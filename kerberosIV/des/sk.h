@@ -1,4 +1,4 @@
-/*	$Id: sk.h,v 1.1 1995/12/14 06:52:43 tholo Exp $	*/
+/*	$Id: sk.h,v 1.1.1.1 1995/12/14 06:52:43 tholo Exp $	*/
 
 /* Copyright (C) 1993 Eric Young - see README for more details */
 static u_int32_t des_skb[8][64]={

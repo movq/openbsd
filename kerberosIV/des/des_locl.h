@@ -1,4 +1,4 @@
-/*	$Id: des_locl.h,v 1.1 1995/12/14 06:52:44 tholo Exp $	*/
+/*	$Id: des_locl.h,v 1.1.1.1 1995/12/14 06:52:44 tholo Exp $	*/
 
 /* Copyright (C) 1993 Eric Young - see README for more details */
 

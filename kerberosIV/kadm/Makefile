@@ -1,4 +1,4 @@
-#	$Id: Makefile,v 1.1 1995/12/14 06:52:45 tholo Exp $
+#	$Id: Makefile,v 1.1.1.1 1995/12/14 06:52:45 tholo Exp $
 
 LIB=	kadm
 SRCS=	kadm_err.c kadm_cli_wrap.c kadm_stream.c kadm_supp.c

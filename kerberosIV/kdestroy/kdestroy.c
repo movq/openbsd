@@ -1,4 +1,4 @@
-/*	$Id: kdestroy.c,v 1.1 1995/12/14 06:52:50 tholo Exp $	*/
+/*	$Id: kdestroy.c,v 1.1.1.1 1995/12/14 06:52:50 tholo Exp $	*/
 
 /*-
  * Copyright 1987, 1988 by the Massachusetts Institute of Technology. 

@@ -1,4 +1,4 @@
-/*	$Id: kadm_supp.c,v 1.1 1995/12/14 06:52:46 tholo Exp $	*/
+/*	$Id: kadm_supp.c,v 1.1.1.1 1995/12/14 06:52:46 tholo Exp $	*/
 
 /*-
  * Copyright (C) 1989 by the Massachusetts Institute of Technology

@@ -1,4 +1,4 @@
-/*	$Id: krb_cache.c,v 1.1 1995/12/14 06:52:36 tholo Exp $	*/
+/*	$Id: krb_cache.c,v 1.1.1.1 1995/12/14 06:52:36 tholo Exp $	*/
 
 /*-
  * Copyright (C) 1989 by the Massachusetts Institute of Technology

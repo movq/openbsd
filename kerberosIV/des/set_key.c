@@ -1,4 +1,4 @@
-/*	$Id: set_key.c,v 1.1 1995/12/14 06:52:43 tholo Exp $	*/
+/*	$Id: set_key.c,v 1.1.1.1 1995/12/14 06:52:43 tholo Exp $	*/
 
 /* Copyright (C) 1993 Eric Young - see README for more details */
 /* set_key.c v 1.4 eay 24/9/91

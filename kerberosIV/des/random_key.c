@@ -1,4 +1,4 @@
-/*	$Id: random_key.c,v 1.1 1995/12/14 06:52:45 tholo Exp $	*/
+/*	$Id: random_key.c,v 1.1.1.1 1995/12/14 06:52:45 tholo Exp $	*/
 
 /* Copyright (C) 1992 Eric Young - see COPYING for more details */
 #include "des_locl.h"

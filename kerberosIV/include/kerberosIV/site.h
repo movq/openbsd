@@ -1,4 +1,4 @@
-/*	$Id: site.h,v 1.1 1995/12/14 06:52:35 tholo Exp $	*/
+/*	$Id: site.h,v 1.1.1.1 1995/12/14 06:52:35 tholo Exp $	*/
 
 /* 
  * Site-specific definitions.

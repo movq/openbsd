@@ -4,7 +4,7 @@
  * This module in only based on the code in this paper and is
  * almost definitely not the same as the MIT implementation.
  *
- *	$Id: qud_cksm.c,v 1.1 1995/12/14 06:52:43 tholo Exp $
+ *	$Id: qud_cksm.c,v 1.1.1.1 1995/12/14 06:52:43 tholo Exp $
  */
 #include "des_locl.h"
 
