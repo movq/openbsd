@@ -1,4 +1,4 @@
-/*	$OpenBSD: defaults.h,v 1.1 1997/09/15 06:01:53 downsj Exp $	*/
+/*	$OpenBSD: defaults.h,v 1.1.1.1 1997/09/15 06:01:53 downsj Exp $	*/
 /*
  * Header file defaults.h - assorted default values for character strings in
  * the volume descriptor.

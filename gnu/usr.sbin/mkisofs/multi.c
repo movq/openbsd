@@ -1,4 +1,4 @@
-/*	$OpenBSD: multi.c,v 1.1 1997/09/15 06:01:53 downsj Exp $	*/
+/*	$OpenBSD: multi.c,v 1.1.1.1 1997/09/15 06:01:53 downsj Exp $	*/
 /*
  * File multi.c - scan existing iso9660 image and merge into 
  * iso9660 filesystem.  Used for multisession support.
