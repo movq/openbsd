@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998-2000 Sendmail, Inc. and its suppliers.
+ * Copyright (c) 1998, 1999 Sendmail, Inc. and its suppliers.
  *	All rights reserved.
  * Copyright (c) 1994, 1996-1997 Eric P. Allman.  All rights reserved.
  * Copyright (c) 1994
@@ -15,7 +15,7 @@
 #include <string.h>
 
 #ifndef lint
-static char id[] = "@(#)$Sendmail: mime.c,v 8.94.16.3 2000/10/09 02:46:10 gshapiro Exp $";
+static char id[] = "@(#)$Sendmail: mime.c,v 8.94 1999/10/17 17:35:58 ca Exp $";
 #endif /* ! lint */
 
 static int	isboundary __P((char *, char **));
@@ -277,10 +277,8 @@ mime8to7(mci, header, e, boundaries, flags)
 		if (tTd(43, 1))
 			dprintf("mime8to7: multipart boundary \"%s\"\n", bbuf);
 		for (i = 0; i < MAXMIMENESTING; i++)
-		{
 			if (boundaries[i] == NULL)
 				break;
-		}
 		if (i >= MAXMIMENESTING)
 		{
 			usrerr("mime8to7: multipart nesting boundary too deep");
@@ -623,7 +621,7 @@ mime8to7(mci, header, e, boundaries, flags)
 					linelen++;
 				}
 			}
-			if (bitnset(bitidx(c1), badchars))
+			if (bitnset(c1 & 0xff, badchars))
 			{
 				*bp++ = '=';
 				*bp++ = Base16Code[(c1 >> 4) & 0x0f];
@@ -830,11 +828,11 @@ mimeboundary(line, boundaries)
 	if (line[0] != '-' || line[1] != '-' || boundaries == NULL)
 		return MBT_NOTSEP;
 	i = strlen(line);
-	if (i > 0 && line[i - 1] == '\n')
+	if (line[i - 1] == '\n')
 		i--;
 
 	/* strip off trailing whitespace */
-	while (i > 0 && (line[i - 1] == ' ' || line[i - 1] == '\t'))
+	while (line[i - 1] == ' ' || line[i - 1] == '\t')
 		i--;
 	savec = line[i];
 	line[i] = '\0';
@@ -906,7 +904,7 @@ isboundary(line, boundaries)
 {
 	register int i;
 
-	for (i = 0; i <= MAXMIMENESTING && boundaries[i] != NULL; i++)
+	for (i = 0; boundaries[i] != NULL; i++)
 	{
 		if (strcmp(line, boundaries[i]) == 0)
 			return i;

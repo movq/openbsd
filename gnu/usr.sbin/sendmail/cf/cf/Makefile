@@ -1,8 +1,7 @@
-#	$OpenBSD: Makefile,v 1.10 2001/05/29 01:31:11 millert Exp $
 #
 #  Makefile for configuration files.
 #
-#	$Sendmail: Makefile,v 8.40.8.5 2001/04/12 22:39:52 gshapiro Exp $
+#	$Sendmail: Makefile,v 8.40 2000/02/01 22:07:15 gshapiro Exp $
 #
 
 #
@@ -13,7 +12,7 @@
 #
 
 M4=	m4
-CFDIR=	${.CURDIR}/..
+CFDIR=	..
 CHMOD=	chmod
 ROMODE=	444
 RM=	rm -f
@@ -22,23 +21,31 @@ RM=	rm -f
 
 .mc.cf:
 	$(RM) $@
-	( cd ${.CURDIR} && $(M4) ${CFDIR}/m4/cf.m4 ${@:R}.mc > ${.OBJDIR}/$@ )
+	$(M4) ${CFDIR}/m4/cf.m4 $*.mc > $@ || ( $(RM) $@ && exit 1 )
 	$(CHMOD) $(ROMODE) $@
 
-ALL=	clientproto.cf openbsd-proto.cf courtesan.cf courtesan-nonet.cf \
-	courtesan-lists.cf  openbsd-lists.cf gandalf.cf alatar.cf \
-	nettan.cf waldorf.cf lucifier.cf elbereth.cf corpse.cf knecht.cf
+GENERIC=generic-bsd4.4.cf generic-hpux9.cf generic-hpux10.cf \
+		generic-linux.cf \
+		generic-osf1.cf generic-solaris2.cf \
+		generic-sunos4.1.cf generic-ultrix4.cf
+BERKELEY=cs-hpux9.cf cs-osf1.cf cs-solaris2.cf \
+	cs-sunos4.1.cf cs-ultrix4.cf \
+	s2k-osf1.cf s2k-ultrix4.cf \
+	chez.cs.cf huginn.cs.cf mail.cs.cf mail.eecs.cf mailspool.cs.cf \
+	python.cs.cf ucbarpa.cf ucbvax.cf vangogh.cs.cf
+OTHER=	knecht.cf
+ALL=	$(GENERIC) $(BERKELEY) $(OTHER)
 
 all: $(ALL)
+
+berkeley: $(BERKELEY)
+generic: $(GENERIC)
+other: $(OTHER)
 
 clean cleandir:
 	$(RM) $(ALL) core
 
 depend install:
-
-distribution: openbsd-proto.cf
-	${INSTALL} ${INSTALL_COPY} -o root -g wheel -m 644 openbsd-proto.cf \
-	    ${DESTDIR}/etc/mail/sendmail.cf
 
 # this is overkill, but....
 M4FILES=\
@@ -110,6 +117,7 @@ M4FILES=\
 	${CFDIR}/ostype/aix4.m4 \
 	${CFDIR}/ostype/altos.m4 \
 	${CFDIR}/ostype/amdahl-uts.m4 \
+	${CFDIR}/ostype/aux.m4 \
 	${CFDIR}/ostype/bsd4.3.m4 \
 	${CFDIR}/ostype/bsd4.4.m4 \
 	${CFDIR}/ostype/bsdi.m4 \
@@ -151,5 +159,6 @@ M4FILES=\
 	${CFDIR}/ostype/uxpds.m4
 
 $(ALL): $(M4FILES)
-
-.include <bsd.prog.mk>
+$(BERKELEY): $(M4FILES)
+$(GENERIC): $(M4FILES)
+$(OTHER): $(M4FILES)

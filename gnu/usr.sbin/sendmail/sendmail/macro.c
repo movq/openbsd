@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998-2001 Sendmail, Inc. and its suppliers.
+ * Copyright (c) 1998, 1999 Sendmail, Inc. and its suppliers.
  *	All rights reserved.
  * Copyright (c) 1983, 1995-1997 Eric P. Allman.  All rights reserved.
  * Copyright (c) 1988, 1993
@@ -12,17 +12,14 @@
  */
 
 #ifndef lint
-static char id[] = "@(#)$Sendmail: macro.c,v 8.40.16.9 2001/02/22 01:16:55 gshapiro Exp $";
+static char id[] = "@(#)$Sendmail: macro.c,v 8.40 1999/11/22 19:10:16 gshapiro Exp $";
 #endif /* ! lint */
 
 #include <sendmail.h>
 
-#if MAXMACROID != (BITMAPBITS - 1)
-	ERROR Read the comment in conf.h
-#endif /* MAXMACROID != (BITMAPBITS - 1) */
+char	*MacroName[256];	/* macro id to name table */
+int	NextMacroId = 0240;	/* codes for long named macros */
 
-char	*MacroName[MAXMACROID + 1];	/* macro id to name table */
-int	NextMacroId = 0240;		/* codes for long named macros */
 
 /*
 **  EXPAND -- macro expand a string using $x escapes.
@@ -114,7 +111,7 @@ expand(s, buf, bufsize, e)
 			continue;
 
 		  case MACROEXPAND:	/* macro interpolation */
-			c = bitidx(*++s);
+			c = *++s & 0377;
 			if (c != '\0')
 				q = macvalue(c, e);
 			else
@@ -172,7 +169,7 @@ expand(s, buf, bufsize, e)
 
 	/* copy results out */
 	i = xp - xbuf;
-	if ((size_t)i >= bufsize)
+	if (i >= bufsize)
 		i = bufsize - 1;
 	memmove(buf, xbuf, i);
 	buf[i] = '\0';
@@ -250,7 +247,7 @@ define(n, v, e)
 {
 	int m;
 
-	m = bitidx(n);
+	m = n & 0377;
 	if (tTd(35, 9))
 	{
 		dprintf("%sdefine(%s as ",
@@ -288,15 +285,13 @@ macvalue(n, e)
 	int n;
 	register ENVELOPE *e;
 {
-	n = bitidx(n);
+	n &= 0377;
 	while (e != NULL)
 	{
 		register char *p = e->e_macro[n];
 
 		if (p != NULL)
 			return p;
-		if (e == e->e_parent)
-			break;
 		e = e->e_parent;
 	}
 	return NULL;
@@ -320,7 +315,7 @@ macname(n)
 {
 	static char mbuf[2];
 
-	n = bitidx(n);
+	n &= 0377;
 	if (bitset(0200, n))
 	{
 		char *p = MacroName[n];
@@ -373,7 +368,7 @@ macid(p, ep)
 			*ep = p;
 		if (tTd(35, 14))
 			dprintf("NULL\n");
-		return 0;
+		return '\0';
 	}
 	if (*p != '{')
 	{
@@ -381,8 +376,8 @@ macid(p, ep)
 		if (ep != NULL)
 			*ep = p + 1;
 		if (tTd(35, 14))
-			dprintf("%c\n", bitidx(*p));
-		return bitidx(*p);
+			dprintf("%c\n", *p);
+		return *p;
 	}
 	bp = mbuf;
 	while (*++p != '\0' && *p != '}' && bp < &mbuf[sizeof mbuf - 1])
@@ -406,7 +401,7 @@ macid(p, ep)
 	else if (mbuf[1] == '\0')
 	{
 		/* ${x} == $x */
-		mid = bitidx(mbuf[0]);
+		mid = mbuf[0];
 		p++;
 	}
 	else
@@ -433,13 +428,6 @@ macid(p, ep)
 	}
 	if (ep != NULL)
 		*ep = p;
-	if (mid < 0 || mid > MAXMACROID)
-	{
-		syserr("Unable to assign macro/class ID (mid = 0x%x)", mid);
-		if (tTd(35, 14))
-			dprintf("NULL\n");
-		return 0;
-	}
 	if (tTd(35, 14))
 		dprintf("0x%x\n", mid);
 	return mid;
@@ -464,5 +452,5 @@ wordinclass(str, cl)
 	register STAB *s;
 
 	s = stab(str, ST_CLASS, ST_FIND);
-	return s != NULL && bitnset(bitidx(cl), s->s_class);
+	return s != NULL && bitnset(cl & 0xff, s->s_class);
 }
