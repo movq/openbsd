@@ -1,4 +1,4 @@
-/*	$OpenBSD: consinit.c,v 1.1 2004/01/28 01:39:38 mickey Exp $	*/
+/*	$OpenBSD: consinit.c,v 1.2 2004/02/03 12:09:47 mickey Exp $	*/
 /*	$NetBSD: consinit.c,v 1.2 2003/03/02 18:27:14 fvdl Exp $	*/
 
 /*
@@ -31,7 +31,6 @@
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <machine/bus.h>
-#include <machine/bootinfo.h>
 
 #include <dev/cons.h>
 
