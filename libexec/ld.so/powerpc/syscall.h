@@ -1,4 +1,4 @@
-/*	$OpenBSD: syscall.h,v 1.1 2000/06/13 03:40:39 rahnds Exp $ */
+/*	$OpenBSD: syscall.h,v 1.1.1.1 2000/06/13 03:40:39 rahnds Exp $ */
 
 /*
  * Copyright (c) 1998 Per Fogelstrom, Opsycon AB
