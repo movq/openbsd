@@ -10,7 +10,7 @@
  * In return you should think about all the nice people who give away software.
  * Maybe you should write some free software too.
  *
- * $Id: ctm_smail.c,v 1.1 1996/10/30 17:32:59 graichen Exp $
+ * $Id: ctm_smail.c,v 1.1.1.1 1996/10/30 17:32:59 graichen Exp $
  */
 
 #include <stdio.h>

@@ -26,7 +26,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- *	$Id: ctm_dequeue.c,v 1.1 1996/10/30 17:32:58 graichen Exp $
+ *	$Id: ctm_dequeue.c,v 1.1.1.1 1996/10/30 17:32:58 graichen Exp $
  */
 
 /* 
