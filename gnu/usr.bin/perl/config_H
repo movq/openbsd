@@ -11,7 +11,7 @@
  * that running config_h.SH again will wipe out any changes you've made.
  * For a more permanent change edit config.sh and rerun config_h.SH.
  *
- * $Id: config_H,v 1.1 1996/08/19 10:11:36 downsj Exp $
+ * $Id: config_H,v 1.1.1.1 1996/08/19 10:11:36 downsj Exp $
  */
 
 /* Configuration time: Mon Mar 18 23:11:24 EST 1996
