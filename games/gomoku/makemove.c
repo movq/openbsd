@@ -1,4 +1,4 @@
-/*	$OpenBSD: makemove.c,v 1.1 1996/12/16 06:56:08 downsj Exp $	*/
+/*	$OpenBSD: makemove.c,v 1.1.1.1 1996/12/16 06:56:08 downsj Exp $	*/
 /*
  * Copyright (c) 1994
  *	The Regents of the University of California.  All rights reserved.
