@@ -9,24 +9,24 @@
  */
 
 #ifndef lint
-static char id[] = "@(#)$Sendmail: comm.c,v 8.30.4.6 2000/10/05 22:44:01 gshapiro Exp $";
+static char id[] = "@(#)$Sendmail: comm.c,v 8.30 2000/02/11 00:12:29 ca Exp $";
 #endif /* ! lint */
 
 #if _FFR_MILTER
 #include "libmilter.h"
 
 #define FD_Z	FD_ZERO(&readset);	\
-		FD_SET((u_int) sd, &readset);	\
+		FD_SET(fd, &readset);	\
 		FD_ZERO(&excset);	\
-		FD_SET((u_int) sd, &excset)
+		FD_SET(fd, &excset)
 
 /*
 **  MI_RD_CMD -- read a command
 **
 **	Parameters:
-**		sd -- socket descriptor
+**		fd -- file descriptor
 **		timeout -- maximum time to wait
-**		cmd -- single character command read from sd
+**		cmd -- single character command read from fd
 **		rlen -- pointer to length of result
 **		name -- name of milter
 **
@@ -37,8 +37,8 @@ static char id[] = "@(#)$Sendmail: comm.c,v 8.30.4.6 2000/10/05 22:44:01 gshapir
 */
 
 char *
-mi_rd_cmd(sd, timeout, cmd, rlen, name)
-	socket_t sd;
+mi_rd_cmd(fd, timeout, cmd, rlen, name)
+	int fd;
 	struct timeval *timeout;
 	char *cmd;
 	size_t *rlen;
@@ -55,25 +55,23 @@ mi_rd_cmd(sd, timeout, cmd, rlen, name)
 
 	*cmd = '\0';
 	*rlen = 0;
-
-	if (sd >= FD_SETSIZE)
+	if (fd >= FD_SETSIZE)
 	{
 		smi_log(SMI_LOG_ERR, "%s: fd %d is larger than FD_SETSIZE %d",
-			name, sd, FD_SETSIZE);
+			name, fd, FD_SETSIZE);
 		*cmd = SMFIC_SELECT;
 		return NULL;
 	}
-
 	FD_Z;
 	i = 0;
-	while ((ret = select(sd + 1, &readset, NULL, &excset, timeout)) >= 1)
+	while ((ret = select(fd + 1, &readset, NULL, &excset, timeout)) >= 1)
 	{
-		if (FD_ISSET(sd, &excset))
+		if (FD_ISSET(fd, &excset))
 		{
 			*cmd = SMFIC_SELECT;
 			return NULL;
 		}
-		if ((len = MI_SOCK_READ(sd, data + i, sizeof data - i)) < 0)
+		if ((len = read(fd, data + i, sizeof data - i)) < 0)
 		{
 			smi_log(SMI_LOG_ERR,
 				"%s, mi_rd_cmd: read returned %d: %s",
@@ -86,7 +84,7 @@ mi_rd_cmd(sd, timeout, cmd, rlen, name)
 			*cmd = SMFIC_EOF;
 			return NULL;
 		}
-		if (len >= (ssize_t) sizeof data - i)
+		if (len >= sizeof data - i)
 			break;
 		i += len;
 		FD_Z;
@@ -125,15 +123,15 @@ mi_rd_cmd(sd, timeout, cmd, rlen, name)
 
 	i = 0;
 	FD_Z;
-	while ((ret = select(sd + 1, &readset, NULL, &excset, timeout)) == 1)
+	while ((ret = select(fd + 1, &readset, NULL, &excset, timeout)) == 1)
 	{
-		if (FD_ISSET(sd, &excset))
+		if (FD_ISSET(fd, &excset))
 		{
 			*cmd = SMFIC_SELECT;
 			free(buf);
 			return NULL;
 		}
-		if ((len = MI_SOCK_READ(sd, buf + i, expl - i)) < 0)
+		if ((len = read(fd, buf + i, expl - i)) < 0)
 		{
 			smi_log(SMI_LOG_ERR,
 				"%s: mi_rd_cmd: read returned %d: %s",
@@ -183,10 +181,10 @@ mi_rd_cmd(sd, timeout, cmd, rlen, name)
 	return NULL;
 }
 /*
-**  MI_WR_CMD -- write a cmd to sd
+**  MI_WR_CMD -- write a cmd to fd
 **
 **	Parameters:
-**		sd -- socket descriptor
+**		fd -- file descriptor
 **		timeout -- maximum time to wait (currently unused)
 **		cmd -- single character command to write
 **		buf -- buffer with further data
@@ -197,8 +195,8 @@ mi_rd_cmd(sd, timeout, cmd, rlen, name)
 */
 
 int
-mi_wr_cmd(sd, timeout, cmd, buf, len)
-	socket_t sd;
+mi_wr_cmd(fd, timeout, cmd, buf, len)
+	int fd;
 	struct timeval *timeout;
 	int cmd;
 	char *buf;
@@ -219,19 +217,17 @@ mi_wr_cmd(sd, timeout, cmd, buf, len)
 	i = 0;
 	sl = MILTER_LEN_BYTES + 1;
 
-	do
-	{
+	do {
 		FD_ZERO(&wrtset);
-		FD_SET((u_int) sd, &wrtset);
-		if ((ret = select(sd + 1, NULL, &wrtset, NULL, timeout)) == 0)
+		FD_SET(fd, &wrtset);
+		if ((ret = select(fd + 1, NULL, &wrtset, NULL, timeout)) == 0)
 			return MI_FAILURE;
 	} while (ret < 0 && errno == EINTR);
 	if (ret < 0)
 		return MI_FAILURE;
 
 	/* use writev() instead to send the whole stuff at once? */
-	while ((l = MI_SOCK_WRITE(sd, (void *) (data + i),
-				  sl - i)) < (ssize_t) sl)
+	while ((l = write(fd, (void *) (data + i), sl - i)) < sl)
 	{
 		if (l < 0)
 			return MI_FAILURE;
@@ -245,17 +241,15 @@ mi_wr_cmd(sd, timeout, cmd, buf, len)
 		return MI_SUCCESS;
 	i = 0;
 	sl = len;
-	do
-	{
+	do {
 		FD_ZERO(&wrtset);
-		FD_SET((u_int) sd, &wrtset);
-		if ((ret = select(sd + 1, NULL, &wrtset, NULL, timeout)) == 0)
+		FD_SET(fd, &wrtset);
+		if ((ret = select(fd + 1, NULL, &wrtset, NULL, timeout)) == 0)
 			return MI_FAILURE;
 	} while (ret < 0 && errno == EINTR);
 	if (ret < 0)
 		return MI_FAILURE;
-	while ((l = MI_SOCK_WRITE(sd, (void *) (buf + i),
-				  sl - i)) < (ssize_t) sl)
+	while ((l = write(fd, (void *) (buf + i), sl - i)) < sl)
 	{
 		if (l < 0)
 			return MI_FAILURE;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998-2001 Sendmail, Inc. and its suppliers.
+ * Copyright (c) 1998, 1999 Sendmail, Inc. and its suppliers.
  *	All rights reserved.
  * Copyright (c) 1983, 1995-1997 Eric P. Allman.  All rights reserved.
  * Copyright (c) 1988, 1993
@@ -12,12 +12,11 @@
  */
 
 #ifndef lint
-static char id[] = "@(#)$Sendmail: util.c,v 8.225.2.1.2.23 2001/05/17 18:10:18 gshapiro Exp $";
+static char id[] = "@(#)$Sendmail: util.c,v 8.224 1999/11/24 08:44:38 gshapiro Exp $";
 #endif /* ! lint */
 
 #include <sendmail.h>
 #include <sysexits.h>
-
 
 static void	readtimeout __P((time_t));
 
@@ -209,7 +208,6 @@ shorten_rfc822_string(string, length)
 	**  If have to rebalance an already short enough string,
 	**  need to do it within allocated space.
 	*/
-
 	slen = strlen(string);
 	if (length == 0 || slen < length)
 		length = slen;
@@ -241,7 +239,7 @@ shorten_rfc822_string(string, length)
 
 increment:
 		/* Check for sufficient space for next character */
-		if (length - (ptr - string) <= (size_t) ((backslash ? 1 : 0) +
+		if (length - (ptr - string) <= ((backslash ? 1 : 0) +
 						parencount +
 						(quoted ? 1 : 0)))
 		{
@@ -378,120 +376,13 @@ xalloc(sz)
 	if (sz <= 0)
 		sz = 1;
 
-	ENTER_CRITICAL();
 	p = malloc((unsigned) sz);
-	LEAVE_CRITICAL();
 	if (p == NULL)
 	{
 		syserr("!Out of memory!!");
-
-		/* NOTREACHED */
-		exit(EX_UNAVAILABLE);
+		/* exit(EX_UNAVAILABLE); */
 	}
 	return p;
-}
-/*
-**  XREALLOC -- Reallocate memory and bitch wildly on failure.
-**
-**	THIS IS A CLUDGE.  This should be made to give a proper
-**	error -- but after all, what can we do?
-**
-**	Parameters:
-**		ptr -- original area.
-**		sz -- size of new area to allocate.
-**
-**	Returns:
-**		pointer to data region.
-**
-**	Side Effects:
-**		Memory is allocated.
-*/
-
-char *
-xrealloc(ptr, sz)
-	void *ptr;
-	size_t sz;
-{
-	register char *p;
-
-	/* some systems can't handle size zero mallocs */
-	if (sz <= 0)
-		sz = 1;
-
-	ENTER_CRITICAL();
-	p = realloc(ptr, (unsigned) sz);
-	LEAVE_CRITICAL();
-	if (p == NULL)
-	{
-		syserr("!Out of memory!!");
-
-		/* NOTREACHED */
-		exit(EX_UNAVAILABLE);
-	}
-	return p;
-}
-/*
-**  XCALLOC -- Allocate memory and bitch wildly on failure.
-**
-**	THIS IS A CLUDGE.  This should be made to give a proper
-**	error -- but after all, what can we do?
-**
-**	Parameters:
-**		num -- number of items to allocate
-**		sz -- size of new area to allocate.
-**
-**	Returns:
-**		pointer to data region.
-**
-**	Side Effects:
-**		Memory is allocated.
-*/
-
-char *
-xcalloc(num, sz)
-	size_t num;
-	size_t sz;
-{
-	register char *p;
-
-	/* some systems can't handle size zero mallocs */
-	if (num <= 0)
-		num = 1;
-	if (sz <= 0)
-		sz = 1;
-
-	ENTER_CRITICAL();
-	p = calloc((unsigned) num, (unsigned) sz);
-	LEAVE_CRITICAL();
-	if (p == NULL)
-	{
-		syserr("!Out of memory!!");
-
-		/* NOTREACHED */
-		exit(EX_UNAVAILABLE);
-	}
-	return p;
-}
-/*
-**  SM_FREE -- Free memory safely.
-**
-**	Parameters:
-**		ptr -- area to free
-**
-**	Returns:
-**		none.
-**
-**	Side Effects:
-**		Memory is freed.
-*/
-
-void
-sm_free(ptr)
-	void *ptr;
-{
-	ENTER_CRITICAL();
-	free(ptr);
-	LEAVE_CRITICAL();
 }
 /*
 **  COPYPLIST -- copy list of pointers.
@@ -604,18 +495,14 @@ log_sendmail_pid(e)
 	pidf = safefopen(pidpath, O_WRONLY|O_TRUNC, 0644, sff);
 	if (pidf == NULL)
 	{
-		sm_syslog(LOG_ERR, NOQID, "unable to write %s: %s",
-			  pidpath, errstring(errno));
+		sm_syslog(LOG_ERR, NOQID, "unable to write %s", pidpath);
 	}
 	else
 	{
-		pid_t pid;
 		extern char *CommandLineArgs;
 
-		pid = getpid();
-
 		/* write the process id on line 1 */
-		fprintf(pidf, "%ld\n", (long) pid);
+		fprintf(pidf, "%ld\n", (long) getpid());
 
 		/* line 2 contains all command line flags */
 		fprintf(pidf, "%s\n", CommandLineArgs);
@@ -752,7 +639,7 @@ xputs(s)
 				if (strchr("=~&?", *s) != NULL)
 					(void) putchar(*s++);
 				if (bitset(0200, *s))
-					printf("{%s}", macname(bitidx(*s++)));
+					printf("{%s}", macname(*s++ & 0377));
 				else
 					printf("%c", *s++);
 				continue;
@@ -1030,11 +917,6 @@ putxline(l, len, mci, pxflags)
 			{
 				if (putc('.', mci->mci_out) == EOF)
 					dead = TRUE;
-				else
-				{
-					/* record progress for DATA timeout */
-					DataProgress = TRUE;
-				}
 				if (TrafficLogFile != NULL)
 					(void) putc('.', TrafficLogFile);
 			}
@@ -1045,11 +927,6 @@ putxline(l, len, mci, pxflags)
 			{
 				if (putc('>', mci->mci_out) == EOF)
 					dead = TRUE;
-				else
-				{
-					/* record progress for DATA timeout */
-					DataProgress = TRUE;
-				}
 				if (TrafficLogFile != NULL)
 					(void) putc('>', TrafficLogFile);
 			}
@@ -1058,17 +935,14 @@ putxline(l, len, mci, pxflags)
 
 			while (l < q)
 			{
-				if (putc((unsigned char) *l++, mci->mci_out) ==
-				    EOF)
+				if (putc(*l++, mci->mci_out) == EOF)
 				{
 					dead = TRUE;
 					break;
 				}
-				else
-				{
-					/* record progress for DATA timeout */
-					DataProgress = TRUE;
-				}
+
+				/* record progress for DATA timeout */
+				DataProgress = TRUE;
 			}
 			if (dead)
 				break;
@@ -1081,16 +955,14 @@ putxline(l, len, mci, pxflags)
 				dead = TRUE;
 				break;
 			}
-			else
-			{
-				/* record progress for DATA timeout */
-				DataProgress = TRUE;
-			}
+
+			/* record progress for DATA timeout */
+			DataProgress = TRUE;
+
 			if (TrafficLogFile != NULL)
 			{
 				for (l = l_base; l < q; l++)
-					(void) putc((unsigned char)*l,
-						    TrafficLogFile);
+					(void) putc(*l, TrafficLogFile);
 				fprintf(TrafficLogFile, "!\n%05d >>>  ",
 					(int) getpid());
 			}
@@ -1106,11 +978,6 @@ putxline(l, len, mci, pxflags)
 		{
 			if (putc('.', mci->mci_out) == EOF)
 				break;
-			else
-			{
-				/* record progress for DATA timeout */
-				DataProgress = TRUE;
-			}
 			if (TrafficLogFile != NULL)
 				(void) putc('.', TrafficLogFile);
 		}
@@ -1121,28 +988,21 @@ putxline(l, len, mci, pxflags)
 		{
 			if (putc('>', mci->mci_out) == EOF)
 				break;
-			else
-			{
-				/* record progress for DATA timeout */
-				DataProgress = TRUE;
-			}
 			if (TrafficLogFile != NULL)
 				(void) putc('>', TrafficLogFile);
 		}
 		for ( ; l < p; ++l)
 		{
 			if (TrafficLogFile != NULL)
-				(void) putc((unsigned char)*l, TrafficLogFile);
-			if (putc((unsigned char) *l, mci->mci_out) == EOF)
+				(void) putc(*l, TrafficLogFile);
+			if (putc(*l, mci->mci_out) == EOF)
 			{
 				dead = TRUE;
 				break;
 			}
-			else
-			{
-				/* record progress for DATA timeout */
-				DataProgress = TRUE;
-			}
+
+			/* record progress for DATA timeout */
+			DataProgress = TRUE;
 		}
 		if (dead)
 			break;
@@ -1151,11 +1011,6 @@ putxline(l, len, mci, pxflags)
 			(void) putc('\n', TrafficLogFile);
 		if (fputs(mci->mci_mailer->m_eol, mci->mci_out) == EOF)
 			break;
-		else
-		{
-			/* record progress for DATA timeout */
-			DataProgress = TRUE;
-		}
 		if (l < end && *l == '\n')
 		{
 			if (*++l != ' ' && *l != '\t' && *l != '\0' &&
@@ -1163,15 +1018,13 @@ putxline(l, len, mci, pxflags)
 			{
 				if (putc(' ', mci->mci_out) == EOF)
 					break;
-				else
-				{
-					/* record progress for DATA timeout */
-					DataProgress = TRUE;
-				}
 				if (TrafficLogFile != NULL)
 					(void) putc(' ', TrafficLogFile);
 			}
 		}
+
+		/* record progress for DATA timeout */
+		DataProgress = TRUE;
 	} while (l < end);
 }
 /*
@@ -1222,7 +1075,6 @@ xunlink(f)
 **	Side Effects:
 **		none.
 */
-
 
 static jmp_buf	CtxReadTimeout;
 
@@ -1319,13 +1171,6 @@ static void
 readtimeout(timeout)
 	time_t timeout;
 {
-	/*
-	**  NOTE: THIS CAN BE CALLED FROM A SIGNAL HANDLER.  DO NOT ADD
-	**	ANYTHING TO THIS ROUTINE UNLESS YOU KNOW WHAT YOU ARE
-	**	DOING.
-	*/
-
-	errno = ETIMEDOUT;
 	longjmp(CtxReadTimeout, 1);
 }
 /*
@@ -1385,7 +1230,7 @@ fgetfolded(buf, n, f)
 			memmove(nbp, bp, p - bp);
 			p = &nbp[p - bp];
 			if (bp != buf)
-				sm_free(bp);
+				free(bp);
 			bp = nbp;
 			n = nn - (p - bp);
 		}
@@ -1498,10 +1343,8 @@ bitintersect(a, b)
 	int i;
 
 	for (i = BITMAPBYTES / sizeof (int); --i >= 0; )
-	{
 		if ((a[i] & b[i]) != 0)
 			return TRUE;
-	}
 	return FALSE;
 }
 /*
@@ -1525,10 +1368,8 @@ bitzerop(map)
 	int i;
 
 	for (i = BITMAPBYTES / sizeof (int); --i >= 0; )
-	{
 		if (map[i] != 0)
 			return FALSE;
-	}
 	return TRUE;
 }
 /*
@@ -1640,8 +1481,8 @@ checkfds(where)
 	static BITMAP256 baseline;
 	extern int DtableSize;
 
-	if (DtableSize > BITMAPBITS)
-		maxfd = BITMAPBITS;
+	if (DtableSize > 256)
+		maxfd = 256;
 	else
 		maxfd = DtableSize;
 	if (where == NULL)
@@ -1772,11 +1613,9 @@ dumpfd(fd, printclosed, logit)
 	  case S_IFSOCK:
 		snprintf(p, SPACELEFT(buf, p), "SOCK ");
 		p += strlen(p);
-		memset(&sa, '\0', sizeof sa);
 		slen = sizeof sa;
 		if (getsockname(fd, &sa.sa, &slen) < 0)
-			snprintf(p, SPACELEFT(buf, p), "(%s)",
-				 errstring(errno));
+			snprintf(p, SPACELEFT(buf, p), "(%s)", errstring(errno));
 		else
 		{
 			hp = hostnamebyanyaddr(&sa);
@@ -1900,10 +1739,10 @@ printit:
 **		host -- the host to shorten (stripped in place).
 **
 **	Returns:
-**		place where string was trunacted, NULL if not truncated.
+**		none.
 */
 
-char *
+void
 shorten_hostname(host)
 	char host[];
 {
@@ -1923,7 +1762,7 @@ shorten_hostname(host)
 	/* see if there is any domain at all -- if not, we are done */
 	p = strchr(host, '.');
 	if (p == NULL)
-		return NULL;
+		return;
 
 	/* yes, we have a domain -- see if it looks like us */
 	mydom = macvalue('m', CurEnv);
@@ -1932,11 +1771,7 @@ shorten_hostname(host)
 	i = strlen(++p);
 	if ((canon ? strcasecmp(p, mydom) : strncasecmp(p, mydom, i)) == 0 &&
 	    (mydom[i] == '.' || mydom[i] == '\0'))
-	{
 		*--p = '\0';
-		return p;
-	}
-	return NULL;
 }
 /*
 **  PROG_OPEN -- open a program for reading
@@ -1950,13 +1785,13 @@ shorten_hostname(host)
 **		pid of the process -- -1 if it failed.
 */
 
-pid_t
+int
 prog_open(argv, pfd, e)
 	char **argv;
 	int *pfd;
 	ENVELOPE *e;
 {
-	pid_t pid;
+	int pid;
 	int i;
 	int save_errno;
 	int fdv[2];
@@ -1987,11 +1822,6 @@ prog_open(argv, pfd, e)
 
 	/* child -- close stdin */
 	(void) close(0);
-
-	/* Reset global flags */
-	RestartRequest = NULL;
-	ShutdownRequest = NULL;
-	PendingSignal = 0;
 
 	/* stdout goes back to parent */
 	(void) close(fdv[0]);
@@ -2024,29 +1854,17 @@ prog_open(argv, pfd, e)
 	{
 		expand(ProgMailer->m_rootdir, buf, sizeof buf, e);
 		if (chroot(buf) < 0)
-		{
 			syserr("prog_open: cannot chroot(%s)", buf);
-			exit(EX_TEMPFAIL);
-		}
 		if (chdir("/") < 0)
-		{
 			syserr("prog_open: cannot chdir(/)");
-			exit(EX_TEMPFAIL);
-		}
 	}
 
 	/* run as default user */
 	endpwent();
 	if (setgid(DefGid) < 0 && geteuid() == 0)
-	{
 		syserr("prog_open: setgid(%ld) failed", (long) DefGid);
-		exit(EX_TEMPFAIL);
-	}
 	if (setuid(DefUid) < 0 && geteuid() == 0)
-	{
 		syserr("prog_open: setuid(%ld) failed", (long) DefUid);
-		exit(EX_TEMPFAIL);
-	}
 
 	/* run in some directory */
 	if (ProgMailer != NULL)
@@ -2238,7 +2056,7 @@ denlstring(s, strict, logattacks)
 	{
 		/* allocate more space */
 		if (bp != NULL)
-			sm_free(bp);
+			free(bp);
 		bp = xalloc(l);
 		bl = l;
 	}
@@ -2318,7 +2136,7 @@ path_is_dir(pathname, createflag)
 **		none
 */
 
-static struct procs	*volatile ProcListVec = NULL;
+static struct procs	*ProcListVec = NULL;
 static int		ProcListSize = 0;
 
 void
@@ -2357,7 +2175,7 @@ proc_list_add(pid, task, type)
 		{
 			memmove(npv, ProcListVec,
 				ProcListSize * sizeof (struct procs));
-			sm_free(ProcListVec);
+			free(ProcListVec);
 		}
 		for (i = ProcListSize; i < ProcListSize + PROC_LIST_SEG; i++)
 		{
@@ -2371,7 +2189,7 @@ proc_list_add(pid, task, type)
 	}
 	ProcListVec[i].proc_pid = pid;
 	if (ProcListVec[i].proc_task != NULL)
-		sm_free(ProcListVec[i].proc_task);
+		free(ProcListVec[i].proc_task);
 	ProcListVec[i].proc_task = newstr(task);
 	ProcListVec[i].proc_type = type;
 
@@ -2402,7 +2220,7 @@ proc_list_set(pid, task)
 		if (ProcListVec[i].proc_pid == pid)
 		{
 			if (ProcListVec[i].proc_task != NULL)
-				sm_free(ProcListVec[i].proc_task);
+				free(ProcListVec[i].proc_task);
 			ProcListVec[i].proc_task = newstr(task);
 			break;
 		}
@@ -2416,10 +2234,6 @@ proc_list_set(pid, task)
 **
 **	Returns:
 **		type of process
-**
-**	NOTE:	THIS CAN BE CALLED FROM A SIGNAL HANDLER.  DO NOT ADD
-**		ANYTHING TO THIS ROUTINE UNLESS YOU KNOW WHAT YOU ARE
-**		DOING.
 */
 
 int
@@ -2440,8 +2254,6 @@ proc_list_drop(pid)
 	}
 	if (CurChildren > 0)
 		CurChildren--;
-
-
 	return type;
 }
 /*

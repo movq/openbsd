@@ -1,12 +1,12 @@
 /*
-** Copyright (c) 1999-2000 Sendmail, Inc. and its suppliers.
+** Copyright (c) 1999 Sendmail, Inc. and its suppliers.
 **	All rights reserved.
 **
 ** By using this file, you agree to the terms and conditions set
 ** forth in the LICENSE file which can be found at the top level of
 ** the sendmail distribution.
 **
-** $Sendmail: smdb.h,v 8.29.2.1.2.2 2000/10/05 22:23:55 gshapiro Exp $
+** $Sendmail: smdb.h,v 8.26 2000/03/02 09:03:05 msk Exp $
 */
 
 #ifndef _SMDB_H_
@@ -17,12 +17,6 @@
 # ifndef __P
 #  include "sendmail/cdefs.h"
 # endif /* __P */
-
-# ifndef NDBM
-#  ifndef NEWDB
-ERROR	NDBM or NEWDB must be defined.
-#  endif /* ! NEWDB */
-# endif /* ! NDBM */
 
 # ifdef NDBM
 #  include <ndbm.h>
@@ -53,7 +47,7 @@ ERROR	NDBM or NEWDB must be defined.
 
 typedef struct database_struct SMDB_DATABASE;
 typedef struct cursor_struct SMDB_CURSOR;
-typedef struct entry_struct SMDB_DBENT;
+typedef union database_entity_union SMDB_DBENT;
 
 
 /*
@@ -189,7 +183,6 @@ typedef int (*db_set_owner_func) __P((SMDB_DATABASE *db, uid_t uid,
 typedef int (*db_cursor_func) __P((SMDB_DATABASE *db,
 			      SMDB_CURSOR **cursor, u_int flags));
 
-typedef int (*db_lockfd_func) __P((SMDB_DATABASE *db));
 
 struct database_struct
 {
@@ -201,7 +194,6 @@ struct database_struct
 	db_sync_func		smdb_sync;
 	db_set_owner_func	smdb_set_owner;
 	db_cursor_func		smdb_cursor;
-	db_lockfd_func		smdb_lockfd;
 	void			*smdb_impl;
 };
 
@@ -261,7 +253,6 @@ typedef int (*db_cursor_get_func) __P((SMDB_CURSOR *cursor,
 #define SMDB_CURSOR_GET_FIRST	0
 #define SMDB_CURSOR_GET_LAST	1
 #define SMDB_CURSOR_GET_NEXT	2
-#define SMDB_CURSOR_GET_RANGE	3
 
 
 /*
@@ -312,11 +303,21 @@ struct database_user_struct
 
 typedef struct database_user_struct SMDB_USER_INFO;
 
-struct entry_struct
+union database_entity_union
 {
-	void	*data;
-	size_t	size;
+# ifdef NDBM
+	datum	dbm;
+# endif /* NDBM */
+# ifdef NEWDB
+	DBT	db;
+# endif /* NEWDB */
+	struct
+	{
+		char	*data;
+		size_t	size;
+	} data;
 };
+
 
 typedef char *SMDB_DBTYPE;
 typedef u_int SMDB_FLAG;
@@ -345,29 +346,26 @@ typedef u_int SMDB_FLAG;
 extern SMDB_DATABASE	*smdb_malloc_database __P((void));
 extern void		smdb_free_database __P((SMDB_DATABASE *));
 extern int		smdb_open_database __P((SMDB_DATABASE **, char *, int,
-						int, long, SMDB_DBTYPE,
+						int, int, SMDB_DBTYPE,
 						SMDB_USER_INFO *,
 						SMDB_DBPARAMS *));
 # ifdef NEWDB
 extern int		smdb_db_open __P((SMDB_DATABASE **, char *, int, int,
-					  long, SMDB_DBTYPE, SMDB_USER_INFO *,
+					  int, SMDB_DBTYPE, SMDB_USER_INFO *,
 					  SMDB_DBPARAMS *));
 # endif /* NEWDB */
 # ifdef NDBM
 extern int		smdb_ndbm_open __P((SMDB_DATABASE **, char *, int, int,
-					    long, SMDB_DBTYPE,
-					    SMDB_USER_INFO *,
+					    int, SMDB_DBTYPE, SMDB_USER_INFO *,
 					    SMDB_DBPARAMS *));
 # endif /* NDBM */
 extern int		smdb_add_extension __P((char *, int, char *, char *));
-extern int		smdb_setup_file __P((char *, char *, int, long,
+extern int		smdb_setup_file __P((char *, char *, int, int,
 					     SMDB_USER_INFO *, struct stat *));
-extern int		smdb_lock_file __P((int *, char *, int, long, char *));
+extern int		smdb_lock_file __P((int *, char *, int, int, char *));
 extern int		smdb_unlock_file __P((int));
 extern int		smdb_filechanged __P((char *, char *, int,
 					      struct stat *));
 extern void		smdb_print_available_types __P((void));
 extern char		*smdb_db_definition __P((SMDB_DBTYPE));
-extern int		smdb_lock_map __P((SMDB_DATABASE *, int));
-extern int		smdb_unlock_map __P((SMDB_DATABASE *));
 #endif /* ! _SMDB_H_ */

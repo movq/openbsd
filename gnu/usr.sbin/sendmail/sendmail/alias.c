@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998-2001 Sendmail, Inc. and its suppliers.
+ * Copyright (c) 1998-2000 Sendmail, Inc. and its suppliers.
  *	All rights reserved.
  * Copyright (c) 1983, 1995-1997 Eric P. Allman.  All rights reserved.
  * Copyright (c) 1988, 1993
@@ -13,11 +13,8 @@
 #include <sendmail.h>
 
 #ifndef lint
-static char id[] = "@(#)$Sendmail: alias.c,v 8.142.4.11 2001/05/03 17:24:01 gshapiro Exp $";
+static char id[] = "@(#)$Sendmail: alias.c,v 8.140 2000/02/01 05:49:54 gshapiro Exp $";
 #endif /* ! lint */
-
-# define SEPARATOR ':'
-# define ALIAS_SPEC_SEPARATORS	" ,/:"
 
 static MAP	*AliasFileMap = NULL;	/* the actual aliases.files map */
 static int	NAliasFileMaps;	/* the number of entries in AliasFileMap */
@@ -279,8 +276,9 @@ setalias(spec)
 		map = &s->s_map;
 		memset(map, '\0', sizeof *map);
 		map->map_mname = s->s_name;
-		p = strpbrk(p, ALIAS_SPEC_SEPARATORS);
-		if (p != NULL && *p == SEPARATOR)
+
+		p = strpbrk(p, " ,/:");
+		if (p != NULL && *p == ':')
 		{
 			/* map name */
 			*p++ = '\0';
@@ -405,9 +403,8 @@ aliaswait(map, ext, isopen)
 				dprintf("aliaswait: sleeping for %u seconds\n",
 					sleeptime);
 
-			map->map_mflags |= MF_CLOSING;
 			map->map_class->map_close(map);
-			map->map_mflags &= ~(MF_OPEN|MF_WRITABLE|MF_CLOSING);
+			map->map_mflags &= ~(MF_OPEN|MF_WRITABLE);
 			(void) sleep(sleeptime);
 			sleeptime *= 2;
 			if (sleeptime > 60)
@@ -438,8 +435,7 @@ aliaswait(map, ext, isopen)
 	{
 #if !_FFR_REMOVE_AUTOREBUILD
 		/* database is out of date */
-		if (AutoRebuild &&
-		    stb.st_ino != 0 &&
+		if (AutoRebuild && stb.st_ino != 0 &&
 		    (stb.st_uid == geteuid() ||
 		     (geteuid() == 0 && stb.st_uid == TrustedUid)))
 		{
@@ -450,9 +446,8 @@ aliaswait(map, ext, isopen)
 			SuprErrs = TRUE;
 			if (isopen)
 			{
-				map->map_mflags |= MF_CLOSING;
 				map->map_class->map_close(map);
-				map->map_mflags &= ~(MF_OPEN|MF_WRITABLE|MF_CLOSING);
+				map->map_mflags &= ~(MF_OPEN|MF_WRITABLE);
 			}
 			(void) rebuildaliases(map, TRUE);
 			isopen = map->map_class->map_open(map, O_RDONLY);
@@ -597,17 +592,16 @@ rebuildaliases(map, automatic)
 	/* add distinguished entries and close the database */
 	if (bitset(MF_OPEN, map->map_mflags))
 	{
-		map->map_mflags |= MF_CLOSING;
 		map->map_class->map_close(map);
-		map->map_mflags &= ~(MF_OPEN|MF_WRITABLE|MF_CLOSING);
+		map->map_mflags &= ~(MF_OPEN|MF_WRITABLE);
 	}
 
 	/* restore the old signals */
 	(void) setsignal(SIGINT, oldsigint);
 	(void) setsignal(SIGQUIT, oldsigquit);
-# ifdef SIGTSTP
+#ifdef SIGTSTP
 	(void) setsignal(SIGTSTP, oldsigtstp);
-# endif /* SIGTSTP */
+#endif /* SIGTSTP */
 	return success;
 }
 /*
@@ -672,7 +666,6 @@ readaliases(map, af, announcestats, logstats)
 			*p = '\0';
 		else if (!feof(af))
 		{
-			errno = 0;
 			syserr("554 5.3.0 alias line too long");
 
 			/* flush to end of line */
@@ -735,7 +728,7 @@ readaliases(map, af, announcestats, logstats)
 			register char *nlp;
 
 			nlp = &p[strlen(p)];
-			if (nlp > p && nlp[-1] == '\n')
+			if (nlp[-1] == '\n')
 				*--nlp = '\0';
 
 			if (CheckAliases)
@@ -805,46 +798,30 @@ readaliases(map, af, announcestats, logstats)
 
 		lhssize = strlen(al.q_user);
 		rhssize = strlen(rhs);
-		if (rhssize > 0)
-		{
-			/* is RHS empty (just spaces)? */
-			p = rhs;
-			while (isascii(*p) && isspace(*p))
-				p++;
-		}
-		if (rhssize == 0 || *p == '\0')
-		{
-			syserr("554 5.3.5 %.40s... missing value for alias",
-			       line);
-
-		}
-		else
-		{
-			map->map_class->map_store(map, al.q_user, rhs);
-
-			/* statistics */
-			naliases++;
-			bytes += lhssize + rhssize;
-			if (rhssize > longest)
-				longest = rhssize;
-		}
+		map->map_class->map_store(map, al.q_user, rhs);
 
 		if (al.q_paddr != NULL)
-			sm_free(al.q_paddr);
+			free(al.q_paddr);
 		if (al.q_host != NULL)
-			sm_free(al.q_host);
+			free(al.q_host);
 		if (al.q_user != NULL)
-			sm_free(al.q_user);
+			free(al.q_user);
+
+		/* statistics */
+		naliases++;
+		bytes += lhssize + rhssize;
+		if (rhssize > longest)
+			longest = rhssize;
 	}
 
 	CurEnv->e_to = NULL;
 	FileName = NULL;
 	if (Verbose || announcestats)
-		message("%s: %ld aliases, longest %ld bytes, %ld bytes total",
+		message("%s: %d aliases, longest %d bytes, %d bytes total",
 			map->map_file, naliases, longest, bytes);
 	if (LogLevel > 7 && logstats)
 		sm_syslog(LOG_INFO, NOQID,
-			"%s: %ld aliases, longest %ld bytes, %ld bytes total",
+			"%s: %d aliases, longest %d bytes, %d bytes total",
 			map->map_file, naliases, longest, bytes);
 }
 /*
@@ -906,12 +883,12 @@ forward(user, sendq, aliaslevel, e)
 		char buf[MAXPATHLEN + 1];
 		struct stat st;
 
-		ep = strchr(pp, SEPARATOR);
+		ep = strchr(pp, ':');
 		if (ep != NULL)
 			*ep = '\0';
 		expand(pp, buf, sizeof buf, e);
 		if (ep != NULL)
-			*ep++ = SEPARATOR;
+			*ep++ = ':';
 		if (buf[0] == '\0')
 			continue;
 		if (tTd(27, 3))

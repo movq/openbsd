@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998-2001 Sendmail, Inc. and its suppliers.
+ * Copyright (c) 1998-2000 Sendmail, Inc. and its suppliers.
  *	All rights reserved.
  * Copyright (c) 1983, 1995-1997 Eric P. Allman.  All rights reserved.
  * Copyright (c) 1988, 1993
@@ -12,11 +12,10 @@
  */
 
 #ifndef lint
-static char id[] = "@(#)$Sendmail: collect.c,v 8.136.4.21 2001/05/17 18:10:14 gshapiro Exp $";
+static char id[] = "@(#)$Sendmail: collect.c,v 8.135 2000/02/27 01:27:43 gshapiro Exp $";
 #endif /* ! lint */
 
 #include <sendmail.h>
-
 
 static void	collecttimeout __P((time_t));
 static void	dferror __P((FILE *volatile, char *, ENVELOPE *));
@@ -47,8 +46,8 @@ static void	eatfrom __P((char *volatile, ENVELOPE *));
 */
 
 static jmp_buf	CtxCollectTimeout;
-static bool	volatile CollectProgress;
-static EVENT	*volatile CollectTimeout = NULL;
+static bool	CollectProgress;
+static EVENT	*CollectTimeout;
 
 /* values for input state machine */
 #define IS_NORM		0	/* middle of line */
@@ -62,6 +61,41 @@ static EVENT	*volatile CollectTimeout = NULL;
 #define MS_HEADER	1	/* reading message header */
 #define MS_BODY		2	/* reading message body */
 #define MS_DISCARD	3	/* discarding rest of message */
+
+#if _FFR_MILTER
+# define MILTER_EOH() \
+{ \
+	if (bitset(CHHDR_MILTER, chompflags) && \
+	    rstat == EX_OK && \
+	    !bitset(EF_DISCARD, e->e_flags)) \
+	{ \
+		char state; \
+		char *response; \
+ \
+		response = milter_eoh(e, &state); \
+		chompflags &= ~CHHDR_MILTER; \
+		switch (state) \
+		{ \
+		  case SMFIR_REPLYCODE: \
+			usrerr(response); \
+			break; \
+ \
+		  case SMFIR_REJECT: \
+			usrerr("554 5.7.1 Message rejected"); \
+			break; \
+ \
+		  case SMFIR_DISCARD: \
+			e->e_flags |= EF_DISCARD; \
+			break; \
+ \
+		  case SMFIR_TEMPFAIL: \
+			usrerr("451 4.7.1 Try again later"); \
+			break; \
+		} \
+	} \
+}
+# endif /* _FFR_MILTER */
+
 
 void
 collect(fp, smtpmode, hdrp, e)
@@ -84,6 +118,8 @@ collect(fp, smtpmode, hdrp, e)
 	volatile int hdrslen = 0;
 	volatile int numhdrs = 0;
 	volatile int dfd;
+	volatile int afd;
+	volatile int chompflags = CHHDR_CHECK|CHHDR_USER;
 	volatile int rstat = EX_OK;
 	u_char *volatile pbp;
 	u_char peekbuf[8];
@@ -101,8 +137,6 @@ collect(fp, smtpmode, hdrp, e)
 	if (!headeronly)
 	{
 		struct stat stbuf;
-		long sff = SFF_OPENASROOT;
-
 
 		(void) strlcpy(dfname, queuename(e, 'd'), sizeof dfname);
 #if _FFR_QUEUE_FILE_MODE
@@ -111,21 +145,18 @@ collect(fp, smtpmode, hdrp, e)
 
 			if (bitset(S_IWGRP, QueueFileMode))
 				oldumask = umask(002);
-			df = bfopen(dfname, QueueFileMode,
-				    DataFileBufferSize, sff);
+			df = bfopen(dfname, QueueFileMode, DataFileBufferSize,
+				    SFF_OPENASROOT);
 			if (bitset(S_IWGRP, QueueFileMode))
 				(void) umask(oldumask);
 		}
 #else /* _FFR_QUEUE_FILE_MODE */
-		df = bfopen(dfname, FileMode, DataFileBufferSize, sff);
+		df = bfopen(dfname, FileMode, DataFileBufferSize,
+			    SFF_OPENASROOT);
 #endif /* _FFR_QUEUE_FILE_MODE */
 		if (df == NULL)
 		{
-			HoldErrs = FALSE;
-			if (smtpmode)
-				syserr("421 4.3.5 Unable to create data file");
-			else
-				syserr("Cannot create %s", dfname);
+			syserr("Cannot create %s", dfname);
 			e->e_flags |= EF_NO_BODY_RETN;
 			finis(TRUE, ExitStat);
 			/* NOTREACHED */
@@ -148,7 +179,12 @@ collect(fp, smtpmode, hdrp, e)
 	*/
 
 	if (smtpmode)
+	{
 		message("354 Enter mail, end with \".\" on a line by itself");
+#if _FFR_MILTER
+		chompflags |= CHHDR_MILTER;
+# endif /* _FFR_MILTER */
+	}
 
 	if (tTd(30, 2))
 		dprintf("collect\n");
@@ -199,25 +235,18 @@ collect(fp, smtpmode, hdrp, e)
 				{
 					errno = 0;
 					c = getc(fp);
-
-					if (c == EOF && errno == EINTR)
-					{
-						/* Interrupted, retry */
-						clearerr(fp);
-						continue;
-					}
-					break;
+					if (errno != EINTR)
+						break;
+					clearerr(fp);
 				}
 				CollectProgress = TRUE;
 				if (TrafficLogFile != NULL && !headeronly)
 				{
 					if (istate == IS_BOL)
-						(void) fprintf(TrafficLogFile,
-							       "%05d <<< ",
-							       (int) getpid());
+						(void) fprintf(TrafficLogFile, "%05d <<< ",
+							(int) getpid());
 					if (c == EOF)
-						(void) fprintf(TrafficLogFile,
-							       "[EOF]\n");
+						(void) fprintf(TrafficLogFile, "[EOF]\n");
 					else
 						(void) putc(c, TrafficLogFile);
 				}
@@ -297,23 +326,15 @@ collect(fp, smtpmode, hdrp, e)
 
 bufferchar:
 			if (!headeronly)
-			{
-				/* no overflow? */
-				if (e->e_msgsize >= 0)
-				{
-					e->e_msgsize++;
-					if (MaxMessageSize > 0 &&
-					    !bitset(EF_TOOBIG, e->e_flags) &&
-					    e->e_msgsize > MaxMessageSize)
-						 e->e_flags |= EF_TOOBIG;
-				}
-			}
+				e->e_msgsize++;
 			switch (mstate)
 			{
 			  case MS_BODY:
 				/* just put the character out */
-				if (!bitset(EF_TOOBIG, e->e_flags))
+				if (MaxMessageSize <= 0 ||
+				    e->e_msgsize <= MaxMessageSize)
 					(void) putc(c, df);
+
 				/* FALLTHROUGH */
 
 			  case MS_DISCARD:
@@ -338,7 +359,7 @@ bufferchar:
 				memmove(buf, obuf, bp - obuf);
 				bp = &buf[bp - obuf];
 				if (obuf != bufbuf)
-					sm_free(obuf);
+					free(obuf);
 			}
 			if (c >= 0200 && c <= 0237)
 			{
@@ -351,9 +372,8 @@ bufferchar:
 			else if (c != '\0')
 			{
 				*bp++ = c;
-				hdrslen++;
 				if (MaxHeadersLength > 0 &&
-				    hdrslen > MaxHeadersLength)
+				    ++hdrslen > MaxHeadersLength)
 				{
 					sm_syslog(LOG_NOTICE, e->e_id,
 						  "headers too large (%d max) from %s during message collect",
@@ -404,7 +424,7 @@ nextstate:
 				clearerr(fp);
 				errno = 0;
 				c = getc(fp);
-			} while (c == EOF && errno == EINTR);
+			} while (errno == EINTR);
 			if (c != EOF)
 				(void) ungetc(c, fp);
 			if (c == ' ' || c == '\t')
@@ -418,8 +438,7 @@ nextstate:
 				bp++;
 			*bp = '\0';
 
-			if (bitset(H_EOH, chompheader(buf,
-						      CHHDR_CHECK | CHHDR_USER,
+			if (bitset(H_EOH, chompheader(buf, (int *)&chompflags,
 						      hdrp, e)))
 			{
 				mstate = MS_BODY;
@@ -442,7 +461,18 @@ nextstate:
 				dprintf("collect: rscheck(\"check_eoh\", \"%s $| %s\")\n",
 					hnum, hsize);
 			rstat = rscheck("check_eoh", hnum, hsize, e, FALSE,
-					TRUE, 4, NULL);
+					TRUE);
+
+#if _FFR_MILTER
+			/*
+			**  see if a header check already rejected
+			**  this message or if the check_eoh call
+			**  resulted in an error.  Also, don't call
+			**  filters if we are discarding the message.
+			*/
+
+			MILTER_EOH();
+# endif /* _FFR_MILTER */
 
 			bp = buf;
 
@@ -456,7 +486,8 @@ nextstate:
 			}
 
 			/* if not a blank separator, write it out */
-			if (!bitset(EF_TOOBIG, e->e_flags))
+			if (MaxMessageSize <= 0 ||
+			    e->e_msgsize <= MaxMessageSize)
 			{
 				while (*bp != '\0')
 					(void) putc(*bp++, df);
@@ -479,9 +510,17 @@ readerr:
 		inputerr = TRUE;
 	}
 
+#if _FFR_MILTER
+	/*
+	**  If the message was completely empty (no headers, no body),
+	**  milter hasn't been sent the EOH so do it now.
+	*/
+
+	MILTER_EOH();
+# endif /* _FFR_MILTER */
+
 	/* reset global timer */
-	if (CollectTimeout != NULL)
-		clrevent(CollectTimeout);
+	clrevent(CollectTimeout);
 
 	if (headeronly)
 		return;
@@ -503,6 +542,13 @@ readerr:
 		/* skip next few clauses */
 		/* EMPTY */
 	}
+	else if ((afd = fileno(df)) >= 0 && fsync(afd) < 0)
+	{
+		dferror(df, "fsync", e);
+		flush_errors(TRUE);
+		finis(TRUE, ExitStat);
+		/* NOTREACHED */
+	}
 	else if (bfcommit(df) < 0)
 	{
 		int save_errno = errno;
@@ -517,7 +563,7 @@ readerr:
 				st.st_size = -1;
 			errno = EEXIST;
 			syserr("collect: bfcommit(%s): already on disk, size = %ld",
-			       dfile, (long) st.st_size);
+			       dfile, st.st_size);
 			dfd = fileno(df);
 			if (dfd >= 0)
 				dumpfd(dfd, TRUE, TRUE);
@@ -526,13 +572,6 @@ readerr:
 		dferror(df, "bfcommit", e);
 		flush_errors(TRUE);
 		finis(save_errno != EEXIST, ExitStat);
-	}
-	else if (bffsync(df) < 0)
-	{
-		dferror(df, "bffsync", e);
-		flush_errors(TRUE);
-		finis(TRUE, ExitStat);
-		/* NOTREACHED */
 	}
 	else if (bfclose(df) < 0)
 	{
@@ -647,11 +686,11 @@ readerr:
 			break;
 
 		  case NRA_ADD_BCC:
-			addheader("Bcc", " ", 0, &e->e_header);
+			addheader("Bcc", " ", &e->e_header);
 			break;
 
 		  case NRA_ADD_TO_UNDISCLOSED:
-			addheader("To", "undisclosed-recipients:;", 0, &e->e_header);
+			addheader("To", "undisclosed-recipients:;", &e->e_header);
 			break;
 		}
 
@@ -664,13 +703,13 @@ readerr:
 				if (tTd(30, 3))
 					dprintf("Adding %s: %s\n",
 						hdr, q->q_paddr);
-				addheader(hdr, q->q_paddr, 0, &e->e_header);
+				addheader(hdr, q->q_paddr, &e->e_header);
 			}
 		}
 	}
 
 	/* check for message too large */
-	if (bitset(EF_TOOBIG, e->e_flags))
+	if (MaxMessageSize > 0 && e->e_msgsize > MaxMessageSize)
 	{
 		e->e_flags |= EF_NO_BODY_RETN|EF_CLRQUEUE;
 		e->e_status = "5.2.3";
@@ -723,37 +762,15 @@ static void
 collecttimeout(timeout)
 	time_t timeout;
 {
-	int save_errno = errno;
-
-	/*
-	**  NOTE: THIS CAN BE CALLED FROM A SIGNAL HANDLER.  DO NOT ADD
-	**	ANYTHING TO THIS ROUTINE UNLESS YOU KNOW WHAT YOU ARE
-	**	DOING.
-	*/
-
-	if (CollectProgress)
-	{
-		/* reset the timeout */
-		CollectTimeout = sigsafe_setevent(timeout, collecttimeout,
-						  timeout);
-		CollectProgress = FALSE;
-	}
-	else
-	{
-		/* event is done */
-		CollectTimeout = NULL;
-	}
-
-	/* if no progress was made or problem resetting event, die now */
-	if (CollectTimeout == NULL)
-	{
-		errno = ETIMEDOUT;
+	/* if no progress was made, die now */
+	if (!CollectProgress)
 		longjmp(CtxCollectTimeout, 1);
-	}
 
-	errno = save_errno;
+	/* otherwise reset the timeout */
+	CollectTimeout = setevent(timeout, collecttimeout, timeout);
+	CollectProgress = FALSE;
 }
-/*
+/*
 **  DFERROR -- signal error on writing the data file.
 **
 **	Parameters:
@@ -883,11 +900,6 @@ eatfrom(fm, e)
 			p++;
 		while (*p == ' ')
 			p++;
-		if (strlen(p) < 17)
-		{
-			/* no room for the date */
-			return;
-		}
 		if (!(isascii(*p) && isupper(*p)) ||
 		    p[3] != ' ' || p[13] != ':' || p[16] != ':')
 			continue;
@@ -900,10 +912,8 @@ eatfrom(fm, e)
 			continue;
 
 		for (dt = MonthList; *dt != NULL; dt++)
-		{
 			if (strncmp(*dt, &p[4], 3) == 0)
 				break;
-		}
 		if (*dt != NULL)
 			break;
 	}

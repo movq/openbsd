@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 1999-2001 Sendmail, Inc. and its suppliers.
+ *  Copyright (c) 1999 Sendmail, Inc. and its suppliers.
  *	All rights reserved.
  *
  * By using this file, you agree to the terms and conditions set
@@ -9,7 +9,7 @@
  */
 
 #ifndef lint
-static char id[] = "@(#)$Sendmail: sm_gethost.c,v 8.7.8.10 2001/05/09 20:57:12 gshapiro Exp $";
+static char id[] = "@(#)$Sendmail: sm_gethost.c,v 8.7 2000/01/20 21:51:52 geir Exp $";
 #endif /* ! lint */
 
 #if _FFR_MILTER
@@ -29,7 +29,7 @@ static char id[] = "@(#)$Sendmail: sm_gethost.c,v 8.7.8.10 2001/05/09 20:57:12 g
 **	Support IPv6 as well as IPv4.
 */
 
-#if NETINET6 && NEEDSGETIPNODE
+#if NETINET6 && NEEDSGETIPNODE && __RES < 19990909
 
 # ifndef AI_V4MAPPED
 #  define AI_V4MAPPED	0	/* dummy */
@@ -39,7 +39,7 @@ static char id[] = "@(#)$Sendmail: sm_gethost.c,v 8.7.8.10 2001/05/09 20:57:12 g
 # endif /* ! AI_ALL */
 
 static struct hostent *
-getipnodebyname(name, family, flags, err)
+mi_getipnodebyname(name, family, flags, err)
 	char *name;
 	int family;
 	int flags;
@@ -54,28 +54,14 @@ getipnodebyname(name, family, flags, err)
 		resv6 = bitset(RES_USE_INET6, _res.options);
 		_res.options |= RES_USE_INET6;
 	}
-	SM_SET_H_ERRNO(0);
+	h_errno = 0;
 	h = gethostbyname(name);
 	*err = h_errno;
 	if (family == AF_INET6 && !resv6)
 		_res.options &= ~RES_USE_INET6;
 	return h;
 }
-
-# if _FFR_FREEHOSTENT
-void
-freehostent(h)
-	struct hostent *h;
-{
-	/*
-	**  Stub routine -- if they don't have getipnodeby*(),
-	**  they probably don't have the free routine either.
-	*/
-
-	return;
-}
-# endif /* _FFR_FREEHOSTENT */
-#endif /* NEEDSGETIPNODE && NETINET6 */
+#endif /* NEEDSGETIPNODE && NETINET6 && __RES < 19990909 */
 
 struct hostent *
 mi_gethostbyname(name, family)
@@ -101,8 +87,8 @@ mi_gethostbyname(name, family)
 # endif /* NETINET6 */
 
 # if NETINET6
-	h = getipnodebyname(name, family, AI_V4MAPPED|AI_ALL, &err);
-	SM_SET_H_ERRNO(err);
+	h = mi_getipnodebyname(name, family, AI_V4MAPPED|AI_ALL, &err);
+	h_errno = err;
 # else /* NETINET6 */
 	h = gethostbyname(name);
 # endif /* NETINET6 */

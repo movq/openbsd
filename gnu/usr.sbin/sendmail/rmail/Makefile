@@ -1,9 +1,19 @@
-#	$OpenBSD: Makefile,v 1.3 2000/05/15 03:37:33 millert Exp $
+#       $Sendmail: Makefile,v 8.5 1999/10/05 16:39:19 ca Exp $
 
-PROG=	rmail
-MAN=	rmail.8
+SHELL= /bin/sh
+BUILD=   ./Build
+OPTIONS= $(CONFIG) $(FLAGS)
 
-WANT_LIBSMUTIL=1
+all: FRC
+	$(SHELL) $(BUILD) $(OPTIONS) $@
+clean: FRC
+	$(SHELL) $(BUILD) $(OPTIONS) $@
+install: FRC
+	$(SHELL) $(BUILD) $(OPTIONS) $@
+force-install: FRC
+	$(SHELL) $(BUILD) $(OPTIONS) $@
 
-.include "../../../../bin/Makefile.inc"
-.include <bsd.prog.mk>
+fresh: FRC
+	$(SHELL) $(BUILD) $(OPTIONS) -c
+
+FRC:

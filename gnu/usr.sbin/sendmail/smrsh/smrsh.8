@@ -1,4 +1,4 @@
-.\" Copyright (c) 1998-2000 Sendmail, Inc. and its suppliers.
+.\" Copyright (c) 1998, 1999 Sendmail, Inc. and its suppliers.
 .\"	 All rights reserved.
 .\" Copyright (c) 1993 Eric P. Allman.  All rights reserved.
 .\" Copyright (c) 1993
@@ -9,111 +9,79 @@
 .\" the sendmail distribution.
 .\"
 .\"
-.\"     $OpenBSD: smrsh.8,v 1.5 2001/01/17 05:26:51 millert Exp $
-.\"     $Sendmail: smrsh.8,v 8.11.16.2 2000/12/15 19:50:46 gshapiro Exp $
+.\"     $Sendmail: smrsh.8,v 8.11 1999/06/09 16:51:07 ca Exp $
 .\"
-.Dd December 15, 2000
-.Dt SMRSH 8
-.Os
-.Sh NAME
-.Nm smrsh
-.Nd restricted shell for sendmail
-.Sh SYNOPSIS
-.Nm smrsh
-.Fl c Ar command
-.Sh DESCRIPTION
+.TH SMRSH 8 11/02/93
+.SH NAME
+smrsh \- restricted shell for sendmail
+.SH SYNOPSIS
+.B smrsh
+.B \-c
+command
+.SH DESCRIPTION
 The
-.Nm smrsh
+.I smrsh
 program is intended as a replacement for
-.Pa /bin/sh
-for use in the
-.Dq prog
-mailer in
-.Xr sendmail 8
+.I sh
+for use in the ``prog'' mailer in
+.IR sendmail (8)
 configuration files.
 It sharply limits the commands that can be run using the
-.Dq |program
-syntax of
-.Xr sendmail 8
-in order to improve the overall security of your system.
-Briefly, even if a
-.Dq bad guy
-can get sendmail to run a program
+``|program'' syntax of
+.I sendmail
+in order to improve the over all security of your system.
+Briefly, even if a ``bad guy'' can get sendmail to run a program
 without going through an alias or forward file,
-.Nm smrsh
+.I smrsh
 limits the set of programs that he or she can execute.
-.Pp
+.PP
 Briefly,
-.Nm smrsh
-limits programs to be in a single directory, by default
-.Pa /usr/libexec/sm.bin ,
+.I smrsh
+limits programs to be in the directory
+/usr/adm/sm.bin,
 allowing the system administrator to choose the set of acceptable commands,
-and the shell builtin commands
-.Dq exec ,
-.Dq exit ,
-and
-.Dq echo .
+and to the shell builtin commands ``exec'', ``exit'', and ``echo''.
 It also rejects any commands with the characters
-.Sq \e ,
-.Sq < ,
-.Sq > ,
-.So
-;
-.Sc ,
-.Sq $ ,
-.So
-(
-.Sc ,
-.So
-)
-.Sc ,
-.Sq \er
-(carriage return), or
-.Sq \en
-(newline) on the command line to prevent
-.Dq end run
-attacks.
-It allows
-.Dq ||
-and
-.Dq &&
-to enable commands like:
-.Bd -literal -compact -offset "XXXX"
-.Qq "|exec /usr/local/bin/procmail -f- /etc/procmailrcs/user || exit 75"
-.Ed
-.Pp
+`\`', `<', `>', `;', `$', `(', `)', `\er' (carriage return),
+or `\en' (newline)
+on the command line to prevent ``end run'' attacks.
+It allows ``||'' and ``&&'' to enable commands like:
+``"|exec /usr/local/bin/procmail -f- /etc/procmailrcs/user || exit 75"''
+.PP
 Initial pathnames on programs are stripped,
-so forwarding to
-.Pa /usr/ucb/vacation ,
-.Pa /usr/bin/vacation ,
-.Pa /home/server/mydir/bin/vacation ,
+so forwarding to ``/usr/ucb/vacation'',
+``/usr/bin/vacation'',
+``/home/server/mydir/bin/vacation'',
 and
-.Pa vacation
+``vacation''
 all actually forward to
-.Pa /usr/libexec/sm.bin/vacation .
-.Pp
+``/usr/adm/sm.bin/vacation''.
+.PP
 System administrators should be conservative about populating
-the sm.bin directory.
+/usr/adm/sm.bin.
 Reasonable additions are
-.Xr vacation 1 ,
-.Xr procmail 1 ,
+.IR vacation (1),
+.IR procmail (1),
 and the like.
 No matter how brow-beaten you may be,
 never include any shell or shell-like program
 (such as
-.Xr perl 1 )
+.IR perl (1))
 in the
 sm.bin
 directory.
 Note that this does not restrict the use of shell or perl scripts
-in the sm.bin directory (using the
-.Dq #!
-syntax);
+in the sm.bin directory (using the ``#!'' syntax);
 it simply disallows execution of arbitrary programs.
-.Sh FILES
-.Bl -tag -width "/usr/libexec/sm.bin" -compact
-.It Pa /usr/libexec/sm.bin
-directory for restricted programs
-.El
-.Sh SEE ALSO
-.Xr sendmail 8
+.SH COMPILATION
+Compilation should be trivial on most systems.
+You may need to use \-DPATH=\e"\fIpath\fP\e"
+to adjust the default search path
+(defaults to ``/bin:/usr/bin:/usr/ucb'')
+and/or \-DCMDBIN=\e"\fIdir\fP\e"
+to change the default program directory
+(defaults to ``/usr/adm/sm.bin'').
+.SH FILES
+/usr/adm/sm.bin \- directory for restricted programs
+.SH SEE ALSO
+sendmail(8)

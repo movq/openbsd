@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999-2001 Sendmail, Inc. and its suppliers.
+ * Copyright (c) 1999 Sendmail, Inc. and its suppliers.
  *	All rights reserved.
  *
  * By using this file, you agree to the terms and conditions set
@@ -11,12 +11,8 @@
  */
 
 #ifndef lint
-static char id[] = "@(#)$Sendmail: bf_torek.c,v 8.19.18.6 2001/05/08 06:52:19 gshapiro Exp $";
+static char id[] = "@(#)$Sendmail: bf_torek.c,v 8.19 1999/10/11 23:37:26 ca Exp $";
 #endif /* ! lint */
-
-#if SFIO
-   ERROR README: Can not use bf_torek.c with SFIO.
-#endif /* SFIO */
 
 #include <sys/types.h>
 #include <sys/uio.h>
@@ -26,12 +22,9 @@ static char id[] = "@(#)$Sendmail: bf_torek.c,v 8.19.18.6 2001/05/08 06:52:19 gs
 #include <string.h>
 #include <errno.h>
 #include <stdio.h>
-#ifdef BF_STANDALONE
-# define sm_free free
-# define xalloc malloc
-#else /* BF_STANDALONE */
+#ifndef BF_STANDALONE
 # include "sendmail.h"
-#endif /* BF_STANDALONE */
+#endif /* ! BF_STANDALONE */
 #include "bf_torek.h"
 #include "bf.h"
 
@@ -93,7 +86,7 @@ bfopen(filename, fmode, bsize, flags)
 	}
 
 	/* Allocate memory */
-	bfp = (struct bf *)xalloc(sizeof(struct bf));
+	bfp = (struct bf *)malloc(sizeof(struct bf));
 	if (bfp == NULL)
 	{
 		errno = ENOMEM;
@@ -103,10 +96,10 @@ bfopen(filename, fmode, bsize, flags)
 	/* A zero bsize is valid, just don't allocate memory */
 	if (bsize > 0)
 	{
-		bfp->bf_buf = (char *)xalloc(bsize);
+		bfp->bf_buf = (char *)malloc(bsize);
 		if (bfp->bf_buf == NULL)
 		{
-			sm_free(bfp);
+			free(bfp);
 			errno = ENOMEM;
 			return NULL;
 		}
@@ -122,12 +115,12 @@ bfopen(filename, fmode, bsize, flags)
 	bfp->bf_bufsize = bsize;
 	bfp->bf_buffilled = 0;
 	l = strlen(filename) + 1;
-	bfp->bf_filename = (char *)xalloc(l);
+	bfp->bf_filename = (char *)malloc(l);
 	if (bfp->bf_filename == NULL)
 	{
+		free(bfp);
 		if (bfp->bf_buf != NULL)
-			sm_free(bfp->bf_buf);
-		sm_free(bfp);
+			free(bfp->bf_buf);
 		errno = ENOMEM;
 		return NULL;
 	}
@@ -145,10 +138,10 @@ bfopen(filename, fmode, bsize, flags)
 	{
 		/* Just in case free() sets errno */
 		save_errno = errno;
-		sm_free(bfp->bf_filename);
+		free(bfp);
+		free(bfp->bf_filename);
 		if (bfp->bf_buf != NULL)
-			sm_free(bfp->bf_buf);
-		sm_free(bfp);
+			free(bfp->bf_buf);
 		errno = save_errno;
 		return NULL;
 	}
@@ -288,7 +281,7 @@ bfcommit(fp)
 	{
 		/* Don't need buffer anymore; free it */
 		bfp->bf_bufsize = 0;
-		sm_free(bfp->bf_buf);
+		free(bfp->bf_buf);
 	}
 	return 0;
 }
@@ -320,6 +313,7 @@ bfrewind(fp)
 
 	/* check to see if there is an error on the stream */
 	err = ferror(fp);
+
 	(void) fflush(fp);
 
 	/*
@@ -380,51 +374,6 @@ bftruncate(fp)
 	}
 	else
 		return ftruncate(fileno(fp), 0);
-}
-
-/*
-**  BFFSYNC -- fsync the fd associated with the FILE *
-**
-**	Parameters:
-**		fp -- FILE * to fsync
-**
-**	Returns:
-**		0 on success, -1 on error
-**
-**	Sets errno:
-**		EINVAL if FILE * not bfcommitted yet.
-**		any value of errno specified by fsync()
-*/
-
-int
-bffsync(fp)
-	FILE *fp;
-{
-	int fd;
-	struct bf *bfp;
-
-	if (bftest(fp))
-	{
-		/* Get bf structure */
-		bfp = (struct bf *)fp->_cookie;
-
-		if (bfp->bf_ondisk && bfp->bf_committed)
-			fd = bfp->bf_disk_fd;
-		else
-			fd = -1;
-	}
-	else
-		fd = fileno(fp);
-
-	if (tTd(58, 10))
-		dprintf("bffsync: fd = %d\n", fd);
-
-	if (fd < 0)
-	{
-		errno = EINVAL;
-		return -1;
-	}
-	return fsync(fd);
 }
 
 /*
@@ -532,10 +481,10 @@ _bfclose(cookie)
 
 	/* Need to free the buffer */
 	if (bfp->bf_bufsize > 0)
-		sm_free(bfp->bf_buf);
+		free(bfp->bf_buf);
 
 	/* Finally, free the structure */
-	sm_free(bfp);
+	free(bfp);
 
 	return 0;
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998-2001 Sendmail, Inc. and its suppliers.
+ * Copyright (c) 1998-2000 Sendmail, Inc. and its suppliers.
  *	All rights reserved.
  * Copyright (c) 1983, 1995-1997 Eric P. Allman.  All rights reserved.
  * Copyright (c) 1988, 1993
@@ -12,7 +12,7 @@
  */
 
 #ifndef lint
-static char id[] = "@(#)$Sendmail: err.c,v 8.120.4.2 2001/05/03 17:24:06 gshapiro Exp $";
+static char id[] = "@(#)$Sendmail: err.c,v 8.120 2000/02/17 21:32:05 ca Exp $";
 #endif /* ! lint */
 
 #include <sendmail.h>
@@ -20,7 +20,6 @@ static char id[] = "@(#)$Sendmail: err.c,v 8.120.4.2 2001/05/03 17:24:06 gshapir
 # include <lber.h>
 # include <ldap.h>			/* for LDAP error codes */
 #endif /* LDAPMAP */
-
 
 static void	putoutmsg __P((char *, bool, bool));
 static void	puterrmsg __P((char *));
@@ -107,7 +106,7 @@ syserr(fmt, va_alist)
 	if (!panic && CurEnv != NULL)
 	{
 		if (CurEnv->e_message != NULL)
-			sm_free(CurEnv->e_message);
+			free(CurEnv->e_message);
 		CurEnv->e_message = newstr(errtxt);
 	}
 
@@ -122,13 +121,13 @@ syserr(fmt, va_alist)
 			dprintf("syserr: ExitStat = %d\n", ExitStat);
 	}
 
-	pw = sm_getpwuid(RealUid);
+	pw = sm_getpwuid(getuid());
 	if (pw != NULL)
 		user = pw->pw_name;
 	else
 	{
 		user = ubuf;
-		snprintf(ubuf, sizeof ubuf, "UID%d", (int) RealUid);
+		snprintf(ubuf, sizeof ubuf, "UID%d", (int) getuid());
 	}
 
 	if (LogLevel > 0)
@@ -157,8 +156,6 @@ syserr(fmt, va_alist)
 #ifdef ESTALE
 	  case ESTALE:
 #endif /* ESTALE */
-
-
 		printopenfds(TRUE);
 		mci_dump_all(TRUE);
 		break;
@@ -237,7 +234,7 @@ usrerr(fmt, va_alist)
 	  case '5':
 	  case '6':
 		if (CurEnv->e_message != NULL)
-			sm_free(CurEnv->e_message);
+			free(CurEnv->e_message);
 		if (MsgBuf[0] == '6')
 		{
 			char buf[MAXLINE];
@@ -323,7 +320,7 @@ usrerrenh(enhsc, fmt, va_alist)
 	  case '5':
 	  case '6':
 		if (CurEnv->e_message != NULL)
-			sm_free(CurEnv->e_message);
+			free(CurEnv->e_message);
 		if (MsgBuf[0] == '6')
 		{
 			char buf[MAXLINE];
@@ -392,7 +389,7 @@ message(msg, va_alist)
 
 	  case '5':
 		if (CurEnv->e_message != NULL)
-			sm_free(CurEnv->e_message);
+			free(CurEnv->e_message);
 		CurEnv->e_message = newstr(errtxt);
 		break;
 	}
@@ -446,7 +443,7 @@ nmessage(msg, va_alist)
 
 	  case '5':
 		if (CurEnv->e_message != NULL)
-			sm_free(CurEnv->e_message);
+			free(CurEnv->e_message);
 		CurEnv->e_message = newstr(errtxt);
 		break;
 	}
