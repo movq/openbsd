@@ -1,5 +1,5 @@
 /*
- * $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/route6d/route6d.h,v 1.1 1999/12/11 10:36:02 itojun Exp $
+ * $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/route6d/route6d.h,v 1.1.1.1 1999/12/11 10:36:02 itojun Exp $
  */
 
 /*

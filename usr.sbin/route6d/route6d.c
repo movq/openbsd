@@ -1,5 +1,5 @@
 /*
- * $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/route6d/route6d.c,v 1.1 1999/12/11 10:36:07 itojun Exp $
+ * $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/route6d/route6d.c,v 1.1.1.1 1999/12/11 10:36:07 itojun Exp $
  */
 
 /*
@@ -32,7 +32,7 @@
  */
 
 #ifndef	lint
-static char _rcsid[] = "$Id: route6d.c,v 1.1 1999/12/11 10:36:07 itojun Exp $";
+static char _rcsid[] = "$Id: route6d.c,v 1.1.1.1 1999/12/11 10:36:07 itojun Exp $";
 #endif
 
 #include <stdio.h>
