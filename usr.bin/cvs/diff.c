@@ -1,4 +1,4 @@
-/*	$OpenBSD: diff.c,v 1.1 2004/07/13 22:02:40 jfb Exp $	*/
+/*	$OpenBSD: diff.c,v 1.1.1.1 2004/07/13 22:02:40 jfb Exp $	*/
 /*
  * Copyright (C) Caldera International Inc.  2001-2002.
  * All rights reserved.

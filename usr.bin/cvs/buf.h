@@ -1,4 +1,4 @@
-/*	$OpenBSD: buf.h,v 1.1 2004/07/13 22:02:40 jfb Exp $	*/
+/*	$OpenBSD: buf.h,v 1.1.1.1 2004/07/13 22:02:40 jfb Exp $	*/
 /*
  * Copyright (c) 2003 Jean-Francois Brousseau <jfb@fugusec.net>
  * All rights reserved.
