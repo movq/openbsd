@@ -1,4 +1,4 @@
-/*	$OpenBSD: rx_pkt.h,v 1.1 1998/09/14 21:53:16 art Exp $	*/
+/*	$OpenBSD: rx_pkt.h,v 1.1.1.1 1998/09/14 21:53:16 art Exp $	*/
 #ifndef _RX_PACKET_
 #define _RX_PACKET_
 #include "sys/uio.h"

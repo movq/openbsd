@@ -1,4 +1,4 @@
-/*	$OpenBSD: getusershell.c,v 1.1 1998/09/14 21:53:03 art Exp $	*/
+/*	$OpenBSD: getusershell.c,v 1.1.1.1 1998/09/14 21:53:03 art Exp $	*/
 /*
  * Copyright (c) 1985, 1993
  *	The Regents of the University of California.  All rights reserved.

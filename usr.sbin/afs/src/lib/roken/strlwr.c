@@ -1,4 +1,4 @@
-/*	$OpenBSD: strlwr.c,v 1.1 1998/09/14 21:53:08 art Exp $	*/
+/*	$OpenBSD: strlwr.c,v 1.1.1.1 1998/09/14 21:53:08 art Exp $	*/
 /*
  * Copyright (c) 1995, 1996, 1997 Kungliga Tekniska Högskolan
  * (Royal Institute of Technology, Stockholm, Sweden).

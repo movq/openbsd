@@ -1,4 +1,4 @@
-/*	$OpenBSD: rx_globs.h,v 1.1 1998/09/14 21:53:15 art Exp $	*/
+/*	$OpenBSD: rx_globs.h,v 1.1.1.1 1998/09/14 21:53:15 art Exp $	*/
 /* $KTH: rx_globs.h,v 1.4 1998/02/22 19:46:16 joda Exp $ */
 
 /*

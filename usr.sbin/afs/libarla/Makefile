@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.1 1998/09/14 21:53:28 art Exp $
+#	$OpenBSD: Makefile,v 1.1.1.1 1998/09/14 21:53:28 art Exp $
 
 #
 # You don't want to understand this makefile.

@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.1 1998/09/14 21:52:50 art Exp $
+#	$OpenBSD: Makefile,v 1.1.1.1 1998/09/14 21:52:50 art Exp $
 
 #
 # This is hairy. libroken (originally libroken and libutil) has to be built

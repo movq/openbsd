@@ -39,7 +39,7 @@
 
 #ifdef HAVE_CONFIG_H
 #include <config.h>
-RCSID("$Id: lex.l,v 1.1 1998/09/14 21:53:27 art Exp $");
+RCSID("$Id: lex.l,v 1.1.1.1 1998/09/14 21:53:27 art Exp $");
 #endif
 
 #undef ECHO

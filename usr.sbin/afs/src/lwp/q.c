@@ -1,4 +1,4 @@
-/*	$OpenBSD: q.c,v 1.1 1998/09/14 21:53:13 art Exp $	*/
+/*	$OpenBSD: q.c,v 1.1.1.1 1998/09/14 21:53:13 art Exp $	*/
 /*
  * Emulate the vax instructions for queue insertion and deletion, somewhat.
  * A std_queue structure is defined here and used by these routines.  These

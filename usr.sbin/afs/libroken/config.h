@@ -1,4 +1,4 @@
-/*	$OpenBSD: config.h,v 1.1 1998/09/14 21:53:31 art Exp $	*/
+/*	$OpenBSD: config.h,v 1.1.1.1 1998/09/14 21:53:31 art Exp $	*/
 /* include/config.h.  Generated automatically by configure.  */
 /* include/config.h.in.  Generated automatically from configure.in by autoheader.  */
 

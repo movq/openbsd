@@ -1,4 +1,4 @@
-/*	$OpenBSD: preempt.c,v 1.1 1998/09/14 21:53:12 art Exp $	*/
+/*	$OpenBSD: preempt.c,v 1.1.1.1 1998/09/14 21:53:12 art Exp $	*/
 /*
 ****************************************************************************
 *        Copyright IBM Corporation 1988, 1989 - All Rights Reserved        *

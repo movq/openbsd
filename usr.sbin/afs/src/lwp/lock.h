@@ -1,12 +1,12 @@
-/*	$OpenBSD: lock.h,v 1.1 1998/09/14 21:53:12 art Exp $	*/
-/* $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/afs/src/lwp/Attic/lock.h,v 1.1 1998/09/14 21:53:12 art Exp $ */
+/*	$OpenBSD: lock.h,v 1.1.1.1 1998/09/14 21:53:12 art Exp $	*/
+/* $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/afs/src/lwp/Attic/lock.h,v 1.1.1.1 1998/09/14 21:53:12 art Exp $ */
 /* $Source: /home/mike/src/cvs/openbsd/src/usr.sbin/afs/src/lwp/Attic/lock.h,v $ */
 
 #ifndef LOCK_H
 #define LOCK_H
 
 #if !defined(lint) && !defined(LOCORE) && defined(RCS_HDRS)
-static char *rcsidlock = "$Header: /home/mike/src/cvs/openbsd/src/usr.sbin/afs/src/lwp/Attic/lock.h,v 1.1 1998/09/14 21:53:12 art Exp $";
+static char *rcsidlock = "$Header: /home/mike/src/cvs/openbsd/src/usr.sbin/afs/src/lwp/Attic/lock.h,v 1.1.1.1 1998/09/14 21:53:12 art Exp $";
 #endif
 
 /*

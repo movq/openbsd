@@ -1,4 +1,4 @@
-/*	$OpenBSD: strcasecmp.c,v 1.1 1998/09/14 21:53:08 art Exp $	*/
+/*	$OpenBSD: strcasecmp.c,v 1.1.1.1 1998/09/14 21:53:08 art Exp $	*/
 /*
  * Copyright (c) 1987, 1993
  *	The Regents of the University of California.  All rights reserved.

@@ -1,4 +1,4 @@
-/*	$OpenBSD: rx_pkt.c,v 1.1 1998/09/14 21:53:16 art Exp $	*/
+/*	$OpenBSD: rx_pkt.c,v 1.1.1.1 1998/09/14 21:53:16 art Exp $	*/
 #include "rx_locl.h"
 
 RCSID("$KTH: rx_pkt.c,v 1.9 1998/03/14 13:40:22 assar Exp $");
