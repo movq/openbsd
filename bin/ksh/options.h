@@ -1,4 +1,4 @@
-/*	$OpenBSD: options.h,v 1.1 1996/08/14 06:19:11 downsj Exp $	*/
+/*	$OpenBSD: options.h,v 1.1.1.1 1996/08/14 06:19:11 downsj Exp $	*/
 
 /*
  * Options configuration file for the PD ksh

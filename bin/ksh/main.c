@@ -1,4 +1,4 @@
-/*	$OpenBSD: main.c,v 1.1 1996/08/14 06:19:11 downsj Exp $	*/
+/*	$OpenBSD: main.c,v 1.1.1.1 1996/08/14 06:19:11 downsj Exp $	*/
 
 /*
  * startup, main loop, enviroments and error handling

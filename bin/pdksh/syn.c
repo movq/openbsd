@@ -1,4 +1,4 @@
-/*	$OpenBSD: syn.c,v 1.1 1996/08/14 06:19:11 downsj Exp $	*/
+/*	$OpenBSD: syn.c,v 1.1.1.1 1996/08/14 06:19:11 downsj Exp $	*/
 
 /*
  * shell parser (C version)
