@@ -11,7 +11,7 @@
  *
  *	  $Source: /home/mike/src/cvs/openbsd/src/usr.bin/tcfs/Attic/tcfserrors.h,v $
  *	   $State: Exp $
- *	$Revision: 1.1 $
+ *	$Revision: 1.1.1.1 $
  *	  $Author: provos $
  *	    $Date: 2000/06/18 22:07:24 $
  *
