@@ -1,4 +1,4 @@
-/*	$OpenBSD: strerror.c,v 1.5 1997/06/10 16:39:16 millert Exp $	*/
+/*	$OpenBSD: strerror.c,v 1.6 2003/06/01 17:00:33 deraadt Exp $	*/
 /*	$NetBSD: strerror.c,v 1.11 1996/10/13 02:29:08 christos Exp $	*/
 
 /*-
@@ -42,7 +42,7 @@ char *
 strerror(err)
 	int err;
 {
-static	char ebuf[64];
+	static	char ebuf[64];
 
 	switch (err) {
 	case EADAPT:
@@ -75,7 +75,7 @@ static	char ebuf[64];
 		return "Invalid argument";
 
 	default:
-		sprintf(ebuf, "Unknown error: code %d", err);
+		snprintf(ebuf, sizeof ebuf, "Unknown error: code %d", err);
 		return ebuf;
 	}
 }
