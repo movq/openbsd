@@ -1,4 +1,4 @@
-/*	$OpenBSD: bdinit.c,v 1.1 1996/12/16 06:56:07 downsj Exp $	*/
+/*	$OpenBSD: bdinit.c,v 1.1.1.1 1996/12/16 06:56:07 downsj Exp $	*/
 /*
  * Copyright (c) 1994
  *	The Regents of the University of California.  All rights reserved.
