@@ -1,6 +1,6 @@
 
 #	from: @(#)Makefile.inc	5.7 (Berkeley) 6/27/91
-#	$Id: GNUmakefile.inc,v 1.1 1998/07/21 13:20:28 peter Exp $
+#	$Id: GNUmakefile.inc,v 1.1.1.1 1998/07/21 13:20:28 peter Exp $
 
 # Thread safe stdio sources
 VPATH:= ${VPATH}:${srcdir}/stdio
