@@ -1,6 +1,6 @@
 #!./perl
 
-# $RCSfile: cpp.t,v $$Revision: 1.1.1.6 $$Date: 2004/08/09 17:48:31 $
+# $RCSfile: cpp.t,v $$Revision: 1.1.1.7 $$Date: 2005/01/15 21:18:14 $
 
 BEGIN {
     chdir 't' if -d 't';
