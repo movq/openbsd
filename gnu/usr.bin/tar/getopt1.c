@@ -16,7 +16,7 @@
    Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.  */
 
 #ifndef lint
-static char rcsid[] = "$Id: getopt1.c,v 1.1.1.1 1995/10/18 08:41:08 deraadt Exp $";
+static char rcsid[] = "$Id: getopt1.c,v 1.1 1995/10/18 08:41:08 deraadt Exp $";
 #endif /* not lint */
 
 #ifdef HAVE_CONFIG_H

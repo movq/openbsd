@@ -17,7 +17,7 @@ You should have received a copy of the GNU General Public License
 along with GNU CC; see the file COPYING.  If not, write to
 the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 
-	$Id: conditions.h,v 1.1.1.1 1995/10/18 08:39:36 deraadt Exp $
+	$Id: conditions.h,v 1.1 1995/10/18 08:39:36 deraadt Exp $
 */
 
 /* None of the things in the files exist if we don't use CC0.  */

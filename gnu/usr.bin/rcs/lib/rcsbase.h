@@ -1,6 +1,6 @@
 /* RCS common definitions and data structures */
 
-#define RCSBASE "$Id: rcsbase.h,v 1.1.1.1 1995/10/18 08:41:01 deraadt Exp $"
+#define RCSBASE "$Id: rcsbase.h,v 1.1 1995/10/18 08:41:01 deraadt Exp $"
 
 /* Copyright 1982, 1988, 1989 Walter Tichy
    Copyright 1990, 1991, 1992, 1993, 1994 Paul Eggert
@@ -30,8 +30,8 @@ Report problems and direct all questions to:
 
 /*
  * $Log: rcsbase.h,v $
- * Revision 1.1.1.1  1995/10/18 08:41:01  deraadt
- * initial import of NetBSD tree
+ * Revision 1.1  1995/10/18 08:41:01  deraadt
+ * Initial revision
  *
  * Revision 1.6  1995/02/24 02:24:59  mycroft
  * RCS 5.6.7.4

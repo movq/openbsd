@@ -1,5 +1,5 @@
 #ifndef lint
-static char rcsid[] = "$Id: move.c,v 1.1.1.1 1995/10/18 08:41:11 deraadt Exp $";
+static char rcsid[] = "$Id: move.c,v 1.1 1995/10/18 08:41:11 deraadt Exp $";
 #endif /* not lint */
 
 /* move generator hes@log-sv.se 890318

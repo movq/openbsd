@@ -39,8 +39,8 @@ Report problems and direct all questions to:
 
 /*
  * $Log: rcslex.c,v $
- * Revision 1.1.1.1  1995/10/18 08:41:02  deraadt
- * initial import of NetBSD tree
+ * Revision 1.1  1995/10/18 08:41:02  deraadt
+ * Initial revision
  *
  * Revision 1.4  1995/02/24 02:25:10  mycroft
  * RCS 5.6.7.4
@@ -158,7 +158,7 @@ Report problems and direct all questions to:
 
 #include "rcsbase.h"
 
-libId(lexId, "$Id: rcslex.c,v 1.1.1.1 1995/10/18 08:41:02 deraadt Exp $")
+libId(lexId, "$Id: rcslex.c,v 1.1 1995/10/18 08:41:02 deraadt Exp $")
 
 static char *checkidentifier P((char*,int,int));
 static void errsay P((char const*));

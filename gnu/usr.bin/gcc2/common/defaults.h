@@ -22,7 +22,7 @@ You should have received a copy of the GNU General Public License
 along with GNU CC; see the file COPYING.  If not, write to
 the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 
-	$Id: defaults.h,v 1.1.1.1 1995/10/18 08:39:37 deraadt Exp $
+	$Id: defaults.h,v 1.1 1995/10/18 08:39:37 deraadt Exp $
 */
 
 /* Store in OUTPUT a string (made with alloca) containing

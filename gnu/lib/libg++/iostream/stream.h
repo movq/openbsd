@@ -1,4 +1,4 @@
-//	$Id: stream.h,v 1.1.1.1 1995/10/18 08:38:14 deraadt Exp $
+//	$Id: stream.h,v 1.1 1995/10/18 08:38:14 deraadt Exp $
 
 #ifndef _COMPAT_STREAM_H
 #define _COMPAT_STREAM_H

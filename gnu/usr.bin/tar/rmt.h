@@ -15,7 +15,7 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
-	$Id: rmt.h,v 1.1.1.1 1995/10/18 08:41:09 deraadt Exp $
+	$Id: rmt.h,v 1.1 1995/10/18 08:41:09 deraadt Exp $
 */
 
 #ifdef HAVE_UNISTD_H

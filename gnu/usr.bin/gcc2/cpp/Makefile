@@ -1,5 +1,5 @@
 #	from: @(#)Makefile	6.4 (Berkeley) 2/21/91
-#	$Id: Makefile,v 1.1.1.1 1995/10/18 08:39:48 deraadt Exp $
+#	$Id: Makefile,v 1.1 1995/10/18 08:39:48 deraadt Exp $
 
 PROG=		cpp
 BINDIR=		/usr/libexec
