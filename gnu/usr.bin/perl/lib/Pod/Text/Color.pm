@@ -1,5 +1,5 @@
 # Pod::Text::Color -- Convert POD data to formatted color ASCII text
-# $Id: Color.pm,v 1.1.1.3 2002/10/27 22:15:01 millert Exp $
+# $Id: Color.pm,v 1.1.1.4 2004/08/09 17:47:21 millert Exp $
 #
 # Copyright 1999, 2001 by Russ Allbery <rra@stanford.edu>
 #
