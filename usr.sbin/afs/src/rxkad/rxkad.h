@@ -1,4 +1,4 @@
-/*	$OpenBSD: rxkad.h,v 1.1 1998/09/14 21:53:21 art Exp $	*/
+/*	$OpenBSD: rxkad.h,v 1.1.1.1 1998/09/14 21:53:21 art Exp $	*/
 /* -*- C -*- */
 
 /*

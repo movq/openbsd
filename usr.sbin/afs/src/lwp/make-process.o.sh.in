@@ -3,7 +3,7 @@
 # make-process.o.sh
 #  Try to make process.o various ways.
 #
-#  $Id: make-process.o.sh.in,v 1.1 1998/09/14 21:53:12 art Exp $
+#  $Id: make-process.o.sh.in,v 1.1.1.1 1998/09/14 21:53:12 art Exp $
 #
 
 srcdir=@srcdir@

@@ -2,7 +2,7 @@
  * Interface to Volumeserver, 
  * reference /afs/nada.kth.se/misc/reference/programming/afs/shadow/
  *
- * $Id: volumeserver.xg,v 1.1 1998/09/14 21:53:18 art Exp $
+ * $Id: volumeserver.xg,v 1.1.1.1 1998/09/14 21:53:18 art Exp $
  */
 
 package VOLSER_

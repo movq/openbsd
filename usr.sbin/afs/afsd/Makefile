@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.1 1998/09/14 21:53:33 art Exp $
+#	$OpenBSD: Makefile,v 1.1.1.1 1998/09/14 21:53:33 art Exp $
 PROG	= afsd
 MAN	= afsd.8
 BINDIR	= /usr/libexec

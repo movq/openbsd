@@ -1,5 +1,5 @@
-/*	$OpenBSD: rx_queue.h,v 1.1 1998/09/14 21:53:16 art Exp $	*/
-/* $Header: /cvsroot/src/usr.sbin/afs/src/rx/Attic/rx_queue.h,v 1.1 1998/09/14 21:53:16 art Exp $ */
+/*	$OpenBSD: rx_queue.h,v 1.1.1.1 1998/09/14 21:53:16 art Exp $	*/
+/* $Header: /cvsroot/src/usr.sbin/afs/src/rx/Attic/rx_queue.h,v 1.1.1.1 1998/09/14 21:53:16 art Exp $ */
 /* $Source: /cvsroot/src/usr.sbin/afs/src/rx/Attic/rx_queue.h,v $ */
 
 /*

@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.1 1998/09/14 21:53:31 art Exp $
+#	$OpenBSD: Makefile,v 1.1.1.1 1998/09/14 21:53:31 art Exp $
 LIB	= roken
 # roken stuff
 SRCS	= base64.c getarg.c k_getpwuid.c k_getpwnam.c signal.o tm2time.c \

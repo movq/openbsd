@@ -1,4 +1,4 @@
-/*	$OpenBSD: lock.c,v 1.1 1998/09/14 21:53:11 art Exp $	*/
+/*	$OpenBSD: lock.c,v 1.1.1.1 1998/09/14 21:53:11 art Exp $	*/
 /*
 ****************************************************************************
 *        Copyright IBM Corporation 1988, 1989 - All Rights Reserved        *

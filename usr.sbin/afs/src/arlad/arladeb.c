@@ -1,4 +1,4 @@
-/*	$OpenBSD: arladeb.c,v 1.1 1998/09/14 21:52:55 art Exp $	*/
+/*	$OpenBSD: arladeb.c,v 1.1.1.1 1998/09/14 21:52:55 art Exp $	*/
 /*
  * Copyright (c) 1995, 1996, 1997, 1998 Kungliga Tekniska Högskolan
  * (Royal Institute of Technology, Stockholm, Sweden).

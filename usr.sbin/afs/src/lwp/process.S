@@ -1,4 +1,4 @@
-/* $Header: /cvsroot/src/usr.sbin/afs/src/lwp/Attic/process.S,v 1.1 1998/09/14 21:53:12 art Exp $ */
+/* $Header: /cvsroot/src/usr.sbin/afs/src/lwp/Attic/process.S,v 1.1.1.1 1998/09/14 21:53:12 art Exp $ */
 /* $Source: /cvsroot/src/usr.sbin/afs/src/lwp/Attic/process.S,v $ */
 
 /*

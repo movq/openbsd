@@ -1,4 +1,4 @@
-/*	$OpenBSD: rx.h,v 1.1 1998/09/14 21:53:14 art Exp $	*/
+/*	$OpenBSD: rx.h,v 1.1.1.1 1998/09/14 21:53:14 art Exp $	*/
 /* $KTH: rx.h,v 1.8 1998/03/01 15:26:57 assar Exp $ */
 
 /*

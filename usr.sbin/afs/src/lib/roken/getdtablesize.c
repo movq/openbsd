@@ -1,4 +1,4 @@
-/*	$OpenBSD: getdtablesize.c,v 1.1 1998/09/14 21:53:03 art Exp $	*/
+/*	$OpenBSD: getdtablesize.c,v 1.1.1.1 1998/09/14 21:53:03 art Exp $	*/
 /*
  * Copyright (c) 1995, 1996, 1997 Kungliga Tekniska Högskolan
  * (Royal Institute of Technology, Stockholm, Sweden).

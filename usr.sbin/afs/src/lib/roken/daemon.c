@@ -1,4 +1,4 @@
-/*	$OpenBSD: daemon.c,v 1.1 1998/09/14 21:53:01 art Exp $	*/
+/*	$OpenBSD: daemon.c,v 1.1.1.1 1998/09/14 21:53:01 art Exp $	*/
 /*-
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.

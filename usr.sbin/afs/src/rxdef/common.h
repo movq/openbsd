@@ -1,4 +1,4 @@
-/*	$OpenBSD: common.h,v 1.1 1998/09/14 21:53:18 art Exp $	*/
+/*	$OpenBSD: common.h,v 1.1.1.1 1998/09/14 21:53:18 art Exp $	*/
 /*
  * Common defintions for cb.xg and fs.xg
  */
