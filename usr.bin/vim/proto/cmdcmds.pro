@@ -1,4 +1,4 @@
-/*	$OpenBSD: cmdcmds.pro,v 1.1 1996/09/07 21:40:28 downsj Exp $	*/
+/*	$OpenBSD: cmdcmds.pro,v 1.1.1.1 1996/09/07 21:40:28 downsj Exp $	*/
 /* cmdcmds.c */
 void do_ascii __PARMS((void));
 void do_align __PARMS((linenr_t start, linenr_t end, int width, int type));

@@ -1,4 +1,4 @@
-/*	$OpenBSD: message.c,v 1.1 1996/09/07 21:40:25 downsj Exp $	*/
+/*	$OpenBSD: message.c,v 1.1.1.1 1996/09/07 21:40:25 downsj Exp $	*/
 /* vi:set ts=4 sw=4:
  *
  * VIM - Vi IMproved		by Bram Moolenaar

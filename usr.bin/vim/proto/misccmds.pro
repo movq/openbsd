@@ -1,4 +1,4 @@
-/*	$OpenBSD: misccmds.pro,v 1.1 1996/09/07 21:40:29 downsj Exp $	*/
+/*	$OpenBSD: misccmds.pro,v 1.1.1.1 1996/09/07 21:40:29 downsj Exp $	*/
 /* misccmds.c */
 int get_indent __PARMS((void));
 int get_indent_lnum __PARMS((linenr_t lnum));

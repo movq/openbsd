@@ -1,4 +1,4 @@
-/*	$OpenBSD: regsub.c,v 1.1 1996/09/07 21:40:25 downsj Exp $	*/
+/*	$OpenBSD: regsub.c,v 1.1.1.1 1996/09/07 21:40:25 downsj Exp $	*/
 /* vi:set ts=4 sw=4:
  * NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE
  *
@@ -31,8 +31,16 @@
  *				be misrepresented as being the original software.
  *
  * $Log: regsub.c,v $
- * Revision 1.1  1996/09/07 21:40:25  downsj
- * Initial revision
+ * Revision 1.1.1.1  1996/09/07 21:40:25  downsj
+ * Initial import of vim 4.2.
+ *
+ * This is meant to replace nvi in the tree.  Vim, in general, works better,
+ * provides more features, and does not suffer from the license problems
+ * being imposed upon nvi.
+ *
+ * On the other hand, vim lacks a non-visual ex mode, in addition to open mode.
+ *
+ * This includes the GUI (X11) code, but doesn't try to compile it.
  *
  * Revision 1.2  88/04/28  08:11:25  tony
  * First modification of the regexp library. Added an external variable
