@@ -2509,7 +2509,7 @@ PUBLIC int HTrjis ARGS2(
 */
 /*
  * RJIS ( Recover JIS code from broken file )
- * $Header: /home/mike/src/cvs/openbsd/src/gnu/usr.bin/lynx/WWW/Library/Implementation/Attic/HTMIME.c,v 1.1 1998/03/11 17:47:45 maja Exp $
+ * $Header: /home/mike/src/cvs/openbsd/src/gnu/usr.bin/lynx/WWW/Library/Implementation/Attic/HTMIME.c,v 1.1.1.1 1998/03/11 17:47:45 maja Exp $
  * Copyright (C) 1992 1994
  * Hironobu Takahashi (takahasi@tiny.or.jp)
  *
