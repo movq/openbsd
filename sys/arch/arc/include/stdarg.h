@@ -1,4 +1,4 @@
-/*	$OpenBSD: stdarg.h,v 1.1 1996/06/24 09:07:18 pefo Exp $	*/
+/*	$OpenBSD: stdarg.h,v 1.1.1.1 1996/06/24 09:07:18 pefo Exp $	*/
 /*	$NetBSD: stdarg.h,v 1.7 1995/03/28 18:19:28 jtc Exp $	*/
 
 /*-

@@ -1,4 +1,4 @@
-/*	$OpenBSD: display.h,v 1.1 1996/06/24 09:07:17 pefo Exp $	*/
+/*	$OpenBSD: display.h,v 1.1.1.1 1996/06/24 09:07:17 pefo Exp $	*/
 
 /*
  * IBM PC display definitions

@@ -1,4 +1,4 @@
-/*	$OpenBSD: machdep.c,v 1.1 1996/06/24 09:07:21 pefo Exp $	*/
+/*	$OpenBSD: machdep.c,v 1.1.1.1 1996/06/24 09:07:21 pefo Exp $	*/
 /*
  * Copyright (c) 1988 University of Utah.
  * Copyright (c) 1992, 1993
@@ -38,7 +38,7 @@
  * SUCH DAMAGE.
  *
  *	from: @(#)machdep.c	8.3 (Berkeley) 1/12/94
- *      $Id: machdep.c,v 1.1 1996/06/24 09:07:21 pefo Exp $
+ *      $Id: machdep.c,v 1.1.1.1 1996/06/24 09:07:21 pefo Exp $
  */
 
 /* from: Utah Hdr: machdep.c 1.63 91/04/24 */

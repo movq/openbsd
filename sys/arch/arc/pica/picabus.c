@@ -1,4 +1,4 @@
-/*	$OpenBSD: picabus.c,v 1.1 1996/06/24 09:07:18 pefo Exp $	*/
+/*	$OpenBSD: picabus.c,v 1.1.1.1 1996/06/24 09:07:18 pefo Exp $	*/
 /*	$NetBSD: tc.c,v 1.2 1995/03/08 00:39:05 cgd Exp $	*/
 
 /*
