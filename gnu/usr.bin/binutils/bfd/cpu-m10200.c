@@ -1,6 +1,5 @@
-/* BFD library support routines for architectures.
-   Copyright (C) 1990, 91, 92, 93, 94, 95, 1997 Free Software Foundation, Inc.
-   Hacked by Steve Chamberlain of Cygnus Support.
+/* BFD support for the Matsushita 10200 processor
+   Copyright 1996, 1997 Free Software Foundation, Inc.
 
 This file is part of BFD, the Binary File Descriptor library.
 
@@ -22,18 +21,18 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include "sysdep.h"
 #include "libbfd.h"
 
-#define N(name, print,d,next)  \
-{  32, 32, 8, bfd_arch_m68k, name, "m68k",print,2,d,bfd_default_compatible,bfd_default_scan, next, }
-
-static const bfd_arch_info_type arch_info_struct[] =
-{ 
-  N(68008,"m68k:68008",false, &arch_info_struct[1]),
-  N(68010,"m68k:68010",false, &arch_info_struct[2]),
-  N(68020,"m68k:68020",true, &arch_info_struct[3]),
-  N(68030,"m68k:68030",false, &arch_info_struct[4]),
-  N(68040,"m68k:68040",false, &arch_info_struct[5]),
-  N(68070,"m68k:68070",false, 0),
-};
-
-const bfd_arch_info_type bfd_m68k_arch =
-  N(68000,"m68k:68000",false, &arch_info_struct[0]);
+const bfd_arch_info_type bfd_mn10200_arch =
+  {
+    16, /* 16 bits in a word */
+    24, /* 16 bits in an address */
+    8,  /* 8 bits in a byte */
+    bfd_arch_mn10200,
+    200,
+    "mn10200",
+    "mn10200",
+    2,
+    true, /* the one and only */
+    bfd_default_compatible,
+    bfd_default_scan ,
+    0,
+  };
