@@ -1,7 +1,12 @@
+#	@(#)LICENSE	8.7 (Berkeley) 3/4/96
+
+This work is copyrighted by The Regents of the University of California,
+and by Keith Bostic.  It may be freely redistributed under the following
+conditions, until one year after the release of any subsequent version of
+this software, at which point it may no longer be redistributed without
+written permission from Keith Bostic.
+
 /*-
- * Copyright (c) 1992, 1993, 1994
- *	The Regents of the University of California.  All rights reserved.
- *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
@@ -29,56 +34,4 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- *
- *	@(#)trace.c	8.2 (Berkeley) 3/8/94
  */
-
-#ifdef DEBUG
-#include <sys/types.h>
-#include <sys/queue.h>
-#include <sys/time.h>
-
-#include <bitstring.h>
-#include <limits.h>
-#include <signal.h>
-#include <stdio.h>
-#include <termios.h>
-
-#include "compat.h"
-#include <db.h>
-#include <regex.h>
-
-#include "vi.h"
-
-#ifdef __STDC__
-#include <stdarg.h>
-#else
-#include <varargs.h>
-#endif
-
-void
-#ifdef __STDC__
-TRACE(SCR *sp, const char *fmt, ...)
-#else
-TRACE(sp, fmt, va_alist)
-	SCR *sp;
-	char *fmt;
-	va_dcl
-#endif
-{
-	FILE *tfp;
-	va_list ap;
-
-	if ((tfp = sp->gp->tracefp) == NULL)
-		return;
-#ifdef __STDC__
-	va_start(ap, fmt);
-#else
-	va_start(ap);
-#endif
-	(void)vfprintf(tfp, fmt, ap);
-	va_end(ap);
-
-	(void)fflush(tfp);
-}
-#endif
