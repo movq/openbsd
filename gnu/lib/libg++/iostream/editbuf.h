@@ -14,7 +14,7 @@
 //    License along with this library; if not, write to the Free
 //    Software Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 //
-//	$Id: editbuf.h,v 1.1 1995/10/18 08:38:12 deraadt Exp $
+//	$Id: editbuf.h,v 1.1.1.1 1995/10/18 08:38:12 deraadt Exp $
 
 #ifndef _EDITBUF_H
 #define _EDITBUF_H

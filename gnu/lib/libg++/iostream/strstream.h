@@ -15,7 +15,7 @@
 //    License along with this library; if not, write to the Free
 //    Software Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 //
-//	$Id: strstream.h,v 1.1 1995/10/18 08:38:14 deraadt Exp $
+//	$Id: strstream.h,v 1.1.1.1 1995/10/18 08:38:14 deraadt Exp $
 
 #ifndef __STRSTREAM_H
 #define __STRSTREAM_H

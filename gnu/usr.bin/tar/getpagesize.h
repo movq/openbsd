@@ -1,4 +1,4 @@
-/*	$Id: getpagesize.h,v 1.1 1995/10/18 08:41:09 deraadt Exp $ */
+/*	$Id: getpagesize.h,v 1.1.1.1 1995/10/18 08:41:09 deraadt Exp $ */
 
 #ifdef BSD
 #ifndef BSD4_1

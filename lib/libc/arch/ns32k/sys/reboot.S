@@ -16,7 +16,7 @@
 
 /*	This is a modified copy of mount.s.  Phil Nelson
  *
- *	$Id: reboot.S,v 1.1 1995/10/18 08:41:39 deraadt Exp $
+ *	$Id: reboot.S,v 1.1.1.1 1995/10/18 08:41:39 deraadt Exp $
  */
 
 #include "SYS.h"

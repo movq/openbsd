@@ -31,7 +31,7 @@
  * SUCH DAMAGE.
  *
  *	from: @(#)pathnames.h	5.1 (Berkeley) 5/28/90
- *	$Id: pathnames.h,v 1.1 1995/10/18 08:47:55 deraadt Exp $
+ *	$Id: pathnames.h,v 1.1.1.1 1995/10/18 08:47:55 deraadt Exp $
  */
 
 #define	_PATH_HELPFILE	"/usr/share/misc/nslookup.help"

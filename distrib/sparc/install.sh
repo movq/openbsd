@@ -1,5 +1,5 @@
 #!/bin/sh
-# $Id: install.sh,v 1.1 1995/10/18 08:37:49 deraadt Exp $
+# $Id: install.sh,v 1.1.1.1 1995/10/18 08:37:49 deraadt Exp $
 umask 0
 
 TAR="base.tar.gz comp.tar.gz etc.tar.gz games.tar.gz man.tar.gz

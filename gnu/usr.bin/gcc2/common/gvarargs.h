@@ -1,4 +1,4 @@
-/*	$Id: gvarargs.h,v 1.1 1995/10/18 08:39:40 deraadt Exp $ */
+/*	$Id: gvarargs.h,v 1.1.1.1 1995/10/18 08:39:40 deraadt Exp $ */
 
 #ifndef __GNUC__
 /* Use the system's macros with the system's compiler.  */

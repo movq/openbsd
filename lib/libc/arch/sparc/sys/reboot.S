@@ -35,7 +35,7 @@
  * SUCH DAMAGE.
  *
  * from: Header: reboot.s,v 1.1 91/07/06 13:05:59 torek Exp
- * $Id: reboot.S,v 1.1 1995/10/18 08:41:42 deraadt Exp $
+ * $Id: reboot.S,v 1.1.1.1 1995/10/18 08:41:42 deraadt Exp $
  */
 
 #if defined(LIBC_SCCS) && !defined(lint)

@@ -14,7 +14,7 @@ You should have received a copy of the GNU Library General Public
 License along with this library; if not, write to the Free Software
 Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 
-	$Id: GetOpt.h,v 1.1 1995/10/18 08:38:16 deraadt Exp $
+	$Id: GetOpt.h,v 1.1.1.1 1995/10/18 08:38:16 deraadt Exp $
 */
 
 /* This version of `getopt' appears to the caller like standard Unix `getopt'

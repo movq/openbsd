@@ -16,7 +16,7 @@
 #  GNU CC; see the file COPYING.  If not, write to the Free Software
 #  Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.  */
 #
-#	$Id: Makefile,v 1.1 1995/10/18 08:39:49 deraadt Exp $
+#	$Id: Makefile,v 1.1.1.1 1995/10/18 08:39:49 deraadt Exp $
 
 #  This makefile is run by the parent dir's makefile.
 #  thisdir1=`pwd`; \
