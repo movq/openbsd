@@ -14,10 +14,10 @@
 # based on original version by Alan R. Martello <al@ee.pitt.edu>
 # And by A.Macpherson@bnr.co.uk for multi-homed hosts
 #
-# $Header: /home/mike/src/cvs/openbsd/src/gnu/usr.bin/perl/lib/Attic/ftp.pl,v 1.1.1.3 2000/04/06 16:09:37 millert Exp $
+# $Header: /home/mike/src/cvs/openbsd/src/gnu/usr.bin/perl/lib/Attic/ftp.pl,v 1.1.1.4 2001/05/24 18:23:21 millert Exp $
 # $Log: ftp.pl,v $
-# Revision 1.1.1.3  2000/04/06 16:09:37  millert
-# virgin perl 5.6.0
+# Revision 1.1.1.4  2001/05/24 18:23:21  millert
+# stock perl 5.6.1
 #
 # Revision 1.17  1993/04/21  10:06:54  lmjm
 # Send all status reports to STDERR not to STDOUT (to allow use by ftpcat).
@@ -77,7 +77,7 @@
 # No longer call die expect on fatal errors.  Just return fail codes.
 # Changed returns so higher up routines can tell whats happening.
 # Get expect/accept in correct order for dir listing.
-# When ftp_show is set then print hashes every 1k transfered (like ftp).
+# When ftp_show is set then print hashes every 1k transferred (like ftp).
 # Allow for stripping returns out of incoming data.
 # Save last error in a global string.
 #
