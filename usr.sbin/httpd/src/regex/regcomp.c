@@ -4,9 +4,8 @@
 #include <ctype.h>
 #include <limits.h>
 #include <stdlib.h>
+#include <regex.h>
 
-#include "hsregex.h"
-#include "ap_ctype.h"
 #include "utils.h"
 #include "regex2.h"
 
@@ -73,7 +72,7 @@ static int never = 0;		/* for use in asserts; shuts lint up */
 
 /*
  - regcomp - interface for parser and compilation
- = API_EXPORT(int) regcomp(regex_t *, const char *, int);
+ = extern int regcomp(regex_t *, const char *, int);
  = #define	REG_BASIC	0000
  = #define	REG_EXTENDED	0001
  = #define	REG_ICASE	0002
@@ -83,8 +82,7 @@ static int never = 0;		/* for use in asserts; shuts lint up */
  = #define	REG_PEND	0040
  = #define	REG_DUMP	0200
  */
-ap_private_extern
-API_EXPORT(int)			/* 0 success, otherwise REG_something */
+int				/* 0 success, otherwise REG_something */
 regcomp(preg, pattern, cflags)
 regex_t *preg;
 const char *pattern;
@@ -100,29 +98,6 @@ int cflags;
 #else
 #	define	GOODFLAGS(f)	((f)&~REG_DUMP)
 #endif
-#ifdef CHARSET_EBCDIC /* Added for Apache by <martin@apache.org> */
-	static int initialized = 0;
-
-	if (!initialized) {
-		unsigned ch, idx = 0;
-		static unsigned char ctlchars_ebcdic[256+1];
-
-		for (ch = 1; ch <= 0xFF; ++ch) {
-			if (ap_iscntrl(ch)) {
-				ctlchars_ebcdic[idx++] = ch;
-			}
-		}
-		ctlchars_ebcdic[idx++] = '\0'; /* redundant */
-
-		for (idx=0; idx < sizeof(cclasses) / sizeof(cclasses[0]); ++idx) {
-			if (strcmp(cclasses[idx].name, "cntrl") == 0) {
-				cclasses[idx].chars = (char *)ctlchars_ebcdic;
-				break;
-			}
-		}
-		initialized = 1;
-	}
-#endif /*CHARSET_EBCDIC*/
 
 	cflags = GOODFLAGS(cflags);
 	if ((cflags&REG_EXTENDED) && (cflags&REG_NOSPEC))
@@ -335,7 +310,7 @@ register struct parse *p;
 		ordinary(p, c);
 		break;
 	case '{':		/* okay as ordinary except if digit follows */
-		REQUIRE(!MORE() || !ap_isdigit(PEEK()), REG_BADRPT);
+		REQUIRE(!MORE() || !isdigit(PEEK()), REG_BADRPT);
 		/* FALLTHROUGH */
 	default:
 		ordinary(p, c);
@@ -347,7 +322,7 @@ register struct parse *p;
 	c = PEEK();
 	/* we call { a repetition if followed by a digit */
 	if (!( c == '*' || c == '+' || c == '?' ||
-				(c == '{' && MORE2() && ap_isdigit(PEEK2())) ))
+				(c == '{' && MORE2() && isdigit(PEEK2())) ))
 		return;		/* no repetition, we're done */
 	NEXT1();
 
@@ -376,7 +351,7 @@ register struct parse *p;
 	case '{':
 		count = p_count(p);
 		if (EAT(',')) {
-			if (ap_isdigit(PEEK())) {
+			if (isdigit(PEEK())) {
 				count2 = p_count(p);
 				REQUIRE(count <= count2, REG_BADBR);
 			} else		/* single number with comma */
@@ -397,7 +372,7 @@ register struct parse *p;
 		return;
 	c = PEEK();
 	if (!( c == '*' || c == '+' || c == '?' ||
-				(c == '{' && MORE2() && ap_isdigit(PEEK2())) ) )
+				(c == '{' && MORE2() && isdigit(PEEK2())) ) )
 		return;
 	SETERROR(REG_BADRPT);
 }
@@ -554,7 +529,7 @@ int starordinary;		/* is a leading * an ordinary character? */
 	} else if (EATTWO('\\', '{')) {
 		count = p_count(p);
 		if (EAT(',')) {
-			if (MORE() && ap_isdigit(PEEK())) {
+			if (MORE() && isdigit(PEEK())) {
 				count2 = p_count(p);
 				REQUIRE(count <= count2, REG_BADBR);
 			} else		/* single number with comma */
@@ -585,7 +560,7 @@ register struct parse *p;
 	register int count = 0;
 	register int ndigits = 0;
 
-	while (MORE() && ap_isdigit(PEEK()) && count <= DUPMAX) {
+	while (MORE() && isdigit(PEEK()) && count <= DUPMAX) {
 		count = count*10 + (GETNEXT() - '0');
 		ndigits++;
 	}
@@ -640,7 +615,7 @@ register struct parse *p;
 		register int ci;
 
 		for (i = p->g->csetsize - 1; i >= 0; i--)
-			if (CHIN(cs, i) && ap_isalpha(i)) {
+			if (CHIN(cs, i) && isalpha(i)) {
 				ci = othercase(i);
 				if (ci != i)
 					CHadd(cs, ci);
@@ -731,22 +706,8 @@ register cset *cs;
 			finish = start;
 /* xxx what about signed chars here... */
 		REQUIRE(start <= finish, REG_ERANGE);
-#ifndef CHARSET_EBCDIC
 		for (i = start; i <= finish; i++)
 			CHadd(cs, i);
-#else /* Added for Apache by <martin@apache.org> */
-		/* Special provision for character ranges [a-zA-Z], */
-		/* which are non-contiguous in EBCDIC: */
-		if ((ap_isupper(start) && ap_isupper(finish)) ||
-		    (ap_islower(start) && ap_islower(finish))) {
-			for (i = start; i <= finish; i++)
-				if (ap_isalpha(i))
-					CHadd(cs, i);
-		} else {
-			for (i = start; i <= finish; i++)
-				CHadd(cs, i);
-		}
-#endif /*CHARSET_EBCDIC*/
 		break;
 	}
 }
@@ -766,7 +727,7 @@ register cset *cs;
 	register char *u;
 	register char c;
 
-	while (MORE() && ap_isalpha(PEEK()))
+	while (MORE() && isalpha(PEEK()))
 		NEXT1();
 	len = p->next - sp;
 	for (cp = cclasses; cp->name != NULL; cp++)
@@ -859,11 +820,11 @@ static char			/* if no counterpart, return ch */
 othercase(ch)
 int ch;
 {
-	assert(ap_isalpha(ch));
-	if (ap_isupper(ch))
-		return(ap_tolower(ch));
-	else if (ap_islower(ch))
-		return(ap_toupper(ch));
+	assert(isalpha(ch));
+	if (isupper(ch))
+		return(tolower(ch));
+	else if (islower(ch))
+		return(toupper(ch));
 	else			/* peculiar, but could happen */
 		return(ch);
 }
@@ -906,7 +867,7 @@ register int ch;
 {
 	register cat_t *cap = p->g->categories;
 
-	if ((p->g->cflags&REG_ICASE) && ap_isalpha(ch) && othercase(ch) != ch)
+	if ((p->g->cflags&REG_ICASE) && isalpha(ch) && othercase(ch) != ch)
 		bothcases(p, ch);
 	else {
 		EMIT(OCHAR, (unsigned char)ch);
@@ -1093,7 +1054,7 @@ freeset(p, cs)
 register struct parse *p;
 register cset *cs;
 {
-	register size_t i;
+	register int i;
 	register cset *top = &p->g->sets[p->g->ncsets];
 	register size_t css = (size_t)p->g->csetsize;
 
@@ -1119,7 +1080,7 @@ register struct parse *p;
 register cset *cs;
 {
 	register uch h = cs->hash;
-	register size_t i;
+	register int i;
 	register cset *top = &p->g->sets[p->g->ncsets];
 	register cset *cs2;
 	register size_t css = (size_t)p->g->csetsize;
@@ -1152,7 +1113,7 @@ firstch(p, cs)
 register struct parse *p;
 register cset *cs;
 {
-	register size_t i;
+	register int i;
 	register size_t css = (size_t)p->g->csetsize;
 
 	for (i = 0; i < css; i++)
@@ -1171,7 +1132,7 @@ nch(p, cs)
 register struct parse *p;
 register cset *cs;
 {
-	register size_t i;
+	register int i;
 	register size_t css = (size_t)p->g->csetsize;
 	register int n = 0;
 

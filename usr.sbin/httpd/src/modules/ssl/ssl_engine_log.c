@@ -1,15 +1,15 @@
 /*                      _             _
-**  _ __ ___   ___   __| |    ___ ___| |  mod_ssl
-** | '_ ` _ \ / _ \ / _` |   / __/ __| |  Apache Interface to OpenSSL
-** | | | | | | (_) | (_| |   \__ \__ \ |  www.modssl.org
-** |_| |_| |_|\___/ \__,_|___|___/___/_|  ftp.modssl.org
+**  _ __ ___   ___   __| |    ___ ___| |
+** | '_ ` _ \ / _ \ / _` |   / __/ __| |
+** | | | | | | (_) | (_| |   \__ \__ \ | mod_ssl - Apache Interface to SSLeay
+** |_| |_| |_|\___/ \__,_|___|___/___/_| http://www.engelschall.com/sw/mod_ssl/
 **                      |_____|
 **  ssl_engine_log.c
 **  Logging Facility
 */
 
 /* ====================================================================
- * Copyright (c) 1998-2001 Ralf S. Engelschall. All rights reserved.
+ * Copyright (c) 1998-1999 Ralf S. Engelschall. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,7 +27,7 @@
  *    software must display the following acknowledgment:
  *    "This product includes software developed by
  *     Ralf S. Engelschall <rse@engelschall.com> for use in the
- *     mod_ssl project (http://www.modssl.org/)."
+ *     mod_ssl project (http://www.engelschall.com/sw/mod_ssl/)."
  *
  * 4. The names "mod_ssl" must not be used to endorse or promote
  *    products derived from this software without prior written
@@ -42,7 +42,7 @@
  *    acknowledgment:
  *    "This product includes software developed by
  *     Ralf S. Engelschall <rse@engelschall.com> for use in the
- *     mod_ssl project (http://www.modssl.org/)."
+ *     mod_ssl project (http://www.engelschall.com/sw/mod_ssl/)."
  *
  * THIS SOFTWARE IS PROVIDED BY RALF S. ENGELSCHALL ``AS IS'' AND ANY
  * EXPRESSED OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -74,35 +74,17 @@
 /*
  * Open the SSL logfile
  */
-void ssl_log_open(server_rec *s_main, server_rec *s, pool *p)
+void ssl_log_open(server_rec *s, pool *p)
 {
     char *szLogFile;
-    SSLSrvConfigRec *sc_main = mySrvConfig(s_main);
     SSLSrvConfigRec *sc = mySrvConfig(s);
     piped_log *pl;
-    char *cp;
 
-    /* 
-     * Short-circuit for inherited logfiles in order to save
-     * filedescriptors in mass-vhost situation. Be careful, this works
-     * fine because the close happens implicitly by the pool facility.
-     */
-    if (   s != s_main 
-        && sc_main->fileLogFile != NULL
-        && (   (sc->szLogFile == NULL)
-            || (   sc->szLogFile != NULL 
-                && sc_main->szLogFile != NULL 
-                && strEQ(sc->szLogFile, sc_main->szLogFile)))) {
-        sc->fileLogFile = sc_main->fileLogFile;
-    }
-    else if (sc->szLogFile != NULL) {
+    if (sc->szLogFile != NULL) {
         if (strEQ(sc->szLogFile, "/dev/null"))
             return;
         else if (sc->szLogFile[0] == '|') {
-            cp = sc->szLogFile+1;
-            while (*cp == ' ' || *cp == '\t')
-                cp++;
-            szLogFile = ssl_util_server_root_relative(p, "log", cp);
+            szLogFile = ap_server_root_relative(p, sc->szLogFile+1);
             if ((pl = ap_open_piped_log(p, szLogFile)) == NULL) {
                 ssl_log(s, SSL_LOG_ERROR|SSL_ADD_ERRNO,
                         "Cannot open reliable pipe to SSL logfile filter %s", szLogFile);
@@ -112,7 +94,7 @@ void ssl_log_open(server_rec *s_main, server_rec *s, pool *p)
             setbuf(sc->fileLogFile, NULL);
         }
         else {
-            szLogFile = ssl_util_server_root_relative(p, "log", sc->szLogFile);
+            szLogFile = ap_server_root_relative(p, sc->szLogFile);
             if ((sc->fileLogFile = ap_pfopen(p, szLogFile, "a")) == NULL) {
                 ssl_log(s, SSL_LOG_ERROR|SSL_ADD_ERRNO,
                         "Cannot open SSL logfile %s", szLogFile);
@@ -143,13 +125,9 @@ static struct {
     { "*envelope*bad*decrypt*", "wrong pass phrase!?" },
     { "*CLIENT_HELLO*unknown*protocol*", "speaking not SSL to HTTPS port!?" },
     { "*CLIENT_HELLO*http*request*", "speaking HTTP to HTTPS port!?" },
-    { "*SSL3_READ_BYTES:sslv3*alert*bad*certificate*", "Subject CN in certificate not server name or identical to CA!?" },
+    { "*SSL3_READ_BYTES:sslv3*alert*bad*certificate*", "Subject CN in certificate not server name!?" },
     { "*self signed certificate in certificate chain*", "Client certificate signed by CA not known to server?" },
     { "*peer did not return a certificate*", "No CAs known to server for verification?" },
-    { "*no shared cipher*", "Too restrictive SSLCipherSuite or using DSA server certificate?" },
-    { "*no start line*", "Bad file contents or format - or even just a forgotten SSLCertificateKeyFile?" },
-    { "*bad password read*", "You entered an incorrect pass phrase!?" },
-    { "*bad mac decode*", "Browser still remembered details of a re-created server certificate?" },
     { NULL, NULL }
 };
 
@@ -166,20 +144,6 @@ static char *ssl_log_annotation(char *error)
         }
     }
     return errstr;
-}
-
-BOOL ssl_log_applies(server_rec *s, int level)
-{
-    SSLSrvConfigRec *sc;
-
-    sc = mySrvConfig(s);
-    if (   sc->fileLogFile == NULL
-        && !(level & SSL_LOG_ERROR))
-        return FALSE;
-    if (   level > sc->nLogLevel
-        && !(level & SSL_LOG_ERROR))
-        return FALSE;
-    return TRUE;
 }
 
 void ssl_log(server_rec *s, int level, const char *msg, ...)
@@ -229,12 +193,10 @@ void ssl_log(server_rec *s, int level, const char *msg, ...)
         tstr[0] = NUL;
     else {
         t = ap_get_gmtoff(&timz);
-        strftime(tstr, 80, "[%d/%b/%Y %H:%M:%S", t);
-        i = strlen(tstr);
-        ap_snprintf(tstr+i, 80-i, " %05d] ", (unsigned int)getpid());
+        strftime(tstr, 80, "[%d/%b/%Y %H:%M:%S] ", t);
     }
 
-    /*  determine whether newline should be written */
+    /*  determine whether newline should be writteni  */
     if (add & SSL_NO_NEWLINE)
         nstr[0] = NUL;
     else {

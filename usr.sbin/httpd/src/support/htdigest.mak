@@ -29,19 +29,19 @@ NULL=nul
 
 !IF  "$(CFG)" == "htdigest - Win32 Release"
 
-OUTDIR=.\Release
-INTDIR=.\Release
+OUTDIR=.
+INTDIR=.
 # Begin Custom Macros
-OutDir=.\Release
+OutDir=.
 # End Custom Macros
 
 !IF "$(RECURSE)" == "0" 
 
-ALL : "$(OUTDIR)\htdigest.exe"
+ALL : "$(OUTDIR)\release\htdigest.exe"
 
 !ELSE 
 
-ALL : "$(OUTDIR)\htdigest.exe"
+ALL : "$(OUTDIR)\release\htdigest.exe"
 
 !ENDIF 
 
@@ -49,19 +49,14 @@ CLEAN :
 	-@erase "$(INTDIR)\ap_cpystrn.obj"
 	-@erase "$(INTDIR)\ap_getpass.obj"
 	-@erase "$(INTDIR)\ap_md5c.obj"
-	-@erase "$(INTDIR)\htdigest.idb"
 	-@erase "$(INTDIR)\htdigest.obj"
-	-@erase "$(OUTDIR)\htdigest.exe"
-	-@erase "$(OUTDIR)\htdigest.map"
-
-"$(OUTDIR)" :
-    if not exist "$(OUTDIR)/$(NULL)" mkdir "$(OUTDIR)"
+	-@erase "$(INTDIR)\vc50.idb"
+	-@erase "$(OUTDIR)\release\htdigest.exe"
 
 CPP=cl.exe
-CPP_PROJ=/nologo /MD /W3 /O2 /I "..\include" /I "..\os\win32" /D "WIN32" /D\
- "NDEBUG" /D "_CONSOLE" /D "_MBCS" /Fo"$(INTDIR)\\" /Fd"$(INTDIR)\htdigest" /FD\
- /c 
-CPP_OBJS=.\Release/
+CPP_PROJ=/nologo /ML /W3 /GX /O2 /I "..\include" /D "WIN32" /D "NDEBUG" /D\
+ "_CONSOLE" /D "_MBCS" /Fp"$(INTDIR)\htdigest.pch" /YX /FD /c 
+CPP_OBJS=.
 CPP_SBRS=.
 
 .c{$(CPP_OBJS)}.obj::
@@ -100,35 +95,37 @@ BSC32_FLAGS=/nologo /o"$(OUTDIR)\htdigest.bsc"
 BSC32_SBRS= \
 	
 LINK32=link.exe
-LINK32_FLAGS=/nologo /subsystem:console /incremental:no\
- /pdb:"$(OUTDIR)\htdigest.pdb" /map:"$(INTDIR)\htdigest.map" /machine:I386\
- /out:"$(OUTDIR)\htdigest.exe" 
+LINK32_FLAGS=kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib\
+ advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib\
+ odbccp32.lib /nologo /subsystem:console /incremental:no\
+ /pdb:"$(OUTDIR)\htdigest.pdb" /machine:I386\
+ /out:"$(OUTDIR)\release\htdigest.exe" 
 LINK32_OBJS= \
 	"$(INTDIR)\ap_cpystrn.obj" \
 	"$(INTDIR)\ap_getpass.obj" \
 	"$(INTDIR)\ap_md5c.obj" \
 	"$(INTDIR)\htdigest.obj"
 
-"$(OUTDIR)\htdigest.exe" : "$(OUTDIR)" $(DEF_FILE) $(LINK32_OBJS)
+"$(OUTDIR)\release\htdigest.exe" : "$(OUTDIR)" $(DEF_FILE) $(LINK32_OBJS)
     $(LINK32) @<<
   $(LINK32_FLAGS) $(LINK32_OBJS)
 <<
 
 !ELSEIF  "$(CFG)" == "htdigest - Win32 Debug"
 
-OUTDIR=.\Debug
-INTDIR=.\Debug
+OUTDIR=.
+INTDIR=.
 # Begin Custom Macros
-OutDir=.\Debug
+OutDir=.
 # End Custom Macros
 
 !IF "$(RECURSE)" == "0" 
 
-ALL : "$(OUTDIR)\htdigest.exe"
+ALL : "$(OUTDIR)\debug\htdigest.exe"
 
 !ELSE 
 
-ALL : "$(OUTDIR)\htdigest.exe"
+ALL : "$(OUTDIR)\debug\htdigest.exe"
 
 !ENDIF 
 
@@ -136,20 +133,17 @@ CLEAN :
 	-@erase "$(INTDIR)\ap_cpystrn.obj"
 	-@erase "$(INTDIR)\ap_getpass.obj"
 	-@erase "$(INTDIR)\ap_md5c.obj"
-	-@erase "$(INTDIR)\htdigest.idb"
 	-@erase "$(INTDIR)\htdigest.obj"
-	-@erase "$(OUTDIR)\htdigest.exe"
-	-@erase "$(OUTDIR)\htdigest.map"
+	-@erase "$(INTDIR)\vc50.idb"
+	-@erase "$(INTDIR)\vc50.pdb"
+	-@erase "$(OUTDIR)\debug\htdigest.exe"
+	-@erase "$(OUTDIR)\debug\htdigest.ilk"
 	-@erase "$(OUTDIR)\htdigest.pdb"
 
-"$(OUTDIR)" :
-    if not exist "$(OUTDIR)/$(NULL)" mkdir "$(OUTDIR)"
-
 CPP=cl.exe
-CPP_PROJ=/nologo /MDd /W3 /GX /Zi /Od /I "..\include" /I "..\os\win32" /D\
- "WIN32" /D "_DEBUG" /D "_CONSOLE" /D "_MBCS" /Fo"$(INTDIR)\\"\
- /Fd"$(INTDIR)\htdigest" /FD /c 
-CPP_OBJS=.\Debug/
+CPP_PROJ=/nologo /MLd /W3 /Gm /GX /Zi /Od /I "..\include" /D "WIN32" /D\
+ "_DEBUG" /D "_CONSOLE" /D "_MBCS" /Fp"$(INTDIR)\htdigest.pch" /YX /FD /c 
+CPP_OBJS=.
 CPP_SBRS=.
 
 .c{$(CPP_OBJS)}.obj::
@@ -188,16 +182,18 @@ BSC32_FLAGS=/nologo /o"$(OUTDIR)\htdigest.bsc"
 BSC32_SBRS= \
 	
 LINK32=link.exe
-LINK32_FLAGS=/nologo /subsystem:console /incremental:no\
- /pdb:"$(OUTDIR)\htdigest.pdb" /map:"$(INTDIR)\htdigest.map" /debug\
- /machine:I386 /out:"$(OUTDIR)\htdigest.exe" 
+LINK32_FLAGS=kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib\
+ advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib\
+ odbccp32.lib /nologo /subsystem:console /incremental:yes\
+ /pdb:"$(OUTDIR)\htdigest.pdb" /debug /machine:I386\
+ /out:"$(OUTDIR)\debug\htdigest.exe" /pdbtype:sept 
 LINK32_OBJS= \
 	"$(INTDIR)\ap_cpystrn.obj" \
 	"$(INTDIR)\ap_getpass.obj" \
 	"$(INTDIR)\ap_md5c.obj" \
 	"$(INTDIR)\htdigest.obj"
 
-"$(OUTDIR)\htdigest.exe" : "$(OUTDIR)" $(DEF_FILE) $(LINK32_OBJS)
+"$(OUTDIR)\debug\htdigest.exe" : "$(OUTDIR)" $(DEF_FILE) $(LINK32_OBJS)
     $(LINK32) @<<
   $(LINK32_FLAGS) $(LINK32_OBJS)
 <<
@@ -209,11 +205,10 @@ LINK32_OBJS= \
  "htdigest - Win32 Debug"
 SOURCE=..\ap\ap_cpystrn.c
 DEP_CPP_AP_CP=\
+	"..\include\alloc.h"\
 	"..\include\ap.h"\
-	"..\include\ap_alloc.h"\
 	"..\include\ap_config.h"\
 	"..\include\ap_ctype.h"\
-	"..\include\ap_ebcdic.h"\
 	"..\include\ap_mmn.h"\
 	"..\include\buff.h"\
 	"..\include\hsregex.h"\
@@ -221,9 +216,13 @@ DEP_CPP_AP_CP=\
 	"..\include\util_uri.h"\
 	"..\os\win32\os.h"\
 	"..\os\win32\readdir.h"\
+	{$(INCLUDE)}"sys\stat.h"\
+	{$(INCLUDE)}"sys\types.h"\
 	
 NODEP_CPP_AP_CP=\
 	"..\include\ap_config_auto.h"\
+	"..\include\ebcdic.h"\
+	"..\include\os.h"\
 	"..\include\sfio.h"\
 	
 
@@ -239,9 +238,12 @@ DEP_CPP_AP_GE=\
 	"..\include\ap_mmn.h"\
 	"..\include\hsregex.h"\
 	"..\os\win32\os.h"\
+	{$(INCLUDE)}"sys\stat.h"\
+	{$(INCLUDE)}"sys\types.h"\
 	
 NODEP_CPP_AP_GE=\
 	"..\include\ap_config_auto.h"\
+	"..\include\os.h"\
 	
 
 "$(INTDIR)\ap_getpass.obj" : $(SOURCE) $(DEP_CPP_AP_GE) "$(INTDIR)"
@@ -253,14 +255,17 @@ DEP_CPP_AP_MD=\
 	"..\include\ap.h"\
 	"..\include\ap_config.h"\
 	"..\include\ap_ctype.h"\
-	"..\include\ap_ebcdic.h"\
 	"..\include\ap_md5.h"\
 	"..\include\ap_mmn.h"\
 	"..\include\hsregex.h"\
 	"..\os\win32\os.h"\
+	{$(INCLUDE)}"sys\stat.h"\
+	{$(INCLUDE)}"sys\types.h"\
 	
 NODEP_CPP_AP_MD=\
+	"..\ap\ebcdic.h"\
 	"..\include\ap_config_auto.h"\
+	"..\include\os.h"\
 	
 
 "$(INTDIR)\ap_md5c.obj" : $(SOURCE) $(DEP_CPP_AP_MD) "$(INTDIR)"
@@ -276,9 +281,12 @@ DEP_CPP_HTDIG=\
 	"..\include\ap_mmn.h"\
 	"..\include\hsregex.h"\
 	"..\os\win32\os.h"\
+	{$(INCLUDE)}"sys\stat.h"\
+	{$(INCLUDE)}"sys\types.h"\
 	
 NODEP_CPP_HTDIG=\
 	"..\include\ap_config_auto.h"\
+	"..\include\os.h"\
 	
 
 "$(INTDIR)\htdigest.obj" : $(SOURCE) $(DEP_CPP_HTDIG) "$(INTDIR)"

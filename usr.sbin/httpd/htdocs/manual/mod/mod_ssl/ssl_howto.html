@@ -3,7 +3,7 @@
 <title>mod_ssl: HowTo</title>
 
 <!--
-  Copyright (c) 1998-2001 Ralf S. Engelschall. All rights reserved.
+  Copyright (c) 1998-1999 Ralf S. Engelschall. All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions
@@ -22,7 +22,7 @@
      software must display the following acknowledgment: 
      "This product includes software developed by 
       Ralf S. Engelschall <rse@engelschall.com> for use in the
-      mod_ssl project (http://www.modssl.org/)."
+      mod_ssl project (http://www.engelschall.com/sw/mod_ssl/)."
  
   4. The name "mod_ssl" must not be used to endorse or promote
      products derived from this software without prior written
@@ -32,7 +32,7 @@
      following acknowledgment:
      "This product includes software developed by 
       Ralf S. Engelschall <rse@engelschall.com> for use in the
-      mod_ssl project (http://www.modssl.org/)."
+      mod_ssl project (http://www.engelschall.com/sw/mod_ssl/)."
  
   THIS SOFTWARE IS PROVIDED BY RALF S. ENGELSCHALL ``AS IS'' AND ANY
   EXPRESSED OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -127,79 +127,23 @@ H4 {
     font-style: normal;
 }
 --></style>
-<script type="text/javascript" language="JavaScript">
-<!-- Hiding the code
-function ro_imgNormal(imgName) {
-    if (document.images) {
-        document[imgName].src = eval(imgName + '_n.src');
-        self.status = '';
-    }
-}
-function ro_imgOver(imgName, descript) {
-    if (document.images) {
-        document[imgName].src = eval(imgName + '_o.src');
-        self.status = descript;
-    }
-}
-// done hiding -->
-</script>
-<script type="text/javascript" language="JavaScript">
-<!-- Hiding the code
-if (document.images) {
-    ro_img_prev_top_n = new Image();
-    ro_img_prev_top_n.src = 'ssl_template.navbut-prev-n.gif';
-    ro_img_prev_top_o = new Image();
-    ro_img_prev_top_o.src = 'ssl_template.navbut-prev-s.gif';
-}
-// done hiding -->
-</script>
-<script type="text/javascript" language="JavaScript">
-<!-- Hiding the code
-if (document.images) {
-    ro_img_prev_bot_n = new Image();
-    ro_img_prev_bot_n.src = 'ssl_template.navbut-prev-n.gif';
-    ro_img_prev_bot_o = new Image();
-    ro_img_prev_bot_o.src = 'ssl_template.navbut-prev-s.gif';
-}
-// done hiding -->
-</script>
-<script type="text/javascript" language="JavaScript">
-<!-- Hiding the code
-if (document.images) {
-    ro_img_next_top_n = new Image();
-    ro_img_next_top_n.src = 'ssl_template.navbut-next-n.gif';
-    ro_img_next_top_o = new Image();
-    ro_img_next_top_o.src = 'ssl_template.navbut-next-s.gif';
-}
-// done hiding -->
-</script>
-<script type="text/javascript" language="JavaScript">
-<!-- Hiding the code
-if (document.images) {
-    ro_img_next_bot_n = new Image();
-    ro_img_next_bot_n.src = 'ssl_template.navbut-next-n.gif';
-    ro_img_next_bot_o = new Image();
-    ro_img_next_bot_o.src = 'ssl_template.navbut-next-s.gif';
-}
-// done hiding -->
-</script>
 </head>
 <body bgcolor="#ffffff" text="#000000" link="#333399" alink="#9999ff" vlink="#000066">
 <div align="center">
-<table width="600" cellspacing="0" cellpadding="0" border="0" summary="">
+<table width="600" cellspacing="0" cellpadding="0" border="0">
 <tr>
   <td>
-      <img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="600" height="1" align="bottom" border="0"><br>
-      <table width="600" cellspacing="0" cellpadding="0" summary="">
+          <img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="600" height="1" align="bottom" border="0"><br>
+      <table width="600" cellspacing="0" cellpadding="0">
       <tr>
         <td>
-        <table width="600" summary="">
+        <table width="600">
         <tr>
             <td align="left" valign="bottom">
             <font face="Arial,Helvetica" size="+2"><b>mod_ssl</b></font>
             </td>
             <td align="right">
-              <img src="ssl_template.head-chapter.gif" alt="Chapter" width="175" height="94"> <img src="ssl_template.head-num-5.gif" alt="5" width="74" height="89">
+                            <img src="ssl_template.head-chapter.gif" alt="Chapter" width="175" height="94"> <img src="ssl_template.head-num-5.gif" alt="5" width="74" height="89">
             </td>
         </tr>
         </table>
@@ -210,13 +154,67 @@ if (document.images) {
       </tr>
       <tr>
         <td>
-           <table width="600" border="0" summary="">
+           <table width="600" border="0">
            <tr>
             <td valign="top" align="left" width="250">
-<a href="ssl_compat.html" onmouseover="ro_imgOver('ro_img_prev_top', 'previous page'); return true" onmouseout="ro_imgNormal('ro_img_prev_top'); return true" onfocus="ro_imgOver('ro_img_prev_top', 'previous page'); return true" onblur="ro_imgNormal('ro_img_prev_top'); return true"><img name="ro_img_prev_top" src="ssl_template.navbut-prev-n.gif" alt="previous page" width="70" height="18" border="0"></a><br><font color="#000000">Compatibility</font>
+<script type="text/javascript" language="JavaScript">
+<!-- Hiding the code
+function ro_imgNormal(imgName) {
+    if (document.images) {
+        document[imgName].src = eval(imgName + "_n.src");
+        self.status = '';
+    }
+}
+function ro_imgOver(imgName, descript) {
+    if (document.images) {
+        document[imgName].src = eval(imgName + "_o.src");
+        self.status = descript;
+    }
+}
+// done hiding -->
+</script>
+<script type="text/javascript" language="JavaScript">
+<!-- Hiding the code
+if (document.images) {
+    ro_img_prev_top_n = new Image();
+    ro_img_prev_top_n.src = "ssl_template.navbut-prev-n.gif";
+    ro_img_prev_top_o = new Image();
+    ro_img_prev_top_o.src = "ssl_template.navbut-prev-s.gif";
+}
+// done hiding -->
+</script>
+<a href="ssl_compat.html"
+   onMouseOver="ro_imgOver('ro_img_prev_top', 'previous page'); return true"
+   onMouseOut="ro_imgNormal('ro_img_prev_top'); return true"
+><img
+   name="ro_img_prev_top"
+   src="ssl_template.navbut-prev-n.gif"
+   alt="previous page"
+   width="70" height="18"
+   border="0"
+></a><br><font color="#000000">Compatibility</font>
             </td>
             <td valign="top" align="right" width="250">
-<a href="ssl_faq.html" onmouseover="ro_imgOver('ro_img_next_top', 'next page'); return true" onmouseout="ro_imgNormal('ro_img_next_top'); return true" onfocus="ro_imgOver('ro_img_next_top', 'next page'); return true" onblur="ro_imgNormal('ro_img_next_top'); return true"><img name="ro_img_next_top" src="ssl_template.navbut-next-n.gif" alt="next page" width="70" height="18" border="0"></a><br><font color="#000000">F.A.Q. List</font>
+<script type="text/javascript" language="JavaScript">
+<!-- Hiding the code
+if (document.images) {
+    ro_img_next_top_n = new Image();
+    ro_img_next_top_n.src = "ssl_template.navbut-next-n.gif";
+    ro_img_next_top_o = new Image();
+    ro_img_next_top_o.src = "ssl_template.navbut-next-s.gif";
+}
+// done hiding -->
+</script>
+<a href="ssl_faq.html"
+   onMouseOver="ro_imgOver('ro_img_next_top', 'next page'); return true"
+   onMouseOut="ro_imgNormal('ro_img_next_top'); return true"
+><img
+   name="ro_img_next_top"
+   src="ssl_template.navbut-next-n.gif"
+   alt="next page"
+   width="70" height="18"
+   border="0"
+></a><br><font color="#000000">F.A.Q. List</font>
             </td>
            </tr>
            </table>
@@ -224,19 +222,17 @@ if (document.images) {
       </tr>
       <tr>
         <td>
-          <br>
+                    <br>
           <img src="ssl_template.title-howto.gif" alt="HowTo" width="456" height="60">
         </td>
       </tr>
       </table>
-<div align="right">
-<table cellspacing="0" cellpadding="0" width="200" summary="">
+<DIV align="right">
+<table cellspacing="0" cellpadding="0" width="200">
 <tr>
 <td>
-<em>
-``The solution of this problem is trivial
-  and is left as an exercise for the reader.''
-</em>
+<em>``The solution of this problem is trivial
+  and is left as an exercise for the reader.''</em>
 </td>
 </tr>
 <tr>
@@ -249,7 +245,7 @@ Standard textbook cookie
 </table>
 </div>
 <p>
-<table cellspacing="0" cellpadding="0" border="0" summary="">
+<table cellspacing="0" cellpadding="0" border="0">
 <tr valign="bottom">
 <td>
 <img src="ssl_howto.gfont000.gif" alt="H" width="40" height="34" border="0" align="left">
@@ -265,8 +261,8 @@ coherences.
 &nbsp;&nbsp;
 </td>
 <td>
-<div align="right">
-<table cellspacing="0" cellpadding="5" border="0" bgcolor="#ccccff" width="300" summary="">
+<DIV align="right">
+<table cellspacing="0" cellpadding="5" border="0" bgcolor="#ccccff" width="300">
 <tr>
 <td bgcolor="#333399">
 <font face="Arial,Helvetica" color="#ccccff">
@@ -286,7 +282,6 @@ coherences.
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<a href="#ToC7"><strong>simple certificate-based client authentication</strong></a><br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<a href="#ToC8"><strong>selective certificate-based client authentication</strong></a><br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<a href="#ToC9"><strong>particular certificate-based client authentication</strong></a><br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<a href="#ToC10"><strong>intranet vs. internet authentication</strong></a><br>
 </font>
 </td>
 </tr>
@@ -295,24 +290,22 @@ coherences.
 </td>
 </tr>
 </table>
-<h2><a name="ToC1">Cipher Suites and Enforced Strong Security</a></h2>
+<H2><a name="ToC1">Cipher Suites and Enforced Strong Security</a></H2>
 <ul>
 <p>
 <li><a name="ToC2"></a>
     <a name="cipher-sslv2"></a>
-    <strong id="howto">
-How can I create a real SSLv2-only server?
-</strong>&nbsp;&nbsp;
-    [<a href="http://www.modssl.org/docs/2.8/ssl_howto.html#cipher-sslv2"><b>L</b></a>]
+    <strong id="howto">How can I create a real SSLv2-only server?</strong>&nbsp;&nbsp;
+    [<a href="http://www.engelschall.com/sw/mod_ssl/docs/2.2/ssl_howto.html#cipher-sslv2"><b>L</b></a>]
     <p>
 The following creates an SSL server which speaks only the SSLv2 protocol and
-its ciphers.
+it's ciphers.
 <p>
-<table border="0" cellpadding="0" cellspacing="0" summary="">
+<table border="0" cellpadding="0" cellspacing="0">
     <tr>
         <td colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="8" align="bottom" border="0"></td>
         <td rowspan="3">&nbsp;&nbsp;<font face="Arial,Helvetica" color="#999999">httpd.conf</font>&nbsp;&nbsp;</td>
-        <td colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
+        <td colspan="2"> </td>
     </tr>
     <tr>
         <td bgcolor="#cccccc" colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
@@ -327,16 +320,12 @@ its ciphers.
     <tr>
          <td bgcolor="#cccccc"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
          <td colspan="3" bgcolor="#ffffff">
-             <table border="0" cellspacing="4" summary="">
+             <table border="0" cellspacing="4">
                  <tr>
-                     <td>
-<pre>
-
+                     <td><pre>
 SSLProtocol -all +SSLv2
 SSLCipherSuite SSLv2:+HIGH:+MEDIUM:+LOW:+EXP
-
-</pre>
-</td>
+</pre></td>
                  </tr>
              </table>
          </td>
@@ -349,18 +338,16 @@ SSLCipherSuite SSLv2:+HIGH:+MEDIUM:+LOW:+EXP
 <p>
 <li><a name="ToC3"></a>
     <a name="cipher-strong"></a>
-    <strong id="howto">
-How can I create an SSL server which accepts strong encryption only?
-</strong>&nbsp;&nbsp;
-    [<a href="http://www.modssl.org/docs/2.8/ssl_howto.html#cipher-strong"><b>L</b></a>]
+    <strong id="howto">How can I create an SSL server which accepts strong encryption only?</strong>&nbsp;&nbsp;
+    [<a href="http://www.engelschall.com/sw/mod_ssl/docs/2.2/ssl_howto.html#cipher-strong"><b>L</b></a>]
     <p>
 The following enables only the seven strongest ciphers:
 <p>
-<table border="0" cellpadding="0" cellspacing="0" summary="">
+<table border="0" cellpadding="0" cellspacing="0">
     <tr>
         <td colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="8" align="bottom" border="0"></td>
         <td rowspan="3">&nbsp;&nbsp;<font face="Arial,Helvetica" color="#999999">httpd.conf</font>&nbsp;&nbsp;</td>
-        <td colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
+        <td colspan="2"> </td>
     </tr>
     <tr>
         <td bgcolor="#cccccc" colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
@@ -375,16 +362,12 @@ The following enables only the seven strongest ciphers:
     <tr>
          <td bgcolor="#cccccc"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
          <td colspan="3" bgcolor="#ffffff">
-             <table border="0" cellspacing="4" summary="">
+             <table border="0" cellspacing="4">
                  <tr>
-                     <td>
-<pre>
-
+                     <td><pre>
 SSLProtocol all
 SSLCipherSuite HIGH:MEDIUM
-
-</pre>
-</td>
+</pre></td>
                  </tr>
              </table>
          </td>
@@ -397,11 +380,9 @@ SSLCipherSuite HIGH:MEDIUM
 <p>
 <li><a name="ToC4"></a>
     <a name="cipher-sgc"></a>
-    <strong id="howto">
-How can I create an SSL server which accepts strong encryption only,
-but allows export browsers to upgrade to stronger encryption?
-</strong>&nbsp;&nbsp;
-    [<a href="http://www.modssl.org/docs/2.8/ssl_howto.html#cipher-sgc"><b>L</b></a>]
+    <strong id="howto">How can I create an SSL server which accepts strong encryption only,
+but allows export browsers to upgrade to stronger encryption?</strong>&nbsp;&nbsp;
+    [<a href="http://www.engelschall.com/sw/mod_ssl/docs/2.2/ssl_howto.html#cipher-sgc"><b>L</b></a>]
     <p>
 This facility is called Server Gated Cryptography (SGC) and details you can
 find in the <code>README.GlobalID</code> document in the mod_ssl distribution.
@@ -415,11 +396,11 @@ encryption. Or in other words: Browser either have to initially connect with
 strong encryption or have to upgrade to strong encryption, but are not allowed
 to keep the export ciphers. The following does the trick:
 <p>
-<table border="0" cellpadding="0" cellspacing="0" summary="">
+<table border="0" cellpadding="0" cellspacing="0">
     <tr>
         <td colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="8" align="bottom" border="0"></td>
         <td rowspan="3">&nbsp;&nbsp;<font face="Arial,Helvetica" color="#999999">httpd.conf</font>&nbsp;&nbsp;</td>
-        <td colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
+        <td colspan="2"> </td>
     </tr>
     <tr>
         <td bgcolor="#cccccc" colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
@@ -434,21 +415,17 @@ to keep the export ciphers. The following does the trick:
     <tr>
          <td bgcolor="#cccccc"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
          <td colspan="3" bgcolor="#ffffff">
-             <table border="0" cellspacing="4" summary="">
+             <table border="0" cellspacing="4">
                  <tr>
-                     <td>
-<pre>
-
+                     <td><pre>
 #   allow all ciphers for the inital handshake,
 #   so export browsers can upgrade via SGC facility
-SSLCipherSuite ALL:!ADH:RC4+RSA:+HIGH:+MEDIUM:+LOW:+SSLv2:+EXP:+eNULL
+SSLCipherSuite ALL:!ADH:RC4+RSA:+HIGH:+MEDIUM:+LOW:+SSLv2:+EXP
 &lt;Directory /usr/local/apache/htdocs&gt;
 #   but finally deny all browsers which haven't upgraded
 SSLRequire %{SSL_CIPHER_USEKEYSIZE} &gt;= 128
 &lt;/Directory&gt;
-
-</pre>
-</td>
+</pre></td>
                  </tr>
              </table>
          </td>
@@ -461,11 +438,9 @@ SSLRequire %{SSL_CIPHER_USEKEYSIZE} &gt;= 128
 <p>
 <li><a name="ToC5"></a>
     <a name="cipher-perdir"></a>
-    <strong id="howto">
-How can I create an SSL server which accepts all types of ciphers in general,
-but requires a strong ciphers for access to a particular URL?
-</strong>&nbsp;&nbsp;
-    [<a href="http://www.modssl.org/docs/2.8/ssl_howto.html#cipher-perdir"><b>L</b></a>]
+    <strong id="howto">How can I create an SSL server which accepts all types of ciphers in general,
+but requires a strong ciphers for access to a particular URL?</strong>&nbsp;&nbsp;
+    [<a href="http://www.engelschall.com/sw/mod_ssl/docs/2.2/ssl_howto.html#cipher-perdir"><b>L</b></a>]
     <p>
 Obviously you cannot just use a server-wide <code>SSLCipherSuite</code> which
 restricts the ciphers to the strong variants. But mod_ssl allows you to
@@ -473,11 +448,11 @@ reconfigure the cipher suite in per-directory context and automatically forces
 a renegotiation of the SSL parameters to meet the new configuration. So, the
 solution is:
 <p>
-<table border="0" cellpadding="0" cellspacing="0" summary="">
+<table border="0" cellpadding="0" cellspacing="0">
     <tr>
         <td colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="8" align="bottom" border="0"></td>
         <td rowspan="3">&nbsp;&nbsp;<font face="Arial,Helvetica" color="#999999">httpd.conf</font>&nbsp;&nbsp;</td>
-        <td colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
+        <td colspan="2"> </td>
     </tr>
     <tr>
         <td bgcolor="#cccccc" colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
@@ -492,20 +467,16 @@ solution is:
     <tr>
          <td bgcolor="#cccccc"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
          <td colspan="3" bgcolor="#ffffff">
-             <table border="0" cellspacing="4" summary="">
+             <table border="0" cellspacing="4">
                  <tr>
-                     <td>
-<pre>
-
+                     <td><pre>
 #   be liberal in general
-SSLCipherSuite ALL:!ADH:RC4+RSA:+HIGH:+MEDIUM:+LOW:+SSLv2:+EXP:+eNULL
+SSLCipherSuite ALL:!ADH:RC4+RSA:+HIGH:+MEDIUM:+LOW:+SSLv2:+EXP
 &lt;Location /strong/area&gt;
-#   but https://hostname/strong/area/ and below requires strong ciphers
+#   but https://hostname/string/area/ and below requires strong ciphers
 SSLCipherSuite HIGH:MEDIUM
 &lt;/Location&gt;
-
-</pre>
-</td>
+</pre></td>
                  </tr>
              </table>
          </td>
@@ -516,16 +487,14 @@ SSLCipherSuite HIGH:MEDIUM
     </tr>
 </table>
 </ul>
-<h2><a name="ToC6">Client Authentication and Access Control</a></h2>
+<H2><a name="ToC6">Client Authentication and Access Control</a></H2>
 <ul>
 <p>
 <li><a name="ToC7"></a>
     <a name="auth-simple"></a>
-    <strong id="howto">
-How can I authenticate clients based on certificates when I know all my
-clients?
-</strong>&nbsp;&nbsp;
-    [<a href="http://www.modssl.org/docs/2.8/ssl_howto.html#auth-simple"><b>L</b></a>]
+    <strong id="howto">How can I authenticate clients based on certificates when I know all my
+clients?</strong>&nbsp;&nbsp;
+    [<a href="http://www.engelschall.com/sw/mod_ssl/docs/2.2/ssl_howto.html#auth-simple"><b>L</b></a>]
     <p>
 When you know your user community (i.e. a closed user group situation), as
 it's the case for instance in an Intranet, you can use plain certificate
@@ -533,11 +502,11 @@ authentication. All you have to do is to create client certificates signed by
 your own CA certificate <code>ca.crt</code> and then verifiy the clients
 against this certificate.
 <p>
-<table border="0" cellpadding="0" cellspacing="0" summary="">
+<table border="0" cellpadding="0" cellspacing="0">
     <tr>
         <td colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="8" align="bottom" border="0"></td>
         <td rowspan="3">&nbsp;&nbsp;<font face="Arial,Helvetica" color="#999999">httpd.conf</font>&nbsp;&nbsp;</td>
-        <td colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
+        <td colspan="2"> </td>
     </tr>
     <tr>
         <td bgcolor="#cccccc" colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
@@ -552,19 +521,15 @@ against this certificate.
     <tr>
          <td bgcolor="#cccccc"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
          <td colspan="3" bgcolor="#ffffff">
-             <table border="0" cellspacing="4" summary="">
+             <table border="0" cellspacing="4">
                  <tr>
-                     <td>
-<pre>
-
+                     <td><pre>
 #   require a client certificate which has to be directly
 #   signed by our CA certificate in ca.crt
 SSLVerifyClient require
 SSLVerifyDepth 1
 SSLCACertificateFile conf/ssl.crt/ca.crt
-
-</pre>
-</td>
+</pre></td>
                  </tr>
              </table>
          </td>
@@ -577,19 +542,17 @@ SSLCACertificateFile conf/ssl.crt/ca.crt
 <p>
 <li><a name="ToC8"></a>
     <a name="auth-selective"></a>
-    <strong id="howto">
-How can I authenticate my clients for a particular URL based on certificates
-but still allow arbitrary clients to access the remaining parts of the server?
-</strong>&nbsp;&nbsp;
-    [<a href="http://www.modssl.org/docs/2.8/ssl_howto.html#auth-selective"><b>L</b></a>]
+    <strong id="howto">How can I authenticate my clients for a particular URL based on certificates
+but still allow arbitrary clients to access the remaining parts of the server?</strong>&nbsp;&nbsp;
+    [<a href="http://www.engelschall.com/sw/mod_ssl/docs/2.2/ssl_howto.html#auth-selective"><b>L</b></a>]
     <p>
 For this we again use the per-directory reconfiguration feature of mod_ssl:
 <p>
-<table border="0" cellpadding="0" cellspacing="0" summary="">
+<table border="0" cellpadding="0" cellspacing="0">
     <tr>
         <td colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="8" align="bottom" border="0"></td>
         <td rowspan="3">&nbsp;&nbsp;<font face="Arial,Helvetica" color="#999999">httpd.conf</font>&nbsp;&nbsp;</td>
-        <td colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
+        <td colspan="2"> </td>
     </tr>
     <tr>
         <td bgcolor="#cccccc" colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
@@ -604,20 +567,16 @@ For this we again use the per-directory reconfiguration feature of mod_ssl:
     <tr>
          <td bgcolor="#cccccc"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
          <td colspan="3" bgcolor="#ffffff">
-             <table border="0" cellspacing="4" summary="">
+             <table border="0" cellspacing="4">
                  <tr>
-                     <td>
-<pre>
-
+                     <td><pre>
 SSLVerifyClient none
 SSLCACertificateFile conf/ssl.crt/ca.crt
 &lt;Location /secure/area&gt;
 SSLVerifyClient require
 SSLVerifyDepth 1
 &lt;/Location&gt;
-
-</pre>
-</td>
+</pre></td>
                  </tr>
              </table>
          </td>
@@ -630,12 +589,10 @@ SSLVerifyDepth 1
 <p>
 <li><a name="ToC9"></a>
     <a name="auth-particular"></a>
-    <strong id="howto">
-How can I authenticate only particular clients for a some URLs based
+    <strong id="howto">How can I authenticate only particular clients for a some URLs based
 on certificates but still allow arbitrary clients to access the remaining
-parts of the server?
-</strong>&nbsp;&nbsp;
-    [<a href="http://www.modssl.org/docs/2.8/ssl_howto.html#auth-particular"><b>L</b></a>]
+parts of the server?</strong>&nbsp;&nbsp;
+    [<a href="http://www.engelschall.com/sw/mod_ssl/docs/2.2/ssl_howto.html#auth-particular"><b>L</b></a>]
     <p>
 The key is to check for various ingredients of the client certficate. Usually
 this means to check the whole or part of the Distinguished Name (DN) of the
@@ -649,11 +606,11 @@ DN. Then you can match them more easily.
 <p>
 The first method:
 <p>
-<table border="0" cellpadding="0" cellspacing="0" summary="">
+<table border="0" cellpadding="0" cellspacing="0">
     <tr>
         <td colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="8" align="bottom" border="0"></td>
         <td rowspan="3">&nbsp;&nbsp;<font face="Arial,Helvetica" color="#999999">/usr/local/apache/conf/httpd.conf</font>&nbsp;&nbsp;</td>
-        <td colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
+        <td colspan="2"> </td>
     </tr>
     <tr>
         <td bgcolor="#cccccc" colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
@@ -668,11 +625,9 @@ The first method:
     <tr>
          <td bgcolor="#cccccc"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
          <td colspan="3" bgcolor="#ffffff">
-             <table border="0" cellspacing="4" summary="">
+             <table border="0" cellspacing="4">
                  <tr>
-                     <td>
-<pre>
-
+                     <td><pre>
 SSLVerifyClient      none
 &lt;Directory /usr/local/apache/htdocs/secure/area&gt;
 SSLVerifyClient      require
@@ -681,14 +636,11 @@ SSLCACertificateFile conf/ssl.crt/ca.crt
 SSLCACertificatePath conf/ssl.crt
 SSLOptions           +FakeBasicAuth
 SSLRequireSSL
-AuthName             "Snake Oil Authentication"
 AuthType             Basic
 AuthUserFile         /usr/local/apache/conf/httpd.passwd
 require              valid-user
 &lt;/Directory&gt;
-
-</pre>
-</td>
+</pre></td>
                  </tr>
              </table>
          </td>
@@ -699,11 +651,11 @@ require              valid-user
     </tr>
 </table>
 <p>
-<table border="0" cellpadding="0" cellspacing="0" summary="">
+<table border="0" cellpadding="0" cellspacing="0">
     <tr>
         <td colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="8" align="bottom" border="0"></td>
         <td rowspan="3">&nbsp;&nbsp;<font face="Arial,Helvetica" color="#999999">/usr/local/apache/conf/httpd.passwd</font>&nbsp;&nbsp;</td>
-        <td colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
+        <td colspan="2"> </td>
     </tr>
     <tr>
         <td bgcolor="#cccccc" colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
@@ -718,17 +670,13 @@ require              valid-user
     <tr>
          <td bgcolor="#cccccc"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
          <td colspan="3" bgcolor="#ffffff">
-             <table border="0" cellspacing="4" summary="">
+             <table border="0" cellspacing="4">
                  <tr>
-                     <td>
-<pre>
-
-/C=DE/L=Munich/O=Snake Oil, Ltd./OU=Staff/CN=Foo:xxj31ZMTZzkVA
-/C=US/L=S.F./O=Snake Oil, Ltd./OU=CA/CN=Bar:xxj31ZMTZzkVA
-/C=US/L=L.A./O=Snake Oil, Ltd./OU=Dev/CN=Quux:xxj31ZMTZzkVA
-
-</pre>
-</td>
+                     <td><pre>
+/C=DE/L=Munich/O=Snake Oild, Ltd./OU=Staff/CN=Foo:xxj31ZMTZzkVA
+/C=US/L=S.F./O=Snake Oild, Ltd./OU=CA/CN=Bar:xxj31ZMTZzkVA
+/C=US/L=L.A./O=Snake Oild, Ltd./OU=Dev/CN=Quux:xxj31ZMTZzkVA
+</pre></td>
                  </tr>
              </table>
          </td>
@@ -741,11 +689,11 @@ require              valid-user
 <p>
 The second method:
 <p>
-<table border="0" cellpadding="0" cellspacing="0" summary="">
+<table border="0" cellpadding="0" cellspacing="0">
     <tr>
         <td colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="8" align="bottom" border="0"></td>
         <td rowspan="3">&nbsp;&nbsp;<font face="Arial,Helvetica" color="#999999">httpd.conf</font>&nbsp;&nbsp;</td>
-        <td colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
+        <td colspan="2"> </td>
     </tr>
     <tr>
         <td bgcolor="#cccccc" colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
@@ -760,11 +708,9 @@ The second method:
     <tr>
          <td bgcolor="#cccccc"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
          <td colspan="3" bgcolor="#ffffff">
-             <table border="0" cellspacing="4" summary="">
+             <table border="0" cellspacing="4">
                  <tr>
-                     <td>
-<pre>
-
+                     <td><pre>
 SSLVerifyClient      none
 &lt;Directory /usr/local/apache/htdocs/secure/area&gt;
 SSLVerifyClient      require
@@ -776,102 +722,7 @@ SSLRequireSSL
 SSLRequire           %{SSL_CLIENT_S_DN_O}  eq "Snake Oil, Ltd." and \
                      %{SSL_CLIENT_S_DN_OU} in {"Staff", "CA", "Dev"}
 &lt;/Directory&gt;
-
-</pre>
-</td>
-                 </tr>
-             </table>
-         </td>
-         <td bgcolor="#cccccc"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
-    </tr>
-    <tr>
-         <td colspan="5" bgcolor="#cccccc"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
-    </tr>
-</table>
-<p>
-<li><a name="ToC10"></a>
-    <a name="auth-intranet"></a>
-    <strong id="howto"> How can
-I require HTTPS with strong ciphers and either basic authentication or client
-certificates for access to a subarea on the Intranet website for clients
-coming from the Internet but still allow plain HTTP access for clients on the
-Intranet?
-</strong>&nbsp;&nbsp;
-    [<a href="http://www.modssl.org/docs/2.8/ssl_howto.html#auth-intranet"><b>L</b></a>]
-    <p>
-Let us assume the Intranet can be distinguished through the IP network
-192.160.1.0/24 and the subarea on the Intranet website has the URL
-<tt>/subarea</tt>. Then configure the following outside your HTTPS virtual
-host (so it applies to both HTTPS and HTTP):
-<p>
-<table border="0" cellpadding="0" cellspacing="0" summary="">
-    <tr>
-        <td colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="8" align="bottom" border="0"></td>
-        <td rowspan="3">&nbsp;&nbsp;<font face="Arial,Helvetica" color="#999999">httpd.conf</font>&nbsp;&nbsp;</td>
-        <td colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
-    </tr>
-    <tr>
-        <td bgcolor="#cccccc" colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
-        <td bgcolor="#cccccc" colspan="2"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
-    </tr>
-    <tr>
-         <td bgcolor="#cccccc"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="5" align="bottom" border="0"></td>
-         <td bgcolor="#ffffff"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="40" height="1" align="bottom" border="0"></td>
-         <td bgcolor="#ffffff"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="300" height="1" align="bottom" border="0"></td>
-         <td bgcolor="#cccccc"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="5" align="bottom" border="0"></td>
-    </tr>
-    <tr>
-         <td bgcolor="#cccccc"><img src="ssl_template.imgdot-1x1-transp.gif" alt="" width="1" height="1" align="bottom" border="0"></td>
-         <td colspan="3" bgcolor="#ffffff">
-             <table border="0" cellspacing="4" summary="">
-                 <tr>
-                     <td>
-<pre>
-
-SSLCACertificateFile conf/ssl.crt/company-ca.crt
-
-&lt;Directory /usr/local/apache/htdocs&gt;
-#   Outside the subarea only Intranet access is granted
-Order                deny,allow
-Deny                 from all
-Allow                from 192.168.1.0/24
-&lt;/Directory&gt;
-
-&lt;Directory /usr/local/apache/htdocs/subarea&gt;
-#   Inside the subarea any Intranet access is allowed
-#   but from the Internet only HTTPS + Strong-Cipher + Password
-#   or the alternative HTTPS + Strong-Cipher + Client-Certificate
-
-#   If HTTPS is used, make sure a strong cipher is used.
-#   Additionally allow client certs as alternative to basic auth.
-SSLVerifyClient      optional
-SSLVerifyDepth       1
-SSLOptions           +FakeBasicAuth +StrictRequire
-SSLRequire           %{SSL_CIPHER_USEKEYSIZE} &gt;= 128
-
-#   Force clients from the Internet to use HTTPS
-RewriteEngine        on
-RewriteCond          %{REMOTE_ADDR} !^192\.168\.1\.[0-9]+$
-RewriteCond          %{HTTPS} !=on
-RewriteRule          .* - [F]
-
-#   Allow Network Access and/or Basic Auth
-Satisfy              any
-
-#   Network Access Control
-Order                deny,allow
-Deny                 from all
-Allow                192.168.1.0/24
-
-#   HTTP Basic Authentication
-AuthType             basic
-AuthName             "Protected Intranet Area"
-AuthUserFile         conf/protected.passwd
-Require              valid-user
-&lt;/Directory&gt;
-
-</pre>
-</td>
+</pre></td>
                  </tr>
              </table>
          </td>
@@ -882,18 +733,56 @@ Require              valid-user
     </tr>
 </table>
 </ul>
-      <p>
+          <p>
       <br>
-      <table summary="">
+      <table>
       <tr>
         <td>
-           <table width="600" border="0" summary="">
+           <table width="600" border="0">
            <tr>
             <td valign="top" align="left" width="250">
-<a href="ssl_compat.html" onmouseover="ro_imgOver('ro_img_prev_bot', 'previous page'); return true" onmouseout="ro_imgNormal('ro_img_prev_bot'); return true" onfocus="ro_imgOver('ro_img_prev_bot', 'previous page'); return true" onblur="ro_imgNormal('ro_img_prev_bot'); return true"><img name="ro_img_prev_bot" src="ssl_template.navbut-prev-n.gif" alt="previous page" width="70" height="18" border="0"></a><br><font color="#000000">Compatibility</font>
+<script type="text/javascript" language="JavaScript">
+<!-- Hiding the code
+if (document.images) {
+    ro_img_prev_bot_n = new Image();
+    ro_img_prev_bot_n.src = "ssl_template.navbut-prev-n.gif";
+    ro_img_prev_bot_o = new Image();
+    ro_img_prev_bot_o.src = "ssl_template.navbut-prev-s.gif";
+}
+// done hiding -->
+</script>
+<a href="ssl_compat.html"
+   onMouseOver="ro_imgOver('ro_img_prev_bot', 'previous page'); return true"
+   onMouseOut="ro_imgNormal('ro_img_prev_bot'); return true"
+><img
+   name="ro_img_prev_bot"
+   src="ssl_template.navbut-prev-n.gif"
+   alt="previous page"
+   width="70" height="18"
+   border="0"
+></a><br><font color="#000000">Compatibility</font>
             </td>
             <td valign="top" align="right" width="250">
-<a href="ssl_faq.html" onmouseover="ro_imgOver('ro_img_next_bot', 'next page'); return true" onmouseout="ro_imgNormal('ro_img_next_bot'); return true" onfocus="ro_imgOver('ro_img_next_bot', 'next page'); return true" onblur="ro_imgNormal('ro_img_next_bot'); return true"><img name="ro_img_next_bot" src="ssl_template.navbut-next-n.gif" alt="next page" width="70" height="18" border="0"></a><br><font color="#000000">F.A.Q. List</font>
+<script type="text/javascript" language="JavaScript">
+<!-- Hiding the code
+if (document.images) {
+    ro_img_next_bot_n = new Image();
+    ro_img_next_bot_n.src = "ssl_template.navbut-next-n.gif";
+    ro_img_next_bot_o = new Image();
+    ro_img_next_bot_o.src = "ssl_template.navbut-next-s.gif";
+}
+// done hiding -->
+</script>
+<a href="ssl_faq.html"
+   onMouseOver="ro_imgOver('ro_img_next_bot', 'next page'); return true"
+   onMouseOut="ro_imgNormal('ro_img_next_bot'); return true"
+><img
+   name="ro_img_next_bot"
+   src="ssl_template.navbut-next-n.gif"
+   alt="next page"
+   width="70" height="18"
+   border="0"
+></a><br><font color="#000000">F.A.Q. List</font>
             </td>
            </tr>
            </table>
@@ -903,15 +792,15 @@ Require              valid-user
         <td><img src="ssl_template.imgdot-1x1-000000.gif" alt="" width="600" height="2" align="bottom" border="0"></td>
       </tr>
       <tr>
-        <td><table width="598" summary="">
+        <td>        <table width="598">
         <tr>
         <td align="left"><font face="Arial,Helvetica">
-        <a href="http://www.modssl.org/">mod_ssl</a> 2.8, User Manual<br>
-        The Apache Interface to OpenSSL
+        <a href="http://www.engelschall.com/sw/mod_ssl/">mod_ssl</a> 2.2, User Manual<br>
+        The Apache Interface to SSLeay
         </font>
         </td>
         <td align="right"><font face="Arial,Helvetica">
-        Copyright &copy; 1998-2001
+        Copyright &copy; 1998-1999
         <a href="http://www.engelschall.com/">Ralf S. Engelschall</a><br>
         All Rights Reserved<br>
         </font>

@@ -1,59 +1,58 @@
 /* ====================================================================
- * The Apache Software License, Version 1.1
- *
- * Copyright (c) 2000-2002 The Apache Software Foundation.  All rights
- * reserved.
+ * Copyright (c) 1995-1998 The Apache Group.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
  *
  * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
+ *    notice, this list of conditions and the following disclaimer. 
  *
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in
  *    the documentation and/or other materials provided with the
  *    distribution.
  *
- * 3. The end-user documentation included with the redistribution,
- *    if any, must include the following acknowledgment:
- *       "This product includes software developed by the
- *        Apache Software Foundation (http://www.apache.org/)."
- *    Alternately, this acknowledgment may appear in the software itself,
- *    if and wherever such third-party acknowledgments normally appear.
+ * 3. All advertising materials mentioning features or use of this
+ *    software must display the following acknowledgment:
+ *    "This product includes software developed by the Apache Group
+ *    for use in the Apache HTTP server project (http://www.apache.org/)."
  *
- * 4. The names "Apache" and "Apache Software Foundation" must
- *    not be used to endorse or promote products derived from this
- *    software without prior written permission. For written
- *    permission, please contact apache@apache.org.
+ * 4. The names "Apache Server" and "Apache Group" must not be used to
+ *    endorse or promote products derived from this software without
+ *    prior written permission. For written permission, please contact
+ *    apache@apache.org.
  *
- * 5. Products derived from this software may not be called "Apache",
- *    nor may "Apache" appear in their name, without prior written
- *    permission of the Apache Software Foundation.
+ * 5. Products derived from this software may not be called "Apache"
+ *    nor may "Apache" appear in their names without prior written
+ *    permission of the Apache Group.
  *
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESSED OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED.  IN NO EVENT SHALL THE APACHE SOFTWARE FOUNDATION OR
+ * 6. Redistributions of any form whatsoever must retain the following
+ *    acknowledgment:
+ *    "This product includes software developed by the Apache Group
+ *    for use in the Apache HTTP server project (http://www.apache.org/)."
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE APACHE GROUP ``AS IS'' AND ANY
+ * EXPRESSED OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE APACHE GROUP OR
  * ITS CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
- * USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
- * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
- * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
- * OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+ * OF THE POSSIBILITY OF SUCH DAMAGE.
  * ====================================================================
  *
  * This software consists of voluntary contributions made by many
- * individuals on behalf of the Apache Software Foundation.  For more
- * information on the Apache Software Foundation, please see
- * <http://www.apache.org/>.
+ * individuals on behalf of the Apache Group and was originally based
+ * on public domain software written at the National Center for
+ * Supercomputing Applications, University of Illinois, Urbana-Champaign.
+ * For more information on the Apache Group and the Apache HTTP server
+ * project, please see <http://www.apache.org/>.
  *
- * Portions of this software are based upon public domain software
- * originally written at the National Center for Supercomputing Applications,
- * University of Illinois, Urbana-Champaign.
  */
 
 /* 
@@ -126,7 +125,6 @@
  */
 
 
-#define CORE_PRIVATE
 #include "httpd.h"
 #include "http_config.h"
 #include "http_log.h"
@@ -179,9 +177,6 @@ static void unload_module(moduleinfo *modi)
     ap_remove_loaded_module(modi->modp);
 
     /* unload the module space itself */
-#ifdef NETWARE
-    ap_os_dso_unsym((ap_os_dso_handle_t)modi->modp->dynamic_load_handle, modi->name);
-#endif
     ap_os_dso_unload((ap_os_dso_handle_t)modi->modp->dynamic_load_handle);
 
     /* destroy the module information */
@@ -217,11 +212,6 @@ static const char *load_module(cmd_parms *cmd, void *dummy,
     moduleinfo *modie;
     int i;
 
-    const char *err = ap_check_cmd_context(cmd, GLOBAL_ONLY);
-    if (err != NULL) {
-        return err;
-    }
-    
     /* 
      * check for already existing module
      * If it already exists, we have nothing to do 
@@ -231,11 +221,8 @@ static const char *load_module(cmd_parms *cmd, void *dummy,
     modie = (moduleinfo *)sconf->loaded_modules->elts;
     for (i = 0; i < sconf->loaded_modules->nelts; i++) {
         modi = &modie[i];
-        if (modi->name != NULL && strcmp(modi->name, modname) == 0) {
-            ap_log_error(APLOG_MARK, APLOG_WARNING|APLOG_NOERRNO, cmd->server,
-                          "module %s is already loaded, skipping", modname);
+        if (modi->name != NULL && strcmp(modi->name, modname) == 0)
             return NULL;
-        }
     }
     modi = ap_push_array(sconf->loaded_modules);
     modi->name = modname;
@@ -259,34 +246,11 @@ static const char *load_module(cmd_parms *cmd, void *dummy,
      * symbol name.
      */
     if (!(modp = (module *)(ap_os_dso_sym(modhandle, modname)))) {
-	return ap_pstrcat(cmd->pool, "Can't locate API module structure `", modname,
-		       "' in file ", szModuleFile, ": ", ap_os_dso_error(), NULL);
+	return ap_pstrcat(cmd->pool, "Can't find module ", modname,
+		       " in file ", filename, ":", ap_os_dso_error(), NULL);
     }
     modi->modp = modp;
-    modp->dynamic_load_handle = (void *)modhandle;
-
-    /* 
-     * Make sure the found module structure is really a module structure
-     * 
-     */
-#ifdef EAPI
-    if (   modp->magic != MODULE_MAGIC_COOKIE_AP13 
-        && modp->magic != MODULE_MAGIC_COOKIE_EAPI) {
-#else
-    if (modp->magic != MODULE_MAGIC_COOKIE) {
-#endif
-        return ap_pstrcat(cmd->pool, "API module structure `", modname,
-                          "' in file ", szModuleFile, " is garbled -"
-                          " perhaps this is not an Apache module DSO?", NULL);
-    }
-#ifdef EAPI
-    if (modp->magic == MODULE_MAGIC_COOKIE_AP13) {
-        ap_log_error(APLOG_MARK, APLOG_WARNING|APLOG_NOERRNO, NULL,
-                     "Loaded DSO %s uses plain Apache 1.3 API, "
-                     "this module might crash under EAPI! "
-                     "(please recompile it with -DEAPI)", filename);
-    }
-#endif
+    modp->dynamic_load_handle = modhandle;
 
     /* 
      * Add this module to the Apache core structures
@@ -302,9 +266,15 @@ static const char *load_module(cmd_parms *cmd, void *dummy,
 		     (void (*)(void*))unload_module, ap_null_cleanup);
 
     /* 
-     * Finally we need to run the configuration process for the module
+     * Finally we need to run the configuration functions 
+     * in new modules now.
      */
-    ap_single_module_configure(cmd->pool, cmd->server, modp);
+    if (modp->create_server_config)
+      ((void**)cmd->server->module_config)[modp->module_index] =
+	(*modp->create_server_config)(cmd->pool, cmd->server);
+    if (modp->create_dir_config)
+      ((void**)cmd->server->lookup_defaults)[modp->module_index] =
+	(*modp->create_dir_config)(cmd->pool, NULL);
 
     return NULL;
 }
@@ -316,14 +286,9 @@ static const char *load_module(cmd_parms *cmd, void *dummy,
 
 static const char *load_file(cmd_parms *cmd, void *dummy, char *filename)
 {
-    ap_os_dso_handle_t handle;
+    void *handle;
     char *file;
 
-    const char *err = ap_check_cmd_context(cmd, GLOBAL_ONLY);
-    if (err != NULL) {
-        return err;
-    }
-    
     file = ap_server_root_relative(cmd->pool, filename);
     
     if (!(handle = ap_os_dso_load(file))) {
@@ -337,7 +302,7 @@ static const char *load_file(cmd_parms *cmd, void *dummy, char *filename)
     ap_log_error(APLOG_MARK, APLOG_DEBUG|APLOG_NOERRNO, NULL,
 		"loaded file %s", filename);
 
-    ap_register_cleanup(cmd->pool, (void *)handle, unload_file, ap_null_cleanup);
+    ap_register_cleanup(cmd->pool, handle, unload_file, ap_null_cleanup);
 
     return NULL;
 }
@@ -381,7 +346,6 @@ module MODULE_VAR_EXPORT so_module = {
    NULL,			/* check auth */
    NULL,			/* check access */
    NULL,			/* type_checker */
-   NULL,			/* fixer_upper */
    NULL,			/* logger */
    NULL,			/* header parser */
    NULL,			/* child_init */

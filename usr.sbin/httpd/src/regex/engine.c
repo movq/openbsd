@@ -46,7 +46,6 @@ struct match {
 };
 
 #include "engine.ih"
-#include "ap_ctype.h"
 
 #ifdef REDEBUG
 #define	SP(t, s, c)	print(m, t, s, c, stdout)
@@ -72,7 +71,7 @@ regmatch_t pmatch[];
 int eflags;
 {
 	register char *endp;
-	register size_t i;
+	register int i;
 	struct match mv;
 	register struct match *m = &mv;
 	register char *dp;
@@ -1000,7 +999,7 @@ int ch;
 {
 	static char pbuf[10];
 
-	if (ap_isprint(ch) || ch == ' ')
+	if (isprint(ch) || ch == ' ')
 		sprintf(pbuf, "%c", ch);
 	else
 		sprintf(pbuf, "\\%o", ch);

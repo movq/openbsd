@@ -1,59 +1,58 @@
 /* ====================================================================
- * The Apache Software License, Version 1.1
- *
- * Copyright (c) 2000-2002 The Apache Software Foundation.  All rights
- * reserved.
+ * Copyright (c) 1995-1998 The Apache Group.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
  *
  * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
+ *    notice, this list of conditions and the following disclaimer. 
  *
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in
  *    the documentation and/or other materials provided with the
  *    distribution.
  *
- * 3. The end-user documentation included with the redistribution,
- *    if any, must include the following acknowledgment:
- *       "This product includes software developed by the
- *        Apache Software Foundation (http://www.apache.org/)."
- *    Alternately, this acknowledgment may appear in the software itself,
- *    if and wherever such third-party acknowledgments normally appear.
+ * 3. All advertising materials mentioning features or use of this
+ *    software must display the following acknowledgment:
+ *    "This product includes software developed by the Apache Group
+ *    for use in the Apache HTTP server project (http://www.apache.org/)."
  *
- * 4. The names "Apache" and "Apache Software Foundation" must
- *    not be used to endorse or promote products derived from this
- *    software without prior written permission. For written
- *    permission, please contact apache@apache.org.
+ * 4. The names "Apache Server" and "Apache Group" must not be used to
+ *    endorse or promote products derived from this software without
+ *    prior written permission. For written permission, please contact
+ *    apache@apache.org.
  *
- * 5. Products derived from this software may not be called "Apache",
- *    nor may "Apache" appear in their name, without prior written
- *    permission of the Apache Software Foundation.
+ * 5. Products derived from this software may not be called "Apache"
+ *    nor may "Apache" appear in their names without prior written
+ *    permission of the Apache Group.
  *
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESSED OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED.  IN NO EVENT SHALL THE APACHE SOFTWARE FOUNDATION OR
+ * 6. Redistributions of any form whatsoever must retain the following
+ *    acknowledgment:
+ *    "This product includes software developed by the Apache Group
+ *    for use in the Apache HTTP server project (http://www.apache.org/)."
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE APACHE GROUP ``AS IS'' AND ANY
+ * EXPRESSED OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE APACHE GROUP OR
  * ITS CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
- * USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
- * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
- * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
- * OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+ * OF THE POSSIBILITY OF SUCH DAMAGE.
  * ====================================================================
  *
  * This software consists of voluntary contributions made by many
- * individuals on behalf of the Apache Software Foundation.  For more
- * information on the Apache Software Foundation, please see
- * <http://www.apache.org/>.
+ * individuals on behalf of the Apache Group and was originally based
+ * on public domain software written at the National Center for
+ * Supercomputing Applications, University of Illinois, Urbana-Champaign.
+ * For more information on the Apache Group and the Apache HTTP server
+ * project, please see <http://www.apache.org/>.
  *
- * Portions of this software are based upon public domain software
- * originally written at the National Center for Supercomputing Applications,
- * University of Illinois, Urbana-Champaign.
  */
 
 /*
@@ -107,8 +106,8 @@
  *   CustomLog   logs/referer  "%{referer}i -> %U"
  *   CustomLog   logs/agent    "%{user-agent}i"
  *
- * RefererIgnore functionality can be obtained with conditional
- * logging (SetEnvIf and CustomLog ... env=!VAR).
+ * Except: no RefererIgnore functionality
+ *         logs '-' if no Referer or User-Agent instead of nothing
  *
  * But using this method allows much easier modification of the
  * log format, e.g. to log hosts along with UA:
@@ -118,18 +117,11 @@
  * literal characters copied into the log files, and '%' directives as
  * follows:
  *
- * %...B:  bytes sent, excluding HTTP headers.
- * %...b:  bytes sent, excluding HTTP headers in CLF format, i.e. a '-'
- *         when no bytes where sent (rather than a '0'.
- * %...c:  Status of the connection.
- *         'X' = connection aborted before the response completed.
- *         '+' = connection may be kept alive after the response is sent.
- *         '-' = connection will be closed after the response is sent.
+ * %...b:  bytes sent, excluding HTTP headers.
  * %...{FOOBAR}e:  The contents of the environment variable FOOBAR
  * %...f:  filename
  * %...h:  remote host
  * %...a:  remote IP-address
- * %...A:  local IP-address
  * %...{Foobar}i:  The contents of Foobar: header line(s) in the request
  *                 sent to the client.
  * %...l:  remote logname (from identd, if supplied)
@@ -146,11 +138,7 @@
  * %...T:  the time taken to serve the request, in seconds.
  * %...u:  remote user (from auth; may be bogus if return status (%s) is 401)
  * %...U:  the URL path requested.
- * %...v:  the configured name of the server (i.e. which virtual host?)
- * %...V:  the server name according to the UseCanonicalName setting
- * %...m:  the request method
- * %...H:  the request protocol
- * %...q:  the query string prepended by "?", or empty if no query string
+ * %...v:  the name of the server (i.e. which virtual host?)
  *
  * The '...' can be nothing at all (e.g. "%h %u %r %s %b"), or it can
  * indicate conditions for inclusion of the item (which will cause it
@@ -188,7 +176,7 @@
 module MODULE_VAR_EXPORT config_log_module;
 
 static int xfer_flags = (O_WRONLY | O_APPEND | O_CREAT);
-#if defined(OS2) || defined(WIN32) || defined(NETWARE)
+#if defined(OS2) || defined(WIN32)
 /* OS/2 dosen't support users and groups */
 static mode_t xfer_mode = (S_IREAD | S_IWRITE);
 #else
@@ -214,9 +202,10 @@ static mode_t xfer_mode = (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
  * multi_log_state is our per-(virtual)-server configuration. We store
  * an array of the logs we are going to use, each of type config_log_state.
  * If a default log format is given by LogFormat, store in default_format
- * (backward compat. with mod_log_config).  We also store for each virtual
- * server a pointer to the logs specified for the main server, so that if this
- * vhost has no logs defined, we can use the main server's logs instead.
+ * (backward compat. with mod_log_config). We also store a pointer to
+ * the logs specified for the main server for virtual servers, so that
+ * if this vhost has now logs defined, we can use the main server's
+ * logs instead.
  *
  * So, for the main server, config_logs contains a list of the log files
  * and server_config_logs in empty. For a vhost, server_config_logs
@@ -247,7 +236,6 @@ typedef struct {
     char *format_string;
     array_header *format;
     int log_fd;
-    char *condition_var;
 #ifdef BUFFERED_LOGS
     int outcnt;
     char outbuf[LOG_BUFSIZE];
@@ -262,9 +250,6 @@ typedef struct {
 typedef const char *(*item_key_func) (request_rec *, char *);
 
 typedef struct {
-#ifdef EAPI
-    char ch;
-#endif
     item_key_func func;
     char *arg;
     int condition_sense;
@@ -301,11 +286,6 @@ static const char *log_remote_host(request_rec *r, char *a)
 static const char *log_remote_address(request_rec *r, char *a)
 {
     return r->connection->remote_ip;
-}
-
-static const char *log_local_address(request_rec *r, char *a)
-{
-    return r->connection->local_ip;
 }
 
 static const char *log_remote_logname(request_rec *r, char *a)
@@ -347,25 +327,12 @@ static const char *log_request_uri(request_rec *r, char *a)
 {
     return r->uri;
 }
-static const char *log_request_method(request_rec *r, char *a)
-{
-    return r->method;
-}
-static const char *log_request_protocol(request_rec *r, char *a)
-{
-    return r->protocol;
-}
-static const char *log_request_query(request_rec *r, char *a)
-{
-    return (r->args != NULL) ? ap_pstrcat(r->pool, "?", r->args, NULL)
-                             : "";
-}
 static const char *log_status(request_rec *r, char *a)
 {
     return pfmt(r->pool, r->status);
 }
 
-static const char *clf_log_bytes_sent(request_rec *r, char *a)
+static const char *log_bytes_sent(request_rec *r, char *a)
 {
     if (!r->sent_bodyct) {
         return "-";
@@ -377,19 +344,6 @@ static const char *clf_log_bytes_sent(request_rec *r, char *a)
     }
 }
 
-static const char *log_bytes_sent(request_rec *r, char *a)
-{
-    if (!r->sent_bodyct) {
-        return "0";
-    }
-    else {
-        long int bs;
-        ap_bgetopt(r->connection->client, BO_BYTECT, &bs);
-	return ap_psprintf(r->pool, "%ld", bs);
-    }
-}
-
-
 static const char *log_header_in(request_rec *r, char *a)
 {
     return ap_table_get(r->headers_in, a);
@@ -399,7 +353,7 @@ static const char *log_header_out(request_rec *r, char *a)
 {
     const char *cp = ap_table_get(r->headers_out, a);
     if (!strcasecmp(a, "Content-type") && r->content_type) {
-        cp = ap_field_noparam(r->pool, r->content_type);
+        cp = r->content_type;
     }
     if (cp) {
         return cp;
@@ -429,14 +383,16 @@ static const char *log_request_time(request_rec *r, char *a)
     }
     else {                      /* CLF format */
         char sign = (timz < 0 ? '-' : '+');
+	size_t l;
 
         if (timz < 0) {
             timz = -timz;
         }
-        ap_snprintf(tstr, sizeof(tstr), "[%02d/%s/%d:%02d:%02d:%02d %c%.2d%.2d]",
-                t->tm_mday, ap_month_snames[t->tm_mon], t->tm_year+1900, 
-                t->tm_hour, t->tm_min, t->tm_sec,
-                sign, timz / 60, timz % 60);
+
+        strftime(tstr, MAX_STRING_LEN, "[%d/%b/%Y:%H:%M:%S ", t);
+	l = strlen(tstr);
+        ap_snprintf(tstr + l, sizeof(tstr) - l,
+                    "%c%.2d%.2d]", sign, timz / 60, timz % 60);
     }
 
     return ap_pstrdup(r->pool, tstr);
@@ -452,39 +408,19 @@ static const char *log_request_duration(request_rec *r, char *a)
  */
 static const char *log_virtual_host(request_rec *r, char *a)
 {
-    return r->server->server_hostname;
+    return ap_get_server_name(r);
 }
 
 static const char *log_server_port(request_rec *r, char *a)
 {
-    return ap_psprintf(r->pool, "%u",
-	r->server->port ? r->server->port : ap_default_port(r));
-}
-
-/* This respects the setting of UseCanonicalName so that
- * the dynamic mass virtual hosting trick works better.
- */
-static const char *log_server_name(request_rec *r, char *a)
-{
-    return ap_get_server_name(r);
+    return ap_psprintf(r->pool, "%u", ap_get_server_port(r));
 }
 
 static const char *log_child_pid(request_rec *r, char *a)
 {
     return ap_psprintf(r->pool, "%ld", (long) getpid());
 }
-static const char *log_connection_status(request_rec *r, char *a)
-{
-    if (r->connection->aborted)
-        return "X";
 
-    if ((r->connection->keepalive) &&
-        ((r->server->keep_alive_max - r->connection->keepalives) > 0)) {
-        return "+";
-    }
-
-    return "-";
-}
 /*****************************************************************
  *
  * Parsing the log format string
@@ -501,9 +437,6 @@ static struct log_item_list {
     },
     {   
         'a', log_remote_address, 0 
-    },
-    {   
-        'A', log_local_address, 0 
     },
     {
         'l', log_remote_logname, 0
@@ -530,10 +463,7 @@ static struct log_item_list {
         's', log_status, 1
     },
     {
-        'b', clf_log_bytes_sent, 0
-    },
-    {
-        'B', log_bytes_sent, 0
+        'b', log_bytes_sent, 0
     },
     {
         'i', log_header_in, 0
@@ -548,9 +478,6 @@ static struct log_item_list {
         'e', log_env_var, 0
     },
     {
-        'V', log_server_name, 0
-    },
-    {
         'v', log_virtual_host, 0
     },
     {
@@ -560,110 +487,46 @@ static struct log_item_list {
         'P', log_child_pid, 0
     },
     {
-        'H', log_request_protocol, 0
-    },
-    {
-        'm', log_request_method, 0
-    },
-    {
-        'q', log_request_query, 0
-    },
-    {
-        'c', log_connection_status, 0
-    },
-    {
         '\0'
     }
 };
 
-#ifdef EAPI
-static struct log_item_list *find_log_func(pool *p, char k)
-#else /* EAPI */
 static struct log_item_list *find_log_func(char k)
-#endif /* EAPI */
 {
     int i;
-#ifdef EAPI
-    struct log_item_list *lil;
-#endif /* EAPI */
 
     for (i = 0; log_item_keys[i].ch; ++i)
         if (k == log_item_keys[i].ch) {
             return &log_item_keys[i];
         }
 
-#ifdef EAPI
-    if (ap_hook_status(ap_psprintf(p, "ap::mod_log_config::log_%c", k)) 
-        != AP_HOOK_STATE_NOTEXISTANT) {
-        lil = (struct log_item_list *)
-              ap_pcalloc(p, sizeof(struct log_item_list));
-        if (lil == NULL)
-            return NULL;
-        lil->ch = k;
-        lil->func = NULL;
-        lil->want_orig_default = 0;
-        return lil;
-    }
-#endif /* EAPI */
-
     return NULL;
+}
+
+static char *log_format_substring(pool *p, const char *start,
+                                  const char *end)
+{
+    char *res = ap_palloc(p, end - start + 1);
+
+    strncpy(res, start, end - start);
+    res[end - start] = '\0';
+    return res;
 }
 
 static char *parse_log_misc_string(pool *p, log_format_item *it,
                                    const char **sa)
 {
-    const char *s;
-    char *d;
+    const char *s = *sa;
 
     it->func = constant_item;
     it->conditions = NULL;
 
-    s = *sa;
     while (*s && *s != '%') {
-	s++;
+        ++s;
     }
-    /*
-     * This might allocate a few chars extra if there's a backslash
-     * escape in the format string.
-     */
-    it->arg = ap_palloc(p, s - *sa + 1);
-
-    d = it->arg;
-    s = *sa;
-    while (*s && *s != '%') {
-	if (*s != '\\') {
-	    *d++ = *s++;
-	}
-	else {
-	    s++;
-	    switch (*s) {
-	    case '\\':
-		*d++ = '\\';
-		s++;
-		break;
-	    case 'n':
-		*d++ = '\n';
-		s++;
-		break;
-	    case 't':	
-		*d++ = '\t';
-		s++;
-		break;
-	    default:
-		/* copy verbatim */
-		*d++ = '\\';
-		/*
-		 * Allow the loop to deal with this *s in the normal
-		 * fashion so that it handles end of string etc.
-		 * properly.
-		 */
-		break;
-	    }
-	}
-    }
-    *d = '\0';
-
+    it->arg = log_format_substring(p, *sa, s);
     *sa = s;
+
     return NULL;
 }
 
@@ -731,11 +594,7 @@ static char *parse_log_item(pool *p, log_format_item *it, const char **sa)
             break;
 
         default:
-#ifdef EAPI
-            l = find_log_func(p, *s++);
-#else /* EAPI */
             l = find_log_func(*s++);
-#endif /* EAPI */
             if (!l) {
                 char dummy[2];
 
@@ -744,9 +603,6 @@ static char *parse_log_item(pool *p, log_format_item *it, const char **sa)
                 return ap_pstrcat(p, "Unrecognized LogFormat directive %",
                                dummy, NULL);
             }
-#ifdef EAPI
-            it->ch = s[-1];
-#endif
             it->func = l->func;
             if (it->want_orig == -1) {
                 it->want_orig = l->want_orig_default;
@@ -808,15 +664,6 @@ static const char *process_item(request_rec *r, request_rec *orig,
 
     /* We do.  Do it... */
 
-#ifdef EAPI
-    if (item->func == NULL) {
-        cp = NULL;
-        ap_hook_use(ap_psprintf(r->pool, "ap::mod_log_config::log_%c", item->ch),
-                    AP_HOOK_SIG3(ptr,ptr,ptr), AP_HOOK_DECLINE(NULL),
-                    &cp, r, item->arg);
-    }
-    else
-#endif
     cp = (*item->func) (item->want_orig ? orig : r, item->arg);
     return cp ? cp : "-";
 }
@@ -842,28 +689,9 @@ static int config_log_transaction(request_rec *r, config_log_state *cls,
     int i;
     int len = 0;
     array_header *format;
-    char *envar;
 
     if (cls->fname == NULL) {
         return DECLINED;
-    }
-
-    /*
-     * See if we've got any conditional envariable-controlled logging decisions
-     * to make.
-     */
-    if (cls->condition_var != NULL) {
-	envar = cls->condition_var;
-	if (*envar != '!') {
-	    if (ap_table_get(r->subprocess_env, envar) == NULL) {
-		return DECLINED;
-	    }
-	}
-	else {
-	    if (ap_table_get(r->subprocess_env, &envar[1]) != NULL) {
-		return DECLINED;
-	    }
-	}
     }
 
     format = cls->format ? cls->format : default_format;
@@ -924,13 +752,10 @@ static int config_log_transaction(request_rec *r, config_log_state *cls,
 static int multi_log_transaction(request_rec *r)
 {
     multi_log_state *mls = ap_get_module_config(r->server->module_config,
-						&config_log_module);
+                                             &config_log_module);
     config_log_state *clsarray;
     int i;
 
-    /*
-     * Log this transaction..
-     */
     if (mls->config_logs->nelts) {
         clsarray = (config_log_state *) mls->config_logs->elts;
         for (i = 0; i < mls->config_logs->nelts; ++i) {
@@ -958,9 +783,8 @@ static int multi_log_transaction(request_rec *r)
 
 static void *make_config_log_state(pool *p, server_rec *s)
 {
-    multi_log_state *mls;
+    multi_log_state *mls = (multi_log_state *) ap_palloc(p, sizeof(multi_log_state));
 
-    mls = (multi_log_state *) ap_palloc(p, sizeof(multi_log_state));
     mls->config_logs = ap_make_array(p, 1, sizeof(config_log_state));
     mls->default_format_string = NULL;
     mls->default_format = NULL;
@@ -1000,7 +824,7 @@ static const char *log_format(cmd_parms *cmd, void *dummy, char *fmt,
 {
     const char *err_string = NULL;
     multi_log_state *mls = ap_get_module_config(cmd->server->module_config,
-						&config_log_module);
+                                             &config_log_module);
 
     /*
      * If we were given two arguments, the second is a name to be given to the
@@ -1020,31 +844,18 @@ static const char *log_format(cmd_parms *cmd, void *dummy, char *fmt,
     return err_string;
 }
 
-
 static const char *add_custom_log(cmd_parms *cmd, void *dummy, char *fn,
-                                  char *fmt, char *envclause)
+                                  char *fmt)
 {
     const char *err_string = NULL;
     multi_log_state *mls = ap_get_module_config(cmd->server->module_config,
-						&config_log_module);
+                                             &config_log_module);
     config_log_state *cls;
 
     cls = (config_log_state *) ap_push_array(mls->config_logs);
-    cls->condition_var = NULL;
-    if (envclause != NULL) {
-	if (strncasecmp(envclause, "env=", 4) != 0) {
-	    return "error in condition clause";
-	}
-	if ((envclause[4] == '\0')
-	    || ((envclause[4] == '!') && (envclause[5] == '\0'))) {
-	    return "missing environment variable name";
-	}
-	cls->condition_var = ap_pstrdup(cmd->pool, &envclause[4]);
-    }
-
     cls->fname = fn;
     cls->format_string = fmt;
-    if (fmt == NULL) {
+    if (!fmt) {
         cls->format = NULL;
     }
     else {
@@ -1057,19 +868,18 @@ static const char *add_custom_log(cmd_parms *cmd, void *dummy, char *fn,
 
 static const char *set_transfer_log(cmd_parms *cmd, void *dummy, char *fn)
 {
-    return add_custom_log(cmd, dummy, fn, NULL, NULL);
+    return add_custom_log(cmd, dummy, fn, NULL);
 }
 
 static const char *set_cookie_log(cmd_parms *cmd, void *dummy, char *fn)
 {
-    return add_custom_log(cmd, dummy, fn, "%{Cookie}n \"%r\" %t", NULL);
+    return add_custom_log(cmd, dummy, fn, "%{Cookie}n \"%r\" %t");
 }
 
 static const command_rec config_log_cmds[] =
 {
-    {"CustomLog", add_custom_log, NULL, RSRC_CONF, TAKE23,
-     "a file name, a custom log format string or format name, "
-     "and an optional \"env=\" clause (see docs)"},
+    {"CustomLog", add_custom_log, NULL, RSRC_CONF, TAKE2,
+     "a file name and a custom log format string or format name"},
     {"TransferLog", set_transfer_log, NULL, RSRC_CONF, TAKE1,
      "the filename of the access log"},
     {"LogFormat", log_format, NULL, RSRC_CONF, TAKE12,
@@ -1104,7 +914,7 @@ static config_log_state *open_config_log(server_rec *s, pool *p,
         char *fname = ap_server_root_relative(p, cls->fname);
         if ((cls->log_fd = ap_popenf(p, fname, xfer_flags, xfer_mode)) < 0) {
             ap_log_error(APLOG_MARK, APLOG_ERR, s,
-                         "could not open transfer log file %s.", fname);
+                         "httpd: could not open transfer log file %s.", fname);
             exit(1);
         }
     }

@@ -35,7 +35,7 @@ NULL=nul
 ################################################################################
 # Begin Project
 RSC=rc.exe
-CPP=bcc32.exe
+CPP=cl.exe
 
 !IF  "$(CFG)" == "MakeModuleMak - Win32 Release"
 
@@ -63,8 +63,8 @@ CLEAN :
 
 # ADD BASE CPP /nologo /W3 /GX /O2 /D "WIN32" /D "NDEBUG" /D "_CONSOLE" /YX /c
 # ADD CPP /nologo /W3 /GX /O2 /D "WIN32" /D "NDEBUG" /D "_CONSOLE" /YX /c
-CPP_PROJ=-s /ML -w-8057 -w-8008 -w-8066 /O2 -D"WIN32" -D"NDEBUG" -D"_CONSOLE"\
- /Fp"$(INTDIR)/MakeModuleMak.pch" /YX -o"$(INTDIR)/$&.obj" /c 
+CPP_PROJ=/nologo /ML /W3 /GX /O2 /D "WIN32" /D "NDEBUG" /D "_CONSOLE"\
+ /Fp"$(INTDIR)/MakeModuleMak.pch" /YX /Fo"$(INTDIR)/" /c 
 CPP_OBJS=.\Release/
 CPP_SBRS=.\.
 # ADD BASE RSC /l 0x809 /d "NDEBUG"
@@ -121,8 +121,8 @@ CLEAN :
 
 # ADD BASE CPP /nologo /W3 /Gm /GX /Zi /Od /D "WIN32" /D "_DEBUG" /D "_CONSOLE" /YX /c
 # ADD CPP /nologo /W3 /Gm /GX /Zi /Od /D "WIN32" /D "_DEBUG" /D "_CONSOLE" /YX /c
-CPP_PROJ=-s /MLd -w-8057 -w-8008 -w-8066 /Gm -v /Od -D"WIN32" -D"_DEBUG" -D"_CONSOLE"\
- /Fp"$(INTDIR)/MakeModuleMak.pch" /YX -o"$(INTDIR)/$&.obj" /c 
+CPP_PROJ=/nologo /MLd /W3 /Gm /GX /Zi /Od /D "WIN32" /D "_DEBUG" /D "_CONSOLE"\
+ /Fp"$(INTDIR)/MakeModuleMak.pch" /YX /Fo"$(INTDIR)/" /Fd"$(INTDIR)/" /c 
 CPP_OBJS=.\Debug/
 CPP_SBRS=.\.
 # ADD BASE RSC /l 0x809 /d "_DEBUG"
@@ -151,13 +151,13 @@ LINK32_OBJS= \
 
 !ENDIF 
 
-.c.obj:
+.c{$(CPP_OBJS)}.obj:
    $(CPP) $(CPP_PROJ) $<  
 
-.cpp.obj:
+.cpp{$(CPP_OBJS)}.obj:
    $(CPP) $(CPP_PROJ) $<  
 
-.cxx.obj:
+.cxx{$(CPP_OBJS)}.obj:
    $(CPP) $(CPP_PROJ) $<  
 
 .c{$(CPP_SBRS)}.sbr:
@@ -184,9 +184,9 @@ LINK32_OBJS= \
 ################################################################################
 # Begin Source File
 
-SOURCE_1=.\MakeModuleMak.cpp
+SOURCE=.\MakeModuleMak.cpp
 
-"$(INTDIR)\MakeModuleMak.obj" : $(SOURCE_0) "$(INTDIR)"
+"$(INTDIR)\MakeModuleMak.obj" : $(SOURCE) "$(INTDIR)"
 
 
 # End Source File

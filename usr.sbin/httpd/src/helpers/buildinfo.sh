@@ -1,7 +1,7 @@
 #!/bin/sh
 ##
 ##  buildinfo.sh -- Determine Build Information
-##  Initially written by Ralf S. Engelschall <rse@apache.org>
+##  Written by Ralf S. Engelschall <rse@apache.org>
 ##  for the Apache's Autoconf-style Interface (APACI) 
 ##
 #
@@ -16,10 +16,10 @@ error=no
 if [ $# -ne 1 -a $# -ne 2 ]; then
     error=yes
 fi
-if [ $# -eq 2 -a "x$1" != "x-n" ]; then
+if [ $# -eq 2 -a ".$1" != ".-n" ]; then
     error=yes
 fi
-if [ "x$error" = "xyes" ]; then
+if [ $error = yes ]; then
     echo "$0:Error: invalid argument line"
     echo "$0:Usage: $0 [-n] <format-string>"
     echo "Where <format-string> can contain:"
@@ -55,15 +55,15 @@ time_monthname=''
 #   determine username
 #
 username="$LOGNAME"
-if [ "x$username" = "x" ]; then
+if [ ".$username" = . ]; then
     username="$USER"
-    if [ "x$username" = "x" ]; then
-        username="`(whoami) 2>/dev/null |\
+    if [ ".$username" = . ]; then
+        username="`whoami 2>/dev/null |\
                    awk '{ printf("%s", $1); }'`"
-        if [ "x$username" = "x" ]; then
-            username="`(who am i) 2>/dev/null |\
+        if [ ".$username" = . ]; then
+            username="`who am i 2>/dev/null |\
                        awk '{ printf("%s", $1); }'`"
-            if [ "x$username" = "x" ]; then
+            if [ ".$username" = . ]; then
                 username='unknown'
             fi
         fi
@@ -73,12 +73,12 @@ fi
 #
 #   determine hostname and domainname
 #
-hostname="`(uname -n) 2>/dev/null |\
+hostname="`uname -n 2>/dev/null |\
            awk '{ printf("%s", $1); }'`"
-if [ "x$hostname" = "x" ]; then
-    hostname="`(hostname) 2>/dev/null |\
+if [ ".$hostname" = . ]; then
+    hostname="`hostname 2>/dev/null |\
                awk '{ printf("%s", $1); }'`"
-    if [ "x$hostname" = "x" ]; then
+    if [ ".$hostname" = . ]; then
         hostname='unknown'
     fi
 fi
@@ -88,14 +88,14 @@ case $hostname in
         hostname="`echo $hostname | cut -d. -f1`"
         ;;
 esac
-if [ "x$domainname" = "x" ]; then
+if [ ".$domainname" = . ]; then
     if [ -f /etc/resolv.conf ]; then
         domainname="`egrep '^[ 	]*domain' /etc/resolv.conf | head -1 |\
                      sed -e 's/.*domain//' \
                          -e 's/^[ 	]*//' -e 's/^ *//' -e 's/^	*//' \
                          -e 's/^\.//' -e 's/^/./' |\
                      awk '{ printf("%s", $1); }'`"
-        if [ "x$domainname" = "x" ]; then
+        if [ ".$domainname" = . ]; then
             domainname="`egrep '^[ 	]*search' /etc/resolv.conf | head -1 |\
                          sed -e 's/.*search//' \
                              -e 's/^[ 	]*//' -e 's/^ *//' -e 's/^	*//' \
@@ -112,11 +112,11 @@ fi
 time_day="`date '+%d' | awk '{ printf("%s", $1); }'`"
 time_month="`date '+%m' | awk '{ printf("%s", $1); }'`"
 time_year="`date '+%Y' 2>/dev/null | awk '{ printf("%s", $1); }'`"
-if [ "x$time_year" = "x" ]; then
+if test ".$time_year" = .; then
     time_year="`date '+%y' | awk '{ printf("%s", $1); }'`"
     case $time_year in
-        [5-9][0-9]) time_year="19$time_year" ;;
-        [0-4][0-9]) time_year="20$time_year" ;;
+        9[0-9]*) time_year="19$time_year" ;;
+              *) time_year="20$time_year" ;;
     esac
 fi
 case $time_month in
@@ -137,7 +137,7 @@ esac
 #
 #   create result string
 #
-if [ "x$newline" = "xyes" ]; then
+if [ ".$newline" = .yes ]; then
     echo $format_string |\
     sed -e "s;%u;$username;g" \
         -e "s;%h;$hostname;g" \

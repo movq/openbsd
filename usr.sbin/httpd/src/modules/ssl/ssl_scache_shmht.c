@@ -9,7 +9,7 @@
 */
 
 /* ====================================================================
- * Copyright (c) 1998-2001 Ralf S. Engelschall. All rights reserved.
+ * Copyright (c) 1998-2000 Ralf S. Engelschall. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -175,10 +175,8 @@ BOOL ssl_scache_shmht_store(server_rec *s, UCHAR *id, int idlen, time_t expiry, 
     UCHAR *ucp;
 
     /* streamline session data */
-    if ((nData = i2d_SSL_SESSION(sess, NULL)) > sizeof(ucaData))
-        return FALSE;
     ucp = ucaData;
-    i2d_SSL_SESSION(sess, &ucp);
+    nData = i2d_SSL_SESSION(sess, &ucp);
 
     ssl_mutex_on(s);
     if (table_insert_kd(mc->tSessionCacheDataTable, 

@@ -52,38 +52,38 @@ CLEAN :
 "$(OUTDIR)" :
     if not exist "$(OUTDIR)/$(NULL)" mkdir "$(OUTDIR)"
 
-CPP=bcc32.exe
-CPP_PROJ=-s /ML -w-8057 -w-8008 -w-8066 /O2 -D"WIN32" -D"NDEBUG" -D"_WINDOWS"\
- /Fp"$(INTDIR)\test.pch" /YX -o"$(INTDIR)\\$&.obj" /c 
+CPP=cl.exe
+CPP_PROJ=/nologo /ML /W3 /GX /O2 /D "WIN32" /D "NDEBUG" /D "_WINDOWS"\
+ /Fp"$(INTDIR)\test.pch" /YX /Fo"$(INTDIR)\\" /Fd"$(INTDIR)\\" /FD /c 
 CPP_OBJS=.\Release/
 CPP_SBRS=.
 
-.c.obj:
+.c{$(CPP_OBJS)}.obj::
    $(CPP) @<<
    $(CPP_PROJ) $< 
 <<
 
-.cpp.obj:
+.cpp{$(CPP_OBJS)}.obj::
    $(CPP) @<<
    $(CPP_PROJ) $< 
 <<
 
-.cxx.obj:
+.cxx{$(CPP_OBJS)}.obj::
    $(CPP) @<<
    $(CPP_PROJ) $< 
 <<
 
-.c{$(CPP_SBRS)}.sbr:
+.c{$(CPP_SBRS)}.sbr::
    $(CPP) @<<
    $(CPP_PROJ) $< 
 <<
 
-.cpp{$(CPP_SBRS)}.sbr:
+.cpp{$(CPP_SBRS)}.sbr::
    $(CPP) @<<
    $(CPP_PROJ) $< 
 <<
 
-.cxx{$(CPP_SBRS)}.sbr:
+.cxx{$(CPP_SBRS)}.sbr::
    $(CPP) @<<
    $(CPP_PROJ) $< 
 <<
@@ -142,38 +142,38 @@ CLEAN :
 "$(OUTDIR)" :
     if not exist "$(OUTDIR)/$(NULL)" mkdir "$(OUTDIR)"
 
-CPP=bcc32.exe
-CPP_PROJ=-s /MLd -w-8057 -w-8008 -w-8066 /Gm -v /Od -D"WIN32" -D"_DEBUG" -D"_WINDOWS"\
- /Fp"$(INTDIR)\test.pch" /YX -o"$(INTDIR)\\$&.obj" /c 
+CPP=cl.exe
+CPP_PROJ=/nologo /MLd /W3 /Gm /GX /Zi /Od /D "WIN32" /D "_DEBUG" /D "_WINDOWS"\
+ /Fp"$(INTDIR)\test.pch" /YX /Fo"$(INTDIR)\\" /Fd"$(INTDIR)\\" /FD /c 
 CPP_OBJS=.\Debug/
 CPP_SBRS=.
 
-.c.obj:
+.c{$(CPP_OBJS)}.obj::
    $(CPP) @<<
    $(CPP_PROJ) $< 
 <<
 
-.cpp.obj:
+.cpp{$(CPP_OBJS)}.obj::
    $(CPP) @<<
    $(CPP_PROJ) $< 
 <<
 
-.cxx.obj:
+.cxx{$(CPP_OBJS)}.obj::
    $(CPP) @<<
    $(CPP_PROJ) $< 
 <<
 
-.c{$(CPP_SBRS)}.sbr:
+.c{$(CPP_SBRS)}.sbr::
    $(CPP) @<<
    $(CPP_PROJ) $< 
 <<
 
-.cpp{$(CPP_SBRS)}.sbr:
+.cpp{$(CPP_SBRS)}.sbr::
    $(CPP) @<<
    $(CPP_PROJ) $< 
 <<
 
-.cxx{$(CPP_SBRS)}.sbr:
+.cxx{$(CPP_SBRS)}.sbr::
    $(CPP) @<<
    $(CPP_PROJ) $< 
 <<
@@ -206,22 +206,33 @@ LINK32_OBJS= \
 
 
 !IF "$(CFG)" == "test - Win32 Release" || "$(CFG)" == "test - Win32 Debug"
-SOURCE_1=.\test.c
+SOURCE=.\test.c
+
+!IF  "$(CFG)" == "test - Win32 Release"
+
+
+"$(INTDIR)\test.obj" : $(SOURCE) "$(INTDIR)"
+
+
+!ELSEIF  "$(CFG)" == "test - Win32 Debug"
+
 DEP_CPP_TEST_=\
 	".\test.h"\
 	
 
-"$(INTDIR)\test.obj" : $(SOURCE_0) $(DEP_CPP_TEST_) "$(INTDIR)"
+"$(INTDIR)\test.obj" : $(SOURCE) $(DEP_CPP_TEST_) "$(INTDIR)"
 
 
-SOURCE_1=.\test.rc
+!ENDIF 
+
+SOURCE=.\test.rc
 DEP_RSC_TEST_R=\
 	".\test.h"\
 	".\test.ico"\
 	
 
-"$(INTDIR)\test.res" : $(SOURCE_0) $(DEP_RSC_TEST_R) "$(INTDIR)"
-	$(RSC) $(RSC_PROJ) $(SOURCE_0)
+"$(INTDIR)\test.res" : $(SOURCE) $(DEP_RSC_TEST_R) "$(INTDIR)"
+	$(RSC) $(RSC_PROJ) $(SOURCE)
 
 
 

@@ -9,7 +9,7 @@
 */
 
 /* ====================================================================
- * Copyright (c) 2000-2001 Ralf S. Engelschall. All rights reserved.
+ * Copyright (c) 2000 Ralf S. Engelschall. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -66,6 +66,8 @@
  * originally written by Geoff Thorpe <geoff@eu.c2.net> for C2Net Europe
  * and as a contribution to Ralf Engelschall's mod_ssl project.
  */
+
+#ifdef SSL_EXPERIMENTAL_SHMCB
 
 /*
  * The shared-memory segment header can be cast to and from the
@@ -183,9 +185,9 @@ typedef struct {
     unsigned int division_offset;
     unsigned int division_size;
     unsigned int queue_size;
-    unsigned int index_num;
-    unsigned int index_offset;
-    unsigned int index_size;
+    unsigned char index_num;
+    unsigned char index_offset;
+    unsigned char index_size;
     unsigned int cache_data_offset;
     unsigned int cache_data_size;
     unsigned long num_stores;
@@ -209,9 +211,9 @@ typedef struct {
     unsigned int cache_data_offset;
     unsigned int cache_data_size;
     unsigned char division_mask;
-    unsigned int index_num;
-    unsigned int index_offset;
-    unsigned int index_size;
+    unsigned char index_num;
+    unsigned char index_offset;
+    unsigned char index_size;
 #endif
 } SHMCBHeader;
 
@@ -262,38 +264,13 @@ typedef struct {
    memcpys can hardly make a dent on the massive memmove operations this
    cache technique avoids, nor the overheads of ASN en/decoding. */
 static unsigned int shmcb_get_safe_uint(unsigned int *);
-static void shmcb_set_safe_uint_ex(unsigned char *, const unsigned char *);
-#define shmcb_set_safe_uint(pdest, src) \
-	do { \
-		unsigned int tmp_uint = src; \
-		shmcb_set_safe_uint_ex((unsigned char *)pdest, \
-			(const unsigned char *)(&tmp_uint)); \
-	} while(0)
+static void shmcb_set_safe_uint(unsigned int *, unsigned int);
 #if 0 /* Unused so far */
 static unsigned long shmcb_get_safe_ulong(unsigned long *);
-static void shmcb_set_safe_ulong_ex(unsigned char *, const unsigned char *);
-#define shmcb_set_safe_ulong(pdest, src) \
-	do { \
-		unsigned long tmp_ulong = src; \
-		shmcb_set_safe_ulong_ex((unsigned char *)pdest, \
-			(const unsigned char *)(&tmp_ulong)); \
-	} while(0)
+static void shmcb_set_safe_ulong(unsigned long *, unsigned long);
 #endif
 static time_t shmcb_get_safe_time(time_t *);
-static void shmcb_set_safe_time_ex(unsigned char *, const unsigned char *);
-#define shmcb_set_safe_time(pdest, src) \
-	do { \
-		time_t tmp_time = src; \
-		shmcb_set_safe_time_ex((unsigned char *)pdest, \
-			(const unsigned char *)(&tmp_time)); \
-	} while(0)
-
-/* This is necessary simply so that the size passed to memset() is not a
- * compile-time constant, preventing the compiler from optimising it. */
-static void shmcb_safe_clear(void *ptr, size_t size)
-{
-	memset(ptr, 0, size);
-}
+static void shmcb_set_safe_time(time_t *, time_t);
 
 /* Underlying functions for session-caching */
 static BOOL shmcb_init_memory(server_rec *, void *, unsigned int);
@@ -331,46 +308,61 @@ static BOOL shmcb_remove_session_id(server_rec *, SHMCBQueue *, SHMCBCache *, UC
 
 static unsigned int shmcb_get_safe_uint(unsigned int *ptr)
 {
+    unsigned char *from;
     unsigned int ret;
-    shmcb_set_safe_uint_ex((unsigned char *)(&ret),
-		    (const unsigned char *)ptr);
+
+    from = (unsigned char *)ptr;
+    memcpy(&ret, from, sizeof(unsigned int));
     return ret;
 }
 
-static void shmcb_set_safe_uint_ex(unsigned char *dest,
-				const unsigned char *src)
+static void shmcb_set_safe_uint(unsigned int *ptr, unsigned int val)
 {
-    memcpy(dest, src, sizeof(unsigned int));
+    unsigned char *to, *from;
+
+    to = (unsigned char *)ptr;
+    from = (unsigned char *)(&val);
+    memcpy(to, from, sizeof(unsigned int));
 }
 
 #if 0 /* Unused so far */
 static unsigned long shmcb_get_safe_ulong(unsigned long *ptr)
 {
+    unsigned char *from;
     unsigned long ret;
-    shmcb_set_safe_ulong_ex((unsigned char *)(&ret),
-		    (const unsigned char *)ptr);
+
+    from = (unsigned char *)ptr;
+    memcpy(&ret, from, sizeof(unsigned long));
     return ret;
 }
 
-static void shmcb_set_safe_ulong_ex(unsigned char *dest,
-				const unsigned char *src)
+static void shmcb_set_safe_ulong(unsigned long *ptr, unsigned long val)
 {
-    memcpy(dest, src, sizeof(unsigned long));
+    unsigned char *to, *from;
+
+    to = (unsigned char *)ptr;
+    from = (unsigned char *)(&val);
+    memcpy(to, from, sizeof(unsigned long));
 }
 #endif
 
 static time_t shmcb_get_safe_time(time_t * ptr)
 {
+    unsigned char *from;
     time_t ret;
-    shmcb_set_safe_time_ex((unsigned char *)(&ret),
-		    (const unsigned char *)ptr);
+
+    from = (unsigned char *)ptr;
+    memcpy(&ret, from, sizeof(time_t));
     return ret;
 }
 
-static void shmcb_set_safe_time_ex(unsigned char *dest,
-				const unsigned char *src)
+static void shmcb_set_safe_time(time_t * ptr, time_t val)
 {
-    memcpy(dest, src, sizeof(time_t));
+    unsigned char *to, *from;
+
+    to = (unsigned char *)ptr;
+    from = (unsigned char *)(&val);
+    memcpy(to, from, sizeof(time_t));
 }
 
 /*
@@ -466,7 +458,7 @@ void ssl_scache_shmcb_kill(server_rec *s)
     return;
 }
 
-BOOL ssl_scache_shmcb_store(server_rec *s, UCHAR *id, int idlen,
+BOOL ssl_scache_shmcb_store(server_rec *s, UCHAR * id, int idlen,
                            time_t timeout, SSL_SESSION * pSession)
 {
     SSLModConfigRec *mc = myModConfig();
@@ -488,7 +480,7 @@ BOOL ssl_scache_shmcb_store(server_rec *s, UCHAR *id, int idlen,
     return to_return;
 }
 
-SSL_SESSION *ssl_scache_shmcb_retrieve(server_rec *s, UCHAR *id, int idlen)
+SSL_SESSION *ssl_scache_shmcb_retrieve(server_rec *s, UCHAR * id, int idlen)
 {
     SSLModConfigRec *mc = myModConfig();
     void *shm_segment;
@@ -509,16 +501,14 @@ SSL_SESSION *ssl_scache_shmcb_retrieve(server_rec *s, UCHAR *id, int idlen)
     return pSession;
 }
 
-void ssl_scache_shmcb_remove(server_rec *s, UCHAR *id, int idlen)
+void ssl_scache_shmcb_remove(server_rec *s, UCHAR * id, int idlen)
 {
     SSLModConfigRec *mc = myModConfig();
     void *shm_segment;
 
     /* We've kludged our pointer into the other cache's member variable. */
     shm_segment = (void *) mc->tSessionCacheDataTable;
-    ssl_mutex_on(s);
     shmcb_remove_session(s, shm_segment, id, idlen);
-    ssl_mutex_off(s);
 }
 
 void ssl_scache_shmcb_expire(server_rec *s)
@@ -717,7 +707,7 @@ static BOOL shmcb_init_memory(
 }
 
 static BOOL shmcb_store_session(
-    server_rec *s, void *shm_segment, UCHAR *id,
+    server_rec *s, void *shm_segment, UCHAR * id,
     int idlen, SSL_SESSION * pSession,
     time_t timeout)
 {
@@ -767,7 +757,7 @@ static BOOL shmcb_store_session(
 
 static SSL_SESSION *shmcb_retrieve_session(
     server_rec *s, void *shm_segment,
-    UCHAR *id, int idlen)
+    UCHAR * id, int idlen)
 {
     SHMCBHeader *header;
     SHMCBQueue queue;
@@ -807,7 +797,7 @@ static SSL_SESSION *shmcb_retrieve_session(
 
 static BOOL shmcb_remove_session(
     server_rec *s, void *shm_segment,
-    UCHAR *id, int idlen)
+    UCHAR * id, int idlen)
 {
     SHMCBHeader *header;
     SHMCBQueue queue;
@@ -1004,7 +994,7 @@ static SHMCBIndex *shmcb_get_index(
     const SHMCBQueue *queue, unsigned int idx)
 {
     /* bounds check */
-    if (idx > queue->header->index_num)
+    if (idx > (unsigned int) queue->header->index_num)
         return NULL;
 
     /* Return a pointer to the index. NB: I am being horribly pendantic
@@ -1186,7 +1176,7 @@ static BOOL shmcb_insert_encoded_session(
                 "internal error");
         return FALSE;
     }
-    shmcb_safe_clear(idx, sizeof(SHMCBIndex));
+    memset(idx, 0, sizeof(SHMCBIndex));
     shmcb_set_safe_time(&(idx->expires), expiry_time);
     shmcb_set_safe_uint(&(idx->offset), new_offset);
 
@@ -1352,4 +1342,6 @@ end:
     ssl_log(s, SSL_LOG_TRACE, "leaving shmcb_remove_session_id");
     return to_return;
 }
+
+#endif /* SSL_EXPERIMENTAL_SHMCB */
 
