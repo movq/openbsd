@@ -1,4 +1,4 @@
-/*	$OpenBSD: sbicvar.h,v 1.1 1997/10/14 07:25:30 gingold Exp $	*/
+/*	$OpenBSD: sbicvar.h,v 1.1.1.1 1997/10/14 07:25:30 gingold Exp $	*/
 /*	$NetBSD: sbicvar.h,v 1.11 1996/04/21 21:12:23 veego Exp $	*/
 
 /*

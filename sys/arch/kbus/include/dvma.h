@@ -1,4 +1,4 @@
-/*	$OpenBSD: dvma.h,v 1.1 1997/10/14 07:25:30 gingold Exp $	*/
+/*	$OpenBSD: dvma.h,v 1.1.1.1 1997/10/14 07:25:30 gingold Exp $	*/
 /*	$NetBSD: dvma.h,v 1.4 1996/11/20 18:57:08 gwr Exp $	*/
 
 /*-

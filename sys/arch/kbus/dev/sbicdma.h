@@ -1,4 +1,4 @@
-/*	$OpenBSD: sbicdma.h,v 1.1 1997/10/14 07:25:30 gingold Exp $ */
+/*	$OpenBSD: sbicdma.h,v 1.1.1.1 1997/10/14 07:25:30 gingold Exp $ */
 
 /*
  * Copyright (c) 1994 Christian E. Hopps

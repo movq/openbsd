@@ -27,7 +27,7 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- *	$Id: rd.c,v 1.1 1997/10/14 07:25:30 gingold Exp $
+ *	$Id: rd.c,v 1.1.1.1 1997/10/14 07:25:30 gingold Exp $
  */
 
 #include <sys/param.h>

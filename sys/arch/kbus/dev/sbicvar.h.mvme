@@ -1,4 +1,4 @@
-/*	$OpenBSD: sbicvar.h.mvme,v 1.1 1997/10/14 07:25:30 gingold Exp $ */
+/*	$OpenBSD: sbicvar.h.mvme,v 1.1.1.1 1997/10/14 07:25:30 gingold Exp $ */
 
 /*
  * Copyright (c) 1990 The Regents of the University of California.

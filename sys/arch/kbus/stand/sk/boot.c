@@ -1,4 +1,4 @@
-/*	$Id: boot.c,v 1.1 1997/10/14 07:25:31 gingold Exp $ */
+/*	$Id: boot.c,v 1.1.1.1 1997/10/14 07:25:31 gingold Exp $ */
 
 /*-
  * Copyright (c) 1995 Theo de Raadt
