@@ -1,4 +1,4 @@
-/*   $OpenBSD: eh.S,v 1.1 2004/04/21 15:24:00 aoyama Exp $   */
+/*   $OpenBSD: eh.S,v 1.1.2.1 2004/06/05 23:09:47 niklas Exp $   */
 /*
  * Mach Operating System
  * Copyright (c) 1993-1991 Carnegie Mellon University
