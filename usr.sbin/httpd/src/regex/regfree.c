@@ -1,17 +1,16 @@
 #include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <regex.h>
 
-#include "hsregex.h"
 #include "utils.h"
 #include "regex2.h"
 
 /*
  - regfree - free everything
- = API_EXPORT(void) regfree(regex_t *);
+ = extern void regfree(regex_t *);
  */
-ap_private_extern
-API_EXPORT(void)
+void
 regfree(preg)
 regex_t *preg;
 {

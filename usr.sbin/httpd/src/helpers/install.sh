@@ -34,10 +34,9 @@ chgrpcmd=""
 stripcmd=""
 rmcmd="$rmprog -f"
 mvcmd="$mvprog"
-ext=""
 src=""
 dst=""
-while [ "x$1" != "x" ]; do
+while [ ".$1" != . ]; do
     case $1 in
         -c) instcmd="$cpprog"
             shift; continue
@@ -52,15 +51,8 @@ while [ "x$1" != "x" ]; do
             shift; shift; continue
             ;;
         -s) stripcmd="$stripprog"
-            shift; continue
-            ;;
-        -S) stripcmd="$stripprog $2"
-            shift; shift; continue
-            ;;
-        -e) ext="$2"
-            shift; shift; continue
-            ;;
-        *)  if [ "x$src" = "x" ]; then
+            shift; continue;;
+        *)  if [ ".$src" = . ]; then
                 src=$1
             else
                 dst=$1
@@ -69,11 +61,11 @@ while [ "x$1" != "x" ]; do
             ;;
     esac
 done
-if [ "x$src" = "x" ]; then
+if [ ".$src" = . ]; then
      echo "install.sh: no input file specified"
      exit 1
 fi
-if [ "x$dst" = "x" ]; then
+if [ ".$dst" = . ]; then
      echo "install.sh: no destination specified"
      exit 1
 fi
@@ -87,30 +79,18 @@ if [ -d $dst ]; then
     dst="$dst/`basename $src`"
 fi
 
-#  Check if we need to add an executable extension (such as ".exe") 
-#  on specific OS to src and dst
-if [ -f "$src.exe" ]; then
-  if [ -f "$src" ]; then
-    : # Cygwin [ test ] is too stupid to do [ -f "$src.exe" ] && [ ! -f "$src" ]
-  else
-    ext=".exe"
-  fi
-fi
-src="$src$ext"
-dst="$dst$ext"
-
 #  Make a temp file name in the proper directory.
 dstdir=`dirname $dst`
-dsttmp=$dstdir/inst.$$
+dsttmp=$dstdir/#inst.$$#
 
 #  Move or copy the file name to the temp name
 $instcmd $src $dsttmp
 
 #  And set any options; do chmod last to preserve setuid bits
-if [ "x$chowncmd" != "x" ]; then $chowncmd $dsttmp; fi
-if [ "x$chgrpcmd" != "x" ]; then $chgrpcmd $dsttmp; fi
-if [ "x$stripcmd" != "x" ]; then $stripcmd $dsttmp; fi
-if [ "x$chmodcmd" != "x" ]; then $chmodcmd $dsttmp; fi
+if [ ".$chowncmd" != . ]; then $chowncmd $dsttmp; fi
+if [ ".$chgrpcmd" != . ]; then $chgrpcmd $dsttmp; fi
+if [ ".$stripcmd" != . ]; then $stripcmd $dsttmp; fi
+if [ ".$chmodcmd" != . ]; then $chmodcmd $dsttmp; fi
 
 #  Now rename the file to the real destination.
 $rmcmd $dst

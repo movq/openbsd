@@ -1,40 +1,40 @@
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
-<html>
- <head>
-  <title>Strona testowa instalacji serwera Apache</title>
-  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-2">
+<HTML>
+ <HEAD>
+  <TITLE>Strona testowa instalacji serwera Apache</TITLE>
+  <META http-equiv="Content-Type" content="text/html; charset=iso-8859-2">
   <!-- translated by Bart Grzybicki, bgrzybicki@morliny.pl - http://www.bgrzybicki.morliny.pl on 19th of December 2000 -->
- </head>
+ </HEAD>
 <!-- Background white, links blue (unvisited), navy (visited), red (active) -->
- <body
-  bgcolor="#FFFFFF"
-  text="#000000"
-  link="#0000FF"
-  vlink="#000080"
-  alink="#FF0000"
+ <BODY
+  BGCOLOR="#FFFFFF"
+  TEXT="#000000"
+  LINK="#0000FF"
+  VLINK="#000080"
+  ALINK="#FF0000"
  >
 
 
-<p>
-Jeżeli strona ta jest widoczna, oznacza to poprawną instalację serwera <a href="http://www.apache.org/foundation/preFAQ.html">Apache</a>.  Można już zamienić zawartość tej witryny.
+<P>
+Jeżeli strona ta jest widoczna, oznacza to poprawną instalację serwera Apache.  Można już zamienić zawartość tej witryny.
 
-<p><hr width="50%" size="8">
+<P><HR WIDTH="50%" SIZE="8">
 
-<h2 align="CENTER">Czy zamiast spodziewanej witryny WWW widoczna jest ta?</h2>
+<H2 ALIGN="CENTER">Czy zamiast spodziewanej witryny WWW widoczna jest ta?</H2>
 
-<p>
+<P>
 Strona ta jest widoczna, ponieważ administrator serwera WWW zmienił jego konfigurację.  
-Proszę <strong>skontaktować się z osobą odpowiedzialną za zarządzanie tym serwerem.</strong> Apache Software Foundation, producent oprogramowania serwerowego Apache, nie administruje tą witryną i nie jest w stanie pomóc w sprawach związanych z jej konfiguracją.
+Proszę <STRONG>skontaktować się z osobą odpowiedzialną za zarządzanie tym serwerem.</STRONG> Apache Software Foundation, producent oprogramowania serwerowego Apache, nie administruje tą witryną i nie jest w stanie pomóc w sprawach związanych z jej konfiguracją.
 
-<p><hr width="50%" size="8">
+<P><HR WIDTH="50%" SIZE="8">
 
 
-<p>
-Do niniejszej dystrybucji serwera Apache dołączono anglojęzyczną <a href="manual/index.html">dokumentację</a>.
+<P>
+Do niniejszej dystrybucji serwera Apache dołączono anglojęzyczną <A HREF="manual/index.html">dokumentację</A>.
 
-<p>
+<P>
 Poniższe logo, "Powered by Apache", można stosować bez ograniczeń. Dziękujemy za wybranie Apache'a!
 
-<div align="CENTER"><img src="apache_pb.gif" alt=""></div>
-</body>
-</html>
+<DIV ALIGN="CENTER"><IMG SRC="apache_pb.gif" ALT=""></DIV>
+</BODY>
+</HTML>

@@ -1,8 +1,7 @@
 #!/bin/sh
 ##
 ##  checkheader.sh -- Check whether a C header file exists
-##  Initially written by Ralf S. Engelschall for the Apache
-##   configuration mechanism
+##  Written by Ralf S. Engelschall for the Apache configuration mechanism
 ##
 #
 # This script falls under the Apache License.
@@ -11,10 +10,10 @@
 
 header=$1
 rc=1
-if [ "x$CPP" = "x" ]; then
+if [ ".$CPP" = . ]; then
     CPP='NOT-AVAILABLE'
 fi
-if [ "x$CPP" != "xNOT-AVAILABLE" ]; then
+if [ ".$CPP" != ".NOT-AVAILABLE" ]; then
     #   create a test C source
     cat >conftest.c <<EOF
 #include <$header>
@@ -22,7 +21,7 @@ Syntax Error
 EOF
     (eval "$CPP conftest.c >/dev/null") 2>conftest.out
     my_error=`grep -v '^ *+' conftest.out`
-    if [ "x$my_error" = "x" ]; then
+    if [ ".$my_error" = . ]; then
         rc=0
     fi
 else

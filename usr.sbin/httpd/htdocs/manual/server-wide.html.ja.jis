@@ -13,13 +13,7 @@
  vlink="#000080"
  alink="#FF0000"
 >
-    <div align="CENTER">
-      <img src="images/sub.gif" alt="[APACHE DOCUMENTATION]" /> 
-
-      <h3>Apache HTTP Server</h3>
-    </div>
-
-
+<!--#include virtual="header.html" -->
 <h1 align="center">$B%5!<%PA4BN$N@_Dj(B</h1>
 
 <p>$B$3$N%I%-%e%a%s%H$G$O(B<a href="mod/core.html">$B%3%"(B</a>$B%5!<%P$N(B
@@ -158,7 +152,6 @@ CGI $B%9%/%j%W%H$,7Q>5$9$kFC8"$K$b$3$l$i$N%G%#%l%/%F%#%V$N@_Dj$,E,MQ$5$l$^$9!#
 <a href="mod/core.html#keepalivetimeout">KeepAliveTimeout</a><br>
 <a href="mod/core.html#listen">Listen</a><br>
 <a href="mod/core.html#listenbacklog">ListenBackLog</a><br>
-<a href="mod/core.html#acceptfilter">AcceptFilter</a><br>
 <a href="mod/core.html#maxkeepaliverequests">MaxKeepAliveRequests</a><br>
 <a href="mod/core.html#port">Port</a><br>
 <a href="mod/core.html#sendbuffersize">SendBufferSize</a><br>
@@ -183,10 +176,7 @@ CGI $B%9%/%j%W%H$,7Q>5$9$kFC8"$K$b$3$l$i$N%G%#%l%/%F%#%V$N@_Dj$,E,MQ$5$l$^$9!#
 
 <p><code>ListenBackLog</code> $B%G%#%l%/%F%#%V!"(B<code>SendBufferSize</code>
 $B%G%#%l%/%F%#%V!"(B<code>TimeOut</code> $B%G%#%l%/%F%#%V$O!"(BApache $B$H(B
-$B%M%C%H%o!<%/$H$N4X78$rD4@0$7$^$9!#(B <!-- [code]AcceptFilter[/code] controls
-a BSD specific filter optimization. See the BSD section on
-[a href="misc/perf-tuning.html"]performance hints[/a] documentation. -->
-</p>
+$B%M%C%H%o!<%/$H$N4X78$rD4@0$7$^$9!#(B</p>
 
 <p><code>KeepAlive</code> $B%G%#%l%/%F%#%V!"(B<code>KeepAliveTimeout</code>
 $B%G%#%l%/%F%#%V!"(B<code>MaxKeepAliveRequests</code> $B%G%#%l%/%F%#%V$O!"(B
@@ -221,10 +211,6 @@ fork $B$5$l$?%W%m%;%9$,;HMQ$9$k%j%=!<%9$r@)8B$9$k$?$a$K(B
 <p><code>ThreadStackSize</code> $B$O(B Netware $B$G$N$_!"%9%?%C%/$NBg$-$5$r(B
 $B@)8f$9$k$?$a$K;H$o$l$^$9!#(B</p>
 
-    <hr />
-
-    <h3 align="CENTER">Apache HTTP Server</h3>
-    <a href="./"><img src="images/index.gif" alt="Index" /></a>
-
+<!--#include virtual="footer.html" -->
 </body>
 </html>

@@ -6,11 +6,12 @@
 #include <nwsemaph.h>
 
 
+
 thread *create_thread(void (thread_fn)(void *), void *thread_arg)
 {
     int rv;
 
-    rv = BeginThreadGroup(thread_fn, NULL, ap_thread_stack_size, thread_arg);
+    rv = BeginThread(thread_fn, NULL, ap_thread_stack_size, thread_arg); 
     return((thread *)rv);
 }
 
@@ -33,30 +34,27 @@ void free_thread(thread *thread_id)
 
 mutex * ap_create_mutex(char *name)
 {
-    return (mutex*)kMutexAlloc(name);
+    return(malloc(1));
 }
 
 mutex * ap_open_mutex(char *name)
 {
-	return(NULL);
+	return((mutex*)EnterCritSec());
 }
 
 int ap_acquire_mutex(mutex *mutex_id)
 {
-    return(kMutexLock(mutex_id));
+	return(EnterCritSec());
 }
 
 int ap_release_mutex(mutex *mutex_id)
 {
-    if (kMutexUnlock(mutex_id))
-        return 0;
-    else
-        return 1;
+	return(ExitCritSec());
 }
 
 void ap_destroy_mutex(mutex *mutex_id)
 {
-    kMutexFree(mutex_id);
+    free(mutex_id);
 }
 
 

@@ -364,10 +364,3 @@ EXPORTS
 	ap_SHA1Update	@358
 	ap_SHA1Final	@359
 	ap_sha1_base64	@360
-	ap_add_file_conf  @361
-	ap_set_config_vectors  @362
-	ap_os_case_canonical_filename  @363
-	ap_find_types  @364
-	ap_is_rdirectory  @365
-	ap_stripprefix  @366
-	ap_child_terminate  @367

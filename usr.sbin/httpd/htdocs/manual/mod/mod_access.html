@@ -1,346 +1,189 @@
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
-    "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<HTML>
+<HEAD>
+<TITLE>Apache module mod_access</TITLE>
+</HEAD>
 
-<html xmlns="http://www.w3.org/1999/xhtml">
-  <head>
-    <meta name="generator" content="HTML Tidy, see www.w3.org" />
+<!-- Background white, links blue (unvisited), navy (visited), red (active) -->
+<BODY
+ BGCOLOR="#FFFFFF"
+ TEXT="#000000"
+ LINK="#0000FF"
+ VLINK="#000080"
+ ALINK="#FF0000"
+>
+<DIV ALIGN="CENTER">
+ <IMG SRC="../images/sub.gif" ALT="[APACHE DOCUMENTATION]">
+ <H3>
+  Apache HTTP Server Version 1.2
+ </H3>
+</DIV>
 
-    <title>Apache module mod_access</title>
-  </head>
-  <!-- Background white, links blue (unvisited), navy (visited), red (active) -->
 
-  <body bgcolor="#FFFFFF" text="#000000" link="#0000FF"
-  vlink="#000080" alink="#FF0000">
-        <div align="CENTER">
-      <img src="../images/sub.gif" alt="[APACHE DOCUMENTATION]" /> 
+<H1 ALIGN="CENTER">Module mod_access</h1>
 
-      <h3>Apache HTTP Server Version 1.3</h3>
-    </div>
+This module is contained in the <code>mod_access.c</code> file, and
+is compiled in by default. It provides access control based on client
+hostname or IP address.
 
 
-    <h1 align="CENTER">Module mod_access</h1>
+<menu>
+<li><A HREF="#allow">allow</A>
+<li><A HREF="#allowfromenv">allow from env=</A>
+<li><A HREF="#deny">deny</A>
+<li><A HREF="#denyfromenv">deny from env=</A>
+<li><A HREF="#order">order</A>
+</menu>
+<hr>
 
-    <p>This module provides access control based on client
-    hostname, IP address, or other characteristics of the client
-    request.</p>
 
-    <p><a href="module-dict.html#Status"
-    rel="Help"><strong>Status:</strong></a> Base<br />
-     <a href="module-dict.html#SourceFile"
-    rel="Help"><strong>Source File:</strong></a> mod_access.c<br />
-     <a href="module-dict.html#ModuleIdentifier"
-    rel="Help"><strong>Module Identifier:</strong></a>
-    access_module</p>
+<A name="allow"><h2>allow</h2></A>
+<!--%plaintext &lt;?INDEX {\tt allow} directive&gt; -->
+<strong>Syntax:</strong> allow from <em>host host ...</em><br>
+<Strong>Context:</strong> directory, .htaccess<br>
+<Strong>Override:</strong> Limit<br>
+<strong>Status:</strong> Base<br>
+<strong>Module:</strong> mod_access<p>
 
-    <h2>Summary</h2>
+The allow directive affects which hosts can access a given directory.
+<em>Host</em> is one of the following:
+<dl>
+<dt><code>all</code>
+<dd>all hosts are allowed access
+<dt>A (partial) domain-name
+<dd>host whose name is, or ends in, this string are allowed access.
+<dt>A full IP address
+<dd>An IP address of a host allowed access
+<dt>A partial IP address
+<dd>The first 1 to 3 bytes of an IP address, for subnet restriction.
+</dl>
 
-    <p>The directives provided by mod_access are used in <code><a
-    href="core.html#directory">&lt;Directory&gt;</a>, <a
-    href="core.html#files">&lt;Files&gt;</a>,</code> and <code><a
-    href="core.html#location">&lt;Location&gt;</a></code> sections
-    as well as <code><a
-    href="core.html#accessfilename">.htaccess</a></code> files to
-    control access to particular parts of the server. Access can be
-    controlled based on the client hostname, IP address, or other
-    characteristics of the client request, as captured in <a
-    href="../env.html">environment variables</a>. The
-    <code>Allow</code> and <code>Deny</code> directives are used to
-    specify which clients are or are not allowed access to the
-    server, while the <code>Order</code> directive sets the default
-    access state, and configures how the <code>Allow</code> and
-    <code>Deny</code> directives interact with each other.</p>
+Example:<blockquote><code>allow from .ncsa.uiuc.edu</code></blockquote>
+All hosts in the specified domain are allowed access.<p>
 
-    <p>Both host-based access restrictions and password-based
-    authentication may be implemented simultaneously. In that case,
-    the <a href="core.html#satsify">Satisfy</a> directive is used
-    to determine how the two sets of restrictions interact.</p>
+Note that this compares whole components; <code>bar.edu</code>
+would not match <code>foobar.edu</code>.<p>
 
-    <p>In general, access restriction directives apply to all
-    access methods (<code>GET</code>, <code>PUT</code>,
-    <code>POST</code>, etc). This is the desired behavior in most
-    cases. However, it is possible to restrict some methods, while
-    leaving other methods unrestricted, by enclosing the directives
-    in a <a href="core.html#limit">&lt;Limit&gt;</a> section.</p>
+See also <A HREF="#deny">deny</A>, <A HREF="#order">order</A>, and
+<a href="mod_browser.html#browsermatch">BrowserMatch</a>.<p>
 
-    <h2>Directives</h2>
+<a name="allowfromenv"><strong>Syntax:</strong> allow from env=<em>variablename</em></a><br>
+<Strong>Context:</strong> directory, .htaccess<br>
+<Strong>Override:</strong> Limit<br>
+<strong>Status:</strong> Base<br>
+<strong>Module:</strong> mod_access<br>
+<strong>Compatibility:</strong> Apache 1.2 and above<p>
 
-    <ul>
-      <li><a href="#allow">Allow</a></li>
+The allow from env directive controls access to a directory by the
+existence (or non-existence) of an environment variable.
 
-      <li><a href="#deny">Deny</a></li>
-
-      <li><a href="#order">Order</a></li>
-    </ul>
-
-    <p>See also <a href="core.html#satisfy">Satisfy</a> and <a
-    href="core.html#require">Require</a>.</p>
-    <hr />
-
-    <h2><a id="allow" name="allow">Allow</a> <a id="allowfromenv"
-    name="allowfromenv">directive</a></h2>
-
-    <p>
-     <a href="directive-dict.html#Syntax"
-    rel="Help"><strong>Syntax:</strong></a> Allow from
-    all|<em>host</em>|env=<em>env-variable</em>
-    [<em>host</em>|env=<em>env-variable</em>] ...<br />
-     <a href="directive-dict.html#Context"
-    rel="Help"><strong>Context:</strong></a> directory,
-    .htaccess<br />
-     <a href="directive-dict.html#Override"
-    rel="Help"><strong>Override:</strong></a> Limit<br />
-     <a href="directive-dict.html#Status"
-    rel="Help"><strong>Status:</strong></a> Base<br />
-     <a href="directive-dict.html#Module"
-    rel="Help"><strong>Module:</strong></a> mod_access</p>
-
-    <p>The <code>Allow</code> directive affects which hosts can
-    access an area of the server. Access can be controlled by
-    hostname, IP Address, IP Address range, or by other
-    characteristics of the client request captured in environment
-    variables.</p>
-
-    <p>The first argument to this directive is always
-    <code>from</code>. The subsequent arguments can take three
-    different forms. If <code>Allow from all</code> is specified,
-    then all hosts are allowed access, subject to the configuration
-    of the <code>Deny</code> and <code>Order</code> directives as
-    discussed below. To allow only particular hosts or groups of
-    hosts to access the server, the <em>host</em> can be specified
-    in any of the following formats:</p>
-
-    <dl>
-      <dt>A (partial) domain-name</dt>
-
-      <dd>Example: <code>Allow from apache.org</code><br />
-       Hosts whose names match, or end in, this string are allowed
-      access. Only complete components are matched, so the above
-      example will match <code>foo.apache.org</code> but it will
-      not match <code>fooapache.org</code>. This configuration will
-      cause the server to perform a reverse DNS lookup on the
-      client IP address, regardless of the setting of the <a
-      href="core.html#hostnamelookups">HostnameLookups</a>
-      directive.</dd>
-
-      <dt>A full IP address</dt>
-
-      <dd>Example: <code>Allow from 10.1.2.3</code><br />
-       An IP address of a host allowed access</dd>
-
-      <dt>A partial IP address</dt>
-
-      <dd>Example: <code>Allow from 10.1</code><br />
-       The first 1 to 3 bytes of an IP address, for subnet
-      restriction.</dd>
-
-      <dt>A network/netmask pair</dt>
-
-      <dd>Example: <code>Allow from
-      10.1.0.0/255.255.0.0</code><br />
-       A network a.b.c.d, and a netmask w.x.y.z. For more
-      fine-grained subnet restriction. (Apache 1.3 and later)</dd>
-
-      <dt>A network/nnn CIDR specification</dt>
-
-      <dd>Example: <code>Allow from 10.1.0.0/16</code><br />
-       Similar to the previous case, except the netmask consists of
-      nnn high-order 1 bits. (Apache 1.3 and later)</dd>
-    </dl>
-
-    <p>Note that the last three examples above match exactly the
-    same set of hosts.</p>
-
-    <p>The third format of the arguments to the <code>Allow</code>
-    directive allows access to the server to be controlled based on
-    the existence of an <a href="../env.html">environment
-    variable</a>. When <code>Allow from
-    env=</code><em>env-variable</em> is specified, then the request
-    is allowed access if the environment variable
-    <em>env-variable</em> exists. The server provides the ability
-    to set environment variables in a flexible way based on
-    characteristics of the client request using the directives
-    provided by <a href="mod_setenvif.html">mod_setenvif</a>.
-    Therefore, this directive can be used to allow access based on
-    such factors as the clients <code>User-Agent</code> (browser
-    type), <code>Referer</code>, or other HTTP request header
-    fields.</p>
-
-    <p>Example:</p>
-
-    <blockquote>
-<pre>
-SetEnvIf User-Agent ^KnockKnock/2.0 let_me_in
+Example:<blockquote><pre>
+BrowserMatch ^KnockKnock/2.0 let_me_in
 &lt;Directory /docroot&gt;
-    Order Deny,Allow
-    Deny from all
-    Allow from env=let_me_in
+order allow,deny
+allow from env=let_me_in
+deny from all
 &lt;/Directory&gt;
-</pre>
-    </blockquote>
+</pre></blockquote>
 
-    <p>In this case, browsers with a user-agent string beginning
-    with <tt>KnockKnock/2.0</tt> will be allowed access, and all
-    others will be denied.</p>
+See also <A HREF="#denyfromenv">deny from env</A>
+and <A HREF="#order">order</A>.<p><hr>
 
-    <p>See also <a href="#deny">Deny</a>, <a
-    href="#order">Order</a> and <a
-    href="mod_setenvif.html#SetEnvIf">SetEnvIf</a>.</p>
-    <hr />
+<A name="deny"><h2>deny</h2></A>
+<!--%plaintext &lt;?INDEX {\tt deny} directive&gt; -->
+<strong>Syntax:</strong> deny from <em>host host ...</em><br>
+<Strong>Context:</strong> directory, .htaccess<br>
+<Strong>Override:</strong> Limit<br>
+<strong>Status:</strong> Base<br>
+<strong>Module:</strong> mod_access<p>
 
-    <h2><a id="deny" name="deny">Deny</a> <a id="denyfromenv"
-    name="denyfromenv">directive</a></h2>
+The deny directive affects which hosts can access a given directory.
+<em>Host</em> is one of the following:
+<dl>
+<dt><code>all</code>
+<dd>all hosts are denied access
+<dt>A (partial) domain-name
+<dd>host whose name is, or ends in, this string are denied access.
+<dt>A full IP address
+<dd>An IP address of a host denied access
+<dt>A partial IP address
+<dd>The first 1 to 3 bytes of an IP address, for subnet restriction.
+</dl>
 
-    <p>
-     <a href="directive-dict.html#Syntax"
-    rel="Help"><strong>Syntax:</strong></a> Deny from
-    all|<em>host</em>|env=<em>env-variable</em>
-    [<em>host</em>|env=<em>env-variable</em>] ...<br />
-     <a href="directive-dict.html#Context"
-    rel="Help"><strong>Context:</strong></a> directory,
-    .htaccess<br />
-     <a href="directive-dict.html#Override"
-    rel="Help"><strong>Override:</strong></a> Limit<br />
-     <a href="directive-dict.html#Status"
-    rel="Help"><strong>Status:</strong></a> Base<br />
-     <a href="directive-dict.html#Module"
-    rel="Help"><strong>Module:</strong></a> mod_access</p>
+Example:<blockquote><code>deny from 16</code></blockquote>
+All hosts in the specified network are denied access.<p>
 
-    <p>This directive allows access to the server to be restricted
-    based on hostname, IP address, or environment variables. The
-    arguments for the <code>Deny</code> directive are identical to
-    the arguments for the <a href="#allow">Allow</a> directive.</p>
+Note that this compares whole components; <code>bar.edu</code>
+would not match <code>foobar.edu</code>.<p>
 
-    <p>See also <a href="#allow">Allow</a>, <a
-    href="#order">Order</a> and <a
-    href="mod_setenvif.html#SetEnvIf">SetEnvIf</a>.</p>
-    <hr />
+See also <A HREF="#allow">allow</A> and <A HREF="#order">order</A>.<p>
 
-    <h2><a id="order" name="order">Order directive</a></h2>
+<a name="denyfromenv"><strong>Syntax:</strong> deny from env=<em>variablename</em></a><br>
+<Strong>Context:</strong> directory, .htaccess<br>
+<Strong>Override:</strong> Limit<br>
+<strong>Status:</strong> Base<br>
+<strong>Module:</strong> mod_access<br>
+<strong>Compatibility:</strong> Apache 1.2 and above<p>
 
-    <p>
-     <a href="directive-dict.html#Syntax"
-    rel="Help"><strong>Syntax:</strong></a> Order
-    <em>ordering</em><br />
-     <a href="directive-dict.html#Default"
-    rel="Help"><strong>Default:</strong></a> <code>Order
-    Deny,Allow</code><br />
-     <a href="directive-dict.html#Context"
-    rel="Help"><strong>Context:</strong></a> directory,
-    .htaccess<br />
-     <a href="directive-dict.html#Override"
-    rel="Help"><strong>Override:</strong></a> Limit<br />
-     <a href="directive-dict.html#Status"
-    rel="Help"><strong>Status:</strong></a> Base<br />
-     <a href="directive-dict.html#Module"
-    rel="Help"><strong>Module:</strong></a> mod_access</p>
+The deny from env directive controls access to a directory by the
+existence (or non-existence) of an environment variable.
 
-    <p>The <code>Order</code> directive controls the default access
-    state and the order in which <a href="#allow">Allow</a> and <a
-    href="#deny">Deny</a> directives are evaluated.
-    <em>Ordering</em> is one of</p>
+Example:<blockquote><pre>
+BrowserMatch ^BadRobot/0.9 go_away
+&lt;Directory /docroot&gt;
+order deny,allow
+deny from env=go_away
+allow from all
+&lt;/Directory&gt;
+</pre></blockquote>
 
-    <dl>
-      <dt>Deny,Allow</dt>
+See also <A HREF="#allowfromenv">allow from env</A>
+and <A HREF="#order">order</A>.<p><hr>
 
-      <dd>The <code>Deny</code> directives are evaluated before the
-      <code>Allow</code> directives. Access is allowed by default.
-      Any client which does not match a <code>Deny</code> directive
-      or does match an <code>Allow</code> directive will be allowed
-      access to the server.</dd>
+<A name="order"><h2>order</h2></A>
+<!--%plaintext &lt;?INDEX {\tt order} directive&gt; -->
+<strong>Syntax:</strong> order <em>ordering</em><br>
+<strong>Default:</strong> <code>order deny,allow</code><br>
+<strong>Context:</strong> directory, .htaccess<br>
+<strong>Override:</strong> Limit<br>
+<strong>Status:</strong> Base<br>
+<strong>Module:</strong> mod_access<p>
 
-      <dt>Allow,Deny</dt>
+The order directive controls the order in which <A HREF="#allow">allow</A> and
+<A HREF="#deny">deny</A> directives are evaluated. <em>Ordering</em> is one
+of
+<dl>
+<dt>deny,allow
+<dd>the deny directives are evaluated before the allow directives.  (The
+initial state is OK.)
+<dt>allow,deny
+<dd>the allow directives are evaluated before the deny directives.  (The
+initial state is FORBIDDEN.)
+<dt>mutual-failure
+<dd>Only those hosts which appear on the allow list and do not appear
+on the deny list are granted access.  (The initial state is irrelevant.)
+</dl>
 
-      <dd>The <code>Allow</code> directives are evaluated before
-      the <code>Deny</code> directives. Access is denied by
-      default. Any client which does not match an
-      <code>Allow</code> directive or does match a
-      <code>Deny</code> directive will be denied access to the
-      server.</dd>
+Note that in all cases every <code>allow</code> and <code>deny</code>
+statement is evaluated, there is no &quot;short-circuiting&quot;.
 
-      <dt>Mutual-failure</dt>
+<p>Example:
+<blockquote><code>
+order deny,allow<br>
+deny from all<br>
+allow from .ncsa.uiuc.edu<br>
+</code></blockquote>
+Hosts in the ncsa.uiuc.edu domain are allowed access; all other hosts are
+denied access.
 
-      <dd>Only those hosts which appear on the <code>Allow</code>
-      list and do not appear on the <code>Deny</code> list are
-      granted access. This ordering has the same effect as
-      <code>Order Allow,Deny</code> and is deprecated in favor of
-      that configuration.</dd>
-    </dl>
+<HR>
+<H3 ALIGN="CENTER">
+ Apache HTTP Server Version 1.2
+</H3>
 
-    <p>Keywords may only be separated by a comma; no whitespace is
-    allowed between them. Note that in all cases every
-    <code>Allow</code> and <code>Deny</code> statement is
-    evaluated.</p>
+<A HREF="./"><IMG SRC="../images/index.gif" ALT="Index"></A>
+<A HREF="../"><IMG SRC="../images/home.gif" ALT="Home"></A>
 
-    <p>In the following example, all hosts in the apache.org domain
-    are allowed access; all other hosts are denied access.</p>
-
-    <blockquote>
-      <code>Order Deny,Allow<br />
-       Deny from all<br />
-       Allow from apache.org<br />
-      </code>
-    </blockquote>
-
-    <p>In the next example, all hosts in the apache.org domain are
-    allowed access, except for the hosts which are in the
-    foo.apache.org subdomain, who are denied access. All hosts not
-    in the apache.org domain are denied access because the default
-    state is to deny access to the server.</p>
-
-    <blockquote>
-      <code>Order Allow,Deny<br />
-       Allow from apache.org<br />
-       Deny from foo.apache.org<br />
-      </code>
-    </blockquote>
-
-    <p>On the other hand, if the <code>Order</code> in the last
-    example is changed to <code>Deny,Allow</code>, all hosts will
-    be allowed access. This happens because, regardless of the
-    actual ordering of the directives in the configuration file,
-    the <code>Allow from apache.org</code> will be evaluated last
-    and will override the <code>Deny from foo.apache.org</code>.
-    All hosts not in the <code>apache.org</code> domain will also
-    be allowed access because the default state will change to
-    <em>allow</em>.</p>
-
-    <p>The presence of an <code>Order</code> directive can affect
-    access to a part of the server even in the absence of
-    accompanying <code>Allow</code> and <code>Deny</code>
-    directives because of its effect on the default access state.
-    For example,</p>
-
-    <blockquote>
-      <code>&lt;Directory /www&gt;<br />
-       &nbsp;&nbsp;Order Allow,Deny<br />
-       &lt;/Directory&gt;</code>
-    </blockquote>
-
-    <p>will deny all access to the <code>/www</code> directory
-    because the default access state will be set to
-    <em>deny</em>.</p>
-
-    <p>The <code>Order</code> directive controls the order of
-    access directive processing only within each phase of the
-    server's configuration processing. This implies, for example,
-    that an <code>Allow</code> or <code>Deny</code> directive
-    occurring in a &lt;Location&gt; section will always be
-    evaluated after an <code>Allow</code> or <code>Deny</code>
-    directive occurring in a &lt;Directory&gt; section or
-    <code>.htaccess</code> file, regardless of the setting of the
-    <code>Order</code> directive. For details on the merging of
-    configuration sections, see the documentation on <a
-    href="../sections.html">How Directory, Location and Files
-    sections work</a>.</p>
-
-    <p>See also: <a href="#deny">Deny</a> and <a
-    href="#allow">Allow</a>.     <hr />
-
-    <h3 align="CENTER">Apache HTTP Server Version 1.3</h3>
-    <a href="./"><img src="../images/index.gif" alt="Index" /></a>
-    <a href="../"><img src="../images/home.gif" alt="Home" /></a>
-
-    </p>
-  </body>
-</html>
+</BODY>
+</HTML>
 

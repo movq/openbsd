@@ -1,51 +1,51 @@
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
-<html>
- <head>
-  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-2">
-  <title>Testovací stránka instalace web serveru Apache</title>
- </head>
+<HTML>
+ <HEAD>
+  <META HTTP-Equiv="Content-Type" CONTENT="text/html; charset=iso-8859-2">
+  <TITLE>Testovací stránka instalace web serveru Apache</TITLE>
+ </HEAD>
 <!-- Background white, links blue (unvisited), navy (visited), red (active) -->
- <body
-  bgcolor="#FFFFFF"
-  text="#000000"
-  link="#0000FF"
-  vlink="#000080"
-  alink="#FF0000"
+ <BODY
+  BGCOLOR="#FFFFFF"
+  TEXT="#000000"
+  LINK="#0000FF"
+  VLINK="#000080"
+  ALINK="#FF0000"
  >
-  <h1 align="CENTER">
+  <H1 ALIGN="CENTER">
    Funguje to! Na tomto serveru běží Apache!
-  </h1>
-  <p>
+  </H1>
+  <P>
   Pokud vidíte tuto zprávu, správce tohoto počítače právě úspěšně
   nainstaloval Apache web server.
   Teď ještě musí doplnit obsah a nahradit tuto standardní uvítací
   stránku, nebo přesměrovat server na skutečnou domovskou stránku.
-  </p>
-  <hr>
-  <blockquote>
+  </P>
+  <HR>
+  <BLOCKQUOTE>
    Pokud vidíte tuto zprávu místo očekávané domovské stránky, 
-   <strong>kontaktujte, prosím, správce příslušného web
-   serveru.</strong> (Zkuste poslat e-mail na adresu
-   <samp>&lt;Webmaster@<em>domain</em>&gt;</samp>.) 
+   <STRONG>kontaktujte, prosím, správce příslušného web
+   serveru.</STRONG> (Zkuste poslat e-mail na adresu
+   <SAMP>&lt;Webmaster@<EM>domain</EM>&gt;</SAMP>.) 
    Přestože tento server používá program Apache, téměř jistě nemá nic
    společného s Apache Group, proto prosím neposílejte e-maily o tomto
    serveru nebo jeho obsahu autorům Apache. Pokud to uděláte, budeme
-   vaše zprávy <strong><big>ignorovat</big></strong>.
-  </blockquote>
-  <hr>
-  <p>
+   vaše zprávy <STRONG><BIG>ignorovat</BIG></STRONG>.
+  </BLOCKQUOTE>
+  <HR>
+  <P>
   Zde najdete
-  <a
-   href="manual/"
-  >dokumentaci</a>
+  <A
+   HREF="manual/"
+  >dokumentaci</A>
   Apache (anglicky) obsaženou v této distribuci.
-  </p>
-  <p>
+  </P>
+  <P>
   Následující logo může být použito bez omezení na web serveru s
   programem Apache. Děkujeme za použití Apache!
-  </p>
-  <div align="CENTER">
-   <img src="apache_pb.gif" alt="">
-  </div>
- </body>
-</html>
+  </P>
+  <DIV ALIGN="CENTER">
+   <IMG SRC="apache_pb.gif" ALT="">
+  </DIV>
+ </BODY>
+</HTML>

@@ -1,8 +1,6 @@
 #include <stdio.h>
 #include <string.h>
 
-extern int split(char *, char *[], int, char *);
-
 /*
  - split - divide a string into fields, like awk split()
  = int split(char *string, char *fields[], int nfields, char *sep);

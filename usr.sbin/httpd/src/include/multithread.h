@@ -19,11 +19,7 @@ typedef void event;
  * I believe this is terribly ugly
  */
 #ifdef MULTITHREAD
-#ifdef NETWARE
-#define APACHE_TLS
-#else
 #define APACHE_TLS __declspec( thread )
-#endif
 
 thread *create_thread(void (thread_fn) (void *thread_arg), void *thread_arg);
 int kill_thread(thread *thread_id);
@@ -58,7 +54,7 @@ extern void *ap_dummy_mutex;
 #define ap_create_mutex(name)	((mutex *)ap_dummy_mutex)
 #define ap_acquire_mutex(mutex_id)	((int)MULTI_OK)
 #define ap_release_mutex(mutex_id)	((int)MULTI_OK)
-#define ap_destroy_mutex(mutex_id)
+#define ap_destroy_mutex(mutex_id)	(0)
 
 #endif /* ndef MULTITHREAD */
 

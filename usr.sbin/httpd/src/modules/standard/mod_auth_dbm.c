@@ -1,59 +1,58 @@
 /* ====================================================================
- * The Apache Software License, Version 1.1
- *
- * Copyright (c) 2000-2002 The Apache Software Foundation.  All rights
- * reserved.
+ * Copyright (c) 1995-1998 The Apache Group.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
  *
  * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
+ *    notice, this list of conditions and the following disclaimer. 
  *
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in
  *    the documentation and/or other materials provided with the
  *    distribution.
  *
- * 3. The end-user documentation included with the redistribution,
- *    if any, must include the following acknowledgment:
- *       "This product includes software developed by the
- *        Apache Software Foundation (http://www.apache.org/)."
- *    Alternately, this acknowledgment may appear in the software itself,
- *    if and wherever such third-party acknowledgments normally appear.
+ * 3. All advertising materials mentioning features or use of this
+ *    software must display the following acknowledgment:
+ *    "This product includes software developed by the Apache Group
+ *    for use in the Apache HTTP server project (http://www.apache.org/)."
  *
- * 4. The names "Apache" and "Apache Software Foundation" must
- *    not be used to endorse or promote products derived from this
- *    software without prior written permission. For written
- *    permission, please contact apache@apache.org.
+ * 4. The names "Apache Server" and "Apache Group" must not be used to
+ *    endorse or promote products derived from this software without
+ *    prior written permission. For written permission, please contact
+ *    apache@apache.org.
  *
- * 5. Products derived from this software may not be called "Apache",
- *    nor may "Apache" appear in their name, without prior written
- *    permission of the Apache Software Foundation.
+ * 5. Products derived from this software may not be called "Apache"
+ *    nor may "Apache" appear in their names without prior written
+ *    permission of the Apache Group.
  *
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESSED OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED.  IN NO EVENT SHALL THE APACHE SOFTWARE FOUNDATION OR
+ * 6. Redistributions of any form whatsoever must retain the following
+ *    acknowledgment:
+ *    "This product includes software developed by the Apache Group
+ *    for use in the Apache HTTP server project (http://www.apache.org/)."
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE APACHE GROUP ``AS IS'' AND ANY
+ * EXPRESSED OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE APACHE GROUP OR
  * ITS CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
- * USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
- * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
- * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
- * OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+ * OF THE POSSIBILITY OF SUCH DAMAGE.
  * ====================================================================
  *
  * This software consists of voluntary contributions made by many
- * individuals on behalf of the Apache Software Foundation.  For more
- * information on the Apache Software Foundation, please see
- * <http://www.apache.org/>.
+ * individuals on behalf of the Apache Group and was originally based
+ * on public domain software written at the National Center for
+ * Supercomputing Applications, University of Illinois, Urbana-Champaign.
+ * For more information on the Apache Group and the Apache HTTP server
+ * project, please see <http://www.apache.org/>.
  *
- * Portions of this software are based upon public domain software
- * originally written at the National Center for Supercomputing Applications,
- * University of Illinois, Urbana-Champaign.
  */
 
 /*
@@ -75,14 +74,7 @@
 #include "http_core.h"
 #include "http_log.h"
 #include "http_protocol.h"
-#if (defined(WIN32) || defined(NETWARE))
-#include <sdbm.h>
-#define dbm_open sdbm_open
-#define dbm_fetch sdbm_fetch
-#define dbm_close sdbm_close
-#else
 #include <ndbm.h>
-#endif
 
 /*
  * Module definition information - the part between the -START and -END
@@ -145,7 +137,7 @@ static const command_rec dbm_auth_cmds[] =
     {NULL}
 };
 
-module MODULE_VAR_EXPORT dbm_auth_module;
+module dbm_auth_module;
 
 static char *get_dbm_pw(request_rec *r, char *user, char *auth_dbmpwfile)
 {
@@ -216,7 +208,6 @@ static int dbm_authenticate_basic_user(request_rec *r)
     conn_rec *c = r->connection;
     const char *sent_pw;
     char *real_pw, *colon_pw;
-    char *invalid_pw;
     int res;
 
     if ((res = ap_get_basic_auth_pw(r, &sent_pw)))
@@ -235,14 +226,12 @@ static int dbm_authenticate_basic_user(request_rec *r)
     }
     /* Password is up to first : if exists */
     colon_pw = strchr(real_pw, ':');
-    if (colon_pw) {
+    if (colon_pw)
 	*colon_pw = '\0';
-    }
-    invalid_pw = ap_validate_password(sent_pw, real_pw);
-    if (invalid_pw != NULL) {
+    /* anyone know where the prototype for crypt is? */
+    if (strcmp(real_pw, (char *) crypt(sent_pw, real_pw))) {
 	ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r,
-		      "DBM user %s: authentication failure for \"%s\": %s",
-		      c->user, r->uri, invalid_pw);
+		    "user %s: password mismatch: %s", c->user, r->uri);
 	ap_note_basic_auth_failure(r);
 	return AUTH_REQUIRED;
     }
@@ -277,7 +266,7 @@ static int dbm_check_auth(request_rec *r)
 	    continue;
 
 	t = reqs[x].requirement;
-	w = ap_getword_white(r->pool, &t);
+	w = ap_getword(r->pool, &t, ' ');
 
 	if (!strcmp(w, "group") && sec->auth_dbmgrpfile) {
 	    const char *orig_groups, *groups;
@@ -294,7 +283,7 @@ static int dbm_check_auth(request_rec *r)
 	    }
 	    orig_groups = groups;
 	    while (t[0]) {
-		w = ap_getword_white(r->pool, &t);
+		w = ap_getword(r->pool, &t, ' ');
 		groups = orig_groups;
 		while (groups[0]) {
 		    v = ap_getword(r->pool, &groups, ',');
@@ -314,7 +303,7 @@ static int dbm_check_auth(request_rec *r)
 }
 
 
-module MODULE_VAR_EXPORT dbm_auth_module =
+module dbm_auth_module =
 {
     STANDARD_MODULE_STUFF,
     NULL,			/* initializer */

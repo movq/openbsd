@@ -1,111 +1,81 @@
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
-    "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<HTML>
+<HEAD>
+<TITLE>Apache module mod_foobar</TITLE>
+</HEAD>
 
-<html xmlns="http://www.w3.org/1999/xhtml">
-  <head>
-    <meta name="generator" content="HTML Tidy, see www.w3.org" />
+<!-- read and delete all blockquotes, and this comment -->
 
-    <title>Apache module mod_foobar</title>
-  </head>
-  <!-- read and delete all blockquotes, and this comment -->
-  <!-- Background white, links blue (unvisited), navy (visited), red (active) -->
+<!-- Background white, links blue (unvisited), navy (visited), red (active) -->
+<BODY
+ BGCOLOR="#FFFFFF"
+ TEXT="#000000"
+ LINK="#0000FF"
+ VLINK="#000080"
+ ALINK="#FF0000"
+>
+<DIV ALIGN="CENTER">
+ <IMG SRC="images/sub.gif" ALT="[APACHE DOCUMENTATION]">
+ <H3>
+  Apache HTTP Server Version 1.2
+ </H3>
+</DIV>
 
-  <body bgcolor="#FFFFFF" text="#000000" link="#0000FF"
-  vlink="#000080" alink="#FF0000">
-        <div align="CENTER">
-      <img src="images/sub.gif" alt="[APACHE DOCUMENTATION]" /> 
+<H1 ALIGN="CENTER">Module mod_foobar</h1>
 
-      <h3>Apache HTTP Server</h3>
-    </div>
+<blockquote><em>Add this file as a link in modules.html</em></blockquote>
 
+This module is contained in the <code>mod_foobar.c</code> file, and
+<strong>is/is not</strong> compiled in by default. It provides for
+<strong>the foobar feature</strong>. Any document with the mime type
+<code>foo/bar</code> will be processed by this module.
 
+<blockquote><em>Add the magic mime type to the list in
+magic_types.html</em></blockquote>
 
-    <h1 align="CENTER">Module mod_foobar</h1>
+<h2>Summary</h2>
+General module documentation here.
 
-    <blockquote>
-      <em>Add this file as a link in mod/index.html</em>
-    </blockquote>
+<h2>Directives</h2>
+<ul>
+<li><A HREF="#adirective">ADirective</A>
+</ul>
 
-    <p>This module is contained in the <code>mod_foobar.c</code>
-    file, and <strong>is/is not</strong> compiled in by default. It
-    provides for <strong>the foobar feature</strong>. Any document
-    with the mime type <samp>foo/bar</samp> will be processed by
-    this module.</p>
+<blockquote><em>Add these directives to the list in
+directives.html</em></blockquote>
 
-    <blockquote>
-      <em>Add the magic mime type to the list in
-      magic_types.html</em>
-    </blockquote>
+<hr>
 
-    <h2>Summary</h2>
+<h2><A name="adirective">ADirective</A></h2>
+<strong>Syntax:</strong> ADirective <em>some args</em><br>
+<strong>Default:</strong> <code>ADirective default value</code><br>
+<strong>Context:</strong> context-list<br>
 
-    <p><em>General module documentation here.</em></p>
+<blockquote><em>context-list is where this directive can appear;
+allowed: server config, virtual host, directory, .htaccess</em></blockquote>
 
-    <h2>Directives</h2>
+<strong>Override:</strong> override<br>
 
-    <ul>
-      <li><a href="#adirective">ADirective</a></li>
-    </ul>
+<blockquote><em>required if the directive is allowed in .htaccess files;
+the AllowOverride option that allows the directive.</em></blockquote>
 
-    <blockquote>
-      <em>Add these directives to the list in directives.html</em>
-    </blockquote>
-    <hr />
-    <!-- the HR is part of the directive description -->
+<strong>Status:</strong> status<br>
 
-    <h2><a id="adirective" name="adirective">ADirective
-    directive</a></h2>
+<blockquote><em>Core if in core apache, Base if in one of the standard
+modules, Extension if in an extension module (not compiled in by default)
+or Experimental</em></blockquote>
 
-    <p><a href="directive-dict.html#Syntax"
-    rel="Help"><strong>Syntax:</strong></a> ADirective <em>some
-    args</em><br />
-     <a href="directive-dict.html#Default"
-    rel="Help"><strong>Default:</strong></a> <samp>ADirective
-    default value</samp><br />
-     <a href="directive-dict.html#Context"
-    rel="Help"><strong>Context:</strong></a> context-list<br />
-    </p>
+<strong>Module:</strong> mod_foobar<p>
 
-    <blockquote>
-      <em>context-list is where this directive can appear; allowed:
-      server config, virtual host, directory, .htaccess</em>
-    </blockquote>
-    <a href="directive-dict.html#Override"
-    rel="Help"><strong>Override:</strong></a> override <br />
-     
+The ADirective directive does something.
 
-    <blockquote>
-      <em>required if the directive is allowed in .htaccess files;
-      the AllowOverride option that allows the directive.</em>
-    </blockquote>
-    <a href="directive-dict.html#Status"
-    rel="Help"><strong>Status:</strong></a> status <br />
-     
+<HR>
+<H3 ALIGN="CENTER">
+ Apache HTTP Server Version 1.2
+</H3>
 
-    <blockquote>
-      <em>Core if in core apache, Base if in one of the standard
-      modules, Extension if in an extension module (not compiled in
-      by default) or Experimental</em>
-    </blockquote>
-    <a href="directive-dict.html#Module"
-    rel="Help"><strong>Module:</strong></a> mod_foobar <br />
-     <a href="directive-dict.html#Compatibility"
-    rel="Help"><strong>Compatibility:</strong></a> compatibility
-    notes 
+<A HREF="./"><IMG SRC="images/index.gif" ALT="Index"></A>
 
-    <blockquote>
-      <em>Describe any compatibility issues, such as "Only
-      available in Apache 1.2 or later," or "The Apache syntax for
-      this directive is not compatible with the NCSA directive of
-      the same name."</em>
-    </blockquote>
-
-    <p>The ADirective directive does something.</p>
-        <hr />
-
-    <h3 align="CENTER">Apache HTTP Server</h3>
-    <a href="./"><img src="images/index.gif" alt="Index" /></a>
-
-  </body>
-</html>
+</BODY>
+</HTML>
 
