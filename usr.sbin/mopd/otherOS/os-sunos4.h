@@ -26,7 +26,7 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- * @(#) $Id: os-sunos4.h,v 1.1 1996/09/21 13:49:17 maja Exp $
+ * @(#) $Id: os-sunos4.h,v 1.1.1.1 1996/09/21 13:49:17 maja Exp $
  */
 
 #include <stdio.h>

@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# @(#) $Id: ostype,v 1.1 1996/09/21 13:49:17 maja Exp $
+# @(#) $Id: ostype,v 1.1.1.1 1996/09/21 13:49:17 maja Exp $
 #
 # Determine os type.
 #
