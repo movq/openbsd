@@ -1,4 +1,4 @@
-# $OpenBSD: Makefile,v 1.1 1999/05/23 23:01:27 angelos Exp $
+# $OpenBSD: Makefile,v 1.1.1.1 1999/05/23 23:01:27 angelos Exp $
 
 PROG=	keynote-verify
 
