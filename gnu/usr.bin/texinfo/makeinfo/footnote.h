@@ -1,5 +1,5 @@
 /* footnote.h -- declarations for footnote.c.
-   $Id: footnote.h,v 1.1 2000/02/09 01:25:11 espie Exp $
+   $Id: footnote.h,v 1.1.1.1 2000/02/09 01:25:11 espie Exp $
 
    Copyright (C) 1998 Free Software Foundation, Inc.
 

@@ -1,5 +1,5 @@
 /* cmds.c -- Texinfo commands.
-   $Id: cmds.c,v 1.1 2000/02/09 01:25:09 espie Exp $
+   $Id: cmds.c,v 1.1.1.1 2000/02/09 01:25:09 espie Exp $
 
    Copyright (C) 1998, 99 Free Software Foundation, Inc.
 

@@ -1,5 +1,5 @@
 /* index.c -- indexing for Texinfo.
-   $Id: index.c,v 1.1 2000/02/09 01:25:16 espie Exp $
+   $Id: index.c,v 1.1.1.1 2000/02/09 01:25:16 espie Exp $
 
    Copyright (C) 1998, 99 Free Software Foundation, Inc.
 

@@ -1,5 +1,5 @@
 /* html.h -- declarations for html-related utilities.
-   $Id: html.h,v 1.1 2000/02/09 01:25:11 espie Exp $
+   $Id: html.h,v 1.1.1.1 2000/02/09 01:25:11 espie Exp $
 
    Copyright (C) 1999 Free Software Foundation, Inc.
 
