@@ -1,7 +1,7 @@
 // Use all the g++ headerfiles
 
 // $Author: niklas $
-// $Revision: 1.1 $
+// $Revision: 1.1.1.1 $
 // $Date: 1996/03/15 22:19:18 $
 
 #include <_G_config.h>
