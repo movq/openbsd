@@ -1,4 +1,4 @@
-# $OpenBSD: Makefile,v 1.1 1999/05/23 22:46:29 angelos Exp $
+# $OpenBSD: Makefile,v 1.1.1.1 1999/05/23 22:46:29 angelos Exp $
 
 PROG=	keynote-sign
 
