@@ -1,4 +1,4 @@
-/*	$Id: afssysdefs.h,v 1.1 1995/12/14 06:52:46 tholo Exp $	*/
+/*	$Id: afssysdefs.h,v 1.1.1.1 1995/12/14 06:52:46 tholo Exp $	*/
 
 /*
  * This section is for machines using single entry point AFS syscalls!

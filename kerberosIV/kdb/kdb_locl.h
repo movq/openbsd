@@ -1,4 +1,4 @@
-/*	$Id: kdb_locl.h,v 1.1 1995/12/14 06:52:37 tholo Exp $	*/
+/*	$Id: kdb_locl.h,v 1.1.1.1 1995/12/14 06:52:37 tholo Exp $	*/
 
 #ifndef __kdb_locl_h
 #define __kdb_locl_h

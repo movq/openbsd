@@ -1,4 +1,4 @@
-/*	$Id: kpasswdd.c,v 1.1 1995/12/14 06:52:53 tholo Exp $	*/
+/*	$Id: kpasswdd.c,v 1.1.1.1 1995/12/14 06:52:53 tholo Exp $	*/
 
 /*-
  * Copyright (c) 1990, 1993

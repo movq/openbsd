@@ -1,4 +1,4 @@
-/*	$Id: kadm_local.h,v 1.1 1995/12/14 06:52:45 tholo Exp $	*/
+/*	$Id: kadm_local.h,v 1.1.1.1 1995/12/14 06:52:45 tholo Exp $	*/
 
 #include <stdio.h>
 #include <stdlib.h>

@@ -1,4 +1,4 @@
-/*	$Id: admin_server.c,v 1.1 1995/12/14 06:52:49 tholo Exp $	*/
+/*	$Id: admin_server.c,v 1.1.1.1 1995/12/14 06:52:49 tholo Exp $	*/
 
 /*-
  * Copyright (C) 1989 by the Massachusetts Institute of Technology

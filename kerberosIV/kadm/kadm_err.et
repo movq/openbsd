@@ -1,4 +1,4 @@
-#	$Id: kadm_err.et,v 1.1 1995/12/14 06:52:45 tholo Exp $
+#	$Id: kadm_err.et,v 1.1.1.1 1995/12/14 06:52:45 tholo Exp $
 
 # Copyright 1988 by the Massachusetts Institute of Technology.
 #
@@ -11,7 +11,7 @@
 
 # KADM_SUCCESS, as all success codes should be, is zero
 
-ec KADM_RCSID,		"$Header: /home/mike/src/cvs/openbsd/src/kerberosIV/kadm/Attic/kadm_err.et,v 1.1 1995/12/14 06:52:45 tholo Exp $"
+ec KADM_RCSID,		"$Header: /home/mike/src/cvs/openbsd/src/kerberosIV/kadm/Attic/kadm_err.et,v 1.1.1.1 1995/12/14 06:52:45 tholo Exp $"
 # /* Building and unbuilding the packet errors */
 ec KADM_NO_REALM,	"Cannot fetch local realm"
 ec KADM_NO_CRED,	"Unable to fetch credentials"

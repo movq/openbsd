@@ -1,4 +1,4 @@
-/*	$Id: ksrvutil.c,v 1.1 1995/12/14 06:52:53 tholo Exp $	*/
+/*	$Id: ksrvutil.c,v 1.1.1.1 1995/12/14 06:52:53 tholo Exp $	*/
 
 /*-
  * Copyright (C) 1989 by the Massachusetts Institute of Technology

@@ -1,4 +1,4 @@
-/*	$Id: kadmin.c,v 1.1 1995/12/14 06:52:48 tholo Exp $	*/
+/*	$Id: kadmin.c,v 1.1.1.1 1995/12/14 06:52:48 tholo Exp $	*/
 
 /* 
  * Copyright (C) 1989 by the Massachusetts Institute of Technology

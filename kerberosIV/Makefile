@@ -1,5 +1,5 @@
 #	from @(#)Makefile	5.1 (Berkeley) 6/25/90
-#	$Id: Makefile,v 1.1 1995/12/14 06:52:32 tholo Exp $
+#	$Id: Makefile,v 1.1.1.1 1995/12/14 06:52:32 tholo Exp $
 
 # do compile_et and mk_cmds first, used by other directories
 

@@ -1,4 +1,4 @@
-/* $Id: krb_locl.h,v 1.1 1995/12/14 06:52:38 tholo Exp $ */
+/* $Id: krb_locl.h,v 1.1.1.1 1995/12/14 06:52:38 tholo Exp $ */
 
 #ifndef __krb_locl_h
 #define __krb_locl_h

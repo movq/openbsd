@@ -1,4 +1,4 @@
-/*	$Id: kerberos.c,v 1.1 1995/12/14 06:52:52 tholo Exp $	*/
+/*	$Id: kerberos.c,v 1.1.1.1 1995/12/14 06:52:52 tholo Exp $	*/
 
 /*-
  * Copyright 1987, 1988 by the Student Information Processing Board

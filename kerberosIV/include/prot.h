@@ -1,4 +1,4 @@
-/*	$Id: prot.h,v 1.1 1995/12/14 06:52:33 tholo Exp $	*/
+/*	$Id: prot.h,v 1.1.1.1 1995/12/14 06:52:33 tholo Exp $	*/
 
 /*-
  * Copyright 1985, 1986, 1987, 1988 by the Massachusetts Institute
