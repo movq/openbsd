@@ -9,7 +9,7 @@
 */
 
 /* ====================================================================
- * Copyright (c) 1998-2001 Ralf S. Engelschall. All rights reserved.
+ * Copyright (c) 1998-2003 Ralf S. Engelschall. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -74,7 +74,7 @@
  *  identify the module to SCCS `what' and RCS `ident' commands
  */
 static char const sccsid[] = "@(#) mod_ssl/" MOD_SSL_VERSION " >";
-static char const rcsid[]  = "$Id: mod_ssl.c,v 1.1.1.1 2002/10/07 19:48:14 henning Exp $";
+static char const rcsid[]  = "$Id: mod_ssl.c,v 1.1.1.2 2003/11/17 17:03:23 henning Exp $";
 
 /*
  *  the table of configuration directives we provide
