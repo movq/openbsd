@@ -1,6 +1,6 @@
 #!./perl
 
-# $RCSfile: anydbm.t,v $$Revision: 1.1 $$Date: 1996/08/19 10:13:13 $
+# $RCSfile: anydbm.t,v $$Revision: 1.1.1.1 $$Date: 1996/08/19 10:13:13 $
 
 BEGIN {
     chdir 't' if -d 't';

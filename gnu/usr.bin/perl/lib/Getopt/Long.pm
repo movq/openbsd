@@ -1,6 +1,6 @@
 # GetOpt::Long.pm -- POSIX compatible options parsing
 
-# RCS Status      : $Id: Long.pm,v 1.1 1996/08/19 10:12:44 downsj Exp $
+# RCS Status      : $Id: Long.pm,v 1.1.1.1 1996/08/19 10:12:44 downsj Exp $
 # Author          : Johan Vromans
 # Created On      : Tue Sep 11 15:00:12 1990
 # Last Modified By: Johan Vromans
@@ -14,7 +14,7 @@ require Exporter;
 
 @ISA = qw(Exporter);
 @EXPORT = qw(&GetOptions $REQUIRE_ORDER $PERMUTE $RETURN_IN_ORDER);
-$VERSION = sprintf("%d.%02d", q$Revision: 1.1 $ =~ /(\d+)\.(\d+)/);
+$VERSION = sprintf("%d.%02d", q$Revision: 1.1.1.1 $ =~ /(\d+)\.(\d+)/);
 use strict;
 
 =head1 NAME
@@ -458,7 +458,7 @@ $Getopt::Long::error = 0;		# error tally
 $Getopt::Long::ignorecase = 1;		# ignore case when matching options
 ($Getopt::Long::version,
  $Getopt::Long::major_version, 
- $Getopt::Long::minor_version) = '$Revision: 1.1 $ ' =~ /: ((\d+)\.(\d+))/;
+ $Getopt::Long::minor_version) = '$Revision: 1.1.1.1 $ ' =~ /: ((\d+)\.(\d+))/;
 $Getopt::Long::version .= '*' if length('$Locker:  $ ') > 12;
 
 ################ Subroutines ################

@@ -15,7 +15,7 @@ $Debug = 0;
 $Verbose = 1;
 $Is_VMS = $^O eq 'VMS';
 
-$VERSION = $VERSION = substr(q$Revision: 1.1 $,10,4);
+$VERSION = $VERSION = substr(q$Revision: 1.1.1.1 $,10,4);
 
 $Quiet = 0;
 

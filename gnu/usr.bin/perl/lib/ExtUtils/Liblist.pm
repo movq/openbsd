@@ -2,7 +2,7 @@ package ExtUtils::Liblist;
 
 # Broken out of MakeMaker from version 4.11
 
-$ExtUtils::Liblist::VERSION = substr q$Revision: 1.1 $, 10;
+$ExtUtils::Liblist::VERSION = substr q$Revision: 1.1.1.1 $, 10;
 
 use Config;
 use Cwd 'cwd';
