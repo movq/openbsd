@@ -1,4 +1,4 @@
-/* * $OpenBSD: etc.c,v 1.1 2000/06/13 03:40:14 rahnds Exp $*/
+/* * $OpenBSD: etc.c,v 1.1.1.1 2000/06/13 03:40:14 rahnds Exp $*/
 /*
  */
 

@@ -1,4 +1,4 @@
-/*	$OpenBSD: shlib.c,v 1.1 2000/06/13 03:40:21 rahnds Exp $	*/
+/*	$OpenBSD: shlib.c,v 1.1.1.1 2000/06/13 03:40:21 rahnds Exp $	*/
 /*	$NetBSD: shlib.c,v 1.13 1998/04/04 01:00:29 fvdl Exp $	*/
 
 /*
