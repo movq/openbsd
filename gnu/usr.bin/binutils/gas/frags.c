@@ -1,6 +1,6 @@
 /* frags.c - manage frags -
-   Copyright (C) 1987, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 2000
-   Free Software Foundation, Inc.
+
+   Copyright (C) 1987, 1990, 1991, 1992 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -15,9 +15,8 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with GAS; see the file COPYING.  If not, write to the Free
-   Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+   along with GAS; see the file COPYING.  If not, write to
+   the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #include "as.h"
 #include "subsegs.h"
@@ -67,22 +66,25 @@ frag_grow (nchars)
 {
   if (obstack_room (&frchain_now->frch_obstack) < nchars)
     {
-      unsigned int n;
+      unsigned int n, oldn;
       long oldc;
 
       frag_wane (frag_now);
       frag_new (0);
+      oldn = (unsigned) -1;
       oldc = frchain_now->frch_obstack.chunk_size;
-      frchain_now->frch_obstack.chunk_size = 2 * nchars + SIZEOF_STRUCT_FRAG;
-      while ((n = obstack_room (&frchain_now->frch_obstack)) < nchars)
+      frchain_now->frch_obstack.chunk_size = 2 * nchars;
+      while ((n = obstack_room (&frchain_now->frch_obstack)) < nchars
+	     && n < oldn)
 	{
 	  frag_wane (frag_now);
 	  frag_new (0);
+	  oldn = n;
 	}
       frchain_now->frch_obstack.chunk_size = oldc;
     }
   if (obstack_room (&frchain_now->frch_obstack) < nchars)
-    as_fatal (_("Can't extend frag %d. chars"), nchars);
+    as_fatal ("Can't extend frag %d. chars", nchars);
 }
 
 /*
@@ -93,14 +95,11 @@ frag_grow (nchars)
  * [frchain_now remains the same but frag_now is updated.]
  * Because this calculates the correct value of fr_fix by
  * looking at the obstack 'frags', it needs to know how many
- * characters at the end of the old frag belong to the maximal
- * variable part;  The rest must belong to fr_fix.
- * It doesn't actually set up the old frag's fr_var.  You may have
- * set fr_var == 1, but allocated 10 chars to the end of the frag;
- * In this case you pass old_frags_var_max_size == 10.
- * In fact, you may use fr_var for something totally unrelated to the
- * size of the variable part of the frag;  None of the generic frag
- * handling code makes use of fr_var.
+ * characters at the end of the old frag belong to (the maximal)
+ * fr_var: the rest must belong to fr_fix.
+ * It doesn't actually set up the old frag's fr_var: you may have
+ * set fr_var == 1, but allocated 10 chars to the end of the frag:
+ * in this case you pass old_frags_var_max_size == 10.
  *
  * Make a new frag, initialising some components. Link new frag at end
  * of frchain_now.
@@ -113,11 +112,12 @@ frag_new (old_frags_var_max_size)
 {
   fragS *former_last_fragP;
   frchainS *frchP;
+  long tmp;
 
   assert (frchain_now->frch_last == frag_now);
 
   /* Fix up old frag's fr_fix.  */
-  frag_now->fr_fix = frag_now_fix_octets () - old_frags_var_max_size;
+  frag_now->fr_fix = frag_now_fix () - old_frags_var_max_size;
   /* Make sure its type is valid.  */
   assert (frag_now->fr_type != 0);
 
@@ -130,8 +130,6 @@ frag_new (old_frags_var_max_size)
   assert (former_last_fragP != 0);
   assert (former_last_fragP == frag_now);
   frag_now = frag_alloc (&frchP->frch_obstack);
-
-  as_where (&frag_now->fr_file, &frag_now->fr_line);
 
   /* Generally, frag_now->points to an address rounded up to next
      alignment.  However, characters will add to obstack frags
@@ -170,13 +168,13 @@ frag_more (nchars)
 
   if (now_seg == absolute_section)
     {
-      as_bad (_("attempt to allocate data in absolute section"));
+      as_bad ("attempt to allocate data in absolute section");
       subseg_set (text_section, 0);
     }
 
   if (mri_common_symbol != NULL)
     {
-      as_bad (_("attempt to allocate data in common section"));
+      as_bad ("attempt to allocate data in common section");
       mri_common_symbol = NULL;
     }
 
@@ -204,7 +202,7 @@ frag_var (type, max_chars, var, subtype, symbol, offset, opcode)
      int var;
      relax_substateT subtype;
      symbolS *symbol;
-     offsetT offset;
+     long offset;
      char *opcode;
 {
   register char *retval;
@@ -218,15 +216,9 @@ frag_var (type, max_chars, var, subtype, symbol, offset, opcode)
   frag_now->fr_symbol = symbol;
   frag_now->fr_offset = offset;
   frag_now->fr_opcode = opcode;
-#ifdef USING_CGEN
-  frag_now->fr_cgen.insn = 0;
-  frag_now->fr_cgen.opindex = 0;
-  frag_now->fr_cgen.opinfo = 0;
-#endif
-#ifdef TC_FRAG_INIT
-  TC_FRAG_INIT (frag_now);
-#endif
-  as_where (&frag_now->fr_file, &frag_now->fr_line);
+  /* default these to zero. */
+  frag_now->fr_pcrel_adjust = 0;
+  frag_now->fr_bsr = 0;
   frag_new (max_chars);
   return (retval);
 }
@@ -237,6 +229,7 @@ frag_var (type, max_chars, var, subtype, symbol, offset, opcode)
  * OVE: This variant of frag_var assumes that space for the tail has been
  *      allocated by caller.
  *      No call to frag_grow is done.
+ *      Two new arguments have been added.
  */
 
 char *
@@ -246,7 +239,7 @@ frag_variant (type, max_chars, var, subtype, symbol, offset, opcode)
      int var;
      relax_substateT subtype;
      symbolS *symbol;
-     offsetT offset;
+     long offset;
      char *opcode;
 {
   register char *retval;
@@ -258,15 +251,9 @@ frag_variant (type, max_chars, var, subtype, symbol, offset, opcode)
   frag_now->fr_symbol = symbol;
   frag_now->fr_offset = offset;
   frag_now->fr_opcode = opcode;
-#ifdef USING_CGEN
-  frag_now->fr_cgen.insn = 0;
-  frag_now->fr_cgen.opindex = 0;
-  frag_now->fr_cgen.opinfo = 0;
-#endif
-#ifdef TC_FRAG_INIT
-  TC_FRAG_INIT (frag_now);
-#endif
-  as_where (&frag_now->fr_file, &frag_now->fr_line);
+  /* default these to zero. */
+  frag_now->fr_pcrel_adjust = 0;
+  frag_now->fr_bsr = 0;
   frag_new (max_chars);
   return (retval);
 }				/* frag_variant() */
@@ -285,73 +272,53 @@ frag_wane (fragP)
   fragP->fr_var = 0;
 }
 
-/* Make an alignment frag.  The size of this frag will be adjusted to
-   force the next frag to have the appropriate alignment.  ALIGNMENT
-   is the power of two to which to align.  FILL_CHARACTER is the
-   character to use to fill in any bytes which are skipped.  MAX is
-   the maximum number of characters to skip when doing the alignment,
-   or 0 if there is no maximum.  */
+/*
+ *			frag_align()
+ *
+ * Make a frag for ".align foo,bar". Call is "frag_align (foo,bar);".
+ * Foo & bar are absolute integers.
+ *
+ * Call to close off the current frag with a ".align", then start a new
+ * (so far empty) frag, in the same subsegment as the last frag.
+ */
 
 void 
-frag_align (alignment, fill_character, max)
+frag_align (alignment, fill_character)
      int alignment;
      int fill_character;
-     int max;
 {
   if (now_seg == absolute_section)
-    {
-      addressT new_off;
-
-      new_off = ((abs_section_offset + alignment - 1)
-		 &~ ((1 << alignment) - 1));
-      if (max == 0 || new_off - abs_section_offset <= (addressT) max)
-	abs_section_offset = new_off;
-    }
+    abs_section_offset = ((abs_section_offset + alignment - 1)
+			  &~ ((1 << alignment) - 1));
   else
     {
       char *p;
 
-      p = frag_var (rs_align, 1, 1, (relax_substateT) max,
-		    (symbolS *) 0, (offsetT) alignment, (char *) 0);
+      p = frag_var (rs_align, 1, 1, (relax_substateT) 0,
+		    (symbolS *) 0, (long) alignment, (char *) 0);
       *p = fill_character;
     }
 }
 
-/* Make an alignment frag like frag_align, but fill with a repeating
-   pattern rather than a single byte.  ALIGNMENT is the power of two
-   to which to align.  FILL_PATTERN is the fill pattern to repeat in
-   the bytes which are skipped.  N_FILL is the number of bytes in
-   FILL_PATTERN.  MAX is the maximum number of characters to skip when
-   doing the alignment, or 0 if there is no maximum.  */
-
 void 
-frag_align_pattern (alignment, fill_pattern, n_fill, max)
+frag_align_pattern (alignment, fill_pattern, n_fill)
      int alignment;
      const char *fill_pattern;
      int n_fill;
-     int max;
 {
   char *p;
-
-  p = frag_var (rs_align, n_fill, n_fill, (relax_substateT) max,
-		(symbolS *) 0, (offsetT) alignment, (char *) 0);
+  p = frag_var (rs_align, n_fill, n_fill, (relax_substateT) 0,
+		(symbolS *) 0, (long) alignment, (char *) 0);
   memcpy (p, fill_pattern, n_fill);
 }
 
-addressT
-frag_now_fix_octets ()
+int
+frag_now_fix ()
 {
   if (now_seg == absolute_section)
     return abs_section_offset;
-
-  return ((char*) obstack_next_free (&frchain_now->frch_obstack)
-          - frag_now->fr_literal);
-}
-
-addressT
-frag_now_fix ()
-{
-  return frag_now_fix_octets() / OCTETS_PER_BYTE;
+  return ((char*)obstack_next_free (&frchain_now->frch_obstack)
+	  - frag_now->fr_literal);
 }
 
 void

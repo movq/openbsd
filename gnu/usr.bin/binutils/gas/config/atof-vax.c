@@ -1,6 +1,5 @@
 /* atof_vax.c - turn a Flonum into a VAX floating point number
-   Copyright (C) 1987, 1992, 93, 95, 97, 98, 1999
-   Free Software Foundation, Inc.
+   Copyright (C) 1987, 1992 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -15,17 +14,10 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with GAS; see the file COPYING.  If not, write to the Free
-   Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+   along with GAS; see the file COPYING.  If not, write to
+   the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #include "as.h"
-
-static int atof_vax_sizeof PARAMS ((int));
-static int next_bits PARAMS ((int));
-static void make_invalid_floating_point_number PARAMS ((LITTLENUM_TYPE *));
-static int what_kind_of_float PARAMS ((int, int *, long *));
-static char *atof_vax PARAMS ((char *, int, LITTLENUM_TYPE *));
 
 /* Precision in LittleNums. */
 #define MAX_PRECISION (8)
@@ -41,9 +33,9 @@ int flonum_gen2vax PARAMS ((int format_letter, FLONUM_TYPE * f,
 			    LITTLENUM_TYPE * words));
 
 /* Number of chars in flonum type 'letter'. */
-static int
+int
 atof_vax_sizeof (letter)
-     int letter;
+     char letter;
 {
   int return_value;
 
@@ -156,7 +148,7 @@ make_invalid_floating_point_number (words)
 
 static int			/* 0 means letter is OK. */
 what_kind_of_float (letter, precisionP, exponent_bitsP)
-     int letter;		/* In: lowercase please. What kind of float? */
+     char letter;		/* In: lowercase please. What kind of float? */
      int *precisionP;		/* Number of 16-bit words in the float. */
      long *exponent_bitsP;	/* Number of exponent bits. */
 {
@@ -201,10 +193,10 @@ what_kind_of_float (letter, precisionP, exponent_bitsP)
  *									*
  \***********************************************************************/
 
-static char *				/* Return pointer past text consumed. */
+char *				/* Return pointer past text consumed. */
 atof_vax (str, what_kind, words)
      char *str;			/* Text to convert to binary. */
-     int what_kind;		/* 'd', 'f', 'g', 'h' */
+     char what_kind;		/* 'd', 'f', 'g', 'h' */
      LITTLENUM_TYPE *words;	/* Build the binary here. */
 {
   FLONUM_TYPE f;
@@ -261,7 +253,7 @@ atof_vax (str, what_kind, words)
 
 int				/* 0: OK. */
 flonum_gen2vax (format_letter, f, words)
-     int format_letter;		/* One of 'd' 'f' 'g' 'h'. */
+     char format_letter;	/* One of 'd' 'f' 'g' 'h'. */
      FLONUM_TYPE *f;
      LITTLENUM_TYPE *words;	/* Deliver answer here. */
 {
@@ -450,7 +442,7 @@ flonum_gen2vax (format_letter, f, words)
 
 char *
 md_atof (what_statement_type, literalP, sizeP)
-     int what_statement_type;
+     char what_statement_type;
      char *literalP;
      int *sizeP;
 {
@@ -512,7 +504,7 @@ md_atof (what_statement_type, literalP, sizeP)
     };
 
   *sizeP = number_of_chars;
-  return kind_of_float ? NULL : _("Bad call to md_atof()");
+  return kind_of_float ? 0 : "Bad call to md_atof()";
 }
 
 /* end of atof-vax.c */

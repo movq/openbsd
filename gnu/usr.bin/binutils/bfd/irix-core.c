@@ -1,5 +1,5 @@
 /* BFD back-end for Irix core files.
-   Copyright 1993, 94, 95, 96, 1997 Free Software Foundation, Inc.
+   Copyright 1993, 1994 Free Software Foundation, Inc.
    Written by Stu Grossman, Cygnus Support.
    Converted to back-end form by Ian Lance Taylor, Cygnus Support
 
@@ -39,16 +39,6 @@ struct sgi_core_struct
 #define core_hdr(bfd) ((bfd)->tdata.sgi_core_data)
 #define core_signal(bfd) (core_hdr(bfd)->sig)
 #define core_command(bfd) (core_hdr(bfd)->cmd)
-
-static asection *make_bfd_asection
-  PARAMS ((bfd *, CONST char *, flagword, bfd_size_type, bfd_vma, file_ptr));
-static const bfd_target *irix_core_core_file_p PARAMS ((bfd *));
-static char *irix_core_core_file_failing_command PARAMS ((bfd *));
-static int irix_core_core_file_failing_signal PARAMS ((bfd *));
-static boolean irix_core_core_file_matches_executable_p 
-  PARAMS ((bfd *, bfd *));
-static asymbol *irix_core_make_empty_symbol PARAMS ((bfd *));
-static void swap_abort PARAMS ((void));
 
 static asection *
 make_bfd_asection (abfd, name, flags, _raw_size, vma, filepos)
@@ -92,10 +82,7 @@ irix_core_core_file_p (abfd)
       return 0;
     }
 
-#ifndef CORE_MAGICN32
-#define CORE_MAGICN32 CORE_MAGIC
-#endif
-  if ((coreout.c_magic != CORE_MAGIC && coreout.c_magic != CORE_MAGICN32)
+  if (coreout.c_magic != CORE_MAGIC
       || coreout.c_version != CORE_VERSION1)
     return 0;
 
@@ -143,7 +130,8 @@ irix_core_core_file_p (abfd)
 			      SEC_ALLOC+SEC_LOAD+SEC_HAS_CONTENTS,
 			      vmap.v_len,
 			      vmap.v_vaddr,
-			      vmap.v_offset))
+			      vmap.v_offset,
+			      2))
 	return NULL;
     }
 
@@ -206,8 +194,7 @@ irix_core_make_empty_symbol (abfd)
 #define irix_core_get_symtab _bfd_nosymbols_get_symtab
 #define irix_core_print_symbol _bfd_nosymbols_print_symbol
 #define irix_core_get_symbol_info _bfd_nosymbols_get_symbol_info
-#define irix_core_bfd_is_local_label_name \
-  _bfd_nosymbols_bfd_is_local_label_name
+#define irix_core_bfd_is_local_label _bfd_nosymbols_bfd_is_local_label
 #define irix_core_get_lineno _bfd_nosymbols_get_lineno
 #define irix_core_find_nearest_line _bfd_nosymbols_find_nearest_line
 #define irix_core_bfd_make_debug_symbol _bfd_nosymbols_bfd_make_debug_symbol
@@ -215,7 +202,7 @@ irix_core_make_empty_symbol (abfd)
 #define irix_core_minisymbol_to_symbol _bfd_nosymbols_minisymbol_to_symbol
 
 /* If somebody calls any byte-swapping routines, shoot them.  */
-static void
+void
 swap_abort()
 {
   abort(); /* This way doesn't require any declaration for ANSI to fuck up */
@@ -229,8 +216,8 @@ const bfd_target irix_core_vec =
   {
     "irix-core",
     bfd_target_unknown_flavour,
-    BFD_ENDIAN_BIG,		/* target byte order */
-    BFD_ENDIAN_BIG,		/* target headers byte order */
+    true,			/* target byte order */
+    true,			/* target headers byte order */
     (HAS_RELOC | EXEC_P |	/* object flags */
      HAS_LINENO | HAS_DEBUG |
      HAS_SYMS | HAS_LOCALS | WP_TEXT | D_PAGED),
@@ -270,8 +257,6 @@ const bfd_target irix_core_vec =
        BFD_JUMP_TABLE_LINK (_bfd_nolink),
        BFD_JUMP_TABLE_DYNAMIC (_bfd_nodynamic),
 
-    NULL,
-    
     (PTR) 0			/* backend_data */
 };
 

@@ -11,7 +11,7 @@ resource 'vers' (1)  {
 	0,
 	verUs,
 	VERSION_STRING,
-	VERSION_STRING  " (C) 1986-95 FSF, Inc."
+	VERSION_STRING  " (c) 1986-95 FSF, Inc. "
 };
 
 resource 'vers' (2, purgeable)  {
@@ -21,7 +21,7 @@ resource 'vers' (2, purgeable)  {
 	0,
 	verUs,
 	VERSION_STRING,
-	"GAS " VERSION_STRING " for MPW"
+	"GAS " /* fill in major/minor versions */ "for MPW"
 };
 
 #ifdef WANT_CFRG
@@ -35,7 +35,7 @@ resource 'cfrg' (0) {
 		kNoVersionNum, kNoVersionNum,
 		0,0,
 		kIsApp, kOnDiskFlat, kZeroOffset, kWholeFork,
-		PROG_NAME
+		"as"
 	}
 };
 

@@ -1,8 +1,5 @@
 /*** coff information for M68K */
 
-#ifndef GNU_COFF_M68K_H
-#define GNU_COFF_M68K_H 1
-
 /********************** FILE HEADER **********************/
 
 struct external_filehdr {
@@ -47,7 +44,7 @@ struct external_filehdr {
 #define PAGEMAGICPEXECPAGED   0413 /* pure executable (paged) */
 
 #define	FILHDR	struct external_filehdr
-#define	FILHSZ	20
+#define	FILHSZ	sizeof(FILHDR)
 
 
 /********************** AOUT "OPTIONAL HEADER" **********************/
@@ -66,8 +63,8 @@ typedef struct
 }
 AOUTHDR;
 
-#define AOUTSZ 28
-#define AOUTHDRSZ 28
+#define AOUTSZ (sizeof(AOUTHDR))
+
 
 
 /********************** SECTION HEADER **********************/
@@ -95,7 +92,7 @@ struct external_scnhdr {
 #define _COMMENT ".comment"
 
 #define	SCNHDR	struct external_scnhdr
-#define	SCNHSZ	40
+#define	SCNHSZ	sizeof(SCNHDR)
 
 
 /********************** LINE NUMBERS **********************/
@@ -115,7 +112,7 @@ struct external_lineno {
 
 
 #define	LINENO	struct external_lineno
-#define	LINESZ	6
+#define	LINESZ	sizeof(LINENO) 
 
 
 /********************** SYMBOLS **********************/
@@ -216,10 +213,5 @@ struct external_reloc {
 
 #define RELOC struct external_reloc
 
-#ifdef M68K_COFF_OFFSET
-#define RELSZ 14
-#else
-#define RELSZ 10
-#endif
+#define RELSZ sizeof(struct external_reloc)
 
-#endif /* GNU_COFF_M68K_H */

@@ -105,7 +105,6 @@ int_vasprintf (result, format, args)
 	      (void) va_arg (ap, char *);
 	      break;
 	    }
-	  p++;
 	}
     }
 #ifdef TEST

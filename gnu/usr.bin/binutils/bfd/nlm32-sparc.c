@@ -1,5 +1,5 @@
 /* Support for 32-bit SPARC NLM (NetWare Loadable Module)
-   Copyright (C) 1993, 1994, 1995, 1999 Free Software Foundation, Inc.
+   Copyright (C) 1993 Free Software Foundation, Inc.
 
 This file is part of BFD, the Binary File Descriptor library.
 
@@ -118,7 +118,7 @@ struct nlm32_sparc_reloc_ext {
 static boolean
 nlm_sparc_read_reloc (abfd, sym, secp, rel)
      bfd *abfd;
-     nlmNAME(symbol_type) *sym ATTRIBUTE_UNUSED;
+     nlmNAME(symbol_type) *sym;
      asection **secp;
      arelent *rel;
 {
@@ -232,11 +232,11 @@ nlm_sparc_write_reloc (abfd, sec, rel)
 
 static boolean
 nlm_sparc_mangle_relocs (abfd, sec, data, offset, count)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     asection *sec ATTRIBUTE_UNUSED;
-     PTR data ATTRIBUTE_UNUSED;
-     bfd_vma offset ATTRIBUTE_UNUSED;
-     bfd_size_type count ATTRIBUTE_UNUSED;
+     bfd *abfd;
+     asection *sec;
+     PTR data;
+     bfd_vma offset;
+     bfd_size_type count;
 {
   return true;
 }
@@ -272,7 +272,10 @@ nlm_sparc_read_import (abfd, sym)
   sym -> symbol.the_bfd = abfd;
   name = bfd_alloc (abfd, symlength + 1);
   if (name == NULL)
-    return false;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return false;
+    }
   
   /*
    * Then read in the symbol
@@ -293,7 +296,10 @@ nlm_sparc_read_import (abfd, sym)
   nlm_relocs = ((struct nlm_relent *)
 		bfd_alloc (abfd, rcount * sizeof (struct nlm_relent)));
   if (!nlm_relocs)
-    return false;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return false;
+    }
   sym -> relocs = nlm_relocs;
   sym -> rcnt = 0;
   while (sym -> rcnt < rcount)

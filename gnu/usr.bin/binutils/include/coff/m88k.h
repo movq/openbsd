@@ -18,7 +18,7 @@ struct external_filehdr {
 #define MC88BADMAG(x) (((x).f_magic!=MC88MAGIC) &&((x).f_magic!=MC88DMAGIC) && ((x).f_magic != MC88OMAGIC))
 
 #define	FILHDR	struct external_filehdr
-#define	FILHSZ	20
+#define	FILHSZ	sizeof(FILHDR)
 
 
 /********************** AOUT "OPTIONAL HEADER" **********************/
@@ -44,8 +44,7 @@ AOUTHDR;
 
 /* compute size of a header */
 
-#define AOUTSZ 28
-#define AOUTHDRSZ 28
+#define AOUTSZ (sizeof(AOUTHDR))
 
 
 /********************** SECTION HEADER **********************/
@@ -67,7 +66,7 @@ struct external_scnhdr
 
 
 #define	SCNHDR	struct external_scnhdr
-#define	SCNHSZ	44
+#define	SCNHSZ	sizeof(SCNHDR)
 
 /*
  * names of "special" sections

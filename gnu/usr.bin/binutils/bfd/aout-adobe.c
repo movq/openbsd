@@ -1,6 +1,5 @@
 /* BFD back-end for a.out.adobe binaries.
-   Copyright 1990, 91, 92, 93, 94, 95, 96, 98, 1999
-   Free Software Foundation, Inc.
+   Copyright 1990, 1991, 1992, 1993, 1994 Free Software Foundation, Inc.
    Written by Cygnus Support.  Based on bout.c.
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -113,6 +112,8 @@ aout_adobe_object_p (abfd)
      take just about any a.out file as an Adobe a.out file.  FIXME!  */
 
   if (N_BADMAG (anexec)) {
+    extern char *getenv ();
+
     targ = getenv ("GNUTARGET");
     if (targ && !strcmp (targ, a_out_adobe_vec.name))
       ;		/* Just continue anyway, if specifically set to this format */
@@ -180,7 +181,7 @@ aout_adobe_callback (abfd)
 
     default:
       (*_bfd_error_handler)
-	(_("%s: Unknown section type in a.out.adobe file: %x\n"), 
+	("%s: Unknown section type in a.out.adobe file: %x\n", 
 	 bfd_get_filename (abfd), ext->e_type[0]);
       goto no_more_sections;
     }
@@ -201,8 +202,10 @@ aout_adobe_callback (abfd)
     /* Fix the name, if it is a sprintf'd name.  */
     if (sect->name == try_again) {
       newname = (char *) bfd_zalloc(abfd, strlen (sect->name));
-      if (newname == NULL)
+      if (newname == NULL) {
+	bfd_set_error (bfd_error_no_memory);
 	return 0;
+      }
       strcpy (newname, sect->name);
       sect->name = newname;
     }
@@ -253,8 +256,10 @@ aout_adobe_mkobject (abfd)
   struct bout_data_struct *rawptr;
 
   rawptr = (struct bout_data_struct *) bfd_zalloc (abfd, sizeof (struct bout_data_struct));
-  if (rawptr == NULL)
+  if (rawptr == NULL) {
+      bfd_set_error (bfd_error_no_memory);
       return false;
+    }
 
   abfd->tdata.bout_data = rawptr;
   exec_hdr (abfd) = &rawptr->e;
@@ -373,8 +378,8 @@ aout_adobe_write_object_contents (abfd)
 
 static void
 aout_adobe_write_section (abfd, sect)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     sec_ptr sect ATTRIBUTE_UNUSED;
+     bfd *abfd;
+     sec_ptr sect;
 {
   /* FIXME XXX */
 }
@@ -451,8 +456,8 @@ aout_adobe_set_arch_mach (abfd, arch, machine)
 
 static int 
 aout_adobe_sizeof_headers (ignore_abfd, ignore)
-     bfd *ignore_abfd ATTRIBUTE_UNUSED;
-     boolean ignore ATTRIBUTE_UNUSED;
+     bfd *ignore_abfd;
+     boolean ignore;
 {
   return sizeof(struct internal_exec);
 }
@@ -479,7 +484,6 @@ aout_adobe_sizeof_headers (ignore_abfd, ignore)
   bfd_generic_get_relocated_section_contents
 #define aout_32_get_section_contents_in_window _bfd_generic_get_section_contents_in_window
 #define aout_32_bfd_relax_section       bfd_generic_relax_section
-#define aout_32_bfd_gc_sections         bfd_generic_gc_sections
 #define aout_32_bfd_link_hash_table_create \
   _bfd_generic_link_hash_table_create
 #define aout_32_bfd_link_add_symbols	_bfd_generic_link_add_symbols
@@ -490,8 +494,8 @@ const bfd_target a_out_adobe_vec =
 {
   "a.out.adobe",		/* name */
   bfd_target_aout_flavour,
-  BFD_ENDIAN_BIG,		/* data byte order is unknown (big assumed) */
-  BFD_ENDIAN_BIG,		/* hdr byte order is big */
+  true,				/* data byte order is unknown (big assumed) */
+  true,				/* hdr byte order is big */
   (HAS_RELOC | EXEC_P |		/* object flags */
    HAS_LINENO | HAS_DEBUG |
    HAS_SYMS | HAS_LOCALS | WP_TEXT ),
@@ -524,7 +528,5 @@ const bfd_target a_out_adobe_vec =
      BFD_JUMP_TABLE_LINK (aout_32),
      BFD_JUMP_TABLE_DYNAMIC (_bfd_nodynamic),
 
-  NULL,
-  
   (PTR) 0
 };

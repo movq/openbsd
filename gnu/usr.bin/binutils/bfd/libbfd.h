@@ -1,7 +1,6 @@
 /* libbfd.h -- Declarations used by bfd library *implementation*.
    (This include file is not for users of the library.)
-   Copyright 1990, 91, 92, 93, 94, 95, 96, 97, 98, 99, 2000
-   Free Software Foundation, Inc.
+   Copyright 1990, 1991, 1992, 1993, 1994, 1995 Free Software Foundation, Inc.
    Written by Cygnus Support.
 
 ** NOTE: libbfd.h is a GENERATED file.  Don't change it; instead,
@@ -25,13 +24,9 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 /* Align an address upward to a boundary, expressed as a number of bytes.
-   E.g. align to an 8-byte boundary with argument of 8.  Take care never
-   to wrap around if the address is within boundary-1 of the end of the
-   address space.  */
-#define BFD_ALIGN(this, boundary)					\
-  ((((bfd_vma) (this) + (boundary) - 1) >= (bfd_vma) (this))		\
-   ? (((bfd_vma) (this) + ((boundary) - 1)) & (~((boundary)-1)))	\
-   : ~ (bfd_vma) 0)
+   E.g. align to an 8-byte boundary with argument of 8.  */
+#define BFD_ALIGN(this, boundary) \
+  ((( (this) + ((boundary) -1)) & (~((boundary)-1))))
 
 /* If you want to read and write large blocks, you might want to do it
    in quanta of this amount */
@@ -40,17 +35,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 /* Set a tdata field.  Can't use the other macros for this, since they
    do casts, and casting to the left of assignment isn't portable.  */
 #define set_tdata(bfd, v) ((bfd)->tdata.any = (PTR) (v))
-
-/* If BFD_IN_MEMORY is set for a BFD, then the iostream fields points
-   to an instance of this structure.  */
-
-struct bfd_in_memory
-{
-  /* Size of buffer.  */
-  bfd_size_type size;
-  /* Buffer holding contents of BFD.  */
-  bfd_byte *buffer;
-};
 
 /* tdata for an archive.  For an input archive, cache
    needs to be free()'d.  For an output archive, symdefs do.  */
@@ -86,17 +70,21 @@ struct areltdata {
 
 #define arelt_size(bfd) (((struct areltdata *)((bfd)->arelt_data))->parsed_size)
 
-extern PTR bfd_malloc PARAMS ((size_t));
-extern PTR bfd_realloc PARAMS ((PTR, size_t));
-extern PTR bfd_zmalloc PARAMS ((size_t));
+char *bfd_zmalloc PARAMS ((bfd_size_type size));
 
 extern bfd_error_handler_type _bfd_error_handler;
 
-/* These routines allocate and free things on the BFD's objalloc.  */
+/* These routines allocate and free things on the BFD's obstack.  Note
+   that realloc can never occur in place.  */
 
-extern PTR bfd_alloc PARAMS ((bfd *, size_t));
-extern PTR bfd_zalloc PARAMS ((bfd *, size_t));
-extern void bfd_release PARAMS ((bfd *, PTR));
+PTR	bfd_alloc PARAMS ((bfd *abfd, size_t size));
+PTR	bfd_zalloc PARAMS ((bfd *abfd, size_t size));
+PTR	bfd_realloc PARAMS ((bfd *abfd, PTR orig, size_t size));
+void	bfd_alloc_grow PARAMS ((bfd *abfd, PTR thing, size_t size));
+PTR	bfd_alloc_finish PARAMS ((bfd *abfd));
+PTR	bfd_alloc_by_size_t PARAMS ((bfd *abfd, size_t wanted));
+
+#define	bfd_release(x,y) (void) obstack_free(&(x->memory),y)
 
 bfd *	_bfd_create_empty_archive_element_shell PARAMS ((bfd *obfd));
 bfd *	_bfd_look_for_bfd_in_cache PARAMS ((bfd *arch_bfd, file_ptr index));
@@ -113,7 +101,6 @@ extern boolean _bfd_construct_extended_name_table
 boolean	_bfd_write_archive_contents PARAMS ((bfd *abfd));
 boolean _bfd_compute_and_write_armap PARAMS ((bfd *, unsigned int elength));
 bfd *_bfd_get_elt_at_filepos PARAMS ((bfd *archive, file_ptr filepos));
-extern bfd *_bfd_generic_get_elt_at_index PARAMS ((bfd *, symindex));
 bfd * _bfd_new_bfd PARAMS ((void));
 
 boolean	bfd_false PARAMS ((bfd *ignore));
@@ -142,8 +129,6 @@ boolean	coff_write_armap PARAMS ((bfd *arch, unsigned int elength,
 				   struct orl *map, unsigned int orl_count, int stridx));
 
 extern PTR _bfd_generic_read_ar_hdr PARAMS ((bfd *));
-
-extern PTR _bfd_generic_read_ar_hdr_mag PARAMS ((bfd *, const char *));
 
 bfd *	bfd_generic_openr_next_archived_file PARAMS ((bfd *archive,
 						     bfd *last_file));
@@ -207,8 +192,6 @@ extern boolean _bfd_nocore_core_file_matches_executable_p
 #define _bfd_noarchive_read_ar_hdr bfd_nullvoidptr
 #define _bfd_noarchive_openr_next_archived_file \
   ((bfd *(*) PARAMS ((bfd *, bfd *))) bfd_nullvoidptr)
-#define _bfd_noarchive_get_elt_at_index \
-  ((bfd *(*) PARAMS ((bfd *, symindex))) bfd_nullvoidptr)
 #define _bfd_noarchive_generic_stat_arch_elt bfd_generic_stat_arch_elt
 #define _bfd_noarchive_update_armap_timestamp bfd_false
 
@@ -225,7 +208,6 @@ extern boolean _bfd_archive_bsd_construct_extended_name_table
 #define _bfd_archive_bsd_read_ar_hdr _bfd_generic_read_ar_hdr
 #define _bfd_archive_bsd_openr_next_archived_file \
   bfd_generic_openr_next_archived_file
-#define _bfd_archive_bsd_get_elt_at_index _bfd_generic_get_elt_at_index
 #define _bfd_archive_bsd_generic_stat_arch_elt \
   bfd_generic_stat_arch_elt
 extern boolean _bfd_archive_bsd_update_armap_timestamp PARAMS ((bfd *));
@@ -243,7 +225,6 @@ extern boolean _bfd_archive_coff_construct_extended_name_table
 #define _bfd_archive_coff_read_ar_hdr _bfd_generic_read_ar_hdr
 #define _bfd_archive_coff_openr_next_archived_file \
   bfd_generic_openr_next_archived_file
-#define _bfd_archive_coff_get_elt_at_index _bfd_generic_get_elt_at_index
 #define _bfd_archive_coff_generic_stat_arch_elt \
   bfd_generic_stat_arch_elt
 #define _bfd_archive_coff_update_armap_timestamp bfd_true
@@ -260,8 +241,8 @@ extern boolean _bfd_archive_coff_construct_extended_name_table
   ((void (*) PARAMS ((bfd *, PTR, asymbol *, bfd_print_symbol_type))) bfd_void)
 #define _bfd_nosymbols_get_symbol_info \
   ((void (*) PARAMS ((bfd *, asymbol *, symbol_info *))) bfd_void)
-#define _bfd_nosymbols_bfd_is_local_label_name \
-  ((boolean (*) PARAMS ((bfd *, const char *))) bfd_false)
+#define _bfd_nosymbols_bfd_is_local_label \
+  ((boolean (*) PARAMS ((bfd *, asymbol *))) bfd_false)
 #define _bfd_nosymbols_get_lineno \
   ((alent *(*) PARAMS ((bfd *, asymbol *))) bfd_nullvoidptr)
 #define _bfd_nosymbols_find_nearest_line \
@@ -318,10 +299,6 @@ extern boolean _bfd_generic_set_section_contents
   ((boolean (*) \
     PARAMS ((bfd *, asection *, struct bfd_link_info *, boolean *))) \
    bfd_false)
-#define _bfd_nolink_bfd_gc_sections \
-  ((boolean (*) \
-    PARAMS ((bfd *, struct bfd_link_info *))) \
-   bfd_false)
 #define _bfd_nolink_bfd_link_hash_table_create \
   ((struct bfd_link_hash_table *(*) PARAMS ((bfd *))) bfd_nullvoidptr)
 #define _bfd_nolink_bfd_link_add_symbols \
@@ -344,28 +321,13 @@ extern boolean _bfd_generic_set_section_contents
 
 /* Generic routine to determine of the given symbol is a local
    label.  */
-extern boolean bfd_generic_is_local_label_name PARAMS ((bfd *, const char *));
+extern boolean bfd_generic_is_local_label PARAMS ((bfd *, asymbol *));
 
 /* Generic minisymbol routines.  */
 extern long _bfd_generic_read_minisymbols
   PARAMS ((bfd *, boolean, PTR *, unsigned int *));
 extern asymbol *_bfd_generic_minisymbol_to_symbol
   PARAMS ((bfd *, boolean, const PTR, asymbol *));
-
-/* Find the nearest line using .stab/.stabstr sections.  */
-extern boolean _bfd_stab_section_find_nearest_line
-  PARAMS ((bfd *, asymbol **, asection *, bfd_vma, boolean *, const char **,
-	   const char **, unsigned int *, PTR *));
-
-/* Find the neaderst line using DWARF 1 debugging information.  */
-extern boolean _bfd_dwarf1_find_nearest_line
-  PARAMS ((bfd *, asection *, asymbol **, bfd_vma, const char **,
-	   const char **, unsigned int *));
-
-/* Find the nearest line using DWARF 2 debugging information.  */
-extern boolean _bfd_dwarf2_find_nearest_line
-  PARAMS ((bfd *, asection *, asymbol **, bfd_vma, const char **,
-	   const char **, unsigned int *, unsigned int));
 
 /* A routine to create entries for a bfd_link_hash_table.  */
 extern struct bfd_hash_entry *_bfd_link_hash_newfunc
@@ -398,8 +360,6 @@ extern boolean _bfd_generic_link_add_symbols_collect
 extern boolean _bfd_generic_link_add_archive_symbols
   PARAMS ((bfd *, struct bfd_link_info *,
 	   boolean (*checkfn) (bfd *, struct bfd_link_info *, boolean *)));
-
-
 
 /* Forward declaration to avoid prototype errors.  */
 typedef struct bfd_link_hash_entry _bfd_link_hash_entry;
@@ -440,26 +400,6 @@ extern bfd_reloc_status_type _bfd_final_link_relocate
 extern bfd_reloc_status_type _bfd_relocate_contents
   PARAMS ((reloc_howto_type *, bfd *, bfd_vma, bfd_byte *));
 
-/* Link stabs in sections in the first pass.  */
-
-extern boolean _bfd_link_section_stabs
-  PARAMS ((bfd *, PTR *, asection *, asection *, PTR *));
-
-/* Write out the .stab section when linking stabs in sections.  */
-
-extern boolean _bfd_write_section_stabs
-  PARAMS ((bfd *, PTR *, asection *, PTR *, bfd_byte *));
-
-/* Write out the .stabstr string table when linking stabs in sections.  */
-
-extern boolean _bfd_write_stab_strings PARAMS ((bfd *, PTR *));
-
-/* Find an offset within a .stab section when linking stabs in
-   sections.  */
-
-extern bfd_vma _bfd_stab_section_offset
-  PARAMS ((bfd *, PTR *, asection *, PTR *, bfd_vma));
-
 /* Create a string table.  */
 extern struct bfd_strtab_hash *_bfd_stringtab_init PARAMS ((void));
 
@@ -479,9 +419,6 @@ extern bfd_size_type _bfd_stringtab_add
 
 /* Write out a string table.  */
 extern boolean _bfd_stringtab_emit PARAMS ((bfd *, struct bfd_strtab_hash *));
-
-/* Check that endianness of input and output file match.  */
-extern boolean _bfd_generic_verify_endian_match PARAMS ((bfd *, bfd *));
 
 /* Macros to tell if bfds are read or write enabled.
 
@@ -503,25 +440,23 @@ void	bfd_assert PARAMS ((const char*,int));
 #define BFD_FAIL() \
 { bfd_assert(__FILE__,__LINE__); }
 
-extern void _bfd_abort PARAMS ((const char *, int, const char *))
-     ATTRIBUTE_NORETURN;
-
-/* if gcc >= 2.6, we can give a function name, too */
-#if __GNUC__ < 2 || (__GNUC__ == 2 && __GNUC_MINOR__ < 6)
-#define __PRETTY_FUNCTION__  ((char *) NULL)
-#endif
-
-#undef abort
-#define abort() _bfd_abort (__FILE__, __LINE__, __PRETTY_FUNCTION__)
-
 FILE *	bfd_cache_lookup_worker PARAMS ((bfd *));
 
 extern bfd *bfd_last_cache;
+    
+/* Now Steve, what's the story here? */
+#ifdef lint
+#define itos(x) "l"
+#define stoi(x) 1
+#else
+#define itos(x) ((char*)(x))
+#define stoi(x) ((int)(x))
+#endif
 
 /* List of supported target vectors, and the default vector (if
    bfd_default_vector[0] is NULL, there is no default).  */
 extern const bfd_target * const bfd_target_vector[];
-extern const bfd_target *bfd_default_vector[];
+extern const bfd_target * const bfd_default_vector[];
 
 /* Functions shared by the ECOFF and MIPS ELF backends, which have no
    other common header files.  */
@@ -537,17 +472,6 @@ extern boolean _bfd_ecoff_locate_line
 extern boolean _bfd_ecoff_get_accumulated_pdr PARAMS ((PTR, bfd_byte *));
 extern boolean _bfd_ecoff_get_accumulated_sym PARAMS ((PTR, bfd_byte *));
 extern boolean _bfd_ecoff_get_accumulated_ss PARAMS ((PTR, bfd_byte *));
-
-extern bfd_vma _bfd_get_gp_value PARAMS ((bfd *));
-extern void _bfd_set_gp_value PARAMS ((bfd *, bfd_vma));
-
-/* Function shared by the COFF and ELF SH backends, which have no
-   other common header files.  */
-
-extern boolean _bfd_sh_align_load_span
-  PARAMS ((bfd *, asection *, bfd_byte *,
-	   boolean (*) (bfd *, asection *, PTR, bfd_byte *, bfd_vma),
-	   PTR, bfd_vma **, bfd_vma *, bfd_vma, bfd_vma, boolean *));
 
 /* And more follows */
 
@@ -583,7 +507,6 @@ static const char *const bfd_reloc_code_real_names[] = { "@@uninitialized@@",
   "BFD_RELOC_64",
   "BFD_RELOC_32",
   "BFD_RELOC_26",
-  "BFD_RELOC_24",
   "BFD_RELOC_16",
   "BFD_RELOC_14",
   "BFD_RELOC_8",
@@ -659,36 +582,14 @@ static const char *const bfd_reloc_code_real_names[] = { "@@uninitialized@@",
   "BFD_RELOC_SPARC_PC_LM22",
   "BFD_RELOC_SPARC_WDISP16",
   "BFD_RELOC_SPARC_WDISP19",
-  "BFD_RELOC_SPARC_7",
-  "BFD_RELOC_SPARC_6",
-  "BFD_RELOC_SPARC_5",
-  "BFD_RELOC_SPARC_PLT64",
-  "BFD_RELOC_SPARC_HIX22",
-  "BFD_RELOC_SPARC_LOX10",
-  "BFD_RELOC_SPARC_H44",
-  "BFD_RELOC_SPARC_M44",
-  "BFD_RELOC_SPARC_L44",
-  "BFD_RELOC_SPARC_REGISTER",
-  "BFD_RELOC_SPARC_REV32",
+  "BFD_RELOC_SPARC_GLOB_JMP",
+  "BFD_RELOC_SPARC_LO7",
   "BFD_RELOC_ALPHA_GPDISP_HI16",
   "BFD_RELOC_ALPHA_GPDISP_LO16",
-  "BFD_RELOC_ALPHA_GPDISP",
   "BFD_RELOC_ALPHA_LITERAL",
-  "BFD_RELOC_ALPHA_ELF_LITERAL",
   "BFD_RELOC_ALPHA_LITUSE",
-  "BFD_RELOC_ALPHA_USER_LITERAL",
-  "BFD_RELOC_ALPHA_USER_LITUSE_BASE",
-  "BFD_RELOC_ALPHA_USER_LITUSE_BYTOFF",
-  "BFD_RELOC_ALPHA_USER_LITUSE_JSR",
-  "BFD_RELOC_ALPHA_USER_GPDISP",
-  "BFD_RELOC_ALPHA_USER_GPRELHIGH",
-  "BFD_RELOC_ALPHA_USER_GPRELLOW",
   "BFD_RELOC_ALPHA_HINT",
-  "BFD_RELOC_ALPHA_LINKAGE",
-  "BFD_RELOC_ALPHA_CODEADDR",
   "BFD_RELOC_MIPS_JMP",
-  "BFD_RELOC_MIPS16_JMP",
-  "BFD_RELOC_MIPS16_GPREL",
   "BFD_RELOC_HI16",
   "BFD_RELOC_HI16_S",
   "BFD_RELOC_LO16",
@@ -697,15 +598,6 @@ static const char *const bfd_reloc_code_real_names[] = { "@@uninitialized@@",
   "BFD_RELOC_MIPS_LITERAL",
   "BFD_RELOC_MIPS_GOT16",
   "BFD_RELOC_MIPS_CALL16",
-  "BFD_RELOC_MIPS_GOT_HI16",
-  "BFD_RELOC_MIPS_GOT_LO16",
-  "BFD_RELOC_MIPS_CALL_HI16",
-  "BFD_RELOC_MIPS_CALL_LO16",
-  "BFD_RELOC_MIPS_SUB",
-  "BFD_RELOC_MIPS_GOT_PAGE",
-  "BFD_RELOC_MIPS_GOT_OFST",
-  "BFD_RELOC_MIPS_GOT_DISP",
-
   "BFD_RELOC_386_GOT32",
   "BFD_RELOC_386_PLT32",
   "BFD_RELOC_386_COPY",
@@ -726,12 +618,6 @@ static const char *const bfd_reloc_code_real_names[] = { "@@uninitialized@@",
   "BFD_RELOC_NS32K_DISP_8_PCREL",
   "BFD_RELOC_NS32K_DISP_16_PCREL",
   "BFD_RELOC_NS32K_DISP_32_PCREL",
-  "BFD_RELOC_PJ_CODE_HI16",
-  "BFD_RELOC_PJ_CODE_LO16",
-  "BFD_RELOC_PJ_CODE_DIR16",
-  "BFD_RELOC_PJ_CODE_DIR32",
-  "BFD_RELOC_PJ_CODE_REL16",
-  "BFD_RELOC_PJ_CODE_REL32",
   "BFD_RELOC_PPC_B26",
   "BFD_RELOC_PPC_BA26",
   "BFD_RELOC_PPC_TOC16",
@@ -746,27 +632,9 @@ static const char *const bfd_reloc_code_real_names[] = { "@@uninitialized@@",
   "BFD_RELOC_PPC_JMP_SLOT",
   "BFD_RELOC_PPC_RELATIVE",
   "BFD_RELOC_PPC_LOCAL24PC",
-  "BFD_RELOC_PPC_EMB_NADDR32",
-  "BFD_RELOC_PPC_EMB_NADDR16",
-  "BFD_RELOC_PPC_EMB_NADDR16_LO",
-  "BFD_RELOC_PPC_EMB_NADDR16_HI",
-  "BFD_RELOC_PPC_EMB_NADDR16_HA",
-  "BFD_RELOC_PPC_EMB_SDAI16",
-  "BFD_RELOC_PPC_EMB_SDA2I16",
-  "BFD_RELOC_PPC_EMB_SDA2REL",
-  "BFD_RELOC_PPC_EMB_SDA21",
-  "BFD_RELOC_PPC_EMB_MRKREF",
-  "BFD_RELOC_PPC_EMB_RELSEC16",
-  "BFD_RELOC_PPC_EMB_RELST_LO",
-  "BFD_RELOC_PPC_EMB_RELST_HI",
-  "BFD_RELOC_PPC_EMB_RELST_HA",
-  "BFD_RELOC_PPC_EMB_BIT_FLD",
-  "BFD_RELOC_PPC_EMB_RELSDA",
-  "BFD_RELOC_I370_D12",
   "BFD_RELOC_CTOR",
   "BFD_RELOC_ARM_PCREL_BRANCH",
   "BFD_RELOC_ARM_IMMEDIATE",
-  "BFD_RELOC_ARM_ADRL_IMMEDIATE",
   "BFD_RELOC_ARM_OFFSET_IMM",
   "BFD_RELOC_ARM_SHIFT_IMM",
   "BFD_RELOC_ARM_SWI",
@@ -776,119 +644,6 @@ static const char *const bfd_reloc_code_real_names[] = { "@@uninitialized@@",
   "BFD_RELOC_ARM_LDR_IMM",
   "BFD_RELOC_ARM_LITERAL",
   "BFD_RELOC_ARM_IN_POOL",
-  "BFD_RELOC_ARM_OFFSET_IMM8",
-  "BFD_RELOC_ARM_HWLITERAL",
-  "BFD_RELOC_ARM_THUMB_ADD",
-  "BFD_RELOC_ARM_THUMB_IMM",
-  "BFD_RELOC_ARM_THUMB_SHIFT",
-  "BFD_RELOC_ARM_THUMB_OFFSET",
-  "BFD_RELOC_ARM_GOT12",
-  "BFD_RELOC_ARM_GOT32",
-  "BFD_RELOC_ARM_JUMP_SLOT",
-  "BFD_RELOC_ARM_COPY",
-  "BFD_RELOC_ARM_GLOB_DAT",
-  "BFD_RELOC_ARM_PLT32",
-  "BFD_RELOC_ARM_RELATIVE",
-  "BFD_RELOC_ARM_GOTOFF",
-  "BFD_RELOC_ARM_GOTPC",
-  "BFD_RELOC_SH_PCDISP8BY2",
-  "BFD_RELOC_SH_PCDISP12BY2",
-  "BFD_RELOC_SH_IMM4",
-  "BFD_RELOC_SH_IMM4BY2",
-  "BFD_RELOC_SH_IMM4BY4",
-  "BFD_RELOC_SH_IMM8",
-  "BFD_RELOC_SH_IMM8BY2",
-  "BFD_RELOC_SH_IMM8BY4",
-  "BFD_RELOC_SH_PCRELIMM8BY2",
-  "BFD_RELOC_SH_PCRELIMM8BY4",
-  "BFD_RELOC_SH_SWITCH16",
-  "BFD_RELOC_SH_SWITCH32",
-  "BFD_RELOC_SH_USES",
-  "BFD_RELOC_SH_COUNT",
-  "BFD_RELOC_SH_ALIGN",
-  "BFD_RELOC_SH_CODE",
-  "BFD_RELOC_SH_DATA",
-  "BFD_RELOC_SH_LABEL",
-  "BFD_RELOC_THUMB_PCREL_BRANCH9",
-  "BFD_RELOC_THUMB_PCREL_BRANCH12",
-  "BFD_RELOC_THUMB_PCREL_BRANCH23",
-  "BFD_RELOC_ARC_B22_PCREL",
-  "BFD_RELOC_ARC_B26",
-  "BFD_RELOC_D10V_10_PCREL_R",
-  "BFD_RELOC_D10V_10_PCREL_L",
-  "BFD_RELOC_D10V_18",
-  "BFD_RELOC_D10V_18_PCREL",
-  "BFD_RELOC_D30V_6",
-  "BFD_RELOC_D30V_9_PCREL",
-  "BFD_RELOC_D30V_9_PCREL_R",
-  "BFD_RELOC_D30V_15",
-  "BFD_RELOC_D30V_15_PCREL",
-  "BFD_RELOC_D30V_15_PCREL_R",
-  "BFD_RELOC_D30V_21",
-  "BFD_RELOC_D30V_21_PCREL",
-  "BFD_RELOC_D30V_21_PCREL_R",
-  "BFD_RELOC_D30V_32",
-  "BFD_RELOC_D30V_32_PCREL",
-  "BFD_RELOC_M32R_24",
-  "BFD_RELOC_M32R_10_PCREL",
-  "BFD_RELOC_M32R_18_PCREL",
-  "BFD_RELOC_M32R_26_PCREL",
-  "BFD_RELOC_M32R_HI16_ULO",
-  "BFD_RELOC_M32R_HI16_SLO",
-  "BFD_RELOC_M32R_LO16",
-  "BFD_RELOC_M32R_SDA16",
-  "BFD_RELOC_V850_9_PCREL",
-  "BFD_RELOC_V850_22_PCREL",
-  "BFD_RELOC_V850_SDA_16_16_OFFSET",
-  "BFD_RELOC_V850_SDA_15_16_OFFSET",
-  "BFD_RELOC_V850_ZDA_16_16_OFFSET",
-  "BFD_RELOC_V850_ZDA_15_16_OFFSET",
-  "BFD_RELOC_V850_TDA_6_8_OFFSET",
-  "BFD_RELOC_V850_TDA_7_8_OFFSET",
-  "BFD_RELOC_V850_TDA_7_7_OFFSET",
-  "BFD_RELOC_V850_TDA_16_16_OFFSET",
-  "BFD_RELOC_V850_TDA_4_5_OFFSET",
-  "BFD_RELOC_V850_TDA_4_4_OFFSET",
-  "BFD_RELOC_V850_SDA_16_16_SPLIT_OFFSET",
-  "BFD_RELOC_V850_ZDA_16_16_SPLIT_OFFSET",
-  "BFD_RELOC_V850_CALLT_6_7_OFFSET",
-  "BFD_RELOC_V850_CALLT_16_16_OFFSET",
-
-  "BFD_RELOC_MN10300_32_PCREL",
-  "BFD_RELOC_MN10300_16_PCREL",
-  "BFD_RELOC_TIC30_LDP",
-  "BFD_RELOC_FR30_48",
-  "BFD_RELOC_FR30_20",
-  "BFD_RELOC_FR30_6_IN_4",
-  "BFD_RELOC_FR30_8_IN_8",
-  "BFD_RELOC_FR30_9_IN_8",
-  "BFD_RELOC_FR30_10_IN_8",
-  "BFD_RELOC_FR30_9_PCREL",
-  "BFD_RELOC_FR30_12_PCREL",
-  "BFD_RELOC_MCORE_PCREL_IMM8BY4",
-  "BFD_RELOC_MCORE_PCREL_IMM11BY2",
-  "BFD_RELOC_MCORE_PCREL_IMM4BY2",
-  "BFD_RELOC_MCORE_PCREL_32",
-  "BFD_RELOC_MCORE_PCREL_JSR_IMM11BY2",
-  "BFD_RELOC_MCORE_RVA",
-  "BFD_RELOC_AVR_7_PCREL",
-  "BFD_RELOC_AVR_13_PCREL",
-  "BFD_RELOC_AVR_16_PM",
-  "BFD_RELOC_AVR_LO8_LDI",
-  "BFD_RELOC_AVR_HI8_LDI",
-  "BFD_RELOC_AVR_HH8_LDI",
-  "BFD_RELOC_AVR_LO8_LDI_NEG",
-  "BFD_RELOC_AVR_HI8_LDI_NEG",
-  "BFD_RELOC_AVR_HH8_LDI_NEG",
-  "BFD_RELOC_AVR_LO8_LDI_PM",
-  "BFD_RELOC_AVR_HI8_LDI_PM",
-  "BFD_RELOC_AVR_HH8_LDI_PM",
-  "BFD_RELOC_AVR_LO8_LDI_PM_NEG",
-  "BFD_RELOC_AVR_HI8_LDI_PM_NEG",
-  "BFD_RELOC_AVR_HH8_LDI_PM_NEG",
-  "BFD_RELOC_AVR_CALL",
-  "BFD_RELOC_VTABLE_INHERIT",
-  "BFD_RELOC_VTABLE_ENTRY",
  "@@overflow: BFD_RELOC_UNUSED@@",
 };
 #endif
@@ -903,10 +658,6 @@ bfd_generic_relax_section
     asection *section,
     struct bfd_link_info *,
     boolean *));
-
-boolean 
-bfd_generic_gc_sections
- PARAMS ((bfd *, struct bfd_link_info *));
 
 bfd_byte *
 

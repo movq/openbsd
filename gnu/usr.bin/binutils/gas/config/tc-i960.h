@@ -1,6 +1,5 @@
 /* tc-i960.h - Basic 80960 instruction formats.
-   Copyright (C) 1989, 90, 91, 92, 93, 94, 95, 96, 97, 98, 1999
-   Free Software Foundation, Inc.
+   Copyright (C) 1989, 1990, 1991, 1992 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -14,22 +13,12 @@
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
    the GNU General Public License for more details.
 
-   You should have received a copy of the GNU General Public License
-   along with GAS; see the file COPYING.  If not, write to the Free
-   Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA. */
+   You should have received a copy of the GNU General Public
+   License along with GAS; see the file COPYING.  If not, write
+   to the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. */
 
 #ifndef TC_I960
 #define TC_I960 1
-
-#ifdef OBJ_ELF
-#define TARGET_FORMAT "elf32-i960"
-#define TARGET_ARCH bfd_arch_i960
-#endif
-
-#define TARGET_BYTES_BIG_ENDIAN 0
-
-#define WORKING_DOT_WORD
 
 /*
  * The 'COJ' instructions are actually COBR instructions with the 'b' in
@@ -54,6 +43,7 @@
 #define SYMBOLS_NEED_BACKPOINTERS
 #define LOCAL_LABELS_FB 1
 #define BITFIELD_CONS_EXPRESSIONS
+#define MRI_MODE_NEEDS_PSEUDO_DOT 1
 
 /* tailor the coff format */
 #define BFD_ARCH				bfd_arch_i960
@@ -128,10 +118,6 @@ struct relocation_info
   };
 
 #ifdef OBJ_COFF
-
-/* We store the bal information in the sy_tc field.  */
-#define TC_SYMFIELD_TYPE symbolS *
-
 #define TC_ADJUST_RELOC_COUNT(FIXP,COUNT) \
   { fixS *tcfixp = (FIXP); \
     for (;tcfixp;tcfixp=tcfixp->fx_next) \
@@ -140,38 +126,22 @@ struct relocation_info
   }
 #endif
 
-extern int i960_validate_fix PARAMS ((struct fix *, segT, symbolS **));
+extern int i960_validate_fix PARAMS ((struct fix *, segT, struct symbol **));
 #define TC_VALIDATE_FIX(FIXP,SEGTYPE,LABEL) \
 	if (i960_validate_fix (FIXP, SEGTYPE, &add_symbolP) != 0) goto LABEL
 
-#ifdef OBJ_ELF
-#define TC_RELOC_RTSYM_LOC_FIXUP(FIX)  \
-  ((FIX)->fx_addsy == NULL \
-   || (! S_IS_EXTERNAL ((FIX)->fx_addsy) \
-       && ! S_IS_WEAK ((FIX)->fx_addsy) \
-       && S_IS_DEFINED ((FIX)->fx_addsy) \
-       && ! S_IS_COMMON ((FIX)->fx_addsy)))
-#endif
-
-#ifndef OBJ_ELF
 #define tc_fix_adjustable(FIXP)		((FIXP)->fx_bsr == 0)
-#else
-#define tc_fix_adjustable(FIXP)						\
-  ((FIXP)->fx_bsr == 0							\
-   && ! S_IS_EXTERNAL ((FIXP)->fx_addsy)				\
-   && ! S_IS_WEAK ((FIXP)->fx_addsy))
-#endif
 
-extern void brtab_emit PARAMS ((void));
+void brtab_emit PARAMS ((void));
 #define md_end()	brtab_emit ()
 
-extern void reloc_callj ();
+void reloc_callj ();		/* this is really reloc_callj(fixS *fixP) but I don't want to change header inclusion order. */
+void tc_set_bal_of_call ();	/* this is really tc_set_bal_of_call(symbolS *callP, symbolS *balP) */
 
-extern void tc_set_bal_of_call PARAMS ((symbolS *, symbolS *));
+char *_tc_get_bal_of_call ();	/* this is really symbolS *tc_get_bal_of_call(symbolS *callP). */
+#define tc_get_bal_of_call(c)	((symbolS *) _tc_get_bal_of_call(c))
 
-extern struct symbol *tc_get_bal_of_call PARAMS ((symbolS *));
-
-extern void i960_handle_align ();
+void i960_handle_align ();
 #define HANDLE_ALIGN(FRAG)	i960_handle_align (FRAG)
 #define NEED_FX_R_TYPE
 #define NO_RELOC -1

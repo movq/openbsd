@@ -1,4 +1,4 @@
-# Copyright (C) 1993, 1996, 1997 Free Software Foundation, Inc.
+# Copyright (C) 1993 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -12,7 +12,7 @@
 # 
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
-# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  
+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 # Please email any bugs, comments, and/or additions to this file to:
 # DejaGnu@cygnus.com
@@ -189,7 +189,6 @@ if [istarget hppa*-*-*] then {
     # Bad things happen in the PA ELF backend (others too?) if a non-default
     # section is created...
     setup_xfail hppa*-*-*elf*
-    setup_xfail hppa*w-*-*
     gas_test "ssbug.s" "" "" "Check for acceptance of non-default subspaces"
 
     # To be compatable with certain "features" of the HP compiler

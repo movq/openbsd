@@ -1,6 +1,5 @@
 /* BFD back end for traditional Unix core files (U-area and raw sections)
-   Copyright 1988, 89, 91, 92, 93, 94, 95, 96, 98, 99, 2000
-   Free Software Foundation, Inc.
+   Copyright 1988, 1989, 1991, 1992, 1993, 1994 Free Software Foundation, Inc.
    Written by John Gilmore of Cygnus Support.
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -24,6 +23,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include "libbfd.h"
 #include "libaout.h"           /* BFD a.out internal data structures */
 
+#include <stdio.h>
+#include <sys/types.h>
 #include <sys/param.h>
 #include <sys/dir.h>
 #include <signal.h>
@@ -54,7 +55,6 @@ char *		trad_unix_core_file_failing_command PARAMS ((bfd *abfd));
 int		trad_unix_core_file_failing_signal PARAMS ((bfd *abfd));
 boolean		trad_unix_core_file_matches_executable_p
 			 PARAMS ((bfd *core_bfd, bfd *exec_bfd));
-static void	swap_abort PARAMS ((void));
 
 /* Handle 4.2-style (and perhaps also sysV-style) core dump file.  */
 
@@ -105,24 +105,22 @@ trad_unix_core_file_p (abfd)
 	bfd_set_error (bfd_error_system_call);
 	return 0;
       }
-    if ((unsigned long) (NBPG * (UPAGES + u.u_dsize
+    if (NBPG * (UPAGES + u.u_dsize
 #ifdef TRAD_CORE_DSIZE_INCLUDES_TSIZE
-				 - u.u_tsize
+		- u.u_tsize
 #endif
-				 + u.u_ssize))
-	> (unsigned long) statbuf.st_size)
+		+ u.u_ssize) > statbuf.st_size)
       {
-	bfd_set_error (bfd_error_wrong_format);
+	bfd_set_error (bfd_error_file_truncated);
 	return 0;
       }
 #ifndef TRAD_CORE_ALLOW_ANY_EXTRA_SIZE
-    if ((unsigned long) (NBPG * (UPAGES + u.u_dsize + u.u_ssize)
+    if (NBPG * (UPAGES + u.u_dsize + u.u_ssize)
 #ifdef TRAD_CORE_EXTRA_SIZE_ALLOWED
 	/* Some systems write the file too big.  */
-			 + TRAD_CORE_EXTRA_SIZE_ALLOWED
+	+ TRAD_CORE_EXTRA_SIZE_ALLOWED
 #endif
-			 )
-	< (unsigned long) statbuf.st_size)
+	< statbuf.st_size)
       {
 	/* The file is too big.  Maybe it's not a core file
 	   or we otherwise have bad values for u_dsize and u_ssize).  */
@@ -138,8 +136,10 @@ trad_unix_core_file_p (abfd)
      a single free() will free them both.  */
   rawptr = (struct trad_core_struct *)
 		bfd_zmalloc (sizeof (struct trad_core_struct));
-  if (rawptr == NULL)
+  if (rawptr == NULL) {
+    bfd_set_error (bfd_error_no_memory);
     return 0;
+  }
   
   abfd->tdata.trad_core_data = rawptr;
 
@@ -148,15 +148,24 @@ trad_unix_core_file_p (abfd)
   /* Create the sections.  This is raunchy, but bfd_close wants to free
      them separately.  */
 
-  core_stacksec(abfd) = (asection *) bfd_zalloc (abfd, sizeof (asection));
-  if (core_stacksec (abfd) == NULL)
-    return NULL;
-  core_datasec (abfd) = (asection *) bfd_zalloc (abfd, sizeof (asection));
-  if (core_datasec (abfd) == NULL)
-    return NULL;
-  core_regsec (abfd) = (asection *) bfd_zalloc (abfd, sizeof (asection));
-  if (core_regsec (abfd) == NULL)
-    return NULL;
+  core_stacksec(abfd) = (asection *) bfd_zmalloc (sizeof (asection));
+  if (core_stacksec (abfd) == NULL) {
+  loser:
+    bfd_set_error (bfd_error_no_memory);
+    free ((void *)rawptr);
+    return 0;
+  }
+  core_datasec (abfd) = (asection *) bfd_zmalloc (sizeof (asection));
+  if (core_datasec (abfd) == NULL) {
+  loser1:
+    free ((void *)core_stacksec (abfd));
+    goto loser;
+  }
+  core_regsec (abfd) = (asection *) bfd_zmalloc (sizeof (asection));
+  if (core_regsec (abfd) == NULL) {
+    free ((void *)core_datasec (abfd));
+    goto loser1;
+  }
 
   core_stacksec (abfd)->name = ".stack";
   core_datasec (abfd)->name = ".data";
@@ -202,7 +211,7 @@ trad_unix_core_file_p (abfd)
      0 is at the place pointed to by u_ar0 (by setting the vma of the start
      of the section to -u_ar0).  GDB uses this info to locate the regs,
      using minor trickery to get around the offset-or-absolute-addr problem. */
-  core_regsec (abfd)->vma = - (bfd_vma) u.u_ar0;
+  core_regsec (abfd)->vma = 0 - (bfd_vma) u.u_ar0;
 
   core_datasec (abfd)->filepos = NBPG * UPAGES;
   core_stacksec (abfd)->filepos = (NBPG * UPAGES) + NBPG * u.u_dsize
@@ -241,7 +250,7 @@ trad_unix_core_file_failing_command (abfd)
 /* ARGSUSED */
 int
 trad_unix_core_file_failing_signal (ignore_abfd)
-     bfd *ignore_abfd ATTRIBUTE_UNUSED;
+     bfd *ignore_abfd;
 {
 #ifdef TRAD_UNIX_CORE_FILE_FAILING_SIGNAL
   return TRAD_UNIX_CORE_FILE_FAILING_SIGNAL(ignore_abfd);
@@ -253,14 +262,13 @@ trad_unix_core_file_failing_signal (ignore_abfd)
 /* ARGSUSED */
 boolean
 trad_unix_core_file_matches_executable_p  (core_bfd, exec_bfd)
-     bfd *core_bfd ATTRIBUTE_UNUSED;
-     bfd *exec_bfd ATTRIBUTE_UNUSED;
+     bfd *core_bfd, *exec_bfd;
 {
   return true;		/* FIXME, We have no way of telling at this point */
 }
 
 /* If somebody calls any byte-swapping routines, shoot them.  */
-static void
+void
 swap_abort()
 {
   abort(); /* This way doesn't require any declaration for ANSI to fuck up */
@@ -274,8 +282,8 @@ const bfd_target trad_core_vec =
   {
     "trad-core",
     bfd_target_unknown_flavour,
-    BFD_ENDIAN_UNKNOWN,		/* target byte order */
-    BFD_ENDIAN_UNKNOWN,		/* target headers byte order */
+    true,			/* target byte order */
+    true,			/* target headers byte order */
     (HAS_RELOC | EXEC_P |	/* object flags */
      HAS_LINENO | HAS_DEBUG |
      HAS_SYMS | HAS_LOCALS | WP_TEXT | D_PAGED),
@@ -315,7 +323,5 @@ const bfd_target trad_core_vec =
        BFD_JUMP_TABLE_LINK (_bfd_nolink),
        BFD_JUMP_TABLE_DYNAMIC (_bfd_nodynamic),
 
-    NULL,
-    
     (PTR) 0			/* backend_data */
 };

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1983, 1998 Regents of the University of California.
+ * Copyright (c) 1983 Regents of the University of California.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms are permitted
@@ -42,13 +42,10 @@ DEFUN (print_name_only, (self), Sym * self)
 	    {
 	      name++;
 	    }
-	  if (demangle)
+	  demangled = cplus_demangle (name, DMGL_ANSI | DMGL_PARAMS);
+	  if (demangled)
 	    {
-	      demangled = cplus_demangle (name, DMGL_ANSI | DMGL_PARAMS);
-	      if (demangled)
-		{
-		  name = demangled;
-		}
+	      name = demangled;
 	    }
 	}
       printf ("%s", name);
@@ -69,7 +66,7 @@ DEFUN (print_name_only, (self), Sym * self)
 		}
 	    }
 	  sprintf (buf, " (%s:%d)", filename, self->line_num);
-	  printf ("%s", buf);
+	  printf (buf);
 	  size += strlen (buf);
 	}
       if (demangled)
@@ -90,7 +87,7 @@ DEFUN (print_name, (self), Sym * self)
 
   if (self->cg.cyc.num != 0)
     {
-      printf (_(" <cycle %d>"), self->cg.cyc.num);
+      printf (" <cycle %d>", self->cg.cyc.num);
     }
   if (self->cg.index != 0)
     {

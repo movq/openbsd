@@ -1,6 +1,5 @@
 /* coff object file format
-   Copyright (C) 1989, 90, 91, 92, 94, 95, 96, 97, 98, 99, 2000
-   Free Software Foundation, Inc.
+   Copyright (C) 1989, 90, 91, 92, 94, 1995 Free Software Foundation, Inc.
 
    This file is part of GAS.
 
@@ -15,9 +14,8 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with GAS; see the file COPYING.  If not, write to the Free
-   Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+   along with GAS; see the file COPYING.  If not, write to
+   the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #ifndef OBJ_FORMAT_H
 #define OBJ_FORMAT_H
@@ -63,6 +61,11 @@
 
 #ifdef TC_SPARC
 #include "coff/sparc.h"
+#ifdef TE_LYNX
+#define TARGET_FORMAT "coff-sparc-lynx"
+#else
+#define TARGET_FORMAT "coff-sparc"
+#endif
 #endif
 
 #ifdef TC_I386
@@ -110,28 +113,8 @@
 #endif
 
 #ifdef TC_SH
-
-#ifdef TE_PE
-#define COFF_WITH_PE
-#endif
-
 #include "coff/sh.h"
-
-#ifdef TE_PE
-#define TARGET_FORMAT "pe-shl"
-#else
-#define TARGET_FORMAT					\
-  (shl							\
-   ? (sh_small ? "coff-shl-small" : "coff-shl")		\
-   : (sh_small ? "coff-sh-small" : "coff-sh"))
-#endif
-#endif
-
-#ifdef TC_MIPS
-#define COFF_WITH_PE
-#include "coff/mipspe.h"
-#undef  TARGET_FORMAT
-#define TARGET_FORMAT "pe-mips"
+#define TARGET_FORMAT (shl ? "coff-shl" : "coff-sh")
 #endif
 
 #ifdef TC_M88K
@@ -144,24 +127,6 @@
 #define TARGET_FORMAT "coff-w65"
 #endif
 
-#ifdef TC_TIC30
-#include "coff/tic30.h"
-#define TARGET_FORMAT "coff-tic30"
-#endif
-
-#ifdef TC_TIC80
-#include "coff/tic80.h"
-#define TARGET_FORMAT "coff-tic80"
-#define ALIGNMENT_IN_S_FLAGS 1
-#endif
-
-#ifdef TC_MCORE
-#include "coff/mcore.h"
-#ifndef TARGET_FORMAT
-#define TARGET_FORMAT "pe-mcore"
-#endif
-#endif
-
 /* Targets may also set this.  Also, if BFD_ASSEMBLER is defined, this
    will already have been defined.  */
 #undef SYMBOLS_NEED_BACKPOINTERS
@@ -170,12 +135,6 @@
 #ifndef OBJ_COFF_MAX_AUXENTRIES
 #define OBJ_COFF_MAX_AUXENTRIES 1
 #endif /* OBJ_COFF_MAX_AUXENTRIES */
-
-extern void coff_obj_symbol_new_hook PARAMS ((symbolS *));
-#define obj_symbol_new_hook coff_obj_symbol_new_hook
-
-extern void coff_obj_read_begin_hook PARAMS ((void));
-#define obj_read_begin_hook coff_obj_read_begin_hook
 
 /* ***********************************************************************
 
@@ -228,35 +187,32 @@ extern void coff_obj_read_begin_hook PARAMS ((void));
 /* Alter the field names, for now, until we've fixed up the other
    references to use the new name.  */
 #ifdef TC_I960
-#define TC_SYMFIELD_TYPE	symbolS *
+#define TC_SYMFIELD_TYPE	struct symbol *
 #define sy_tc			bal
 #endif
 
 #define OBJ_SYMFIELD_TYPE	unsigned long
 #define sy_obj			sy_flags
 
-#define SYM_AUXENT(S) \
-  (&coffsymbol (symbol_get_bfdsym (S))->native[1].u.auxent)
-#define SYM_AUXINFO(S) \
-  (&coffsymbol (symbol_get_bfdsym (S))->native[1])
+#define SYM_AUXENT(S)	(&coffsymbol ((S)->bsym)->native[1].u.auxent)
 
 #define DO_NOT_STRIP	0
+#define DO_STRIP	1
 
 extern void obj_coff_section PARAMS ((int));
 
 /* The number of auxiliary entries */
-#define S_GET_NUMBER_AUXILIARY(s) \
-  (coffsymbol (symbol_get_bfdsym (s))->native->u.syment.n_numaux)
+#define S_GET_NUMBER_AUXILIARY(s)	(coffsymbol((s)->bsym)->native->u.syment.n_numaux)
 /* The number of auxiliary entries */
 #define S_SET_NUMBER_AUXILIARY(s,v)	(S_GET_NUMBER_AUXILIARY (s) = (v))
 
 /* True if a symbol name is in the string table, i.e. its length is > 8. */
 #define S_IS_STRING(s)		(strlen(S_GET_NAME(s)) > 8 ? 1 : 0)
 
-extern int S_SET_DATA_TYPE PARAMS ((symbolS *, int));
-extern int S_SET_STORAGE_CLASS PARAMS ((symbolS *, int));
-extern int S_GET_STORAGE_CLASS PARAMS ((symbolS *));
-extern void SA_SET_SYM_ENDNDX PARAMS ((symbolS *, symbolS *));
+extern int S_SET_DATA_TYPE PARAMS ((struct symbol *, int));
+extern int S_SET_STORAGE_CLASS PARAMS ((struct symbol *, int));
+extern int S_GET_STORAGE_CLASS PARAMS ((struct symbol *));
+extern void SA_SET_SYM_ENDNDX PARAMS ((struct symbol *, struct symbol *));
 
 /* Auxiliary entry macros. SA_ stands for symbol auxiliary */
 /* Omit the tv related fields */
@@ -318,9 +274,9 @@ extern void SA_SET_SYM_ENDNDX PARAMS ((symbolS *, symbolS *));
 /* All other bits are unused. */
 
 /* Accessors */
-#define SF_GET(s)		(*symbol_get_obj (s))
-#define SF_GET_DEBUG(s)		(symbol_get_bfdsym (s)->flags & BSF_DEBUGGING)
-#define SF_SET_DEBUG(s)		(symbol_get_bfdsym (s)->flags |= BSF_DEBUGGING)
+#define SF_GET(s)		((s)->sy_flags)
+#define SF_GET_DEBUG(s)		((s)->bsym->flags & BSF_DEBUGGING)
+#define SF_SET_DEBUG(s)		((s)->bsym->flags |= BSF_DEBUGGING)
 #define SF_GET_NORMAL_FIELD(s)	(SF_GET (s) & SF_NORMAL_MASK)
 #define SF_GET_DEBUG_FIELD(s)	(SF_GET (s) & SF_DEBUG_MASK)
 #define SF_GET_FILE(s)		(SF_GET (s) & SF_FILE)
@@ -366,29 +322,26 @@ extern int coff_line_base;
 extern int coff_n_line_nos;
 
 #define obj_emit_lineno(WHERE,LINE,FILE_START)	abort ()
-extern void coff_add_linesym PARAMS ((symbolS *));
+extern void coff_add_linesym PARAMS ((struct symbol *));
 
 
 void c_dot_file_symbol PARAMS ((char *filename));
 #define obj_app_file c_dot_file_symbol
 
-extern void coff_frob_symbol PARAMS ((symbolS *, int *));
+extern void coff_frob_symbol PARAMS ((struct symbol *, int *));
 extern void coff_adjust_symtab PARAMS ((void));
 extern void coff_frob_section PARAMS ((segT));
 extern void coff_adjust_section_syms PARAMS ((bfd *, asection *, PTR));
-extern void coff_frob_file_after_relocs PARAMS ((void));
+extern void coff_frob_file PARAMS ((void));
 #define obj_frob_symbol(S,P) 	coff_frob_symbol(S,&P)
-#ifndef obj_adjust_symtab
 #define obj_adjust_symtab()	coff_adjust_symtab()
-#endif
 #define obj_frob_section(S)	coff_frob_section (S)
-#define obj_frob_file_after_relocs() coff_frob_file_after_relocs ()
+#define obj_frob_file()		coff_frob_file ()
 
-extern symbolS *coff_last_function;
+extern struct symbol *coff_last_function;
 
 /* Forward the segment of a forwarded symbol, handle assignments that
    just copy symbol values, etc.  */
-#ifndef OBJ_COPY_SYMBOL_ATTRIBUTES
 #ifndef TE_I386AIX
 #define OBJ_COPY_SYMBOL_ATTRIBUTES(dest,src) \
   (SF_GET_GET_SEGMENT (dest) \
@@ -399,7 +352,6 @@ extern symbolS *coff_last_function;
   (SF_GET_GET_SEGMENT (dest) && S_GET_SEGMENT (dest) == SEG_UNKNOWN \
    ? (S_SET_SEGMENT (dest, S_GET_SEGMENT (src)), 0) \
    : 0)
-#endif
 #endif
 
 /* sanity check */
@@ -450,6 +402,7 @@ typedef struct
 
 #ifndef DO_NOT_STRIP
 #define DO_NOT_STRIP	0
+#define DO_STRIP	1
 #endif
 /* Symbol table macros and constants */
 
@@ -462,7 +415,7 @@ typedef struct
 #define C_DEBUG_SECTION		N_DEBUG
 #define C_NTV_SECTION		N_TV
 #define C_PTV_SECTION		P_TV
-#define C_REGISTER_SECTION	50
+#define C_REGISTER_SECTION	20
 
 /*
  *  Macros to extract information from a symbol table entry.
@@ -487,12 +440,8 @@ typedef struct
 /* A symbol name whose name includes ^A is a gas internal pseudo symbol */
 #define S_IS_LOCAL(s) \
   ((s)->sy_symbol.ost_entry.n_scnum == C_REGISTER_SECTION \
-   || (S_LOCAL_NAME(s) && ! flag_keep_locals && ! S_IS_DEBUG (s)) \
-   || strchr (S_GET_NAME (s), '\001') != NULL \
-   || strchr (S_GET_NAME (s), '\002') != NULL \
-   || (flag_strip_local_absolute \
-       && !S_IS_EXTERNAL(s) \
-       && (s)->sy_symbol.ost_entry.n_scnum == C_ABS_SECTION))
+   || (S_LOCAL_NAME(s) && !flag_keep_locals) \
+   || (strchr (S_GET_NAME (s), '\001') != NULL))
 /* True if a symbol is not defined in this file */
 #define S_IS_EXTERN(s)		((s)->sy_symbol.ost_entry.n_scnum == 0 \
 				 && S_GET_VALUE (s) == 0)
@@ -504,16 +453,6 @@ typedef struct
 				 && S_GET_VALUE (s) != 0)
 /* True if a symbol name is in the string table, i.e. its length is > 8. */
 #define S_IS_STRING(s)		(strlen(S_GET_NAME(s)) > 8 ? 1 : 0)
-
-/* True if a symbol is defined as weak.  */
-#ifdef TE_PE
-#define S_IS_WEAK(s) \
-  ((s)->sy_symbol.ost_entry.n_sclass == C_NT_WEAK \
-   || (s)->sy_symbol.ost_entry.n_sclass == C_WEAKEXT)
-#else
-#define S_IS_WEAK(s) \
-  ((s)->sy_symbol.ost_entry.n_sclass == C_WEAKEXT)
-#endif
 
 /* Accessors */
 /* The name of the symbol */
@@ -612,7 +551,6 @@ typedef struct
 #define SF_TAG		(0x00080000)	/* Is a tag */
 #define SF_DEBUG	(0x00100000)	/* Is in debug or abs section */
 #define SF_GET_SEGMENT	(0x00200000)	/* Get the section of the forward symbol. */
-#define SF_ADJ_LNNOPTR	(0x00400000)	/* Has a lnnoptr */
 /* All other bits are unused. */
 
 /* Accessors */
@@ -630,7 +568,6 @@ typedef struct
 #define SF_GET_TAGGED(s)	(SF_GET (s) & SF_TAGGED)
 #define SF_GET_TAG(s)		(SF_GET (s) & SF_TAG)
 #define SF_GET_GET_SEGMENT(s)	(SF_GET (s) & SF_GET_SEGMENT)
-#define SF_GET_ADJ_LNNOPTR(s)	(SF_GET (s) & SF_ADJ_LNNOPTR)
 #define SF_GET_I960(s)		(SF_GET (s) & SF_I960_MASK)	/* used by i960 */
 #define SF_GET_BALNAME(s)	(SF_GET (s) & SF_BALNAME)	/* used by i960 */
 #define SF_GET_CALLNAME(s)	(SF_GET (s) & SF_CALLNAME)	/* used by i960 */
@@ -653,7 +590,6 @@ typedef struct
 #define SF_SET_TAGGED(s)	(SF_GET (s) |= SF_TAGGED)
 #define SF_SET_TAG(s)		(SF_GET (s) |= SF_TAG)
 #define SF_SET_GET_SEGMENT(s)	(SF_GET (s) |= SF_GET_SEGMENT)
-#define SF_SET_ADJ_LNNOPTR(s)	(SF_GET (s) |= SF_ADJ_LNNOPTR)
 #define SF_SET_I960(s,v)	(SF_GET (s) |= ((v) & SF_I960_MASK))	/* used by i960 */
 #define SF_SET_BALNAME(s)	(SF_GET (s) |= SF_BALNAME)	/* used by i960 */
 #define SF_SET_CALLNAME(s)	(SF_GET (s) |= SF_CALLNAME)	/* used by i960 */
@@ -800,7 +736,7 @@ extern void c_dot_file_symbol PARAMS ((char *filename));
 #define obj_app_file c_dot_file_symbol
 extern void obj_extra_stuff PARAMS ((object_headers * headers));
 
-extern segT s_get_segment PARAMS ((symbolS *ptr));
+extern segT s_get_segment PARAMS ((struct symbol * ptr));
 
 extern void c_section_header PARAMS ((struct internal_scnhdr * header,
 				      char *name,
@@ -814,7 +750,7 @@ extern void c_section_header PARAMS ((struct internal_scnhdr * header,
 				      long alignment));
 
 #ifndef tc_coff_symbol_emit_hook
-void tc_coff_symbol_emit_hook PARAMS ((symbolS *));
+void tc_coff_symbol_emit_hook PARAMS ((struct symbol *));
 #endif
 
 /* sanity check */
@@ -833,30 +769,7 @@ extern struct internal_scnhdr text_section_header;
    ? (S_SET_SEGMENT (dest, S_GET_SEGMENT (src)), 0) \
    : 0)
 
-#ifdef TE_PE
-#define obj_handle_link_once(t) obj_coff_pe_handle_link_once (t)
-extern void obj_coff_pe_handle_link_once ();
-#endif
-
 #endif /* not BFD_ASSEMBLER */
-
-extern const pseudo_typeS coff_pseudo_table[];
-
-#ifndef obj_pop_insert
-#define obj_pop_insert() pop_insert (coff_pseudo_table)
-#endif
-
-/* In COFF, if a symbol is defined using .def/.val SYM/.endef, it's OK
-   to redefine the symbol later on.  This can happen if C symbols use
-   a prefix, and a symbol is defined both with and without the prefix,
-   as in start/_start/__start in gcc/libgcc1-test.c.  */
-#define RESOLVE_SYMBOL_REDEFINITION(sym)		\
-(SF_GET_GET_SEGMENT (sym)				\
- ? (sym->sy_frag = frag_now,				\
-    S_SET_VALUE (sym, frag_now_fix ()),			\
-    S_SET_SEGMENT (sym, now_seg),			\
-    0)							\
- : 0)
 
 /* Stabs in a coff file go into their own section.  */
 #define SEPARATE_STAB_SECTIONS 1
@@ -865,9 +778,5 @@ extern const pseudo_typeS coff_pseudo_table[];
    information.  */
 extern void obj_coff_init_stab_section PARAMS ((segT));
 #define INIT_STAB_SECTION(seg) obj_coff_init_stab_section (seg)
-
-/* Store the number of relocations in the section aux entry.  */
-#define SET_SECTION_RELOCS(sec, relocs, n) \
-  SA_SET_SCN_NRELOC (section_symbol (sec), n)
 
 #endif /* OBJ_FORMAT_H */

@@ -18,6 +18,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 /* This program generates z8k-opc.h */
 
+#include <ansidecl.h>
 #include "sysdep.h"
 
 #define BYTE_INFO_LEN 10
@@ -892,7 +893,8 @@ void
 internal ()
 {
   int c = count ();
-  struct op *new = xmalloc (sizeof (struct op) * c);
+  struct op *new = malloc (sizeof (struct
+				   op) * c);
   struct op *p = opt;
   memcpy (new, p, c * sizeof (struct op));
 
@@ -951,7 +953,7 @@ gas ()
   struct op *p = opt;
   int idx = 0;
   char *oldname = "";
-  struct op *new = xmalloc (sizeof (struct op) * c);
+  struct op *new = malloc (sizeof (struct op) * c);
 
   memcpy (new, p, c * sizeof (struct op));
 

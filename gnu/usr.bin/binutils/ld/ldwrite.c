@@ -1,6 +1,5 @@
 /* ldwrite.c -- write out the linked file
-   Copyright (C) 1991, 92, 93, 94, 95, 96, 97, 1998
-   Free Software Foundation, Inc.
+   Copyright (C) 1993 Free Software Foundation, Inc.
    Written by Steve Chamberlain sac@cygnus.com
 
 This file is part of GLD, the Gnu Linker.
@@ -22,7 +21,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include "bfd.h"
 #include "sysdep.h"
 #include "bfdlink.h"
-#include "libiberty.h"
 
 #include "ld.h"
 #include "ldexp.h"
@@ -33,8 +31,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include "ldmain.h"
 
 static void build_link_order PARAMS ((lang_statement_union_type *));
-static asection *clone_section PARAMS ((bfd *, asection *, int *));
-static void split_sections PARAMS ((bfd *, struct bfd_link_info *));
+static void print_symbol_table PARAMS ((void));
+static void print_file_stuff PARAMS ((lang_input_statement_type *));
+static boolean print_symbol PARAMS ((struct bfd_link_hash_entry *, PTR));
+
+extern char *strdup();
 
 /* Build link_order structures for the BFD linker.  */
 
@@ -49,14 +50,13 @@ build_link_order (statement)
 	asection *output_section;
 	struct bfd_link_order *link_order;
 	bfd_vma value;
-	boolean big_endian = false;
 
 	output_section = statement->data_statement.output_section;
 	ASSERT (output_section->owner == output_bfd);
 
 	link_order = bfd_new_link_order (output_bfd, output_section);
 	if (link_order == NULL)
-	  einfo (_("%P%F: bfd_new_link_order failed\n"));
+	  einfo ("%P%F: bfd_new_link_order failed\n");
 
 	link_order->type = bfd_data_link_order;
 	link_order->offset = statement->data_statement.output_vma;
@@ -64,101 +64,11 @@ build_link_order (statement)
 
 	value = statement->data_statement.value;
 
-	/* If the endianness of the output BFD is not known, then we
-	   base the endianness of the data on the first input file.
-	   By convention, the bfd_put routines for an unknown
-	   endianness are big endian, so we must swap here if the
-	   input file is little endian.  */
-	if (bfd_big_endian (output_bfd))
-	  big_endian = true;
-	else if (bfd_little_endian (output_bfd))
-	  big_endian = false;
-	else
-	  {
-	    boolean swap;
-
-	    swap = false;
-	    if (command_line.endian == ENDIAN_BIG)
-	      big_endian = true;
-	    else if (command_line.endian == ENDIAN_LITTLE)
-	      {
-		big_endian = false;
-		swap = true;
-	      }
-	    else if (command_line.endian == ENDIAN_UNSET)
-	      {
-		big_endian = true;
-		{
-		  LANG_FOR_EACH_INPUT_STATEMENT (s)
-		    {
-		      if (s->the_bfd != NULL)
-			{
-			  if (bfd_little_endian (s->the_bfd))
-			    {
-			      big_endian = false;
-			      swap = true;
-			    }
-			  break;
-			}
-		    }
-		}
-	      }
-
-	    if (swap)
-	      {
-		bfd_byte buffer[8];
-
-		switch (statement->data_statement.type)
-		  {
-		  case QUAD:
-		  case SQUAD:
-		    if (sizeof (bfd_vma) >= QUAD_SIZE)
-		      {
-			bfd_putl64 (value, buffer);
-			value = bfd_getb64 (buffer);
-			break;
-		      }
-		    /* Fall through.  */
-		  case LONG:
-		    bfd_putl32 (value, buffer);
-		    value = bfd_getb32 (buffer);
-		    break;
-		  case SHORT:
-		    bfd_putl16 (value, buffer);
-		    value = bfd_getb16 (buffer);
-		    break;
-		  case BYTE:
-		    break;
-		  default:
-		    abort ();
-		  }
-	      }
-	  }
-
 	ASSERT (output_section->owner == output_bfd);
 	switch (statement->data_statement.type)
 	  {
 	  case QUAD:
-	  case SQUAD:
-	    if (sizeof (bfd_vma) >= QUAD_SIZE)
-	      bfd_put_64 (output_bfd, value, link_order->u.data.contents);
-	    else
-	      {
-		bfd_vma high;
-
-		if (statement->data_statement.type == QUAD)
-		  high = 0;
-		else if ((value & 0x80000000) == 0)
-		  high = 0;
-		else
-		  high = (bfd_vma) -1;
-		bfd_put_32 (output_bfd, high,
-			    (link_order->u.data.contents
-			     + (big_endian ? 0 : 4)));
-		bfd_put_32 (output_bfd, value,
-			    (link_order->u.data.contents
-			     + (big_endian ? 4 : 0)));
-	      }
+	    bfd_put_64 (output_bfd, value, link_order->u.data.contents);
 	    link_order->size = QUAD_SIZE;
 	    break;
 	  case LONG:
@@ -192,7 +102,7 @@ build_link_order (statement)
 
 	link_order = bfd_new_link_order (output_bfd, output_section);
 	if (link_order == NULL)
-	  einfo (_("%P%F: bfd_new_link_order failed\n"));
+	  einfo ("%P%F: bfd_new_link_order failed\n");
 
 	link_order->offset = rs->output_vma;
 	link_order->size = bfd_get_reloc_size (rs->howto);
@@ -322,7 +232,7 @@ clone_section (abfd, s, count)
     }
   while (bfd_get_section_by_name (abfd, sname));
 
-  n = bfd_make_section_anyway (abfd, xstrdup (sname));
+  n = bfd_make_section_anyway (abfd, strdup (sname));
 
   /* Create a symbol of the same name */
 
@@ -362,7 +272,7 @@ ds (s)
 	}
       else
 	{
-	  printf (_("%8x something else\n"), l->offset);
+	  printf ("%8x something else\n", l->offset);
 	}
       l = l->next;
     }
@@ -402,7 +312,8 @@ sanity_check (abfd)
 #define dump(a, b, c)
 #endif
 
-static void 
+
+void 
 split_sections (abfd, info)
      bfd *abfd;
      struct bfd_link_info *info;
@@ -523,8 +434,155 @@ ldwrite ()
 	 out.  */
 
       if (bfd_get_error () != bfd_error_no_error)
-	einfo (_("%F%P: final link failed: %E\n"), output_bfd);
+	einfo ("%F%P: final link failed: %E\n", output_bfd);
       else
 	xexit(1);
     }
+
+  if (config.map_file)
+    {
+      print_symbol_table ();
+      lang_map ();
+    }
+}
+
+/* Print the symbol table.  */
+
+static void
+print_symbol_table ()
+{
+  fprintf (config.map_file, "**FILES**\n\n");
+  lang_for_each_file (print_file_stuff);
+
+  fprintf (config.map_file, "**GLOBAL SYMBOLS**\n\n");
+  fprintf (config.map_file, "offset    section    offset   symbol\n");
+  bfd_link_hash_traverse (link_info.hash, print_symbol, (PTR) NULL);
+}
+
+/* Print information about a file.  */
+
+static void
+print_file_stuff (f)
+     lang_input_statement_type *f;
+{
+  fprintf (config.map_file, "  %s\n", f->filename);
+  if (f->just_syms_flag)
+    {
+      fprintf (config.map_file, " symbols only\n");
+    }
+  else
+    {
+      asection *s;
+      if (true)
+	{
+	  for (s = f->the_bfd->sections;
+	       s != (asection *) NULL;
+	       s = s->next)
+	    {
+#ifdef WINDOWS_NT
+              /* Don't include any information that goes into the '.junk'
+                 section.  This includes the code view .debug$ data and
+                 stuff from .drectve sections */
+              if (strcmp (s->name, ".drectve") == 0 ||
+                  strncmp (s->name, ".debug$", 7) == 0)
+                continue;
+#endif
+	      print_address (s->output_offset);
+	      if (s->reloc_done)
+		{
+		  fprintf (config.map_file, " %08x 2**%2ud %s\n",
+			   (unsigned) bfd_get_section_size_after_reloc (s),
+			   s->alignment_power, s->name);
+		}
+
+	      else
+		{
+		  fprintf (config.map_file, " %08x 2**%2ud %s\n",
+			   (unsigned) bfd_get_section_size_before_reloc (s),
+			   s->alignment_power, s->name);
+		}
+	    }
+	}
+      else
+	{
+	  for (s = f->the_bfd->sections;
+	       s != (asection *) NULL;
+	       s = s->next)
+	    {
+	      fprintf (config.map_file, "%s ", s->name);
+	      print_address (s->output_offset);
+	      fprintf (config.map_file, "(%x)",
+		       (unsigned) bfd_get_section_size_after_reloc (s));
+	    }
+	  fprintf (config.map_file, "hex \n");
+	}
+    }
+  print_nl ();
+}
+
+/* Print a symbol.  */
+
+/*ARGSUSED*/
+static boolean
+print_symbol (p, ignore)
+     struct bfd_link_hash_entry *p;
+     PTR ignore;
+{
+  while (p->type == bfd_link_hash_indirect
+	 || p->type == bfd_link_hash_warning)
+    p = p->u.i.link;
+
+  switch (p->type)
+    {
+    case bfd_link_hash_new:
+      abort ();
+
+    case bfd_link_hash_undefined:
+      fprintf (config.map_file, "undefined                     ");
+      fprintf (config.map_file, "%s ", p->root.string);
+      print_nl ();
+      break;
+
+    case bfd_link_hash_undefweak:
+      fprintf (config.map_file, "weak                          ");
+      fprintf (config.map_file, "%s ", p->root.string);
+      print_nl ();
+      break;
+
+    case bfd_link_hash_defined:
+    case bfd_link_hash_defweak:
+      {
+	asection *defsec = p->u.def.section;
+
+	print_address (p->u.def.value);
+	if (defsec)
+	  {
+	    fprintf (config.map_file, "  %-10s",
+		     bfd_section_name (output_bfd, defsec));
+	    print_space ();
+	    print_address (p->u.def.value + defsec->vma);
+	  }
+	else
+	  {
+	    fprintf (config.map_file, "         .......");
+	  }
+	fprintf (config.map_file, " %s", p->root.string);
+	if (p->type == bfd_link_hash_defweak)
+	  fprintf (config.map_file, " [weak]");
+      }
+      print_nl ();
+      break;
+
+    case bfd_link_hash_common:
+      fprintf (config.map_file, "common               ");
+      print_address (p->u.c.size);
+      fprintf (config.map_file, " %s ", p->root.string);
+      print_nl ();
+      break;
+
+    default:
+      abort ();
+    }
+
+  return true;
 }

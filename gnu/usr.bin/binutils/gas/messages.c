@@ -1,6 +1,6 @@
 /* messages.c - error reporter -
-   Copyright (C) 1987, 91, 92, 93, 94, 95, 96, 97, 1998
-   Free Software Foundation, Inc.
+   Copyright (C) 1987, 1991, 1992, 1995 Free Software Foundation, Inc.
+
    This file is part of GAS, the GNU Assembler.
 
    GAS is free software; you can redistribute it and/or modify
@@ -14,9 +14,8 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with GAS; see the file COPYING.  If not, write to the Free
-   Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA. */
+   along with GAS; see the file COPYING.  If not, write to
+   the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. */
 
 #include "as.h"
 
@@ -42,7 +41,8 @@ typedef int * va_list;
 #define va_end(ARGS)
 #endif
 
-static void identify PARAMS ((char *));
+extern char *xstrerror PARAMS ((int));	/* from libiberty */
+
 static void as_show_where PARAMS ((void));
 static void as_warn_internal PARAMS ((char *, unsigned int, char *));
 static void as_bad_internal PARAMS ((char *, unsigned int, char *));
@@ -102,7 +102,7 @@ identify (file)
 
   if (file)
     fprintf (stderr, "%s: ", file);
-  fprintf (stderr, _("Assembler messages:\n"));
+  fprintf (stderr, "Assembler messages:\n");
 }
 
 static int warning_count;	/* Count of number of warnings issued */
@@ -219,7 +219,7 @@ as_warn_internal (file, line, buffer)
   identify (file);
   if (file)
     fprintf (stderr, "%s:%u: ", file, line);
-  fprintf (stderr, _("Warning: "));
+  fprintf (stderr, "Warning: ");
   fputs (buffer, stderr);
   (void) putc ('\n', stderr);
 #ifndef NO_LISTING
@@ -241,7 +241,7 @@ void
 as_warn (const char *format,...)
 {
   va_list args;
-  char buffer[2000];
+  char buffer[200];
 
   if (!flag_no_warnings)
     {
@@ -259,7 +259,7 @@ as_warn (format, va_alist)
      va_dcl
 {
   va_list args;
-  char buffer[2000];
+  char buffer[200];
 
   if (!flag_no_warnings)
     {
@@ -280,7 +280,7 @@ void
 as_warn_where (char *file, unsigned int line, const char *format,...)
 {
   va_list args;
-  char buffer[2000];
+  char buffer[200];
 
   if (!flag_no_warnings)
     {
@@ -300,7 +300,7 @@ as_warn_where (file, line, format, va_alist)
      va_dcl
 {
   va_list args;
-  char buffer[2000];
+  char buffer[200];
 
   if (!flag_no_warnings)
     {
@@ -328,7 +328,7 @@ as_bad_internal (file, line, buffer)
   identify (file);
   if (file)
     fprintf (stderr, "%s:%u: ", file, line);
-  fprintf (stderr, _("Error: "));
+  fprintf (stderr, "Error: ");
   fputs (buffer, stderr);
   (void) putc ('\n', stderr);
 #ifndef NO_LISTING
@@ -350,7 +350,7 @@ void
 as_bad (const char *format,...)
 {
   va_list args;
-  char buffer[2000];
+  char buffer[200];
 
   va_start (args, format);
   vsprintf (buffer, format, args);
@@ -367,7 +367,7 @@ as_bad (format, va_alist)
      va_dcl
 {
   va_list args;
-  char buffer[2000];
+  char buffer[200];
 
   va_start (args);
   vsprintf (buffer, format, args);
@@ -386,7 +386,7 @@ void
 as_bad_where (char *file, unsigned int line, const char *format,...)
 {
   va_list args;
-  char buffer[2000];
+  char buffer[200];
 
   va_start (args, format);
   vsprintf (buffer, format, args);
@@ -405,7 +405,7 @@ as_bad_where (file, line, format, va_alist)
      va_dcl
 {
   va_list args;
-  char buffer[2000];
+  char buffer[200];
 
   va_start (args);
   vsprintf (buffer, format, args);
@@ -421,7 +421,7 @@ as_bad_where (file, line, format, va_alist)
  * Send to stderr a string as a fatal message, and print location of error in
  * input file(s).
  * Please only use this for when we DON'T have some recovery action.
- * It xexit()s with a warning status.
+ * It exit()s with a warning status.
  */
 
 #ifdef USE_STDARG
@@ -432,11 +432,11 @@ as_fatal (const char *format,...)
 
   as_show_where ();
   va_start (args, format);
-  fprintf (stderr, _("Fatal error: "));
+  fprintf (stderr, "Fatal error: ");
   vfprintf (stderr, format, args);
   (void) putc ('\n', stderr);
   va_end (args);
-  xexit (EXIT_FAILURE);
+  exit (EXIT_FAILURE);
 }				/* as_fatal() */
 #else
 /*VARARGS1*/
@@ -449,11 +449,11 @@ as_fatal (format, va_alist)
 
   as_show_where ();
   va_start (args);
-  fprintf (stderr, _("Fatal error: "));
+  fprintf (stderr, "Fatal error: ");
   vfprintf (stderr, format, args);
   (void) putc ('\n', stderr);
   va_end (args);
-  xexit (EXIT_FAILURE);
+  exit (EXIT_FAILURE);
 }				/* as_fatal() */
 #endif /* not NO_STDARG */
 
@@ -468,14 +468,13 @@ as_assert (file, line, fn)
      int line;
 {
   as_show_where ();
-  fprintf (stderr, _("Internal error!\n"));
+  fprintf (stderr, "Internal error!\n");
+  fprintf (stderr, "Assertion failure");
   if (fn)
-    fprintf (stderr, _("Assertion failure in %s at %s line %d.\n"),
-	     fn, file, line);
-  else
-    fprintf (stderr, _("Assertion failure at %s line %d.\n"), file, line);
-  fprintf (stderr, _("Please report this bug.\n"));
-  xexit (EXIT_FAILURE);
+    fprintf (stderr, " in %s", fn);
+  fprintf (stderr, " at %s line %d.\n", file, line);
+  fprintf (stderr, "Please report this bug.\n");
+  exit (EXIT_FAILURE);
 }
 
 /* as_abort: Print a friendly message saying how totally hosed we are,
@@ -486,14 +485,11 @@ as_abort (file, line, fn)
      int line;
 {
   as_show_where ();
+  fprintf (stderr, "Internal error, aborting at %s line %d", file, line);
   if (fn)
-    fprintf (stderr, _("Internal error, aborting at %s line %d in %s\n"),
-	     file, line, fn);
-  else
-    fprintf (stderr, _("Internal error, aborting at %s line %d\n"),
-	     file, line);
-  fprintf (stderr, _("Please report this bug.\n"));
-  xexit (EXIT_FAILURE);
+    fprintf (stderr, " in %s", fn);
+  fprintf (stderr, "\nPlease report this bug.\n");
+  exit (EXIT_FAILURE);
 }
 
 /* Support routines.  */
@@ -505,7 +501,7 @@ fprint_value (file, val)
 {
   if (sizeof (val) <= sizeof (long))
     {
-      fprintf (file, "%ld", (long) val);
+      fprintf (file, "%ld", val);
       return;
     }
 #ifdef BFD_ASSEMBLER
@@ -525,7 +521,7 @@ sprint_value (buf, val)
 {
   if (sizeof (val) <= sizeof (long))
     {
-      sprintf (buf, "%ld", (long) val);
+      sprintf (buf, "%ld", val);
       return;
     }
 #ifdef BFD_ASSEMBLER

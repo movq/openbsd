@@ -16,8 +16,6 @@
 
 #include "source.h"
 
-#define NBBS 10
-
 /*
  * Symbol-entry.  For each external in the specified file we gather
  * its address, the number of calls and compute its share of cpu time.
@@ -38,16 +36,9 @@ typedef struct sym
     int line_num;		/* source line number */
     unsigned int is_func:1,	/* is this a function entry point? */
       is_static:1,		/* is this a local (static) symbol? */
-      is_bb_head:1,		/* is this the head of a basic-blk? */
-      mapped:1,			/* this symbol was mapped to another name */
-      has_been_placed:1;	/* have we placed this symbol?  */
-    unsigned long ncalls;	/* how many times executed */
-    int nuses;			/* how many times this symbol appears in
-				   a particular context */
-    bfd_vma bb_addr[NBBS];	/* address of basic-block start */
-    unsigned long bb_calls[NBBS]; /* how many times basic-block was called */
+      is_bb_head:1;		/* is this the head of a basic-blk? */
+    int ncalls;			/* how many times executed */
     struct sym *next;		/* for building chains of syms */
-    struct sym *prev;		/* for building chains of syms */
 
     /* profile-specific information: */
 
@@ -62,7 +53,7 @@ typedef struct sym
     /* call-graph specific info: */
     struct
       {
-	unsigned long self_calls; /* how many calls to self */
+	int self_calls;		/* how many calls to self */
 	double child_time;	/* cumulative ticks in children */
 	int index;		/* index in the graph list */
 	int top_order;		/* graph call chain top-sort order */
@@ -94,7 +85,7 @@ Sym;
  */
 typedef struct
   {
-    unsigned int len;		/* # of symbols in this table */
+    int len;			/* # of symbols in this table */
     Sym *base;			/* first element in symbol table */
     Sym *limit;			/* limit = base + len */
   }
@@ -105,7 +96,5 @@ extern Sym_Table symtab;	/* the symbol table */
 extern void sym_init PARAMS ((Sym * sym));
 extern void symtab_finalize PARAMS ((Sym_Table * symtab));
 extern Sym *sym_lookup PARAMS ((Sym_Table * symtab, bfd_vma address));
-
-extern void find_call PARAMS ((Sym *, bfd_vma, bfd_vma));
 
 #endif /* symtab_h */

@@ -1,5 +1,5 @@
 /* sysdep.h -- handle host dependencies for the BFD library
-   Copyright 1995, 96, 97, 98, 99, 2000 Free Software Foundation, Inc.
+   Copyright 1995 Free Software Foundation, Inc.
    Written by Cygnus Support.
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -34,7 +34,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include <sys/stat.h>
 
 #include <errno.h>
-#if !(defined(errno) || defined(_MSC_VER) && defined(_INC_ERRNO))
+#ifndef errno
 extern int errno;
 #endif
 
@@ -46,6 +46,7 @@ extern int errno;
 #else
 extern char *strchr ();
 extern char *strrchr ();
+extern char *strstr ();
 #endif
 #endif
 
@@ -53,15 +54,8 @@ extern char *strrchr ();
 #include <stdlib.h>
 #endif
 
-#ifdef TIME_WITH_SYS_TIME
-#include <sys/time.h>
+#ifdef HAVE_TIME_H
 #include <time.h>
-#else
-#ifdef HAVE_SYS_TIME_H
-#include <sys/time.h>
-#else
-#include <time.h>
-#endif
 #endif
 
 #ifdef HAVE_UNISTD_H
@@ -102,44 +96,12 @@ extern char *strrchr ();
 #define SEEK_CUR 1
 #endif
 
-#include "filenames.h"
-
-#ifdef NEED_DECLARATION_STRSTR
-extern char *strstr ();
-#endif
-
 #ifdef NEED_DECLARATION_MALLOC
 extern PTR malloc ();
 #endif
 
-#ifdef NEED_DECLARATION_REALLOC
-extern PTR realloc ();
-#endif
-
 #ifdef NEED_DECLARATION_FREE
 extern void free ();
-#endif
-
-#ifdef NEED_DECLARATION_GETENV
-extern char *getenv ();
-#endif
-
-#ifdef ENABLE_NLS
-#include <libintl.h>
-#define _(String) dgettext (PACKAGE, String)
-#ifdef gettext_noop
-#define N_(String) gettext_noop (String)
-#else
-#define N_(String) (String)
-#endif
-#else
-# define gettext(Msgid) (Msgid)
-# define dgettext(Domainname, Msgid) (Msgid)
-# define dcgettext(Domainname, Msgid, Category) (Msgid)
-# define textdomain(Domainname) while (0) /* nothing */
-# define bindtextdomain(Domainname, Dirname) while (0) /* nothing */
-# define _(String) (String)
-# define N_(String) (String)
 #endif
 
 #endif /* ! defined (BFD_SYSDEP_H) */

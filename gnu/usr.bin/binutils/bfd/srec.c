@@ -1,6 +1,5 @@
 /* BFD back-end for s-record objects.
-   Copyright 1990, 91, 92, 93, 94, 95, 96, 97, 98, 1999
-   Free Software Foundation, Inc.
+   Copyright 1990, 1991, 1992, 1993, 1994, 1995 Free Software Foundation, Inc.
    Written by Steve Chamberlain of Cygnus Support <sac@cygnus.com>.
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -110,9 +109,6 @@ DESCRIPTION
 #include "libiberty.h"
 #include <ctype.h>
 
-static void srec_get_symbol_info PARAMS ((bfd *, asymbol *, symbol_info *));
-static void srec_print_symbol
- PARAMS ((bfd *, PTR, asymbol *, bfd_print_symbol_type));
 static void srec_init PARAMS ((void));
 static boolean srec_mkobject PARAMS ((bfd *));
 static int srec_get_byte PARAMS ((bfd *, boolean *));
@@ -127,20 +123,6 @@ static boolean srec_write_record PARAMS ((bfd *, int, bfd_vma,
 					  const bfd_byte *));
 static boolean srec_write_header PARAMS ((bfd *));
 static boolean srec_write_symbols PARAMS ((bfd *));
-static boolean srec_new_symbol PARAMS ((bfd *, const char *, bfd_vma));
-static boolean srec_get_section_contents
-  PARAMS ((bfd *, asection *, PTR, file_ptr, bfd_size_type));
-static boolean srec_set_arch_mach
-  PARAMS ((bfd *, enum bfd_architecture, unsigned long));
-static boolean srec_set_section_contents
-  PARAMS ((bfd *, sec_ptr, PTR, file_ptr, bfd_size_type));
-static boolean internal_srec_write_object_contents PARAMS ((bfd *, int));
-static boolean srec_write_object_contents PARAMS ((bfd *));
-static boolean symbolsrec_write_object_contents PARAMS ((bfd *));
-static int srec_sizeof_headers PARAMS ((bfd *, boolean));
-static asymbol *srec_make_empty_symbol PARAMS ((bfd *));
-static long srec_get_symtab_upper_bound PARAMS ((bfd *));
-static long srec_get_symtab PARAMS ((bfd *, asymbol **));
 
 /* Macros for converting between hex and binary. */
 
@@ -171,7 +153,7 @@ srec_init ()
 /* The maximum number of bytes on a line is FF */
 #define MAXCHUNK 0xff
 /* The number of bytes we fit onto a line on output */
-#define CHUNK 16
+#define CHUNK 21
 
 /* When writing an S-record file, the S-records can not be output as
    they are seen.  This structure is used to hold them in memory.  */
@@ -226,7 +208,10 @@ srec_mkobject (abfd)
     {
       tdata_type *tdata = (tdata_type *) bfd_alloc (abfd, sizeof (tdata_type));
       if (tdata == NULL)
-	return false;
+	{
+	  bfd_set_error (bfd_error_no_memory);
+	  return false;
+	}
       abfd->tdata.srec_data = tdata;
       tdata->type = 1;
       tdata->head = NULL;
@@ -287,7 +272,7 @@ srec_bad_byte (abfd, lineno, c, error)
 	  buf[1] = '\0';
 	}
       (*_bfd_error_handler)
-	(_("%s:%d: Unexpected character `%s' in S-record file\n"),
+	("%s:%d: Unexpected character `%s' in S-record file\n",
 	 bfd_get_filename (abfd), lineno, buf);
       bfd_set_error (bfd_error_bad_value);
     }
@@ -305,7 +290,10 @@ srec_new_symbol (abfd, name, val)
 
   n = (struct srec_symbol *) bfd_alloc (abfd, sizeof (struct srec_symbol));
   if (n == NULL)
-    return false;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return false;
+    }
 
   n->name = name;
   n->val = val;
@@ -335,7 +323,6 @@ srec_scan (abfd)
   bfd_byte *buf = NULL;
   size_t bufsize = 0;
   asection *sec = NULL;
-  char *symbuf = NULL;
 
   if (bfd_seek (abfd, (file_ptr) 0, SEEK_SET) != 0)
     goto error_return;
@@ -376,107 +363,78 @@ srec_scan (abfd)
 	  break;
 
 	case ' ':
-	  do
-	    {
-	      unsigned int alc;
-	      char *p, *symname;
-	      bfd_vma symval;
+	  {
+	    char *symname;
+	    bfd_vma symval;
 
-	      /* Starting a symbol definition.  */
-	      while ((c = srec_get_byte (abfd, &error)) != EOF
-		     && (c == ' ' || c == '\t'))
-		;
-
-	      if (c == '\n' || c == '\r')
-		break;
-
-	      if (c == EOF)
-		{
-		  srec_bad_byte (abfd, lineno, c, error);
-		  goto error_return;
-		}
-
-	      alc = 10;
-	      symbuf = (char *) bfd_malloc (alc + 1);
-	      if (symbuf == NULL)
+	    /* Starting a symbol definition.  */
+	    while ((c = srec_get_byte (abfd, &error)) != EOF
+		   && (c == ' ' || c == '\t'))
+	      ;
+	    if (c == EOF)
+	      {
+		srec_bad_byte (abfd, lineno, c, error);
 		goto error_return;
+	      }
 
-	      p = symbuf;
-
-	      *p++ = c;
-	      while ((c = srec_get_byte (abfd, &error)) != EOF
-		     && ! isspace (c))
-		{
-		  if ((unsigned int) (p - symbuf) >= alc)
-		    {
-		      char *n;
-
-		      alc *= 2;
-		      n = (char *) bfd_realloc (symbuf, alc + 1);
-		      if (n == NULL)
-			goto error_return;
-		      p = n + (p - symbuf);
-		      symbuf = n;
-		    }
-
-		  *p++ = c;
-		}
-
-	      if (c == EOF)
-		{
-		  srec_bad_byte (abfd, lineno, c, error);
-		  goto error_return;
-		}
-
-	      *p++ = '\0';
-	      symname = bfd_alloc (abfd, p - symbuf);
-	      if (symname == NULL)
+	    obstack_1grow (&abfd->memory, c);
+	    while ((c = srec_get_byte (abfd, &error)) != EOF
+		   && ! isspace (c))
+	      obstack_1grow (&abfd->memory, c);
+	    if (c == EOF)
+	      {
+		srec_bad_byte (abfd, lineno, c, error);
 		goto error_return;
-	      strcpy (symname, symbuf);
-	      free (symbuf);
-	      symbuf = NULL;
+	      }
 
-	      while ((c = srec_get_byte (abfd, &error)) != EOF
-		     && (c == ' ' || c == '\t'))
-		;
-	      if (c == EOF)
-		{
-		  srec_bad_byte (abfd, lineno, c, error);
-		  goto error_return;
-		}
-
-	      /* Skip a dollar sign before the hex value.  */
-	      if (c == '$')
-		{
-		  c = srec_get_byte (abfd, &error);
-		  if (c == EOF)
-		    {
-		      srec_bad_byte (abfd, lineno, c, error);
-		      goto error_return;
-		    }
-		}
-
-	      symval = 0;
-	      while (ISHEX (c))
-		{
-		  symval <<= 4;
-		  symval += NIBBLE (c);
-		  c = srec_get_byte (abfd, &error);
-		}
-
-	      if (! srec_new_symbol (abfd, symname, symval))
+	    symname = obstack_finish (&abfd->memory);
+	    if (symname == NULL)
+	      {
+		bfd_set_error (bfd_error_no_memory);
 		goto error_return;
-	    }
-	  while (c == ' ' || c == '\t');
+	      }
+      
+	    while ((c = srec_get_byte (abfd, &error)) != EOF
+		   && (c == ' ' || c == '\t'))
+	      ;
+	    if (c == EOF)
+	      {
+		srec_bad_byte (abfd, lineno, c, error);
+		goto error_return;
+	      }
 
-	  if (c == '\n')
-	    ++lineno;
-	  else if (c != '\r')
-	    {
-	      srec_bad_byte (abfd, lineno, c, error);
+	    /* Skip a dollar sign before the hex value.  */
+	    if (c == '$')
+	      {
+		c = srec_get_byte (abfd, &error);
+		if (c == EOF)
+		  {
+		    srec_bad_byte (abfd, lineno, c, error);
+		    goto error_return;
+		  }
+	      }
+
+	    symval = 0;
+	    while (ISHEX (c))
+	      {
+		symval <<= 4;
+		symval += NIBBLE (c);
+		c = srec_get_byte (abfd, &error);
+	      }
+
+	    if (c == EOF || ! isspace (c))
+	      {
+		srec_bad_byte (abfd, lineno, c, error);
+		goto error_return;
+	      }
+
+	    if (! srec_new_symbol (abfd, symname, symval))
 	      goto error_return;
-	    }
 
+	    if (c == '\n')
+	      ++lineno;
+
+	  }
 	  break;
     
 	case 'S':
@@ -509,9 +467,12 @@ srec_scan (abfd)
 	      {
 		if (buf != NULL)
 		  free (buf);
-		buf = (bfd_byte *) bfd_malloc (bytes * 2);
+		buf = (bfd_byte *) malloc (bytes * 2);
 		if (buf == NULL)
-		  goto error_return;
+		  {
+		    bfd_set_error (bfd_error_no_memory);
+		    goto error_return;
+		  }
 		bufsize = bytes * 2;
 	      }
 
@@ -569,7 +530,6 @@ srec_scan (abfd)
 		      goto error_return;
 		    sec->flags = SEC_HAS_CONTENTS | SEC_LOAD | SEC_ALLOC;
 		    sec->vma = address;
-		    sec->lma = address;
 		    sec->_raw_size = bytes;
 		    sec->filepos = pos;
 		  }
@@ -612,8 +572,6 @@ srec_scan (abfd)
   return true;
 
  error_return:
-  if (symbuf != NULL)
-    free (symbuf);
   if (buf != NULL)
     free (buf);
   return false;
@@ -643,9 +601,6 @@ srec_object_p (abfd)
       || ! srec_scan (abfd))
     return NULL;
 
-  if (abfd->symcount > 0)
-    abfd->flags |= HAS_SYMS;
-
   return abfd->xvec;
 }
 
@@ -672,9 +627,6 @@ symbolsrec_object_p (abfd)
   if (! srec_mkobject (abfd)
       || ! srec_scan (abfd))
     return NULL;
-
-  if (abfd->symcount > 0)
-    abfd->flags |= HAS_SYMS;
 
   return abfd->xvec;
 }
@@ -721,9 +673,12 @@ srec_read_section (abfd, section, contents)
 	{
 	  if (buf != NULL)
 	    free (buf);
-	  buf = (bfd_byte *) bfd_malloc (bytes * 2);
+	  buf = (bfd_byte *) malloc (bytes * 2);
 	  if (buf == NULL)
-	    goto error_return;
+	    {
+	      bfd_set_error (bfd_error_no_memory);
+	      goto error_return;
+	    }
 	  bufsize = bytes * 2;
 	}
 
@@ -811,7 +766,10 @@ srec_get_section_contents (abfd, section, location, offset, count)
       section->used_by_bfd = bfd_alloc (abfd, section->_raw_size);
       if (section->used_by_bfd == NULL
 	  && section->_raw_size != 0)
-	return false;
+	{
+	  bfd_set_error (bfd_error_no_memory);
+	  return false;
+	}
 
       if (! srec_read_section (abfd, section, section->used_by_bfd))
 	return false;
@@ -821,22 +779,6 @@ srec_get_section_contents (abfd, section, location, offset, count)
 	  (size_t) count);
 
   return true;
-}
-
-/* Set the architecture.  We accept an unknown architecture here.  */
-
-static boolean
-srec_set_arch_mach (abfd, arch, mach)
-     bfd *abfd;
-     enum bfd_architecture arch;
-     unsigned long mach;
-{
-  if (arch == bfd_arch_unknown)
-    {
-      abfd->arch_info = &bfd_default_arch_struct;
-      return true;
-    }
-  return bfd_default_set_arch_mach (abfd, arch, mach);
 }
 
 /* we have to save up all the Srecords for a splurge before output */
@@ -855,7 +797,10 @@ srec_set_section_contents (abfd, section, location, offset, bytes_to_do)
   entry = ((srec_data_list_type *)
 	   bfd_alloc (abfd, sizeof (srec_data_list_type)));
   if (entry == NULL)
-    return false;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return false;
+    }
 
   if (bytes_to_do
       && (section->flags & SEC_ALLOC)
@@ -863,7 +808,10 @@ srec_set_section_contents (abfd, section, location, offset, bytes_to_do)
     {
       bfd_byte *data = (bfd_byte *) bfd_alloc (abfd, bytes_to_do);
       if (data == NULL)
-	return false;
+	{
+	  bfd_set_error (bfd_error_no_memory);
+	  return false;
+	}
       memcpy ((PTR) data, location, (size_t) bytes_to_do);
 
       if ((section->lma + offset + bytes_to_do - 1) <= 0xffff)
@@ -871,7 +819,7 @@ srec_set_section_contents (abfd, section, location, offset, bytes_to_do)
 
 	}
       else if ((section->lma + offset + bytes_to_do - 1) <= 0xffffff
-	       && tdata->type <= 2)
+	       && tdata->type < 2)
 	{
 	  tdata->type = 2;
 	}
@@ -1000,28 +948,31 @@ srec_write_section (abfd, tdata, list)
      tdata_type *tdata;
      srec_data_list_type *list;
 {
-  unsigned int octets_written = 0;
+  unsigned int bytes_written = 0;
   bfd_byte *location = list->data;
 
-  while (octets_written < list->size)
+  while (bytes_written < list->size)
     {
       bfd_vma address;
-      unsigned int octets_this_chunk = list->size - octets_written;
 
-      if (octets_this_chunk > CHUNK)
-	octets_this_chunk = CHUNK;
+      unsigned int bytes_this_chunk = list->size - bytes_written;
 
-      address = list->where + octets_written / bfd_octets_per_byte (abfd);
+      if (bytes_this_chunk > CHUNK)
+	{
+	  bytes_this_chunk = CHUNK;
+	}
+
+      address = list->where + bytes_written;
 
       if (! srec_write_record (abfd,
 			       tdata->type,
 			       address,
 			       location,
-			       location + octets_this_chunk))
+			       location + bytes_this_chunk))
 	return false;
 
-      octets_written += octets_this_chunk;
-      location += octets_this_chunk;
+      bytes_written += bytes_this_chunk;
+      location += bytes_this_chunk;
     }
 
   return true;
@@ -1062,8 +1013,26 @@ srec_write_symbols (abfd)
       for (i = 0; i < count; i++)
 	{
 	  asymbol *s = table[i];
-	  if (! bfd_is_local_label (abfd, s)
-	      && (s->flags & BSF_DEBUGGING) == 0)
+#if 0
+	  int len = strlen (s->name);
+
+	  /* If this symbol has a .[ocs] in it, it's probably a file name
+	 and we'll output that as the module name */
+
+	  if (len > 3 && s->name[len - 2] == '.')
+	    {
+	      int l;
+	      sprintf (buffer, "$$ %s\r\n", s->name);
+	      l = strlen (buffer);
+	      if (bfd_write (buffer, l, 1, abfd) != l)
+		return false;
+	    }
+	  else
+#endif
+	    if (s->flags & (BSF_GLOBAL | BSF_LOCAL)
+		&& (s->flags & BSF_DEBUGGING) == 0
+		&& s->name[0] != '.'
+		&& s->name[0] != 't')
 	    {
 	      /* Just dump out non debug symbols */
 	      bfd_size_type l;
@@ -1136,8 +1105,8 @@ symbolsrec_write_object_contents (abfd)
 /*ARGSUSED*/
 static int
 srec_sizeof_headers (abfd, exec)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     boolean exec ATTRIBUTE_UNUSED;
+     bfd *abfd;
+     boolean exec;
 {
   return 0;
 }
@@ -1180,7 +1149,10 @@ srec_get_symtab (abfd, alocation)
 
       csymbols = (asymbol *) bfd_alloc (abfd, symcount * sizeof (asymbol));
       if (csymbols == NULL && symcount != 0)
-	return false;
+	{
+	  bfd_set_error (bfd_error_no_memory);
+	  return false;
+	}
       abfd->tdata.srec_data->csymbols = csymbols;
 
       for (s = abfd->tdata.srec_data->symbols, c = csymbols;
@@ -1204,9 +1176,9 @@ srec_get_symtab (abfd, alocation)
 }
 
 /*ARGSUSED*/
-static void
+void
 srec_get_symbol_info (ignore_abfd, symbol, ret)
-     bfd *ignore_abfd ATTRIBUTE_UNUSED;
+     bfd *ignore_abfd;
      asymbol *symbol;
      symbol_info *ret;
 {
@@ -1214,9 +1186,9 @@ srec_get_symbol_info (ignore_abfd, symbol, ret)
 }
 
 /*ARGSUSED*/
-static void
+void
 srec_print_symbol (ignore_abfd, afile, symbol, how)
-     bfd *ignore_abfd ATTRIBUTE_UNUSED;
+     bfd *ignore_abfd;
      PTR afile;
      asymbol *symbol;
      bfd_print_symbol_type how;
@@ -1240,7 +1212,7 @@ srec_print_symbol (ignore_abfd, afile, symbol, how)
 #define srec_bfd_free_cached_info _bfd_generic_bfd_free_cached_info
 #define srec_new_section_hook _bfd_generic_new_section_hook
 
-#define srec_bfd_is_local_label_name bfd_generic_is_local_label_name
+#define srec_bfd_is_local_label bfd_generic_is_local_label
 #define srec_get_lineno _bfd_nosymbols_get_lineno
 #define srec_find_nearest_line _bfd_nosymbols_find_nearest_line
 #define srec_bfd_make_debug_symbol _bfd_nosymbols_bfd_make_debug_symbol
@@ -1256,10 +1228,11 @@ srec_print_symbol (ignore_abfd, afile, symbol, how)
 #define srec_get_section_contents_in_window \
   _bfd_generic_get_section_contents_in_window
 
+#define srec_set_arch_mach bfd_default_set_arch_mach
+
 #define srec_bfd_get_relocated_section_contents \
   bfd_generic_get_relocated_section_contents
 #define srec_bfd_relax_section bfd_generic_relax_section
-#define srec_bfd_gc_sections bfd_generic_gc_sections
 #define srec_bfd_link_hash_table_create _bfd_generic_link_hash_table_create
 #define srec_bfd_link_add_symbols _bfd_generic_link_add_symbols
 #define srec_bfd_final_link _bfd_generic_final_link
@@ -1269,8 +1242,8 @@ const bfd_target srec_vec =
 {
   "srec",			/* name */
   bfd_target_srec_flavour,
-  BFD_ENDIAN_UNKNOWN,		/* target byte order */
-  BFD_ENDIAN_UNKNOWN,		/* target headers byte order */
+  true,				/* target byte order */
+  true,				/* target headers byte order */
   (HAS_RELOC | EXEC_P |		/* object flags */
    HAS_LINENO | HAS_DEBUG |
    HAS_SYMS | HAS_LOCALS | WP_TEXT | D_PAGED),
@@ -1315,8 +1288,6 @@ const bfd_target srec_vec =
   BFD_JUMP_TABLE_LINK (srec),
   BFD_JUMP_TABLE_DYNAMIC (_bfd_nodynamic),
 
-  NULL,
-  
   (PTR) 0
 };
 
@@ -1326,8 +1297,8 @@ const bfd_target symbolsrec_vec =
 {
   "symbolsrec",			/* name */
   bfd_target_srec_flavour,
-  BFD_ENDIAN_UNKNOWN,		/* target byte order */
-  BFD_ENDIAN_UNKNOWN,		/* target headers byte order */
+  true,				/* target byte order */
+  true,				/* target headers byte order */
   (HAS_RELOC | EXEC_P |		/* object flags */
    HAS_LINENO | HAS_DEBUG |
    HAS_SYMS | HAS_LOCALS | WP_TEXT | D_PAGED),
@@ -1372,7 +1343,5 @@ const bfd_target symbolsrec_vec =
   BFD_JUMP_TABLE_LINK (srec),
   BFD_JUMP_TABLE_DYNAMIC (_bfd_nodynamic),
 
-  NULL,
-  
   (PTR) 0
 };

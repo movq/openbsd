@@ -1,6 +1,5 @@
 # Source file used to test the and macro.
 	
-foo:
 	and	$4,$4,0
 	and	$4,$4,1
 	and	$4,$4,0x8000
@@ -21,8 +20,3 @@ foo:
 	or	$4,$5,0
 
 	xor	$4,$5,0
-
-	# Round to a 16 byte boundary, for ease in testing multiple targets.
-	nop
-	nop
-	nop

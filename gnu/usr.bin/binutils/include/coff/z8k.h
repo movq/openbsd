@@ -23,7 +23,7 @@ struct external_filehdr {
 #define Z8KBADMAG(x) (((x).f_magic!=Z8KMAGIC))
 
 #define	FILHDR	struct external_filehdr
-#define	FILHSZ	20
+#define	FILHSZ	sizeof(FILHDR)
 
 
 /********************** AOUT "OPTIONAL HEADER" **********************/
@@ -43,8 +43,8 @@ typedef struct
 AOUTHDR;
 
 
-#define AOUTHDRSZ 28
-#define AOUTSZ 28
+#define AOUTHDRSZ (sizeof(AOUTHDR))
+#define AOUTSZ (sizeof(AOUTHDR))
 
 
 
@@ -74,7 +74,7 @@ struct external_scnhdr {
 
 
 #define	SCNHDR	struct external_scnhdr
-#define	SCNHSZ	40
+#define	SCNHSZ	sizeof(SCNHDR)
 
 
 /********************** LINE NUMBERS **********************/
@@ -96,7 +96,7 @@ struct external_lineno {
 #define PUT_LINENO_LNNO(abfd,val, ext) bfd_h_put_32(abfd,val,  (bfd_byte *) (ext->l_lnno));
 
 #define	LINENO	struct external_lineno
-#define	LINESZ	8
+#define	LINESZ	sizeof(LINENO) 
 
 
 /********************** SYMBOLS **********************/

@@ -31,7 +31,7 @@ struct external_filehdr
 #define LYNXCOFFMAGIC	(0415)
 
 #define	FILHDR	struct external_filehdr
-#define	FILHSZ	20
+#define	FILHSZ	sizeof(FILHDR)
 
 /********************** AOUT "OPTIONAL HEADER" **********************/
 
@@ -48,8 +48,7 @@ typedef struct
 }
 AOUTHDR;
 
-#define AOUTSZ 28
-#define AOUTHDRSZ 28
+#define AOUTSZ (sizeof(AOUTHDR))
 
 #define OMAGIC          0404    /* object files, eg as output */
 #define ZMAGIC          0413    /* demand load format, eg normal ld output */
@@ -73,7 +72,7 @@ struct external_scnhdr
 };
 
 #define	SCNHDR	struct external_scnhdr
-#define	SCNHSZ	40
+#define	SCNHSZ	sizeof(SCNHDR)
 
 /* Names of "special" sections. */
 
@@ -206,5 +205,5 @@ struct external_reloc {
 };
 
 #define RELOC struct external_reloc
-#define RELSZ 16
+#define RELSZ sizeof (RELOC)
 

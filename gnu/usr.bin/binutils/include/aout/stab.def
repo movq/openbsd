@@ -1,6 +1,5 @@
 /* Table of DBX symbol codes for the GNU system.
-   Copyright (C) 1988, 91, 92, 93, 94, 95, 96, 1998
-   Free Software Foundation, Inc.
+   Copyright (C) 1988, 1991 Free Software Foundation, Inc.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -95,7 +94,7 @@ __define_stab (N_BSLINE, 0x48, "BSLINE")
 /* Sun's source-code browser stabs.  ?? Don't know what the fields are.
    Supposedly the field is "path to associated .cb file".  THIS VALUE
    OVERLAPS WITH N_BSLINE!  */
-__define_stab_duplicate (N_BROWS, 0x48, "BROWS")
+__define_stab (N_BROWS, 0x48, "BROWS")
 
 /* GNU Modula-2 definition module dependency.  Value is the modification time
    of the definition file.  Other is non-zero if it is imported with the
@@ -111,7 +110,7 @@ __define_stab(N_FLINE, 0x4C, "FLINE")
 /* GNU C++ exception variable.  Name is variable name.  */
 __define_stab (N_EHDECL, 0x50, "EHDECL")
 /* Modula2 info "for imc":  name,,0,0,0  according to Ultrix V4.0.  */
-__define_stab_duplicate (N_MOD2, 0x50, "MOD2")
+__define_stab (N_MOD2, 0x50, "MOD2")
 
 /* GNU C++ `catch' clause.  Value is its address.  Desc is nonzero if
    this entry is immediately followed by a CAUGHT stab saying what exception
@@ -135,9 +134,6 @@ __define_stab (N_ENDM, 0x62, "ENDM")
    On Solaris2, value is undefined, but desc is a source-language code.  */
 
 __define_stab (N_SO, 0x64, "SO")
-
-/* SunPro F77:  Name of alias.  */
-__define_stab (N_ALIAS, 0x6c, "ALIAS")
 
 /* Automatic variable in the stack.  Value is offset from frame pointer.
    Also used for type descriptions.  */
@@ -243,7 +239,7 @@ __define_stab (N_LENG, 0xfe, "LENG")
 	| 50 EHDECL*| 52	| 54 CATCH  | 56        |
 	| 58        | 5A        | 5C        | 5E	|
 	| 60 SSYM   | 62 ENDM	| 64 SO	    | 66 	|
-	| 68 	    | 6A	| 6C ALIAS  | 6E	|
+	| 68 	    | 6A	| 6C	    | 6E	|
 	| 70	    | 72	| 74	    | 76	|
 	| 78	    | 7A	| 7C	    | 7E	|
 	| 80 LSYM   | 82 BINCL	| 84 SOL    | 86	|

@@ -1,6 +1,5 @@
 /* m68k-parse.h -- header file for m68k assembler
-   Copyright (C) 1987, 91, 92, 93, 94, 95, 96, 1999
-   Free Software Foundation, Inc.
+   Copyright (C) 1987, 91, 92, 93, 94, 1995 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -84,9 +83,6 @@ enum m68k_register
   ZPC,				/* Hack for Program space, but 0 addressing */
   SR,				/* Status Reg */
   CCR,				/* Condition code Reg */
-  ACC,				/* Accumulator Reg */
-  MACSR,			/* MAC Status Reg */
-  MASK,				/* Modulus Reg */
 
   /* These have to be grouped together for the movec instruction to work. */
   USP,				/*  User Stack Pointer */
@@ -107,11 +103,7 @@ enum m68k_register
   URP,
   BUSCR,			/* 68060 added these */
   PCR,
-  ROMBAR,			/* mcf5200 added these */
-  RAMBAR0,
-  RAMBAR1,
-  MBAR,
-#define last_movec_reg MBAR
+#define last_movec_reg PCR
   /* end of movec ordering constraints */
 
   FPI,
@@ -169,44 +161,6 @@ enum m68k_register
   ZADDR5,
   ZADDR6,
   ZADDR7,
-
-  /* Upper and lower half of data and address registers.  Order *must*
-     be DATAxL, ADDRxL, DATAxU, ADDRxU. */
-  DATA0L,			/* lower half of data registers */
-  DATA1L,
-  DATA2L,
-  DATA3L,
-  DATA4L,
-  DATA5L,
-  DATA6L,
-  DATA7L,
-
-  ADDR0L,			/* lower half of address registers */
-  ADDR1L,
-  ADDR2L,
-  ADDR3L,
-  ADDR4L,
-  ADDR5L,
-  ADDR6L,
-  ADDR7L,
-
-  DATA0U,			/* upper half of data registers */
-  DATA1U,
-  DATA2U,
-  DATA3U,
-  DATA4U,
-  DATA5U,
-  DATA6U,
-  DATA7U,
-
-  ADDR0U,			/* upper half of address registers */
-  ADDR1U,
-  ADDR2U,
-  ADDR3U,
-  ADDR4U,
-  ADDR5U,
-  ADDR6U,
-  ADDR7U,
 };
 
 /* Size information.  */
@@ -240,30 +194,12 @@ struct m68k_indexreg
   int scale;
 };
 
-#ifdef OBJ_ELF
-/* The type of a PIC expression.  */
-
-enum pic_relocation
-{
-  pic_none,			/* not pic */
-  pic_plt_pcrel,		/* @PLTPC */
-  pic_got_pcrel,		/* @GOTPC */
-  pic_plt_off,			/* @PLT */
-  pic_got_off			/* @GOT */
-};
-#endif
-
 /* The structure used to hold information about an expression.  */
 
 struct m68k_exp
 {
   /* The size to use.  */
   enum m68k_size size;
-
-#ifdef OBJ_ELF
-  /* The type of pic relocation if any.  */
-  enum pic_relocation pic_reloc;
-#endif
 
   /* The expression itself.  */
   expressionS exp;

@@ -1,5 +1,5 @@
 /* BFD back-end for WDC 65816 COFF binaries.
-   Copyright 1995, 96, 1997 Free Software Foundation, Inc.
+   Copyright 1995 Free Software Foundation, Inc.
    Written by Steve Chamberlain, <sac@cygnus.com>.
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -20,6 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #include "bfd.h"
 #include "sysdep.h"
+#include "obstack.h"
 #include "libbfd.h"
 #include "bfdlink.h"
 #include "coff/w65.h"
@@ -82,7 +83,7 @@ rtype2howto (internal, dst)
 #define RTYPE2HOWTO(internal, relocentry) rtype2howto(internal,relocentry)
 
 
-/* Perform any necessary magic to the addend in a reloc entry */
+/* Perform any necessaru magic to the addend in a reloc entry */
 
 
 #define CALC_ADDEND(abfd, symbol, ext_reloc, cache_ptr) \
@@ -145,13 +146,13 @@ h8300_reloc16_estimate(abfd, input_section, reloc, shrink, link_info)
 
   switch (reloc->howto->type)
     {     
-    case R_MOV16B2:
+    case R_MOVB2:
     case R_JMP2:
       shrink+=2;
       break;
 
       /* Thing is a move one byte */
-    case R_MOV16B1:
+    case R_MOVB1:
       value = bfd_coff_reloc16_get_value(reloc, link_info, input_section);
 
       if (value >= 0xff00)
@@ -233,10 +234,10 @@ h8300_reloc16_estimate(abfd, input_section, reloc, shrink, link_info)
 
 /* Reloc types
    large		small
-   R_MOV16B1		R_MOV16B2	mov.b with 16bit or 8 bit address
+   R_MOVB1		R_MOVB2		mov.b with 16bit or 8 bit address
    R_JMP1		R_JMP2		jmp or pcrel branch
    R_JMPL1		R_JMPL_B8	24jmp or pcrel branch
-   R_MOV24B1		R_MOV24B2	24 or 8 bit reloc for mov.b
+   R_MOVLB1		R_MOVLB2	24 or 8 bit reloc for mov.b
 
 */
 
@@ -380,7 +381,7 @@ h8300_reloc16_extra_cases (abfd, link_info, link_order, reloc, data, src_ptr,
       }
       break;
     default:
-      printf(_("ignoring reloc %s\n"), reloc->howto->name);
+      printf("ignoring reloc %s\n", reloc->howto->name);
       break;
 
     }
@@ -401,4 +402,45 @@ h8300_reloc16_extra_cases (abfd, link_info, link_order, reloc, data, src_ptr,
   bfd_coff_reloc16_get_relocated_section_contents
 #define coff_bfd_relax_section bfd_coff_reloc16_relax_section
 
-CREATE_LITTLE_COFF_TARGET_VEC (w65_vec, "coff-w95", BFD_IS_RELAXABLE, 0, '_', NULL)
+
+
+bfd_target w65_vec =
+{
+  "coff-w65",			/* name */
+  bfd_target_coff_flavour,
+  false,			/* data byte order is big */
+  false,			/* header byte order is big */
+
+  (HAS_RELOC | EXEC_P |		/* object flags */
+   HAS_LINENO | HAS_DEBUG |
+   HAS_SYMS | HAS_LOCALS | WP_TEXT | BFD_IS_RELAXABLE ),
+  (SEC_HAS_CONTENTS | SEC_ALLOC | SEC_LOAD | SEC_RELOC),	/* section flags */
+  '_',				/* leading char */
+  '/',				/* ar_pad_char */
+  15,				/* ar_max_namelen */
+  bfd_getl64, bfd_getl_signed_64, bfd_putl64,
+  bfd_getl32, bfd_getl_signed_32, bfd_putl32,
+  bfd_getl16, bfd_getl_signed_16, bfd_putl16,	/* data */
+  bfd_getl64, bfd_getl_signed_64, bfd_putl64,
+  bfd_getl32, bfd_getl_signed_32, bfd_putl32,
+  bfd_getl16, bfd_getl_signed_16, bfd_putl16,	/* hdrs */
+
+  {_bfd_dummy_target, coff_object_p,	/* bfd_check_format */
+   bfd_generic_archive_p, _bfd_dummy_target},
+  {bfd_false, coff_mkobject, _bfd_generic_mkarchive,	/* bfd_set_format */
+   bfd_false},
+  {bfd_false, coff_write_object_contents,	/* bfd_write_contents */
+   _bfd_write_archive_contents, bfd_false},
+
+     BFD_JUMP_TABLE_GENERIC (coff),
+     BFD_JUMP_TABLE_COPY (coff),
+     BFD_JUMP_TABLE_CORE (_bfd_nocore),
+     BFD_JUMP_TABLE_ARCHIVE (_bfd_archive_coff),
+     BFD_JUMP_TABLE_SYMBOLS (coff),
+     BFD_JUMP_TABLE_RELOCS (coff),
+     BFD_JUMP_TABLE_WRITE (coff),
+     BFD_JUMP_TABLE_LINK (coff),
+     BFD_JUMP_TABLE_DYNAMIC (_bfd_nodynamic),
+
+  COFF_SWAP_TABLE,
+};

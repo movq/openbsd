@@ -1,30 +1,23 @@
 # Sed commands to finish translating the binutils Unix makefile into MPW syntax.
 
-# Add a rule.
+# Define undefined makefile variables.
 /^#### .*/a\
 \
+BUILD_NLMCONV = \
+BUILD_SRCONV = \
+SYSINFO_PROG = \
+BUILD_DLLTOOL = \
+\
 "{o}"underscore.c.o \\Option-f "{o}"underscore.c\
-
-# Comment out any alias settings.
-/^host_alias =/s/^/#/
-/^target_alias =/s/^/#/
 
 # Whack out unused host define bits.
 /HDEFINES/s/@HDEFINES@//
 
-# Don't build specialized tools.
 /BUILD_NLMCONV/s/@BUILD_NLMCONV@//
 /BUILD_SRCONV/s/@BUILD_SRCONV@//
 /BUILD_DLLTOOL/s/@BUILD_DLLTOOL@//
 
 /UNDERSCORE/s/@UNDERSCORE@/{UNDERSCORE}/
-
-# Don't need this.
-/@HLDFLAGS@/s/@HLDFLAGS@//
-
-# Point at the libraries directly.
-/@BFDLIB@/s/@BFDLIB@/::bfd:libbfd.o/
-/@OPCODES@/s/@OPCODES@/::opcodes:libopcodes.o/
 
 # Whack out target makefile fragment.
 /target_makefile_fragment/s/target_makefile_fragment@//
@@ -38,20 +31,11 @@
 /BISON/s/^BISON =.*$/BISON = byacc/
 #/BISONFLAGS/s/^BISONFLAGS =.*$/BISONFLAGS = /
 
-# Embed the version in symbolic doublequotes that will expand to
-# the right thing for each compiler.
-/VERSION/s/'"{VERSION}"'/{dq}{VERSION}{dq}/
-
 # '+' is a special char to MPW, don't use it ever.
 /c++filt/s/c++filt/cplusfilt/
 
-# All of the binutils use the same Rez file, change names to refer to it.
 /^{[A-Z]*_PROG}/s/$/ "{s}"mac-binutils.r/
 /{[A-Z]*_PROG}\.r/s/{[A-Z]*_PROG}\.r/mac-binutils.r/
-
-# There are auto-generated references to BFD .h files that are not
-# in the objdir (like bfd.h) but are in the source dir.
-/::bfd:lib/s/::bfd:lib\([a-z]*\)\.h/{BFDDIR}:lib\1.h/g
 
 # Fix the locations of generated files.
 /config/s/"{s}"config\.h/"{o}"config.h/g
@@ -81,27 +65,6 @@
 
 # Fix an over-eagerness.
 /echo.*WARNING.*This file/s/'.*'/' '/
-
-# Add a "stamps" target.
-$a\
-stamps \\Option-f stamp-under\
-
-/^install \\Option-f /,/^$/c\
-install \\Option-f  all install-only\
-\
-install-only \\Option-f\
-	NewFolderRecursive "{bindir}"\
-	# Need to copy all the tools\
-	For prog in {PROGS}\
-		Set progname `echo {prog} | sed -e 's/.new//'`\
-		Duplicate -y :{prog} "{bindir}"{progname}\
-	End For\
-
-
-/true/s/ ; @true$//
-
-# dot files are trouble, remove them and their actions.
-/^\.dep/,/^$/d
 
 # Remove un-useful targets.
 /^Makefile \\Option-f/,/^$/d

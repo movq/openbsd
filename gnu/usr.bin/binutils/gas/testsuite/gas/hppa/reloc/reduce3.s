@@ -1,4 +1,16 @@
-	.data
+	.SPACE $PRIVATE$
+	.SUBSPA $DATA$,QUAD=1,ALIGN=8,ACCESS=31
+	.SUBSPA $BSS$,QUAD=1,ALIGN=8,ACCESS=31,ZERO,SORT=82
+	.SPACE $TEXT$
+	.SUBSPA $LIT$,QUAD=0,ALIGN=8,ACCESS=44
+	.SUBSPA $CODE$,QUAD=0,ALIGN=8,ACCESS=44,CODE_ONLY
+	.IMPORT $global$,DATA
+	.IMPORT $$dyncall,MILLICODE
+; gcc_compiled.:
+	.EXPORT blah,DATA
+	.SPACE $PRIVATE$
+	.SUBSPA $DATA$
+
 	.align 8
 blah
 	; .double 0e+00
@@ -14,7 +26,8 @@ foo
 	.align 4
 yabba
 	.word 1
-	.code
+	.SPACE $TEXT$
+	.SUBSPA $CODE$
 
 	.align 4
 	.EXPORT bar,CODE
@@ -25,14 +38,14 @@ bar
 	.ENTRY
 	copy %r3,%r1
 	copy %r30,%r3
-	stwm %r1,64(%r30)
+	stwm %r1,64(0,%r30)
 	addil L'yabba-$global$,%r27
 	ldo R'yabba-$global$(%r1),%r19
 	ldi 2,%r20
-	stw %r20,0(%r19)
+	stw %r20,0(0,%r19)
 L$0001
 	ldo 64(%r3),%r30
-	ldwm -64(%r30),%r3
-	bv,n %r0(%r2)
+	ldwm -64(0,%r30),%r3
+	bv,n 0(%r2)
 	.EXIT
 	.PROCEND

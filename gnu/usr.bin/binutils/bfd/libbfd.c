@@ -1,6 +1,5 @@
 /* Assorted BFD support routines, only used internally.
-   Copyright 1990, 91, 92, 93, 94, 95, 96, 97, 98, 1999
-   Free Software Foundation, Inc.
+   Copyright 1990, 91, 92, 93, 94 Free Software Foundation, Inc.
    Written by Cygnus Support.
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -23,10 +22,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include "sysdep.h"
 #include "libbfd.h"
 
-#ifndef HAVE_GETPAGESIZE
-#define getpagesize() 2048
-#endif
-
 static int real_read PARAMS ((PTR, size_t, size_t, FILE *));
 
 /*
@@ -45,7 +40,7 @@ DESCRIPTION
 /*ARGSUSED*/
 boolean
 bfd_false (ignore)
-     bfd *ignore ATTRIBUTE_UNUSED;
+     bfd *ignore;
 {
   bfd_set_error (bfd_error_invalid_operation);
   return false;
@@ -57,7 +52,7 @@ bfd_false (ignore)
 /*ARGSUSED*/
 boolean
 bfd_true (ignore)
-     bfd *ignore ATTRIBUTE_UNUSED;
+     bfd *ignore;
 {
   return true;
 }
@@ -68,7 +63,7 @@ bfd_true (ignore)
 /*ARGSUSED*/
 PTR
 bfd_nullvoidptr (ignore)
-     bfd *ignore ATTRIBUTE_UNUSED;
+     bfd *ignore;
 {
   bfd_set_error (bfd_error_invalid_operation);
   return NULL;
@@ -77,7 +72,7 @@ bfd_nullvoidptr (ignore)
 /*ARGSUSED*/
 int 
 bfd_0 (ignore)
-     bfd *ignore ATTRIBUTE_UNUSED;
+     bfd *ignore;
 {
   return 0;
 }
@@ -85,7 +80,7 @@ bfd_0 (ignore)
 /*ARGSUSED*/
 unsigned int 
 bfd_0u (ignore)
-     bfd *ignore ATTRIBUTE_UNUSED;
+     bfd *ignore;
 {
    return 0;
 }
@@ -93,7 +88,7 @@ bfd_0u (ignore)
 /*ARGUSED*/
 long
 bfd_0l (ignore)
-     bfd *ignore ATTRIBUTE_UNUSED;
+     bfd *ignore;
 {
   return 0;
 }
@@ -104,7 +99,7 @@ bfd_0l (ignore)
 /*ARGSUSED*/
 long
 _bfd_n1 (ignore_abfd)
-     bfd *ignore_abfd ATTRIBUTE_UNUSED;
+     bfd *ignore_abfd;
 {
   bfd_set_error (bfd_error_invalid_operation);
   return -1;
@@ -113,15 +108,15 @@ _bfd_n1 (ignore_abfd)
 /*ARGSUSED*/
 void 
 bfd_void (ignore)
-     bfd *ignore ATTRIBUTE_UNUSED;
+     bfd *ignore;
 {
 }
 
 /*ARGSUSED*/
 boolean
 _bfd_nocore_core_file_matches_executable_p (ignore_core_bfd, ignore_exec_bfd)
-     bfd *ignore_core_bfd ATTRIBUTE_UNUSED;
-     bfd *ignore_exec_bfd ATTRIBUTE_UNUSED;
+     bfd *ignore_core_bfd;
+     bfd *ignore_exec_bfd;
 {
   bfd_set_error (bfd_error_invalid_operation);
   return false;
@@ -133,7 +128,7 @@ _bfd_nocore_core_file_matches_executable_p (ignore_core_bfd, ignore_exec_bfd)
 /*ARGSUSED*/
 char *
 _bfd_nocore_core_file_failing_command (ignore_abfd)
-     bfd *ignore_abfd ATTRIBUTE_UNUSED;
+     bfd *ignore_abfd;
 {
   bfd_set_error (bfd_error_invalid_operation);
   return (char *)NULL;
@@ -145,7 +140,7 @@ _bfd_nocore_core_file_failing_command (ignore_abfd)
 /*ARGSUSED*/
 int
 _bfd_nocore_core_file_failing_signal (ignore_abfd)
-     bfd *ignore_abfd ATTRIBUTE_UNUSED;
+     bfd *ignore_abfd;
 {
   bfd_set_error (bfd_error_invalid_operation);
   return 0;
@@ -154,66 +149,28 @@ _bfd_nocore_core_file_failing_signal (ignore_abfd)
 /*ARGSUSED*/
 const bfd_target *
 _bfd_dummy_target (ignore_abfd)
-     bfd *ignore_abfd ATTRIBUTE_UNUSED;
+     bfd *ignore_abfd;
 {
   bfd_set_error (bfd_error_wrong_format);
   return 0;
 }
 
-/* Allocate memory using malloc.  */
 
-PTR
-bfd_malloc (size)
-     size_t size;
-{
-  PTR ptr;
+#ifndef bfd_zmalloc
+/* allocate and clear storage */
 
-  ptr = (PTR) malloc (size);
-  if (ptr == NULL && size != 0)
-    bfd_set_error (bfd_error_no_memory);
-  return ptr;
-}
-
-/* Reallocate memory using realloc.  */
-
-PTR
-bfd_realloc (ptr, size)
-     PTR ptr;
-     size_t size;
-{
-  PTR ret;
-
-  if (ptr == NULL)
-    ret = malloc (size);
-  else
-    ret = realloc (ptr, size);
-
-  if (ret == NULL)
-    bfd_set_error (bfd_error_no_memory);
-
-  return ret;
-}
-
-/* Allocate memory using malloc and clear it.  */
-
-PTR
+char *
 bfd_zmalloc (size)
-     size_t size;
+     bfd_size_type size;
 {
-  PTR ptr;
+  char *ptr = (char *) malloc ((size_t) size);
 
-  ptr = (PTR) malloc (size);
-
-  if (size != 0)
-    {
-      if (ptr == NULL)
-	bfd_set_error (bfd_error_no_memory);
-      else
-	memset (ptr, 0, size);
-    }
+  if (ptr && size)
+   memset(ptr, 0, (size_t) size);
 
   return ptr;
 }
+#endif /* bfd_zmalloc */
 
 /* Some IO code */
 
@@ -232,25 +189,7 @@ real_read (where, a,b, file)
      size_t b;
      FILE *file;
 {
-  /* FIXME - this looks like an optimization, but it's really to cover
-     up for a feature of some OSs (not solaris - sigh) that
-     ld/pe-dll.c takes advantage of (apparently) when it creates BFDs
-     internally and tries to link against them.  BFD seems to be smart
-     enough to realize there are no symbol records in the "file" that
-     doesn't exist but attempts to read them anyway.  On Solaris,
-     attempting to read zero bytes from a NULL file results in a core
-     dump, but on other platforms it just returns zero bytes read.
-     This makes it to something reasonable. - DJ */
-  if (a == 0 || b == 0)
-    return 0;
-
-#if defined (__VAX) && defined (VMS)
-  /* Apparently fread on Vax VMS does not keep the record length
-     information.  */
-  return read (fileno (file), where, a * b);
-#else
   return fread (where, a, b, file);
-#endif
 }
 
 /* Return value is amount read (FIXME: how are errors and end of file dealt
@@ -264,30 +203,11 @@ bfd_read (ptr, size, nitems, abfd)
      bfd *abfd;
 {
   int nread;
-
-  if ((abfd->flags & BFD_IN_MEMORY) != 0)
-    {
-      struct bfd_in_memory *bim;
-      bfd_size_type get;
-
-      bim = (struct bfd_in_memory *) abfd->iostream;
-      get = size * nitems;
-      if (abfd->where + get > bim->size)
-	{
-	  if (bim->size < (bfd_size_type) abfd->where)
-	    get = 0;
-	  else
-	    get = bim->size - abfd->where;
-	  bfd_set_error (bfd_error_file_truncated);
-	}
-      memcpy (ptr, bim->buffer + abfd->where, get);
-      abfd->where += get;
-      return get;
-    }
-
   nread = real_read (ptr, 1, (size_t)(size*nitems), bfd_cache_lookup(abfd));
+#ifdef FILE_OFFSET_IS_CHAR_INDEX
   if (nread > 0)
     abfd->where += nread;
+#endif
 
   /* Set bfd_error if we did not read as much data as we expected.
 
@@ -296,7 +216,7 @@ bfd_read (ptr, size, nitems, abfd)
 
      A BFD backend may wish to override bfd_error_file_truncated to
      provide something more useful (eg. no_symbols or wrong_format).  */
-  if (nread != (int) (size * nitems))
+  if (nread < (int)(size * nitems))
     {
       if (ferror (bfd_cache_lookup (abfd)))
 	bfd_set_error (bfd_error_system_call);
@@ -329,16 +249,11 @@ bfd_init_window (windowp)
   windowp->i = 0;
   windowp->size = 0;
 }
-
-/* Currently, if USE_MMAP is undefined, none if the window stuff is
-   used.  Okay, so it's mis-named.  At least the command-line option
-   "--without-mmap" is more obvious than "--without-windows" or some
-   such.  */
-#ifdef USE_MMAP
 
 #undef HAVE_MPROTECT /* code's not tested yet */
 
 #if HAVE_MMAP || HAVE_MPROTECT || HAVE_MADVISE
+#include <sys/types.h>
 #include <sys/mman.h>
 #endif
 
@@ -347,6 +262,12 @@ bfd_init_window (windowp)
 #endif
 
 static int debug_windows;
+
+/* Currently, if USE_MMAP is undefined, none if the window stuff is
+   used.  Okay, so it's mis-named.  At least the command-line option
+   "--without-mmap" is more obvious than "--without-windows" or some
+   such.  */
+#ifdef USE_MMAP
 
 void
 bfd_free_window (windowp)
@@ -384,6 +305,7 @@ bfd_free_window (windowp)
   /* There should be no more references to i at this point.  */
   free (i);
 }
+#endif
 
 static int ok_to_map = 1;
 
@@ -399,11 +321,15 @@ bfd_get_file_window (abfd, offset, size, windowp, writable)
   bfd_window_internal *i = windowp->i;
   size_t size_to_alloc = size;
 
+#ifndef USE_MMAP
+  abort ();
+#endif
+
   if (debug_windows)
     fprintf (stderr, "bfd_get_file_window (%p, %6ld, %6ld, %p<%p,%lx,%p>, %d)",
 	     abfd, (long) offset, (long) size,
-	     windowp, windowp->data, (unsigned long) windowp->size,
-	     windowp->i, writable);
+	     windowp, windowp->data, windowp->size, windowp->i,
+	     writable);
 
   /* Make sure we know the page size, so we can be friendly to mmap.  */
   if (pagesize == 0)
@@ -419,9 +345,7 @@ bfd_get_file_window (abfd, offset, size, windowp, writable)
       i->data = 0;
     }
 #ifdef HAVE_MMAP
-  if (ok_to_map
-      && (i->data == 0 || i->mapped == 1)
-      && (abfd->flags & BFD_IN_MEMORY) == 0)
+  if (ok_to_map && (i->data == 0 || i->mapped == 1))
     {
       file_ptr file_offset, offset2;
       size_t real_size;
@@ -481,10 +405,10 @@ bfd_get_file_window (abfd, offset, size, windowp, writable)
   else if (debug_windows)
     {
       if (ok_to_map)
-	fprintf (stderr, _("not mapping: data=%lx mapped=%d\n"),
+	fprintf (stderr, "not mapping: data=%lx mapped=%d\n",
 		 (unsigned long) i->data, (int) i->mapped);
       else
-	fprintf (stderr, _("not mapping: env var not set\n"));
+	fprintf (stderr, "not mapping: env var not set\n");
     }
 #else
   ok_to_map = 0;
@@ -500,7 +424,10 @@ bfd_get_file_window (abfd, offset, size, windowp, writable)
   if (debug_windows)
     fprintf (stderr, "\n\t%s(%6ld)",
 	     i->data ? "realloc" : " malloc", (long) size_to_alloc);
-  i->data = (PTR) bfd_realloc (i->data, size_to_alloc);
+  if (i->data)
+    i->data = (PTR) realloc (i->data, size_to_alloc);
+  else
+    i->data = (PTR) malloc (size_to_alloc);
   if (debug_windows)
     fprintf (stderr, "\t-> %p\n", i->data);
   i->refcount = 1;
@@ -531,8 +458,6 @@ bfd_get_file_window (abfd, offset, size, windowp, writable)
   return true;
 }
 
-#endif /* USE_MMAP */
-
 bfd_size_type
 bfd_write (ptr, size, nitems, abfd)
      CONST PTR ptr;
@@ -540,37 +465,12 @@ bfd_write (ptr, size, nitems, abfd)
      bfd_size_type nitems;
      bfd *abfd;
 {
-  long nwrote;
-
-  if ((abfd->flags & BFD_IN_MEMORY) != 0)
-    {
-      struct bfd_in_memory *bim = (struct bfd_in_memory *) (abfd->iostream);
-      size *= nitems;
-      if (abfd->where + size > bim->size)
-	{
-	  long newsize, oldsize = (bim->size + 127) & ~127;
-	  bim->size = abfd->where + size;
-	  /* Round up to cut down on memory fragmentation */
-	  newsize = (bim->size + 127) & ~127;
-	  if (newsize > oldsize)
-	    {
-	      bim->buffer = bfd_realloc (bim->buffer, newsize);
-	      if (bim->buffer == 0)
-		{
-		  bim->size = 0;
-		  return 0;
-		}
-	    }
-	}
-      memcpy (bim->buffer + abfd->where, ptr, size);
-      abfd->where += size;
-      return size;
-    }
-
-  nwrote = fwrite (ptr, 1, (size_t) (size * nitems),
-		   bfd_cache_lookup (abfd));
+  long nwrote = fwrite (ptr, 1, (size_t) (size * nitems),
+			bfd_cache_lookup (abfd));
+#ifdef FILE_OFFSET_IS_CHAR_INDEX
   if (nwrote > 0)
     abfd->where += nwrote;
+#endif
   if ((bfd_size_type) nwrote != size * nitems)
     {
 #ifdef ENOSPC
@@ -612,9 +512,6 @@ bfd_tell (abfd)
 {
   file_ptr ptr;
 
-  if ((abfd->flags & BFD_IN_MEMORY) != 0)
-    return abfd->where;
-
   ptr = ftell (bfd_cache_lookup(abfd));
 
   if (abfd->my_archive)
@@ -627,8 +524,6 @@ int
 bfd_flush (abfd)
      bfd *abfd;
 {
-  if ((abfd->flags & BFD_IN_MEMORY) != 0)
-    return 0;
   return fflush (bfd_cache_lookup(abfd));
 }
 
@@ -641,10 +536,6 @@ bfd_stat (abfd, statbuf)
 {
   FILE *f;
   int result;
-
-  if ((abfd->flags & BFD_IN_MEMORY) != 0)
-    abort ();
-
   f = bfd_cache_lookup (abfd);
   if (f == NULL)
     {
@@ -677,28 +568,7 @@ bfd_seek (abfd, position, direction)
 
   if (direction == SEEK_CUR && position == 0)
     return 0;
-
-  if ((abfd->flags & BFD_IN_MEMORY) != 0)
-    {
-      struct bfd_in_memory *bim;
-
-      bim = (struct bfd_in_memory *) abfd->iostream;
-      
-      if (direction == SEEK_SET)
-	abfd->where = position;
-      else
-	abfd->where += position;
-      
-      if ((bfd_size_type) abfd->where > bim->size)
-	{
-	  abfd->where = bim->size;
-	  bfd_set_error (bfd_error_file_truncated);
-	  return -1;
-	}
-      
-      return 0;
-    }
-
+#ifdef FILE_OFFSET_IS_CHAR_INDEX
   if (abfd->format != bfd_archive && abfd->my_archive == 0)
     {
 #if 0
@@ -732,6 +602,7 @@ bfd_seek (abfd, position, direction)
 
 	 In the meantime, no optimization for archives.  */
     }
+#endif
 
   f = bfd_cache_lookup (abfd);
   file_position = position;
@@ -742,28 +613,19 @@ bfd_seek (abfd, position, direction)
 
   if (result != 0)
     {
-      int hold_errno = errno;
-
       /* Force redetermination of `where' field.  */
       bfd_tell (abfd);
-
-      /* An EINVAL error probably means that the file offset was
-         absurd.  */
-      if (hold_errno == EINVAL)
-	bfd_set_error (bfd_error_file_truncated);
-      else
-	{
-	  bfd_set_error (bfd_error_system_call);
-	  errno = hold_errno;
-	}
+      bfd_set_error (bfd_error_system_call);
     }
   else
     {
+#ifdef FILE_OFFSET_IS_CHAR_INDEX
       /* Adjust `where' field.  */
       if (direction == SEEK_SET)
 	abfd->where = position;
       else
 	abfd->where += position;
+#endif
     }
   return result;
 }
@@ -807,7 +669,7 @@ DESCRIPTION
 .{* Byte swapping macros for user section data.  *}
 .
 .#define bfd_put_8(abfd, val, ptr) \
-.                ((void) (*((unsigned char *)(ptr)) = (unsigned char)(val)))
+.                (*((unsigned char *)(ptr)) = (unsigned char)(val))
 .#define bfd_put_signed_8 \
 .		bfd_put_8
 .#define bfd_get_8(abfd, ptr) \
@@ -841,20 +703,6 @@ DESCRIPTION
 .                BFD_SEND(abfd, bfd_getx64, (ptr))
 .#define bfd_get_signed_64(abfd, ptr) \
 .		 BFD_SEND(abfd, bfd_getx_signed_64, (ptr))
-.
-.#define bfd_get(bits, abfd, ptr)				\
-.                ((bits) == 8 ? bfd_get_8 (abfd, ptr)		\
-.		 : (bits) == 16 ? bfd_get_16 (abfd, ptr)	\
-.		 : (bits) == 32 ? bfd_get_32 (abfd, ptr)	\
-.		 : (bits) == 64 ? bfd_get_64 (abfd, ptr)	\
-.		 : (abort (), (bfd_vma) - 1))
-.
-.#define bfd_put(bits, abfd, val, ptr)				\
-.                ((bits) == 8 ? bfd_put_8 (abfd, val, ptr)	\
-.		 : (bits) == 16 ? bfd_put_16 (abfd, val, ptr)	\
-.		 : (bits) == 32 ? bfd_put_32 (abfd, val, ptr)	\
-.		 : (bits) == 64 ? bfd_put_64 (abfd, val, ptr)	\
-.		 : (abort (), (void) 0))
 .
 */ 
 
@@ -912,8 +760,7 @@ DESCRIPTION
 
 /* Sign extension to bfd_signed_vma.  */
 #define COERCE16(x) (((bfd_signed_vma) (x) ^ 0x8000) - 0x8000)
-#define COERCE32(x) \
-  ((bfd_signed_vma) (long) (((unsigned long) (x) ^ 0x80000000) - 0x80000000))
+#define COERCE32(x) (((bfd_signed_vma) (x) ^ 0x80000000) - 0x80000000)
 #define EIGHT_GAZILLION (((BFD_HOST_64_BIT)0x80000000) << 32)
 #define COERCE64(x) \
   (((bfd_signed_vma) (x) ^ EIGHT_GAZILLION) - EIGHT_GAZILLION)
@@ -968,57 +815,37 @@ bfd_vma
 bfd_getb32 (addr)
      register const bfd_byte *addr;
 {
-  unsigned long v;
-
-  v = (unsigned long) addr[0] << 24;
-  v |= (unsigned long) addr[1] << 16;
-  v |= (unsigned long) addr[2] << 8;
-  v |= (unsigned long) addr[3];
-  return (bfd_vma) v;
+  return (((((bfd_vma)addr[0] << 8) | addr[1]) << 8)
+	  | addr[2]) << 8 | addr[3];
 }
 
 bfd_vma
 bfd_getl32 (addr)
      register const bfd_byte *addr;
 {
-  unsigned long v;
-
-  v = (unsigned long) addr[0];
-  v |= (unsigned long) addr[1] << 8;
-  v |= (unsigned long) addr[2] << 16;
-  v |= (unsigned long) addr[3] << 24;
-  return (bfd_vma) v;
+  return (((((bfd_vma)addr[3] << 8) | addr[2]) << 8)
+	  | addr[1]) << 8 | addr[0];
 }
 
 bfd_signed_vma
 bfd_getb_signed_32 (addr)
      register const bfd_byte *addr;
 {
-  unsigned long v;
-
-  v = (unsigned long) addr[0] << 24;
-  v |= (unsigned long) addr[1] << 16;
-  v |= (unsigned long) addr[2] << 8;
-  v |= (unsigned long) addr[3];
-  return COERCE32 (v);
+  return COERCE32((((((bfd_vma)addr[0] << 8) | addr[1]) << 8)
+		   | addr[2]) << 8 | addr[3]);
 }
 
 bfd_signed_vma
 bfd_getl_signed_32 (addr)
      register const bfd_byte *addr;
 {
-  unsigned long v;
-
-  v = (unsigned long) addr[0];
-  v |= (unsigned long) addr[1] << 8;
-  v |= (unsigned long) addr[2] << 16;
-  v |= (unsigned long) addr[3] << 24;
-  return COERCE32 (v);
+  return COERCE32((((((bfd_vma)addr[3] << 8) | addr[2]) << 8)
+		   | addr[1]) << 8 | addr[0]);
 }
 
 bfd_vma
 bfd_getb64 (addr)
-     register const bfd_byte *addr ATTRIBUTE_UNUSED;
+     register const bfd_byte *addr;
 {
 #ifdef BFD64
   bfd_vma low, high;
@@ -1042,7 +869,7 @@ bfd_getb64 (addr)
 
 bfd_vma
 bfd_getl64 (addr)
-     register const bfd_byte *addr ATTRIBUTE_UNUSED;
+     register const bfd_byte *addr;
 {
 #ifdef BFD64
   bfd_vma low, high;
@@ -1066,7 +893,7 @@ bfd_getl64 (addr)
 
 bfd_signed_vma
 bfd_getb_signed_64 (addr)
-     register const bfd_byte *addr ATTRIBUTE_UNUSED;
+     register const bfd_byte *addr;
 {
 #ifdef BFD64
   bfd_vma low, high;
@@ -1090,7 +917,7 @@ bfd_getb_signed_64 (addr)
 
 bfd_signed_vma
 bfd_getl_signed_64 (addr)
-     register const bfd_byte *addr ATTRIBUTE_UNUSED;
+     register const bfd_byte *addr;
 {
 #ifdef BFD64
   bfd_vma low, high;
@@ -1135,8 +962,8 @@ bfd_putl32 (data, addr)
 
 void
 bfd_putb64 (data, addr)
-     bfd_vma data ATTRIBUTE_UNUSED;
-     register bfd_byte *addr ATTRIBUTE_UNUSED;
+     bfd_vma data;
+     register bfd_byte *addr;
 {
 #ifdef BFD64
   addr[0] = (bfd_byte)(data >> (7*8));
@@ -1154,8 +981,8 @@ bfd_putb64 (data, addr)
 
 void
 bfd_putl64 (data, addr)
-     bfd_vma data ATTRIBUTE_UNUSED;
-     register bfd_byte *addr ATTRIBUTE_UNUSED;
+     bfd_vma data;
+     register bfd_byte *addr;
 {
 #ifdef BFD64
   addr[7] = (bfd_byte)(data >> (7*8));
@@ -1181,29 +1008,22 @@ _bfd_generic_get_section_contents (abfd, section, location, offset, count)
      file_ptr offset;
      bfd_size_type count;
 {
-  if (count == 0)
-    return true;
-
-  if ((bfd_size_type) (offset + count) > section->_raw_size)
-    {
-      bfd_set_error (bfd_error_invalid_operation);
-      return false;
-    }
-
-  if (bfd_seek (abfd, section->filepos + offset, SEEK_SET) != 0
-      || bfd_read (location, (bfd_size_type) 1, count, abfd) != count)
-    return false;
-
-  return true;
+    if (count == 0)
+        return true;
+    if ((bfd_size_type)(offset+count) > section->_raw_size
+        || bfd_seek(abfd, (file_ptr)(section->filepos + offset), SEEK_SET) == -1
+        || bfd_read(location, (bfd_size_type)1, count, abfd) != count)
+        return (false); /* on error */
+    return (true);
 }
 
 boolean
 _bfd_generic_get_section_contents_in_window (abfd, section, w, offset, count)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     sec_ptr section ATTRIBUTE_UNUSED;
-     bfd_window *w ATTRIBUTE_UNUSED;
-     file_ptr offset ATTRIBUTE_UNUSED;
-     bfd_size_type count ATTRIBUTE_UNUSED;
+     bfd *abfd;
+     sec_ptr section;
+     bfd_window *w;
+     file_ptr offset;
+     bfd_size_type count;
 {
 #ifdef USE_MMAP
   if (count == 0)
@@ -1219,7 +1039,7 @@ _bfd_generic_get_section_contents_in_window (abfd, section, w, offset, count)
       w->i = (bfd_window_internal *) bfd_zmalloc (sizeof (bfd_window_internal));
       if (w->i == NULL)
 	return false;
-      w->i->data = (PTR) bfd_malloc ((size_t) count);
+      w->i->data = (PTR) malloc ((size_t) count);
       if (w->i->data == NULL)
 	{
 	  free (w->i);
@@ -1276,47 +1096,23 @@ DESCRIPTION
 	@var{x} of 1025 returns 11.
 */
 
-unsigned int
-bfd_log2 (x)
+unsigned
+bfd_log2(x)
      bfd_vma x;
 {
-  unsigned int result = 0;
-
-  while ((x = (x >> 1)) != 0)
-    ++result;
+  unsigned result = 0;
+  while ( (bfd_vma)(1<< result) < x)
+    result++;
   return result;
 }
 
 boolean
-bfd_generic_is_local_label_name (abfd, name)
+bfd_generic_is_local_label (abfd, sym)
      bfd *abfd;
-     const char *name;
+     asymbol *sym;
 {
   char locals_prefix = (bfd_get_symbol_leading_char (abfd) == '_') ? 'L' : '.';
 
-  return (name[0] == locals_prefix);
+  return (sym->name[0] == locals_prefix);
 }
 
-/*  Can be used from / for bfd_merge_private_bfd_data to check that
-    endianness matches between input and output file.  Returns
-    true for a match, otherwise returns false and emits an error.  */
-boolean
-_bfd_generic_verify_endian_match (ibfd, obfd)
-     bfd *ibfd;
-     bfd *obfd;
-{
-  if (ibfd->xvec->byteorder != obfd->xvec->byteorder
-      && obfd->xvec->byteorder != BFD_ENDIAN_UNKNOWN)
-    {
-      (*_bfd_error_handler)
-	("%s: compiled for a %s endian system and target is %s endian",
-	 bfd_get_filename (ibfd),
-	 bfd_big_endian (ibfd) ? "big" : "little",
-	 bfd_big_endian (obfd) ? "big" : "little");
-
-      bfd_set_error (bfd_error_wrong_format);
-      return false;
-    }
-
-  return true;
-}

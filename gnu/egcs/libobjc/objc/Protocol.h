@@ -55,4 +55,4 @@ Boston, MA 02111-1307, USA.  */
 
 
 
-#endif /* not __Protocol_INCLUDE_GNU */
+#endif __Protocol_INCLUDE_GNU

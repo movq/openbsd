@@ -5,7 +5,7 @@
 class Foo {
     static int foos;
     int i;
-    static const int len = FOO_MSG_LEN;
+    const len = FOO_MSG_LEN;
     char message[len];
 public:
     static void init_foo ();
@@ -26,59 +26,21 @@ main ()
   return 0;
 }
 
-void
-terminate(void)
-{
-  /* This recursive call prevents a compiler warning that the noreturn
-     function terminate actually does return.  */
-  terminate ();
-}
-
 extern "C" {
-void
+int
 __main ()
 {
 }
 
-void
+int
 __builtin_delete ()
 {
 }
 
-void
+int
 __builtin_new ()
 {
 }
-
-void
-__throw ()
-{
-}
-
-void
-__rethrow ()
-{
-}
-
-void
-__terminate ()
-{
-}
-
-void *__eh_pc;
-
-void ***
-__get_dynamic_handler_chain ()
-{
-  return 0;
-}
-
-void *
-__get_eh_context ()
-{
-  return 0;
-}
-
 }
 
 int Foo::foos = 0;
@@ -93,7 +55,7 @@ Foo::Foo ()
   i = ++foos;
 }
 
-Foo::Foo (char*)
+Foo::Foo (char* msg)
 {
   i = ++foos;
 }

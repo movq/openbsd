@@ -368,16 +368,16 @@ class_is_subclass_of_class (Class class, Class superclass)
    superclasses are not yet know to the runtime. */
 static struct objc_list* unresolved_classes = 0;
 
-/* Extern function used to reference the Object and NXConstantString classes.
+/* Static function used to reference the Object and NXConstantString classes.
  */
-
-extern void __objc_force_linking (void);
-
-void
+static void
 __objc_force_linking (void)
 {
   extern void __objc_linking (void);
   __objc_linking ();
+
+  /* Call the function to avoid compiler warning */
+  __objc_force_linking ();
 }
 
 /* Run through the statics list, removing modules as soon as all its statics

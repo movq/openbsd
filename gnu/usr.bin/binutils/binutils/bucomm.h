@@ -1,6 +1,5 @@
 /* bucomm.h -- binutils common include file.
-   Copyright (C) 1991, 92, 93, 94, 95, 96, 97, 98, 99, 2000
-   Free Software Foundation, Inc.
+   Copyright (C) 1992, 93, 94 Free Software Foundation, Inc.
 
 This file is part of GNU Binutils.
 
@@ -26,13 +25,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include <sys/types.h>
 
 #include "config.h"
-#include "bin-bugs.h"
-
-#ifdef ANSI_PROTOTYPES
-#include <stdarg.h>
-#else
-#include <varargs.h>
-#endif
 
 #ifdef USE_BINARY_FOPEN
 #include "fopen-bin.h"
@@ -57,6 +49,7 @@ extern int errno;
 #else
 extern char *strchr ();
 extern char *strrchr ();
+extern char *strstr ();
 #endif
 #endif
 
@@ -72,24 +65,6 @@ extern char *strrchr ();
 #endif
 #endif
 
-#ifdef NEED_DECLARATION_STRSTR
-extern char *strstr ();
-#endif
-
-#ifdef HAVE_SBRK
-#ifdef NEED_DECLARATION_SBRK
-extern char *sbrk ();
-#endif
-#endif
-
-#ifdef NEED_DECLARATION_GETENV
-extern char *getenv ();
-#endif
-
-#ifdef NEED_DECLARATION_ENVIRON
-extern char **environ;
-#endif
-
 #ifndef O_RDONLY
 #define O_RDONLY 0
 #endif
@@ -98,68 +73,12 @@ extern char **environ;
 #define O_RDWR 2
 #endif
 
-#ifndef SEEK_SET
-#define SEEK_SET 0
-#endif
-#ifndef SEEK_CUR
-#define SEEK_CUR 1
-#endif
-#ifndef SEEK_END
-#define SEEK_END 2
-#endif
-
-#if defined(__GNUC__) && !defined(C_ALLOCA)
-# undef alloca
-# define alloca __builtin_alloca
-#else
-# if defined(HAVE_ALLOCA_H) && !defined(C_ALLOCA)
-#  include <alloca.h>
-# else
-#  ifndef alloca /* predefined by HP cc +Olibcalls */
-#   if !defined (__STDC__) && !defined (__hpux)
-char *alloca ();
-#   else
-void *alloca ();
-#   endif /* __STDC__, __hpux */
-#  endif /* alloca */
-# endif /* HAVE_ALLOCA_H */
-#endif
-
-#ifdef HAVE_LOCALE_H
-# include <locale.h>
-#endif
-
-#ifdef ENABLE_NLS
-# include <libintl.h>
-# define _(String) gettext (String)
-# ifdef gettext_noop
-#  define N_(String) gettext_noop (String)
-# else
-#  define N_(String) (String)
-# endif
-#else
-/* Stubs that do something close enough.  */
-# define textdomain(String) (String)
-# define gettext(String) (String)
-# define dgettext(Domain,Message) (Message)
-# define dcgettext(Domain,Message,Type) (Message)
-# define bindtextdomain(Domain,Directory) (Domain)
-# define _(String) (String)
-# define N_(String) (String)
-#endif
-
 /* bucomm.c */
-void bfd_nonfatal PARAMS ((const char *));
+void bfd_nonfatal PARAMS ((CONST char *));
 
-void bfd_fatal PARAMS ((const char *)) ATTRIBUTE_NORETURN;
+void bfd_fatal PARAMS ((CONST char *));
 
-void report PARAMS ((const char *, va_list));
-
-void fatal PARAMS ((const char *, ...)) ATTRIBUTE_PRINTF_1 ATTRIBUTE_NORETURN;
-
-void non_fatal PARAMS ((const char *, ...)) ATTRIBUTE_PRINTF_1;
-
-void set_default_bfd_target PARAMS ((void));
+void fatal PARAMS ((CONST char *, ...));
 
 void list_matching_formats PARAMS ((char **p));
 
@@ -167,7 +86,7 @@ void list_supported_targets PARAMS ((const char *, FILE *));
 
 void print_arelt_descr PARAMS ((FILE *file, bfd *abfd, boolean verbose));
 
-char *make_tempname PARAMS ((char *, int));
+char *make_tempname PARAMS ((char *));
 
 bfd_vma parse_vma PARAMS ((const char *, const char *));
 
@@ -176,17 +95,9 @@ extern char *program_name;
 /* filemode.c */
 void mode_string PARAMS ((unsigned long mode, char *buf));
 
-/* version.c */
-extern void print_version PARAMS ((const char *));
-
-/* rename.c */
-extern void set_times PARAMS ((const char *, const struct stat *));
-
-extern int smart_rename PARAMS ((const char *, const char *, int));
-
 /* libiberty */
 PTR xmalloc PARAMS ((size_t));
 
-PTR xrealloc PARAMS ((PTR, size_t));
+PTR xrealloc PARAMS ((char *, size_t));
 
 #endif /* _BUCOMM_H */

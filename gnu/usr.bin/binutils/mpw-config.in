@@ -10,23 +10,15 @@ Echo byacc is `Which byacc`
 Echo flex is `Which flex`
 Echo forward-include is `Which forward-include`
 Echo MoveIfChange is `Which MoveIfChange`
-Echo mpw-touch is `Which mpw-touch`
-Echo mpw-true is `Which mpw-true`
-Echo NewFolderRecursive is `Which NewFolderRecursive`
-Echo null-command is `Which null-command`
 Echo open-brace is `Which open-brace`
 Echo sed is `Which sed`
+Echo mpw-touch is `Which mpw-touch`
 Echo 'tr-7to8' is `Which tr-7to8`
-Echo true is `Which true`
 Set Exit 1
 
-Set host_libs "mmalloc libiberty opcodes bfd readline gash tcl tk tclX"
+Set host_libs "libiberty opcodes bfd readline"
 
-Set host_tools "texinfo byacc flex bison binutils ld gas gcc gdb make patch \Option-d
-	    prms send-pr gprof gdbtest tgas etc expect dejagnu sim bash \Option-d
-	    m4 autoconf ispell grep diff rcs cvs fileutils shellutils time \Option-d
-	    textutils wdiff find emacs emacs19 uudecode hello tar gzip indent \Option-d
-	    recode release sed utils guile perl apache inet gawk"
+Set host_tools "byacc flex binutils ld gas gcc gdb"
 
 Set target_libs "newlib"
 
@@ -81,7 +73,6 @@ End If
 
 forward-include "{srcroot}"include:elf:common.h "{edir}"'elf/common.h'
 forward-include "{srcroot}"include:elf:dwarf.h "{edir}"'elf/dwarf.h'
-forward-include "{srcroot}"include:elf:dwarf2.h "{edir}"'elf/dwarf2.h'
 forward-include "{srcroot}"include:elf:external.h "{edir}"'elf/external.h'
 forward-include "{srcroot}"include:elf:internal.h "{edir}"'elf/internal.h'
 
@@ -107,7 +98,6 @@ End If
 forward-include "{srcroot}"bfd:libcoff.h "{edir}"'bfd/libcoff.h'
 forward-include "{srcroot}"bfd:libecoff.h "{edir}"'bfd/libecoff.h'
 
-# Translate random files into MPW-only character set.
+# Make the README more visible.
 
-tr-7to8 "{srcdir}"mpw-README > "{objdir}Read Me for MPW"
-tr-7to8 "{srcdir}"mpw-install > "{objdir}"Install
+Catenate "{srcdir}"mpw-README > "{objdir}Read Me for MPW"

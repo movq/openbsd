@@ -1,5 +1,4 @@
 # Source file used to test the div macro.
-foo:
 	div	$0,$4,$5
 	div	$4,$5
 	div	$4,$5,$6

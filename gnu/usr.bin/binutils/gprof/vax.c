@@ -18,34 +18,10 @@
  */
 #include "gprof.h"
 #include "cg_arcs.h"
-#include "corefile.h"
+#include "core.h"
 #include "hist.h"
 #include "symtab.h"
-
-    /*
-     *        opcode of the `calls' instruction
-     */
-#define	CALLS	0xfb
-
-    /*
-     *        register for pc relative addressing
-     */
-#define	PC	0xf
-
-enum opermodes
-  {
-    literal, indexed, reg, regdef, autodec, autoinc, autoincdef,
-    bytedisp, bytedispdef, worddisp, worddispdef, longdisp, longdispdef,
-    immediate, absolute, byterel, bytereldef, wordrel, wordreldef,
-    longrel, longreldef
-  };
-typedef enum opermodes operandenum;
-
-struct modebyte
-  {
-    unsigned int regfield:4;
-    unsigned int modefield:4;
-  };
+#include "vax.h"
 
 /*
  * A symbol to be the child of indirect calls:
@@ -54,7 +30,7 @@ Sym indirectchild;
 
 
 static operandenum
-vax_operandmode (modep)
+operandmode (modep)
      struct modebyte *modep;
 {
   long usesreg = modep->regfield;
@@ -92,11 +68,10 @@ vax_operandmode (modep)
       return usesreg != PC ? longdispdef : longreldef;
     }
   /* NOTREACHED */
-  abort ();
 }
 
 static char *
-vax_operandname (mode)
+operandname (mode)
      operandenum mode;
 {
 
@@ -146,15 +121,14 @@ vax_operandname (mode)
       return "long relative deferred";
     }
   /* NOTREACHED */
-  abort ();
 }
 
 static long
-vax_operandlength (modep)
+operandlength (modep)
      struct modebyte *modep;
 {
 
-  switch (vax_operandmode (modep))
+  switch (operandmode (modep))
     {
     case literal:
     case reg:
@@ -181,17 +155,16 @@ vax_operandlength (modep)
     case longreldef:
       return 5;
     case indexed:
-      return 1 + vax_operandlength ((struct modebyte *) ((char *) modep) + 1);
+      return 1 + operandlength ((struct modebyte *) ((char *) modep) + 1);
     }
   /* NOTREACHED */
-  abort ();
 }
 
 static bfd_vma
-vax_reladdr (modep)
+reladdr (modep)
      struct modebyte *modep;
 {
-  operandenum mode = vax_operandmode (modep);
+  operandenum mode = operandmode (modep);
   char *cp;
   short *sp;
   long *lp;
@@ -216,7 +189,7 @@ vax_reladdr (modep)
 
 
 void
-vax_find_call (parent, p_lowpc, p_highpc)
+find_call (parent, p_lowpc, p_highpc)
      Sym *parent;
      bfd_vma p_lowpc;
      bfd_vma p_highpc;
@@ -250,8 +223,7 @@ vax_find_call (parent, p_lowpc, p_highpc)
       p_highpc = s_highpc;
     }
   DBG (CALLDEBUG, printf ("[findcall] %s: 0x%lx to 0x%lx\n",
-			  parent->name, (unsigned long) p_lowpc,
-			  (unsigned long) p_highpc));
+			  parent->name, p_lowpc, p_highpc));
   for (instructp = (unsigned char *) core_text_space + p_lowpc;
        instructp < (unsigned char *) core_text_space + p_highpc;
        instructp += length)
@@ -264,10 +236,9 @@ vax_find_call (parent, p_lowpc, p_highpc)
 	   *      skip the count of the number of arguments.
 	   */
 	  DBG (CALLDEBUG,
-	       printf ("[findcall]\t0x%lx:calls",
-		       ((unsigned long)
-			(instructp - (unsigned char *) core_text_space))));
-	  firstmode = vax_operandmode ((struct modebyte *) (instructp + length));
+	       printf ("[findcall]\t0x%x:calls",
+		       instructp - (unsigned char *) core_text_space));
+	  firstmode = operandmode ((struct modebyte *) (instructp + length));
 	  switch (firstmode)
 	    {
 	    case literal:
@@ -276,11 +247,11 @@ vax_find_call (parent, p_lowpc, p_highpc)
 	    default:
 	      goto botched;
 	    }
-	  length += vax_operandlength ((struct modebyte *) (instructp + length));
-	  mode = vax_operandmode ((struct modebyte *) (instructp + length));
+	  length += operandlength ((struct modebyte *) (instructp + length));
+	  mode = operandmode ((struct modebyte *) (instructp + length));
 	  DBG (CALLDEBUG,
-	       printf ("\tfirst operand is %s", vax_operandname (firstmode));
-	       printf ("\tsecond operand is %s\n", vax_operandname (mode)));
+	       printf ("\tfirst operand is %s", operandname (firstmode));
+	       printf ("\tsecond operand is %s\n", operandname (mode)));
 	  switch (mode)
 	    {
 	    case regdef:
@@ -298,8 +269,8 @@ vax_find_call (parent, p_lowpc, p_highpc)
 	       *      [are there others that we miss?,
 	       *       e.g. arrays of pointers to functions???]
 	       */
-	      arc_add (parent, &indirectchild, (unsigned long) 0);
-	      length += vax_operandlength (
+	      arc_add (parent, &indirectchild, (long) 0);
+	      length += operandlength (
 				  (struct modebyte *) (instructp + length));
 	      continue;
 	    case byterel:
@@ -310,26 +281,24 @@ vax_find_call (parent, p_lowpc, p_highpc)
 	       *      check that this is the address of 
 	       *      a function.
 	       */
-	      destpc = vax_reladdr ((struct modebyte *) (instructp + length))
+	      destpc = reladdr ((struct modebyte *) (instructp + length))
 		- (bfd_vma) core_text_space;
 	      if (destpc >= s_lowpc && destpc <= s_highpc)
 		{
 		  child = sym_lookup (&symtab, destpc);
 		  DBG (CALLDEBUG,
-		       printf ("[findcall]\tdestpc 0x%lx",
-			       (unsigned long) destpc);
+		       printf ("[findcall]\tdestpc 0x%lx", destpc);
 		       printf (" child->name %s", child->name);
-		       printf (" child->addr 0x%lx\n",
-			       (unsigned long) child->addr);
+		       printf (" child->addr 0x%lx\n", child->addr);
 		    );
 		  if (child->addr == destpc)
 		    {
 		      /*
 		       *    a hit
 		       */
-		      arc_add (parent, child, (unsigned long) 0);
-		      length += vax_operandlength ((struct modebyte *)
-						   (instructp + length));
+		      arc_add (parent, child, (long) 0);
+		      length += operandlength ((struct modebyte *)
+					       (instructp + length));
 		      continue;
 		    }
 		  goto botched;

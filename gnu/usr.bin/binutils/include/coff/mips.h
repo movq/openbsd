@@ -46,8 +46,7 @@ typedef struct external_aouthdr
 
 /* compute size of a header */
 
-#define AOUTSZ 56
-#define AOUTHDRSZ 56
+#define AOUTSZ (sizeof(AOUTHDR))
 
 /********************** SECTION HEADER **********************/
 
@@ -65,7 +64,7 @@ struct external_scnhdr {
 };
 
 #define	SCNHDR	struct external_scnhdr
-#define	SCNHSZ	40
+#define	SCNHSZ	sizeof(SCNHDR)
 
 /********************** RELOCATION DIRECTIVES **********************/
 

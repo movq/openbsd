@@ -1,7 +1,7 @@
-/* ldver.h -- Header file for ldver.c.
-   Copyright (C) 1991, 92, 93, 95, 1996 Free Software Foundation, Inc.
+/* ldver.h -
+   Copyright 1991, 1992 Free Software Foundation, Inc.
 
-This file is part of GLD, the Gnu Linker.
+   This file is part of GLD, the Gnu Linker.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -17,6 +17,5 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
-extern const char *ld_program_version;
-
 void ldversion PARAMS ((int));
+void help PARAMS ((void));

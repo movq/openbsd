@@ -1,5 +1,5 @@
 # Expect script for ld-shared tests
-#   Copyright (C) 1994, 1995, 1996, 1997, 1998 Free Software Foundation
+#   Copyright (C) 1994,1995 Free Software Foundation
 #
 # This file is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -36,25 +36,11 @@ if { ![istarget i386-*-sysv4*] \
      && ![istarget i386-*-elf*] \
      && ![istarget i486-*-elf*] \
      && ![istarget i586-*-elf*] \
-     && ![istarget i386-*-linux*] \
-     && ![istarget i486-*-linux*] \
-     && ![istarget i586-*-linux*] \
-     && ![istarget m68k-*-linux*] \
-     && ![istarget mips*-*-irix5*] \
-     && ![istarget powerpc-*-elf*] \
-     && ![istarget powerpc-*-linux*] \
-     && ![istarget powerpc-*-sysv4*] \
      && ![istarget sparc*-*-elf] \
      && ![istarget sparc*-*-solaris2*] \
      && ![istarget sparc*-*-sunos4*] \
-     && ![istarget sparc*-*-linux*] \
      && ![istarget rs6000*-*-aix*] \
      && ![istarget powerpc*-*-aix*] } {
-    return
-}
-
-if { [istarget *-*-linux*aout*] \
-     || [istarget *-*-linux*oldld*] } {
     return
 }
 
@@ -92,7 +78,7 @@ if { [istarget rs6000*-*-aix*] || [istarget powerpc*-*-aix*] } {
 }
 
 # The test procedure.
-proc shared_test { progname testname main sh1 sh2 dat args } {
+proc shared_test { progname testname main sh1 sh2 dat } {
     global ld
     global srcdir
     global subdir
@@ -100,15 +86,13 @@ proc shared_test { progname testname main sh1 sh2 dat args } {
     global host_triplet
     global tmpdir
 
-    if [llength $args] { set shldflags [lindex $args 0] } else { set shldflags "" }
-
     # Build the shared library.
     # On AIX, we need to use an export file.
     set shared -shared
     if { [istarget rs6000*-*-aix*] || [istarget powerpc*-*-aix*] } {
 	set shared "-bM:SRE -bE:$tmpdir/xcoff.exp"
     }
-    if {![ld_simple_link $ld $tmpdir/$progname.so "$shared $shldflags $tmpdir/$sh1 $tmpdir/$sh2"]} {
+    if {![ld_simple_link $ld $tmpdir/$progname.so "$shared $tmpdir/$sh1 $tmpdir/$sh2"]} {
         fail "$testname"
     	return
     }
@@ -140,7 +124,7 @@ proc shared_test { progname testname main sh1 sh2 dat args } {
     send_log "diff $tmpdir/$progname.out $srcdir/$subdir/$dat.dat\n"
     verbose "diff $tmpdir/$progname.out $srcdir/$subdir/$dat.dat"
     catch "exec diff $tmpdir/$progname.out $srcdir/$subdir/$dat.dat" exec_output
-    set exec_output [prune_warnings $exec_output]
+    set exec_output [prune_system_crud $host_triplet $exec_output]
 
     if {![string match "" $exec_output]} then {
 	send_log "$exec_output\n"
@@ -152,26 +136,23 @@ proc shared_test { progname testname main sh1 sh2 dat args } {
     pass "$testname"
 }
 
-if [istarget mips*-*-*] {
-    set picflag ""
-} else {
-    # Unfortunately, the gcc argument is -fpic and the cc argument is
-    # -KPIC.  We have to try both.
-    set picflag "-fpic"
-    send_log "$CC $picflag\n"
-    verbose "$CC $picflag"
-    catch "exec $CC $picflag" exec_output
-    send_log "$exec_output\n"
-    verbose "--" "$exec_output"
-    if { [string match "*illegal option*" $exec_output] \
-	 || [string match "*option ignored*" $exec_output] \
-	 || [string match "*unrecognized option*" $exec_output] \
-	 || [string match "*passed to ld*" $exec_output] } {
-	if [istarget *-*-sunos4*] {
-	    set picflag "-pic"
-	} else {
-	    set picflag "-KPIC"
-	}
+# Unfortunately, the gcc argument is -fpic and the cc argument is
+# -KPIC.  We have to try both.
+
+set picflag "-fpic"
+send_log "$CC $picflag\n"
+verbose "$CC $picflag"
+catch "exec $CC $picflag" exec_output
+send_log "$exec_output\n"
+verbose "--" "$exec_output"
+if { [string match "*illegal option*" $exec_output] \
+     || [string match "*option ignored*" $exec_output] \
+     || [string match "*unrecognized option*" $exec_output] \
+     || [string match "*passed to ld*" $exec_output] } {
+    if [istarget *-*-sunos4*] {
+	set picflag "-pic"
+    } else {
+	set picflag "-KPIC"
     }
 }
 verbose "Using $picflag to compile PIC code"
@@ -193,20 +174,9 @@ if ![ld_compile "$CC $CFLAGS $SHCFLAG" $srcdir/$subdir/main.c $tmpdir/mainnp.o] 
     } else { if { [istarget rs6000*-*-aix*] || [istarget powerpc*-*-aix*] } {
 	shared_test shnp "shared (nonPIC)" mainnp.o sh1np.o sh2np.o xcoff
     } else {
-	# SunOS non PIC shared libraries don't permit some cases of
-	# overriding.
+	# SunOS can not handle non PIC code in a shared library
 	setup_xfail "*-*-sunos4*"
 	shared_test shnp "shared (non PIC)" mainnp.o sh1np.o sh2np.o shared
-
-	# Test ELF shared library relocations with a non-zero load
-	# address for the library.  Near as I can tell, the R_*_RELATIVE
-	# relocations for various targets are broken in the case where
-	# the load address is not zero (which is the default).
-	setup_xfail "*-*-sunos4*"
-	setup_xfail "*-*-linux*libc1"
-	shared_test shnp "shared (non PIC, load offset)" \
-		mainnp.o sh1np.o sh2np.o shared \
-		"-T $srcdir/$subdir/elf-offset.ld"
     } }
 
     # Now compile the code using -fpic.
@@ -235,8 +205,7 @@ if ![ld_compile "$CC $CFLAGS $SHCFLAG $picflag" $srcdir/$subdir/main.c $tmpdir/m
         if { [istarget rs6000*-*-aix*] || [istarget powerpc*-*-aix*] } {
 	    shared_test shmpnp "shared (PIC main, non PIC so)" mainp.o sh1np.o sh2np.o xcoff
 	} else {
-	    # SunOS non PIC shared libraries don't permit some cases of
-	    # overriding.
+	    # SunOS can not handle non PIC code in a shared library
 	    setup_xfail "*-*-sunos4*"
 	    shared_test shmpnp "shared (PIC main, non PIC so)" mainp.o sh1np.o sh2np.o shared
 	}

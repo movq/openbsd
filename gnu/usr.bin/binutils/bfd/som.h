@@ -1,6 +1,5 @@
 /* HP PA-RISC SOM object file format:  definitions internal to BFD.
-   Copyright (C) 1990, 91, 92, 93, 94, 95, 96, 1998
-   Free Software Foundation, Inc.
+   Copyright (C) 1990, 91, 92, 93, 94 Free Software Foundation, Inc.
 
    Contributed by the Center for Software Science at the
    University of Utah (pa-gdb-bugs@cs.utah.edu).
@@ -19,12 +18,12 @@
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #ifndef _SOM_H
 #define _SOM_H
 
+#include "../bfd/sysdep.h"
 #include "libhppa.h"
 
 #include <a.out.h>
@@ -58,11 +57,7 @@ typedef struct som_symbol
        in GAS this way.  */
     union
       {
-	struct
-	{
-	  unsigned int hppa_arg_reloc;
-	  unsigned int hppa_priv_level;
-	} ap;
+	unsigned int hppa_arg_reloc;
 	PTR any;
       }
     tc_data;
@@ -113,7 +108,6 @@ struct somdata
     struct copyright_aux_hdr *copyright_aux_hdr;
     struct user_string_aux_hdr *version_aux_hdr;
     struct som_exec_auxhdr *exec_hdr;
-    COMPUNIT *comp_unit;
 
     /* Pointers to a saved copy of the symbol and string tables.  These
        need not be copied for objcopy or strip to work.  */
@@ -186,7 +180,6 @@ struct som_section_data_struct
 #define obj_som_exec_hdr(bfd)		(somdata(bfd).exec_hdr)
 #define obj_som_copyright_hdr(bfd)	(somdata(bfd).copyright_aux_hdr)
 #define obj_som_version_hdr(bfd)	(somdata(bfd).version_aux_hdr)
-#define obj_som_compilation_unit(bfd)	(somdata(bfd).comp_unit)
 #define obj_som_symtab(bfd)		(somdata(bfd).symtab)
 #define obj_som_stringtab(bfd)		(somdata(bfd).stringtab)
 #define obj_som_sym_filepos(bfd)	(somdata(bfd).sym_filepos)
@@ -218,8 +211,6 @@ struct som_section_data_struct
 #define R_HPPA_COMPLEX			R_COMP1
 #define R_HPPA_BEGIN_BRTAB		R_BEGIN_BRTAB
 #define R_HPPA_END_BRTAB		R_END_BRTAB
-#define R_HPPA_BEGIN_TRY		R_BEGIN_TRY
-#define R_HPPA_END_TRY			R_END_TRY
 
 /* Exported functions, mostly for use by GAS.  */
 boolean bfd_som_set_section_attributes PARAMS ((asection *, int, int,
@@ -229,9 +220,5 @@ boolean bfd_som_set_subsection_attributes PARAMS ((asection *, asection *,
 void bfd_som_set_symbol_type PARAMS ((asymbol *, unsigned int));
 boolean bfd_som_attach_aux_hdr PARAMS ((bfd *, int, char *));
 int ** hppa_som_gen_reloc_type
-  PARAMS ((bfd *, int, int, enum hppa_reloc_field_selector_type_alt,
-	   int, asymbol *));
-boolean bfd_som_attach_compilation_unit
-  PARAMS ((bfd *, const char *, const char *, const char *, const char *));
-
+  PARAMS ((bfd *, int, int, enum hppa_reloc_field_selector_type_alt, int));
 #endif /* _SOM_H */

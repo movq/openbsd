@@ -210,56 +210,19 @@ proc run_srec_test { test objs } {
     global sizeof_headers
     global host_triplet
 
-    set flags ""
-
     # If the linker script uses SIZEOF_HEADERS, use a -Ttext argument
     # to force both the normal link and the S-record link to be put in
     # the same place.  We don't always use -Ttext because it interacts
     # poorly with a.out.
 
     if { $sizeof_headers } {
-	set flags "$flags -Ttext 0x1000"
+	set targ "-Ttext 0x1000"
+    } else {
+	set targ ""
     }
 
-    # The a29k compiled code calls V_SPILL and V_FILL.  Since we don't
-    # need to run this code, but we don't have definitions for those
-    # functions, we just define them out.
-    if [istarget a29k*-*-*] {
-	set flags "$flags --defsym V_SPILL=0 --defsym V_FILL=0"
-    }
-
-    # ARM targets call __gccmain
-    if [istarget arm*-*-*] {
-	set flags "$flags --defsym ___gccmain=0"
-    }
-    
-    if [istarget strongarm*-*-*] {
-	set flags "$flags --defsym __gccmain=0"
-    }
-    
-    # Thumb targets call __gccmain
-    if [istarget thumb-*-*] {
-	set flags "$flags --defsym ___gccmain=0"
-    }
-
-    # PowerPC EABI code calls __eabi.
-    if [istarget powerpc*-*-eabi*] {
-	set flags "$flags --defsym __eabi=0"
-    }
-
-    # mn10200 code calls __truncsipsi2_d0_d2.
-    if {[istarget mn10200*-*-*]} then {
-	set flags "$flags --defsym __truncsipsi2_d0_d2=0"
-    }
-
-    # V850 targets need libgcc.a
-    if [istarget v850*-*-elf] {
-	set objs "$objs -L ../gcc -lgcc"
-    }
-    
-    if { ![ld_simple_link $ld tmpdir/sr1 "$flags $objs"] \
-	 || ![ld_simple_link $ld tmpdir/sr2.sr "$flags -oformat srec $objs"] } {
-	setup_xfail "hppa*-*-*elf*"
+    if { ![ld_simple_link $ld tmpdir/sr1 "$targ $objs"] \
+	 || ![ld_simple_link $ld tmpdir/sr2.sr "$targ -oformat srec $objs"] } {
 	fail $test
 	return
     }
@@ -267,7 +230,7 @@ proc run_srec_test { test objs } {
     send_log "$objcopy -O srec tmpdir/sr1 tmpdir/sr1.sr\n"
     verbose "$objcopy -O srec tmpdir/sr1 tmpdir/sr1.sr"
     catch "exec $objcopy -O srec tmpdir/sr1 tmpdir/sr1.sr" exec_output
-    set exec_output [prune_warnings $exec_output]
+    set exec_output [prune_system_crud $host_triplet $exec_output]
     if ![string match "" $exec_output] {
 	send_log "$exec_output\n"
 	verbose "$exec_output"
@@ -311,44 +274,6 @@ if { ![ld_compile $CC $srcdir/$subdir/sr1.c tmpdir/sr1.o] \
     return
 }
 
-# The i386-aout target is confused: the linker does not put the
-# sections where objdump finds them.  I don't know which is wrong.
-setup_xfail "i*86-*-aout*"
-
-# These tests fail on the native MIPS ELF targets because the GP value
-# in the .reginfo section is not updated when the S-record version is
-# written out.  The mips-elf target itself does not use a .reginfo section.
-setup_xfail "mips*-*-irix5*" "mips*-*-irix6*"
-
-# The S-record linker doesn't do the magic TOC handling that XCOFF
-# linkers do.
-setup_xfail "*-*-aix*" "*-*-xcoff*"
-
-# The S-record linker doesn't build ARM/Thumb stubs.
-setup_xfail "arm-*-coff"
-setup_xfail "strongarm*-*-*"
-setup_xfail "arm-*-pe*"
-# setup_xfail "arm-*elf*"
-setup_xfail "thumb-*-coff*"
-setup_xfail "thumb-*-pe*"
-setup_xfail "thumb-*-elf*"
-setup_xfail "arm*-*-linux*"
-
-# The S-record linker doesn't build special EABI sections.
-setup_xfail "powerpc*-*-eabi*"
-
-# The S-record linker doesn't include the .{zda} sections.
-setup_xfail "v850*-*-elf"
-
-# The S-record linker doesn't handle Alpha Elf relaxation.
-setup_xfail "alpha*-*-elf*" "alpha*-*-linux-gnu*" "alpha*-*-gnu*"
-setup_xfail "alpha*-*-netbsd*"
-
-# The S-record linker doesn't support the special PE headers - the PE
-# emulation tries to write pe-specific information to the PE headers
-# in the output bfd, but it's not a PE bfd (it's an srec bfd)
-setup_xfail "*-*-cygwin*" "*-*-mingw*" "*-*-pe*" "*-*-winnt*"
-
 run_srec_test $test1 "tmpdir/sr1.o tmpdir/sr2.o"
 
 # Now try linking a C++ program with global constructors and
@@ -364,18 +289,5 @@ if ![ld_compile "$CXX $CXXFLAGS -fgnu-linker" $srcdir/$subdir/sr3.cc tmpdir/sr3.
     unresolved $test2
     return
 }
-
-# See above.
-setup_xfail "i*86-*-aout*"
-setup_xfail "mips*-*-irix5*" "mips*-*-irix6*"
-setup_xfail "*-*-aix*" "*-*-xcoff*"
-setup_xfail "arm*-*-*"
-setup_xfail "strongarm*-*-*"
-setup_xfail "thumb-*-*"
-setup_xfail "powerpc*-*-eabi*"
-setup_xfail "v850*-*-elf"
-setup_xfail "alpha*-*-elf*" "alpha*-*-linux-gnu*" "alpha*-*-gnu*"
-setup_xfail "alpha*-*-netbsd*"
-setup_xfail "*-*-cygwin*" "*-*-mingw*" "*-*-pe*" "*-*-winnt*"
 
 run_srec_test $test2 "tmpdir/sr3.o"

@@ -1,6 +1,5 @@
 /* b.out object file format
-   Copyright (C) 1989, 90, 91, 92, 93, 94, 95, 1996
-   Free Software Foundation, Inc.
+   Copyright (C) 1989, 1990, 1991, 1992 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -14,10 +13,9 @@
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
    the GNU General Public License for more details.
 
-   You should have received a copy of the GNU General Public License
-   along with GAS; see the file COPYING.  If not, write to the Free
-   Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA. */
+   You should have received a copy of the GNU General Public
+   License along with GAS; see the file COPYING.  If not, write
+   to the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. */
 
 #include "as.h"
 #include "obstack.h"
@@ -98,14 +96,6 @@ obj_emit_relocations (where, fixP, segment_address_in_file)
       if (fixP->fx_done == 0
 	  || fixP->fx_r_type != NO_RELOC)
 	{
-	  symbolS *sym;
-
-	  sym = fixP->fx_addsy;
-	  while (sym->sy_value.X_op == O_symbol
-		 && (! S_IS_DEFINED (sym) || S_IS_COMMON (sym)))
-	    sym = sym->sy_value.X_add_symbol;
-	  fixP->fx_addsy = sym;
-
 	  tc_bout_fix_to_chars (*where, fixP, segment_address_in_file);
 	  *where += sizeof (struct relocation_info);
 	}			/* if there's a symbol */
@@ -254,16 +244,7 @@ obj_crawl_symbol_chain (headers)
 	  S_SET_SEGMENT (symbolP, SEG_TEXT);
 	}			/* if pusing data into text */
 
-      resolve_symbol_value (symbolP, 1);
-
-      /* Skip symbols which were equated to undefined or common
-	 symbols.  */
-      if (symbolP->sy_value.X_op == O_symbol
-	  && (! S_IS_DEFINED (symbolP) || S_IS_COMMON (symbolP)))
-	{
-	  *symbolPP = symbol_next (symbolP);
-	  continue;
-	}
+      resolve_symbol_value (symbolP);
 
       /* OK, here is how we decide which symbols go out into the
 	 brave new symtab.  Symbols that do are:
@@ -310,7 +291,7 @@ obj_crawl_symbol_chain (headers)
 	{
 	  if (S_IS_EXTERNAL (symbolP) || !S_IS_DEFINED (symbolP))
 	    {
-	      as_bad (_("Local symbol %s never defined"), S_GET_NAME (symbolP));
+	      as_bad ("Local symbol %s never defined", S_GET_NAME (symbolP));
 	    }			/* oops. */
 
 	  /* Unhook it from the chain */

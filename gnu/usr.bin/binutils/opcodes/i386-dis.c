@@ -1,6 +1,5 @@
 /* Print i386 instructions for GDB, the GNU debugger.
-   Copyright (C) 1988, 89, 91, 93, 94, 95, 96, 97, 98, 1999
-   Free Software Foundation, Inc.
+   Copyright (C) 1988, 1989, 1991, 1993, 1994, 1995 Free Software Foundation, Inc.
 
 This file is part of GDB.
 
@@ -29,25 +28,16 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
  * of the "Opcode Map" chapter (Appendix A) of the Intel 80386
  * Programmers Manual.  Usually, there is a capital letter, followed
  * by a small letter.  The capital letter tell the addressing mode,
- * and the small letter tells about the operand size.  Refer to
+ * and the small letter tells about the operand size.  Refer to 
  * the Intel manual for details.
  */
 
 #include "dis-asm.h"
 #include "sysdep.h"
-#include "opintl.h"
 
 #define MAXLEN 20
 
 #include <setjmp.h>
-
-#ifndef UNIXWARE_COMPAT
-/* Set non-zero for broken, compatible instructions.  Set to zero for
-   non-broken opcodes.  */
-#define UNIXWARE_COMPAT 1
-#endif
-
-static int fetch_data PARAMS ((struct disassemble_info *, bfd_byte *));
 
 struct dis_private
 {
@@ -57,31 +47,6 @@ struct dis_private
   bfd_vma insn_start;
   jmp_buf bailout;
 };
-
-/* The opcode for the fwait instruction, which we treat as a prefix
-   when we can.  */
-#define FWAIT_OPCODE (0x9b)
-
-/* Flags for the prefixes for the current instruction.  See below.  */
-static int prefixes;
-
-/* Flags for prefixes which we somehow handled when printing the
-   current instruction.  */
-static int used_prefixes;
-
-/* Flags stored in PREFIXES.  */
-#define PREFIX_REPZ 1
-#define PREFIX_REPNZ 2
-#define PREFIX_LOCK 4
-#define PREFIX_CS 8
-#define PREFIX_SS 0x10
-#define PREFIX_DS 0x20
-#define PREFIX_ES 0x40
-#define PREFIX_FS 0x80
-#define PREFIX_GS 0x100
-#define PREFIX_DATA 0x200
-#define PREFIX_ADDR 0x400
-#define PREFIX_FWAIT 0x800
 
 /* Make sure that bytes from INFO->PRIVATE_DATA->BUFFER (inclusive)
    to ADDR (exclusive) are valid.  Returns 1 for success, longjmps
@@ -105,12 +70,7 @@ fetch_data (info, addr)
 				      info);
   if (status != 0)
     {
-      /* If we did manage to read at least one byte, then
-         print_insn_i386 will do something sensible.  Otherwise, print
-         an error.  We do that here because this is where we know
-         STATUS.  */
-      if (priv->max_fetched == priv->the_buffer)
-	(*info->memory_error_func) (status, start, info);
+      (*info->memory_error_func) (status, start, info);
       longjmp (priv->bailout, 1);
     }
   else
@@ -118,27 +78,26 @@ fetch_data (info, addr)
   return 1;
 }
 
-#define XX NULL, 0
-
 #define Eb OP_E, b_mode
 #define indirEb OP_indirE, b_mode
 #define Gb OP_G, b_mode
 #define Ev OP_E, v_mode
-#define Ed OP_E, d_mode
 #define indirEv OP_indirE, v_mode
 #define Ew OP_E, w_mode
 #define Ma OP_E, v_mode
-#define M OP_E, 0		/* lea */
-#define Mp OP_E, 0		/* 32 or 48 bit memory operand for LDS, LES etc */
+#define M OP_E, 0
+#define Mp OP_E, 0		/* ? */
 #define Gv OP_G, v_mode
 #define Gw OP_G, w_mode
-#define Rd OP_Rd, d_mode
+#define Rw OP_rm, w_mode
+#define Rd OP_rm, d_mode
 #define Ib OP_I, b_mode
 #define sIb OP_sI, b_mode	/* sign extened byte */
 #define Iv OP_I, v_mode
 #define Iw OP_I, w_mode
 #define Jb OP_J, b_mode
 #define Jv OP_J, v_mode
+#define ONE OP_ONE, 0
 #define Cd OP_C, d_mode
 #define Dd OP_D, d_mode
 #define Td OP_T, d_mode
@@ -164,14 +123,14 @@ fetch_data (info, addr)
 #define indirDX OP_REG, indir_dx_reg
 
 #define Sw OP_SEG, w_mode
-#define Ap OP_DIR, 0
+#define Ap OP_DIR, lptr
+#define Av OP_DIR, v_mode
 #define Ob OP_OFF, b_mode
 #define Ov OP_OFF, v_mode
-#define Xb OP_DSreg, eSI_reg
-#define Xv OP_DSreg, eSI_reg
-#define Yb OP_ESreg, eDI_reg
-#define Yv OP_ESreg, eDI_reg
-#define DSBX OP_DSreg, eBX_reg
+#define Xb OP_DSSI, b_mode
+#define Xv OP_DSSI, v_mode
+#define Yb OP_ESDI, b_mode
+#define Yv OP_ESDI, v_mode
 
 #define es OP_REG, es_reg
 #define ss OP_REG, ss_reg
@@ -180,67 +139,18 @@ fetch_data (info, addr)
 #define fs OP_REG, fs_reg
 #define gs OP_REG, gs_reg
 
-#define MX OP_MMX, 0
-#define XM OP_XMM, 0
-#define EM OP_EM, v_mode
-#define EX OP_EX, v_mode
-#define MS OP_MS, v_mode
-#define None OP_E, 0
-#define OPSUF OP_3DNowSuffix, 0
-#define OPSIMD OP_SIMD_Suffix, 0
+int OP_E(), OP_indirE(), OP_G(), OP_I(), OP_sI(), OP_REG();
+int OP_J(), OP_SEG();
+int OP_DIR(), OP_OFF(), OP_DSSI(), OP_ESDI(), OP_ONE(), OP_C();
+int OP_D(), OP_T(), OP_rm();
 
-/* bits in sizeflag */
-#if 0 /* leave undefined until someone adds the extra flag to objdump */
-#define SUFFIX_ALWAYS 4
-#endif
-#define AFLAG 2
-#define DFLAG 1
-
-typedef void (*op_rtn) PARAMS ((int bytemode, int sizeflag));
-
-static void OP_E PARAMS ((int, int));
-static void OP_G PARAMS ((int, int));
-static void OP_I PARAMS ((int, int));
-static void OP_indirE PARAMS ((int, int));
-static void OP_sI PARAMS ((int, int));
-static void OP_REG PARAMS ((int, int));
-static void OP_J PARAMS ((int, int));
-static void OP_DIR PARAMS ((int, int));
-static void OP_OFF PARAMS ((int, int));
-static void OP_ESreg PARAMS ((int, int));
-static void OP_DSreg PARAMS ((int, int));
-static void OP_SEG PARAMS ((int, int));
-static void OP_C PARAMS ((int, int));
-static void OP_D PARAMS ((int, int));
-static void OP_T PARAMS ((int, int));
-static void OP_Rd PARAMS ((int, int));
-static void OP_ST PARAMS ((int, int));
-static void OP_STi  PARAMS ((int, int));
-static void OP_MMX PARAMS ((int, int));
-static void OP_XMM PARAMS ((int, int));
-static void OP_EM PARAMS ((int, int));
-static void OP_EX PARAMS ((int, int));
-static void OP_MS PARAMS ((int, int));
-static void OP_3DNowSuffix PARAMS ((int, int));
-static void OP_SIMD_Suffix PARAMS ((int, int));
-static void SIMD_Fixup PARAMS ((int, int));
-
-static void append_seg PARAMS ((void));
-static void set_op PARAMS ((unsigned int op));
-static void putop PARAMS ((const char *template, int sizeflag));
-static void dofloat PARAMS ((int sizeflag));
-static int get16 PARAMS ((void));
-static int get32 PARAMS ((void));
-static void ckprefix PARAMS ((void));
-static const char *prefix_name PARAMS ((int, int));
-static void ptr_reg PARAMS ((int, int));
-static void BadOp PARAMS ((void));
+static void dofloat (), putop (), append_prefix (), set_op ();
+static int get16 (), get32 ();
 
 #define b_mode 1
 #define v_mode 2
 #define w_mode 3
 #define d_mode 4
-#define x_mode 5
 
 #define es_reg 100
 #define cs_reg 101
@@ -248,15 +158,16 @@ static void BadOp PARAMS ((void));
 #define ds_reg 103
 #define fs_reg 104
 #define gs_reg 105
+#define eAX_reg 107
+#define eCX_reg 108
+#define eDX_reg 109
+#define eBX_reg 110
+#define eSP_reg 111
+#define eBP_reg 112
+#define eSI_reg 113
+#define eDI_reg 114
 
-#define eAX_reg 108
-#define eCX_reg 109
-#define eDX_reg 110
-#define eBX_reg 111
-#define eSP_reg 112
-#define eBP_reg 113
-#define eSI_reg 114
-#define eDI_reg 115
+#define lptr 115
 
 #define al_reg 116
 #define cl_reg 117
@@ -278,320 +189,281 @@ static void BadOp PARAMS ((void));
 
 #define indir_dx_reg 150
 
-#define USE_GROUPS 1
-#define USE_PREFIX_USER_TABLE 2
-
-#define GRP1b NULL, NULL, 0, NULL, USE_GROUPS, NULL, 0
-#define GRP1S NULL, NULL, 1, NULL, USE_GROUPS, NULL, 0
-#define GRP1Ss NULL, NULL, 2, NULL, USE_GROUPS, NULL, 0
-#define GRP2b NULL, NULL, 3, NULL, USE_GROUPS, NULL, 0
-#define GRP2S NULL, NULL, 4, NULL, USE_GROUPS, NULL, 0
-#define GRP2b_one NULL, NULL, 5, NULL, USE_GROUPS, NULL, 0
-#define GRP2S_one NULL, NULL, 6, NULL, USE_GROUPS, NULL, 0
-#define GRP2b_cl NULL, NULL, 7, NULL, USE_GROUPS, NULL, 0
-#define GRP2S_cl NULL, NULL, 8, NULL, USE_GROUPS, NULL, 0
-#define GRP3b NULL, NULL, 9, NULL, USE_GROUPS, NULL, 0
-#define GRP3S NULL, NULL, 10, NULL, USE_GROUPS, NULL, 0
-#define GRP4  NULL, NULL, 11, NULL, USE_GROUPS, NULL, 0
-#define GRP5  NULL, NULL, 12, NULL, USE_GROUPS, NULL, 0
-#define GRP6  NULL, NULL, 13, NULL, USE_GROUPS, NULL, 0
-#define GRP7 NULL, NULL, 14, NULL, USE_GROUPS, NULL, 0
-#define GRP8 NULL, NULL, 15, NULL, USE_GROUPS, NULL, 0
-#define GRP9 NULL, NULL, 16, NULL, USE_GROUPS, NULL, 0
-#define GRP10 NULL, NULL, 17, NULL, USE_GROUPS, NULL, 0
-#define GRP11 NULL, NULL, 18, NULL, USE_GROUPS, NULL, 0
-#define GRP12 NULL, NULL, 19, NULL, USE_GROUPS, NULL, 0
-#define GRP13 NULL, NULL, 20, NULL, USE_GROUPS, NULL, 0
-#define GRP14 NULL, NULL, 21, NULL, USE_GROUPS, NULL, 0
-#define GRPAMD NULL, NULL, 22, NULL, USE_GROUPS, NULL, 0
-
-#define PREGRP0 NULL, NULL, 0, NULL, USE_PREFIX_USER_TABLE, NULL, 0
-#define PREGRP1 NULL, NULL, 1, NULL, USE_PREFIX_USER_TABLE, NULL, 0
-#define PREGRP2 NULL, NULL, 2, NULL, USE_PREFIX_USER_TABLE, NULL, 0
-#define PREGRP3 NULL, NULL, 3, NULL, USE_PREFIX_USER_TABLE, NULL, 0
-#define PREGRP4 NULL, NULL, 4, NULL, USE_PREFIX_USER_TABLE, NULL, 0
-#define PREGRP5 NULL, NULL, 5, NULL, USE_PREFIX_USER_TABLE, NULL, 0
-#define PREGRP6 NULL, NULL, 6, NULL, USE_PREFIX_USER_TABLE, NULL, 0
-#define PREGRP7 NULL, NULL, 7, NULL, USE_PREFIX_USER_TABLE, NULL, 0
-#define PREGRP8 NULL, NULL, 8, NULL, USE_PREFIX_USER_TABLE, NULL, 0
-#define PREGRP9 NULL, NULL, 9, NULL, USE_PREFIX_USER_TABLE, NULL, 0
-#define PREGRP10 NULL, NULL, 10, NULL, USE_PREFIX_USER_TABLE, NULL, 0
-#define PREGRP11 NULL, NULL, 11, NULL, USE_PREFIX_USER_TABLE, NULL, 0
-#define PREGRP12 NULL, NULL, 12, NULL, USE_PREFIX_USER_TABLE, NULL, 0
-#define PREGRP13 NULL, NULL, 13, NULL, USE_PREFIX_USER_TABLE, NULL, 0
-#define PREGRP14 NULL, NULL, 14, NULL, USE_PREFIX_USER_TABLE, NULL, 0
+#define GRP1b NULL, NULL, 0
+#define GRP1S NULL, NULL, 1
+#define GRP1Ss NULL, NULL, 2
+#define GRP2b NULL, NULL, 3
+#define GRP2S NULL, NULL, 4
+#define GRP2b_one NULL, NULL, 5
+#define GRP2S_one NULL, NULL, 6
+#define GRP2b_cl NULL, NULL, 7
+#define GRP2S_cl NULL, NULL, 8
+#define GRP3b NULL, NULL, 9
+#define GRP3S NULL, NULL, 10
+#define GRP4  NULL, NULL, 11
+#define GRP5  NULL, NULL, 12
+#define GRP6  NULL, NULL, 13
+#define GRP7 NULL, NULL, 14
+#define GRP8 NULL, NULL, 15
+#define GRP9 NULL, NULL, 16
 
 #define FLOATCODE 50
-#define FLOAT NULL, NULL, FLOATCODE, NULL, 0, NULL, 0
+#define FLOAT NULL, NULL, FLOATCODE
 
 struct dis386 {
-  const char *name;
-  op_rtn op1;
+  char *name;
+  int (*op1)();
   int bytemode1;
-  op_rtn op2;
+  int (*op2)();
   int bytemode2;
-  op_rtn op3;
+  int (*op3)();
   int bytemode3;
 };
 
-/* Upper case letters in the instruction names here are macros.
-   'A' => print 'b' if no register operands or suffix_always is true
-   'B' => print 'b' if suffix_always is true
-   'E' => print 'e' if 32-bit form of jcxz
-   'L' => print 'l' if suffix_always is true
-   'N' => print 'n' if instruction has no wait "prefix"
-   'P' => print 'w' or 'l' if instruction has an operand size prefix,
-                              or suffix_always is true
-   'Q' => print 'w' or 'l' if no register operands or suffix_always is true
-   'R' => print 'w' or 'l' ("wd" or "dq" in intel mode)
-   'S' => print 'w' or 'l' if suffix_always is true
-   'W' => print 'b' or 'w' ("w" or "de" in intel mode)
-*/
-
-static const struct dis386 dis386_att[] = {
+struct dis386 dis386[] = {
   /* 00 */
-  { "addB",	Eb, Gb, XX },
-  { "addS",	Ev, Gv, XX },
-  { "addB",	Gb, Eb, XX },
-  { "addS",	Gv, Ev, XX },
-  { "addB",	AL, Ib, XX },
-  { "addS",	eAX, Iv, XX },
-  { "pushP",	es, XX, XX },
-  { "popP",	es, XX, XX },
+  { "addb",	Eb, Gb },
+  { "addS",	Ev, Gv },
+  { "addb",	Gb, Eb },
+  { "addS",	Gv, Ev },
+  { "addb",	AL, Ib },
+  { "addS",	eAX, Iv },
+  { "pushl",	es },
+  { "popl",	es },
   /* 08 */
-  { "orB",	Eb, Gb, XX },
-  { "orS",	Ev, Gv, XX },
-  { "orB",	Gb, Eb, XX },
-  { "orS",	Gv, Ev, XX },
-  { "orB",	AL, Ib, XX },
-  { "orS",	eAX, Iv, XX },
-  { "pushP",	cs, XX, XX },
-  { "(bad)",	XX, XX, XX },	/* 0x0f extended opcode escape */
+  { "orb",	Eb, Gb },
+  { "orS",	Ev, Gv },
+  { "orb",	Gb, Eb },
+  { "orS",	Gv, Ev },
+  { "orb",	AL, Ib },
+  { "orS",	eAX, Iv },
+  { "pushl",	cs },
+  { "(bad)" },	/* 0x0f extended opcode escape */
   /* 10 */
-  { "adcB",	Eb, Gb, XX },
-  { "adcS",	Ev, Gv, XX },
-  { "adcB",	Gb, Eb, XX },
-  { "adcS",	Gv, Ev, XX },
-  { "adcB",	AL, Ib, XX },
-  { "adcS",	eAX, Iv, XX },
-  { "pushP",	ss, XX, XX },
-  { "popP",	ss, XX, XX },
+  { "adcb",	Eb, Gb },
+  { "adcS",	Ev, Gv },
+  { "adcb",	Gb, Eb },
+  { "adcS",	Gv, Ev },
+  { "adcb",	AL, Ib },
+  { "adcS",	eAX, Iv },
+  { "pushl",	ss },
+  { "popl",	ss },
   /* 18 */
-  { "sbbB",	Eb, Gb, XX },
-  { "sbbS",	Ev, Gv, XX },
-  { "sbbB",	Gb, Eb, XX },
-  { "sbbS",	Gv, Ev, XX },
-  { "sbbB",	AL, Ib, XX },
-  { "sbbS",	eAX, Iv, XX },
-  { "pushP",	ds, XX, XX },
-  { "popP",	ds, XX, XX },
+  { "sbbb",	Eb, Gb },
+  { "sbbS",	Ev, Gv },
+  { "sbbb",	Gb, Eb },
+  { "sbbS",	Gv, Ev },
+  { "sbbb",	AL, Ib },
+  { "sbbS",	eAX, Iv },
+  { "pushl",	ds },
+  { "popl",	ds },
   /* 20 */
-  { "andB",	Eb, Gb, XX },
-  { "andS",	Ev, Gv, XX },
-  { "andB",	Gb, Eb, XX },
-  { "andS",	Gv, Ev, XX },
-  { "andB",	AL, Ib, XX },
-  { "andS",	eAX, Iv, XX },
-  { "(bad)",	XX, XX, XX },			/* SEG ES prefix */
-  { "daa",	XX, XX, XX },
+  { "andb",	Eb, Gb },
+  { "andS",	Ev, Gv },
+  { "andb",	Gb, Eb },
+  { "andS",	Gv, Ev },
+  { "andb",	AL, Ib },
+  { "andS",	eAX, Iv },
+  { "(bad)" },			/* SEG ES prefix */
+  { "daa" },
   /* 28 */
-  { "subB",	Eb, Gb, XX },
-  { "subS",	Ev, Gv, XX },
-  { "subB",	Gb, Eb, XX },
-  { "subS",	Gv, Ev, XX },
-  { "subB",	AL, Ib, XX },
-  { "subS",	eAX, Iv, XX },
-  { "(bad)",	XX, XX, XX },			/* SEG CS prefix */
-  { "das",	XX, XX, XX },
+  { "subb",	Eb, Gb },
+  { "subS",	Ev, Gv },
+  { "subb",	Gb, Eb },
+  { "subS",	Gv, Ev },
+  { "subb",	AL, Ib },
+  { "subS",	eAX, Iv },
+  { "(bad)" },			/* SEG CS prefix */
+  { "das" },
   /* 30 */
-  { "xorB",	Eb, Gb, XX },
-  { "xorS",	Ev, Gv, XX },
-  { "xorB",	Gb, Eb, XX },
-  { "xorS",	Gv, Ev, XX },
-  { "xorB",	AL, Ib, XX },
-  { "xorS",	eAX, Iv, XX },
-  { "(bad)",	XX, XX, XX },			/* SEG SS prefix */
-  { "aaa",	XX, XX, XX },
+  { "xorb",	Eb, Gb },
+  { "xorS",	Ev, Gv },
+  { "xorb",	Gb, Eb },
+  { "xorS",	Gv, Ev },
+  { "xorb",	AL, Ib },
+  { "xorS",	eAX, Iv },
+  { "(bad)" },			/* SEG SS prefix */
+  { "aaa" },
   /* 38 */
-  { "cmpB",	Eb, Gb, XX },
-  { "cmpS",	Ev, Gv, XX },
-  { "cmpB",	Gb, Eb, XX },
-  { "cmpS",	Gv, Ev, XX },
-  { "cmpB",	AL, Ib, XX },
-  { "cmpS",	eAX, Iv, XX },
-  { "(bad)",	XX, XX, XX },			/* SEG DS prefix */
-  { "aas",	XX, XX, XX },
+  { "cmpb",	Eb, Gb },
+  { "cmpS",	Ev, Gv },
+  { "cmpb",	Gb, Eb },
+  { "cmpS",	Gv, Ev },
+  { "cmpb",	AL, Ib },
+  { "cmpS",	eAX, Iv },
+  { "(bad)" },			/* SEG DS prefix */
+  { "aas" },
   /* 40 */
-  { "incS",	eAX, XX, XX },
-  { "incS",	eCX, XX, XX },
-  { "incS",	eDX, XX, XX },
-  { "incS",	eBX, XX, XX },
-  { "incS",	eSP, XX, XX },
-  { "incS",	eBP, XX, XX },
-  { "incS",	eSI, XX, XX },
-  { "incS",	eDI, XX, XX },
+  { "incS",	eAX },
+  { "incS",	eCX },
+  { "incS",	eDX },
+  { "incS",	eBX },
+  { "incS",	eSP },
+  { "incS",	eBP },
+  { "incS",	eSI },
+  { "incS",	eDI },
   /* 48 */
-  { "decS",	eAX, XX, XX },
-  { "decS",	eCX, XX, XX },
-  { "decS",	eDX, XX, XX },
-  { "decS",	eBX, XX, XX },
-  { "decS",	eSP, XX, XX },
-  { "decS",	eBP, XX, XX },
-  { "decS",	eSI, XX, XX },
-  { "decS",	eDI, XX, XX },
+  { "decS",	eAX },
+  { "decS",	eCX },
+  { "decS",	eDX },
+  { "decS",	eBX },
+  { "decS",	eSP },
+  { "decS",	eBP },
+  { "decS",	eSI },
+  { "decS",	eDI },
   /* 50 */
-  { "pushS",	eAX, XX, XX },
-  { "pushS",	eCX, XX, XX },
-  { "pushS",	eDX, XX, XX },
-  { "pushS",	eBX, XX, XX },
-  { "pushS",	eSP, XX, XX },
-  { "pushS",	eBP, XX, XX },
-  { "pushS",	eSI, XX, XX },
-  { "pushS",	eDI, XX, XX },
+  { "pushS",	eAX },
+  { "pushS",	eCX },
+  { "pushS",	eDX },
+  { "pushS",	eBX },
+  { "pushS",	eSP },
+  { "pushS",	eBP },
+  { "pushS",	eSI },
+  { "pushS",	eDI },
   /* 58 */
-  { "popS",	eAX, XX, XX },
-  { "popS",	eCX, XX, XX },
-  { "popS",	eDX, XX, XX },
-  { "popS",	eBX, XX, XX },
-  { "popS",	eSP, XX, XX },
-  { "popS",	eBP, XX, XX },
-  { "popS",	eSI, XX, XX },
-  { "popS",	eDI, XX, XX },
+  { "popS",	eAX },
+  { "popS",	eCX },
+  { "popS",	eDX },
+  { "popS",	eBX },
+  { "popS",	eSP },
+  { "popS",	eBP },
+  { "popS",	eSI },
+  { "popS",	eDI },
   /* 60 */
-  { "pushaP",	XX, XX, XX },
-  { "popaP",	XX, XX, XX },
-  { "boundS",	Gv, Ma, XX },
-  { "arpl",	Ew, Gw, XX },
-  { "(bad)",	XX, XX, XX },			/* seg fs */
-  { "(bad)",	XX, XX, XX },			/* seg gs */
-  { "(bad)",	XX, XX, XX },			/* op size prefix */
-  { "(bad)",	XX, XX, XX },			/* adr size prefix */
+  { "pusha" },
+  { "popa" },
+  { "boundS",	Gv, Ma },
+  { "arpl",	Ew, Gw },
+  { "(bad)" },			/* seg fs */
+  { "(bad)" },			/* seg gs */
+  { "(bad)" },			/* op size prefix */
+  { "(bad)" },			/* adr size prefix */
   /* 68 */
-  { "pushP",	Iv, XX, XX },		/* 386 book wrong */
+  { "pushS",	Iv },		/* 386 book wrong */
   { "imulS",	Gv, Ev, Iv },
-  { "pushP",	sIb, XX, XX },	/* push of byte really pushes 2 or 4 bytes */
-  { "imulS",	Gv, Ev, sIb },
-  { "insb",	Yb, indirDX, XX },
-  { "insR",	Yv, indirDX, XX },
-  { "outsb",	indirDX, Xb, XX },
-  { "outsR",	indirDX, Xv, XX },
+  { "pushl",	sIb },		/* push of byte really pushes 4 bytes */
+  { "imulS",	Gv, Ev, Ib },
+  { "insb",	Yb, indirDX },
+  { "insS",	Yv, indirDX },
+  { "outsb",	indirDX, Xb },
+  { "outsS",	indirDX, Xv },
   /* 70 */
-  { "jo",	Jb, XX, XX },
-  { "jno",	Jb, XX, XX },
-  { "jb",	Jb, XX, XX },
-  { "jae",	Jb, XX, XX },
-  { "je",	Jb, XX, XX },
-  { "jne",	Jb, XX, XX },
-  { "jbe",	Jb, XX, XX },
-  { "ja",	Jb, XX, XX },
+  { "jo",		Jb },
+  { "jno",	Jb },
+  { "jb",		Jb },
+  { "jae",	Jb },
+  { "je",		Jb },
+  { "jne",	Jb },
+  { "jbe",	Jb },
+  { "ja",		Jb },
   /* 78 */
-  { "js",	Jb, XX, XX },
-  { "jns",	Jb, XX, XX },
-  { "jp",	Jb, XX, XX },
-  { "jnp",	Jb, XX, XX },
-  { "jl",	Jb, XX, XX },
-  { "jge",	Jb, XX, XX },
-  { "jle",	Jb, XX, XX },
-  { "jg",	Jb, XX, XX },
+  { "js",		Jb },
+  { "jns",	Jb },
+  { "jp",		Jb },
+  { "jnp",	Jb },
+  { "jl",		Jb },
+  { "jnl",	Jb },
+  { "jle",	Jb },
+  { "jg",		Jb },
   /* 80 */
   { GRP1b },
   { GRP1S },
-  { "(bad)",	XX, XX, XX },
+  { "(bad)" },
   { GRP1Ss },
-  { "testB",	Eb, Gb, XX },
-  { "testS",	Ev, Gv, XX },
-  { "xchgB",	Eb, Gb, XX },
-  { "xchgS",	Ev, Gv, XX },
+  { "testb",	Eb, Gb },
+  { "testS",	Ev, Gv },
+  { "xchgb",	Eb, Gb },
+  { "xchgS",	Ev, Gv },
   /* 88 */
-  { "movB",	Eb, Gb, XX },
-  { "movS",	Ev, Gv, XX },
-  { "movB",	Gb, Eb, XX },
-  { "movS",	Gv, Ev, XX },
-  { "movQ",	Ev, Sw, XX },
-  { "leaS",	Gv, M, XX },
-  { "movQ",	Sw, Ev, XX },
-  { "popQ",	Ev, XX, XX },
+  { "movb",	Eb, Gb },
+  { "movS",	Ev, Gv },
+  { "movb",	Gb, Eb },
+  { "movS",	Gv, Ev },
+  { "movw",	Ew, Sw },
+  { "leaS",	Gv, M },
+  { "movw",	Sw, Ew },
+  { "popS",	Ev },
   /* 90 */
-  { "nop",	XX, XX, XX },
-  { "xchgS",	eCX, eAX, XX },
-  { "xchgS",	eDX, eAX, XX },
-  { "xchgS",	eBX, eAX, XX },
-  { "xchgS",	eSP, eAX, XX },
-  { "xchgS",	eBP, eAX, XX },
-  { "xchgS",	eSI, eAX, XX },
-  { "xchgS",	eDI, eAX, XX },
+  { "nop" },
+  { "xchgS",	eCX, eAX },
+  { "xchgS",	eDX, eAX },
+  { "xchgS",	eBX, eAX },
+  { "xchgS",	eSP, eAX },
+  { "xchgS",	eBP, eAX },
+  { "xchgS",	eSI, eAX },
+  { "xchgS",	eDI, eAX },
   /* 98 */
-  { "cWtR",	XX, XX, XX },
-  { "cRtd",	XX, XX, XX },
-  { "lcallP",	Ap, XX, XX },
-  { "(bad)",	XX, XX, XX },		/* fwait */
-  { "pushfP",	XX, XX, XX },
-  { "popfP",	XX, XX, XX },
-  { "sahf",	XX, XX, XX },
-  { "lahf",	XX, XX, XX },
+  { "cwtl" },
+  { "cltd" },
+  { "lcall",	Ap },
+  { "(bad)" },		/* fwait */
+  { "pushf" },
+  { "popf" },
+  { "sahf" },
+  { "lahf" },
   /* a0 */
-  { "movB",	AL, Ob, XX },
-  { "movS",	eAX, Ov, XX },
-  { "movB",	Ob, AL, XX },
-  { "movS",	Ov, eAX, XX },
-  { "movsb",	Yb, Xb, XX },
-  { "movsR",	Yv, Xv, XX },
-  { "cmpsb",	Xb, Yb, XX },
-  { "cmpsR",	Xv, Yv, XX },
+  { "movb",	AL, Ob },
+  { "movS",	eAX, Ov },
+  { "movb",	Ob, AL },
+  { "movS",	Ov, eAX },
+  { "movsb",	Yb, Xb },
+  { "movsS",	Yv, Xv },
+  { "cmpsb",	Yb, Xb },
+  { "cmpsS",	Yv, Xv },
   /* a8 */
-  { "testB",	AL, Ib, XX },
-  { "testS",	eAX, Iv, XX },
-  { "stosB",	Yb, AL, XX },
-  { "stosS",	Yv, eAX, XX },
-  { "lodsB",	AL, Xb, XX },
-  { "lodsS",	eAX, Xv, XX },
-  { "scasB",	AL, Yb, XX },
-  { "scasS",	eAX, Yv, XX },
+  { "testb",	AL, Ib },
+  { "testS",	eAX, Iv },
+  { "stosb",	Yb, AL },
+  { "stosS",	Yv, eAX },
+  { "lodsb",	AL, Xb },
+  { "lodsS",	eAX, Xv },
+  { "scasb",	AL, Yb },
+  { "scasS",	eAX, Yv },
   /* b0 */
-  { "movB",	AL, Ib, XX },
-  { "movB",	CL, Ib, XX },
-  { "movB",	DL, Ib, XX },
-  { "movB",	BL, Ib, XX },
-  { "movB",	AH, Ib, XX },
-  { "movB",	CH, Ib, XX },
-  { "movB",	DH, Ib, XX },
-  { "movB",	BH, Ib, XX },
+  { "movb",	AL, Ib },
+  { "movb",	CL, Ib },
+  { "movb",	DL, Ib },
+  { "movb",	BL, Ib },
+  { "movb",	AH, Ib },
+  { "movb",	CH, Ib },
+  { "movb",	DH, Ib },
+  { "movb",	BH, Ib },
   /* b8 */
-  { "movS",	eAX, Iv, XX },
-  { "movS",	eCX, Iv, XX },
-  { "movS",	eDX, Iv, XX },
-  { "movS",	eBX, Iv, XX },
-  { "movS",	eSP, Iv, XX },
-  { "movS",	eBP, Iv, XX },
-  { "movS",	eSI, Iv, XX },
-  { "movS",	eDI, Iv, XX },
+  { "movS",	eAX, Iv },
+  { "movS",	eCX, Iv },
+  { "movS",	eDX, Iv },
+  { "movS",	eBX, Iv },
+  { "movS",	eSP, Iv },
+  { "movS",	eBP, Iv },
+  { "movS",	eSI, Iv },
+  { "movS",	eDI, Iv },
   /* c0 */
   { GRP2b },
   { GRP2S },
-  { "retP",	Iw, XX, XX },
-  { "retP",	XX, XX, XX },
-  { "lesS",	Gv, Mp, XX },
-  { "ldsS",	Gv, Mp, XX },
-  { "movA",	Eb, Ib, XX },
-  { "movQ",	Ev, Iv, XX },
+  { "ret",	Iw },
+  { "ret" },
+  { "lesS",	Gv, Mp },
+  { "ldsS",	Gv, Mp },
+  { "movb",	Eb, Ib },
+  { "movS",	Ev, Iv },
   /* c8 */
-  { "enterP",	Iw, Ib, XX },
-  { "leaveP",	XX, XX, XX },
-  { "lretP",	Iw, XX, XX },
-  { "lretP",	XX, XX, XX },
-  { "int3",	XX, XX, XX },
-  { "int",	Ib, XX, XX },
-  { "into",	XX, XX, XX},
-  { "iretP",	XX, XX, XX },
+  { "enter",	Iw, Ib },
+  { "leave" },
+  { "lret",	Iw },
+  { "lret" },
+  { "int3" },
+  { "int",	Ib },
+  { "into" },
+  { "iret" },
   /* d0 */
   { GRP2b_one },
   { GRP2S_one },
   { GRP2b_cl },
   { GRP2S_cl },
-  { "aam",	sIb, XX, XX },
-  { "aad",	sIb, XX, XX },
-  { "(bad)",	XX, XX, XX },
-  { "xlat",	DSBX, XX, XX },
+  { "aam",	Ib },
+  { "aad",	Ib },
+  { "(bad)" },
+  { "xlat" },
   /* d8 */
   { FLOAT },
   { FLOAT },
@@ -602,1357 +474,450 @@ static const struct dis386 dis386_att[] = {
   { FLOAT },
   { FLOAT },
   /* e0 */
-  { "loopne",	Jb, XX, XX },
-  { "loope",	Jb, XX, XX },
-  { "loop",	Jb, XX, XX },
-  { "jEcxz",	Jb, XX, XX },
-  { "inB",	AL, Ib, XX },
-  { "inS",	eAX, Ib, XX },
-  { "outB",	Ib, AL, XX },
-  { "outS",	Ib, eAX, XX },
+  { "loopne",	Jb },
+  { "loope",	Jb },
+  { "loop",	Jb },
+  { "jCcxz",	Jb },
+  { "inb",	AL, Ib },
+  { "inS",	eAX, Ib },
+  { "outb",	Ib, AL },
+  { "outS",	Ib, eAX },
   /* e8 */
-  { "callP",	Jv, XX, XX },
-  { "jmpP",	Jv, XX, XX },
-  { "ljmpP",	Ap, XX, XX },
-  { "jmp",	Jb, XX, XX },
-  { "inB",	AL, indirDX, XX },
-  { "inS",	eAX, indirDX, XX },
-  { "outB",	indirDX, AL, XX },
-  { "outS",	indirDX, eAX, XX },
+  { "call",	Av },
+  { "jmp",	Jv },
+  { "ljmp",	Ap },
+  { "jmp",	Jb },
+  { "inb",	AL, indirDX },
+  { "inS",	eAX, indirDX },
+  { "outb",	indirDX, AL },
+  { "outS",	indirDX, eAX },
   /* f0 */
-  { "(bad)",	XX, XX, XX },			/* lock prefix */
-  { "(bad)",	XX, XX, XX },
-  { "(bad)",	XX, XX, XX },			/* repne */
-  { "(bad)",	XX, XX, XX },			/* repz */
-  { "hlt",	XX, XX, XX },
-  { "cmc",	XX, XX, XX },
+  { "(bad)" },			/* lock prefix */
+  { "(bad)" },
+  { "(bad)" },			/* repne */
+  { "(bad)" },			/* repz */
+  { "hlt" },
+  { "cmc" },
   { GRP3b },
   { GRP3S },
   /* f8 */
-  { "clc",	XX, XX, XX },
-  { "stc",	XX, XX, XX },
-  { "cli",	XX, XX, XX },
-  { "sti",	XX, XX, XX },
-  { "cld",	XX, XX, XX },
-  { "std",	XX, XX, XX },
+  { "clc" },
+  { "stc" },
+  { "cli" },
+  { "sti" },
+  { "cld" },
+  { "std" },
   { GRP4 },
   { GRP5 },
 };
 
-static const struct dis386 dis386_intel[] = {
-  /* 00 */
-  { "add",	Eb, Gb, XX },
-  { "add",	Ev, Gv, XX },
-  { "add",	Gb, Eb, XX },
-  { "add",	Gv, Ev, XX },
-  { "add",	AL, Ib, XX },
-  { "add",	eAX, Iv, XX },
-  { "push",	es, XX, XX },
-  { "pop",	es, XX, XX },
-  /* 08 */
-  { "or",	Eb, Gb, XX },
-  { "or",	Ev, Gv, XX },
-  { "or",	Gb, Eb, XX },
-  { "or",	Gv, Ev, XX },
-  { "or",	AL, Ib, XX },
-  { "or",	eAX, Iv, XX },
-  { "push",	cs, XX, XX },
-  { "(bad)",	XX, XX, XX },	/* 0x0f extended opcode escape */
-  /* 10 */
-  { "adc",	Eb, Gb, XX },
-  { "adc",	Ev, Gv, XX },
-  { "adc",	Gb, Eb, XX },
-  { "adc",	Gv, Ev, XX },
-  { "adc",	AL, Ib, XX },
-  { "adc",	eAX, Iv, XX },
-  { "push",	ss, XX, XX },
-  { "pop",	ss, XX, XX },
-  /* 18 */
-  { "sbb",	Eb, Gb, XX },
-  { "sbb",	Ev, Gv, XX },
-  { "sbb",	Gb, Eb, XX },
-  { "sbb",	Gv, Ev, XX },
-  { "sbb",	AL, Ib, XX },
-  { "sbb",	eAX, Iv, XX },
-  { "push",	ds, XX, XX },
-  { "pop",	ds, XX, XX },
-  /* 20 */
-  { "and",	Eb, Gb, XX },
-  { "and",	Ev, Gv, XX },
-  { "and",	Gb, Eb, XX },
-  { "and",	Gv, Ev, XX },
-  { "and",	AL, Ib, XX },
-  { "and",	eAX, Iv, XX },
-  { "(bad)",	XX, XX, XX },			/* SEG ES prefix */
-  { "daa",	XX, XX, XX },
-  /* 28 */
-  { "sub",	Eb, Gb, XX },
-  { "sub",	Ev, Gv, XX },
-  { "sub",	Gb, Eb, XX },
-  { "sub",	Gv, Ev, XX },
-  { "sub",	AL, Ib, XX },
-  { "sub",	eAX, Iv, XX },
-  { "(bad)",	XX, XX, XX },			/* SEG CS prefix */
-  { "das",	XX, XX, XX },
-  /* 30 */
-  { "xor",	Eb, Gb, XX },
-  { "xor",	Ev, Gv, XX },
-  { "xor",	Gb, Eb, XX },
-  { "xor",	Gv, Ev, XX },
-  { "xor",	AL, Ib, XX },
-  { "xor",	eAX, Iv, XX },
-  { "(bad)",	XX, XX, XX },			/* SEG SS prefix */
-  { "aaa",	XX, XX, XX },
-  /* 38 */
-  { "cmp",	Eb, Gb, XX },
-  { "cmp",	Ev, Gv, XX },
-  { "cmp",	Gb, Eb, XX },
-  { "cmp",	Gv, Ev, XX },
-  { "cmp",	AL, Ib, XX },
-  { "cmp",	eAX, Iv, XX },
-  { "(bad)",	XX, XX, XX },			/* SEG DS prefix */
-  { "aas",	XX, XX, XX },
-  /* 40 */
-  { "inc",	eAX, XX, XX },
-  { "inc",	eCX, XX, XX },
-  { "inc",	eDX, XX, XX },
-  { "inc",	eBX, XX, XX },
-  { "inc",	eSP, XX, XX },
-  { "inc",	eBP, XX, XX },
-  { "inc",	eSI, XX, XX },
-  { "inc",	eDI, XX, XX },
-  /* 48 */
-  { "dec",	eAX, XX, XX },
-  { "dec",	eCX, XX, XX },
-  { "dec",	eDX, XX, XX },
-  { "dec",	eBX, XX, XX },
-  { "dec",	eSP, XX, XX },
-  { "dec",	eBP, XX, XX },
-  { "dec",	eSI, XX, XX },
-  { "dec",	eDI, XX, XX },
-  /* 50 */
-  { "push",	eAX, XX, XX },
-  { "push",	eCX, XX, XX },
-  { "push",	eDX, XX, XX },
-  { "push",	eBX, XX, XX },
-  { "push",	eSP, XX, XX },
-  { "push",	eBP, XX, XX },
-  { "push",	eSI, XX, XX },
-  { "push",	eDI, XX, XX },
-  /* 58 */
-  { "pop",	eAX, XX, XX },
-  { "pop",	eCX, XX, XX },
-  { "pop",	eDX, XX, XX },
-  { "pop",	eBX, XX, XX },
-  { "pop",	eSP, XX, XX },
-  { "pop",	eBP, XX, XX },
-  { "pop",	eSI, XX, XX },
-  { "pop",	eDI, XX, XX },
-  /* 60 */
-  { "pusha",	XX, XX, XX },
-  { "popa",	XX, XX, XX },
-  { "bound",	Gv, Ma, XX },
-  { "arpl",	Ew, Gw, XX },
-  { "(bad)",	XX, XX, XX },			/* seg fs */
-  { "(bad)",	XX, XX, XX },			/* seg gs */
-  { "(bad)",	XX, XX, XX },			/* op size prefix */
-  { "(bad)",	XX, XX, XX },			/* adr size prefix */
-  /* 68 */
-  { "push",	Iv, XX, XX },		/* 386 book wrong */
-  { "imul",	Gv, Ev, Iv },
-  { "push",	sIb, XX, XX },	/* push of byte really pushes 2 or 4 bytes */
-  { "imul",	Gv, Ev, sIb },
-  { "ins",	Yb, indirDX, XX },
-  { "ins",	Yv, indirDX, XX },
-  { "outs",	indirDX, Xb, XX },
-  { "outs",	indirDX, Xv, XX },
-  /* 70 */
-  { "jo",	Jb, XX, XX },
-  { "jno",	Jb, XX, XX },
-  { "jb",	Jb, XX, XX },
-  { "jae",	Jb, XX, XX },
-  { "je",	Jb, XX, XX },
-  { "jne",	Jb, XX, XX },
-  { "jbe",	Jb, XX, XX },
-  { "ja",	Jb, XX, XX },
-  /* 78 */
-  { "js",	Jb, XX, XX },
-  { "jns",	Jb, XX, XX },
-  { "jp",	Jb, XX, XX },
-  { "jnp",	Jb, XX, XX },
-  { "jl",	Jb, XX, XX },
-  { "jge",	Jb, XX, XX },
-  { "jle",	Jb, XX, XX },
-  { "jg",	Jb, XX, XX },
-  /* 80 */
-  { GRP1b },
-  { GRP1S },
-  { "(bad)",	XX, XX, XX },
-  { GRP1Ss },
-  { "test",	Eb, Gb, XX },
-  { "test",	Ev, Gv, XX },
-  { "xchg",	Eb, Gb, XX },
-  { "xchg",	Ev, Gv, XX },
-  /* 88 */
-  { "mov",	Eb, Gb, XX },
-  { "mov",	Ev, Gv, XX },
-  { "mov",	Gb, Eb, XX },
-  { "mov",	Gv, Ev, XX },
-  { "mov",	Ev, Sw, XX },
-  { "lea",	Gv, M, XX },
-  { "mov",	Sw, Ev, XX },
-  { "pop",	Ev, XX, XX },
-  /* 90 */
-  { "nop",	XX, XX, XX },
-  { "xchg",	eCX, eAX, XX },
-  { "xchg",	eDX, eAX, XX },
-  { "xchg",	eBX, eAX, XX },
-  { "xchg",	eSP, eAX, XX },
-  { "xchg",	eBP, eAX, XX },
-  { "xchg",	eSI, eAX, XX },
-  { "xchg",	eDI, eAX, XX },
-  /* 98 */
-  { "cW",	XX, XX, XX },		/* cwde and cbw */
-  { "cR",	XX, XX, XX },		/* cdq and cwd */
-  { "lcall",	Ap, XX, XX },
-  { "(bad)",	XX, XX, XX },		/* fwait */
-  { "pushf",	XX, XX, XX },
-  { "popf",	XX, XX, XX },
-  { "sahf",	XX, XX, XX },
-  { "lahf",	XX, XX, XX },
-  /* a0 */
-  { "mov",	AL, Ob, XX },
-  { "mov",	eAX, Ov, XX },
-  { "mov",	Ob, AL, XX },
-  { "mov",	Ov, eAX, XX },
-  { "movs",	Yb, Xb, XX },
-  { "movs",	Yv, Xv, XX },
-  { "cmps",	Xb, Yb, XX },
-  { "cmps",	Xv, Yv, XX },
-  /* a8 */
-  { "test",	AL, Ib, XX },
-  { "test",	eAX, Iv, XX },
-  { "stos",	Yb, AL, XX },
-  { "stos",	Yv, eAX, XX },
-  { "lods",	AL, Xb, XX },
-  { "lods",	eAX, Xv, XX },
-  { "scas",	AL, Yb, XX },
-  { "scas",	eAX, Yv, XX },
-  /* b0 */
-  { "mov",	AL, Ib, XX },
-  { "mov",	CL, Ib, XX },
-  { "mov",	DL, Ib, XX },
-  { "mov",	BL, Ib, XX },
-  { "mov",	AH, Ib, XX },
-  { "mov",	CH, Ib, XX },
-  { "mov",	DH, Ib, XX },
-  { "mov",	BH, Ib, XX },
-  /* b8 */
-  { "mov",	eAX, Iv, XX },
-  { "mov",	eCX, Iv, XX },
-  { "mov",	eDX, Iv, XX },
-  { "mov",	eBX, Iv, XX },
-  { "mov",	eSP, Iv, XX },
-  { "mov",	eBP, Iv, XX },
-  { "mov",	eSI, Iv, XX },
-  { "mov",	eDI, Iv, XX },
-  /* c0 */
-  { GRP2b },
-  { GRP2S },
-  { "ret",	Iw, XX, XX },
-  { "ret",	XX, XX, XX },
-  { "les",	Gv, Mp, XX },
-  { "lds",	Gv, Mp, XX },
-  { "mov",	Eb, Ib, XX },
-  { "mov",	Ev, Iv, XX },
-  /* c8 */
-  { "enter",	Iw, Ib, XX },
-  { "leave",	XX, XX, XX },
-  { "lret",	Iw, XX, XX },
-  { "lret",	XX, XX, XX },
-  { "int3",	XX, XX, XX },
-  { "int",	Ib, XX, XX },
-  { "into",	XX, XX, XX },
-  { "iret",	XX, XX, XX },
-  /* d0 */
-  { GRP2b_one },
-  { GRP2S_one },
-  { GRP2b_cl },
-  { GRP2S_cl },
-  { "aam",	sIb, XX, XX },
-  { "aad",	sIb, XX, XX },
-  { "(bad)",	XX, XX, XX },
-  { "xlat",	DSBX, XX, XX },
-  /* d8 */
-  { FLOAT },
-  { FLOAT },
-  { FLOAT },
-  { FLOAT },
-  { FLOAT },
-  { FLOAT },
-  { FLOAT },
-  { FLOAT },
-  /* e0 */
-  { "loopne",	Jb, XX, XX },
-  { "loope",	Jb, XX, XX },
-  { "loop",	Jb, XX, XX },
-  { "jEcxz",	Jb, XX, XX },
-  { "in",	AL, Ib, XX },
-  { "in",	eAX, Ib, XX },
-  { "out",	Ib, AL, XX },
-  { "out",	Ib, eAX, XX },
-  /* e8 */
-  { "call",	Jv, XX, XX },
-  { "jmp",	Jv, XX, XX },
-  { "ljmp",	Ap, XX, XX },
-  { "jmp",	Jb, XX, XX },
-  { "in",	AL, indirDX, XX },
-  { "in",	eAX, indirDX, XX },
-  { "out",	indirDX, AL, XX },
-  { "out",	indirDX, eAX, XX },
-  /* f0 */
-  { "(bad)",	XX, XX, XX },			/* lock prefix */
-  { "(bad)",	XX, XX, XX },
-  { "(bad)",	XX, XX, XX },			/* repne */
-  { "(bad)",	XX, XX, XX },			/* repz */
-  { "hlt",	XX, XX, XX },
-  { "cmc",	XX, XX, XX },
-  { GRP3b },
-  { GRP3S },
-  /* f8 */
-  { "clc",	XX, XX, XX },
-  { "stc",	XX, XX, XX },
-  { "cli",	XX, XX, XX },
-  { "sti",	XX, XX, XX },
-  { "cld",	XX, XX, XX },
-  { "std",	XX, XX, XX },
-  { GRP4 },
-  { GRP5 },
-};
-
-static const struct dis386 dis386_twobyte_att[] = {
+struct dis386 dis386_twobyte[] = {
   /* 00 */
   { GRP6 },
   { GRP7 },
-  { "larS", Gv, Ew, XX },
-  { "lslS", Gv, Ew, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "clts", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
+  { "larS", Gv, Ew },
+  { "lslS", Gv, Ew },  
+  { "(bad)" },
+  { "(bad)" },
+  { "clts" },
+  { "(bad)" },  
   /* 08 */
-  { "invd", XX, XX, XX },
-  { "wbinvd", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "ud2a", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { GRPAMD },
-  { "femms", XX, XX, XX },
-  { "", MX, EM, OPSUF }, /* See OP_3DNowSuffix */
+  { "invd" },
+  { "wbinvd" },
+  { "(bad)" },  { "(bad)" },  
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
   /* 10 */
-  { PREGRP8 },
-  { PREGRP9 },
-  { "movlps", XM, EX, SIMD_Fixup, 'h' },  /* really only 2 operands */
-  { "movlps", EX, XM, SIMD_Fixup, 'h' },
-  { "unpcklps", XM, EX, XX },
-  { "unpckhps", XM, EX, XX },
-  { "movhps", XM, EX, SIMD_Fixup, 'l' },
-  { "movhps", EX, XM, SIMD_Fixup, 'l' },
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
   /* 18 */
-  { GRP14 },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
   /* 20 */
   /* these are all backward in appendix A of the intel book */
-  { "movL", Rd, Cd, XX },
-  { "movL", Rd, Dd, XX },
-  { "movL", Cd, Rd, XX },
-  { "movL", Dd, Rd, XX },
-  { "movL", Rd, Td, XX },
-  { "(bad)", XX, XX, XX },
-  { "movL", Td, Rd, XX },
-  { "(bad)", XX, XX, XX },
+  { "movl", Rd, Cd },
+  { "movl", Rd, Dd },
+  { "movl", Cd, Rd },
+  { "movl", Dd, Rd },  
+  { "movl", Rd, Td },
+  { "(bad)" },
+  { "movl", Td, Rd },
+  { "(bad)" },  
   /* 28 */
-  { "movaps", XM, EX, XX },
-  { "movaps", EX, XM, XX },
-  { PREGRP2 },
-  { "movntps", Ev, XM, XX },
-  { PREGRP4 },
-  { PREGRP3 },
-  { "ucomiss", XM, EX, XX },
-  { "comiss", XM, EX, XX },
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
   /* 30 */
-  { "wrmsr", XX, XX, XX },
-  { "rdtsc", XX, XX, XX },
-  { "rdmsr", XX, XX, XX },
-  { "rdpmc", XX, XX, XX },
-  { "sysenter", XX, XX, XX },
-  { "sysexit", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
+  { "wrmsr" },  { "rdtsc" },  { "rdmsr" },  { "(bad)" },  
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
   /* 38 */
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
   /* 40 */
-  { "cmovo", Gv, Ev, XX },
-  { "cmovno", Gv, Ev, XX },
-  { "cmovb", Gv, Ev, XX },
-  { "cmovae", Gv, Ev, XX },
-  { "cmove", Gv, Ev, XX },
-  { "cmovne", Gv, Ev, XX },
-  { "cmovbe", Gv, Ev, XX },
-  { "cmova", Gv, Ev, XX },
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
   /* 48 */
-  { "cmovs", Gv, Ev, XX },
-  { "cmovns", Gv, Ev, XX },
-  { "cmovp", Gv, Ev, XX },
-  { "cmovnp", Gv, Ev, XX },
-  { "cmovl", Gv, Ev, XX },
-  { "cmovge", Gv, Ev, XX },
-  { "cmovle", Gv, Ev, XX },
-  { "cmovg", Gv, Ev, XX },
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
   /* 50 */
-  { "movmskps", Gv, EX, XX },
-  { PREGRP13 },
-  { PREGRP12 },
-  { PREGRP11 },
-  { "andps", XM, EX, XX },
-  { "andnps", XM, EX, XX },
-  { "orps", XM, EX, XX },
-  { "xorps", XM, EX, XX },
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
   /* 58 */
-  { PREGRP0 },
-  { PREGRP10 },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { PREGRP14 },
-  { PREGRP7 },
-  { PREGRP5 },
-  { PREGRP6 },
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
   /* 60 */
-  { "punpcklbw", MX, EM, XX },
-  { "punpcklwd", MX, EM, XX },
-  { "punpckldq", MX, EM, XX },
-  { "packsswb", MX, EM, XX },
-  { "pcmpgtb", MX, EM, XX },
-  { "pcmpgtw", MX, EM, XX },
-  { "pcmpgtd", MX, EM, XX },
-  { "packuswb", MX, EM, XX },
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
   /* 68 */
-  { "punpckhbw", MX, EM, XX },
-  { "punpckhwd", MX, EM, XX },
-  { "punpckhdq", MX, EM, XX },
-  { "packssdw", MX, EM, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "movd", MX, Ed, XX },
-  { "movq", MX, EM, XX },
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
   /* 70 */
-  { "pshufw", MX, EM, Ib },
-  { GRP10 },
-  { GRP11 },
-  { GRP12 },
-  { "pcmpeqb", MX, EM, XX },
-  { "pcmpeqw", MX, EM, XX },
-  { "pcmpeqd", MX, EM, XX },
-  { "emms", XX, XX, XX },
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
   /* 78 */
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "movd", Ed, MX, XX },
-  { "movq", EM, MX, XX },
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
   /* 80 */
-  { "jo", Jv, XX, XX },
-  { "jno", Jv, XX, XX },
-  { "jb", Jv, XX, XX },
-  { "jae", Jv, XX, XX },
-  { "je", Jv, XX, XX },
-  { "jne", Jv, XX, XX },
-  { "jbe", Jv, XX, XX },
-  { "ja", Jv, XX, XX },
+  { "jo", Jv },
+  { "jno", Jv },
+  { "jb", Jv },
+  { "jae", Jv },  
+  { "je", Jv },
+  { "jne", Jv },
+  { "jbe", Jv },
+  { "ja", Jv },  
   /* 88 */
-  { "js", Jv, XX, XX },
-  { "jns", Jv, XX, XX },
-  { "jp", Jv, XX, XX },
-  { "jnp", Jv, XX, XX },
-  { "jl", Jv, XX, XX },
-  { "jge", Jv, XX, XX },
-  { "jle", Jv, XX, XX },
-  { "jg", Jv, XX, XX },
+  { "js", Jv },
+  { "jns", Jv },
+  { "jp", Jv },
+  { "jnp", Jv },  
+  { "jl", Jv },
+  { "jge", Jv },
+  { "jle", Jv },
+  { "jg", Jv },  
   /* 90 */
-  { "seto", Eb, XX, XX },
-  { "setno", Eb, XX, XX },
-  { "setb", Eb, XX, XX },
-  { "setae", Eb, XX, XX },
-  { "sete", Eb, XX, XX },
-  { "setne", Eb, XX, XX },
-  { "setbe", Eb, XX, XX },
-  { "seta", Eb, XX, XX },
+  { "seto", Eb },
+  { "setno", Eb },
+  { "setb", Eb },
+  { "setae", Eb },
+  { "sete", Eb },
+  { "setne", Eb },
+  { "setbe", Eb },
+  { "seta", Eb },
   /* 98 */
-  { "sets", Eb, XX, XX },
-  { "setns", Eb, XX, XX },
-  { "setp", Eb, XX, XX },
-  { "setnp", Eb, XX, XX },
-  { "setl", Eb, XX, XX },
-  { "setge", Eb, XX, XX },
-  { "setle", Eb, XX, XX },
-  { "setg", Eb, XX, XX },
+  { "sets", Eb },
+  { "setns", Eb },
+  { "setp", Eb },
+  { "setnp", Eb },
+  { "setl", Eb },
+  { "setge", Eb },
+  { "setle", Eb },
+  { "setg", Eb },  
   /* a0 */
-  { "pushP", fs, XX, XX },
-  { "popP", fs, XX, XX },
-  { "cpuid", XX, XX, XX },
-  { "btS", Ev, Gv, XX },
+  { "pushl", fs },
+  { "popl", fs },
+  { "cpuid" },
+  { "btS", Ev, Gv },  
   { "shldS", Ev, Gv, Ib },
   { "shldS", Ev, Gv, CL },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
+  { "(bad)" },
+  { "(bad)" },  
   /* a8 */
-  { "pushP", gs, XX, XX },
-  { "popP", gs, XX, XX },
-  { "rsm", XX, XX, XX },
-  { "btsS", Ev, Gv, XX },
+  { "pushl", gs },
+  { "popl", gs },
+  { "rsm" },
+  { "btsS", Ev, Gv },  
   { "shrdS", Ev, Gv, Ib },
   { "shrdS", Ev, Gv, CL },
-  { GRP13 },
-  { "imulS", Gv, Ev, XX },
+  { "(bad)" },
+  { "imulS", Gv, Ev },  
   /* b0 */
-  { "cmpxchgB", Eb, Gb, XX },
-  { "cmpxchgS", Ev, Gv, XX },
-  { "lssS", Gv, Mp, XX },
-  { "btrS", Ev, Gv, XX },
-  { "lfsS", Gv, Mp, XX },
-  { "lgsS", Gv, Mp, XX },
-  { "movzbR", Gv, Eb, XX },
-  { "movzwR", Gv, Ew, XX }, /* yes, there really is movzww ! */
+  { "cmpxchgb", Eb, Gb },
+  { "cmpxchgS", Ev, Gv },
+  { "lssS", Gv, Mp },	/* 386 lists only Mp */
+  { "btrS", Ev, Gv },  
+  { "lfsS", Gv, Mp },	/* 386 lists only Mp */
+  { "lgsS", Gv, Mp },	/* 386 lists only Mp */
+  { "movzbS", Gv, Eb },
+  { "movzwS", Gv, Ew },  
   /* b8 */
-  { "(bad)", XX, XX, XX },
-  { "ud2b", XX, XX, XX },
+  { "(bad)" },
+  { "(bad)" },
   { GRP8 },
-  { "btcS", Ev, Gv, XX },
-  { "bsfS", Gv, Ev, XX },
-  { "bsrS", Gv, Ev, XX },
-  { "movsbR", Gv, Eb, XX },
-  { "movswR", Gv, Ew, XX }, /* yes, there really is movsww ! */
+  { "btcS", Ev, Gv },  
+  { "bsfS", Gv, Ev },
+  { "bsrS", Gv, Ev },
+  { "movsbS", Gv, Eb },
+  { "movswS", Gv, Ew },  
   /* c0 */
-  { "xaddB", Eb, Gb, XX },
-  { "xaddS", Ev, Gv, XX },
-  { PREGRP1 },
-  { "(bad)", XX, XX, XX },
-  { "pinsrw", MX, Ev, Ib },
-  { "pextrw", Ev, MX, Ib },
-  { "shufps", XM, EX, Ib },
-  { GRP9 },
+  { "xaddb", Eb, Gb },
+  { "xaddS", Ev, Gv },
+  { "(bad)" },
+  { "(bad)" },  
+  { "(bad)" },
+  { "(bad)" },
+  { "(bad)" },
+  { GRP9 },  
   /* c8 */
-  { "bswap", eAX, XX, XX },	/* bswap doesn't support 16 bit regs */
-  { "bswap", eCX, XX, XX },
-  { "bswap", eDX, XX, XX },
-  { "bswap", eBX, XX, XX },
-  { "bswap", eSP, XX, XX },
-  { "bswap", eBP, XX, XX },
-  { "bswap", eSI, XX, XX },
-  { "bswap", eDI, XX, XX },
+  { "bswap", eAX },
+  { "bswap", eCX },
+  { "bswap", eDX },
+  { "bswap", eBX },
+  { "bswap", eSP },
+  { "bswap", eBP },
+  { "bswap", eSI },
+  { "bswap", eDI },
   /* d0 */
-  { "(bad)", XX, XX, XX },
-  { "psrlw", MX, EM, XX },
-  { "psrld", MX, EM, XX },
-  { "psrlq", MX, EM, XX },
-  { "(bad)", XX, XX, XX },
-  { "pmullw", MX, EM, XX },
-  { "(bad)", XX, XX, XX },
-  { "pmovmskb", Ev, MX, XX },
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
   /* d8 */
-  { "psubusb", MX, EM, XX },
-  { "psubusw", MX, EM, XX },
-  { "pminub", MX, EM, XX },
-  { "pand", MX, EM, XX },
-  { "paddusb", MX, EM, XX },
-  { "paddusw", MX, EM, XX },
-  { "pmaxub", MX, EM, XX },
-  { "pandn", MX, EM, XX },
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
   /* e0 */
-  { "pavgb", MX, EM, XX },
-  { "psraw", MX, EM, XX },
-  { "psrad", MX, EM, XX },
-  { "pavgw", MX, EM, XX },
-  { "pmulhuw", MX, EM, XX },
-  { "pmulhw", MX, EM, XX },
-  { "(bad)", XX, XX, XX },
-  { "movntq", Ev, MX, XX },
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
   /* e8 */
-  { "psubsb", MX, EM, XX },
-  { "psubsw", MX, EM, XX },
-  { "pminsw", MX, EM, XX },
-  { "por", MX, EM, XX },
-  { "paddsb", MX, EM, XX },
-  { "paddsw", MX, EM, XX },
-  { "pmaxsw", MX, EM, XX },
-  { "pxor", MX, EM, XX },
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
   /* f0 */
-  { "(bad)", XX, XX, XX },
-  { "psllw", MX, EM, XX },
-  { "pslld", MX, EM, XX },
-  { "psllq", MX, EM, XX },
-  { "(bad)", XX, XX, XX },
-  { "pmaddwd", MX, EM, XX },
-  { "psadbw", MX, EM, XX },
-  { "maskmovq", MX, EM, XX },
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
   /* f8 */
-  { "psubb", MX, EM, XX },
-  { "psubw", MX, EM, XX },
-  { "psubd", MX, EM, XX },
-  { "(bad)", XX, XX, XX },
-  { "paddb", MX, EM, XX },
-  { "paddw", MX, EM, XX },
-  { "paddd", MX, EM, XX },
-  { "(bad)", XX, XX, XX }
-};
-
-static const struct dis386 dis386_twobyte_intel[] = {
-  /* 00 */
-  { GRP6 },
-  { GRP7 },
-  { "lar", Gv, Ew, XX },
-  { "lsl", Gv, Ew, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "clts", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  /* 08 */
-  { "invd", XX, XX, XX },
-  { "wbinvd", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "ud2a", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { GRPAMD },
-  { "femms" , XX, XX, XX},
-  { "", MX, EM, OPSUF }, /* See OP_3DNowSuffix */
-  /* 10 */
-  { PREGRP8 },
-  { PREGRP9 },
-  { "movlps", XM, EX, SIMD_Fixup, 'h' },  /* really only 2 operands */
-  { "movlps", EX, XM, SIMD_Fixup, 'h' },
-  { "unpcklps", XM, EX, XX },
-  { "unpckhps", XM, EX, XX },
-  { "movhps", XM, EX, SIMD_Fixup, 'l' },
-  { "movhps", EX, XM, SIMD_Fixup, 'l' },
-  /* 18 */
-  { GRP14 },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  /* 20 */
-  /* these are all backward in appendix A of the intel book */
-  { "mov", Rd, Cd, XX },
-  { "mov", Rd, Dd, XX },
-  { "mov", Cd, Rd, XX },
-  { "mov", Dd, Rd, XX },
-  { "mov", Rd, Td, XX },
-  { "(bad)", XX, XX, XX },
-  { "mov", Td, Rd, XX },
-  { "(bad)", XX, XX, XX },
-  /* 28 */
-  { "movaps", XM, EX, XX },
-  { "movaps", EX, XM, XX },
-  { PREGRP2 },
-  { "movntps", Ev, XM, XX },
-  { PREGRP4 },
-  { PREGRP3 },
-  { "ucomiss", XM, EX, XX },
-  { "comiss", XM, EX, XX },
-  /* 30 */
-  { "wrmsr", XX, XX, XX },
-  { "rdtsc", XX, XX, XX },
-  { "rdmsr", XX, XX, XX },
-  { "rdpmc", XX, XX, XX },
-  { "sysenter", XX, XX, XX },
-  { "sysexit", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  /* 38 */
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  /* 40 */
-  { "cmovo", Gv, Ev, XX },
-  { "cmovno", Gv, Ev, XX },
-  { "cmovb", Gv, Ev, XX },
-  { "cmovae", Gv, Ev, XX },
-  { "cmove", Gv, Ev, XX },
-  { "cmovne", Gv, Ev, XX },
-  { "cmovbe", Gv, Ev, XX },
-  { "cmova", Gv, Ev, XX },
-  /* 48 */
-  { "cmovs", Gv, Ev, XX },
-  { "cmovns", Gv, Ev, XX },
-  { "cmovp", Gv, Ev, XX },
-  { "cmovnp", Gv, Ev, XX },
-  { "cmovl", Gv, Ev, XX },
-  { "cmovge", Gv, Ev, XX },
-  { "cmovle", Gv, Ev, XX },
-  { "cmovg", Gv, Ev, XX },
-  /* 50 */
-  { "movmskps", Gv, EX, XX },
-  { PREGRP13 },
-  { PREGRP12 },
-  { PREGRP11 },
-  { "andps", XM, EX, XX },
-  { "andnps", XM, EX, XX },
-  { "orps", XM, EX, XX },
-  { "xorps", XM, EX, XX },
-  /* 58 */
-  { PREGRP0 },
-  { PREGRP10 },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { PREGRP14 },
-  { PREGRP7 },
-  { PREGRP5 },
-  { PREGRP6 },
-  /* 60 */
-  { "punpcklbw", MX, EM, XX },
-  { "punpcklwd", MX, EM, XX },
-  { "punpckldq", MX, EM, XX },
-  { "packsswb", MX, EM, XX },
-  { "pcmpgtb", MX, EM, XX },
-  { "pcmpgtw", MX, EM, XX },
-  { "pcmpgtd", MX, EM, XX },
-  { "packuswb", MX, EM, XX },
-  /* 68 */
-  { "punpckhbw", MX, EM, XX },
-  { "punpckhwd", MX, EM, XX },
-  { "punpckhdq", MX, EM, XX },
-  { "packssdw", MX, EM, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "movd", MX, Ed, XX },
-  { "movq", MX, EM, XX },
-  /* 70 */
-  { "pshufw", MX, EM, Ib },
-  { GRP10 },
-  { GRP11 },
-  { GRP12 },
-  { "pcmpeqb", MX, EM, XX },
-  { "pcmpeqw", MX, EM, XX },
-  { "pcmpeqd", MX, EM, XX },
-  { "emms", XX, XX, XX },
-  /* 78 */
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  { "movd", Ed, MX, XX },
-  { "movq", EM, MX, XX },
-  /* 80 */
-  { "jo", Jv, XX, XX },
-  { "jno", Jv, XX, XX },
-  { "jb", Jv, XX, XX },
-  { "jae", Jv, XX, XX },
-  { "je", Jv, XX, XX },
-  { "jne", Jv, XX, XX },
-  { "jbe", Jv, XX, XX },
-  { "ja", Jv, XX, XX },
-  /* 88 */
-  { "js", Jv, XX, XX },
-  { "jns", Jv, XX, XX },
-  { "jp", Jv, XX, XX },
-  { "jnp", Jv, XX, XX },
-  { "jl", Jv, XX, XX },
-  { "jge", Jv, XX, XX },
-  { "jle", Jv, XX, XX },
-  { "jg", Jv, XX, XX },
-  /* 90 */
-  { "seto", Eb, XX, XX },
-  { "setno", Eb, XX, XX },
-  { "setb", Eb, XX, XX },
-  { "setae", Eb, XX, XX },
-  { "sete", Eb, XX, XX },
-  { "setne", Eb, XX, XX },
-  { "setbe", Eb, XX, XX },
-  { "seta", Eb, XX, XX },
-  /* 98 */
-  { "sets", Eb, XX, XX },
-  { "setns", Eb, XX, XX },
-  { "setp", Eb, XX, XX },
-  { "setnp", Eb, XX, XX },
-  { "setl", Eb, XX, XX },
-  { "setge", Eb, XX, XX },
-  { "setle", Eb, XX, XX },
-  { "setg", Eb, XX, XX },
-  /* a0 */
-  { "push", fs, XX, XX },
-  { "pop", fs, XX, XX },
-  { "cpuid", XX, XX, XX },
-  { "bt", Ev, Gv, XX },
-  { "shld", Ev, Gv, Ib },
-  { "shld", Ev, Gv, CL },
-  { "(bad)", XX, XX, XX },
-  { "(bad)", XX, XX, XX },
-  /* a8 */
-  { "push", gs, XX, XX },
-  { "pop", gs, XX, XX },
-  { "rsm" , XX, XX, XX},
-  { "bts", Ev, Gv, XX },
-  { "shrd", Ev, Gv, Ib },
-  { "shrd", Ev, Gv, CL },
-  { GRP13 },
-  { "imul", Gv, Ev, XX },
-  /* b0 */
-  { "cmpxchg", Eb, Gb, XX },
-  { "cmpxchg", Ev, Gv, XX },
-  { "lss", Gv, Mp, XX },
-  { "btr", Ev, Gv, XX },
-  { "lfs", Gv, Mp, XX },
-  { "lgs", Gv, Mp, XX },
-  { "movzx", Gv, Eb, XX },
-  { "movzx", Gv, Ew, XX },
-  /* b8 */
-  { "(bad)", XX, XX, XX },
-  { "ud2b", XX, XX, XX },
-  { GRP8 },
-  { "btc", Ev, Gv, XX },
-  { "bsf", Gv, Ev, XX },
-  { "bsr", Gv, Ev, XX },
-  { "movsx", Gv, Eb, XX },
-  { "movsx", Gv, Ew, XX },
-  /* c0 */
-  { "xadd", Eb, Gb, XX },
-  { "xadd", Ev, Gv, XX },
-  { PREGRP1 },
-  { "(bad)", XX, XX, XX },
-  { "pinsrw", MX, Ev, Ib },
-  { "pextrw", Ev, MX, Ib },
-  { "shufps", XM, EX, Ib },
-  { GRP9 },
-  /* c8 */
-  { "bswap", eAX, XX, XX },	/* bswap doesn't support 16 bit regs */
-  { "bswap", eCX, XX, XX },
-  { "bswap", eDX, XX, XX },
-  { "bswap", eBX, XX, XX },
-  { "bswap", eSP, XX, XX },
-  { "bswap", eBP, XX, XX },
-  { "bswap", eSI, XX, XX },
-  { "bswap", eDI, XX, XX },
-  /* d0 */
-  { "(bad)", XX, XX, XX },
-  { "psrlw", MX, EM, XX },
-  { "psrld", MX, EM, XX },
-  { "psrlq", MX, EM, XX },
-  { "(bad)", XX, XX, XX },
-  { "pmullw", MX, EM, XX },
-  { "(bad)", XX, XX, XX },
-  { "pmovmskb", Ev, MX, XX },
-  /* d8 */
-  { "psubusb", MX, EM, XX },
-  { "psubusw", MX, EM, XX },
-  { "pminub", MX, EM, XX },
-  { "pand", MX, EM, XX },
-  { "paddusb", MX, EM, XX },
-  { "paddusw", MX, EM, XX },
-  { "pmaxub", MX, EM, XX },
-  { "pandn", MX, EM, XX },
-  /* e0 */
-  { "pavgb", MX, EM, XX },
-  { "psraw", MX, EM, XX },
-  { "psrad", MX, EM, XX },
-  { "pavgw", MX, EM, XX },
-  { "pmulhuw", MX, EM, XX },
-  { "pmulhw", MX, EM, XX },
-  { "(bad)", XX, XX, XX },
-  { "movntq", Ev, MX, XX },
-  /* e8 */
-  { "psubsb", MX, EM, XX },
-  { "psubsw", MX, EM, XX },
-  { "pminsw", MX, EM, XX },
-  { "por", MX, EM, XX },
-  { "paddsb", MX, EM, XX },
-  { "paddsw", MX, EM, XX },
-  { "pmaxsw", MX, EM, XX },
-  { "pxor", MX, EM, XX },
-  /* f0 */
-  { "(bad)", XX, XX, XX },
-  { "psllw", MX, EM, XX },
-  { "pslld", MX, EM, XX },
-  { "psllq", MX, EM, XX },
-  { "(bad)", XX, XX, XX },
-  { "pmaddwd", MX, EM, XX },
-  { "psadbw", MX, EM, XX },
-  { "maskmovq", MX, EM, XX },
-  /* f8 */
-  { "psubb", MX, EM, XX },
-  { "psubw", MX, EM, XX },
-  { "psubd", MX, EM, XX },
-  { "(bad)", XX, XX, XX },
-  { "paddb", MX, EM, XX },
-  { "paddw", MX, EM, XX },
-  { "paddd", MX, EM, XX },
-  { "(bad)", XX, XX, XX }
-};
-
-static const unsigned char onebyte_has_modrm[256] = {
-  /*       0 1 2 3 4 5 6 7 8 9 a b c d e f        */
-  /*       -------------------------------        */
-  /* 00 */ 1,1,1,1,0,0,0,0,1,1,1,1,0,0,0,0, /* 00 */
-  /* 10 */ 1,1,1,1,0,0,0,0,1,1,1,1,0,0,0,0, /* 10 */
-  /* 20 */ 1,1,1,1,0,0,0,0,1,1,1,1,0,0,0,0, /* 20 */
-  /* 30 */ 1,1,1,1,0,0,0,0,1,1,1,1,0,0,0,0, /* 30 */
-  /* 40 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 40 */
-  /* 50 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 50 */
-  /* 60 */ 0,0,1,1,0,0,0,0,0,1,0,1,0,0,0,0, /* 60 */
-  /* 70 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 70 */
-  /* 80 */ 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, /* 80 */
-  /* 90 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 90 */
-  /* a0 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* a0 */
-  /* b0 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* b0 */
-  /* c0 */ 1,1,0,0,1,1,1,1,0,0,0,0,0,0,0,0, /* c0 */
-  /* d0 */ 1,1,1,1,0,0,0,0,1,1,1,1,1,1,1,1, /* d0 */
-  /* e0 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* e0 */
-  /* f0 */ 0,0,0,0,0,0,1,1,0,0,0,0,0,0,1,1  /* f0 */
-  /*       -------------------------------        */
-  /*       0 1 2 3 4 5 6 7 8 9 a b c d e f        */
-};
-
-static const unsigned char twobyte_has_modrm[256] = {
-  /*       0 1 2 3 4 5 6 7 8 9 a b c d e f        */
-  /*       -------------------------------        */
-  /* 00 */ 1,1,1,1,0,0,0,0,0,0,0,0,0,1,0,1, /* 0f */
-  /* 10 */ 1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0, /* 1f */
-  /* 20 */ 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, /* 2f */
-  /* 30 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 3f */
-  /* 40 */ 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, /* 4f */
-  /* 50 */ 1,1,1,1,1,1,1,1,1,1,0,0,1,1,1,1, /* 5f */
-  /* 60 */ 1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,1, /* 6f */
-  /* 70 */ 1,1,1,1,1,1,1,0,0,0,0,0,0,0,1,1, /* 7f */
-  /* 80 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 8f */
-  /* 90 */ 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, /* 9f */
-  /* a0 */ 0,0,0,1,1,1,1,1,0,0,0,1,1,1,1,1, /* af */
-  /* b0 */ 1,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1, /* bf */
-  /* c0 */ 1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0, /* cf */
-  /* d0 */ 0,1,1,1,0,1,0,1,1,1,1,1,1,1,1,1, /* df */
-  /* e0 */ 1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1, /* ef */
-  /* f0 */ 0,1,1,1,0,1,1,1,1,1,1,0,1,1,1,0  /* ff */
-  /*       -------------------------------        */
-  /*       0 1 2 3 4 5 6 7 8 9 a b c d e f        */
-};
-
-static const unsigned char twobyte_uses_f3_prefix[256] = {
-  /*       0 1 2 3 4 5 6 7 8 9 a b c d e f        */
-  /*       -------------------------------        */
-  /* 00 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0f */
-  /* 10 */ 1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 1f */
-  /* 20 */ 0,0,0,0,0,0,0,0,0,0,1,0,1,1,0,0, /* 2f */
-  /* 30 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 3f */
-  /* 40 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 4f */
-  /* 50 */ 0,1,1,1,0,0,0,0,1,1,0,0,1,1,1,1, /* 5f */
-  /* 60 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 6f */
-  /* 70 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 7f */
-  /* 80 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 8f */
-  /* 90 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 9f */
-  /* a0 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* af */
-  /* b0 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* bf */
-  /* c0 */ 0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0, /* cf */
-  /* d0 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* df */
-  /* e0 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* ef */
-  /* f0 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0  /* ff */
-  /*       -------------------------------        */
-  /*       0 1 2 3 4 5 6 7 8 9 a b c d e f        */
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
+  { "(bad)" },  { "(bad)" },  { "(bad)" },  { "(bad)" },  
 };
 
 static char obuf[100];
 static char *obufp;
 static char scratchbuf[100];
 static unsigned char *start_codep;
-static unsigned char *insn_codep;
 static unsigned char *codep;
 static disassemble_info *the_info;
 static int mod;
 static int rm;
 static int reg;
-static void oappend PARAMS ((const char *s));
+static void oappend ();
 
-static const char *names32[]={
+static char *names32[]={
   "%eax","%ecx","%edx","%ebx", "%esp","%ebp","%esi","%edi",
 };
-static const char *names16[] = {
+static char *names16[] = {
   "%ax","%cx","%dx","%bx","%sp","%bp","%si","%di",
 };
-static const char *names8[] = {
+static char *names8[] = {
   "%al","%cl","%dl","%bl","%ah","%ch","%dh","%bh",
 };
-static const char *names_seg[] = {
+static char *names_seg[] = {
   "%es","%cs","%ss","%ds","%fs","%gs","%?","%?",
 };
-static const char *index16[] = {
-  "%bx,%si","%bx,%di","%bp,%si","%bp,%di","%si","%di","%bp","%bx"
-};
 
-static const struct dis386 grps[][8] = {
+struct dis386 grps[][8] = {
   /* GRP1b */
   {
-    { "addA",	Eb, Ib, XX },
-    { "orA",	Eb, Ib, XX },
-    { "adcA",	Eb, Ib, XX },
-    { "sbbA",	Eb, Ib, XX },
-    { "andA",	Eb, Ib, XX },
-    { "subA",	Eb, Ib, XX },
-    { "xorA",	Eb, Ib, XX },
-    { "cmpA",	Eb, Ib, XX }
+    { "addb",	Eb, Ib },
+    { "orb",	Eb, Ib },
+    { "adcb",	Eb, Ib },
+    { "sbbb",	Eb, Ib },
+    { "andb",	Eb, Ib },
+    { "subb",	Eb, Ib },
+    { "xorb",	Eb, Ib },
+    { "cmpb",	Eb, Ib }
   },
   /* GRP1S */
   {
-    { "addQ",	Ev, Iv, XX },
-    { "orQ",	Ev, Iv, XX },
-    { "adcQ",	Ev, Iv, XX },
-    { "sbbQ",	Ev, Iv, XX },
-    { "andQ",	Ev, Iv, XX },
-    { "subQ",	Ev, Iv, XX },
-    { "xorQ",	Ev, Iv, XX },
-    { "cmpQ",	Ev, Iv, XX }
+    { "addS",	Ev, Iv },
+    { "orS",	Ev, Iv },
+    { "adcS",	Ev, Iv },
+    { "sbbS",	Ev, Iv },
+    { "andS",	Ev, Iv },
+    { "subS",	Ev, Iv },
+    { "xorS",	Ev, Iv },
+    { "cmpS",	Ev, Iv }
   },
   /* GRP1Ss */
   {
-    { "addQ",	Ev, sIb, XX },
-    { "orQ",	Ev, sIb, XX },
-    { "adcQ",	Ev, sIb, XX },
-    { "sbbQ",	Ev, sIb, XX },
-    { "andQ",	Ev, sIb, XX },
-    { "subQ",	Ev, sIb, XX },
-    { "xorQ",	Ev, sIb, XX },
-    { "cmpQ",	Ev, sIb, XX }
+    { "addS",	Ev, sIb },
+    { "orS",	Ev, sIb },
+    { "adcS",	Ev, sIb },
+    { "sbbS",	Ev, sIb },
+    { "andS",	Ev, sIb },
+    { "subS",	Ev, sIb },
+    { "xorS",	Ev, sIb },
+    { "cmpS",	Ev, sIb }
   },
   /* GRP2b */
   {
-    { "rolA",	Eb, Ib, XX },
-    { "rorA",	Eb, Ib, XX },
-    { "rclA",	Eb, Ib, XX },
-    { "rcrA",	Eb, Ib, XX },
-    { "shlA",	Eb, Ib, XX },
-    { "shrA",	Eb, Ib, XX },
-    { "(bad)",	XX, XX, XX },
-    { "sarA",	Eb, Ib, XX },
+    { "rolb",	Eb, Ib },
+    { "rorb",	Eb, Ib },
+    { "rclb",	Eb, Ib },
+    { "rcrb",	Eb, Ib },
+    { "shlb",	Eb, Ib },
+    { "shrb",	Eb, Ib },
+    { "(bad)" },
+    { "sarb",	Eb, Ib },
   },
   /* GRP2S */
   {
-    { "rolQ",	Ev, Ib, XX },
-    { "rorQ",	Ev, Ib, XX },
-    { "rclQ",	Ev, Ib, XX },
-    { "rcrQ",	Ev, Ib, XX },
-    { "shlQ",	Ev, Ib, XX },
-    { "shrQ",	Ev, Ib, XX },
-    { "(bad)",	XX, XX, XX },
-    { "sarQ",	Ev, Ib, XX },
+    { "rolS",	Ev, Ib },
+    { "rorS",	Ev, Ib },
+    { "rclS",	Ev, Ib },
+    { "rcrS",	Ev, Ib },
+    { "shlS",	Ev, Ib },
+    { "shrS",	Ev, Ib },
+    { "(bad)" },
+    { "sarS",	Ev, Ib },
   },
   /* GRP2b_one */
   {
-    { "rolA",	Eb, XX, XX },
-    { "rorA",	Eb, XX, XX },
-    { "rclA",	Eb, XX, XX },
-    { "rcrA",	Eb, XX, XX },
-    { "shlA",	Eb, XX, XX },
-    { "shrA",	Eb, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "sarA",	Eb, XX, XX },
+    { "rolb",	Eb },
+    { "rorb",	Eb },
+    { "rclb",	Eb },
+    { "rcrb",	Eb },
+    { "shlb",	Eb },
+    { "shrb",	Eb },
+    { "(bad)" },
+    { "sarb",	Eb },
   },
   /* GRP2S_one */
   {
-    { "rolQ",	Ev, XX, XX },
-    { "rorQ",	Ev, XX, XX },
-    { "rclQ",	Ev, XX, XX },
-    { "rcrQ",	Ev, XX, XX },
-    { "shlQ",	Ev, XX, XX },
-    { "shrQ",	Ev, XX, XX },
-    { "(bad)",	XX, XX, XX},
-    { "sarQ",	Ev, XX, XX },
+    { "rolS",	Ev },
+    { "rorS",	Ev },
+    { "rclS",	Ev },
+    { "rcrS",	Ev },
+    { "shlS",	Ev },
+    { "shrS",	Ev },
+    { "(bad)" },
+    { "sarS",	Ev },
   },
   /* GRP2b_cl */
   {
-    { "rolA",	Eb, CL, XX },
-    { "rorA",	Eb, CL, XX },
-    { "rclA",	Eb, CL, XX },
-    { "rcrA",	Eb, CL, XX },
-    { "shlA",	Eb, CL, XX },
-    { "shrA",	Eb, CL, XX },
-    { "(bad)",	XX, XX, XX },
-    { "sarA",	Eb, CL, XX },
+    { "rolb",	Eb, CL },
+    { "rorb",	Eb, CL },
+    { "rclb",	Eb, CL },
+    { "rcrb",	Eb, CL },
+    { "shlb",	Eb, CL },
+    { "shrb",	Eb, CL },
+    { "(bad)" },
+    { "sarb",	Eb, CL },
   },
   /* GRP2S_cl */
   {
-    { "rolQ",	Ev, CL, XX },
-    { "rorQ",	Ev, CL, XX },
-    { "rclQ",	Ev, CL, XX },
-    { "rcrQ",	Ev, CL, XX },
-    { "shlQ",	Ev, CL, XX },
-    { "shrQ",	Ev, CL, XX },
-    { "(bad)",	XX, XX, XX },
-    { "sarQ",	Ev, CL, XX }
+    { "rolS",	Ev, CL },
+    { "rorS",	Ev, CL },
+    { "rclS",	Ev, CL },
+    { "rcrS",	Ev, CL },
+    { "shlS",	Ev, CL },
+    { "shrS",	Ev, CL },
+    { "(bad)" },
+    { "sarS",	Ev, CL }
   },
   /* GRP3b */
   {
-    { "testA",	Eb, Ib, XX },
-    { "(bad)",	Eb, XX, XX },
-    { "notA",	Eb, XX, XX },
-    { "negA",	Eb, XX, XX },
-    { "mulB",	AL, Eb, XX },
-    { "imulB",	AL, Eb, XX },
-    { "divB",	AL, Eb, XX },
-    { "idivB",	AL, Eb, XX }
+    { "testb",	Eb, Ib },
+    { "(bad)",	Eb },
+    { "notb",	Eb },
+    { "negb",	Eb },
+    { "mulb",	AL, Eb },
+    { "imulb",	AL, Eb },
+    { "divb",	AL, Eb },
+    { "idivb",	AL, Eb }
   },
   /* GRP3S */
   {
-    { "testQ",	Ev, Iv, XX },
-    { "(bad)",	XX, XX, XX },
-    { "notQ",	Ev, XX, XX },
-    { "negQ",	Ev, XX, XX },
-    { "mulS",	eAX, Ev, XX },
-    { "imulS",	eAX, Ev, XX },
-    { "divS",	eAX, Ev, XX },
-    { "idivS",	eAX, Ev, XX },
+    { "testS",	Ev, Iv },
+    { "(bad)" },
+    { "notS",	Ev },
+    { "negS",	Ev },
+    { "mulS",	eAX, Ev },
+    { "imulS",	eAX, Ev },
+    { "divS",	eAX, Ev },
+    { "idivS",	eAX, Ev },
   },
   /* GRP4 */
   {
-    { "incA",	Eb, XX, XX },
-    { "decA",	Eb, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
+    { "incb", Eb },
+    { "decb", Eb },
+    { "(bad)" },
+    { "(bad)" },
+    { "(bad)" },
+    { "(bad)" },
+    { "(bad)" },
+    { "(bad)" },
   },
   /* GRP5 */
   {
-    { "incQ",	Ev, XX, XX },
-    { "decQ",	Ev, XX, XX },
-    { "callP",	indirEv, XX, XX },
-    { "lcallP",	indirEv, XX, XX },
-    { "jmpP",	indirEv, XX, XX },
-    { "ljmpP",	indirEv, XX, XX },
-    { "pushQ",	Ev, XX, XX },
-    { "(bad)",	XX, XX, XX },
+    { "incS",	Ev },
+    { "decS",	Ev },
+    { "call",	indirEv },
+    { "lcall",	indirEv },
+    { "jmp",	indirEv },
+    { "ljmp",	indirEv },
+    { "pushS",	Ev },
+    { "(bad)" },
   },
   /* GRP6 */
   {
-    { "sldt",	Ew, XX, XX },
-    { "str",	Ew, XX, XX },
-    { "lldt",	Ew, XX, XX },
-    { "ltr",	Ew, XX, XX },
-    { "verr",	Ew, XX, XX },
-    { "verw",	Ew, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX }
+    { "sldt",	Ew },
+    { "str",	Ew },
+    { "lldt",	Ew },
+    { "ltr",	Ew },
+    { "verr",	Ew },
+    { "verw",	Ew },
+    { "(bad)" },
+    { "(bad)" }
   },
   /* GRP7 */
   {
-    { "sgdt", Ew, XX, XX },
-    { "sidt", Ew, XX, XX },
-    { "lgdt", Ew, XX, XX },
-    { "lidt", Ew, XX, XX },
-    { "smsw", Ew, XX, XX },
-    { "(bad)", XX, XX, XX },
-    { "lmsw", Ew, XX, XX },
-    { "invlpg", Ew, XX, XX },
+    { "sgdt", Ew },
+    { "sidt", Ew },
+    { "lgdt", Ew },
+    { "lidt", Ew },
+    { "smsw", Ew },
+    { "(bad)" },
+    { "lmsw", Ew },
+    { "invlpg", Ew },
   },
   /* GRP8 */
   {
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "btQ",	Ev, Ib, XX },
-    { "btsQ",	Ev, Ib, XX },
-    { "btrQ",	Ev, Ib, XX },
-    { "btcQ",	Ev, Ib, XX },
+    { "(bad)" },
+    { "(bad)" },
+    { "(bad)" },
+    { "(bad)" },
+    { "btS",	Ev, Ib },
+    { "btsS",	Ev, Ib },
+    { "btrS",	Ev, Ib },
+    { "btcS",	Ev, Ib },
   },
   /* GRP9 */
   {
-    { "(bad)",	XX, XX, XX },
-    { "cmpxchg8b", Ev, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-  },
-  /* GRP10 */
-  {
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "psrlw",	MS, Ib, XX },
-    { "(bad)",	XX, XX, XX },
-    { "psraw",	MS, Ib, XX },
-    { "(bad)",	XX, XX, XX },
-    { "psllw",	MS, Ib, XX },
-    { "(bad)",	XX, XX, XX },
-  },
-  /* GRP11 */
-  {
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "psrld",	MS, Ib, XX },
-    { "(bad)",	XX, XX, XX },
-    { "psrad",	MS, Ib, XX },
-    { "(bad)",	XX, XX, XX },
-    { "pslld",	MS, Ib, XX },
-    { "(bad)",	XX, XX, XX },
-  },
-  /* GRP12 */
-  {
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "psrlq",	MS, Ib, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "psllq",	MS, Ib, XX },
-    { "(bad)",	XX, XX, XX },
-  },
-  /* GRP13 */
-  {
-    { "fxsave", Ev, XX, XX },
-    { "fxrstor", Ev, XX, XX },
-    { "ldmxcsr", Ev, XX, XX },
-    { "stmxcsr", Ev, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "sfence", None, XX, XX },
-  },
-  /* GRP14 */
-  {
-    { "prefetchnta", Ev, XX, XX },
-    { "prefetcht0", Ev, XX, XX },
-    { "prefetcht1", Ev, XX, XX },
-    { "prefetcht2", Ev, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-  },
-  /* GRPAMD */
-  {
-    { "prefetch", Eb, XX, XX },
-    { "prefetchw", Eb, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-  }
-
-};
-
-static const struct dis386 prefix_user_table[][2] = {
-  /* PREGRP0 */
-  {
-    { "addps", XM, EX, XX },
-    { "addss", XM, EX, XX },
-  },
-  /* PREGRP1 */
-  {
-    { "", XM, EX, OPSIMD },	/* See OP_SIMD_SUFFIX */
-    { "", XM, EX, OPSIMD },
-  },
-  /* PREGRP2 */
-  {
-    { "cvtpi2ps", XM, EM, XX },
-    { "cvtsi2ss", XM, Ev, XX },
-  },
-  /* PREGRP3 */
-  {
-    { "cvtps2pi", MX, EX, XX },
-    { "cvtss2si", Gv, EX, XX },
-  },
-  /* PREGRP4 */
-  {
-    { "cvttps2pi", MX, EX, XX },
-    { "cvttss2si", Gv, EX, XX },
-  },
-  /* PREGRP5 */
-  {
-    { "divps", XM, EX, XX },
-    { "divss", XM, EX, XX },
-  },
-  /* PREGRP6 */
-  {
-    { "maxps", XM, EX, XX },
-    { "maxss", XM, EX, XX },
-  },
-  /* PREGRP7 */
-  {
-    { "minps", XM, EX, XX },
-    { "minss", XM, EX, XX },
-  },
-  /* PREGRP8 */
-  {
-    { "movups", XM, EX, XX },
-    { "movss", XM, EX, XX },
-  },
-  /* PREGRP9 */
-  {
-    { "movups", EX, XM, XX },
-    { "movss", EX, XM, XX },
-  },
-  /* PREGRP10 */
-  {
-    { "mulps", XM, EX, XX },
-    { "mulss", XM, EX, XX },
-  },
-  /* PREGRP11 */
-  {
-    { "rcpps", XM, EX, XX },
-    { "rcpss", XM, EX, XX },
-  },
-  /* PREGRP12 */
-  {
-    { "rsqrtps", XM, EX, XX },
-    { "rsqrtss", XM, EX, XX },
-  },
-  /* PREGRP13 */
-  {
-    { "sqrtps", XM, EX, XX },
-    { "sqrtss", XM, EX, XX },
-  },
-  /* PREGRP14 */
-  {
-    { "subps", XM, EX, XX },
-    { "subss", XM, EX, XX },
+    { "(bad)" },
+    { "cmpxchg8b", Ev },
+    { "(bad)" },
+    { "(bad)" },
+    { "(bad)" },
+    { "(bad)" },
+    { "(bad)" },
+    { "(bad)" },
   }
 };
 
-#define INTERNAL_DISASSEMBLER_ERROR _("<internal disassembler error>")
+#define PREFIX_REPZ 1
+#define PREFIX_REPNZ 2
+#define PREFIX_LOCK 4
+#define PREFIX_CS 8
+#define PREFIX_SS 0x10
+#define PREFIX_DS 0x20
+#define PREFIX_ES 0x40
+#define PREFIX_FS 0x80
+#define PREFIX_GS 0x100
+#define PREFIX_DATA 0x200
+#define PREFIX_ADR 0x400
+#define PREFIX_FWAIT 0x800
+
+static int prefixes;
 
 static void
 ckprefix ()
 {
   prefixes = 0;
-  used_prefixes = 0;
   while (1)
     {
       FETCH_DATA (the_info, codep + 1);
@@ -1989,19 +954,10 @@ ckprefix ()
 	  prefixes |= PREFIX_DATA;
 	  break;
 	case 0x67:
-	  prefixes |= PREFIX_ADDR;
+	  prefixes |= PREFIX_ADR;
 	  break;
-	case FWAIT_OPCODE:
-	  /* fwait is really an instruction.  If there are prefixes
-	     before the fwait, they belong to the fwait, *not* to the
-	     following instruction.  */
-	  if (prefixes)
-	    {
-	      prefixes |= PREFIX_FWAIT;
-	      codep++;
-	      return;
-	    }
-	  prefixes = PREFIX_FWAIT;
+	case 0x9b:
+	  prefixes |= PREFIX_FWAIT;
 	  break;
 	default:
 	  return;
@@ -2010,49 +966,12 @@ ckprefix ()
     }
 }
 
-/* Return the name of the prefix byte PREF, or NULL if PREF is not a
-   prefix byte.  */
-
-static const char *
-prefix_name (pref, sizeflag)
-     int pref;
-     int sizeflag;
-{
-  switch (pref)
-    {
-    case 0xf3:
-      return "repz";
-    case 0xf2:
-      return "repnz";
-    case 0xf0:
-      return "lock";
-    case 0x2e:
-      return "cs";
-    case 0x36:
-      return "ss";
-    case 0x3e:
-      return "ds";
-    case 0x26:
-      return "es";
-    case 0x64:
-      return "fs";
-    case 0x65:
-      return "gs";
-    case 0x66:
-      return (sizeflag & DFLAG) ? "data16" : "data32";
-    case 0x67:
-      return (sizeflag & AFLAG) ? "addr16" : "addr32";
-    case FWAIT_OPCODE:
-      return "fwait";
-    default:
-      return NULL;
-    }
-}
+static int dflag;
+static int aflag;		
 
 static char op1out[100], op2out[100], op3out[100];
-static int op_ad, op_index[3];
-static unsigned int op_address[3];
-static unsigned int start_pc;
+static int op_address[3], op_ad, op_index[3];
+static int start_pc;
 
 
 /*
@@ -2064,77 +983,26 @@ static unsigned int start_pc;
  * The function returns the length of this instruction in bytes.
  */
 
-static int print_insn_i386
-  PARAMS ((bfd_vma pc, disassemble_info *info));
-
-static char intel_syntax;
-static char open_char;
-static char close_char;
-static char separator_char;
-static char scale_char;
-
 int
-print_insn_i386_att (pc, info)
-     bfd_vma pc;
-     disassemble_info *info;
-{
-  intel_syntax = 0;
-  open_char = '(';
-  close_char =  ')';
-  separator_char = ',';
-  scale_char = ',';
-
-  return print_insn_i386 (pc, info);
-}
-
-int
-print_insn_i386_intel (pc, info)
-     bfd_vma pc;
-     disassemble_info *info;
-{
-  intel_syntax = 1;
-  open_char = '[';
-  close_char = ']';
-  separator_char = '+';
-  scale_char = '*';
-
-  return print_insn_i386 (pc, info);
-}
-
-static int
 print_insn_i386 (pc, info)
      bfd_vma pc;
      disassemble_info *info;
 {
-  const struct dis386 *dp;
+  struct dis386 *dp;
   int i;
-  int two_source_ops;
+  int enter_instruction;
   char *first, *second, *third;
   int needcomma;
-  unsigned char need_modrm;
-  unsigned char uses_f3_prefix;
-  VOLATILE int sizeflag;
-  VOLATILE int orig_sizeflag;
-
+  
   struct dis_private priv;
   bfd_byte *inbuf = priv.the_buffer;
-
-  if (info->mach == bfd_mach_i386_i386
-      || info->mach == bfd_mach_i386_i386_intel_syntax)
-    sizeflag = AFLAG|DFLAG;
-  else if (info->mach == bfd_mach_i386_i8086)
-    sizeflag = 0;
-  else
-    abort ();
-  orig_sizeflag = sizeflag;
-
-  /* The output looks better if we put 7 bytes on a line, since that
-     puts most long word instructions on a single line.  */
-  info->bytes_per_line = 7;
 
   info->private_data = (PTR) &priv;
   priv.max_fetched = priv.the_buffer;
   priv.insn_start = pc;
+  if (setjmp (priv.bailout) != 0)
+    /* Error return.  */
+    return -1;
 
   obuf[0] = 0;
   op1out[0] = 0;
@@ -2147,178 +1015,102 @@ print_insn_i386 (pc, info)
   start_pc = pc;
   start_codep = inbuf;
   codep = inbuf;
-
-  if (setjmp (priv.bailout) != 0)
-    {
-      const char *name;
-
-      /* Getting here means we tried for data but didn't get it.  That
-         means we have an incomplete instruction of some sort.  Just
-         print the first byte as a prefix or a .byte pseudo-op.  */
-      if (codep > inbuf)
-	{
-	  name = prefix_name (inbuf[0], orig_sizeflag);
-	  if (name != NULL)
-	    (*info->fprintf_func) (info->stream, "%s", name);
-	  else
-	    {
-	      /* Just print the first byte as a .byte instruction.  */
-	      (*info->fprintf_func) (info->stream, ".byte 0x%x",
-				     (unsigned int) inbuf[0]);
-	    }
-
-	  return 1;
-	}
-
-      return -1;
-    }
-
+  
   ckprefix ();
 
-  insn_codep = codep;
-
   FETCH_DATA (info, codep + 1);
-  two_source_ops = (*codep == 0x62) || (*codep == 0xc8);
-
+  if (*codep == 0xc8)
+    enter_instruction = 1;
+  else
+    enter_instruction = 0;
+  
   obufp = obuf;
-
+  
+  if (prefixes & PREFIX_REPZ)
+    oappend ("repz ");
+  if (prefixes & PREFIX_REPNZ)
+    oappend ("repnz ");
+  if (prefixes & PREFIX_LOCK)
+    oappend ("lock ");
+  
   if ((prefixes & PREFIX_FWAIT)
       && ((*codep < 0xd8) || (*codep > 0xdf)))
     {
-      const char *name;
-
-      /* fwait not followed by floating point instruction.  Print the
-         first prefix, which is probably fwait itself.  */
-      name = prefix_name (inbuf[0], orig_sizeflag);
-      if (name == NULL)
-	name = INTERNAL_DISASSEMBLER_ERROR;
-      (*info->fprintf_func) (info->stream, "%s", name);
-      return 1;
+      /* fwait not followed by floating point instruction */
+      (*info->fprintf_func) (info->stream, "fwait");
+      return (1);
     }
-
+  
+  /* these would be initialized to 0 if disassembling for 8086 or 286 */
+  dflag = 1;
+  aflag = 1;
+  
+  if (prefixes & PREFIX_DATA)
+    dflag ^= 1;
+  
+  if (prefixes & PREFIX_ADR)
+    {
+      aflag ^= 1;
+      oappend ("addr16 ");
+    }
+  
   if (*codep == 0x0f)
     {
       FETCH_DATA (info, codep + 2);
-      if (intel_syntax)
-        dp = &dis386_twobyte_intel[*++codep];
-      else
-        dp = &dis386_twobyte_att[*++codep];
-      need_modrm = twobyte_has_modrm[*codep];
-      uses_f3_prefix = twobyte_uses_f3_prefix[*codep];
+      dp = &dis386_twobyte[*++codep];
     }
   else
-    {
-      if (intel_syntax)
-        dp = &dis386_intel[*codep];
-      else
-        dp = &dis386_att[*codep];
-      need_modrm = onebyte_has_modrm[*codep];
-      uses_f3_prefix = 0;
-    }
+    dp = &dis386[*codep];
   codep++;
 
-  if (!uses_f3_prefix && (prefixes & PREFIX_REPZ))
-    {
-      oappend ("repz ");
-      used_prefixes |= PREFIX_REPZ;
-    }
-  if (prefixes & PREFIX_REPNZ)
-    {
-      oappend ("repnz ");
-      used_prefixes |= PREFIX_REPNZ;
-    }
-  if (prefixes & PREFIX_LOCK)
-    {
-      oappend ("lock ");
-      used_prefixes |= PREFIX_LOCK;
-    }
+  /* Fetch the mod/reg/rm byte.  FIXME: We should be only fetching
+     this if we need it.  As it is, this code loses if there is a
+     one-byte instruction (without a mod/reg/rm byte) at the end of
+     the address space.  */
 
-  if (prefixes & PREFIX_DATA)
-    sizeflag ^= DFLAG;
-
-  if (prefixes & PREFIX_ADDR)
-    {
-      sizeflag ^= AFLAG;
-      if (sizeflag & AFLAG)
-        oappend ("addr32 ");
-      else
-	oappend ("addr16 ");
-      used_prefixes |= PREFIX_ADDR;
-    }
-
-  if (need_modrm)
-    {
-      FETCH_DATA (info, codep + 1);
-      mod = (*codep >> 6) & 3;
-      reg = (*codep >> 3) & 7;
-      rm = *codep & 7;
-    }
+  FETCH_DATA (info, codep + 1);
+  mod = (*codep >> 6) & 3;
+  reg = (*codep >> 3) & 7;
+  rm = *codep & 7;
 
   if (dp->name == NULL && dp->bytemode1 == FLOATCODE)
     {
-      dofloat (sizeflag);
+      dofloat ();
     }
   else
     {
       if (dp->name == NULL)
-	{
-	  switch(dp->bytemode2)
-	    {
-	      case USE_GROUPS:
-	        dp = &grps[dp->bytemode1][reg];
-		break;
-	      case USE_PREFIX_USER_TABLE:
-		dp = &prefix_user_table[dp->bytemode1][prefixes & PREFIX_REPZ ? 1 : 0];
-		used_prefixes |= (prefixes & PREFIX_REPZ);
-		break;
-	      default:
-		oappend (INTERNAL_DISASSEMBLER_ERROR);
-		break;
-	    }
-	}
-
-      putop (dp->name, sizeflag);
-
+	dp = &grps[dp->bytemode1][reg];
+      
+      putop (dp->name);
+      
       obufp = op1out;
       op_ad = 2;
       if (dp->op1)
-	(*dp->op1)(dp->bytemode1, sizeflag);
-
+	(*dp->op1)(dp->bytemode1);
+      
       obufp = op2out;
       op_ad = 1;
       if (dp->op2)
-	(*dp->op2)(dp->bytemode2, sizeflag);
-
+	(*dp->op2)(dp->bytemode2);
+      
       obufp = op3out;
       op_ad = 0;
       if (dp->op3)
-	(*dp->op3)(dp->bytemode3, sizeflag);
+	(*dp->op3)(dp->bytemode3);
     }
-
-  /* See if any prefixes were not used.  If so, print the first one
-     separately.  If we don't do this, we'll wind up printing an
-     instruction stream which does not precisely correspond to the
-     bytes we are disassembling.  */
-  if ((prefixes & ~used_prefixes) != 0)
-    {
-      const char *name;
-
-      name = prefix_name (inbuf[0], orig_sizeflag);
-      if (name == NULL)
-	name = INTERNAL_DISASSEMBLER_ERROR;
-      (*info->fprintf_func) (info->stream, "%s", name);
-      return 1;
-    }
-
+  
   obufp = obuf + strlen (obuf);
   for (i = strlen (obuf); i < 6; i++)
     oappend (" ");
   oappend (" ");
   (*info->fprintf_func) (info->stream, "%s", obuf);
-
-  /* The enter and bound instructions are printed with operands in the same
-     order as the intel book; everything else is printed in reverse order.  */
-  if (intel_syntax || two_source_ops)
+  
+  /* enter instruction is printed with operands in the
+   * same order as the intel book; everything else
+   * is printed in reverse order 
+   */
+  if (enter_instruction)
     {
       first = op1out;
       second = op2out;
@@ -2337,7 +1129,7 @@ print_insn_i386 (pc, info)
   if (*first)
     {
       if (op_index[0] != -1)
-	(*info->print_address_func) ((bfd_vma) op_address[op_index[0]], info);
+	(*info->print_address_func) (op_address[op_index[0]], info);
       else
 	(*info->fprintf_func) (info->stream, "%s", first);
       needcomma = 1;
@@ -2347,7 +1139,7 @@ print_insn_i386 (pc, info)
       if (needcomma)
 	(*info->fprintf_func) (info->stream, ",");
       if (op_index[1] != -1)
-	(*info->print_address_func) ((bfd_vma) op_address[op_index[1]], info);
+	(*info->print_address_func) (op_address[op_index[1]], info);
       else
 	(*info->fprintf_func) (info->stream, "%s", second);
       needcomma = 1;
@@ -2357,14 +1149,14 @@ print_insn_i386 (pc, info)
       if (needcomma)
 	(*info->fprintf_func) (info->stream, ",");
       if (op_index[2] != -1)
-	(*info->print_address_func) ((bfd_vma) op_address[op_index[2]], info);
+	(*info->print_address_func) (op_address[op_index[2]], info);
       else
 	(*info->fprintf_func) (info->stream, "%s", third);
     }
-  return codep - inbuf;
+  return (codep - inbuf);
 }
 
-static const char *float_mem_att[] = {
+char *float_mem[] = {
   /* d8 */
   "fadds",
   "fmuls",
@@ -2439,112 +1231,38 @@ static const char *float_mem_att[] = {
   "fistpll",
 };
 
-static const char *float_mem_intel[] = {
-  /* d8 */
-  "fadd",
-  "fmul",
-  "fcom",
-  "fcomp",
-  "fsub",
-  "fsubr",
-  "fdiv",
-  "fdivr",
-  /*  d9 */
-  "fld",
-  "(bad)",
-  "fst",
-  "fstp",
-  "fldenv",
-  "fldcw",
-  "fNstenv",
-  "fNstcw",
-  /* da */
-  "fiadd",
-  "fimul",
-  "ficom",
-  "ficomp",
-  "fisub",
-  "fisubr",
-  "fidiv",
-  "fidivr",
-  /* db */
-  "fild",
-  "(bad)",
-  "fist",
-  "fistp",
-  "(bad)",
-  "fld",
-  "(bad)",
-  "fstp",
-  /* dc */
-  "fadd",
-  "fmul",
-  "fcom",
-  "fcomp",
-  "fsub",
-  "fsubr",
-  "fdiv",
-  "fdivr",
-  /* dd */
-  "fld",
-  "(bad)",
-  "fst",
-  "fstp",
-  "frstor",
-  "(bad)",
-  "fNsave",
-  "fNstsw",
-  /* de */
-  "fiadd",
-  "fimul",
-  "ficom",
-  "ficomp",
-  "fisub",
-  "fisubr",
-  "fidiv",
-  "fidivr",
-  /* df */
-  "fild",
-  "(bad)",
-  "fist",
-  "fistp",
-  "fbld",
-  "fild",
-  "fbstp",
-  "fistpll",
-};
-
 #define ST OP_ST, 0
 #define STi OP_STi, 0
+int OP_ST(), OP_STi();
 
-#define FGRPd9_2 NULL, NULL, 0, NULL, 0, NULL, 0
-#define FGRPd9_4 NULL, NULL, 1, NULL, 0, NULL, 0
-#define FGRPd9_5 NULL, NULL, 2, NULL, 0, NULL, 0
-#define FGRPd9_6 NULL, NULL, 3, NULL, 0, NULL, 0
-#define FGRPd9_7 NULL, NULL, 4, NULL, 0, NULL, 0
-#define FGRPda_5 NULL, NULL, 5, NULL, 0, NULL, 0
-#define FGRPdb_4 NULL, NULL, 6, NULL, 0, NULL, 0
-#define FGRPde_3 NULL, NULL, 7, NULL, 0, NULL, 0
-#define FGRPdf_4 NULL, NULL, 8, NULL, 0, NULL, 0
+#define FGRPd9_2 NULL, NULL, 0
+#define FGRPd9_4 NULL, NULL, 1
+#define FGRPd9_5 NULL, NULL, 2
+#define FGRPd9_6 NULL, NULL, 3
+#define FGRPd9_7 NULL, NULL, 4
+#define FGRPda_5 NULL, NULL, 5
+#define FGRPdb_4 NULL, NULL, 6
+#define FGRPde_3 NULL, NULL, 7
+#define FGRPdf_4 NULL, NULL, 8
 
-static const struct dis386 float_reg[][8] = {
+struct dis386 float_reg[][8] = {
   /* d8 */
   {
-    { "fadd",	ST, STi, XX },
-    { "fmul",	ST, STi, XX },
-    { "fcom",	STi, XX, XX },
-    { "fcomp",	STi, XX, XX },
-    { "fsub",	ST, STi, XX },
-    { "fsubr",	ST, STi, XX },
-    { "fdiv",	ST, STi, XX },
-    { "fdivr",	ST, STi, XX },
+    { "fadd",	ST, STi },
+    { "fmul",	ST, STi },
+    { "fcom",	STi },
+    { "fcomp",	STi },
+    { "fsub",	ST, STi },
+    { "fsubr",	ST, STi },
+    { "fdiv",	ST, STi },
+    { "fdivr",	ST, STi },
   },
   /* d9 */
   {
-    { "fld",	STi, XX, XX },
-    { "fxch",	STi, XX, XX },
+    { "fld",	STi },
+    { "fxch",	STi },
     { FGRPd9_2 },
-    { "(bad)",	XX, XX, XX },
+    { "(bad)" },
     { FGRPd9_4 },
     { FGRPd9_5 },
     { FGRPd9_6 },
@@ -2552,88 +1270,74 @@ static const struct dis386 float_reg[][8] = {
   },
   /* da */
   {
-    { "fcmovb",	ST, STi, XX },
-    { "fcmove",	ST, STi, XX },
-    { "fcmovbe",ST, STi, XX },
-    { "fcmovu",	ST, STi, XX },
-    { "(bad)",	XX, XX, XX },
+    { "(bad)" },
+    { "(bad)" },
+    { "(bad)" },
+    { "(bad)" },
+    { "(bad)" },
     { FGRPda_5 },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
+    { "(bad)" },
+    { "(bad)" },
   },
   /* db */
   {
-    { "fcmovnb",ST, STi, XX },
-    { "fcmovne",ST, STi, XX },
-    { "fcmovnbe",ST, STi, XX },
-    { "fcmovnu",ST, STi, XX },
+    { "(bad)" },
+    { "(bad)" },
+    { "(bad)" },
+    { "(bad)" },
     { FGRPdb_4 },
-    { "fucomi",	ST, STi, XX },
-    { "fcomi",	ST, STi, XX },
-    { "(bad)",	XX, XX, XX },
+    { "(bad)" },
+    { "(bad)" },
+    { "(bad)" },
   },
   /* dc */
   {
-    { "fadd",	STi, ST, XX },
-    { "fmul",	STi, ST, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-#if UNIXWARE_COMPAT
-    { "fsub",	STi, ST, XX },
-    { "fsubr",	STi, ST, XX },
-    { "fdiv",	STi, ST, XX },
-    { "fdivr",	STi, ST, XX },
-#else
-    { "fsubr",	STi, ST, XX },
-    { "fsub",	STi, ST, XX },
-    { "fdivr",	STi, ST, XX },
-    { "fdiv",	STi, ST, XX },
-#endif
+    { "fadd",	STi, ST },
+    { "fmul",	STi, ST },
+    { "(bad)" },
+    { "(bad)" },
+    { "fsub",	STi, ST },
+    { "fsubr",	STi, ST },
+    { "fdiv",	STi, ST },
+    { "fdivr",	STi, ST },
   },
   /* dd */
   {
-    { "ffree",	STi, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "fst",	STi, XX, XX },
-    { "fstp",	STi, XX, XX },
-    { "fucom",	STi, XX, XX },
-    { "fucomp",	STi, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
+    { "ffree",	STi },
+    { "(bad)" },
+    { "fst",	STi },
+    { "fstp",	STi },
+    { "fucom",	STi },
+    { "fucomp",	STi },
+    { "(bad)" },
+    { "(bad)" },
   },
   /* de */
   {
-    { "faddp",	STi, ST, XX },
-    { "fmulp",	STi, ST, XX },
-    { "(bad)",	XX, XX, XX },
+    { "faddp",	STi, ST },
+    { "fmulp",	STi, ST },
+    { "(bad)" },
     { FGRPde_3 },
-#if UNIXWARE_COMPAT
-    { "fsubp",	STi, ST, XX },
-    { "fsubrp",	STi, ST, XX },
-    { "fdivp",	STi, ST, XX },
-    { "fdivrp",	STi, ST, XX },
-#else
-    { "fsubrp",	STi, ST, XX },
-    { "fsubp",	STi, ST, XX },
-    { "fdivrp",	STi, ST, XX },
-    { "fdivp",	STi, ST, XX },
-#endif
+    { "fsubp",	STi, ST },
+    { "fsubrp",	STi, ST },
+    { "fdivp",	STi, ST },
+    { "fdivrp",	STi, ST },
   },
   /* df */
   {
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
-    { "(bad)",	XX, XX, XX },
+    { "(bad)" },
+    { "(bad)" },
+    { "(bad)" },
+    { "(bad)" },
     { FGRPdf_4 },
-    { "fucomip",ST, STi, XX },
-    { "fcomip", ST, STi, XX },
-    { "(bad)",	XX, XX, XX },
+    { "(bad)" },
+    { "(bad)" },
+    { "(bad)" },
   },
 };
 
 
-static char *fgrps[][8] = {
+char *fgrps[][8] = {
   /* d9_2  0 */
   {
     "fnop","(bad)","(bad)","(bad)","(bad)","(bad)","(bad)","(bad)",
@@ -2682,81 +1386,71 @@ static char *fgrps[][8] = {
 };
 
 static void
-dofloat (sizeflag)
-     int sizeflag;
+dofloat ()
 {
-  const struct dis386 *dp;
+  struct dis386 *dp;
   unsigned char floatop;
-
+  
   floatop = codep[-1];
-
+  
   if (mod != 3)
     {
-      if (intel_syntax)
-        putop (float_mem_intel[(floatop - 0xd8 ) * 8 + reg], sizeflag);
-      else
-        putop (float_mem_att[(floatop - 0xd8 ) * 8 + reg], sizeflag);
+      putop (float_mem[(floatop - 0xd8) * 8 + reg]);
       obufp = op1out;
-      if (floatop == 0xdb)
-        OP_E (x_mode, sizeflag);
-      else if (floatop == 0xdd)
-        OP_E (d_mode, sizeflag);
-      else
-        OP_E (v_mode, sizeflag);
+      OP_E (v_mode);
       return;
     }
   codep++;
-
+  
   dp = &float_reg[floatop - 0xd8][reg];
   if (dp->name == NULL)
     {
-      putop (fgrps[dp->bytemode1][rm], sizeflag);
-
+      putop (fgrps[dp->bytemode1][rm]);
       /* instruction fnstsw is only one with strange arg */
-      if (floatop == 0xdf && codep[-1] == 0xe0)
-	strcpy (op1out, names16[0]);
+      if (floatop == 0xdf
+	  && FETCH_DATA (the_info, codep + 1)
+	  && *codep == 0xe0)
+	strcpy (op1out, "%eax");
     }
   else
     {
-      putop (dp->name, sizeflag);
-
+      putop (dp->name);
       obufp = op1out;
       if (dp->op1)
-	(*dp->op1)(dp->bytemode1, sizeflag);
+	(*dp->op1)(dp->bytemode1);
       obufp = op2out;
       if (dp->op2)
-	(*dp->op2)(dp->bytemode2, sizeflag);
+	(*dp->op2)(dp->bytemode2);
     }
 }
 
 /* ARGSUSED */
-static void
-OP_ST (ignore, sizeflag)
-     int ignore ATTRIBUTE_UNUSED;
-     int sizeflag ATTRIBUTE_UNUSED;
+int
+OP_ST (ignore)
+     int ignore;
 {
   oappend ("%st");
+  return (0);
 }
 
 /* ARGSUSED */
-static void
-OP_STi (ignore, sizeflag)
-     int ignore ATTRIBUTE_UNUSED;
-     int sizeflag ATTRIBUTE_UNUSED;
+int
+OP_STi (ignore)
+     int ignore;
 {
   sprintf (scratchbuf, "%%st(%d)", rm);
   oappend (scratchbuf);
+  return (0);
 }
 
 
 /* capital letters in template are macros */
 static void
-putop (template, sizeflag)
-     const char *template;
-     int sizeflag;
+putop (template)
+     char *template;
 {
-  const char *p;
-
+  char *p;
+  
   for (p = template; *p; p++)
     {
       switch (*p)
@@ -2764,130 +1458,20 @@ putop (template, sizeflag)
 	default:
 	  *obufp++ = *p;
 	  break;
-	case 'A':
-          if (intel_syntax)
-            break;
-	  if (mod != 3
-#ifdef SUFFIX_ALWAYS
-	      || (sizeflag & SUFFIX_ALWAYS)
-#endif
-	      )
-	    *obufp++ = 'b';
-	  break;
-	case 'B':
-          if (intel_syntax)
-            break;
-#ifdef SUFFIX_ALWAYS
-	  if (sizeflag & SUFFIX_ALWAYS)
-	    *obufp++ = 'b';
-#endif
-	  break;
-	case 'E':		/* For jcxz/jecxz */
-	  if (sizeflag & AFLAG)
+	case 'C':		/* For jcxz/jecxz */
+	  if (aflag == 0)
 	    *obufp++ = 'e';
-	  break;
-	case 'L':
-          if (intel_syntax)
-            break;
-#ifdef SUFFIX_ALWAYS
-	  if (sizeflag & SUFFIX_ALWAYS)
-	    *obufp++ = 'l';
-#endif
 	  break;
 	case 'N':
 	  if ((prefixes & PREFIX_FWAIT) == 0)
 	    *obufp++ = 'n';
-	  else
-	    used_prefixes |= PREFIX_FWAIT;
-	  break;
-	case 'P':
-          if (intel_syntax)
-            break;
-	  if ((prefixes & PREFIX_DATA)
-#ifdef SUFFIX_ALWAYS
-	      || (sizeflag & SUFFIX_ALWAYS)
-#endif
-	      )
-	    {
-	      if (sizeflag & DFLAG)
-		*obufp++ = 'l';
-	      else
-		*obufp++ = 'w';
-	      used_prefixes |= (prefixes & PREFIX_DATA);
-	    }
-	  break;
-	case 'Q':
-          if (intel_syntax)
-            break;
-	  if (mod != 3
-#ifdef SUFFIX_ALWAYS
-	      || (sizeflag & SUFFIX_ALWAYS)
-#endif
-	      )
-	    {
-	      if (sizeflag & DFLAG)
-		*obufp++ = 'l';
-	      else
-		*obufp++ = 'w';
-	      used_prefixes |= (prefixes & PREFIX_DATA);
-	    }
-	  break;
-	case 'R':
-          if (intel_syntax)
-	    {
-	      if (sizeflag & DFLAG)
-		{
-		  *obufp++ = 'd';
-		  *obufp++ = 'q';
-		}
-	      else
-		{
-		  *obufp++ = 'w';
-		  *obufp++ = 'd';
-		}
-	    }
-	  else
-	    {
-	      if (sizeflag & DFLAG)
-		*obufp++ = 'l';
-	      else
-		*obufp++ = 'w';
-	    }
-	  used_prefixes |= (prefixes & PREFIX_DATA);
 	  break;
 	case 'S':
-          if (intel_syntax)
-            break;
-#ifdef SUFFIX_ALWAYS
-	  if (sizeflag & SUFFIX_ALWAYS)
-	    {
-	      if (sizeflag & DFLAG)
-		*obufp++ = 'l';
-	      else
-		*obufp++ = 'w';
-	      used_prefixes |= (prefixes & PREFIX_DATA);
-	    }
-#endif
-	  break;
-	case 'W':
-	  /* operand size flag for cwtl, cbtw */
-	  if (sizeflag & DFLAG)
-	    *obufp++ = 'w';
+	  /* operand size flag */
+	  if (dflag)
+	    *obufp++ = 'l';
 	  else
-	    *obufp++ = 'b';
-          if (intel_syntax)
-	    {
-	      if (sizeflag & DFLAG)
-		{
-		  *obufp++ = 'd';
-		  *obufp++ = 'e';
-		}
-	      else
-		{
-		  *obufp++ = 'w';
-		}
-	    }
-	  used_prefixes |= (prefixes & PREFIX_DATA);
+	    *obufp++ = 'w';
 	  break;
 	}
     }
@@ -2896,67 +1480,57 @@ putop (template, sizeflag)
 
 static void
 oappend (s)
-     const char *s;
+     char *s;
 {
   strcpy (obufp, s);
   obufp += strlen (s);
+  *obufp = 0;
 }
 
 static void
-append_seg ()
+append_prefix ()
 {
   if (prefixes & PREFIX_CS)
-    {
-      oappend ("%cs:");
-      used_prefixes |= PREFIX_CS;
-    }
+    oappend ("%cs:");
   if (prefixes & PREFIX_DS)
-    {
-      oappend ("%ds:");
-      used_prefixes |= PREFIX_DS;
-    }
+    oappend ("%ds:");
   if (prefixes & PREFIX_SS)
-    {
-      oappend ("%ss:");
-      used_prefixes |= PREFIX_SS;
-    }
+    oappend ("%ss:");
   if (prefixes & PREFIX_ES)
-    {
-      oappend ("%es:");
-      used_prefixes |= PREFIX_ES;
-    }
+    oappend ("%es:");
   if (prefixes & PREFIX_FS)
-    {
-      oappend ("%fs:");
-      used_prefixes |= PREFIX_FS;
-    }
+    oappend ("%fs:");
   if (prefixes & PREFIX_GS)
-    {
-      oappend ("%gs:");
-      used_prefixes |= PREFIX_GS;
-    }
+    oappend ("%gs:");
 }
 
-static void
-OP_indirE (bytemode, sizeflag)
+int
+OP_indirE (bytemode)
      int bytemode;
-     int sizeflag;
 {
-  if (!intel_syntax)
-    oappend ("*");
-  OP_E (bytemode, sizeflag);
+  oappend ("*");
+  OP_E (bytemode);
+  return (0);
 }
 
-static void
-OP_E (bytemode, sizeflag)
+int
+OP_E (bytemode)
      int bytemode;
-     int sizeflag;
 {
   int disp;
-
+  int havesib;
+  int base;
+  int index;
+  int scale;
+  int havebase;
+  
   /* skip mod/rm byte */
   codep++;
-
+  
+  havesib = 0;
+  havebase = 0;
+  disp = 0;
+  
   if (mod == 3)
     {
       switch (bytemode)
@@ -2967,222 +1541,102 @@ OP_E (bytemode, sizeflag)
 	case w_mode:
 	  oappend (names16[rm]);
 	  break;
-	case d_mode:
-	  oappend (names32[rm]);
-	  break;
 	case v_mode:
-	  if (sizeflag & DFLAG)
+	  if (dflag)
 	    oappend (names32[rm]);
 	  else
 	    oappend (names16[rm]);
-	  used_prefixes |= (prefixes & PREFIX_DATA);
-	  break;
-	case 0:
-	  if ( !(codep[-2] == 0xAE && codep[-1] == 0xF8 /* sfence */))
-	    BadOp();	/* bad sfence,lea,lds,les,lfs,lgs,lss modrm */
 	  break;
 	default:
-	  oappend (INTERNAL_DISASSEMBLER_ERROR);
+	  oappend ("<bad dis table>");
 	  break;
 	}
-      return;
+      return (0);
     }
-
-  disp = 0;
-  append_seg ();
-
-  if (sizeflag & AFLAG) /* 32 bit address mode */
+  
+  append_prefix ();
+  if (rm == 4)
     {
-      int havesib;
-      int havebase;
-      int base;
-      int index = 0;
-      int scale = 0;
-
-      havesib = 0;
+      havesib = 1;
       havebase = 1;
-      base = rm;
-
-      if (base == 4)
+      FETCH_DATA (the_info, codep + 1);
+      scale = (*codep >> 6) & 3;
+      index = (*codep >> 3) & 7;
+      base = *codep & 7;
+      codep++;
+    }
+  
+  switch (mod)
+    {
+    case 0:
+      switch (rm)
 	{
-	  havesib = 1;
-	  FETCH_DATA (the_info, codep + 1);
-	  scale = (*codep >> 6) & 3;
-	  index = (*codep >> 3) & 7;
-	  base = *codep & 7;
-	  codep++;
-	}
-
-      switch (mod)
-	{
-	case 0:
-	  if (base == 5)
-	    {
-	      havebase = 0;
-	      disp = get32 ();
-	    }
+	case 4:
+	  /* implies havesib and havebase */
+	  if (base == 5) {
+	    havebase = 0;
+	    disp = get32 ();
+	  }
 	  break;
-	case 1:
-	  FETCH_DATA (the_info, codep + 1);
-	  disp = *codep++;
-	  if ((disp & 0x80) != 0)
-	    disp -= 0x100;
-	  break;
-	case 2:
+	case 5:
 	  disp = get32 ();
 	  break;
+	default:
+	  havebase = 1;
+	  base = rm;
+	  break;
 	}
-
-      if (!intel_syntax)
-        if (mod != 0 || base == 5)
-          {
-            sprintf (scratchbuf, "0x%x", disp);
-            oappend (scratchbuf);
-          }
-
-      if (havebase || (havesib && (index != 4 || scale != 0)))
+      break;
+    case 1:
+      FETCH_DATA (the_info, codep + 1);
+      disp = *(char *)codep++;
+      if (rm != 4)
 	{
-          if (intel_syntax)
-            {
-              switch (bytemode)
-                {
-                case b_mode:
-                  oappend("BYTE PTR ");
-                  break;
-                case w_mode:
-                  oappend("WORD PTR ");
-                  break;
-                case v_mode:
-                  oappend("DWORD PTR ");
-                  break;
-                case d_mode:
-                  oappend("QWORD PTR ");
-                  break;
-                case x_mode:
-                  oappend("XWORD PTR ");
-                  break;
-                default:
-                  break;
-                }
-             }
-	  *obufp++ = open_char;
-          *obufp = '\0';
-	  if (havebase)
-	    oappend (names32[base]);
-	  if (havesib)
-	    {
-	      if (index != 4)
-		{
-                  if (intel_syntax)
-                    {
-                      if (havebase)
-                        {
-                          *obufp++ = separator_char;
-                          *obufp = '\0';
-                        }
-                      sprintf (scratchbuf, "%s", names32[index]);
-                    }
-                  else
-		    sprintf (scratchbuf, ",%s", names32[index]);
-		  oappend (scratchbuf);
-		}
-              if (!intel_syntax
-                  || (intel_syntax
-                      && bytemode != b_mode
-                      && bytemode != w_mode
-                      && bytemode != v_mode))
-                {
-                  *obufp++ = scale_char;
-                  *obufp = '\0';
-	          sprintf (scratchbuf, "%d", 1 << scale);
-	          oappend (scratchbuf);
-                }
-	    }
-          if (intel_syntax)
-            if (mod != 0 || base == 5)
-              {
-                /* Don't print zero displacements */
-                if (disp > 0)
-                  {
-                    sprintf (scratchbuf, "+%d", disp);
-                    oappend (scratchbuf);
-                  }
-                else if (disp < 0)
-                  {
-                    sprintf (scratchbuf, "%d", disp);
-                    oappend (scratchbuf);
-                  }
-              }
-
-	  *obufp++ = close_char;
-          *obufp = '\0';
+	  havebase = 1;
+	  base = rm;
 	}
-      else if (intel_syntax)
-        {
-          if (mod != 0 || base == 5)
-            {
-	      if (prefixes & (PREFIX_CS | PREFIX_SS | PREFIX_DS
-			      | PREFIX_ES | PREFIX_FS | PREFIX_GS))
-		;
-	      else
-		{
-		  oappend (names_seg[3]);
-		  oappend (":");
-		}
-              sprintf (scratchbuf, "0x%x", disp);
-              oappend (scratchbuf);
-            }
-        }
+      break;
+    case 2:
+      disp = get32 ();
+      if (rm != 4)
+	{
+	  havebase = 1;
+	  base = rm;
+	}
+      break;
     }
-  else
-    { /* 16 bit address mode */
-      switch (mod)
-	{
-	case 0:
-	  if (rm == 6)
-	    {
-	      disp = get16 ();
-	      if ((disp & 0x8000) != 0)
-		disp -= 0x10000;
-	    }
-	  break;
-	case 1:
-	  FETCH_DATA (the_info, codep + 1);
-	  disp = *codep++;
-	  if ((disp & 0x80) != 0)
-	    disp -= 0x100;
-	  break;
-	case 2:
-	  disp = get16 ();
-	  if ((disp & 0x8000) != 0)
-	    disp -= 0x10000;
-	  break;
-	}
-
-      if (!intel_syntax)
-        if (mod != 0 || rm == 6)
-          {
-            sprintf (scratchbuf, "%d", disp);
-            oappend (scratchbuf);
-          }
-
-      if (mod != 0 || rm != 6)
-	{
-	  *obufp++ = open_char;
-          *obufp = '\0';
-	  oappend (index16[rm]);
-          *obufp++ = close_char;
-          *obufp = '\0';
-	}
+  
+  if (mod != 0 || rm == 5 || (havesib && base == 5))
+    {
+      sprintf (scratchbuf, "0x%x", disp);
+      oappend (scratchbuf);
     }
+  
+  if (havebase || havesib) 
+    {
+      oappend ("(");
+      if (havebase)
+	oappend (names32[base]);
+      if (havesib) 
+	{
+	  if (index != 4) 
+	    {
+	      sprintf (scratchbuf, ",%s", names32[index]);
+	      oappend (scratchbuf);
+	    }
+	  sprintf (scratchbuf, ",%d", 1 << scale);
+	  oappend (scratchbuf);
+	}
+      oappend (")");
+    }
+  return (0);
 }
 
-static void
-OP_G (bytemode, sizeflag)
+int
+OP_G (bytemode)
      int bytemode;
-     int sizeflag;
 {
-  switch (bytemode)
+  switch (bytemode) 
     {
     case b_mode:
       oappend (names8[reg]);
@@ -3194,16 +1648,16 @@ OP_G (bytemode, sizeflag)
       oappend (names32[reg]);
       break;
     case v_mode:
-      if (sizeflag & DFLAG)
+      if (dflag)
 	oappend (names32[reg]);
       else
 	oappend (names16[reg]);
-      used_prefixes |= (prefixes & PREFIX_DATA);
       break;
     default:
-      oappend (INTERNAL_DISASSEMBLER_ERROR);
+      oappend ("<internal disassembler error>");
       break;
     }
+  return (0);
 }
 
 static int
@@ -3216,7 +1670,7 @@ get32 ()
   x |= (*codep++ & 0xff) << 8;
   x |= (*codep++ & 0xff) << 16;
   x |= (*codep++ & 0xff) << 24;
-  return x;
+  return (x);
 }
 
 static int
@@ -3227,533 +1681,295 @@ get16 ()
   FETCH_DATA (the_info, codep + 2);
   x = *codep++ & 0xff;
   x |= (*codep++ & 0xff) << 8;
-  return x;
+  return (x);
 }
 
 static void
 set_op (op)
-     unsigned int op;
+     int op;
 {
   op_index[op_ad] = op_ad;
   op_address[op_ad] = op;
 }
 
-static void
-OP_REG (code, sizeflag)
+int
+OP_REG (code)
      int code;
-     int sizeflag;
 {
-  const char *s;
-
-  switch (code)
+  char *s;
+  
+  switch (code) 
     {
-    case indir_dx_reg:
-      s = "(%dx)";
-      break;
-    case ax_reg: case cx_reg: case dx_reg: case bx_reg:
-    case sp_reg: case bp_reg: case si_reg: case di_reg:
-      s = names16[code - ax_reg];
-      break;
-    case es_reg: case ss_reg: case cs_reg:
-    case ds_reg: case fs_reg: case gs_reg:
-      s = names_seg[code - es_reg];
-      break;
-    case al_reg: case ah_reg: case cl_reg: case ch_reg:
-    case dl_reg: case dh_reg: case bl_reg: case bh_reg:
-      s = names8[code - al_reg];
-      break;
-    case eAX_reg: case eCX_reg: case eDX_reg: case eBX_reg:
-    case eSP_reg: case eBP_reg: case eSI_reg: case eDI_reg:
-      if (sizeflag & DFLAG)
+    case indir_dx_reg: s = "(%dx)"; break;
+	case ax_reg: case cx_reg: case dx_reg: case bx_reg:
+	case sp_reg: case bp_reg: case si_reg: case di_reg:
+		s = names16[code - ax_reg];
+		break;
+	case es_reg: case ss_reg: case cs_reg:
+	case ds_reg: case fs_reg: case gs_reg:
+		s = names_seg[code - es_reg];
+		break;
+	case al_reg: case ah_reg: case cl_reg: case ch_reg:
+	case dl_reg: case dh_reg: case bl_reg: case bh_reg:
+		s = names8[code - al_reg];
+		break;
+	case eAX_reg: case eCX_reg: case eDX_reg: case eBX_reg:
+	case eSP_reg: case eBP_reg: case eSI_reg: case eDI_reg:
+      if (dflag)
 	s = names32[code - eAX_reg];
       else
 	s = names16[code - eAX_reg];
-      used_prefixes |= (prefixes & PREFIX_DATA);
       break;
     default:
-      s = INTERNAL_DISASSEMBLER_ERROR;
+      s = "<internal disassembler error>";
       break;
     }
   oappend (s);
+  return (0);
 }
 
-static void
-OP_I (bytemode, sizeflag)
+int
+OP_I (bytemode)
      int bytemode;
-     int sizeflag;
 {
   int op;
-
-  switch (bytemode)
+  
+  switch (bytemode) 
     {
     case b_mode:
       FETCH_DATA (the_info, codep + 1);
       op = *codep++ & 0xff;
       break;
     case v_mode:
-      if (sizeflag & DFLAG)
+      if (dflag)
 	op = get32 ();
       else
 	op = get16 ();
-      used_prefixes |= (prefixes & PREFIX_DATA);
       break;
     case w_mode:
       op = get16 ();
       break;
     default:
-      oappend (INTERNAL_DISASSEMBLER_ERROR);
-      return;
+      oappend ("<internal disassembler error>");
+      return (0);
     }
-
-  if (intel_syntax)
-    sprintf (scratchbuf, "0x%x", op);
-  else
-    sprintf (scratchbuf, "$0x%x", op);
+  sprintf (scratchbuf, "$0x%x", op);
   oappend (scratchbuf);
-  scratchbuf[0] = '\0';
+  return (0);
 }
 
-static void
-OP_sI (bytemode, sizeflag)
+int
+OP_sI (bytemode)
      int bytemode;
-     int sizeflag;
 {
   int op;
-
-  switch (bytemode)
+  
+  switch (bytemode) 
     {
     case b_mode:
       FETCH_DATA (the_info, codep + 1);
-      op = *codep++;
-      if ((op & 0x80) != 0)
-	op -= 0x100;
+      op = *(char *)codep++;
       break;
     case v_mode:
-      if (sizeflag & DFLAG)
+      if (dflag)
 	op = get32 ();
       else
-	{
-	  op = get16();
-	  if ((op & 0x8000) != 0)
-	    op -= 0x10000;
-	}
-      used_prefixes |= (prefixes & PREFIX_DATA);
+	op = (short)get16();
       break;
     case w_mode:
-      op = get16 ();
-      if ((op & 0x8000) != 0)
-	op -= 0x10000;
+      op = (short)get16 ();
       break;
     default:
-      oappend (INTERNAL_DISASSEMBLER_ERROR);
-      return;
+      oappend ("<internal disassembler error>");
+      return (0);
     }
-  if (intel_syntax)
-    sprintf (scratchbuf, "%d", op);
-  else
-    sprintf (scratchbuf, "$0x%x", op);
+  sprintf (scratchbuf, "$0x%x", op);
   oappend (scratchbuf);
+  return (0);
 }
 
-static void
-OP_J (bytemode, sizeflag)
+int
+OP_J (bytemode)
      int bytemode;
-     int sizeflag;
 {
   int disp;
   int mask = -1;
-
-  switch (bytemode)
+  
+  switch (bytemode) 
     {
     case b_mode:
       FETCH_DATA (the_info, codep + 1);
-      disp = *codep++;
-      if ((disp & 0x80) != 0)
-	disp -= 0x100;
+      disp = *(char *)codep++;
       break;
     case v_mode:
-      if (sizeflag & DFLAG)
+      if (dflag)
 	disp = get32 ();
       else
 	{
-	  disp = get16 ();
+	  disp = (short)get16 ();
 	  /* for some reason, a data16 prefix on a jump instruction
 	     means that the pc is masked to 16 bits after the
 	     displacement is added!  */
 	  mask = 0xffff;
 	}
-      used_prefixes |= (prefixes & PREFIX_DATA);
       break;
     default:
-      oappend (INTERNAL_DISASSEMBLER_ERROR);
-      return;
+      oappend ("<internal disassembler error>");
+      return (0);
     }
   disp = (start_pc + codep - start_codep + disp) & mask;
   set_op (disp);
   sprintf (scratchbuf, "0x%x", disp);
   oappend (scratchbuf);
+  return (0);
 }
 
 /* ARGSUSED */
-static void
-OP_SEG (dummy, sizeflag)
-     int dummy ATTRIBUTE_UNUSED;
-     int sizeflag ATTRIBUTE_UNUSED;
+int
+OP_SEG (dummy)
+     int dummy;
 {
   static char *sreg[] = {
     "%es","%cs","%ss","%ds","%fs","%gs","%?","%?",
   };
 
   oappend (sreg[reg]);
+  return (0);
 }
 
-/* ARGSUSED */
-static void
-OP_DIR (dummy, sizeflag)
-     int dummy ATTRIBUTE_UNUSED;
-     int sizeflag;
+int
+OP_DIR (size)
+     int size;
 {
   int seg, offset;
-
-  if (sizeflag & DFLAG)
+  
+  switch (size) 
     {
-      offset = get32 ();
-      seg = get16 ();
+    case lptr:
+      if (aflag) 
+	{
+	  offset = get32 ();
+	  seg = get16 ();
+	} 
+      else 
+	{
+	  offset = get16 ();
+	  seg = get16 ();
+	}
+      sprintf (scratchbuf, "0x%x,0x%x", seg, offset);
+      oappend (scratchbuf);
+      break;
+    case v_mode:
+      if (aflag)
+	offset = get32 ();
+      else
+	offset = (short)get16 ();
+      
+      offset = start_pc + codep - start_codep + offset;
+      set_op (offset);
+      sprintf (scratchbuf, "0x%x", offset);
+      oappend (scratchbuf);
+      break;
+    default:
+      oappend ("<internal disassembler error>");
+      break;
     }
-  else
-    {
-      offset = get16 ();
-      seg = get16 ();
-    }
-  used_prefixes |= (prefixes & PREFIX_DATA);
-  sprintf (scratchbuf, "$0x%x,$0x%x", seg, offset);
-  oappend (scratchbuf);
+  return (0);
 }
 
 /* ARGSUSED */
-static void
-OP_OFF (ignore, sizeflag)
-     int ignore ATTRIBUTE_UNUSED;
-     int sizeflag;
+int
+OP_OFF (bytemode)
+     int bytemode;
 {
   int off;
-
-  append_seg ();
-
-  if (sizeflag & AFLAG)
+  
+  if (aflag)
     off = get32 ();
   else
     off = get16 ();
-
-  if (intel_syntax)
-    {
-      if (!(prefixes & (PREFIX_CS | PREFIX_SS | PREFIX_DS
-		        | PREFIX_ES | PREFIX_FS | PREFIX_GS)))
-	{
-	  oappend (names_seg[3]);
-	  oappend (":");
-	}
-    }
+  
   sprintf (scratchbuf, "0x%x", off);
   oappend (scratchbuf);
-}
-
-static void
-ptr_reg (code, sizeflag)
-     int code;
-     int sizeflag;
-{
-  const char *s;
-  oappend ("(");
-  if (sizeflag & AFLAG)
-    s = names32[code - eAX_reg];
-  else
-    s = names16[code - eAX_reg];
-  oappend (s);
-  oappend (")");
-}
-
-static void
-OP_ESreg (code, sizeflag)
-     int code;
-     int sizeflag;
-{
-  oappend ("%es:");
-  ptr_reg (code, sizeflag);
-}
-
-static void
-OP_DSreg (code, sizeflag)
-     int code;
-     int sizeflag;
-{
-  if ((prefixes
-       & (PREFIX_CS
-	  | PREFIX_DS
-	  | PREFIX_SS
-	  | PREFIX_ES
-	  | PREFIX_FS
-	  | PREFIX_GS)) == 0)
-    prefixes |= PREFIX_DS;
-  append_seg();
-  ptr_reg (code, sizeflag);
+  return (0);
 }
 
 /* ARGSUSED */
-static void
-OP_C (dummy, sizeflag)
-     int dummy ATTRIBUTE_UNUSED;
-     int sizeflag ATTRIBUTE_UNUSED;
+int
+OP_ESDI (dummy)
+    int dummy;
 {
+  oappend ("%es:(");
+  oappend (aflag ? "%edi" : "%di");
+  oappend (")");
+  return (0);
+}
+
+/* ARGSUSED */
+int
+OP_DSSI (dummy)
+    int dummy;
+{
+  oappend ("%ds:(");
+  oappend (aflag ? "%esi" : "%si");
+  oappend (")");
+  return (0);
+}
+
+/* ARGSUSED */
+int
+OP_ONE (dummy)
+    int dummy;
+{
+  oappend ("1");
+  return (0);
+}
+
+/* ARGSUSED */
+int
+OP_C (dummy)
+    int dummy;
+{
+  codep++; /* skip mod/rm */
   sprintf (scratchbuf, "%%cr%d", reg);
   oappend (scratchbuf);
+  return (0);
 }
 
 /* ARGSUSED */
-static void
-OP_D (dummy, sizeflag)
-     int dummy ATTRIBUTE_UNUSED;
-     int sizeflag ATTRIBUTE_UNUSED;
+int
+OP_D (dummy)
+    int dummy;
 {
+  codep++; /* skip mod/rm */
   sprintf (scratchbuf, "%%db%d", reg);
   oappend (scratchbuf);
+  return (0);
 }
 
 /* ARGSUSED */
-static void
-OP_T (dummy, sizeflag)
-     int dummy ATTRIBUTE_UNUSED;
-     int sizeflag ATTRIBUTE_UNUSED;
+int
+OP_T (dummy)
+     int dummy;
 {
+  codep++; /* skip mod/rm */
   sprintf (scratchbuf, "%%tr%d", reg);
   oappend (scratchbuf);
+  return (0);
 }
 
-static void
-OP_Rd (bytemode, sizeflag)
+int
+OP_rm (bytemode)
      int bytemode;
-     int sizeflag;
 {
-  if (mod == 3)
-    OP_E (bytemode, sizeflag);
-  else
-    BadOp();
-}
-
-static void
-OP_MMX (ignore, sizeflag)
-     int ignore ATTRIBUTE_UNUSED;
-     int sizeflag ATTRIBUTE_UNUSED;
-{
-  sprintf (scratchbuf, "%%mm%d", reg);
-  oappend (scratchbuf);
-}
-
-static void
-OP_XMM (bytemode, sizeflag)
-     int bytemode ATTRIBUTE_UNUSED;
-     int sizeflag ATTRIBUTE_UNUSED;
-{
-  sprintf (scratchbuf, "%%xmm%d", reg);
-  oappend (scratchbuf);
-}
-
-static void
-OP_EM (bytemode, sizeflag)
-     int bytemode;
-     int sizeflag;
-{
-  if (mod != 3)
+  switch (bytemode) 
     {
-      OP_E (bytemode, sizeflag);
-      return;
+    case d_mode:
+      oappend (names32[rm]);
+      break;
+    case w_mode:
+      oappend (names16[rm]);
+      break;
     }
-
-  codep++;
-  sprintf (scratchbuf, "%%mm%d", rm);
-  oappend (scratchbuf);
-}
-
-static void
-OP_EX (bytemode, sizeflag)
-     int bytemode;
-     int sizeflag;
-{
-  if (mod != 3)
-    {
-      OP_E (bytemode, sizeflag);
-      return;
-    }
-
-  codep++;
-  sprintf (scratchbuf, "%%xmm%d", rm);
-  oappend (scratchbuf);
-}
-
-static void
-OP_MS (bytemode, sizeflag)
-     int bytemode;
-     int sizeflag;
-{
-  if (mod == 3)
-    OP_EM (bytemode, sizeflag);
-  else
-    BadOp();
-}
-
-static const char *Suffix3DNow[] = {
-/* 00 */	NULL,		NULL,		NULL,		NULL,
-/* 04 */	NULL,		NULL,		NULL,		NULL,
-/* 08 */	NULL,		NULL,		NULL,		NULL,
-/* 0C */	"pi2fw",	"pi2fd",	NULL,		NULL,
-/* 10 */	NULL,		NULL,		NULL,		NULL,
-/* 14 */	NULL,		NULL,		NULL,		NULL,
-/* 18 */	NULL,		NULL,		NULL,		NULL,
-/* 1C */	"pf2iw",	"pf2id",	NULL,		NULL,
-/* 20 */	NULL,		NULL,		NULL,		NULL,
-/* 24 */	NULL,		NULL,		NULL,		NULL,
-/* 28 */	NULL,		NULL,		NULL,		NULL,
-/* 2C */	NULL,		NULL,		NULL,		NULL,
-/* 30 */	NULL,		NULL,		NULL,		NULL,
-/* 34 */	NULL,		NULL,		NULL,		NULL,
-/* 38 */	NULL,		NULL,		NULL,		NULL,
-/* 3C */	NULL,		NULL,		NULL,		NULL,
-/* 40 */	NULL,		NULL,		NULL,		NULL,
-/* 44 */	NULL,		NULL,		NULL,		NULL,
-/* 48 */	NULL,		NULL,		NULL,		NULL,
-/* 4C */	NULL,		NULL,		NULL,		NULL,
-/* 50 */	NULL,		NULL,		NULL,		NULL,
-/* 54 */	NULL,		NULL,		NULL,		NULL,
-/* 58 */	NULL,		NULL,		NULL,		NULL,
-/* 5C */	NULL,		NULL,		NULL,		NULL,
-/* 60 */	NULL,		NULL,		NULL,		NULL,
-/* 64 */	NULL,		NULL,		NULL,		NULL,
-/* 68 */	NULL,		NULL,		NULL,		NULL,
-/* 6C */	NULL,		NULL,		NULL,		NULL,
-/* 70 */	NULL,		NULL,		NULL,		NULL,
-/* 74 */	NULL,		NULL,		NULL,		NULL,
-/* 78 */	NULL,		NULL,		NULL,		NULL,
-/* 7C */	NULL,		NULL,		NULL,		NULL,
-/* 80 */	NULL,		NULL,		NULL,		NULL,
-/* 84 */	NULL,		NULL,		NULL,		NULL,
-/* 88 */	NULL,		NULL,		"pfnacc",	NULL,
-/* 8C */	NULL,		NULL,		"pfpnacc",	NULL,
-/* 90 */	"pfcmpge",	NULL,		NULL,		NULL,
-/* 94 */	"pfmin",	NULL,		"pfrcp",	"pfrsqrt",
-/* 98 */	NULL,		NULL,		"pfsub",	NULL,
-/* 9C */	NULL,		NULL,		"pfadd",	NULL,
-/* A0 */	"pfcmpgt",	NULL,		NULL,		NULL,
-/* A4 */	"pfmax",	NULL,		"pfrcpit1",	"pfrsqit1",
-/* A8 */	NULL,		NULL,		"pfsubr",	NULL,
-/* AC */	NULL,		NULL,		"pfacc",	NULL,
-/* B0 */	"pfcmpeq",	NULL,		NULL,		NULL,
-/* B4 */	"pfmul",	NULL,		"pfrcpit2",	"pfmulhrw",
-/* B8 */	NULL,		NULL,		NULL,		"pswapd",
-/* BC */	NULL,		NULL,		NULL,		"pavgusb",
-/* C0 */	NULL,		NULL,		NULL,		NULL,
-/* C4 */	NULL,		NULL,		NULL,		NULL,
-/* C8 */	NULL,		NULL,		NULL,		NULL,
-/* CC */	NULL,		NULL,		NULL,		NULL,
-/* D0 */	NULL,		NULL,		NULL,		NULL,
-/* D4 */	NULL,		NULL,		NULL,		NULL,
-/* D8 */	NULL,		NULL,		NULL,		NULL,
-/* DC */	NULL,		NULL,		NULL,		NULL,
-/* E0 */	NULL,		NULL,		NULL,		NULL,
-/* E4 */	NULL,		NULL,		NULL,		NULL,
-/* E8 */	NULL,		NULL,		NULL,		NULL,
-/* EC */	NULL,		NULL,		NULL,		NULL,
-/* F0 */	NULL,		NULL,		NULL,		NULL,
-/* F4 */	NULL,		NULL,		NULL,		NULL,
-/* F8 */	NULL,		NULL,		NULL,		NULL,
-/* FC */	NULL,		NULL,		NULL,		NULL,
-};
-
-static void
-OP_3DNowSuffix (bytemode, sizeflag)
-     int bytemode ATTRIBUTE_UNUSED;
-     int sizeflag ATTRIBUTE_UNUSED;
-{
-  const char *mnemonic;
-
-  FETCH_DATA (the_info, codep + 1);
-  /* AMD 3DNow! instructions are specified by an opcode suffix in the
-     place where an 8-bit immediate would normally go.  ie. the last
-     byte of the instruction.  */
-  obufp = obuf + strlen(obuf);
-  mnemonic = Suffix3DNow[*codep++ & 0xff];
-  if (mnemonic)
-    oappend (mnemonic);
-  else
-    {
-      /* Since a variable sized modrm/sib chunk is between the start
-	 of the opcode (0x0f0f) and the opcode suffix, we need to do
-	 all the modrm processing first, and don't know until now that
-	 we have a bad opcode.  This necessitates some cleaning up.  */
-      op1out[0] = '\0';
-      op2out[0] = '\0';
-      BadOp();
-    }
-}
-
-
-static const char *simd_cmp_op [] = {
-  "eq",
-  "lt",
-  "le",
-  "unord",
-  "neq",
-  "nlt",
-  "nle",
-  "ord"
-};
-
-static void
-OP_SIMD_Suffix (bytemode, sizeflag)
-     int bytemode ATTRIBUTE_UNUSED;
-     int sizeflag ATTRIBUTE_UNUSED;
-{
-  unsigned int cmp_type;
-
-  FETCH_DATA (the_info, codep + 1);
-  obufp = obuf + strlen(obuf);
-  cmp_type = *codep++ & 0xff;
-  if (cmp_type < 8)
-    {
-      sprintf (scratchbuf, "cmp%s%cs",
-	       simd_cmp_op[cmp_type],
-	       prefixes & PREFIX_REPZ ? 's' : 'p');
-      used_prefixes |= (prefixes & PREFIX_REPZ);
-      oappend (scratchbuf);
-    }
-  else
-    {
-      /* We have a bad extension byte.  Clean up.  */
-      op1out[0] = '\0';
-      op2out[0] = '\0';
-      BadOp();
-    }
-}
-
-static void
-SIMD_Fixup (extrachar, sizeflag)
-     int extrachar;
-     int sizeflag ATTRIBUTE_UNUSED;
-{
-  /* Change movlps/movhps to movhlps/movlhps for 2 register operand
-     forms of these instructions.  */
-  if (mod == 3)
-    {
-      char *p = obuf + strlen(obuf);
-      *(p+1) = '\0';
-      *p     = *(p-1);
-      *(p-1) = *(p-2);
-      *(p-2) = *(p-3);
-      *(p-3) = extrachar;
-    }
-}
-
-static void BadOp (void)
-{
-  codep = insn_codep + 1;	/* throw away prefixes and 1st. opcode byte */
-  oappend ("(bad)");
+  return (0);
 }

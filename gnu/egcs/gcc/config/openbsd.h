@@ -83,7 +83,7 @@ Boston, MA 02111-1307, USA.  */
 /* LIB_SPEC appropriate for OpenBSD.  Select the appropriate libc, 
    depending on profiling and threads.  Basically, 
    -lc(_r)?(_p)?, select _r for threads, and _p for p or pg.  */
-#define OBSD_LIB_SPEC "%{!shared:-lc%{pthread:_r}%{p:_p}%{!p:%{pg:_p}}}"
+#define OBSD_LIB_SPEC "-lc%{pthread:_r}%{p:_p}%{!p:%{pg:_p}}"
 
 #ifndef OBSD_HAS_CORRECT_SPECS
 
@@ -116,10 +116,10 @@ Boston, MA 02111-1307, USA.  */
 #undef LINK_SPEC
 #ifdef OBSD_NO_DYNAMIC_LIBRARIES
 #define LINK_SPEC \
-  "%{g:%{!nostdlib:-L/usr/lib/debug}} %{!nostdlib:%{!r*:%{!e*:-e start}}} -dc -dp %{assert*}"
+  "%{!nostdlib:%{!r*:%{!e*:-e start}}} -dc -dp %{assert*}"
 #else
 #define LINK_SPEC \
-  "%{g:%{!nostdlib:-L/usr/lib/debug}} %{!shared:%{!nostdlib:%{!r*:%{!e*:-e start}}}} %{shared:-Bshareable -x} -dc -dp %{R*} %{static:-Bstatic} %{assert*}"
+  "%{!nostdlib:%{!r*:%{!e*:-e start}}} -dc -dp %{R*} %{static:-Bstatic} %{assert*}"
 #endif
 
 #undef LIB_SPEC
@@ -165,16 +165,13 @@ Boston, MA 02111-1307, USA.  */
 
 /* OpenBSD assembler is hacked to have .type & .size support even in a.out
    format object files.  Functions size are supported but not activated 
-   yet (look for GRACE_PERIOD_EXPIRED in gas/config/obj-aout.c).  
-   SET_ASM_OP is needed for attribute alias to work.  */
+   yet (look for GRACE_PERIOD_EXPIRED in gas/config/obj-aout.c).  */
 
 #undef TYPE_ASM_OP
 #undef SIZE_ASM_OP
-#undef SET_ASM_OP
 
 #define TYPE_ASM_OP	".type"
 #define SIZE_ASM_OP	".size"
-#define SET_ASM_OP	".set"
 
 /* The following macro defines the format used to output the second
    operand of the .type assembler directive.  */

@@ -1,5 +1,5 @@
 /* m68k.y -- bison grammar for m68k operand parsing
-   Copyright (C) 1995, 96, 1997, 1998 Free Software Foundation, Inc.
+   Copyright (C) 1995 Free Software Foundation, Inc.
    Written by Ken Raeburn and Ian Lance Taylor, Cygnus Support
 
    This file is part of GAS, the GNU Assembler.
@@ -82,7 +82,7 @@
 /* Internal functions.  */
 
 static enum m68k_register m68k_reg_parse PARAMS ((char **));
-static int yylex PARAMS ((void));
+static int yylex PARAMS (());
 static void yyerror PARAMS ((const char *));
 
 /* The parser sets fields pointed to by this global variable.  */
@@ -200,16 +200,6 @@ motorola_operand:
 		  else
 		    op->mode = DISP;
 		}
-	| '(' zapc ',' EXPR ')'
-		{
-		  op->reg = $2;
-		  op->disp = $4;
-		  if (($2 >= ZADDR0 && $2 <= ZADDR7)
-		      || $2 == ZPC)
-		    op->mode = BASE;
-		  else
-		    op->mode = DISP;
-		}
 	| EXPR '(' zapc ')'
 		{
 		  op->reg = $3;
@@ -245,7 +235,7 @@ motorola_operand:
 	| '(' EXPR ',' zapc ',' zpc ')'
 		{
 		  if ($4 == PC || $4 == ZPC)
-		    yyerror (_("syntax error"));
+		    yyerror ("syntax error");
 		  op->mode = BASE;
 		  op->reg = $6;
 		  op->disp = $2;
@@ -259,12 +249,6 @@ motorola_operand:
 		  op->reg = $5;
 		  op->disp = $2;
 		  op->index = $4;
-		}
-	| '(' zdireg ',' EXPR ')'
-		{
-		  op->mode = BASE;
-		  op->disp = $4;
-		  op->index = $2;
 		}
 	| EXPR '(' zapc ',' zireg ')'
 		{
@@ -282,7 +266,7 @@ motorola_operand:
 	| EXPR '(' zapc ',' zpc ')'
 		{
 		  if ($3 == PC || $3 == ZPC)
-		    yyerror (_("syntax error"));
+		    yyerror ("syntax error");
 		  op->mode = BASE;
 		  op->reg = $5;
 		  op->disp = $1;
@@ -293,7 +277,7 @@ motorola_operand:
 	| '(' zapc ',' zpc ')'
 		{
 		  if ($2 == PC || $2 == ZPC)
-		    yyerror (_("syntax error"));
+		    yyerror ("syntax error");
 		  op->mode = BASE;
 		  op->reg = $4;
 		  op->index.reg = $2;
@@ -359,7 +343,7 @@ motorola_operand:
 	| '(' '[' EXPR ',' zapc ',' zpc ']' optcexpr ')'
 		{
 		  if ($5 == PC || $5 == ZPC)
-		    yyerror (_("syntax error"));
+		    yyerror ("syntax error");
 		  op->mode = PRE;
 		  op->reg = $7;
 		  op->disp = $3;
@@ -371,7 +355,7 @@ motorola_operand:
 	| '(' '[' zapc ',' zpc ']' optcexpr ')'
 		{
 		  if ($3 == PC || $3 == ZPC)
-		    yyerror (_("syntax error"));
+		    yyerror ("syntax error");
 		  op->mode = PRE;
 		  op->reg = $5;
 		  op->index.reg = $3;
@@ -396,7 +380,7 @@ mit_operand:
 		{
 		  /* We use optzapc to avoid a shift/reduce conflict.  */
 		  if ($1 < ADDR0 || $1 > ADDR7)
-		    yyerror (_("syntax error"));
+		    yyerror ("syntax error");
 		  op->mode = AINDR;
 		  op->reg = $1;
 		}
@@ -404,7 +388,7 @@ mit_operand:
 		{
 		  /* We use optzapc to avoid a shift/reduce conflict.  */
 		  if ($1 < ADDR0 || $1 > ADDR7)
-		    yyerror (_("syntax error"));
+		    yyerror ("syntax error");
 		  op->mode = AINC;
 		  op->reg = $1;
 		}
@@ -412,7 +396,7 @@ mit_operand:
 		{
 		  /* We use optzapc to avoid a shift/reduce conflict.  */
 		  if ($1 < ADDR0 || $1 > ADDR7)
-		    yyerror (_("syntax error"));
+		    yyerror ("syntax error");
 		  op->mode = ADEC;
 		  op->reg = $1;
 		}
@@ -613,10 +597,7 @@ ireglist:
 reglistpair:
 	  reglistreg '-' reglistreg
 		{
-		  if ($1 <= $3)
-		    $$ = (1 << ($3 + 1)) - 1 - ((1 << $1) - 1);
-		  else
-		    $$ = (1 << ($1 + 1)) - 1 - ((1 << $3) - 1);
+		  $$ = (1 << ($3 + 1)) - 1 - ((1 << $1) - 1);
 		}
 	;
 
@@ -727,7 +708,6 @@ yylex ()
   char *s;
   int parens;
   int c = 0;
-  int tail = 0;
   char *hold;
 
   if (*str == ' ')
@@ -739,21 +719,12 @@ yylex ()
   /* Various special characters are just returned directly.  */
   switch (*str)
     {
-    case '@':
-      /* In MRI mode, this can be the start of an octal number.  */
-      if (flag_mri)
-	{
-	  if (isdigit (str[1])
-	      || ((str[1] == '+' || str[1] == '-')
-		  && isdigit (str[2])))
-	    break;
-	}
-      /* Fall through.  */
     case '#':
     case '&':
     case ',':
     case ')':
     case '/':
+    case '@':
     case '[':
     case ']':
       return *str++;
@@ -871,42 +842,30 @@ yylex ()
 	      ++s;
 	      break;
 	    default:
-	      yyerror (_("illegal size specification"));
+	      yyerror ("illegal size specification");
 	      yylval.indexreg.size = SIZE_UNSPEC;
 	      break;
 	    }
 	}
 
-      yylval.indexreg.scale = 1;
-
-      if (*s == '*' || *s == ':')
+      if (*s != '*' && *s != ':')
+	yylval.indexreg.scale = 1;
+      else
 	{
-	  expressionS scale;
-
 	  ++s;
-
-	  hold = input_line_pointer;
-	  input_line_pointer = s;
-	  expression (&scale);
-	  s = input_line_pointer;
-	  input_line_pointer = hold;
-
-	  if (scale.X_op != O_constant)
-	    yyerror (_("scale specification must resolve to a number"));
-	  else
+	  switch (*s)
 	    {
-	      switch (scale.X_add_number)
-		{
-		case 1:
-		case 2:
-		case 4:
-		case 8:
-		  yylval.indexreg.scale = scale.X_add_number;
-		  break;
-		default:
-		  yyerror (_("invalid scale value"));
-		  break;
-		}
+	    case '1':
+	    case '2':
+	    case '4':
+	    case '8':
+	      yylval.indexreg.scale = *s - '0';
+	      ++s;
+	      break;
+	    default:
+	      yyerror ("illegal scale specification");
+	      yylval.indexreg.scale = 1;
+	      break;
 	    }
 	}
 
@@ -947,7 +906,7 @@ yylex ()
   yylval.exp.size = SIZE_UNSPEC;
   if (s <= str + 2
       || (s[-2] != '.' && s[-2] != ':'))
-    tail = 0;
+    s = NULL;
   else
     {
       switch (s[-1])
@@ -967,52 +926,14 @@ yylex ()
 	  yylval.exp.size = SIZE_LONG;
 	  break;
 	default:
+	  s = NULL;
 	  break;
 	}
       if (yylval.exp.size != SIZE_UNSPEC)
-	tail = 2;
-    }
-
-#ifdef OBJ_ELF
-  {
-    /* Look for @PLTPC, etc.  */
-    char *cp;
-
-    yylval.exp.pic_reloc = pic_none;
-    cp = s - tail;
-    if (cp - 6 > str && cp[-6] == '@')
-      {
-	if (strncmp (cp - 6, "@PLTPC", 6) == 0)
-	  {
-	    yylval.exp.pic_reloc = pic_plt_pcrel;
-	    tail += 6;
-	  }
-	else if (strncmp (cp - 6, "@GOTPC", 6) == 0)
-	  {
-	    yylval.exp.pic_reloc = pic_got_pcrel;
-	    tail += 6;
-	  }
-      }
-    else if (cp - 4 > str && cp[-4] == '@')
-      {
-	if (strncmp (cp - 4, "@PLT", 4) == 0)
-	  {
-	    yylval.exp.pic_reloc = pic_plt_off;
-	    tail += 4;
-	  }
-	else if (strncmp (cp - 4, "@GOT", 4) == 0)
-	  {
-	    yylval.exp.pic_reloc = pic_got_off;
-	    tail += 4;
-	  }
-      }
-  }
-#endif
-
-  if (tail != 0)
-    {
-      c = s[-tail];
-      s[-tail] = 0;
+	{
+	  c = s[-2];
+	  s[-2] = '\0';
+	}
     }
 
   hold = input_line_pointer;
@@ -1021,9 +942,9 @@ yylex ()
   str = input_line_pointer;
   input_line_pointer = hold;
 
-  if (tail != 0)
+  if (s != NULL)
     {
-      s[-tail] = c;
+      s[-2] = c;
       str = s;
     }
 

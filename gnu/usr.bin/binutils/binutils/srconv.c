@@ -1,5 +1,5 @@
 /* srconv.c -- Sysroff conversion program
-   Copyright (C) 1994, 95, 96, 98, 99, 2000 Free Software Foundation, Inc.
+   Copyright (C) 1994 Free Software Foundation, Inc.
 
    This file is part of GNU Binutils.
 
@@ -15,8 +15,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 /* Written by Steve Chamberlain (sac@cygnus.com)
 
@@ -38,10 +37,8 @@
 #define PROGRAM_VERSION "1.5"
 /*#define FOOP1 1 */
 
-static int addrsize;
-static char *toolname;
-static char **rnames;
-
+static int sh;
+static int h8300;
 static void wr_cs ();
 static void walk_tree_scope ();
 static void wr_globals ();
@@ -65,6 +62,16 @@ static int ids2[20000];
 
 static int base1 = 0x18;
 static int base2 = 0x2018;
+
+char *
+xcalloc (a, b)
+     int a;
+     int b;
+{
+  char *r = xmalloc (a * b);
+  memset (r, 0, a * b);
+  return r;
+}
 
 static int
 get_member_id (x)
@@ -164,7 +171,12 @@ writeINT (n, ptr, idx, size, file)
   int byte = *idx / 8;
 
   if (size == -2)
-    size = addrsize;
+    {
+      if (sh)	
+	size = 4;
+      else if (h8300)
+	size = 2;
+    }
   else if (size == -1)
     size = 0;
 
@@ -307,14 +319,14 @@ wr_un (ptr, sfile, first, nsecs)
 
   un.spare1 = 0;
 
-  if (bfd_get_file_flags (abfd) & EXEC_P)
+  if (abfd->flags & EXEC_P)
     un.format = FORMAT_LM;
   else
     un.format = FORMAT_OM;
   un.spare1 = 0;
 
 
-#if 1
+#if 0
   un.nsections = ptr->nsections - 1;	/*  Don't count the abs section */
 #else
   /*NEW - only count sections with size */
@@ -337,7 +349,10 @@ wr_un (ptr, sfile, first, nsecs)
 	    un.nextrefs++;
 	}
     }
-  un.tool = toolname;
+  if (sh)
+    un.tool = "C_SH";
+  else if (h8300)
+    un.tool = "C_H8/300H";
   un.tcd = DATE;
   un.linker = "L_GX00";
   un.lcd = DATE;
@@ -353,7 +368,7 @@ wr_hd (p)
   struct IT_hd hd;
 
   hd.spare1 = 0;
-  if (bfd_get_file_flags (abfd) & EXEC_P)
+  if (abfd->flags & EXEC_P)
     {
       hd.mt = MTYPE_ABS_LM;
     }
@@ -366,56 +381,33 @@ wr_hd (p)
   hd.nu = p->nsources;		/* Always one unit */
   hd.code = 0;			/* Always ASCII */
   hd.ver = "0200";		/* Version 2.00 */
-  switch (bfd_get_arch (abfd))
+  switch (abfd->arch_info->arch)
     {
     case bfd_arch_h8300:
       hd.au = 8;
-      hd.si = 0;
-      hd.spcsz = 32;
+      hd.si = 32;
+      hd.afl = 2;
+      hd.spcsz = 0;
       hd.segsz = 0;
       hd.segsh = 0;
-      switch (bfd_get_mach (abfd))
-	{
-	case bfd_mach_h8300:
-	  hd.cpu = "H8300";
-	  hd.afl = 2;
-	  addrsize = 2;
-	  toolname = "C_H8/300";
-	  break;
-	case bfd_mach_h8300h:
-	  hd.cpu = "H8300H";
-	  hd.afl = 4;
-	  addrsize = 4;
-	  toolname = "C_H8/300H";
-	  break;
-	case bfd_mach_h8300s:
-	  hd.cpu = "H8300S";
-	  hd.afl = 4;
-	  addrsize = 4;
-	  toolname = "C_H8/300S";
-	  break;
-	default:
-	  abort();
-	}
-      rnames = rname_h8300;
+      hd.cpu = "H8300H";
+      h8300 = 1;
       break;
     case bfd_arch_sh:
       hd.au = 8;
-      hd.si = 0;
+      hd.si = 32;
       hd.afl = 4;
-      hd.spcsz = 32;
+      hd.spcsz = 0;
       hd.segsz = 0;
       hd.segsh = 0;
       hd.cpu = "SH";
-      addrsize = 4;
-      toolname = "C_SH";
-      rnames = rname_sh;
+      sh = 1;
       break;
     default:
       abort ();
     }
 
-  if (! bfd_get_file_flags(abfd) & EXEC_P)
+  if (!abfd->flags & EXEC_P)
     {
       hd.ep = 0;
     }
@@ -430,7 +422,8 @@ wr_hd (p)
 
   hd.os = "";
   hd.sys = "";
-  hd.mn = strip_suffix (bfd_get_filename (abfd));
+  hd.mn = strip_suffix (abfd->filename);
+
 
   sysroff_swap_hd_out (file, &hd);
 }
@@ -456,7 +449,7 @@ wr_ob (p, section)
      struct coff_ofile *p;
      struct coff_section *section;
 {
-  bfd_size_type i;
+  int i;
   int first = 1;
   unsigned char stuff[200];
 
@@ -472,7 +465,7 @@ wr_ob (p, section)
       if (first)
 	{
 	  ob.saf = 1;
-	  if (bfd_get_file_flags (abfd) & EXEC_P)
+	  if (abfd->flags & EXEC_P)
 	    ob.address = section->address;
 	  else
 	    ob.address = 0;
@@ -492,12 +485,12 @@ wr_ob (p, section)
       i += todo;
     }
   /* Now fill the rest with blanks */
-  while (i < (bfd_size_type) section->size)
+  while (i < section->size)
     {
       struct IT_ob ob;
       int todo = 200;		/* Copy in 200 byte lumps */
       ob.spare = 0;
-      if (i + todo > (bfd_size_type) section->size)
+      if (i + todo > section->size)
 	todo = section->size - i;
       ob.saf = 0;
 
@@ -966,7 +959,7 @@ walk_tree_symbol (sfile, section, symbol, nest)
 {
   struct IT_dsy dsy;
 
-  memset(&dsy, 0, sizeof(dsy));
+  dsy.spare2 = 0;
   dsy.nesting = nest;
 
   switch (symbol->type->type)
@@ -1123,7 +1116,12 @@ walk_tree_symbol (sfile, section, symbol, nest)
     }
 
   if (symbol->where->where == coff_where_register)
-    dsy.reg = rnames[symbol->where->offset];
+    {
+      if (sh)
+	dsy.reg = rname_sh[symbol->where->offset];
+      else if (h8300)
+	dsy.reg = rname_h8300[symbol->where->offset];
+    }
 
   switch (symbol->visible->type)
     {
@@ -1232,10 +1230,9 @@ wr_du (p, sfile, n)
   int j;
   unsigned int *lowest = (unsigned *) nints (p->nsections);
   unsigned int *highest = (unsigned *) nints (p->nsections);
-  du.format = bfd_get_file_flags (abfd) & EXEC_P ? 0 : 1;
-  du.optimized = 0;
-  du.stackfrmt = 0;
   du.spare = 0;
+  du.format = abfd->flags & EXEC_P ? 0 : 1;
+  du.optimized = 0;
   du.unit = n;
   du.sections = p->nsections - 1;
   du.san = (int *) xcalloc (sizeof (int), du.sections);
@@ -1278,7 +1275,7 @@ wr_du (p, sfile, n)
 	}
       du.san[used] = i;
       du.length[used] = highest[i] - lowest[i];
-      du.address[used] = bfd_get_file_flags (abfd) & EXEC_P ? lowest[i] : 0;
+      du.address[used] = abfd->flags & EXEC_P ? lowest[i] : 0;
       if (debug)
 	{
 	  printf (" section %6s 0x%08x..0x%08x\n",
@@ -1667,14 +1664,14 @@ int scount = 0;
 	{
 	  /* Don't have a symbol set aside for this section, which means that nothing
 	     in this file does anything for the section. */
-	  sc.format = !(bfd_get_file_flags (abfd) & EXEC_P);
+	  sc.format = !(abfd->flags & EXEC_P);
 	  sc.addr = 0;
 	  sc.length = 0;
 	  name = info[i].sec->name;
 	}
       else
 	{
-	  if (bfd_get_file_flags (abfd) & EXEC_P)
+	  if (abfd->flags & EXEC_P)
 	    {
 	      sc.format = 0;
 	      sc.addr = symbol->where->offset;
@@ -1716,15 +1713,11 @@ int scount = 0;
 	{
 	  sc.contents = CONTENTS_CODE;
 	}
-#if 0
       /* NEW */
       if (sc.length) {
-#endif
 	sysroff_swap_sc_out (file, &sc);
 	scount++;
-#if 0
       }
-#endif
     }
 return scount;
 }
@@ -1876,14 +1869,14 @@ show_usage (file, status)
      FILE *file;
      int status;
 {
-  fprintf (file, _("Usage: %s [-dhVq] in-file [out-file]\n"), program_name);
+  fprintf (file, "Usage: %s [-dhVq] in-file [out-file]\n", program_name);
   exit (status);
 }
 
 static void
 show_help ()
 {
-  printf (_("%s: Convert a COFF object file into a SYSROFF object file\n"),
+  printf ("%s: Convert a COFF object file into a SYSROFF object file\n",
 	  program_name);
   show_usage (stdout, 0);
 }
@@ -1907,14 +1900,8 @@ main (ac, av)
   };
   char **matching;
   char *input_file;
+
   char *output_file;
-
-#if defined (HAVE_SETLOCALE) && defined (HAVE_LC_MESSAGES)
-  setlocale (LC_MESSAGES, "");
-#endif
-  bindtextdomain (PACKAGE, LOCALEDIR);
-  textdomain (PACKAGE);
-
   program_name = av[0];
   xmalloc_set_program_name (program_name);
 
@@ -1937,7 +1924,7 @@ main (ac, av)
 	  show_help ();
 	  /*NOTREACHED */
 	case 'V':
-	  printf (_("GNU %s version %s\n"), program_name, PROGRAM_VERSION);
+	  printf ("GNU %s version %s\n", program_name, PROGRAM_VERSION);
 	  exit (0);
 	  /*NOTREACHED */
 	case 0:
@@ -1962,7 +1949,10 @@ main (ac, av)
 	    show_usage (stderr, 1);
 	  if (strcmp (input_file, output_file) == 0)
 	    {
-	      fatal (_("input and output files must be different"));
+	      fprintf (stderr,
+		       "%s: input and output files must be different\n",
+		       program_name);
+	      exit (1);
 	    }
 	}
     }
@@ -1971,7 +1961,9 @@ main (ac, av)
 
   if (!input_file)
     {
-      fatal (_("no input file specified"));
+      fprintf (stderr, "%s: no input file specified\n",
+	       program_name);
+      exit (1);
     }
 
   if (!output_file)
@@ -2016,7 +2008,9 @@ main (ac, av)
 
   if (!file)
     {
-      fatal (_("unable to open output file %s"), output_file);
+      fprintf (stderr, "%s: unable to open output file %s\n",
+	       program_name, output_file);
+      exit (1);
     }
 
   if (debug)

@@ -1,6 +1,7 @@
-%{/* deflex.l - Lexer for .def files */
+%{
+/* deflex.l - Lexer for .def files */
 
-/*   Copyright (C) 1995, 1997, 1998, 1999 Free Software Foundation, Inc.
+/*   Copyright (C) 1995 Free Software Foundation, Inc.
 
 This file is part of GNU Binutils.
 
@@ -24,10 +25,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 */
 #define DONTDECLARE_MALLOC
-#include "libiberty.h"
 #include "defparse.h"
-#include "dlltool.h"
-
+extern char *strdup();
 int linenumber;
 
 %}
@@ -42,7 +41,7 @@ int linenumber;
 "SECTIONS"	{ return SECTIONS;}
 "EXPORTS"	{ return EXPORTS;}
 "IMPORTS"	{ return IMPORTS;}
-"VERSION"	{ return VERSIONK;}
+"VERSION"	{ return VERSION;}
 "BASE"		{ return BASE;}
 "CONSTANT"	{ return CONSTANT; }
 "NONAME"	{ return NONAME; }
@@ -50,30 +49,23 @@ int linenumber;
 "WRITE"		{ return WRITE;}
 "EXECUTE"	{ return EXECUTE;}
 "SHARED"	{ return SHARED;}
-"NONSHARED"	{ return NONSHARED;}
-"SINGLE"	{ return SINGLE;}
-"MULTIPLE"	{ return MULTIPLE;}
-"INITINSTANCE"	{ return INITINSTANCE;}
-"INITGLOBAL"	{ return INITGLOBAL;}
-"TERMINSTANCE"	{ return TERMINSTANCE;}
-"TERMGLOBAL"	{ return TERMGLOBAL;}
 
 [0-9][x0-9A-Fa-f]* { yylval.number = strtol (yytext,0,0); 
 		return NUMBER; }
 
-[A-Za-z$:\-\_?][A-Za-z0-9/$:\-\_@?]* { 	
-		yylval.id =  xstrdup (yytext);
+[A-Za-z$:\-\_][A-Za-z0-9/$:\-\_@]+ { 	
+		yylval.id =  strdup(yytext);
 		return ID;
 		}
 
 "\""[^\"]*"\"" {
-		yylval.id = xstrdup (yytext+1);
+		yylval.id = strdup (yytext+1);
 		yylval.id[yyleng-2] = 0;
 		return ID;
 		}
 
 "\'"[^\']*"\'" {
-		yylval.id = xstrdup (yytext+1);
+		yylval.id = strdup (yytext+1);
 		yylval.id[yyleng-2] = 0;
 		return ID;
 		}

@@ -62,7 +62,7 @@ void
 ar_extract PARAMS ((struct list *));
 
 bfd *
-open_inarch PARAMS ((const char *archive_filename, const char *));
+open_inarch PARAMS ((const char *archive_filename));
 
 int
 yyparse PARAMS ((void));

@@ -1,6 +1,5 @@
 /* BFD back-end for PowerPC Microsoft Portable Executable files.
-   Copyright 1990, 91, 92, 93, 94, 95, 96, 97, 98, 1999
-   Free Software Foundation, Inc.
+   Copyright 1990, 1991, 1992, 1993, 1994 Free Software Foundation, Inc.
 
    Original version pieced together by Kim Knuttila (krk@cygnus.com)
 
@@ -22,8 +21,7 @@ GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
-Foundation, 59 Temple Place - Suite 330,
-Boston, MA 02111-1307, USA.  */
+Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.  */
 
 /* Current State:
    - objdump works
@@ -36,8 +34,8 @@ Boston, MA 02111-1307, USA.  */
 
 #include "bfd.h"
 #include "sysdep.h"
-
 #include "libbfd.h"
+#include "obstack.h"
 
 #include "coff/powerpc.h"
 #include "coff/internal.h"
@@ -51,56 +49,6 @@ Boston, MA 02111-1307, USA.  */
 #define BADMAG(x) PPCBADMAG(x)
 
 #include "libcoff.h"
-
-/* This file is compiled more than once, but we only compile the
-   final_link routine once.  */
-extern boolean ppc_bfd_coff_final_link
-  PARAMS ((bfd *, struct bfd_link_info *));
-extern void dump_toc PARAMS ((PTR));
-
-/* The toc is a set of bfd_vma fields. We use the fact that valid         */
-/* addresses are even (i.e. the bit representing "1" is off) to allow     */
-/* us to encode a little extra information in the field                   */
-/* - Unallocated addresses are intialized to 1.                           */
-/* - Allocated addresses are even numbers.                                */
-/* The first time we actually write a reference to the toc in the bfd,    */
-/* we want to record that fact in a fixup file (if it is asked for), so   */
-/* we keep track of whether or not an address has been written by marking */
-/* the low order bit with a "1" upon writing                              */
-
-#define SET_UNALLOCATED(x)  ((x) = 1)
-#define IS_UNALLOCATED(x)   ((x) == 1)
-
-#define IS_WRITTEN(x)       ((x) & 1)
-#define MARK_AS_WRITTEN(x)  ((x) |= 1)
-#define MAKE_ADDR_AGAIN(x)  ((x) &= ~1)
-
-
-/* Turn on this check if you suspect something amiss in the hash tables */
-#ifdef DEBUG_HASH
-
-/* Need a 7 char string for an eye catcher */
-#define EYE "krkjunk"
-
-#define HASH_CHECK_DCL char eye_catcher[8];
-#define HASH_CHECK_INIT(ret)      strcpy(ret->eye_catcher, EYE)
-#define HASH_CHECK(addr) \
- if (strcmp(addr->eye_catcher, EYE) != 0) \
-  { \
-    fprintf(stderr,\
-    _("File %s, line %d, Hash check failure, bad eye %8s\n"), \
-    __FILE__, __LINE__, addr->eye_catcher); \
-    abort(); \
- }
-
-
-#else
-
-#define HASH_CHECK_DCL
-#define HASH_CHECK_INIT(ret)
-#define HASH_CHECK(addr)
-
-#endif
 
 /* In order not to add an int to every hash table item for every coff
    linker, we define our own hash table, derived from the coff one */
@@ -116,10 +64,20 @@ struct ppc_coff_link_hash_entry
   bfd_vma toc_offset;               /* Our addition, as required */
   int symbol_is_glue;
   unsigned long int glue_insn;
-
-  HASH_CHECK_DCL
+  char eye_catcher[8];
 };
 
+/* Need a 7 char string for an eye catcher */
+#define EYE "krkjunk"
+
+#define CHECK_EYE(addr) \
+ if (strcmp(addr, EYE) != 0) \
+  { \
+    fprintf(stderr,\
+    "File %s, line %d, Hash check failure, bad eye %8s\n", \
+    __FILE__, __LINE__, addr); \
+    abort(); \
+ }
 
 /* PE linker hash table.  */
 
@@ -131,20 +89,6 @@ struct ppc_coff_link_hash_table
 static struct bfd_hash_entry *ppc_coff_link_hash_newfunc
   PARAMS ((struct bfd_hash_entry *, struct bfd_hash_table *,
 	   const char *));
-static boolean ppc_coff_link_hash_table_init
-  PARAMS ((struct ppc_coff_link_hash_table *, bfd *,
-	   struct bfd_hash_entry *(*) (struct bfd_hash_entry *,
-				       struct bfd_hash_table *,
-				       const char *)));
-static struct bfd_link_hash_table *ppc_coff_link_hash_table_create
-  PARAMS ((bfd *));
-static boolean coff_ppc_relocate_section
-  PARAMS ((bfd *, struct bfd_link_info *, bfd *, asection *, bfd_byte *,
-	   struct internal_reloc *, struct internal_syment *, asection **));
-static reloc_howto_type *coff_ppc_rtype_to_howto
-  PARAMS ((bfd *, asection *, struct internal_reloc *,
-	   struct coff_link_hash_entry *, struct internal_syment *,
-	   bfd_vma *));
 
 /* Routine to create an entry in the link hash table.  */
 
@@ -175,11 +119,10 @@ ppc_coff_link_hash_newfunc (entry, table, string)
   if (ret)
     {
       /* Initialize the local fields.  */
-      SET_UNALLOCATED(ret->toc_offset);
+      ret->toc_offset = 1;
       ret->symbol_is_glue = 0;
       ret->glue_insn = 0;
-
-      HASH_CHECK_INIT(ret);
+      strcpy(ret->eye_catcher, EYE);
     }
 
   return (struct bfd_hash_entry *) ret;
@@ -209,7 +152,10 @@ ppc_coff_link_hash_table_create (abfd)
   ret = ((struct ppc_coff_link_hash_table *)
 	 bfd_alloc (abfd, sizeof (struct ppc_coff_link_hash_table)));
   if (ret == NULL)
-    return NULL;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return NULL;
+    }
   if (! ppc_coff_link_hash_table_init (ret, abfd,
 					ppc_coff_link_hash_newfunc))
     {
@@ -225,8 +171,8 @@ ppc_coff_link_hash_table_create (abfd)
 
 
 /* The nt loader points the toc register to &toc + 32768, in order to */
-/* use the complete range of a 16-bit displacement. We have to adjust */
-/* for this when we fix up loads displaced off the toc reg.           */
+/* use the complete range of a 16-bit displacement (I guess). We have */
+/* to adjust for this when we fix up loads displaced off the toc reg. */
 #define TOC_LOAD_ADJUSTMENT (-32768)
 #define TOC_SECTION_NAME ".private.toc"
 
@@ -295,8 +241,6 @@ ppc_coff_link_hash_table_create (abfd)
 #define IMAGE_REL_PPC_REFLO             0x0011
 #define IMAGE_REL_PPC_PAIR              0x0012
 
-/* This is essentially the same as tocrel16, with TOCDEFN assumed */
-#define IMAGE_REL_PPC_TOCREL16_DEFN     0x0013
 
 /*  Flag bits in IMAGE_RELOCATION.TYPE */
 
@@ -332,7 +276,6 @@ static bfd_reloc_status_type ppc_refhi_reloc PARAMS ((bfd *abfd,
 						      asection *section,
 						      bfd *output_bfd,
 						      char **error));
-#if 0
 static bfd_reloc_status_type ppc_reflo_reloc PARAMS ((bfd *abfd,
 						      arelent *reloc,
 						      asymbol *symbol,
@@ -340,7 +283,6 @@ static bfd_reloc_status_type ppc_reflo_reloc PARAMS ((bfd *abfd,
 						      asection *section,
 						      bfd *output_bfd,
 						      char **error));
-#endif
 static bfd_reloc_status_type ppc_pair_reloc PARAMS ((bfd *abfd,
 						     arelent *reloc,
 						     asymbol *symbol,
@@ -358,7 +300,6 @@ static bfd_reloc_status_type ppc_toc16_reloc PARAMS ((bfd *abfd,
 						      bfd *output_bfd,
 						      char **error));
 
-#if 0
 static bfd_reloc_status_type ppc_addr32nb_reloc PARAMS ((bfd *abfd,
 							 arelent *reloc,
 							 asymbol *symbol,
@@ -366,7 +307,7 @@ static bfd_reloc_status_type ppc_addr32nb_reloc PARAMS ((bfd *abfd,
 							 asection *section,
 							 bfd *output_bfd,
 							 char **error));
-#endif
+
 static bfd_reloc_status_type ppc_section_reloc PARAMS ((bfd *abfd,
 							arelent *reloc,
 							asymbol *symbol,
@@ -755,25 +696,7 @@ static reloc_howto_type ppc_coff_howto_table[] =
 	 true,	                /* partial_inplace */                      
 	 0xffffffff,	        /* src_mask */                             
 	 0xffffffff,        	/* dst_mask */                             
-	 false),                /* pcrel_offset */
-
-  /* IMAGE_REL_PPC_TOCREL16_DEFN 0x0013 */
-  /*   16-bit offset from TOC base, without causing a definition */
-  /* Used: */
-  HOWTO ( (IMAGE_REL_PPC_TOCREL16 | IMAGE_REL_PPC_TOCDEFN), /* type */ 
-	 0,	                /* rightshift */                           
-	 1,	                /* size (0 = byte, 1 = short, 2 = long) */ 
-	 16,	                /* bitsize */                   
-	 false,	                /* pc_relative */                          
-	 0,	                /* bitpos */                               
-	 complain_overflow_dont, /* complain_on_overflow */
-	 0,                     /* special_function */                     
-	 "TOCREL16, TOCDEFN",   /* name */
-	 false,	                /* partial_inplace */                      
-	 0xffff,	        /* src_mask */                             
-	 0xffff,        	/* dst_mask */                             
-	 false),                /* pcrel_offset */
-
+	 false)                 /* pcrel_offset */
 };
 
 
@@ -788,7 +711,7 @@ static reloc_howto_type ppc_coff_howto_table[] =
    if (i == 0)                                               \
      {                                                       \
        i = 1;                                                \
-       fprintf(stderr,_("Unimplemented Relocation -- %s\n"),x); \
+       fprintf(stderr,"Unimplemented Relocation -- %s\n",x); \
      }                                                       \
 }
 
@@ -810,10 +733,8 @@ static reloc_howto_type ppc_coff_howto_table[] =
 
 #define DUMP_RELOC2(n,r)                     \
 {                                            \
-   fprintf(stderr,"%s sym %d, r_vaddr %d %s\n", \
-	   n, r->r_symndx, r->r_vaddr,\
-	   (((r->r_type) & IMAGE_REL_PPC_TOCDEFN) == 0) \
-	   ?" ":" TOCDEFN"  );      \
+   fprintf(stderr,"%s sym %d, r_vaddr %d\n", \
+	   n, r->r_symndx, r->r_vaddr);      \
 }
 
 #else
@@ -825,10 +746,6 @@ static reloc_howto_type ppc_coff_howto_table[] =
 
 
 /* toc construction and management routines */
-
-/* This file is compiled twice, and these variables are defined in one
-   of the compilations.  FIXME: This is confusing and weird.  Also,
-   BFD should not use global variables.  */
 extern bfd* bfd_of_toc_owner;
 extern long int global_toc_size;
 
@@ -843,18 +760,10 @@ enum toc_type
   toc_64
 };
 
-enum ref_category
-{
-  priv,
-  pub,
-  data
-};
-
 struct list_ele
 {
   struct list_ele *next;
   bfd_vma addr;
-  enum ref_category cat;
   int offset;
   const char *name;
 };
@@ -862,25 +771,18 @@ struct list_ele
 extern struct list_ele *head;
 extern struct list_ele *tail;
 
-static void record_toc
-  PARAMS ((asection *, int, enum ref_category, const char *));
-
 static void
-record_toc (toc_section, our_toc_offset, cat, name)
+record_toc(toc_section, our_toc_offset, name)
      asection *toc_section;
      int our_toc_offset;
-     enum ref_category cat;
      const char *name;
 {
   /* add this entry to our toc addr-offset-name list */
   struct list_ele *t;
-  t = (struct list_ele *) bfd_malloc (sizeof (struct list_ele));
-  if (t == NULL)
-    abort ();
+  t = malloc(sizeof(struct list_ele));
   t->next = 0;
   t->offset = our_toc_offset;
   t->name = name;
-  t->cat = cat;
   t->addr = toc_section->output_offset + our_toc_offset;
 
   if (head == 0)
@@ -895,23 +797,24 @@ record_toc (toc_section, our_toc_offset, cat, name)
     }
 }
 
-#ifdef COFF_IMAGE_WITH_PE
-
-static boolean ppc_record_toc_entry
-  PARAMS ((bfd *, struct bfd_link_info *, asection *, int, enum toc_type));
-static void ppc_mark_symbol_as_glue
-  PARAMS ((bfd *, int, struct internal_reloc *));
-
 /* record a toc offset against a symbol */
-static boolean
+static int
 ppc_record_toc_entry(abfd, info, sec, sym, toc_kind)
      bfd *abfd;
-     struct bfd_link_info *info ATTRIBUTE_UNUSED;
-     asection *sec ATTRIBUTE_UNUSED;
+     struct bfd_link_info *info;
+     asection *sec;
      int sym;
-     enum toc_type toc_kind ATTRIBUTE_UNUSED;
+     enum toc_type toc_kind;
 {
+  bfd_byte *t;
+  bfd_byte *old_contents;
+  asection *s;
+  int element_size;
+  int data;
+  int offset;
   struct ppc_coff_link_hash_entry *h;
+  struct coff_symbol_struct *target;
+  int ret_val;
   const char *name;
 
   int *local_syms;
@@ -921,7 +824,7 @@ ppc_record_toc_entry(abfd, info, sec, sym, toc_kind)
   h = (struct ppc_coff_link_hash_entry *) (obj_coff_sym_hashes (abfd)[sym]);
   if (h != 0)
     {
-      HASH_CHECK(h);
+      CHECK_EYE(h->eye_catcher);
     }
 
   if (h == 0) 
@@ -929,32 +832,40 @@ ppc_record_toc_entry(abfd, info, sec, sym, toc_kind)
       local_syms = obj_coff_local_toc_table(abfd);
       if (local_syms == 0)
 	{
-	  unsigned int i;
+	  int i;
 	  /* allocate a table */
 	  local_syms = 
 	    (int *) bfd_zalloc (abfd, 
 				obj_raw_syment_count(abfd) * sizeof(int));
 	  if (local_syms == 0)
-	    return false;
-	  obj_coff_local_toc_table(abfd) = local_syms;
-	  for (i = 0; i < obj_raw_syment_count(abfd); ++i)
 	    {
-	      SET_UNALLOCATED(local_syms[i]);
-	    }
-	}
-
-      if (IS_UNALLOCATED(local_syms[sym])) 
-	{
-	  local_syms[sym] = global_toc_size;
-	  global_toc_size += 4;
-
-	  /* The size must fit in a 16bit displacment */
-	  if (global_toc_size > 65535)
-	    {
-	      (*_bfd_error_handler) (_("TOC overflow"));
-	      bfd_set_error (bfd_error_file_too_big);
+	      bfd_set_error (bfd_error_no_memory);
 	      return false;
 	    }
+	  obj_coff_local_toc_table(abfd) = local_syms;
+	  for (i = 0; i < obj_raw_syment_count(abfd); ++i)
+	    local_syms[i] = 1;
+	}
+
+      if (local_syms[sym] == 1) 
+	{
+	  local_syms[sym] = global_toc_size;
+	  ret_val = global_toc_size;
+	  global_toc_size += 4;
+#ifdef TOC_DEBUG
+	  fprintf(stderr,
+		  "Setting toc_offset for local sym %d to %d\n",
+		  sym, ret_val);
+#endif
+	}
+      else
+	{
+	  ret_val = local_syms[sym];
+#ifdef TOC_DEBUG
+	  fprintf(stderr,
+		  "toc_offset already set for local sym %d to %d\n",
+		  sym, ret_val);
+#endif
 	}
     }
   else
@@ -963,22 +874,29 @@ ppc_record_toc_entry(abfd, info, sec, sym, toc_kind)
 
       /* check to see if there's a toc slot allocated. If not, do it
 	 here. It will be used in relocate_section */
-      if (IS_UNALLOCATED(h->toc_offset))
+      if (h->toc_offset == 1)
 	{
 	  h->toc_offset = global_toc_size;
+	  ret_val = global_toc_size;
 	  global_toc_size += 4;
-
-	  /* The size must fit in a 16bit displacment */
-	  if (global_toc_size >= 65535)
-	    {
-	      (*_bfd_error_handler) (_("TOC overflow"));
-	      bfd_set_error (bfd_error_file_too_big);
-	      return false;
-	    }
+#ifdef TOC_DEBUG
+	  fprintf(stderr,
+		  "Setting toc_offset for sym %d (%s) [h=%p] to %d\n",
+		  sym, name, h, ret_val);
+#endif
+	}
+      else
+	{
+	  ret_val = h->toc_offset;
+#ifdef TOC_DEBUG
+	  fprintf(stderr,
+		  "toc_offset already set for sym %d (%s) [h=%p] to %d\n",
+		  sym, name, h, ret_val);
+#endif
 	}
     }
 
-  return true;
+  return ret_val;
 }
 
 /* record a toc offset against a symbol */
@@ -992,7 +910,7 @@ ppc_mark_symbol_as_glue(abfd, sym, rel)
 
   h = (struct ppc_coff_link_hash_entry *) (obj_coff_sym_hashes (abfd)[sym]);
 
-  HASH_CHECK(h);
+  CHECK_EYE(h->eye_catcher);
 
   h->symbol_is_glue = 1;
   h->glue_insn = bfd_get_32 (abfd, (bfd_byte *) &rel->r_vaddr);
@@ -1000,32 +918,42 @@ ppc_mark_symbol_as_glue(abfd, sym, rel)
   return;
 }
 
-#endif /* COFF_IMAGE_WITH_PE */
 
+/* Provided the symbol, returns the value reffed */
+static long get_symbol_value PARAMS ((asymbol *));
+
+static long
+get_symbol_value (symbol)       
+     asymbol *symbol;
+{                                             
+  long relocation = 0;
+
+  if (bfd_is_com_section (symbol->section))
+    {
+      relocation = 0;                           
+    }
+  else 
+    {                                      
+      relocation = symbol->value +
+	symbol->section->output_section->vma +
+	  symbol->section->output_offset;
+    }                                           
+
+  return(relocation);
+}
 
 /* Return true if this relocation should
    appear in the output .reloc section. */
 
 static boolean in_reloc_p(abfd, howto)
-     bfd * abfd ATTRIBUTE_UNUSED;
+     bfd * abfd;
      reloc_howto_type *howto;
 {
   return 
     (! howto->pc_relative) 
-      && (howto->type != IMAGE_REL_PPC_ADDR32NB)
       && (howto->type != IMAGE_REL_PPC_TOCREL16)
-      && (howto->type != IMAGE_REL_PPC_IMGLUE)
-      && (howto->type != IMAGE_REL_PPC_IFGLUE) 
-      && (howto->type != IMAGE_REL_PPC_SECREL)
-      && (howto->type != IMAGE_REL_PPC_SECTION)
-      && (howto->type != IMAGE_REL_PPC_SECREL16)
-      && (howto->type != IMAGE_REL_PPC_REFHI)
-      && (howto->type != IMAGE_REL_PPC_REFLO)
-      && (howto->type != IMAGE_REL_PPC_PAIR)
-      && (howto->type != IMAGE_REL_PPC_TOCREL16_DEFN) ;
+      && (howto->type != IMAGE_REL_PPC_IMGLUE);
 }     
-
-#if 0
 
 /* this function is in charge of performing all the ppc PE relocations */
 /* Don't yet know if we want to do this this particular way ... (krk)  */
@@ -1047,10 +975,17 @@ pe_ppc_reloc (abfd, reloc_entry, symbol_in, data, input_section, output_bfd,
   static boolean part1_consth_active = false;
   static unsigned long part1_consth_value;
 
+  unsigned long insn;
   unsigned long sym_value;
+  unsigned long unsigned_value;
   unsigned short r_type;
+  long signed_value;
+  
   unsigned long addr = reloc_entry->address ; /*+ input_section->vma*/
+  bfd_byte  *hit_data =addr + (bfd_byte *)(data);
 	
+  fprintf(stderr, "pe_ppc_reloc (%s)\n", TARGET_LITTLE_NAME);
+
   r_type = reloc_entry->howto->type;
 
   if (output_bfd) 
@@ -1075,7 +1010,7 @@ pe_ppc_reloc (abfd, reloc_entry, symbol_in, data, input_section, output_bfd,
   if ((part1_consth_active) && (r_type != IMAGE_REL_PPC_PAIR)) 
     {
       part1_consth_active = false;
-      *error_message = (char *) _("Missing PAIR");
+      *error_message = (char *) "Missing PAIR";
       return(bfd_reloc_dangerous);
     }
 
@@ -1084,8 +1019,6 @@ pe_ppc_reloc (abfd, reloc_entry, symbol_in, data, input_section, output_bfd,
   
   return(bfd_reloc_ok);	
 }
-
-#endif /* 0 */
 
 /* The reloc processing routine for the optimized COFF linker.  */
 
@@ -1109,6 +1042,14 @@ coff_ppc_relocate_section (output_bfd, info, input_bfd, input_section,
   bfd_vma relocation;
   reloc_howto_type *howto = 0;
   
+#ifdef DEBUG_RELOC
+  fprintf(stderr, 
+	  "pe_ppc_relocate_section (%s) for %s \n", 
+	  TARGET_LITTLE_NAME,
+	  input_section->name);
+  
+#endif  
+
   /* If we are performing a relocateable link, we don't need to do a
      thing.  The caller will take care of adjusting the reloc
      addresses and symbol indices.  */
@@ -1133,7 +1074,25 @@ coff_ppc_relocate_section (output_bfd, info, input_bfd, input_section,
 
       unsigned short r_type  = EXTRACT_TYPE (rel->r_type);
       unsigned short r_flags = EXTRACT_FLAGS(rel->r_type);
+      unsigned short junk    = EXTRACT_JUNK (rel->r_type);
   
+#ifdef DEBUG_RELOC
+      /* now examine flags */
+      if (r_flags != 0) 
+	{
+	  fprintf (stderr, "Reloc with flags found!");
+	  if ( r_flags & IMAGE_REL_PPC_NEG ) 
+	    fprintf (stderr, " NEG");
+	  if ( r_flags & IMAGE_REL_PPC_BRTAKEN )
+	    fprintf (stderr, " BRTAKEN");
+	  if ( r_flags & IMAGE_REL_PPC_BRNTAKEN )
+	    fprintf (stderr, " BRNTAKEN");
+	  if ( r_flags & IMAGE_REL_PPC_TOCDEFN )
+	    fprintf (stderr, " TOCDEFN");
+	  fprintf(stderr, "\n");
+	}
+#endif
+
       symndx = rel->r_symndx;
       loc = contents + rel->r_vaddr - input_section->vma;
 
@@ -1151,16 +1110,10 @@ coff_ppc_relocate_section (output_bfd, info, input_bfd, input_section,
 	    (obj_coff_sym_hashes (input_bfd)[symndx]);
 	  if (h != 0) 
 	    {
-	      HASH_CHECK(h);
+	      CHECK_EYE(h->eye_catcher);
 	    }
 
 	  sym = syms + symndx;
-	}
-
-      if (r_type == IMAGE_REL_PPC_IMGLUE && h == 0)
-	{
-	  /* An IMGLUE reloc must have a name. Something is very wrong. */
-	  abort();
 	}
 
       sec = NULL;
@@ -1176,14 +1129,13 @@ coff_ppc_relocate_section (output_bfd, info, input_bfd, input_section,
 	      sec = sections[symndx];
 	      val = (sec->output_section->vma
 		     + sec->output_offset
-		     + sym->n_value);
-	      if (! obj_pe (output_bfd))
-		val -= sec->vma;
+		     + sym->n_value
+		     - sec->vma);
 	    }
 	}
       else
 	{
-	  HASH_CHECK(h);
+	  CHECK_EYE(h->eye_catcher);
 
 	  if (h->root.root.type == bfd_link_hash_defined
 	      || h->root.root.type == bfd_link_hash_defweak)
@@ -1197,7 +1149,7 @@ coff_ppc_relocate_section (output_bfd, info, input_bfd, input_section,
 	    {
 	      if (! ((*info->callbacks->undefined_symbol)
 		     (info, h->root.root.root.string, input_bfd, input_section,
-		      rel->r_vaddr - input_section->vma, true)))
+		      rel->r_vaddr - input_section->vma)))
 		return false;
 	    }
 	}
@@ -1208,10 +1160,11 @@ coff_ppc_relocate_section (output_bfd, info, input_bfd, input_section,
       switch (r_type)
 	{
 	default:
-	  (*_bfd_error_handler)
-	    (_("%s: unsupported relocation type 0x%02x"),
-	     bfd_get_filename (input_bfd), r_type);
+	  fprintf( stderr, 
+		  "ERROR: during reloc processing -- unsupported reloc %s\n", 
+		  howto->name);
 	  bfd_set_error (bfd_error_bad_value);
+	  abort();
 	  return false;
 	case IMAGE_REL_PPC_TOCREL16:
 	  {
@@ -1224,13 +1177,30 @@ coff_ppc_relocate_section (output_bfd, info, input_bfd, input_section,
 	      {
 		toc_section = bfd_get_section_by_name (bfd_of_toc_owner, 
 						       TOC_SECTION_NAME);
+#ifdef TOC_DEBUG
+
+		fprintf(stderr,
+			"BFD of toc owner %p, section addr of %s %p\n",
+			 bfd_of_toc_owner, TOC_SECTION_NAME, toc_section);
+#endif
 
 		if ( toc_section == NULL ) 
 		  {
-		    /* There is no toc section. Something is very wrong. */
+		    fprintf(stderr, "No Toc section!\n");
 		    abort();
 		  }
 	      }
+
+#if 0
+	    if ( r_flags & IMAGE_REL_PPC_TOCDEFN )
+	      {
+		/* Somehow, we are to assume that the toc has already been
+		   done for this one, and the offset is the value of
+		   the symbol? */
+		fprintf(stderr,
+			"Symbol value %d\n", val);
+	      }
+#endif
 
 	    /* 
 	     *  Amazing bit tricks present. As we may have seen earlier, we
@@ -1251,27 +1221,38 @@ coff_ppc_relocate_section (output_bfd, info, input_bfd, input_section,
 		local_toc_table = obj_coff_local_toc_table(input_bfd);
 		our_toc_offset = local_toc_table[symndx];
 
-		if (IS_WRITTEN(our_toc_offset))
+		if ((our_toc_offset & 1) != 0)
 		  {
 		    /* if it has been written out, it is marked with the 
 		       1 bit. Fix up our offset, but do not write it out
 		       again.
 		     */
-		    MAKE_ADDR_AGAIN(our_toc_offset);
+		    our_toc_offset &= ~1;
+#ifdef TOC_DEBUG
+
+		    fprintf(stderr,
+			    "Not writing out toc_offset of %d for %s\n", our_toc_offset, name);
+#endif
 		  }
 		else
 		  {
 		    /* write out the toc entry */
-		    record_toc(toc_section, 
-			       our_toc_offset, 
-			       priv, 
-			       strdup(name));
+		    record_toc(toc_section, our_toc_offset, strdup(name));
+#ifdef TOC_DEBUG
+		    fprintf(stderr,
+			    "Writing out toc_offset toc_section (%p,%p)+%d val %d for %s\n", 
+			    toc_section,
+			    toc_section->contents,
+			    our_toc_offset, 
+			    val,
+			    name);
+#endif
 
 		    bfd_put_32(output_bfd,
 			       val,
 			       toc_section->contents + our_toc_offset);
 
-		    MARK_AS_WRITTEN(local_toc_table[symndx]);
+		    local_toc_table[symndx] |= 1;
 		    fixit = true;
 		  }
 	      }
@@ -1280,58 +1261,39 @@ coff_ppc_relocate_section (output_bfd, info, input_bfd, input_section,
 		const char *name = h->root.root.root.string;
 		our_toc_offset = h->toc_offset;
 
-		if ((r_flags & IMAGE_REL_PPC_TOCDEFN) 
-		    == IMAGE_REL_PPC_TOCDEFN )
-		  {
-		    /* This is unbelievable cheese. Some knowledgable asm 
-		       hacker has decided to use r2 as a base for loading 
-		       a value. He/She does this by setting the tocdefn bit, 
-		       and not supplying a toc definition. The behaviour is 
-		       then to use the difference between the value of the 
-		       symbol and the actual location of the toc as the toc 
-		       index. 
-
-		       In fact, what is usually happening is, because the
-		       Import Address Table is mapped immediately following
-		       the toc, some trippy library code trying for speed on
-		       dll linkage, takes advantage of that and considers 
-		       the IAT to be part of the toc, thus saving a load.
-		    */
-
-		    our_toc_offset = val - 
-		      (toc_section->output_section->vma + 
-		       toc_section->output_offset);
-
-		    /* The size must still fit in a 16bit displacment */
-		    if (our_toc_offset >= 65535)
-		      {
-			(*_bfd_error_handler)
-			  (_("%s: Relocation for %s of %x exceeds Toc size limit"), 
-			   bfd_get_filename (input_bfd), name, our_toc_offset);
-			bfd_set_error (bfd_error_bad_value);
-			return false;
-		      }
-
-		    record_toc(toc_section, our_toc_offset, pub, strdup(name));
-		  }
-		else if (IS_WRITTEN(our_toc_offset))
+		if ((our_toc_offset & 1) != 0)
 		  {
 		    /* if it has been written out, it is marked with the 
 		       1 bit. Fix up our offset, but do not write it out
 		       again.
 		     */
-		    MAKE_ADDR_AGAIN(our_toc_offset);
+		    our_toc_offset &= ~1;
+#ifdef TOC_DEBUG
+		    fprintf(stderr,
+			    "Not writing out toc_offset of %d for %s\n", our_toc_offset, name);
+#endif
 		  }
 		else
 		  {
-		    record_toc(toc_section, our_toc_offset, pub, strdup(name));
+		    record_toc(toc_section, our_toc_offset, strdup(name));
+
+#ifdef TOC_DEBUG
+		    /* write out the toc entry */
+		    fprintf(stderr,
+			    "Writing out toc_offset toc_section (%p,%p)+%d val %d for %s\n", 
+			    toc_section,
+			    toc_section->contents,
+			    our_toc_offset, 
+			    val,
+			    name);
+#endif
 
 		    /* write out the toc entry */
 		    bfd_put_32(output_bfd,
 			       val,
 			       toc_section->contents + our_toc_offset);
 
-		    MARK_AS_WRITTEN(h->toc_offset);
+		    h->toc_offset |= 1;
 		    /* The tricky part is that this is the address that */
 		    /* needs a .reloc entry for it */
 		    fixit = true;
@@ -1350,23 +1312,21 @@ coff_ppc_relocate_section (output_bfd, info, input_bfd, input_section,
 		bfd_vma addr =  toc_section->output_section->vma
 		  + toc_section->output_offset + our_toc_offset;
 		    
+		fprintf(stderr,
+			"  Toc Section reloc candidate\n");
+		    
 		if (coff_data(output_bfd)->pe)
 		  addr -= pe_data(output_bfd)->pe_opthdr.ImageBase;
-
 		fwrite (&addr, 1,4, (FILE *) info->base_file);
 	      }
 
 
 	    /* FIXME: this test is conservative */
-	    if ( (r_flags & IMAGE_REL_PPC_TOCDEFN) != IMAGE_REL_PPC_TOCDEFN &&
-		our_toc_offset > toc_section->_raw_size)
+	    if (our_toc_offset > toc_section->_raw_size)
 	      {
-		(*_bfd_error_handler)
-		  (_("%s: Relocation exceeds allocated TOC (%x)"), 
-		   bfd_get_filename (input_bfd),
-		   toc_section->_raw_size);
-		bfd_set_error (bfd_error_bad_value);
-		return false;
+		fprintf(stderr,
+			"reloc offset is bigger than the toc size!\n");
+		abort();
 	      }
 
 	    /* Now we know the relocation for this toc reference */
@@ -1421,14 +1381,13 @@ coff_ppc_relocate_section (output_bfd, info, input_bfd, input_section,
 	      }
 
 	    fprintf(stderr, 
-		    _("Warning: unsupported reloc %s <file %s, section %s>\n"), 
+		    "Warning: unsupported reloc %s <file %s, section %s>\n", 
 		    howto->name,
 		    bfd_get_filename(input_bfd),
 		    input_section->name);
 
-	    fprintf(stderr,"sym %ld (%s), r_vaddr %ld (%lx)\n", 
-		    rel->r_symndx, my_name, (long) rel->r_vaddr,
-		    (unsigned long) rel->r_vaddr);  
+	    fprintf(stderr,"sym %d (%s), r_vaddr %d (%x)\n", 
+		    rel->r_symndx, my_name, rel->r_vaddr, rel->r_vaddr);  
 	  }
 	  break;
 	case IMAGE_REL_PPC_IMGLUE:
@@ -1439,45 +1398,21 @@ coff_ppc_relocate_section (output_bfd, info, input_bfd, input_section,
 	    if (h->symbol_is_glue == 1) 
 	      break;
 	    my_name = h->root.root.root.string;
+	    fprintf(stderr, 
+		    "Warning: previously missed IMGLUE reloc %s <file %s, section %s>\n", 
+		    howto->name,
+		    bfd_get_filename(input_bfd),
+		    input_section->name);
+	    break;
 
-	    (*_bfd_error_handler)
-	      (_("%s: Out of order IMGLUE reloc for %s"), 
-	       bfd_get_filename (input_bfd), my_name);
-	    bfd_set_error (bfd_error_bad_value);
-	    return false;
 	  }
+	  break;
 
 	case IMAGE_REL_PPC_ADDR32NB:
 	  {
 	    struct coff_link_hash_entry *myh = 0;
 	    const char *name = 0;
 	    DUMP_RELOC2(howto->name, rel);
-
-	    if (strncmp(".idata$2",input_section->name,8) == 0 && first_thunk_address == 0)
-	      {
-		/* set magic values */
-		int idata5offset;
-		struct coff_link_hash_entry *myh = 0;
-		myh = coff_link_hash_lookup (coff_hash_table (info),
-					     "__idata5_magic__",
-					     false, false, true);
-		first_thunk_address = myh->root.u.def.value + 
-		  sec->output_section->vma + 
-		    sec->output_offset - 
-		      pe_data(output_bfd)->pe_opthdr.ImageBase;
-		
-		idata5offset = myh->root.u.def.value;
-		myh = coff_link_hash_lookup (coff_hash_table (info),
-					     "__idata6_magic__",
-					     false, false, true);
-		
-		thunk_size = myh->root.u.def.value - idata5offset;
-		myh = coff_link_hash_lookup (coff_hash_table (info),
-					     "__idata4_magic__",
-					     false, false, true);
-		import_table_size = myh->root.u.def.value;
-	      }
-
 	    if (h == 0)
 	      { /* it is a file local symbol */
 		sym = syms + symndx;
@@ -1494,44 +1429,43 @@ coff_ppc_relocate_section (output_bfd, info, input_bfd, input_section,
 		  target = "__idata4_magic__";
 		else if (strcmp(".idata$5", name) == 0)
 		  target = "__idata5_magic__";
+		else
+		  abort();
 
-		if (target != 0)
+		myh = 0;
+
+		myh = coff_link_hash_lookup (coff_hash_table (info),
+					     target,
+					     false, false, true);
+		if (myh == 0) 
 		  {
-		    myh = 0;
+		    fprintf(stderr, "Missing idata magic cookies, this cannot work anyway...\n");
+		    abort();
+		  }
 
+		val = myh->root.u.def.value + 
+		  sec->output_section->vma + sec->output_offset;
+		if (first_thunk_address == 0)
+		  {
+		    int idata5offset;
 		    myh = coff_link_hash_lookup (coff_hash_table (info),
-						 target,
+						 "__idata5_magic__",
 						 false, false, true);
-		    if (myh == 0) 
-		      {
-			/* Missing magic cookies. Something is very wrong. */
-			abort();
-		      }
-		    
-		    val = myh->root.u.def.value + 
-		      sec->output_section->vma + sec->output_offset;
-		    if (first_thunk_address == 0)
-		      {
-			int idata5offset;
-			myh = coff_link_hash_lookup (coff_hash_table (info),
-						     "__idata5_magic__",
-						     false, false, true);
-			first_thunk_address = myh->root.u.def.value + 
-			  sec->output_section->vma + 
-			    sec->output_offset - 
-			      pe_data(output_bfd)->pe_opthdr.ImageBase;
-			
-			idata5offset = myh->root.u.def.value;
-			myh = coff_link_hash_lookup (coff_hash_table (info),
-						     "__idata6_magic__",
-						     false, false, true);
-			
-			thunk_size = myh->root.u.def.value - idata5offset;
-			myh = coff_link_hash_lookup (coff_hash_table (info),
-						     "__idata4_magic__",
-						     false, false, true);
-			import_table_size = myh->root.u.def.value;
-		      }
+		    first_thunk_address = myh->root.u.def.value + 
+		      sec->output_section->vma + 
+		      sec->output_offset - 
+			pe_data(output_bfd)->pe_opthdr.ImageBase;
+
+		    idata5offset = myh->root.u.def.value;
+		    myh = coff_link_hash_lookup (coff_hash_table (info),
+						 "__idata6_magic__",
+						 false, false, true);
+
+		    thunk_size = myh->root.u.def.value - idata5offset;
+		    myh = coff_link_hash_lookup (coff_hash_table (info),
+						 "__idata4_magic__",
+						 false, false, true);
+		    import_table_size = myh->root.u.def.value;
 		  }
 	      }
 
@@ -1543,17 +1477,8 @@ coff_ppc_relocate_section (output_bfd, info, input_bfd, input_section,
 	  }
 	  break;
 
-	case IMAGE_REL_PPC_REL24:
-	  DUMP_RELOC2(howto->name, rel);
-	  val -= (input_section->output_section->vma
-		  + input_section->output_offset);
-
-	  rstat = _bfd_relocate_contents (howto,
-					  input_bfd, 
-					  val, 
-					  loc);
-	  break;
 	case IMAGE_REL_PPC_ADDR16:
+	case IMAGE_REL_PPC_REL24:
 	case IMAGE_REL_PPC_ADDR24:
 	case IMAGE_REL_PPC_ADDR32:
 	  DUMP_RELOC2(howto->name, rel);
@@ -1581,7 +1506,11 @@ coff_ppc_relocate_section (output_bfd, info, input_bfd, input_section,
 	      if (coff_data(output_bfd)->pe)
 		{
 		  addr -= pe_data(output_bfd)->pe_opthdr.ImageBase;
+		  fprintf(stderr,
+			  " adjusted down to %d", addr);
 		}
+	      fprintf(stderr, "\n");
+
 	      fwrite (&addr, 1,4, (FILE *) info->base_file);
 	    }
 	}
@@ -1612,14 +1541,20 @@ coff_ppc_relocate_section (output_bfd, info, input_bfd, input_section,
 		buf[SYMNMLEN] = '\0';
 		name = buf;
 	      }
+#if 0
+	    else
+	      {
+		name = _bfd_coff_internal_syment_name (input_bfd, sym, buf);
+		if (name == NULL)
+		  return false;
+	      }
+#endif
 
 	    if (! ((*info->callbacks->reloc_overflow)
 		   (info, name, howto->name, 
 		    (bfd_vma) 0, input_bfd,
 		    input_section, rel->r_vaddr - input_section->vma)))
-	      {
-		return false;
-	      }
+	      return false;
 	  }
 	}
 
@@ -1630,11 +1565,7 @@ coff_ppc_relocate_section (output_bfd, info, input_bfd, input_section,
 
 #ifdef COFF_IMAGE_WITH_PE
 
-/* FIXME: BFD should not use global variables.  This file is compiled
-   twice, and these variables are shared.  This is confusing and
-   weird.  */
-
-long int global_toc_size = 4;
+long int global_toc_size = 0;
 
 bfd* bfd_of_toc_owner = 0;
 
@@ -1645,84 +1576,56 @@ long int thunk_size;
 struct list_ele *head;
 struct list_ele *tail;
 
-static char *
-h1 = N_("\n\t\t\tTOC MAPPING\n\n");
-static char *
-h2 = N_(" TOC    disassembly  Comments       Name\n");
-static char *
-h3 = N_(" Offset  spelling                   (if present)\n");
-
 void
-dump_toc (vfile)
-     PTR vfile;
+dump_toc(vfile)
+     void *vfile;
 {
-  FILE *file = (FILE *) vfile;
+  FILE *file = vfile;
   struct list_ele *t;
 
-  fprintf(file, _(h1));
-  fprintf(file, _(h2));
-  fprintf(file, _(h3));
+  fprintf(file, 
+	  " Offset Offset   Name if present\n");
 
   for(t = head; t != 0; t=t->next)
     {
-      const char *cat = "";
-
-      if (t->cat == priv)
-	cat = _("private       ");
-      else if (t->cat == pub)
-	cat = _("public        ");
-      else if (t->cat == data)
-	cat = _("data-in-toc   ");
-
-      if (t->offset > global_toc_size)
-	{
-	  if (t->offset <= global_toc_size + thunk_size)
-	    cat = _("IAT reference ");
-	  else
-	    {
-	      fprintf(file,
-		      _("**** global_toc_size %ld(%lx), thunk_size %ld(%lx)\n"),
-		      global_toc_size, global_toc_size, thunk_size, thunk_size);
-	      cat = _("Out of bounds!");
-	    }
-	}
-
       fprintf(file,
-	      " %04lx    (%d)", (unsigned long) t->offset, t->offset - 32768);
-      fprintf(file,
-	      "    %s %s\n",
-	      cat, t->name);
-
+	      " %2x  %04lx    %s\n",
+	      t->offset - 32768, t->offset, t->name);
     }
-
-  fprintf(file, "\n");
 }
 
 boolean
 ppc_allocate_toc_section (info) 
-     struct bfd_link_info *info ATTRIBUTE_UNUSED;
+     struct bfd_link_info *info;
 {
   asection *s;
   bfd_byte *foo;
   static char test_char = '1';
+
+#ifdef DEBUG_TOC
+  fprintf(stderr,
+	  "ppc_allocate_toc_section: allocating %s section of size %d\n",
+	  TOC_SECTION_NAME, global_toc_size);
+#endif
 
   if ( global_toc_size == 0 ) /* FIXME: does this get me in trouble? */
     return true;
 
   if (bfd_of_toc_owner == 0)
     {
-      /* No toc owner? Something is very wrong. */
+      fprintf(stderr,
+	      "There is no bfd that owns the toc section!\n");
       abort();
     }
 
   s = bfd_get_section_by_name ( bfd_of_toc_owner , TOC_SECTION_NAME);
   if (s == NULL) 
     {
-      /* No toc section? Something is very wrong. */
+      fprintf(stderr, "No Toc section!\n");
       abort();
     }
 
-  foo = (bfd_byte *) bfd_alloc(bfd_of_toc_owner, global_toc_size);
+  foo = bfd_alloc(bfd_of_toc_owner, global_toc_size);
   memset(foo, test_char, global_toc_size);
 
   s->_raw_size = s->_cooked_size = global_toc_size;
@@ -1739,6 +1642,12 @@ ppc_process_before_allocation (abfd, info)
   asection *sec;
   struct internal_reloc *i, *rel;
 
+#if 0
+  fprintf(stderr, 
+	  "ppc_process_before_allocation: BFD %s\n", 
+	  bfd_get_filename(abfd));
+#endif
+
   /* here we have a bfd that is to be included on the link. We have a hook
      to do reloc rummaging, before section sizes are nailed down. */
 
@@ -1754,6 +1663,14 @@ ppc_process_before_allocation (abfd, info)
 
   for (; sec != 0; sec = sec->next)
   {
+    int toc_offset;
+#ifdef DEBUG_RELOC
+    fprintf(stderr, 
+	    "  section %s reloc count %d\n", 
+	    sec->name, 
+	    sec->reloc_count);
+#endif
+
     if (sec->reloc_count == 0) 
       continue;
 
@@ -1768,20 +1685,32 @@ ppc_process_before_allocation (abfd, info)
       {
 	unsigned short r_type  = EXTRACT_TYPE (rel->r_type);
 	unsigned short r_flags = EXTRACT_FLAGS(rel->r_type);
-	boolean ok = true;
+	unsigned short junk    = EXTRACT_JUNK (rel->r_type);
 
+#ifdef DEBUG_RELOC
+	/* now examine flags */
+	if (r_flags != 0) 
+	  {
+	    fprintf (stderr, "Reloc with flags found!");
+	    if ( r_flags & IMAGE_REL_PPC_NEG ) 
+	      fprintf (stderr, " NEG");
+	    if ( r_flags & IMAGE_REL_PPC_BRTAKEN )
+	      fprintf (stderr, " BRTAKEN");
+	    if ( r_flags & IMAGE_REL_PPC_BRNTAKEN )
+	      fprintf (stderr, " BRNTAKEN");
+	    if ( r_flags & IMAGE_REL_PPC_TOCDEFN )
+		fprintf (stderr, " TOCDEFN");
+	    fprintf(stderr, "\n");
+	  }
+#endif
+	
 	DUMP_RELOC2(ppc_coff_howto_table[r_type].name, rel);
 
 	switch(r_type) 
 	  {
 	  case IMAGE_REL_PPC_TOCREL16:
-	    /* if TOCDEFN is on, ignore as someone else has allocated the
-	       toc entry */
-	    if ( (r_flags & IMAGE_REL_PPC_TOCDEFN) != IMAGE_REL_PPC_TOCDEFN )
-	      ok = ppc_record_toc_entry(abfd, info, sec, 
-					rel->r_symndx, default_toc);
-	    if (!ok)
-	      return false;
+	    toc_offset = ppc_record_toc_entry(abfd, info, sec, 
+					      rel->r_symndx, default_toc);
 	    break;
 	  case IMAGE_REL_PPC_IMGLUE:
 	    ppc_mark_symbol_as_glue(abfd, rel->r_symndx, rel);
@@ -1791,8 +1720,6 @@ ppc_process_before_allocation (abfd, info)
 	  }
       }
   }
-
-  return true;
 }
 
 #endif
@@ -1806,13 +1733,13 @@ ppc_refhi_reloc (abfd,
 		 input_section,
 		 output_bfd,
 		 error_message)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     arelent *reloc_entry ATTRIBUTE_UNUSED;
-     asymbol *symbol ATTRIBUTE_UNUSED;
-     PTR data ATTRIBUTE_UNUSED;
-     asection *input_section ATTRIBUTE_UNUSED;
+     bfd *abfd;
+     arelent *reloc_entry;
+     asymbol *symbol;
+     PTR data;
+     asection *input_section;
      bfd *output_bfd;
-     char **error_message ATTRIBUTE_UNUSED;
+     char **error_message;
 {
   UN_IMPL("REFHI");
   DUMP_RELOC("REFHI",reloc_entry);
@@ -1822,8 +1749,6 @@ ppc_refhi_reloc (abfd,
 
   return bfd_reloc_undefined;
 }
-
-#if 0
 
 static bfd_reloc_status_type
 ppc_reflo_reloc (abfd,
@@ -1850,8 +1775,6 @@ ppc_reflo_reloc (abfd,
   return bfd_reloc_undefined;
 }
 
-#endif
-
 static bfd_reloc_status_type
 ppc_pair_reloc (abfd,
 		reloc_entry,
@@ -1860,13 +1783,13 @@ ppc_pair_reloc (abfd,
 		input_section,
 		output_bfd,
 		error_message)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     arelent *reloc_entry ATTRIBUTE_UNUSED;
-     asymbol *symbol ATTRIBUTE_UNUSED;
-     PTR data ATTRIBUTE_UNUSED;
-     asection *input_section ATTRIBUTE_UNUSED;
+     bfd *abfd;
+     arelent *reloc_entry;
+     asymbol *symbol;
+     PTR data;
+     asection *input_section;
      bfd *output_bfd;
-     char **error_message ATTRIBUTE_UNUSED;
+     char **error_message;
 {
   UN_IMPL("PAIR");
   DUMP_RELOC("PAIR",reloc_entry);
@@ -1886,13 +1809,13 @@ ppc_toc16_reloc (abfd,
 		 input_section,
 		 output_bfd,
 		 error_message)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     arelent *reloc_entry ATTRIBUTE_UNUSED;
-     asymbol *symbol ATTRIBUTE_UNUSED;
-     PTR data ATTRIBUTE_UNUSED;
-     asection *input_section ATTRIBUTE_UNUSED;
+     bfd *abfd;
+     arelent *reloc_entry;
+     asymbol *symbol;
+     PTR data;
+     asection *input_section;
      bfd *output_bfd;
-     char **error_message ATTRIBUTE_UNUSED;
+     char **error_message;
 {
   UN_IMPL("TOCREL16");
   DUMP_RELOC("TOCREL16",reloc_entry);
@@ -1904,8 +1827,6 @@ ppc_toc16_reloc (abfd,
 
   return bfd_reloc_ok;
 }
-
-#if 0
 
 /* ADDR32NB : 32 bit address relative to the virtual origin.         */
 /*            (On the alpha, this is always a linker generated thunk)*/
@@ -1935,8 +1856,6 @@ ppc_addr32nb_reloc (abfd,
   return bfd_reloc_ok;
 }
 
-#endif
-
 static bfd_reloc_status_type
 ppc_secrel_reloc (abfd,
 		  reloc_entry,
@@ -1945,13 +1864,13 @@ ppc_secrel_reloc (abfd,
 		  input_section,
 		  output_bfd,
 		  error_message)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     arelent *reloc_entry ATTRIBUTE_UNUSED;
-     asymbol *symbol ATTRIBUTE_UNUSED;
-     PTR data ATTRIBUTE_UNUSED;
-     asection *input_section ATTRIBUTE_UNUSED;
+     bfd *abfd;
+     arelent *reloc_entry;
+     asymbol *symbol;
+     PTR data;
+     asection *input_section;
      bfd *output_bfd;
-     char **error_message ATTRIBUTE_UNUSED;
+     char **error_message;
 {
   UN_IMPL("SECREL");
   DUMP_RELOC("SECREL",reloc_entry);
@@ -1970,13 +1889,13 @@ ppc_section_reloc (abfd,
 		   input_section,
 		   output_bfd,
 		   error_message)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     arelent *reloc_entry ATTRIBUTE_UNUSED;
-     asymbol *symbol ATTRIBUTE_UNUSED;
-     PTR data ATTRIBUTE_UNUSED;
-     asection *input_section ATTRIBUTE_UNUSED;
+     bfd *abfd;
+     arelent *reloc_entry;
+     asymbol *symbol;
+     PTR data;
+     asection *input_section;
      bfd *output_bfd;
-     char **error_message ATTRIBUTE_UNUSED;
+     char **error_message;
 {
   UN_IMPL("SECTION");
   DUMP_RELOC("SECTION",reloc_entry);
@@ -1995,13 +1914,13 @@ ppc_imglue_reloc (abfd,
 		  input_section,
 		  output_bfd,
 		  error_message)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     arelent *reloc_entry ATTRIBUTE_UNUSED;
-     asymbol *symbol ATTRIBUTE_UNUSED;
-     PTR data ATTRIBUTE_UNUSED;
-     asection *input_section ATTRIBUTE_UNUSED;
+     bfd *abfd;
+     arelent *reloc_entry;
+     asymbol *symbol;
+     PTR data;
+     asection *input_section;
      bfd *output_bfd;
-     char **error_message ATTRIBUTE_UNUSED;
+     char **error_message;
 {
   UN_IMPL("IMGLUE");
   DUMP_RELOC("IMGLUE",reloc_entry);
@@ -2041,63 +1960,81 @@ ppc_coff_rtype2howto (relent, internal)
      For now, we just strip this stuff to find the type, and ignore it other
      than that.
   */
-  reloc_howto_type *howto;
+
   unsigned short r_type  = EXTRACT_TYPE (internal->r_type);
   unsigned short r_flags = EXTRACT_FLAGS(internal->r_type);
   unsigned short junk    = EXTRACT_JUNK (internal->r_type);
 
   /* the masking process only slices off the bottom byte for r_type. */
   if ( r_type > MAX_RELOC_INDEX ) 
-    abort();
+    {
+      fprintf(stderr, 
+	      "ppc_coff_rtype2howto: reloc index %d out of range [%d, %d]\n",
+	      internal->r_type, 0, MAX_RELOC_INDEX);
+      abort();
+    }
 
   /* check for absolute crap */
   if ( junk != 0 )
-    abort();
+    {
+      fprintf(stderr, 
+	      "ppc_coff_rtype2howto: reloc index %d contains junk %d\n",
+	      internal->r_type, junk);
+      abort();
+    }
+
+#ifdef DEBUG_RELOC
+  /* now examine flags */
+  if (r_flags != 0) 
+    {
+      fprintf (stderr, "Reloc with flags found!");
+      if ( r_flags & IMAGE_REL_PPC_NEG ) 
+	fprintf (stderr, " NEG");
+      if ( r_flags & IMAGE_REL_PPC_BRTAKEN )
+	fprintf (stderr, " BRTAKEN");
+      if ( r_flags & IMAGE_REL_PPC_BRNTAKEN )
+	fprintf (stderr, " BRNTAKEN");
+      if ( r_flags & IMAGE_REL_PPC_TOCDEFN )
+	fprintf (stderr, " TOCDEFN");
+      fprintf(stderr, "\n");
+    }
+#endif
 
   switch(r_type) 
     {
     case IMAGE_REL_PPC_ADDR16:
     case IMAGE_REL_PPC_REL24:
     case IMAGE_REL_PPC_ADDR24:
+    case IMAGE_REL_PPC_TOCREL16:
     case IMAGE_REL_PPC_ADDR32:
     case IMAGE_REL_PPC_IFGLUE:
     case IMAGE_REL_PPC_ADDR32NB:
     case IMAGE_REL_PPC_SECTION:
     case IMAGE_REL_PPC_SECREL:
       DUMP_RELOC2(ppc_coff_howto_table[r_type].name, internal);
-      howto = ppc_coff_howto_table + r_type;
       break;
     case IMAGE_REL_PPC_IMGLUE:
       DUMP_RELOC2(ppc_coff_howto_table[r_type].name, internal);
-      howto = ppc_coff_howto_table + r_type;
-      break;
-    case IMAGE_REL_PPC_TOCREL16:
-      DUMP_RELOC2(ppc_coff_howto_table[r_type].name, internal);
-      if (r_flags & IMAGE_REL_PPC_TOCDEFN)
-	howto = ppc_coff_howto_table + IMAGE_REL_PPC_TOCREL16_DEFN;
-      else
-	howto = ppc_coff_howto_table + IMAGE_REL_PPC_TOCREL16;
       break;
     default:
       fprintf(stderr, 
-	      _("Warning: Unsupported reloc %s [%d] used -- it may not work.\n"),
+	      "Warning: Unsupported reloc %s [%d] used -- it may not work.\n",
 	      ppc_coff_howto_table[r_type].name,
 	      r_type);
-      howto = ppc_coff_howto_table + r_type;      
       break;
     }
   
-  relent->howto = howto;
+  relent->howto = ppc_coff_howto_table + r_type;
   
 }
 
 static reloc_howto_type *
 coff_ppc_rtype_to_howto (abfd, sec, rel, h, sym, addendp)
-     bfd *abfd ATTRIBUTE_UNUSED;
+     bfd *abfd;
      asection *sec;
      struct internal_reloc *rel;
-     struct coff_link_hash_entry *h ATTRIBUTE_UNUSED;
-     struct internal_syment *sym ATTRIBUTE_UNUSED;
+     struct coff_link_hash_entry *h;
+     struct internal_syment *sym;
      bfd_vma *addendp;
 {
   reloc_howto_type *howto;
@@ -2117,51 +2054,72 @@ coff_ppc_rtype_to_howto (abfd, sec, rel, h, sym, addendp)
   unsigned short r_flags = EXTRACT_FLAGS(rel->r_type);
   unsigned short junk    = EXTRACT_JUNK (rel->r_type);
 
+fprintf(stderr,
+	"coff_ppc_rtype_to_howto\n");
+
   /* the masking process only slices off the bottom byte for r_type. */
   if ( r_type > MAX_RELOC_INDEX ) 
-    abort();
+    {
+      fprintf(stderr, 
+	      "coff_ppc_rtype_to_howto: index %d out of range [%d, %d]\n",
+	      r_type, 0, MAX_RELOC_INDEX);
+      abort();
+    }
   
   /* check for absolute crap */
   if ( junk != 0 )
-    abort();
-    
+    {
+      fprintf(stderr, 
+	      "coff_ppc_rtype_to_howto: reloc index %d contains junk %d\n",
+	      rel->r_type, junk);
+      abort();
+    }
+  
+#ifdef DEBUG_RELOC
+  /* now examine flags */
+  if (r_flags != 0) 
+    {
+      fprintf (stderr, "Reloc with flags found!");
+      if ( r_flags & IMAGE_REL_PPC_NEG ) 
+	fprintf (stderr, " NEG");
+      if ( r_flags & IMAGE_REL_PPC_BRTAKEN )
+	fprintf (stderr, " BRTAKEN");
+      if ( r_flags & IMAGE_REL_PPC_BRNTAKEN )
+	fprintf (stderr, " BRNTAKEN");
+      if ( r_flags & IMAGE_REL_PPC_TOCDEFN )
+	fprintf (stderr, " TOCDEFN");
+      fprintf(stderr, "\n");
+    }
+#endif
+  
   switch(r_type) 
     {
     case IMAGE_REL_PPC_ADDR32NB:
       DUMP_RELOC2(ppc_coff_howto_table[r_type].name, rel);
       *addendp -= pe_data(sec->output_section->owner)->pe_opthdr.ImageBase;
-      howto = ppc_coff_howto_table + r_type;
-      break;
-    case IMAGE_REL_PPC_TOCREL16:
-      DUMP_RELOC2(ppc_coff_howto_table[r_type].name, rel);
-      if (r_flags & IMAGE_REL_PPC_TOCDEFN)
-	howto = ppc_coff_howto_table + IMAGE_REL_PPC_TOCREL16_DEFN;
-      else
-	howto = ppc_coff_howto_table + IMAGE_REL_PPC_TOCREL16;
       break;
     case IMAGE_REL_PPC_ADDR16:
     case IMAGE_REL_PPC_REL24:
     case IMAGE_REL_PPC_ADDR24:
+    case IMAGE_REL_PPC_TOCREL16:
     case IMAGE_REL_PPC_ADDR32:
     case IMAGE_REL_PPC_IFGLUE:
     case IMAGE_REL_PPC_SECTION:
     case IMAGE_REL_PPC_SECREL:
       DUMP_RELOC2(ppc_coff_howto_table[r_type].name, rel);
-      howto = ppc_coff_howto_table + r_type;
       break;
     case IMAGE_REL_PPC_IMGLUE:
       DUMP_RELOC2(ppc_coff_howto_table[r_type].name, rel);
-      howto = ppc_coff_howto_table + r_type;
       break;
     default:
       fprintf(stderr, 
-	      _("Warning: Unsupported reloc %s [%d] used -- it may not work.\n"),
+	      "Warning: Unsupported reloc %s [%d] used -- it may not work.\n",
 	      ppc_coff_howto_table[r_type].name,
 	      r_type);
-      howto = ppc_coff_howto_table + r_type;
       break;
     }
   
+  howto = ppc_coff_howto_table + r_type;
   return howto;
 }
 
@@ -2175,24 +2133,31 @@ PARAMS ((bfd *, bfd_reloc_code_real_type));
 
 static reloc_howto_type *
 ppc_coff_reloc_type_lookup (abfd, code)
-     bfd *abfd ATTRIBUTE_UNUSED;
+     bfd *abfd;
      bfd_reloc_code_real_type code;
 {
+  
+#ifdef DEBUG_RELOC
+  fprintf(stderr, "ppc_coff_reloc_type_lookup for %s\n",
+	  bfd_get_reloc_code_name(code));
+#endif
+  
   switch (code)
     {
-      HOW2MAP(BFD_RELOC_32_GOTOFF,    IMAGE_REL_PPC_IMGLUE);
       HOW2MAP(BFD_RELOC_16_GOT_PCREL, IMAGE_REL_PPC_IFGLUE);
       HOW2MAP(BFD_RELOC_16,           IMAGE_REL_PPC_ADDR16);
       HOW2MAP(BFD_RELOC_PPC_B26,      IMAGE_REL_PPC_REL24);
       HOW2MAP(BFD_RELOC_PPC_BA26,     IMAGE_REL_PPC_ADDR24);
       HOW2MAP(BFD_RELOC_PPC_TOC16,    IMAGE_REL_PPC_TOCREL16);
-      HOW2MAP(BFD_RELOC_16_GOTOFF,    IMAGE_REL_PPC_TOCREL16_DEFN);
       HOW2MAP(BFD_RELOC_32,           IMAGE_REL_PPC_ADDR32);
       HOW2MAP(BFD_RELOC_RVA,          IMAGE_REL_PPC_ADDR32NB);
     default: 
+      fprintf(stderr,
+	      "\treturning NULL\n");
       return NULL;
     }
-  /*NOTREACHED*/
+  
+  return NULL;
 }
 
 #undef HOW2MAP
@@ -2203,7 +2168,8 @@ ppc_coff_reloc_type_lookup (abfd, code)
 #define RTYPE2HOWTO(cache_ptr, dst)  ppc_coff_rtype2howto (cache_ptr, dst)
 
 #ifndef COFF_IMAGE_WITH_PE
-static void ppc_coff_swap_sym_in_hook PARAMS ((bfd *, PTR, PTR));
+static void
+ppc_coff_swap_sym_in_hook ();
 #endif
 
 /* We use the special COFF backend linker, with our own special touch.  */
@@ -2211,10 +2177,8 @@ static void ppc_coff_swap_sym_in_hook PARAMS ((bfd *, PTR, PTR));
 #define coff_bfd_reloc_type_lookup   ppc_coff_reloc_type_lookup
 #define coff_rtype_to_howto          coff_ppc_rtype_to_howto
 #define coff_relocate_section        coff_ppc_relocate_section
-#define coff_bfd_final_link          ppc_bfd_coff_final_link 
 
 #ifndef COFF_IMAGE_WITH_PE
-/* FIXME: This no longer works.  */
 #define coff_swap_sym_in_hook        ppc_coff_swap_sym_in_hook
 #endif
 
@@ -2222,59 +2186,32 @@ static void ppc_coff_swap_sym_in_hook PARAMS ((bfd *, PTR, PTR));
 
 #define COFF_PAGE_SIZE                       0x1000
 
-/* FIXME: This controls some code that used to be in peicode.h and is
-   now in peigen.c.  It will not control the code in peigen.c.  If
-   anybody wants to get this working, you will need to fix that.  */
 #define POWERPC_LE_PE
-
-#define COFF_SECTION_ALIGNMENT_ENTRIES \
-{ COFF_SECTION_NAME_EXACT_MATCH (".idata$2"), \
-  COFF_ALIGNMENT_FIELD_EMPTY, COFF_ALIGNMENT_FIELD_EMPTY, 0 }, \
-{ COFF_SECTION_NAME_EXACT_MATCH (".idata$3"), \
-  COFF_ALIGNMENT_FIELD_EMPTY, COFF_ALIGNMENT_FIELD_EMPTY, 0 }, \
-{ COFF_SECTION_NAME_EXACT_MATCH (".idata$4"), \
-  COFF_ALIGNMENT_FIELD_EMPTY, COFF_ALIGNMENT_FIELD_EMPTY, 2 }, \
-{ COFF_SECTION_NAME_EXACT_MATCH (".idata$5"), \
-  COFF_ALIGNMENT_FIELD_EMPTY, COFF_ALIGNMENT_FIELD_EMPTY, 2 }, \
-{ COFF_SECTION_NAME_EXACT_MATCH (".idata$6"), \
-  COFF_ALIGNMENT_FIELD_EMPTY, COFF_ALIGNMENT_FIELD_EMPTY, 1 }, \
-{ COFF_SECTION_NAME_EXACT_MATCH (".reloc"), \
-  COFF_ALIGNMENT_FIELD_EMPTY, COFF_ALIGNMENT_FIELD_EMPTY, 1 }
 
 #include "coffcode.h"
 
 
 
 #ifndef COFF_IMAGE_WITH_PE
-/* FIXME:
-   What we're trying to do here is allocate a toc section (early), and attach 
-   it to the last bfd to be processed. This avoids the problem of having a toc
-   written out before all files have been processed. This code allocates
-   a toc section for every file, and records the last one seen. There are
-   at least two problems with this approach:
-   1. We allocate whole bunches of toc sections that are ignored, but at
-      at least we will not allocate a toc if no .toc is present.
-   2. It's not clear to me that being the last bfd read necessarily means
-      that you are the last bfd closed.
-   3. Doing it on a "swap in" hook depends on when the "swap in" is called,
-      and how often, etc. It's not clear to me that there isn't a hole here.
-*/
-
 static void
 ppc_coff_swap_sym_in_hook (abfd, ext1, in1)
      bfd            *abfd;
-     PTR ext1 ATTRIBUTE_UNUSED;
+     PTR ext1;
      PTR in1;
 {
+  SYMENT *ext = (SYMENT *)ext1;
   struct internal_syment      *in = (struct internal_syment *)in1;
 
+#if 0
   if (bfd_of_toc_owner != 0) /* we already have a toc, so go home */
     return;
+#endif
 
   if (strcmp(in->_n._n_name, ".toc") == 0)
     {
       flagword flags;
       register asection *s;
+      char *foo;
 
       s = bfd_get_section_by_name ( abfd , TOC_SECTION_NAME);
       if (s != NULL) 
@@ -2284,13 +2221,20 @@ ppc_coff_swap_sym_in_hook (abfd, ext1, in1)
 
       flags = SEC_ALLOC | SEC_LOAD | SEC_HAS_CONTENTS | SEC_IN_MEMORY ;
 
+#ifdef TOC_DEBUG
+      fprintf(stderr,
+	      "ppc_coff_swap_sym_in_hook: about to create the %s section\n",
+	      TOC_SECTION_NAME);
+#endif
+
       s = bfd_make_section (abfd, TOC_SECTION_NAME);
 
       if (s == NULL
 	  || !bfd_set_section_flags (abfd, s, flags)
 	  || !bfd_set_section_alignment (abfd, s, 2))
 	{
-	  /* FIXME: set appropriate bfd error */
+	  fprintf(stderr,
+		  "toc section allocation failed!\n");
 	  abort();
 	}
 
@@ -2302,571 +2246,24 @@ ppc_coff_swap_sym_in_hook (abfd, ext1, in1)
 }
 #endif
 
-#ifndef COFF_IMAGE_WITH_PE
-
-static boolean ppc_do_last PARAMS ((bfd *));
-static bfd *ppc_get_last PARAMS ((void));
-
-static boolean
-ppc_do_last (abfd)
-     bfd *abfd;
-{
-  if (abfd == bfd_of_toc_owner)
-    return true;
-  else
-    return false;
-}
-
-static bfd *
-ppc_get_last()
-{
-  return bfd_of_toc_owner;
-}
-
-/* this piece of machinery exists only to guarantee that the bfd that holds
-   the toc section is written last. 
-
-   This does depend on bfd_make_section attaching a new section to the
-   end of the section list for the bfd. 
-
-   This is otherwise intended to be functionally the same as 
-   cofflink.c:_bfd_coff_final_link(). It is specifically different only 
-   where the POWERPC_LE_PE macro modifies the code. It is left in as a 
-   precise form of comment. krk@cygnus.com
-*/
-
-
-/* Do the final link step.  */
-
-boolean
-ppc_bfd_coff_final_link (abfd, info)
-     bfd *abfd;
-     struct bfd_link_info *info;
-{
-  bfd_size_type symesz;
-  struct coff_final_link_info finfo;
-  boolean debug_merge_allocated;
-  asection *o;
-  struct bfd_link_order *p;
-  size_t max_sym_count;
-  size_t max_lineno_count;
-  size_t max_reloc_count;
-  size_t max_output_reloc_count;
-  size_t max_contents_size;
-  file_ptr rel_filepos;
-  unsigned int relsz;
-  file_ptr line_filepos;
-  unsigned int linesz;
-  bfd *sub;
-  bfd_byte *external_relocs = NULL;
-  char strbuf[STRING_SIZE_SIZE];
-
-  symesz = bfd_coff_symesz (abfd);
-
-  finfo.info = info;
-  finfo.output_bfd = abfd;
-  finfo.strtab = NULL;
-  finfo.section_info = NULL;
-  finfo.last_file_index = -1;
-  finfo.last_bf_index = -1;
-  finfo.internal_syms = NULL;
-  finfo.sec_ptrs = NULL;
-  finfo.sym_indices = NULL;
-  finfo.outsyms = NULL;
-  finfo.linenos = NULL;
-  finfo.contents = NULL;
-  finfo.external_relocs = NULL;
-  finfo.internal_relocs = NULL;
-  debug_merge_allocated = false;
-
-  coff_data (abfd)->link_info = info;
-
-  finfo.strtab = _bfd_stringtab_init ();
-  if (finfo.strtab == NULL)
-    goto error_return;
-
-  if (! coff_debug_merge_hash_table_init (&finfo.debug_merge))
-    goto error_return;
-  debug_merge_allocated = true;
-
-  /* Compute the file positions for all the sections.  */
-  if (! abfd->output_has_begun)
-    {
-      if (! bfd_coff_compute_section_file_positions (abfd))
-	return false;
-    }
-
-  /* Count the line numbers and relocation entries required for the
-     output file.  Set the file positions for the relocs.  */
-  rel_filepos = obj_relocbase (abfd);
-  relsz = bfd_coff_relsz (abfd);
-  max_contents_size = 0;
-  max_lineno_count = 0;
-  max_reloc_count = 0;
-
-  for (o = abfd->sections; o != NULL; o = o->next)
-    {
-      o->reloc_count = 0;
-      o->lineno_count = 0;
-      for (p = o->link_order_head; p != NULL; p = p->next)
-	{
-
-	  if (p->type == bfd_indirect_link_order)
-	    {
-	      asection *sec;
-
-	      sec = p->u.indirect.section;
-
-	      /* Mark all sections which are to be included in the
-		 link.  This will normally be every section.  We need
-		 to do this so that we can identify any sections which
-		 the linker has decided to not include.  */
-	      sec->linker_mark = true;
-
-	      if (info->strip == strip_none
-		  || info->strip == strip_some)
-		o->lineno_count += sec->lineno_count;
-
-	      if (info->relocateable)
-		o->reloc_count += sec->reloc_count;
-
-	      if (sec->_raw_size > max_contents_size)
-		max_contents_size = sec->_raw_size;
-	      if (sec->lineno_count > max_lineno_count)
-		max_lineno_count = sec->lineno_count;
-	      if (sec->reloc_count > max_reloc_count)
-		max_reloc_count = sec->reloc_count;
-	    }
-	  else if (info->relocateable
-		   && (p->type == bfd_section_reloc_link_order
-		       || p->type == bfd_symbol_reloc_link_order))
-	    ++o->reloc_count;
-	}
-      if (o->reloc_count == 0)
-	o->rel_filepos = 0;
-      else
-	{
-	  o->flags |= SEC_RELOC;
-	  o->rel_filepos = rel_filepos;
-	  rel_filepos += o->reloc_count * relsz;
-	}
-    }
-
-  /* If doing a relocateable link, allocate space for the pointers we
-     need to keep.  */
-  if (info->relocateable)
-    {
-      unsigned int i;
-
-      /* We use section_count + 1, rather than section_count, because
-         the target_index fields are 1 based.  */
-      finfo.section_info =
-	((struct coff_link_section_info *)
-	 bfd_malloc ((abfd->section_count + 1)
-		     * sizeof (struct coff_link_section_info)));
-      if (finfo.section_info == NULL)
-	goto error_return;
-      for (i = 0; i <= abfd->section_count; i++)
-	{
-	  finfo.section_info[i].relocs = NULL;
-	  finfo.section_info[i].rel_hashes = NULL;
-	}
-    }
-
-  /* We now know the size of the relocs, so we can determine the file
-     positions of the line numbers.  */
-  line_filepos = rel_filepos;
-  linesz = bfd_coff_linesz (abfd);
-  max_output_reloc_count = 0;
-  for (o = abfd->sections; o != NULL; o = o->next)
-    {
-      if (o->lineno_count == 0)
-	o->line_filepos = 0;
-      else
-	{
-	  o->line_filepos = line_filepos;
-	  line_filepos += o->lineno_count * linesz;
-	}
-
-      if (o->reloc_count != 0)
-	{
-	  /* We don't know the indices of global symbols until we have
-             written out all the local symbols.  For each section in
-             the output file, we keep an array of pointers to hash
-             table entries.  Each entry in the array corresponds to a
-             reloc.  When we find a reloc against a global symbol, we
-             set the corresponding entry in this array so that we can
-             fix up the symbol index after we have written out all the
-             local symbols.
-
-	     Because of this problem, we also keep the relocs in
-	     memory until the end of the link.  This wastes memory,
-	     but only when doing a relocateable link, which is not the
-	     common case.  */
-	  BFD_ASSERT (info->relocateable);
-	  finfo.section_info[o->target_index].relocs =
-	    ((struct internal_reloc *)
-	     bfd_malloc (o->reloc_count * sizeof (struct internal_reloc)));
-	  finfo.section_info[o->target_index].rel_hashes =
-	    ((struct coff_link_hash_entry **)
-	     bfd_malloc (o->reloc_count
-		     * sizeof (struct coff_link_hash_entry *)));
-	  if (finfo.section_info[o->target_index].relocs == NULL
-	      || finfo.section_info[o->target_index].rel_hashes == NULL)
-	    goto error_return;
-
-	  if (o->reloc_count > max_output_reloc_count)
-	    max_output_reloc_count = o->reloc_count;
-	}
-
-      /* Reset the reloc and lineno counts, so that we can use them to
-	 count the number of entries we have output so far.  */
-      o->reloc_count = 0;
-      o->lineno_count = 0;
-    }
-
-  obj_sym_filepos (abfd) = line_filepos;
-
-  /* Figure out the largest number of symbols in an input BFD.  Take
-     the opportunity to clear the output_has_begun fields of all the
-     input BFD's.  */
-  max_sym_count = 0;
-  for (sub = info->input_bfds; sub != NULL; sub = sub->link_next)
-    {
-      size_t sz;
-
-      sub->output_has_begun = false;
-      sz = obj_raw_syment_count (sub);
-      if (sz > max_sym_count)
-	max_sym_count = sz;
-    }
-
-  /* Allocate some buffers used while linking.  */
-  finfo.internal_syms = ((struct internal_syment *)
-			 bfd_malloc (max_sym_count
-				     * sizeof (struct internal_syment)));
-  finfo.sec_ptrs = (asection **) bfd_malloc (max_sym_count
-					     * sizeof (asection *));
-  finfo.sym_indices = (long *) bfd_malloc (max_sym_count * sizeof (long));
-  finfo.outsyms = ((bfd_byte *)
-		   bfd_malloc ((size_t) ((max_sym_count + 1) * symesz)));
-  finfo.linenos = (bfd_byte *) bfd_malloc (max_lineno_count
-				       * bfd_coff_linesz (abfd));
-  finfo.contents = (bfd_byte *) bfd_malloc (max_contents_size);
-  finfo.external_relocs = (bfd_byte *) bfd_malloc (max_reloc_count * relsz);
-  if (! info->relocateable)
-    finfo.internal_relocs = ((struct internal_reloc *)
-			     bfd_malloc (max_reloc_count
-					 * sizeof (struct internal_reloc)));
-  if ((finfo.internal_syms == NULL && max_sym_count > 0)
-      || (finfo.sec_ptrs == NULL && max_sym_count > 0)
-      || (finfo.sym_indices == NULL && max_sym_count > 0)
-      || finfo.outsyms == NULL
-      || (finfo.linenos == NULL && max_lineno_count > 0)
-      || (finfo.contents == NULL && max_contents_size > 0)
-      || (finfo.external_relocs == NULL && max_reloc_count > 0)
-      || (! info->relocateable
-	  && finfo.internal_relocs == NULL
-	  && max_reloc_count > 0))
-    goto error_return;
-
-  /* We now know the position of everything in the file, except that
-     we don't know the size of the symbol table and therefore we don't
-     know where the string table starts.  We just build the string
-     table in memory as we go along.  We process all the relocations
-     for a single input file at once.  */
-  obj_raw_syment_count (abfd) = 0;
-
-  if (coff_backend_info (abfd)->_bfd_coff_start_final_link)
-    {
-      if (! bfd_coff_start_final_link (abfd, info))
-	goto error_return;
-    }
-
-  for (o = abfd->sections; o != NULL; o = o->next)
-    {
-      for (p = o->link_order_head; p != NULL; p = p->next)
-	{
-	  if (p->type == bfd_indirect_link_order
-	      && (bfd_get_flavour (p->u.indirect.section->owner)
-		  == bfd_target_coff_flavour))
-	    {
-	      sub = p->u.indirect.section->owner;
-#ifdef POWERPC_LE_PE
-	      if (! sub->output_has_begun && !ppc_do_last(sub))
-#else
-	      if (! sub->output_has_begun)
-#endif
-		{
-		  if (! _bfd_coff_link_input_bfd (&finfo, sub))
-		    goto error_return;
-		  sub->output_has_begun = true;
-		}
-	    }
-	  else if (p->type == bfd_section_reloc_link_order
-		   || p->type == bfd_symbol_reloc_link_order)
-	    {
-	      if (! _bfd_coff_reloc_link_order (abfd, &finfo, o, p))
-		goto error_return;
-	    }
-	  else
-	    {
-	      if (! _bfd_default_link_order (abfd, info, o, p))
-		goto error_return;
-	    }
-	}
-    }
-
-#ifdef POWERPC_LE_PE
-  {
-    bfd* last_one = ppc_get_last();
-    if (last_one)
-      {
-	if (! _bfd_coff_link_input_bfd (&finfo, last_one))
-	  goto error_return;
-      }
-    last_one->output_has_begun = true;
-  }
-#endif
-
-  /* Free up the buffers used by _bfd_coff_link_input_bfd.  */
-
-  coff_debug_merge_hash_table_free (&finfo.debug_merge);
-  debug_merge_allocated = false;
-
-  if (finfo.internal_syms != NULL)
-    {
-      free (finfo.internal_syms);
-      finfo.internal_syms = NULL;
-    }
-  if (finfo.sec_ptrs != NULL)
-    {
-      free (finfo.sec_ptrs);
-      finfo.sec_ptrs = NULL;
-    }
-  if (finfo.sym_indices != NULL)
-    {
-      free (finfo.sym_indices);
-      finfo.sym_indices = NULL;
-    }
-  if (finfo.linenos != NULL)
-    {
-      free (finfo.linenos);
-      finfo.linenos = NULL;
-    }
-  if (finfo.contents != NULL)
-    {
-      free (finfo.contents);
-      finfo.contents = NULL;
-    }
-  if (finfo.external_relocs != NULL)
-    {
-      free (finfo.external_relocs);
-      finfo.external_relocs = NULL;
-    }
-  if (finfo.internal_relocs != NULL)
-    {
-      free (finfo.internal_relocs);
-      finfo.internal_relocs = NULL;
-    }
-
-  /* The value of the last C_FILE symbol is supposed to be the symbol
-     index of the first external symbol.  Write it out again if
-     necessary.  */
-  if (finfo.last_file_index != -1
-      && (unsigned int) finfo.last_file.n_value != obj_raw_syment_count (abfd))
-    {
-      finfo.last_file.n_value = obj_raw_syment_count (abfd);
-      bfd_coff_swap_sym_out (abfd, (PTR) &finfo.last_file,
-			     (PTR) finfo.outsyms);
-      if (bfd_seek (abfd,
-		    (obj_sym_filepos (abfd)
-		     + finfo.last_file_index * symesz),
-		    SEEK_SET) != 0
-	  || bfd_write (finfo.outsyms, symesz, 1, abfd) != symesz)
-	return false;
-    }
-
-  /* Write out the global symbols.  */
-  finfo.failed = false;
-  coff_link_hash_traverse (coff_hash_table (info), _bfd_coff_write_global_sym,
-			   (PTR) &finfo);
-  if (finfo.failed)
-    goto error_return;
-
-  /* The outsyms buffer is used by _bfd_coff_write_global_sym.  */
-  if (finfo.outsyms != NULL)
-    {
-      free (finfo.outsyms);
-      finfo.outsyms = NULL;
-    }
-
-  if (info->relocateable)
-    {
-      /* Now that we have written out all the global symbols, we know
-	 the symbol indices to use for relocs against them, and we can
-	 finally write out the relocs.  */
-      external_relocs = ((bfd_byte *)
-			 bfd_malloc (max_output_reloc_count * relsz));
-      if (external_relocs == NULL)
-	goto error_return;
-
-      for (o = abfd->sections; o != NULL; o = o->next)
-	{
-	  struct internal_reloc *irel;
-	  struct internal_reloc *irelend;
-	  struct coff_link_hash_entry **rel_hash;
-	  bfd_byte *erel;
-
-	  if (o->reloc_count == 0)
-	    continue;
-
-	  irel = finfo.section_info[o->target_index].relocs;
-	  irelend = irel + o->reloc_count;
-	  rel_hash = finfo.section_info[o->target_index].rel_hashes;
-	  erel = external_relocs;
-	  for (; irel < irelend; irel++, rel_hash++, erel += relsz)
-	    {
-	      if (*rel_hash != NULL)
-		{
-		  BFD_ASSERT ((*rel_hash)->indx >= 0);
-		  irel->r_symndx = (*rel_hash)->indx;
-		}
-	      bfd_coff_swap_reloc_out (abfd, (PTR) irel, (PTR) erel);
-	    }
-
-	  if (bfd_seek (abfd, o->rel_filepos, SEEK_SET) != 0
-	      || bfd_write ((PTR) external_relocs, relsz, o->reloc_count,
-			    abfd) != relsz * o->reloc_count)
-	    goto error_return;
-	}
-
-      free (external_relocs);
-      external_relocs = NULL;
-    }
-
-  /* Free up the section information.  */
-  if (finfo.section_info != NULL)
-    {
-      unsigned int i;
-
-      for (i = 0; i < abfd->section_count; i++)
-	{
-	  if (finfo.section_info[i].relocs != NULL)
-	    free (finfo.section_info[i].relocs);
-	  if (finfo.section_info[i].rel_hashes != NULL)
-	    free (finfo.section_info[i].rel_hashes);
-	}
-      free (finfo.section_info);
-      finfo.section_info = NULL;
-    }
-
-  /* If we have optimized stabs strings, output them.  */
-  if (coff_hash_table (info)->stab_info != NULL)
-    {
-      if (! _bfd_write_stab_strings (abfd, &coff_hash_table (info)->stab_info))
-	return false;
-    }
-
-  /* Write out the string table.  */
-  if (obj_raw_syment_count (abfd) != 0)
-    {
-      if (bfd_seek (abfd,
-		    (obj_sym_filepos (abfd)
-		     + obj_raw_syment_count (abfd) * symesz),
-		    SEEK_SET) != 0)
-	return false;
-
-#if STRING_SIZE_SIZE == 4
-      bfd_h_put_32 (abfd,
-		    _bfd_stringtab_size (finfo.strtab) + STRING_SIZE_SIZE,
-		    (bfd_byte *) strbuf);
-#else
- #error Change bfd_h_put_32
-#endif
-
-      if (bfd_write (strbuf, 1, STRING_SIZE_SIZE, abfd) != STRING_SIZE_SIZE)
-	return false;
-
-      if (! _bfd_stringtab_emit (abfd, finfo.strtab))
-	return false;
-    }
-
-  _bfd_stringtab_free (finfo.strtab);
-
-  /* Setting bfd_get_symcount to 0 will cause write_object_contents to
-     not try to write out the symbols.  */
-  bfd_get_symcount (abfd) = 0;
-
-  return true;
-
- error_return:
-  if (debug_merge_allocated)
-    coff_debug_merge_hash_table_free (&finfo.debug_merge);
-  if (finfo.strtab != NULL)
-    _bfd_stringtab_free (finfo.strtab);
-  if (finfo.section_info != NULL)
-    {
-      unsigned int i;
-
-      for (i = 0; i < abfd->section_count; i++)
-	{
-	  if (finfo.section_info[i].relocs != NULL)
-	    free (finfo.section_info[i].relocs);
-	  if (finfo.section_info[i].rel_hashes != NULL)
-	    free (finfo.section_info[i].rel_hashes);
-	}
-      free (finfo.section_info);
-    }
-  if (finfo.internal_syms != NULL)
-    free (finfo.internal_syms);
-  if (finfo.sec_ptrs != NULL)
-    free (finfo.sec_ptrs);
-  if (finfo.sym_indices != NULL)
-    free (finfo.sym_indices);
-  if (finfo.outsyms != NULL)
-    free (finfo.outsyms);
-  if (finfo.linenos != NULL)
-    free (finfo.linenos);
-  if (finfo.contents != NULL)
-    free (finfo.contents);
-  if (finfo.external_relocs != NULL)
-    free (finfo.external_relocs);
-  if (finfo.internal_relocs != NULL)
-    free (finfo.internal_relocs);
-  if (external_relocs != NULL)
-    free (external_relocs);
-  return false;
-}
-#endif
 
-
-/* Forward declaration for use by alternative_target field.  */
-#ifdef TARGET_BIG_SYM
-extern const bfd_target TARGET_BIG_SYM;
-#endif
 
 /* The transfer vectors that lead the outside world to all of the above. */
 
 #ifdef TARGET_LITTLE_SYM
-const bfd_target TARGET_LITTLE_SYM =
+const bfd_target
+TARGET_LITTLE_SYM =
 {
   TARGET_LITTLE_NAME,		/* name or coff-arm-little */
   bfd_target_coff_flavour,
-  BFD_ENDIAN_LITTLE,		/* data byte order is little */
-  BFD_ENDIAN_LITTLE,		/* header byte order is little */
+  false,			/* data byte order is little */
+  false,			/* header byte order is little */
 
   (HAS_RELOC | EXEC_P |		/* FIXME: object flags */
    HAS_LINENO | HAS_DEBUG |
-   HAS_SYMS | HAS_LOCALS | WP_TEXT | D_PAGED),
+   HAS_SYMS | HAS_LOCALS | WP_TEXT),
   
-#ifndef COFF_WITH_PE
   (SEC_HAS_CONTENTS | SEC_ALLOC | SEC_LOAD | SEC_RELOC), /* section flags */
-#else
-  (SEC_HAS_CONTENTS | SEC_ALLOC | SEC_LOAD | SEC_RELOC /* section flags */
-   | SEC_LINK_ONCE | SEC_LINK_DUPLICATES),
-#endif
-
   0,				/* leading char */
   '/',				/* ar_pad_char */
   15,				/* ar_max_namelen??? FIXMEmgo */
@@ -2895,37 +2292,25 @@ const bfd_target TARGET_LITTLE_SYM =
   BFD_JUMP_TABLE_WRITE (coff),
   BFD_JUMP_TABLE_LINK (coff),
   BFD_JUMP_TABLE_DYNAMIC (_bfd_nodynamic),
-
-  /* Alternative_target.  */
-#ifdef TARGET_BIG_SYM
-  & TARGET_BIG_SYM,
-#else
-  NULL,
-#endif
   
-  COFF_SWAP_TABLE
+  COFF_SWAP_TABLE,
 };
 #endif
 
 #ifdef TARGET_BIG_SYM
-const bfd_target TARGET_BIG_SYM =
+const bfd_target
+TARGET_BIG_SYM =
 {
   TARGET_BIG_NAME,
   bfd_target_coff_flavour,	
-  BFD_ENDIAN_BIG,		/* data byte order is big */
-  BFD_ENDIAN_BIG,		/* header byte order is big */
+  true,				/* data byte order is big */
+  true,				/* header byte order is big */
 
   (HAS_RELOC | EXEC_P |		/* FIXME: object flags */
    HAS_LINENO | HAS_DEBUG |
-   HAS_SYMS | HAS_LOCALS | WP_TEXT | D_PAGED),
+   HAS_SYMS | HAS_LOCALS | WP_TEXT),
 
-#ifndef COFF_WITH_PE
   (SEC_HAS_CONTENTS | SEC_ALLOC | SEC_LOAD | SEC_RELOC), /* section flags */
-#else
-  (SEC_HAS_CONTENTS | SEC_ALLOC | SEC_LOAD | SEC_RELOC /* section flags */
-   | SEC_LINK_ONCE | SEC_LINK_DUPLICATES),
-#endif
-
   0,				/* leading char */
   '/',				/* ar_pad_char */
   15,				/* ar_max_namelen??? FIXMEmgo */
@@ -2955,15 +2340,7 @@ const bfd_target TARGET_BIG_SYM =
   BFD_JUMP_TABLE_LINK (coff),
   BFD_JUMP_TABLE_DYNAMIC (_bfd_nodynamic),
 
-
-  /* Alternative_target.  */
-#ifdef TARGET_LITTLE_SYM
-  & TARGET_LITTLE_SYM,
-#else
-  NULL,
-#endif
-  
-  COFF_SWAP_TABLE
+  COFF_SWAP_TABLE,
 };
 
 #endif

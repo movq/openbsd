@@ -10,4 +10,4 @@ L2:
 	.long	bar
 bar:
 	rts
-	.align	4
+	.align	2

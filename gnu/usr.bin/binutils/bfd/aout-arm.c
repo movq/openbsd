@@ -1,5 +1,5 @@
 /* BFD back-end for raw ARM a.out binaries.
-   Copyright (C) 1994, 95, 96, 97, 98, 1999 Free Software Foundation, Inc.
+   Copyright (C) 1994, 1995 Free Software Foundation, Inc.
    Contributed by Richard Earnshaw (rwe@pegasus.esprit.ec.org)
    
 This file is part of BFD, the Binary File Descriptor library.
@@ -38,6 +38,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #include "bfd.h"
 #include "sysdep.h"
+#include "assert.h"
 
 #define MYARM(OP) CAT(aoutarm_,OP)
 reloc_howto_type 	*MYARM(bfd_reloc_type_lookup)
@@ -87,7 +88,7 @@ reloc_howto_type MY(howto_table)[] =
   HOWTO (7, 2, 2, 26, false, 0, complain_overflow_signed,
 	 MY(fix_pcrel_26_done), "ARM26D", true, 0x0, 0x0,
 	 false),
-  EMPTY_HOWTO (-1),
+  {-1},
   HOWTO (9, 0, -1, 16, false, 0, complain_overflow_bitfield, 0, "NEG16", true,
 	 0x0000ffff, 0x0000ffff, false),
   HOWTO (10, 0, -2, 32, false, 0, complain_overflow_bitfield, 0, "NEG32", true,
@@ -111,7 +112,7 @@ MY(reloc_howto)(abfd, rel, r_index, r_extern, r_pcrel)
   int index;
 
   *r_pcrel = 0;
-  if (bfd_header_big_endian (abfd))
+  if (abfd->xvec->header_byteorder_big_p)
     {
       *r_index     =  ((rel->r_index[0] << 16)
 		       | (rel->r_index[1] << 8)
@@ -165,7 +166,7 @@ MY(put_reloc)(abfd, r_extern, r_index, value, howto, reloc)
 
   r_pcrel  = howto->type & 4; 	/* PC Relative done? */
   r_neg = howto->type & 8;	/* Negative relocation */
-  if (bfd_header_big_endian (abfd))
+  if (abfd->xvec->header_byteorder_big_p)
     {
       reloc->r_index[0] = r_index >> 16;
       reloc->r_index[1] = r_index >> 8;
@@ -203,7 +204,7 @@ MY(relocatable_reloc)(howto, abfd, reloc, amount, r_addr)
   if (howto->type == 3)
     {
       if (reloc->r_type[0] 
-	  & (bfd_header_big_endian (abfd)
+	  & (abfd->xvec->header_byteorder_big_p
 	     ? RELOC_STD_BITS_EXTERN_BIG : RELOC_STD_BITS_EXTERN_LITTLE))
 	{
 	  /* The reloc is still external, so don't modify anything. */
@@ -214,7 +215,7 @@ MY(relocatable_reloc)(howto, abfd, reloc, amount, r_addr)
 	  *amount -= r_addr;
 	  /* Change the r_pcrel value -- on the ARM, this bit is set once the
 	     relocation is done.  */
-	  if (bfd_header_big_endian (abfd))
+	  if (abfd->xvec->header_byteorder_big_p)
 	    reloc->r_type[0] |= RELOC_STD_BITS_PCREL_BIG;
 	  else
 	    reloc->r_type[0] |= RELOC_STD_BITS_PCREL_LITTLE;
@@ -230,13 +231,13 @@ MY(relocatable_reloc)(howto, abfd, reloc, amount, r_addr)
 static bfd_reloc_status_type
 MY(fix_pcrel_26_done) (abfd, reloc_entry, symbol, data, input_section,
 		       output_bfd, error_message)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     arelent *reloc_entry ATTRIBUTE_UNUSED;
-     asymbol *symbol ATTRIBUTE_UNUSED;
-     PTR data ATTRIBUTE_UNUSED;
-     asection *input_section ATTRIBUTE_UNUSED;
-     bfd *output_bfd ATTRIBUTE_UNUSED;
-     char **error_message ATTRIBUTE_UNUSED;
+     bfd *abfd;
+     arelent *reloc_entry;
+     asymbol *symbol;
+     PTR data;
+     asection *input_section;
+     bfd *output_bfd;
+     char **error_message;
 {
   /* This is dead simple at present.  */
   return bfd_reloc_ok;
@@ -251,7 +252,7 @@ MY(fix_pcrel_26) (abfd, reloc_entry, symbol, data, input_section,
      PTR data;
      asection *input_section;
      bfd *output_bfd;
-     char **error_message ATTRIBUTE_UNUSED;
+     char **error_message;
 {
   bfd_vma relocation;
   bfd_size_type addr = reloc_entry->address;
@@ -284,7 +285,7 @@ MY(fix_pcrel_26) (abfd, reloc_entry, symbol, data, input_section,
   /* Check for overflow */
   if (relocation & 0x02000000)
     {
-      if ((relocation & ~ (bfd_vma) 0x03ffffff) != ~ (bfd_vma) 0x03ffffff)
+      if ((relocation & ~0x03ffffff) != ~0x03ffffff)
 	flag = bfd_reloc_overflow;
     }
   else if (relocation & ~0x03ffffff)
@@ -343,10 +344,11 @@ MY_swap_std_reloc_in (abfd, bytes, cache_ptr, symbols, symcount)
      struct reloc_std_external *bytes;
      arelent *cache_ptr;
      asymbol **symbols;
-     bfd_size_type symcount ATTRIBUTE_UNUSED;
+     bfd_size_type symcount;
 {
   int r_index;
   int r_extern;
+  unsigned int r_length;
   int r_pcrel;
   struct aoutdata *su = &(abfd->tdata.aout_data->a);
 
@@ -428,7 +430,7 @@ MY_swap_std_reloc_out (abfd, g, natptr)
 	{
 	  /* Fill in symbol */
 	  r_extern = 1;
-	  r_index = (*(g->sym_ptr_ptr))->KEEPIT;
+	  r_index =  stoi((*(g->sym_ptr_ptr))->flags);
 	}
     }
   else
@@ -439,7 +441,7 @@ MY_swap_std_reloc_out (abfd, g, natptr)
     }
 
   /* now the fun stuff */
-  if (bfd_header_big_endian (abfd))
+  if (abfd->xvec->header_byteorder_big_p != false)
     {
       natptr->r_index[0] = r_index >> 16;
       natptr->r_index[1] = r_index >> 8;
@@ -467,18 +469,16 @@ MY_swap_std_reloc_out (abfd, g, natptr)
 
 #include "aout-target.h"
 
-extern const bfd_target aout_arm_big_vec;
-
 const bfd_target aout_arm_little_vec =
 {
   "a.out-arm-little",           /* name */
   bfd_target_aout_flavour,
-  BFD_ENDIAN_LITTLE,            /* target byte order (little) */
-  BFD_ENDIAN_LITTLE,            /* target headers byte order (little) */
+  false,                        /* target byte order (little) */
+  false,                        /* target headers byte order (little) */
   (HAS_RELOC | EXEC_P |         /* object flags */
    HAS_LINENO | HAS_DEBUG |
    HAS_SYMS | HAS_LOCALS | DYNAMIC | WP_TEXT | D_PAGED),
-  (SEC_HAS_CONTENTS | SEC_ALLOC | SEC_LOAD | SEC_RELOC | SEC_CODE | SEC_DATA),
+  (SEC_HAS_CONTENTS | SEC_ALLOC | SEC_LOAD | SEC_RELOC), /* section flags */
   MY_symbol_leading_char,
   AR_PAD_CHAR,                  /* ar_pad_char */
   15,                           /* ar_max_namelen */
@@ -505,8 +505,6 @@ const bfd_target aout_arm_little_vec =
      BFD_JUMP_TABLE_LINK (MY),
      BFD_JUMP_TABLE_DYNAMIC (MY),
 
-  & aout_arm_big_vec,
-  
   (PTR) MY_backend_data,
 };
 
@@ -514,12 +512,12 @@ const bfd_target aout_arm_big_vec =
 {
   "a.out-arm-big",           /* name */
   bfd_target_aout_flavour,
-  BFD_ENDIAN_BIG,               /* target byte order (big) */
-  BFD_ENDIAN_BIG,               /* target headers byte order (big) */
+  true,                         /* target byte order (big) */
+  true,                         /* target headers byte order (big) */
   (HAS_RELOC | EXEC_P |         /* object flags */
    HAS_LINENO | HAS_DEBUG |
    HAS_SYMS | HAS_LOCALS | DYNAMIC | WP_TEXT | D_PAGED),
-  (SEC_HAS_CONTENTS | SEC_ALLOC | SEC_LOAD | SEC_RELOC | SEC_CODE | SEC_DATA),
+  (SEC_HAS_CONTENTS | SEC_ALLOC | SEC_LOAD | SEC_RELOC), /* section flags */
   MY_symbol_leading_char,
   AR_PAD_CHAR,                  /* ar_pad_char */
   15,                           /* ar_max_namelen */
@@ -546,7 +544,5 @@ const bfd_target aout_arm_big_vec =
      BFD_JUMP_TABLE_LINK (MY),
      BFD_JUMP_TABLE_DYNAMIC (MY),
 
-  & aout_arm_little_vec,
-  
   (PTR) MY_backend_data,
 };

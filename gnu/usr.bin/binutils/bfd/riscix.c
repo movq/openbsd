@@ -1,5 +1,5 @@
 /* BFD back-end for RISC iX (Acorn, arm) binaries.
-   Copyright (C) 1994, 95, 96, 97, 98, 1999 Free Software Foundation, Inc.
+   Copyright (C) 1994 Free Software Foundation, Inc.
    Contributed by Richard Earnshaw (rwe@pegasus.esprit.ec.org)
    
 This file is part of BFD, the Binary File Descriptor library.
@@ -89,6 +89,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include "bfd.h"
 #include "sysdep.h"
 #include "libbfd.h"
+#include "assert.h"
 
 #define WRITE_HEADERS(abfd, execp)					   \
   {									   \
@@ -154,7 +155,7 @@ static reloc_howto_type riscix_std_reloc_howto[] = {
   HOWTO( 5,              0,  1,   16, true,  0, complain_overflow_signed,  0,"DISP16",    true, 0x0000ffff,0x0000ffff, true),
   HOWTO( 6,              0,  2,   32, true,  0, complain_overflow_signed,  0,"DISP32",    true, 0xffffffff,0xffffffff, true),
   HOWTO( 7,              2,  3,   26, false, 0, complain_overflow_signed,  riscix_fix_pcrel_26_done, "ARM26D",true,0x00ffffff,0x00ffffff, false),
-  EMPTY_HOWTO (-1),
+  {-1},
   HOWTO( 9,              0, -1,   16, false, 0, complain_overflow_bitfield,0,"NEG16",        true, 0x0000ffff,0x0000ffff, false),
   HOWTO( 10,              0, -2,   32, false, 0, complain_overflow_bitfield,0,"NEG32",        true, 0xffffffff,0xffffffff, false)
 };
@@ -166,13 +167,13 @@ static reloc_howto_type riscix_std_reloc_howto[] = {
 static bfd_reloc_status_type
 riscix_fix_pcrel_26_done (abfd, reloc_entry, symbol, data, input_section,
 			  output_bfd, error_message)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     arelent *reloc_entry ATTRIBUTE_UNUSED;
-     asymbol *symbol ATTRIBUTE_UNUSED;
-     PTR data ATTRIBUTE_UNUSED;
-     asection *input_section ATTRIBUTE_UNUSED;
-     bfd *output_bfd ATTRIBUTE_UNUSED;
-     char **error_message ATTRIBUTE_UNUSED;
+     bfd *abfd;
+     arelent *reloc_entry;
+     asymbol *symbol;
+     PTR data;
+     asection *input_section;
+     bfd *output_bfd;
+     char **error_message;
 {
   /* This is dead simple at present.  */
   return bfd_reloc_ok;
@@ -187,7 +188,7 @@ riscix_fix_pcrel_26 (abfd, reloc_entry, symbol, data, input_section,
      PTR data;
      asection *input_section;
      bfd *output_bfd;
-     char **error_message ATTRIBUTE_UNUSED;
+     char **error_message;
 {
   bfd_vma relocation;
   bfd_size_type addr = reloc_entry->address;
@@ -220,7 +221,7 @@ riscix_fix_pcrel_26 (abfd, reloc_entry, symbol, data, input_section,
   /* Check for overflow */
   if (relocation & 0x02000000)
     {
-      if ((relocation & ~ (bfd_vma) 0x03ffffff) != ~ (bfd_vma) 0x03ffffff)
+      if ((relocation & ~0x03ffffff) != ~0x03ffffff)
 	flag = bfd_reloc_overflow;
     }
   else if (relocation & ~0x03ffffff)
@@ -266,7 +267,6 @@ DEFUN(riscix_reloc_type_lookup,(abfd,code),
 
 #define MY_bfd_link_hash_table_create _bfd_generic_link_hash_table_create
 #define MY_bfd_link_add_symbols _bfd_generic_link_add_symbols
-#define MY_final_link_callback should_not_be_used
 #define MY_bfd_final_link _bfd_generic_final_link
 
 #define MY_bfd_reloc_type_lookup riscix_reloc_type_lookup
@@ -338,7 +338,7 @@ riscix_swap_std_reloc_out (abfd, g, natptr)
 	{
 	  /* Fill in symbol */
 	  r_extern = 1;
-	  r_index = (*g->sym_ptr_ptr)->udata.i;
+	  r_index =  stoi((*(g->sym_ptr_ptr))->flags);
 	}
     }
   else
@@ -349,7 +349,7 @@ riscix_swap_std_reloc_out (abfd, g, natptr)
     }
 
   /* now the fun stuff */
-  if (bfd_header_big_endian (abfd))
+  if (abfd->xvec->header_byteorder_big_p != false)
     {
       natptr->r_index[0] = r_index >> 16;
       natptr->r_index[1] = r_index >> 8;
@@ -390,8 +390,10 @@ riscix_squirt_out_relocs (abfd, section)
   each_size = obj_reloc_entry_size (abfd);
   natsize = each_size * count;
   native = (unsigned char *) bfd_zalloc (abfd, natsize);
-  if (!native)
+  if (!native) {
+    bfd_set_error (bfd_error_no_memory);
     return false;
+  }
 
   generic = section->orelocation;
 
@@ -453,7 +455,7 @@ MY(canonicalize_reloc)(abfd, section, relptr, symbols)
   for (count = 0; count++ < section->reloc_count;)
     {
       c = tblptr->howto - NAME(aout,std_howto_table);
-      BFD_ASSERT (c < RISCIX_TABLE_SIZE);
+      assert (c < RISCIX_TABLE_SIZE);
       tblptr->howto = &riscix_std_reloc_howto[c];
 
       *relptr++ = tblptr++;
@@ -477,8 +479,10 @@ riscix_some_aout_object_p (abfd, execp, callback_to_real_object_p)
   rawptr = ((struct aout_data_struct  *) 
 	    bfd_zalloc (abfd, sizeof (struct aout_data_struct )));
 
-  if (rawptr == NULL)
+  if (rawptr == NULL) {
+    bfd_set_error (bfd_error_no_memory);
     return 0;
+  }
 
   oldrawptr = abfd->tdata.aout_data;
   abfd->tdata.aout_data = rawptr;
@@ -496,7 +500,7 @@ riscix_some_aout_object_p (abfd, execp, callback_to_real_object_p)
   execp = abfd->tdata.aout_data->a.hdr;
 
   /* Set the file flags */
-  abfd->flags = BFD_NO_FLAGS;
+  abfd->flags = NO_FLAGS;
   if (execp->a_drsize || execp->a_trsize)
     abfd->flags |= HAS_RELOC;
   /* Setting of EXEC_P has been deferred to the bottom of this function */
@@ -580,8 +584,7 @@ riscix_some_aout_object_p (abfd, execp, callback_to_real_object_p)
    */
   {
     struct stat stat_buf;
-    if (abfd->iostream != NULL
-	&& (abfd->flags & BFD_IN_MEMORY) == 0
+    if (abfd->iostream
         && (fstat(fileno((FILE *) (abfd->iostream)), &stat_buf) == 0)
         && ((stat_buf.st_mode & 0111) != 0))
       abfd->flags |= EXEC_P;

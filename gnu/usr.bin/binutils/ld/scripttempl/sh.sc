@@ -1,13 +1,3 @@
-TORS=".tors :
-  {
-    ___ctors = . ;
-    *(.ctors)
-    ___ctors_end = . ;
-    ___dtors = . ;
-    *(.dtors)
-    ___dtors_end = . ;
-  } > ram"
-
 cat <<EOF
 OUTPUT_FORMAT("${OUTPUT_FORMAT}")
 OUTPUT_ARCH(${ARCH})
@@ -25,7 +15,15 @@ SECTIONS
     *(.strings)
     ${RELOCATING+ _etext = . ; }
   } ${RELOCATING+ > ram}
-  ${CONSTRUCTING+${TORS}}
+  .tors :
+  {
+    ___ctors = . ;
+    *(.ctors)
+    ___ctors_end = . ;
+    ___dtors = . ;
+    *(.dtors)
+    ___dtors_end = . ;
+  } ${RELOCATING+ > ram}
   .data :
   {
     *(.data)

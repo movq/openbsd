@@ -10,4 +10,3 @@ foo:
 	link	%a6,&0x7fff
 	link	%a6,&0x8000
 	link	%a6,&0x8001
-	nop

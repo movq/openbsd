@@ -1,7 +1,6 @@
 /* Collect static initialization info into data structures that can be
    traversed by C++ initialization and finalization routines.
-   Copyright (C) 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000
-   Free Software Foundation, Inc.
+   Copyright (C) 1992, 93-98, 1999 Free Software Foundation, Inc.
    Contributed by Chris Smith (csmith@convex.com).
    Heavily modified by Michael Meissner (meissner@cygnus.com),
    Per Bothner (bothner@cygnus.com), and John Gilmore (gnu@cygnus.com).
@@ -53,6 +52,8 @@ Boston, MA 02111-1307, USA.  */
 /* Obstack allocation and deallocation routines.  */
 #define obstack_chunk_alloc xmalloc
 #define obstack_chunk_free free
+
+extern char *make_temp_file PROTO ((char *));
 
 /* On certain systems, we have code that works by scanning the object file
    directly.  But this code uses system-specific header files and library
@@ -1010,9 +1011,9 @@ main (argc, argv)
   int first_file;
   int num_c_args	= argc+9;
 
-#if defined (COLLECT2_HOST_INITIALIZATION)
+#if defined (COLLECT2_HOST_INITIALZATION)
   /* Perform system dependant initialization, if neccessary.  */
-  COLLECT2_HOST_INITIALIZATION;
+  COLLECT2_HOST_INITIALZATION;
 #endif
 
 #ifdef HAVE_LC_MESSAGES
@@ -1378,7 +1379,7 @@ main (argc, argv)
 	}
       else if ((p = rindex (arg, '.')) != (char *) 0
 	       && (strcmp (p, ".o") == 0 || strcmp (p, ".a") == 0
-		   || strcmp (p, ".so") == 0 || strcmp (p, ".lo") == 0))
+		   || strcmp (p, ".so") == 0))
 	{
 	  if (first_file)
 	    {
@@ -1393,7 +1394,7 @@ main (argc, argv)
 		  *ld2++ = arg;
 		}
 	    }
-	  if (p[1] == 'o' || p[1] == 'l')
+	  if (p[1] == 'o')
 	    *object++ = arg;
 #ifdef COLLECT_EXPORT_LIST
 	  /* libraries can be specified directly, i.e. without -l flag.  */
@@ -1514,7 +1515,7 @@ main (argc, argv)
 
   /* On AIX we do this later.  */
 #ifndef COLLECT_EXPORT_LIST
-  do_tlink (ld1_argv, object_lst);
+  do_tlink (ld1_argv, object_lst); 
 #endif
 
   /* If -r or they will be run via some other method, do not build the
@@ -1526,9 +1527,6 @@ main (argc, argv)
       )
     {
 #ifdef COLLECT_EXPORT_LIST
-      /* Do the link we avoided above if we are exiting.  */
-      do_tlink (ld1_argv, object_lst);
-
       /* But make sure we delete the export file we may have created.  */
       if (export_file != 0 && export_file[0])
 	maybe_unlink (export_file);
@@ -1557,7 +1555,6 @@ main (argc, argv)
     {
       notice ("%d constructor(s) found\n", constructors.number);
       notice ("%d destructor(s)  found\n", destructors.number);
-      notice ("%d frame table(s) found\n", frame_tables.number);
     }
 
   if (constructors.number == 0 && destructors.number == 0
@@ -2375,7 +2372,6 @@ scan_prog_file (prog_name, which_pass)
 	case 5:
 	  if (which_pass != PASS_LIB)
 	    add_to_list (&frame_tables, name);
-	  break;
 
 	default:		/* not a constructor or destructor */
 	  continue;
@@ -2820,7 +2816,7 @@ scan_libraries (prog_name)
 #if defined(EXTENDED_COFF)
 #   define GCC_SYMBOLS(X)	(SYMHEADER(X).isymMax + SYMHEADER(X).iextMax)
 #   define GCC_SYMENT		SYMR
-#   define GCC_OK_SYMBOL(X)	((X).st == stProc || (X).st == stGlobal)
+#   define GCC_OK_SYMBOL(X)	((X).st == stProc && (X).sc == scText)
 #   define GCC_SYMINC(X)	(1)
 #   define GCC_SYMZERO(X)	(SYMHEADER(X).isymMax)
 #   define GCC_CHECK_HDR(X)	(PSYMTAB(X) != 0)
@@ -2960,11 +2956,6 @@ scan_prog_file (prog_name, which_pass)
 			  break;
 #endif
 
-			case 5:
-			  if (! is_shared)
-			    add_to_list (&frame_tables, name);
-			  break;
-
 			default:	/* not a constructor or destructor */
 #ifdef COLLECT_EXPORT_LIST
 			  /* If we are building a shared object on AIX we need
@@ -3044,11 +3035,21 @@ scan_prog_file (prog_name, which_pass)
 
 #ifdef COLLECT_EXPORT_LIST
 
-/* Never generate import list (gcc-2.95 branch).  */
+/* This new function is used to decide whether we should
+   generate import list for an object or to use it directly.  */
 static int
 use_import_list (prog_name)
      char *prog_name;
 {
+  char *p;
+
+  /* If we do not build a shared object then import list should not be used.  */
+  if (! shared_obj) return 0;
+
+  /* Currently we check only for libgcc, but this can be changed in future.  */
+  p = strstr (prog_name, "libgcc.a");
+  if (p != 0 && (strlen (p) == sizeof ("libgcc.a") - 1))
+    return 1;
   return 0;
 }
 

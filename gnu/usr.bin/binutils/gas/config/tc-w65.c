@@ -1,5 +1,6 @@
 /* tc-w65.c -- Assemble code for the W65816
-   Copyright (C) 1995, 1998 Free Software Foundation.
+
+   Copyright (C) 1995 Free Software Foundation.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -14,9 +15,8 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with GAS; see the file COPYING.  If not, write to the Free
-   Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+   along with GAS; see the file COPYING.  If not, write to
+   the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 /*
    Written By Steve Chamberlain
@@ -133,7 +133,7 @@ s_longa (xmode)
       input_line_pointer += 3;
     }
   else
-    as_bad (_("need on or off."));
+    as_bad ("need on or off.");
   demand_empty_rest_of_line ();
 }
 void
@@ -254,7 +254,7 @@ parse_exp (s, bytes)
   input_line_pointer = s;
   w65_expression (&immediate, bytes);
   if (immediate.X_op == O_absent)
-    as_bad (_("missing operand"));
+    as_bad ("missing operand");
   new = input_line_pointer;
   input_line_pointer = save;
   return new;
@@ -318,7 +318,7 @@ get_operands (info, ptr)
 	    }
 	  else
 	    {
-	      as_bad (_("syntax error after <exp"));
+	      as_bad ("syntax error after <exp");
 	    }
 	}
       else
@@ -361,7 +361,7 @@ get_operands (info, ptr)
 	    }
 	  else
 	    {
-	      as_bad (_("syntax error after <exp"));
+	      as_bad ("syntax error after <exp");
 	    }
 	}
       else
@@ -756,7 +756,7 @@ md_assemble (str)
 
   if (opcode == NULL)
     {
-      as_bad (_("unknown opcode"));
+      as_bad ("unknown opcode");
       return;
     }
 
@@ -776,7 +776,7 @@ md_assemble (str)
 
       where[0] = 0x0;
       where[1] = 0x0;
-      as_bad (_("invalid operands for opcode"));
+      as_bad ("invalid operands for opcode");
       return;
     }
 
@@ -788,7 +788,7 @@ void
 DEFUN (tc_crawl_symbol_chain, (headers),
        object_headers * headers)
 {
-  printf (_("call to tc_crawl_symbol_chain \n"));
+  printf ("call to tc_crawl_symbol_chain \n");
 }
 
 symbolS *
@@ -802,7 +802,7 @@ void
 DEFUN (tc_headers_hook, (headers),
        object_headers * headers)
 {
-  printf (_("call to tc_headers_hook \n"));
+  printf ("call to tc_headers_hook \n");
 }
 
 /* Various routines to kill one day */
@@ -853,7 +853,7 @@ md_atof (type, litP, sizeP)
 
     default:
       *sizeP = 0;
-      return _("Bad call to MD_NTOF()");
+      return "Bad call to MD_NTOF()";
     }
   t = atof_ieee (input_line_pointer, type, words);
   if (t)
@@ -877,12 +877,36 @@ md_parse_option (c,a)
   return 1;
 }
 
+int md_short_jump_size;
+
 void
 tc_Nout_fix_to_chars ()
 {
-  printf (_("call to tc_Nout_fix_to_chars \n"));
+  printf ("call to tc_Nout_fix_to_chars \n");
   abort ();
 }
+
+void
+md_create_short_jump (ptr, from_Nddr, to_Nddr, frag, to_symbol)
+     char *ptr;
+     addressT from_Nddr;
+     addressT to_Nddr;
+     fragS *frag;
+     symbolS *to_symbol;
+{
+  as_fatal ("failed sanity check.");
+}
+
+void
+md_create_long_jump (ptr, from_Nddr, to_Nddr, frag, to_symbol)
+     char *ptr;
+     addressT from_Nddr, to_Nddr;
+     fragS *frag;
+     symbolS *to_symbol;
+{
+  as_fatal ("failed sanity check.");
+}
+
 
 /*
 called after relaxing, change the frags so they know how big they are
@@ -1060,6 +1084,8 @@ md_apply_fix (fixP, val)
     }
 }
 
+int md_long_jump_size;
+
 /* Put number into target byte order */
 
 void
@@ -1081,7 +1107,7 @@ md_pcrel_from (fixP)
 
 void
 tc_coff_symbol_emit_hook (x)
-    symbolS *x;
+    struct symbol *x;
 {
 }
 

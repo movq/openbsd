@@ -1,23 +1,21 @@
 #!/bin/sh
 # genscripts.sh - generate the ld-emulation-target specific files
 #
-# Usage: genscripts.sh srcdir libdir host target target_alias \
-# default_emulation native_lib_dirs this_emulation tool_dir
+# Usage: genscripts.sh srcdir libdir host_alias target_alias \
+# default_emulation this_emulation
 #
 # Sample usage:
 # genscripts.sh /djm/ld-devo/devo/ld /usr/local/lib sparc-sun-sunos4.1.3 \
-# sparc-sun-sunos4.1.3 sparc-sun-sunos4.1.3 sun4 "" sun3 sparc-sun-sunos4.1.3
+# sparc-sun-sunos4.1.3 sun4 sun3
 # produces sun3.x sun3.xbn sun3.xn sun3.xr sun3.xu em_sun3.c
 
 srcdir=$1
 libdir=$2
-host=$3
-target=$4
-target_alias=$5
-EMULATION_LIBPATH=$6
-NATIVE_LIB_DIRS=$7
-EMULATION_NAME=$8
-tool_lib=`echo ${libdir} | sed -e 's|/lib$||'`/${9-$target_alias}/lib
+host_alias=$3
+target_alias=$4
+DEFAULT_EMULATION=$5
+NATIVE_LIB_DIRS=$6
+EMULATION_NAME=$7
 
 # Include the emulation-specific parameters:
 . ${srcdir}/emulparams/${EMULATION_NAME}.sh
@@ -36,29 +34,31 @@ fi
 # To force a logically empty LIB_PATH, do LIBPATH=":".
 
 if [ "x${LIB_PATH}" = "x" ] ; then
-  # Cross, or native non-default emulation not requesting LIB_PATH.
-  LIB_PATH=
-
-  if [ "x${host}" = "x${target}" ] ; then
-    case " $EMULATION_LIBPATH " in
-      *" ${EMULATION_NAME} "*)
-        # Native, and default or emulation requesting LIB_PATH.
-        LIB_PATH=/lib:/usr/lib
-        if [ -n "${NATIVE_LIB_DIRS}" ]; then
-	  LIB_PATH=${LIB_PATH}:${NATIVE_LIB_DIRS}
-        fi
-        if [ "${libdir}" != /usr/lib ]; then
-	  LIB_PATH=${LIB_PATH}:${libdir}
-        fi
-        if [ "${libdir}" != /usr/local/lib ] ; then
-	  LIB_PATH=${LIB_PATH}:/usr/local/lib
-        fi
-    esac
+  if [ "x${host_alias}" = "x${target_alias}" ] ; then
+    if [ "x${DEFAULT_EMULATION}" = "x${EMULATION_NAME}" ] ; then
+      # Native.
+      LIB_PATH=/lib:/usr/lib
+      if [ -n "${NATIVE_LIB_DIRS}" ]; then
+	LIB_PATH=${LIB_PATH}:${NATIVE_LIB_DIRS}
+      fi
+      if [ "${libdir}" != /usr/lib ]; then
+	LIB_PATH=${LIB_PATH}:${libdir}
+      fi
+      if [ "${libdir}" != /usr/local/lib ] ; then
+	LIB_PATH=${LIB_PATH}:/usr/local/lib
+      fi
+    else
+      # Native, but not default emulation.
+      LIB_PATH=
+    fi
+  else
+    # Cross.
+    LIB_PATH=
   fi
 fi
 
 # Always search $(tooldir)/lib, aka /usr/local/TARGET/lib.
-LIB_PATH=${LIB_PATH}:${tool_lib}
+LIB_PATH=${LIB_PATH}:`echo ${libdir} | sed -e s'|/lib$||'`/${target_alias}/lib
 
 LIB_SEARCH_DIRS=`echo ${LIB_PATH} | tr ':' ' ' | sed -e 's/\([^ ][^ ]*\)/SEARCH_DIR(\1);/g'`
 
@@ -125,9 +125,7 @@ if test -n "$GENERATE_SHLIB_SCRIPT"; then
     ldscripts/${EMULATION_NAME}.xs
 fi
 
-for i in $EMULATION_LIBPATH ; do
-  test "$i" = "$EMULATION_NAME" && COMPILE_IN=true
-done
+test "$DEFAULT_EMULATION" = "$EMULATION_NAME" && COMPILE_IN=true
 
-# Generate e${EMULATION_NAME}.c.
+# Generate em_${EMULATION_NAME}.c.
 . ${srcdir}/emultempl/${TEMPLATE_NAME-generic}.em

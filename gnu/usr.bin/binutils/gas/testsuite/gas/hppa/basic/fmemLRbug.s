@@ -69,7 +69,7 @@ f
 	flddx		%r25(%sr0,%r26),%fr6L
 	flddx		%r25(%sr0,%r26),%fr6
 
-	bv		%r0(%r2)
+	bv		0(%r2)
 	nop
 
 	.exit
