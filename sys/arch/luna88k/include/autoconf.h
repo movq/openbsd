@@ -1,4 +1,4 @@
-/*	$OpenBSD: autoconf.h,v 1.1 2004/04/21 15:23:56 aoyama Exp $ */
+/*	$OpenBSD: autoconf.h,v 1.1.2.1 2004/06/05 23:09:46 niklas Exp $ */
 /*
  * Copyright (c) 1999, Steve Murphree, Jr.
  * Copyright (c) 1996 Nivas Madhur

@@ -1,4 +1,4 @@
-/* $OpenBSD: siotty.c,v 1.1 2004/04/21 15:23:55 aoyama Exp $ */
+/* $OpenBSD: siotty.c,v 1.1.2.1 2004/06/05 23:09:46 niklas Exp $ */
 /* $NetBSD: siotty.c,v 1.9 2002/03/17 19:40:43 atatat Exp $ */
 
 /*-
