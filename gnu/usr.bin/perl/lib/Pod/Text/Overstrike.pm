@@ -1,5 +1,5 @@
 # Pod::Text::Overstrike -- Convert POD data to formatted overstrike text
-# $Id: Overstrike.pm,v 1.1.1.4 2004/08/09 17:47:21 millert Exp $
+# $Id: Overstrike.pm,v 1.1.1.5 2005/01/15 21:17:29 millert Exp $
 #
 # Created by Joe Smith <Joe.Smith@inwap.com> 30-Nov-2000
 #   (based on Pod::Text::Color by Russ Allbery <rra@stanford.edu>)
