@@ -1,39 +1,39 @@
+# Generated automatically from Makefile.in by configure.
 # $KTH: Makefile.in,v 1.41.16.1 2001/03/03 22:12:26 assar Exp $
 
 SHELL = /bin/sh
 
-srcdir = @srcdir@
-VPATH = @srcdir@
+srcdir = .
 
 top_builddir = ../..
 
-XINCS = @X_CFLAGS@
-XLIBS = @X_LIBS@ -lXt @X_PRE_LIBS@ -lX11 @X_EXTRA_LIBS@
+XINCS =  -I/usr/X11R6/include
+XLIBS =  -L/usr/X11R6/lib -lXt  -lSM -lICE -lX11 
 
-CC = @CC@
-LINK = @LINK@
-RANLIB = @RANLIB@
-DEFS = @DEFS@ -DBINDIR='"$(bindir)"'
-CFLAGS = $(XINCS) @CFLAGS@ $(WFLAGS)
-WFLAGS = @WFLAGS@ @WFLAGS_NOIMPLICITINT@
-LD_FLAGS = @LD_FLAGS@
-LIBS = $(XLIBS) @LIBS@
-INSTALL = @INSTALL@
-INSTALL_DATA = @INSTALL_DATA@
-INSTALL_PROGRAM = @INSTALL_PROGRAM@
-MKINSTALLDIRS = @top_srcdir@/mkinstalldirs
+CC = gcc
+LINK = $(CC)
+RANLIB = ranlib
+DEFS = -DHAVE_CONFIG_H -DBINDIR='"$(bindir)"'
+CFLAGS = $(XINCS)  -g -O2 $(WFLAGS)
+WFLAGS =  
+LD_FLAGS = 
+LIBS = $(XLIBS) -lutil  
+INSTALL = /usr/bin/install -c
+INSTALL_DATA = ${INSTALL} -m 644
+INSTALL_PROGRAM = ${INSTALL}
+MKINSTALLDIRS = ../../mkinstalldirs
 
-prefix = @prefix@
-exec_prefix = @exec_prefix@
-libdir = @libdir@
-bindir = @bindir@
-mandir = @mandir@
-transform=@program_transform_name@
-EXECSUFFIX=@EXECSUFFIX@
+prefix = /usr/athena
+exec_prefix = ${prefix}
+libdir = ${exec_prefix}/lib
+bindir = ${exec_prefix}/bin
+mandir = ${prefix}/man
+transform=s,x,x,
+EXECSUFFIX=
 
 X_PROGS_BIN = xnlock$(EXECSUFFIX)
 
-PROG_BIN	= @MAKE_X_PROGS_BIN@
+PROG_BIN	= $(X_PROGS_BIN)
 PROG_LIBEXEC	= 
 PROGS = $(PROG_BIN) $(PROG_LIBEXEC)
 
@@ -90,7 +90,7 @@ KLIB=-L../../lib/krb -lkrb -L../../lib/des -ldes
 LIBROKEN=-L../../lib/roken -lroken
 
 xnlock$(EXECSUFFIX): xnlock.o
-	$(LINK) $(LD_FLAGS) $(LDFLAGS) -o $@ xnlock.o @KRB_KAFS_LIB@ $(KLIB) $(LIBROKEN) $(LIBS) $(LIBROKEN)
+	$(LINK) $(LD_FLAGS) $(LDFLAGS) -o $@ xnlock.o -L$(top_builddir)/lib/kafs -lkafs  $(KLIB) $(LIBROKEN) $(LIBS) $(LIBROKEN)
 
 $(OBJECTS): ../../include/config.h
 

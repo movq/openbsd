@@ -1,29 +1,29 @@
+# Generated automatically from Makefile.in by configure.
 # $KTH: Makefile.in,v 1.59.2.3 2000/12/13 14:41:37 assar Exp $
 
-srcdir		= @srcdir@
-VPATH		= @srcdir@
+srcdir		= .
 
 SHELL		= /bin/sh
 
-CC		= @CC@
-LINK = @LINK@
-DEFS		= @DEFS@ -DHOST=\"@CANONICAL_HOST@\"
-CFLAGS		= @CFLAGS@ $(WFLAGS)
-WFLAGS		= @WFLAGS@
-LD_FLAGS	= @LD_FLAGS@
+CC		= gcc
+LINK = $(CC)
+DEFS		= -DHAVE_CONFIG_H -DHOST=\"i386-unknown-openbsd2.9\"
+CFLAGS		=  -g -O2 $(WFLAGS)
+WFLAGS		= 
+LD_FLAGS	= 
 
-INSTALL		= @INSTALL@
-INSTALL_DATA	= @INSTALL_DATA@
-MKINSTALLDIRS	= @top_srcdir@/mkinstalldirs
-LN_S		= @LN_S@
-EXECSUFFIX	= @EXECSUFFIX@
+INSTALL		= /usr/bin/install -c
+INSTALL_DATA	= ${INSTALL} -m 644
+MKINSTALLDIRS	= ../mkinstalldirs
+LN_S		= ln -s
+EXECSUFFIX	= 
 
-prefix		= @prefix@
-exec_prefix	= @exec_prefix@
-includedir	= @includedir@
-libdir		= @libdir@
+prefix		= /usr/athena
+exec_prefix	= ${prefix}
+includedir	= ${prefix}/include
+libdir		= ${exec_prefix}/lib
 
-@SET_MAKE@
+
 
 .c.o:
 	$(CC) -c $(DEFS) -I. -I$(srcdir) $(CFLAGS) $(CPPFLAGS) $(PICFLAGS) $<
@@ -32,11 +32,11 @@ HEADERS = \
 	acl.h com_err.h com_right.h des.h kadm.h kafs.h kdc.h \
 	klog.h krb.h krb-protos.h krb-archaeology.h krb_db.h \
 	ktypes.h otp.h prot.h sl.h \
-	md4.h md5.h sha.h rc4.h @EXTRA_HEADERS@
+	md4.h md5.h sha.h rc4.h 
 
 LOCL_HEADERS = \
 	     base64.h roken-common.h protos.h resolve.h xdbm.h	\
-	     krb_log.h getarg.h parse_time.h @EXTRA_LOCL_HEADERS@
+	     krb_log.h getarg.h parse_time.h 
 
 CLEAN_FILES = roken.h krb_err.h kadm_err.h
 
