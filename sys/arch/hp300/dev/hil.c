@@ -1,4 +1,4 @@
-/*	$OpenBSD: hil.c,v 1.19 2003/09/23 16:51:11 millert Exp $	*/
+/*	$OpenBSD: hil.c,v 1.18 2003/06/02 23:27:44 millert Exp $	*/
 /*	$NetBSD: hil.c,v 1.34 1997/04/02 22:37:32 scottr Exp $	*/
 
 /*
@@ -46,7 +46,6 @@
 #include <sys/file.h>
 #include <sys/ioctl.h>
 #include <sys/kernel.h>
-#include <sys/poll.h>
 #include <sys/proc.h>
 #include <sys/tty.h>
 #include <sys/uio.h>
@@ -736,21 +735,19 @@ hilmmap(dev, off, prot)
 
 /*ARGSUSED*/
 int
-hilpoll(dev, events, p)
+hilselect(dev, rw, p)
 	dev_t dev;
-	int events;
+	int rw;
 	struct proc *p;
 {
 	struct hil_softc *hilp = &hil_softc[HILLOOP(dev)];
 	struct hilloopdev *dptr;
 	struct hiliqueue *qp;
 	int mask;
-	int s, revents, device;
+	int s, device;
 
-	revents = events & (POLLOUT | POLLWRNORM);
-	if (events & (POLLIN | POLLRDNORM) == 0)
-		return (revents);
-
+	if (rw == FWRITE)
+		return (1);
 	device = HILUNIT(dev);
 
 	/*
@@ -760,12 +757,13 @@ hilpoll(dev, events, p)
 	dptr = &hilp->hl_device[device];
 	if (dptr->hd_flags & HIL_READIN) {
 		s = splhil();
-		if (dptr->hd_queue.c_cc)
-			revents |= events & (POLLIN | POLLRDNORM);
-		else
-			selrecord(p, &dptr->hd_selr);
+		if (dptr->hd_queue.c_cc) {
+			splx(s);
+			return (1);
+		}
+		selrecord(p, &dptr->hd_selr);
 		splx(s);
-		return (revents);
+		return (0);
 	}
 
 	/*
@@ -774,7 +772,7 @@ hilpoll(dev, events, p)
 	 * This is primarily to be consistant with HP-UX.
 	 */
 	if (device && (dptr->hd_flags & (HIL_ALIVE|HIL_PSEUDO)) != HIL_ALIVE)
-		return (revents | (events & (POLLIN | POLLRDNORM)));
+		return (1);
 
 	/*
 	 * Select on loop device is special.
@@ -794,12 +792,12 @@ hilpoll(dev, events, p)
 		    qp->hq_eventqueue->hil_evqueue.head !=
 		    qp->hq_eventqueue->hil_evqueue.tail) {
 			splx(s);
-			return (revents | (events & (POLLIN | POLLRDNORM)));
+			return (1);
 		}
 
 	selrecord(p, &dptr->hd_selr);
 	splx(s);
-	return (revents);
+	return (0);
 }
 
 /*ARGSUSED*/
@@ -987,7 +985,7 @@ hilevent(hilp)
 	}
 
 	/*
-	 * Wake up anyone polling this device or the loop itself
+	 * Wake up anyone selecting on this device or the loop itself
 	 */
 	selwakeup(&dptr->hd_selr);
 	dptr = &hilp->hl_device[HILLOOPDEV];
@@ -1028,7 +1026,7 @@ hpuxhilevent(hilp, dptr)
 	}
 
 	/*
-	 * Wake up any one blocked on a read or poll
+	 * Wake up any one blocked on a read or select
 	 */
 	if (dptr->hd_flags & HIL_ASLEEP) {
 		dptr->hd_flags &= ~HIL_ASLEEP;

@@ -1,4 +1,4 @@
-/*	$OpenBSD: advnops.c,v 1.26 2003/09/23 16:51:11 millert Exp $	*/
+/*	$OpenBSD: advnops.c,v 1.25 2003/07/24 22:00:24 mickey Exp $	*/
 /*	$NetBSD: advnops.c,v 1.32 1996/10/13 02:52:09 christos Exp $	*/
 
 /*
@@ -44,7 +44,6 @@
 #include <sys/malloc.h>
 #include <sys/stat.h>
 #include <sys/unistd.h>
-#include <sys/poll.h>
 #include <sys/proc.h>
 
 #include <machine/endian.h>
@@ -58,7 +57,7 @@ int	adosfs_getattr(void *);
 int	adosfs_read(void *);
 int	adosfs_write(void *);
 int	adosfs_ioctl(void *);
-int	adosfs_poll(void *);
+int	adosfs_select(void *);
 int	adosfs_strategy(void *);
 int	adosfs_link(void *);
 int	adosfs_symlink(void *);
@@ -108,7 +107,7 @@ struct vnodeopv_entry_desc adosfs_vnodeop_entries[] = {
 	{ &vop_write_desc, adosfs_write },		/* write */
 	{ &vop_lease_desc, adosfs_lease_check },	/* lease */
 	{ &vop_ioctl_desc, adosfs_ioctl },		/* ioctl */
-	{ &vop_poll_desc, adosfs_poll },		/* poll */
+	{ &vop_select_desc, adosfs_select },		/* select */
 	{ &vop_fsync_desc, adosfs_fsync },		/* fsync */
 	{ &vop_remove_desc, adosfs_remove },		/* remove */
 	{ &vop_link_desc, adosfs_link },		/* link */
@@ -377,23 +376,24 @@ adosfs_ioctl(v)
 
 /* ARGSUSED */
 int
-adosfs_poll(v)
+adosfs_select(v)
 	void *v;
 {
-	struct vop_poll_args /* {
+#ifdef ADOSFS_DIAGNOSTIC
+	struct vop_select_args /* {
 		struct vnode *a_vp;
-		int  a_events;
+		int  a_which;
+		int  a_fflags;
+		struct ucred *a_cred;
 		struct proc *a_p;
 	} */ *sp = v;
-#ifdef ADOSFS_DIAGNOSTIC
 	/*
 	 * sure there's something to read...
 	 */
 	advopprint(sp);
-	printf(" %d",
-	    ap->a_events & (POLLIN | POLLOUT | POLLRDNORM | POLLWRNORM));
+	printf(" 1)");
 #endif
-	return(ap->a_events & (POLLIN | POLLOUT | POLLRDNORM | POLLWRNORM));
+	return(1);
 }
 
 /*

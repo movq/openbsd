@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998-2003 Sendmail, Inc. and its suppliers.
+ * Copyright (c) 1998-2002 Sendmail, Inc. and its suppliers.
  *	All rights reserved.
  * Copyright (c) 1983, 1995-1997 Eric P. Allman.  All rights reserved.
  * Copyright (c) 1988, 1993
@@ -13,7 +13,7 @@
 
 #include <sendmail.h>
 
-SM_RCSID("@(#)$Sendmail: collect.c,v 8.242.2.8 2003/07/08 01:16:35 ca Exp $")
+SM_RCSID("@(#)$Sendmail: collect.c,v 8.242.2.4 2003/03/28 17:34:39 ca Exp $")
 
 static void	collecttimeout __P((time_t));
 static void	dferror __P((SM_FILE_T *volatile, char *, ENVELOPE *));
@@ -217,7 +217,7 @@ collect_dfopen(e)
 		syserr("@Cannot create %s", dfname);
 		e->e_flags |= EF_NO_BODY_RETN;
 		flush_errors(true);
-		finis(false, true, ExitStat);
+		finis(true, true, ExitStat);
 		/* NOTREACHED */
 	}
 	dfd = sm_io_getinfo(df, SM_IO_WHAT_FD, NULL);
@@ -247,7 +247,6 @@ collect_dfopen(e)
 **			end of message.
 **		hdrp -- the location to stash the header.
 **		e -- the current envelope.
-**		rsetsize -- reset e_msgsize?
 **
 **	Returns:
 **		none.
@@ -282,12 +281,11 @@ static SM_EVENT	*volatile CollectTimeout = NULL;
 #define MS_DISCARD	3	/* discarding rest of message */
 
 void
-collect(fp, smtpmode, hdrp, e, rsetsize)
+collect(fp, smtpmode, hdrp, e)
 	SM_FILE_T *fp;
 	bool smtpmode;
 	HDR **hdrp;
 	register ENVELOPE *e;
-	bool rsetsize;
 {
 	register SM_FILE_T *volatile df;
 	volatile bool ignrdot;
@@ -368,8 +366,7 @@ collect(fp, smtpmode, hdrp, e, rsetsize)
 		CollectTimeout = sm_setevent(dbto, collecttimeout, dbto);
 	}
 
-	if (rsetsize)
-		e->e_msgsize = 0;
+	e->e_msgsize = 0;
 	for (;;)
 	{
 		if (tTd(30, 35))
@@ -886,22 +883,7 @@ readerr:
 
 	/* collect statistics */
 	if (OpMode != MD_VERIFY)
-	{
-		/*
-		**  Recalculate e_msgpriority, it is done at in eatheader()
-		**  which is called (in 8.12) after the header is collected,
-		**  hence e_msgsize is (most likely) incorrect.
-		*/
-
-		e->e_msgpriority = e->e_msgsize
-				 - e->e_class * WkClassFact
-				 + e->e_nrcpts * WkRecipFact;
-		if (tTd(90, 1))
-			sm_syslog(LOG_INFO, e->e_id,
-				"collect: at end: msgsize=%ld, msgpriority=%ld",
-				e->e_msgsize, e->e_msgpriority);
 		markstats(e, (ADDRESS *) NULL, STATS_NORMAL);
-	}
 }
 
 static void
@@ -1037,7 +1019,6 @@ dferror(df, msg, e)
 **
 **	Parameters:
 **		fm -- the from line.
-**		e -- envelope
 **
 **	Returns:
 **		none.

@@ -1,4 +1,4 @@
-/*	$OpenBSD: asc.c,v 1.16 2003/09/23 16:51:11 millert Exp $	*/
+/*	$OpenBSD: asc.c,v 1.15 2002/06/24 22:14:47 miod Exp $	*/
 /*	$NetBSD: asc.c,v 1.20 1997/02/24 05:47:33 scottr Exp $	*/
 
 /*
@@ -76,7 +76,6 @@
 #include <sys/param.h>
 #include <sys/device.h>
 #include <sys/fcntl.h>
-#include <sys/poll.h>
 #include <sys/timeout.h>
 
 #include <uvm/uvm_extern.h>
@@ -256,13 +255,21 @@ ascioctl(dev, cmd, data, flag, p)
 }
 
 int
-ascpoll(dev, events, p)
+ascselect(dev, rw, p)
 	dev_t dev;
-	int events;
+	int rw;
 	struct proc *p;
 {
-	/* always fails => never blocks */
-	return (events & (POLLOUT | POLLWRNORM));
+	switch (rw) {
+	case FREAD:
+		break;
+
+	case FWRITE:
+		return (1);	/* always fails => never blocks */
+		break;
+	}
+
+	return (0);
 }
 
 paddr_t

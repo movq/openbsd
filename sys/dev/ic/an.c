@@ -1,4 +1,4 @@
-/*	$OpenBSD: an.c,v 1.30 2003/09/23 11:13:20 avsm Exp $	*/
+/*	$OpenBSD: an.c,v 1.28 2003/08/15 20:32:16 tedu Exp $	*/
 
 /*
  * Copyright (c) 1997, 1998, 1999

@@ -1,4 +1,4 @@
-/*	$OpenBSD: monitor_wrap.h,v 1.12 2003/09/23 20:17:11 markus Exp $	*/
+/*	$OpenBSD: monitor_wrap.h,v 1.11 2003/08/28 12:54:34 markus Exp $	*/
 
 /*
  * Copyright 2002 Niels Provos <provos@citi.umich.edu>
@@ -40,7 +40,6 @@ struct mm_master;
 struct passwd;
 struct Authctxt;
 
-int mm_is_monitor(void);
 DH *mm_choose_dh(int, int, int);
 int mm_key_sign(Key *, u_char **, u_int *, u_char *, u_int);
 void mm_inform_authserv(char *, char *);
@@ -64,10 +63,9 @@ OM_uint32 mm_ssh_gssapi_accept_ctx(Gssctxt *ctxt,
 int mm_ssh_gssapi_userok(char *user);
 #endif
 
-struct Session;
 void mm_terminate(void);
 int mm_pty_allocate(int *, int *, char *, int);
-void mm_session_pty_cleanup2(struct Session *);
+void mm_session_pty_cleanup2(void *);
 
 /* SSHv1 interfaces */
 void mm_ssh1_session_id(u_char *);

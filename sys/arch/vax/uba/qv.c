@@ -1,4 +1,4 @@
-/*	$OpenBSD: qv.c,v 1.7 2003/09/23 16:51:11 millert Exp $	*/
+/*	$OpenBSD: qv.c,v 1.6 2003/06/02 23:27:58 millert Exp $	*/
 /*	$NetBSD: qv.c,v 1.2 1996/09/02 06:44:28 mycroft Exp $	*/
 
 /*-
@@ -142,7 +142,6 @@
 #include "sys/uio.h"
 #include "sys/kernel.h"
 #include "sys/syslog.h"
-#include "sys/poll.h"
 #include "../include/cpu.h"
 #include "../include/mtpr.h"
 #include "ubareg.h"
@@ -495,31 +494,33 @@ qvwrite(dev, uio)
 
 
 /*
- * Mouse activity poll routine
+ * Mouse activity select routine
  */
-int
-qvpoll(dev, events, p)
-	dev_t dev;
-	int events;
-	struct proc *p;
+qvselect(dev, rw)
+dev_t dev;
 {
-	struct qv_info *qp = qv_scn;
-	int revents = 0;
-	int s = spl5();
+	register int s = spl5();
+	register struct qv_info *qp = qv_scn;
 
-	if (QVCHAN(minor(dev)) != QVMOUSECHAN) {
-		splx(s);
-		return(ttpoll(dev, events, p));
-	}
-
-	if (events & (POLLIN | POLLRDNORM)) {
-		if (qp->ihead != qp->itail)
-			revents |= events & (POLLIN | POLLRDNORM);
-		else
+	if( QVCHAN(minor(dev)) == QVMOUSECHAN )
+		switch(rw) {
+		case FREAD:			/* if events okay */
+			if(qp->ihead != qp->itail) {
+				splx(s);
+				return(1);
+			}
 			qvrsel = u.u_procp;
+			splx(s);
+			return(0);
+		default:			/* can never write */
+			splx(s);
+			return(0);
+		}
+	else {
+		splx(s);
+		return( ttselect(dev, rw) );
 	}
-	splx(s);
-	return(revents);
+	/*NOTREACHED*/
 }
 		
 /*

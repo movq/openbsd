@@ -1,5 +1,5 @@
 #!/bin/sh
-#	$OpenBSD: install.sh,v 1.137 2003/09/22 01:31:39 krw Exp $
+#	$OpenBSD: install.sh,v 1.136 2003/08/17 18:18:50 krw Exp $
 #	$NetBSD: install.sh,v 1.5.2.8 1996/08/27 18:15:05 gwr Exp $
 #
 # Copyright (c) 1997-2002 Todd Miller, Theo de Raadt, Ken Westerback
@@ -240,8 +240,13 @@ $(<$FILESYSTEMS)
 The next step creates a filesystem on each partition, ERASING existing data.
 __EOT
 
-	ask_yn "Are you really sure that you're ready to proceed?"
-	[[ $resp == n ]] && { echo "ok, try again later..." ; exit ; }
+	ask "Are you really sure that you're ready to proceed?" n
+	case $resp in
+	y*|Y*)	;;
+	*)	echo "ok, try again later..."
+		exit
+		;;
+	esac
 
 	# Read $FILESYSTEMS, creating a new filesystem on each listed
 	# partition and saving the partition and mount point information
@@ -348,13 +353,16 @@ cat > /tmp/hosts << __EOT
 127.0.0.1 $(hostname -s)
 __EOT
 
-ask_yn "Configure the network?" yes
-[[ $resp == y ]] && donetconfig
+ask "Configure the network?" y
+case $resp in
+y*|Y*)	donetconfig ;;
+*)	;;
+esac
 
 _oifs=$IFS
 IFS=
 resp=
-while [[ -z $resp ]]; do
+while [ -z "$resp" ]; do
 	askpass "Password for root account? (will not echo)"
 	_password=$resp
 

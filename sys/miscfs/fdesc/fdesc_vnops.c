@@ -1,4 +1,4 @@
-/*	$OpenBSD: fdesc_vnops.c,v 1.36 2003/09/23 16:51:12 millert Exp $	*/
+/*	$OpenBSD: fdesc_vnops.c,v 1.35 2003/06/02 23:28:10 millert Exp $	*/
 /*	$NetBSD: fdesc_vnops.c,v 1.32 1996/04/11 11:24:29 mrg Exp $	*/
 
 /*
@@ -60,7 +60,6 @@
 #include <sys/buf.h>
 #include <sys/dirent.h>
 #include <sys/tty.h>
-#include <sys/poll.h>
 
 #include <miscfs/fdesc/fdesc.h>
 
@@ -98,7 +97,7 @@ int	fdesc_setattr(void *);
 int	fdesc_read(void *);
 int	fdesc_write(void *);
 int	fdesc_ioctl(void *);
-int	fdesc_poll(void *);
+int	fdesc_select(void *);
 #define	fdesc_fsync	nullop
 #define	fdesc_remove	eopnotsupp
 #define fdesc_revoke    vop_generic_revoke
@@ -136,7 +135,7 @@ struct vnodeopv_entry_desc fdesc_vnodeop_entries[] = {
 	{ &vop_write_desc, fdesc_write },	/* write */
 	{ &vop_ioctl_desc, fdesc_ioctl },	/* ioctl */
 	{ &vop_revoke_desc, fdesc_revoke },     /* revoke */
-	{ &vop_poll_desc, fdesc_poll },		/* poll */
+	{ &vop_select_desc, fdesc_select },	/* select */
 	{ &vop_fsync_desc, fdesc_fsync },	/* fsync */
 	{ &vop_remove_desc, fdesc_remove },	/* remove */
 	{ &vop_link_desc, fdesc_link },		/* link */
@@ -826,27 +825,29 @@ fdesc_ioctl(v)
 }
 
 int
-fdesc_poll(v)
+fdesc_select(v)
 	void *v;
 {
-	struct vop_poll_args /* {
+	struct vop_select_args /* {
 		struct vnode *a_vp;
-		int  a_events;
+		int  a_which;
+		int  a_fflags;
+		struct ucred *a_cred;
 		struct proc *a_p;
 	} */ *ap = v;
-	int revents;
+	int error = EOPNOTSUPP;
 
 	switch (VTOFDESC(ap->a_vp)->fd_type) {
 	case Fctty:
-		revents = cttypoll(devctty, ap->a_events, ap->a_p);
+		error = cttyselect(devctty, ap->a_fflags, ap->a_p);
 		break;
 
 	default:
-		revents = ap->a_events & (POLLIN | POLLOUT | POLLRDNORM | POLLWRNORM);
+		error = EOPNOTSUPP;
 		break;
 	}
 	
-	return (revents);
+	return (error);
 }
 
 int

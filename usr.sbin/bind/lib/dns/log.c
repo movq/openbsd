@@ -40,7 +40,6 @@ LIBDNS_EXTERNAL_DATA isc_logcategory_t dns_categories[] = {
 	{ "xfer-out",	0 },
 	{ "dispatch",	0 },
 	{ "lame-servers", 0 },
-	{ "delegation-only", 0 },
 	{ NULL, 	0 }
 };
 

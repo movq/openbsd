@@ -1,4 +1,4 @@
-/*	$OpenBSD: magma.c,v 1.16 2003/09/23 16:51:11 millert Exp $	*/
+/*	$OpenBSD: magma.c,v 1.15 2003/08/15 20:32:14 tedu Exp $	*/
 /*
  * magma.c
  *
@@ -1398,7 +1398,7 @@ int s, opt;
  *	mbppread	read from mbpp
  *	mbppwrite	write to mbpp
  *	mbppioctl	do ioctl on mbpp
- *	mbpppoll	do poll on mbpp
+ *	mbppselect	do select on mbpp
  *	mbpp_rw		general rw routine
  *	mbpp_timeout	rw timeout
  *	mbpp_start	rw start after delay
@@ -1589,15 +1589,15 @@ int s;
 }
 
 /*
- * poll routine
+ * select routine
  */
 int
-mbpppoll(dev, events, p)
+mbppselect(dev, rw, p)
 dev_t dev;
-int events;
+int rw;
 struct proc *p;
 {
-	return(seltrue(dev, events, p));
+	return(ENODEV);
 }
 
 int

@@ -1,4 +1,4 @@
-/*	$OpenBSD: biosdev.c,v 1.66 2003/09/20 05:23:42 fgsch Exp $	*/
+/*	$OpenBSD: biosdev.c,v 1.61 2003/09/11 17:39:35 deraadt Exp $	*/
 
 /*
  * Copyright (c) 1996 Michael Shalayeff
@@ -93,7 +93,7 @@ bios_getdiskinfo(int dev, bios_diskinfo_t *pdi)
 
 #ifdef BIOS_DEBUG
 	if (debug)
-		printf("getinfo: try #8, 0x%x, %p\n", dev, pdi);
+		printf("getinfo: try #8, %x,%p\n", dev, pdi);
 #endif
 	__asm __volatile (DOINT(0x13) "\n\t"
 			  "setc %b0; movzbl %h1, %1\n\t"
@@ -120,14 +120,6 @@ bios_getdiskinfo(int dev, bios_diskinfo_t *pdi)
 	pdi->bios_cylinders &= 0x3ff;
 	pdi->bios_cylinders++;
 
-	/* Sanity check */
-	if (!pdi->bios_cylinders || !pdi->bios_heads || !pdi->bios_sectors)
-		return(1);
-
-	/* CD-ROMs sometimes return heads == 1 */
-	if (pdi->bios_heads < 2)
-		return(1);
-
 	/* NOTE:
 	 * This currently hangs/reboots some machines
 	 * The IBM Thinkpad 750ED for one.
@@ -140,11 +132,6 @@ bios_getdiskinfo(int dev, bios_diskinfo_t *pdi)
 	 */
 	if (dev & 0x80 && (dev == 0x80 || dev == 0x81 || dev == bios_bootdev)) {
 		int bm;
-
-#ifdef BIOS_DEBUG
-		if (debug)
-			printf("getinfo: try #41, 0x%x\n", dev);
-#endif
 		/* EDD support check */
 		__asm __volatile(DOINT(0x13) "; setc %b0"
 			 : "=a" (rv), "=c" (bm)
@@ -154,20 +141,22 @@ bios_getdiskinfo(int dev, bios_diskinfo_t *pdi)
 		else
 			pdi->bios_edd = -1;
 
-#ifdef BIOS_DEBUG
-		if (debug) {
-			printf("getinfo: got #41\n");
-			printf("disk 0x%x: 0x%x\n", dev, bm);
-		}
-#endif
 		/*
 		 * If extended disk access functions are not supported
 		 * there is not much point on doing EDD.
 		 */
-		if (!(pdi->bios_edd & EXT_BM_EDA))
+		if (!(pdi->bios_edd & 1))
 			pdi->bios_edd = -1;
 	} else
 		pdi->bios_edd = -1;
+
+	/* Sanity check */
+	if (!pdi->bios_cylinders || !pdi->bios_heads || !pdi->bios_sectors)
+		return(1);
+
+	/* CD-ROMs sometimes return heads == 1 */
+	if (pdi->bios_heads < 2)
+		return(1);
 
 	return(0);
 }
@@ -467,17 +456,11 @@ biosopen(struct open_file *f, ...)
 
 	/* Try for disklabel again (might be removable media) */
 	if(dip->bios_info.flags & BDI_BADLABEL){
-		const char *st = bios_getdisklabel(&dip->bios_info,
-		    &dip->disklabel);
-#ifdef BIOS_DEBUG
+		const char *st = bios_getdisklabel((void *)biosdev, &dip->disklabel);
 		if (debug && st)
 			printf("%s\n", st);
-#endif
-		if (!st) {
-			dip->bios_info.flags &= ~BDI_BADLABEL;
-			dip->bios_info.flags |= BDI_GOODLABEL;
-		} else
-			return (ERDLAB);
+
+		return ERDLAB;
 	}
 
 	f->f_devdata = dip;

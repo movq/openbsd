@@ -14,9 +14,9 @@
 #include <sendmail.h>
 
 #if NAMED_BIND
-SM_RCSID("@(#)$Sendmail: domain.c,v 8.181.2.9 2003/08/11 23:23:40 gshapiro Exp $ (with name server)")
+SM_RCSID("@(#)$Sendmail: domain.c,v 8.181.2.6 2003/01/15 19:17:15 ca Exp $ (with name server)")
 #else /* NAMED_BIND */
-SM_RCSID("@(#)$Sendmail: domain.c,v 8.181.2.9 2003/08/11 23:23:40 gshapiro Exp $ (without name server)")
+SM_RCSID("@(#)$Sendmail: domain.c,v 8.181.2.6 2003/01/15 19:17:15 ca Exp $ (without name server)")
 #endif /* NAMED_BIND */
 
 #if NAMED_BIND
@@ -233,8 +233,6 @@ getmxrr(host, mxhosts, mxprefs, droplocalhost, rcode, tryfallback, pttl)
 	if (tTd(8, 2))
 		sm_dprintf("getmxrr(%s, droplocalhost=%d)\n",
 			   host, droplocalhost);
-	if (*host == '\0')
-		return 0;
 
 	if ((fallbackMX != NULL && droplocalhost &&
 	     wordinclass(fallbackMX, 'w')) || !tryfallback)
@@ -780,6 +778,12 @@ bestmx_map_lookup(map, name, av, statp)
 **		false -- otherwise.
 */
 
+# if NETINET6
+#  define SM_T_INITIAL	T_AAAA
+# else /* NETINET6 */
+#  define SM_T_INITIAL	T_A
+# endif /* NETINET6 */
+
 bool
 dns_getcanonname(host, hbsize, trymx, statp, pttl)
 	char *host;
@@ -803,7 +807,6 @@ dns_getcanonname(host, hbsize, trymx, statp, pttl)
 	bool amatch;
 	bool gotmx = false;
 	int qtype;
-	int initial;
 	int loopcnt;
 	char *xp;
 	char nbuf[SM_MAX(MAXPACKET, MAXDNAME*2+2)];
@@ -895,16 +898,11 @@ cnameloop:
 	*/
 
 	mxmatch = NULL;
-	initial = T_A;
-# if NETINET6
-	if (InetMode == AF_INET6)
-		initial = T_AAAA;
-# endif /* NETINET6 */
-	qtype = initial;
+	qtype = SM_T_INITIAL;
 
 	for (dp = searchlist; *dp != NULL; )
 	{
-		if (qtype == initial)
+		if (qtype == SM_T_INITIAL)
 			gotmx = false;
 		if (tTd(8, 5))
 			sm_dprintf("dns_getcanonname: trying %s.%s (%s)\n",
@@ -986,7 +984,7 @@ nexttype:
 
 			/* definite no -- try the next domain */
 			dp++;
-			qtype = initial;
+			qtype = SM_T_INITIAL;
 			continue;
 		}
 		else if (tTd(8, 7))
@@ -1071,7 +1069,13 @@ nexttype:
 
 # if NETINET6
 			  case T_AAAA:
+				/* Flag that a good match was found */
+				amatch = true;
+
+				/* continue in case a CNAME also exists */
+				continue;
 # endif /* NETINET6 */
+
 			  case T_A:
 				/* Flag that a good match was found */
 				amatch = true;
@@ -1157,7 +1161,7 @@ nexttype:
 			qtype = T_MX;
 		else
 		{
-			qtype = initial;
+			qtype = SM_T_INITIAL;
 			dp++;
 		}
 	}

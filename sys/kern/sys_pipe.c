@@ -1,4 +1,4 @@
-/*	$OpenBSD: sys_pipe.c,v 1.44 2003/09/23 16:51:12 millert Exp $	*/
+/*	$OpenBSD: sys_pipe.c,v 1.43 2002/03/14 01:27:04 millert Exp $	*/
 
 /*
  * Copyright (c) 1996 John S. Dyson
@@ -46,7 +46,6 @@
 #include <sys/syscallargs.h>
 #include <sys/event.h>
 #include <sys/lock.h>
-#include <sys/poll.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -58,13 +57,13 @@
 int	pipe_read(struct file *, off_t *, struct uio *, struct ucred *);
 int	pipe_write(struct file *, off_t *, struct uio *, struct ucred *);
 int	pipe_close(struct file *, struct proc *);
-int	pipe_poll(struct file *, int events, struct proc *);
+int	pipe_select(struct file *, int which, struct proc *);
 int	pipe_kqfilter(struct file *fp, struct knote *kn);
 int	pipe_ioctl(struct file *, u_long, caddr_t, struct proc *);
 int	pipe_stat(struct file *fp, struct stat *ub, struct proc *p);
 
 static struct fileops pipeops = {
-	pipe_read, pipe_write, pipe_ioctl, pipe_poll, pipe_kqfilter,
+	pipe_read, pipe_write, pipe_ioctl, pipe_select, pipe_kqfilter,
 	pipe_stat, pipe_close 
 };
 
@@ -541,7 +540,7 @@ retrywrite:
 
 			/*
 			 * We have no more space and have something to offer,
-			 * wake up select/poll.
+			 * wake up selects.
 			 */
 			pipeselwakeup(wpipe);
 
@@ -588,7 +587,8 @@ retrywrite:
 	if (error == 0)
 		microtime(&wpipe->pipe_mtime);
 	/*
-	 * We have something to offer, wake up select/poll.
+	 * We have something to offer,
+	 * wake up select.
 	 */
 	if (wpipe->pipe_buffer.cnt)
 		pipeselwakeup(wpipe);
@@ -638,43 +638,48 @@ pipe_ioctl(fp, cmd, data, p)
 }
 
 int
-pipe_poll(fp, events, p)
+pipe_select(fp, which, p)
 	struct file *fp;
-	int events;
+	int which;
 	struct proc *p;
 {
 	struct pipe *rpipe = (struct pipe *)fp->f_data;
 	struct pipe *wpipe;
-	int revents = 0;
 
 	wpipe = rpipe->pipe_peer;
-	if (events & (POLLIN | POLLRDNORM)) {
+	switch (which) {
+
+	case FREAD:
 		if ((rpipe->pipe_buffer.cnt > 0) ||
-		    (rpipe->pipe_state & PIPE_EOF))
-			revents |= events & (POLLIN | POLLRDNORM);
-	}
-
-	/* NOTE: POLLHUP and POLLOUT/POLLWRNORM are mutually exclusive */
-	if ((rpipe->pipe_state & PIPE_EOF) ||
-	    (wpipe == NULL) ||
-	    (wpipe->pipe_state & PIPE_EOF))
-		revents |= POLLHUP;
-	else if (events & (POLLOUT | POLLWRNORM)) {
-		if ((wpipe->pipe_buffer.size - wpipe->pipe_buffer.cnt) >= PIPE_BUF)
-			revents |= events & (POLLOUT | POLLWRNORM);
-	}
-
-	if (revents == 0) {
-		if (events & (POLLIN | POLLRDNORM)) {
-			selrecord(p, &rpipe->pipe_sel);
-			rpipe->pipe_state |= PIPE_SEL;
+		    (rpipe->pipe_state & PIPE_EOF)) {
+			return (1);
 		}
-		if (events & (POLLOUT | POLLWRNORM)) {
-			selrecord(p, &wpipe->pipe_sel);
-			wpipe->pipe_state |= PIPE_SEL;
+		selrecord(p, &rpipe->pipe_sel);
+		rpipe->pipe_state |= PIPE_SEL;
+		break;
+
+	case FWRITE:
+		if ((wpipe == NULL) ||
+		    (wpipe->pipe_state & PIPE_EOF) ||
+		    ((wpipe->pipe_buffer.size - wpipe->pipe_buffer.cnt) >= PIPE_BUF)) {
+			return (1);
 		}
+		selrecord(p, &wpipe->pipe_sel);
+		wpipe->pipe_state |= PIPE_SEL;
+		break;
+
+	case 0:
+		if ((rpipe->pipe_state & PIPE_EOF) ||
+		    (wpipe == NULL) ||
+		    (wpipe->pipe_state & PIPE_EOF)) {
+			return (1);
+		}
+			
+		selrecord(p, &rpipe->pipe_sel);
+		rpipe->pipe_state |= PIPE_SEL;
+		break;
 	}
-	return (revents);
+	return (0);
 }
 
 int

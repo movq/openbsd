@@ -1,4 +1,4 @@
-/*	$OpenBSD: sys_generic.c,v 1.46 2003/09/23 16:51:12 millert Exp $	*/
+/*	$OpenBSD: sys_generic.c,v 1.45 2003/09/01 18:06:03 henning Exp $	*/
 /*	$NetBSD: sys_generic.c,v 1.24 1996/03/29 00:25:32 cgd Exp $	*/
 
 /*
@@ -767,7 +767,7 @@ selscan(p, ibits, obits, nfd, retval)
 	register fd_mask bits;
 	struct file *fp;
 	int ni, n = 0;
-	static const int flag[3] = { POLLIN, POLLOUT, POLLPRI };
+	static int flag[3] = { FREAD, FWRITE, 0 };
 
 	/*
 	 * if nfd > FD_SETSIZE then the fd_set's contain nfd bits (rounded
@@ -788,7 +788,7 @@ selscan(p, ibits, obits, nfd, retval)
 				if ((fp = fd_getfile(fdp, fd)) == NULL)
 					return (EBADF);
 				FREF(fp);
-				if ((*fp->f_ops->fo_poll)(fp, flag[msk], p)) {
+				if ((*fp->f_ops->fo_select)(fp, flag[msk], p)) {
 					FD_SET(fd, pobits);
 					n++;
 				}
@@ -802,13 +802,13 @@ selscan(p, ibits, obits, nfd, retval)
 
 /*ARGSUSED*/
 int
-seltrue(dev, events, p)
+seltrue(dev, flag, p)
 	dev_t dev;
-	int events;
+	int flag;
 	struct proc *p;
 {
 
-	return (events & (POLLIN | POLLOUT | POLLRDNORM | POLLWRNORM));
+	return (1);
 }
 
 /*
@@ -871,25 +871,39 @@ pollscan(p, pl, nfd, retval)
 	int nfd;
 	register_t *retval;
 {
-	struct filedesc *fdp = p->p_fd;
+	register struct filedesc *fdp = p->p_fd;
+	register int msk, i;
 	struct file *fp;
-	int i, n = 0;
+	int x, n = 0;
+	static int flag[3] = { FREAD, FWRITE, 0 };
+	static int pflag[3] = { POLLIN|POLLRDNORM, POLLOUT, POLLERR };
 
-	for (i = 0; i < nfd; i++, pl++) {
+	/* 
+	 * XXX: We need to implement the rest of the flags.
+	 */
+	for (i = 0; i < nfd; i++) {
 		/* Check the file descriptor. */
-		if (pl->fd < 0) {
-			pl->revents = 0;
+		if (pl[i].fd < 0) {
+			pl[i].revents = 0;
 			continue;
 		}
-		if ((fp = fd_getfile(fdp, pl->fd)) == NULL) {
-			pl->revents = POLLNVAL;
+		if ((fp = fd_getfile(fdp, pl[i].fd)) == NULL) {
+			pl[i].revents = POLLNVAL;
 			n++;
 			continue;
 		}
 		FREF(fp);
-		pl->revents = (*fp->f_ops->fo_poll)(fp, pl->events, p);
+		for (x = msk = 0; msk < 3; msk++) {
+			if (pl[i].events & pflag[msk]) {
+				if ((*fp->f_ops->fo_select)(fp, flag[msk], p)) {
+					pl[i].revents |= pflag[msk] &
+					    pl[i].events;
+					x++;
+				}
+			}
+		}
 		FRELE(fp);
-		if (pl->revents != 0)
+		if (x)
 			n++;
 	}
 	*retval = n;
@@ -907,7 +921,7 @@ sys_poll(struct proc *p, void *v, register_t *retval)
 	struct pollfd pfds[4], *pl = pfds;
 	int msec = SCARG(uap, timeout);
 	struct timeval atv;
-	int timo, ncoll, i, s, error;
+	int timo, ncoll, i, s, error, error2;
 	extern int nselcoll, selwait;
 	u_int nfds;
 
@@ -932,7 +946,7 @@ sys_poll(struct proc *p, void *v, register_t *retval)
 	for (i = 0; i < nfds; i++)
 		pl[i].revents = 0;
 
-	if (msec != INFTIM) {
+	if (msec != -1) {
 		atv.tv_sec = msec / 1000;
 		atv.tv_usec = (msec - (atv.tv_sec * 1000)) * 1000;
 
@@ -952,7 +966,7 @@ retry:
 	pollscan(p, pl, nfds, retval);
 	if (*retval)
 		goto done;
-	if (msec != INFTIM) {
+	if (msec != -1) {
 		/*
 		 * We have to recalculate the timeout on every retry.
 		 */
@@ -973,21 +987,16 @@ retry:
 
 done:
 	p->p_flag &= ~P_SELECT;
-	/*
-	 * NOTE: poll(2) is not restarted after a signal and EWOULDBLOCK is
-	 *       ignored (since the whole point is to see what would block).
-	 */
-	switch (error) {
-	case ERESTART:
+	/* poll is not restarted after signals... */
+	if (error == ERESTART)
 		error = EINTR;
-		break;
-	case EWOULDBLOCK:
-	case 0:
-		error = copyout(pl, SCARG(uap, fds), sz);
-		break;
-	}
+	if (error == EWOULDBLOCK)
+		error = 0;
+	if ((error2 = copyout(pl, SCARG(uap, fds), sz)) != 0)
+		error = error2;
 bad:
 	if (pl != pfds)
-		free(pl, M_TEMP);
+		free((char *) pl, M_TEMP);
 	return (error);
 }
+

@@ -1,4 +1,4 @@
-/*	$OpenBSD: usb_port.h,v 1.45 2003/09/23 16:51:12 millert Exp $ */
+/*	$OpenBSD: usb_port.h,v 1.43 2003/07/08 13:19:09 nate Exp $ */
 /*	$NetBSD: usb_port.h,v 1.62 2003/02/15 18:33:30 augustss Exp $	*/
 /*	$FreeBSD: src/sys/dev/usb/usb_port.h,v 1.21 1999/11/17 22:33:47 n_hibma Exp $	*/
 
@@ -202,7 +202,7 @@ int __CONCAT(dname,_detach)(struct device *self, int flags)
  */
 #include <sys/timeout.h>
 
-#undef USB_USE_SOFTINTR
+#define USB_USE_SOFTINTR
 
 #ifdef USB_DEBUG
 #define UKBD_DEBUG 1
@@ -285,6 +285,12 @@ typedef int usb_malloc_type;
 #define Ether_ifattach(ifp, eaddr) ether_ifattach(ifp)
 #define if_deactivate(x)
 #define IF_INPUT(ifp, m) ether_input_mbuf((ifp), (m))
+
+#define	usbpoll			usbselect
+#define	uhidpoll		uhidselect
+#define	ugenpoll		ugenselect
+#define	uriopoll		urioselect
+#define uscannerpoll		uscannerselect
 
 #define logprintf printf
 

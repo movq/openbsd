@@ -1,4 +1,4 @@
-#       $OpenBSD: install.md,v 1.17 2003/09/21 02:11:42 krw Exp $
+#       $OpenBSD: install.md,v 1.15 2002/11/07 01:28:51 krw Exp $
 #
 # Copyright (c) 1996 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -45,7 +45,13 @@ md_set_term() {
 }
 
 md_installboot() {
-	local _rawdev=/dev/r${1}c
+	local _rawdev
+
+	if [ -z "$1" ]; then
+		echo No disk device specified, you must run installboot manually.
+		return
+	fi
+	_rawdev=/dev/r${1}c
 
 	# use extracted mdec if it exists (may be newer)
 	if [ -d /mnt/usr/mdec ]; then
@@ -59,17 +65,18 @@ md_installboot() {
 	fi
 }
 
-# $1 is the disk to check
 md_checkfordisklabel() {
-	local rval=0
+	# $1 is the disk to check
+	local rval
 
-	disklabel $1 >/dev/null 2>/tmp/checkfordisklabel
-
+	disklabel $1 >> /dev/null 2> /tmp/checkfordisklabel
 	if grep "no disk label" /tmp/checkfordisklabel; then
 		rval=1
 	elif grep "disk label corrupted" /tmp/checkfordisklabel; then
 		rval=2
-	fi >/dev/null 2>&1
+	else
+		rval=0
+	fi
 
 	rm -f /tmp/checkfordisklabel
 	return $rval

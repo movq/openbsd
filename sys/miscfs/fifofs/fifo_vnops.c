@@ -1,4 +1,4 @@
-/*	$OpenBSD: fifo_vnops.c,v 1.16 2003/09/23 16:51:13 millert Exp $	*/
+/*	$OpenBSD: fifo_vnops.c,v 1.15 2003/06/02 23:28:10 millert Exp $	*/
 /*	$NetBSD: fifo_vnops.c,v 1.18 1996/03/16 23:52:42 christos Exp $	*/
 
 /*
@@ -46,7 +46,6 @@
 #include <sys/event.h>
 #include <sys/errno.h>
 #include <sys/malloc.h>
-#include <sys/poll.h>
 #include <sys/un.h>
 #include <miscfs/fifofs/fifo.h>
 
@@ -76,7 +75,7 @@ struct vnodeopv_entry_desc fifo_vnodeop_entries[] = {
 	{ &vop_write_desc, fifo_write },		/* write */
 	{ &vop_lease_desc, fifo_lease_check },		/* lease */
 	{ &vop_ioctl_desc, fifo_ioctl },		/* ioctl */
-	{ &vop_poll_desc, fifo_poll },			/* poll */
+	{ &vop_select_desc, fifo_select },		/* select */
 	{ &vop_kqfilter_desc, fifo_kqfilter },		/* kqfilter */
 	{ &vop_revoke_desc, fifo_revoke },              /* revoke */
 	{ &vop_fsync_desc, fifo_fsync },		/* fsync */
@@ -354,28 +353,31 @@ fifo_ioctl(v)
 
 /* ARGSUSED */
 int
-fifo_poll(v)
+fifo_select(v)
 	void *v;
 {
-	struct vop_poll_args /* {
+	struct vop_select_args /* {
 		struct vnode *a_vp;
-		int  a_events;
+		int  a_which;
+		int  a_fflags;
+		struct ucred *a_cred;
 		struct proc *a_p;
 	} */ *ap = v;
 	struct file filetmp;
-	int revents = 0;
+	int ready;
 
-	if (ap->a_events & (POLLIN | POLLPRI | POLLRDNORM | POLLRDBAND)) {
+	if (ap->a_fflags & FREAD) {
 		filetmp.f_data = (caddr_t)ap->a_vp->v_fifoinfo->fi_readsock;
-		if (filetmp.f_data)
-			revents |= soo_poll(&filetmp, ap->a_events, ap->a_p);
-	}
-	if (ap->a_events & (POLLOUT | POLLWRNORM | POLLWRBAND)) {
+		ready = soo_select(&filetmp, ap->a_which, ap->a_p);
+		if (ready)
+			return (ready);
+	} else if (ap->a_fflags & FWRITE) {
 		filetmp.f_data = (caddr_t)ap->a_vp->v_fifoinfo->fi_writesock;
-		if (filetmp.f_data)
-			revents |= soo_poll(&filetmp, ap->a_events, ap->a_p);
+		ready = soo_select(&filetmp, ap->a_which, ap->a_p);
+		if (ready)
+			return (ready);
 	}
-	return (revents);
+	return (0);
 }
 
 int

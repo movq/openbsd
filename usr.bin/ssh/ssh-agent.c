@@ -35,7 +35,7 @@
 
 #include "includes.h"
 #include <sys/queue.h>
-RCSID("$OpenBSD: ssh-agent.c,v 1.114 2003/09/23 20:17:11 markus Exp $");
+RCSID("$OpenBSD: ssh-agent.c,v 1.111 2003/06/12 19:12:03 markus Exp $");
 
 #include <openssl/evp.h>
 #include <openssl/md5.h>
@@ -780,7 +780,7 @@ process_message(SocketEntry *e)
 static void
 new_socket(sock_type type, int fd)
 {
-	u_int i, old_alloc, new_alloc;
+	u_int i, old_alloc;
 
 	if (fcntl(fd, F_SETFL, O_NONBLOCK) < 0)
 		error("fcntl O_NONBLOCK: %s", strerror(errno));
@@ -791,26 +791,25 @@ new_socket(sock_type type, int fd)
 	for (i = 0; i < sockets_alloc; i++)
 		if (sockets[i].type == AUTH_UNUSED) {
 			sockets[i].fd = fd;
+			sockets[i].type = type;
 			buffer_init(&sockets[i].input);
 			buffer_init(&sockets[i].output);
 			buffer_init(&sockets[i].request);
-			sockets[i].type = type;
 			return;
 		}
 	old_alloc = sockets_alloc;
-	new_alloc = sockets_alloc + 10;
+	sockets_alloc += 10;
 	if (sockets)
-		sockets = xrealloc(sockets, new_alloc * sizeof(sockets[0]));
+		sockets = xrealloc(sockets, sockets_alloc * sizeof(sockets[0]));
 	else
-		sockets = xmalloc(new_alloc * sizeof(sockets[0]));
-	for (i = old_alloc; i < new_alloc; i++)
+		sockets = xmalloc(sockets_alloc * sizeof(sockets[0]));
+	for (i = old_alloc; i < sockets_alloc; i++)
 		sockets[i].type = AUTH_UNUSED;
-	sockets_alloc = new_alloc;
+	sockets[old_alloc].type = type;
 	sockets[old_alloc].fd = fd;
 	buffer_init(&sockets[old_alloc].input);
 	buffer_init(&sockets[old_alloc].output);
 	buffer_init(&sockets[old_alloc].request);
-	sockets[old_alloc].type = type;
 }
 
 static int
@@ -945,7 +944,7 @@ after_select(fd_set *readset, fd_set *writeset)
 }
 
 static void
-cleanup_socket(void)
+cleanup_socket(void *p)
 {
 	if (socket_name[0])
 		unlink(socket_name);
@@ -953,17 +952,17 @@ cleanup_socket(void)
 		rmdir(socket_dir);
 }
 
-void
+static void
 cleanup_exit(int i)
 {
-	cleanup_socket();
-	_exit(i);
+	cleanup_socket(NULL);
+	exit(i);
 }
 
 static void
 cleanup_handler(int sig)
 {
-	cleanup_socket();
+	cleanup_socket(NULL);
 	_exit(2);
 }
 
@@ -1185,6 +1184,7 @@ main(int ac, char **av)
 	}
 
 skip:
+	fatal_add_cleanup(cleanup_socket, NULL);
 	new_socket(AUTH_SOCKET, sock);
 	if (ac > 0) {
 		signal(SIGALRM, check_parent_exists);

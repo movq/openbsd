@@ -1,4 +1,4 @@
-/*	$OpenBSD: auth.h,v 1.47 2003/09/23 20:17:11 markus Exp $	*/
+/*	$OpenBSD: auth.h,v 1.46 2003/08/28 12:54:34 markus Exp $	*/
 
 /*
  * Copyright (c) 2000 Markus Friedl.  All rights reserved.
@@ -118,12 +118,13 @@ int	 user_key_allowed(struct passwd *, Key *);
 int	auth_krb5(Authctxt *authctxt, krb5_data *auth, char **client, krb5_data *);
 int	auth_krb5_tgt(Authctxt *authctxt, krb5_data *tgt);
 int	auth_krb5_password(Authctxt *authctxt, const char *password);
-void	krb5_cleanup_proc(Authctxt *authctxt);
+void	krb5_cleanup_proc(void *authctxt);
 #endif /* KRB5 */
 
-void	do_authentication(Authctxt *);
-void	do_authentication2(Authctxt *);
+Authctxt *do_authentication(void);
+Authctxt *do_authentication2(void);
 
+Authctxt *authctxt_new(void);
 void	auth_log(Authctxt *, int, char *, char *);
 void	userauth_finish(Authctxt *, int, char *);
 int	auth_root_allowed(char *);
@@ -144,6 +145,8 @@ struct passwd * getpwnamallow(const char *user);
 
 char	*get_challenge(Authctxt *);
 int	verify_response(Authctxt *, const char *);
+
+struct passwd * auth_get_user(void);
 
 char	*expand_filename(const char *, struct passwd *);
 char	*authorized_keys_file(struct passwd *);

@@ -23,7 +23,7 @@
  */
 
 #include "includes.h"
-RCSID("$OpenBSD: auth2.c,v 1.103 2003/09/23 20:17:11 markus Exp $");
+RCSID("$OpenBSD: auth2.c,v 1.102 2003/08/26 09:58:43 markus Exp $");
 
 #include "ssh2.h"
 #include "xmalloc.h"
@@ -44,6 +44,8 @@ RCSID("$OpenBSD: auth2.c,v 1.103 2003/09/23 20:17:11 markus Exp $");
 extern ServerOptions options;
 extern u_char *session_id2;
 extern u_int session_id2_len;
+
+Authctxt *x_authctxt = NULL;
 
 /* methods */
 
@@ -83,9 +85,13 @@ int hostbased_key_allowed(struct passwd *, const char *, char *, Key *);
  * loop until authctxt->success == TRUE
  */
 
-void
-do_authentication2(Authctxt *authctxt)
+Authctxt *
+do_authentication2(void)
 {
+	Authctxt *authctxt = authctxt_new();
+
+	x_authctxt = authctxt;		/*XXX*/
+
 	/* challenge-response is implemented via keyboard interactive */
 	if (options.challenge_response_authentication)
 		options.kbd_interactive_authentication = 1;
@@ -93,6 +99,8 @@ do_authentication2(Authctxt *authctxt)
 	dispatch_init(&dispatch_protocol_error);
 	dispatch_set(SSH2_MSG_SERVICE_REQUEST, &input_service_request);
 	dispatch_run(DISPATCH_BLOCK, &authctxt->success, authctxt);
+
+	return (authctxt);
 }
 
 static void
@@ -234,6 +242,14 @@ userauth_finish(Authctxt *authctxt, int authenticated, char *method)
 		packet_write_wait();
 		xfree(methods);
 	}
+}
+
+/* get current user */
+
+struct passwd*
+auth_get_user(void)
+{
+	return (x_authctxt != NULL && x_authctxt->valid) ? x_authctxt->pw : NULL;
 }
 
 #define	DELIM	","

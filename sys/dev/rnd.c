@@ -1,4 +1,4 @@
-/*	$OpenBSD: rnd.c,v 1.64 2003/09/23 16:51:12 millert Exp $	*/
+/*	$OpenBSD: rnd.c,v 1.63 2003/08/15 20:32:16 tedu Exp $	*/
 
 /*
  * rnd.c -- A strong random number generator
@@ -246,7 +246,6 @@
 #include <sys/md5k.h>
 #include <sys/sysctl.h>
 #include <sys/timeout.h>
-#include <sys/poll.h>
 
 #include <dev/rndvar.h>
 #include <dev/rndioctl.h>
@@ -1022,23 +1021,22 @@ randomread(dev, uio, ioflag)
 }
 
 int
-randompoll(dev, events, p)
+randomselect(dev, rw, p)
 	dev_t	dev;
-	int	events;
+	int	rw;
 	struct proc *p;
 {
-	int revents = 0;
-
-	if (events & (POLLIN | POLLRDNORM)) {
+	switch (rw) {
+	case FREAD:
 		if (random_state.entropy_count > 0)
-			revents |= events & (POLLIN | POLLRDNORM);
+			return (1);
 		else
 			selrecord(p, &rnd_rsel);
+		break;
+	case FWRITE:
+		return 1;
 	}
-	if (events & (POLLOUT | POLLWRNORM))
-		revents = events & (POLLOUT | POLLWRNORM); /* always writable */
-
-	return (revents);
+	return 0;
 }
 
 int
