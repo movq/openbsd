@@ -23,21 +23,21 @@
 ######################################################################
 ######################################################################
 
-#####  $Id: generic-solaris2.cf,v 1.1 2000/04/02 19:05:51 millert Exp $  #####
-#####  $Id: generic-solaris2.cf,v 1.1 2000/04/02 19:05:51 millert Exp $  #####
-#####  $Id: generic-solaris2.cf,v 1.1 2000/04/02 19:05:51 millert Exp $  #####
+#####  $Id: generic-solaris2.cf,v 1.1.1.1 2000/04/02 19:05:51 millert Exp $  #####
+#####  $Id: generic-solaris2.cf,v 1.1.1.1 2000/04/02 19:05:51 millert Exp $  #####
+#####  $Id: generic-solaris2.cf,v 1.1.1.1 2000/04/02 19:05:51 millert Exp $  #####
 
-#####  $Id: generic-solaris2.cf,v 1.1 2000/04/02 19:05:51 millert Exp $  #####
+#####  $Id: generic-solaris2.cf,v 1.1.1.1 2000/04/02 19:05:51 millert Exp $  #####
 
-#####  $Id: generic-solaris2.cf,v 1.1 2000/04/02 19:05:51 millert Exp $  #####
+#####  $Id: generic-solaris2.cf,v 1.1.1.1 2000/04/02 19:05:51 millert Exp $  #####
 
-#####  $Id: generic-solaris2.cf,v 1.1 2000/04/02 19:05:51 millert Exp $  #####
+#####  $Id: generic-solaris2.cf,v 1.1.1.1 2000/04/02 19:05:51 millert Exp $  #####
 
-#####  $Id: generic-solaris2.cf,v 1.1 2000/04/02 19:05:51 millert Exp $  #####
+#####  $Id: generic-solaris2.cf,v 1.1.1.1 2000/04/02 19:05:51 millert Exp $  #####
 
 
 
-#####  $Id: generic-solaris2.cf,v 1.1 2000/04/02 19:05:51 millert Exp $  #####
+#####  $Id: generic-solaris2.cf,v 1.1.1.1 2000/04/02 19:05:51 millert Exp $  #####
 
 
 # level 9 config file format
@@ -1040,7 +1040,7 @@ SLocal_trust_auth
 ###   Local and Program Mailer specification   ###
 ##################################################
 
-#####  $Id: generic-solaris2.cf,v 1.1 2000/04/02 19:05:51 millert Exp $  #####
+#####  $Id: generic-solaris2.cf,v 1.1.1.1 2000/04/02 19:05:51 millert Exp $  #####
 
 #
 #  Envelope sender rewriting
@@ -1089,7 +1089,7 @@ Mprog,		P=/bin/sh, F=lsDFMoqeu9, S=EnvFromL/HdrFromL, R=EnvToL/HdrToL, D=$z:/,
 ###   SMTP Mailer specification   ###
 #####################################
 
-#####  $Id: generic-solaris2.cf,v 1.1 2000/04/02 19:05:51 millert Exp $  #####
+#####  $Id: generic-solaris2.cf,v 1.1.1.1 2000/04/02 19:05:51 millert Exp $  #####
 
 #
 #  common sender and masquerading recipient rewriting
