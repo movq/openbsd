@@ -2,15 +2,15 @@
  *------------------------------------------------------------------
  *
  * $Source: /home/mike/src/cvs/openbsd/src/gnu/usr.sbin/e2fsprogs/lib/ss/Attic/test_ss.c,v $
- * $Revision: 1.1 $
+ * $Revision: 1.1.1.1 $
  * $Date: 1997/06/14 07:18:45 $
  * $State: Exp $
  * $Author: downsj $
  * $Locker:  $
  *
  * $Log: test_ss.c,v $
- * Revision 1.1  1997/06/14 07:18:45  downsj
- * Initial revision
+ * Revision 1.1.1.1  1997/06/14 07:18:45  downsj
+ * Initial import of (unmodifed) e2fsprogs 1.10.
  *
  * Revision 1.1  1993/06/03  12:31:25  tytso
  * Initial revision
@@ -33,7 +33,7 @@
 
 #ifndef lint
 static char const rcsid_test_c[] =
-    "$Header: /home/mike/src/cvs/openbsd/src/gnu/usr.sbin/e2fsprogs/lib/ss/Attic/test_ss.c,v 1.1 1997/06/14 07:18:45 downsj Exp $";
+    "$Header: /home/mike/src/cvs/openbsd/src/gnu/usr.sbin/e2fsprogs/lib/ss/Attic/test_ss.c,v 1.1.1.1 1997/06/14 07:18:45 downsj Exp $";
 #endif /* lint */
 
 #include <stdio.h>

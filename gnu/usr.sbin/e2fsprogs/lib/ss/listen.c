@@ -1,7 +1,7 @@
 /*
  * Listener loop for subsystem library libss.a.
  *
- *	$Header: /home/mike/src/cvs/openbsd/src/gnu/usr.sbin/e2fsprogs/lib/ss/Attic/listen.c,v 1.1 1997/06/14 07:18:45 downsj Exp $
+ *	$Header: /home/mike/src/cvs/openbsd/src/gnu/usr.sbin/e2fsprogs/lib/ss/Attic/listen.c,v 1.1.1.1 1997/06/14 07:18:45 downsj Exp $
  *	$Locker:  $
  * 
  * Copyright 1987, 1988 by MIT Student Information Processing Board
@@ -21,7 +21,7 @@
 
 #ifndef	lint
 static char const rcs_id[] =
-    "$Header: /home/mike/src/cvs/openbsd/src/gnu/usr.sbin/e2fsprogs/lib/ss/Attic/listen.c,v 1.1 1997/06/14 07:18:45 downsj Exp $";
+    "$Header: /home/mike/src/cvs/openbsd/src/gnu/usr.sbin/e2fsprogs/lib/ss/Attic/listen.c,v 1.1.1.1 1997/06/14 07:18:45 downsj Exp $";
 #endif
 
 typedef void sigret_t;

@@ -1,5 +1,5 @@
 /*
- * $Header: /home/mike/src/cvs/openbsd/src/gnu/usr.sbin/e2fsprogs/lib/et/Attic/error_message.c,v 1.1 1997/06/14 07:18:44 downsj Exp $
+ * $Header: /home/mike/src/cvs/openbsd/src/gnu/usr.sbin/e2fsprogs/lib/et/Attic/error_message.c,v 1.1.1.1 1997/06/14 07:18:44 downsj Exp $
  * $Source: /home/mike/src/cvs/openbsd/src/gnu/usr.sbin/e2fsprogs/lib/et/Attic/error_message.c,v $
  * $Locker:  $
  *
