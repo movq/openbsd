@@ -1,4 +1,4 @@
-/*	$OpenBSD: time.c,v 1.1 1998/06/23 18:46:42 mickey Exp $	*/
+/*	$OpenBSD: time.c,v 1.1.1.1 1998/06/23 18:46:42 mickey Exp $	*/
 /*	$NOWHERE: time.c,v 2.2 1998/06/23 05:26:53 mickey Exp $	*/
 
 /*

@@ -1,4 +1,4 @@
-/*	$OpenBSD: libsa.h,v 1.1 1998/06/23 18:46:42 mickey Exp $	*/
+/*	$OpenBSD: libsa.h,v 1.1.1.1 1998/06/23 18:46:42 mickey Exp $	*/
 /*	$NOWHERE: libsa.h,v 2.2 1998/06/22 19:34:47 mickey Exp $	*/
 
 /*

@@ -1,4 +1,4 @@
-/*	$OpenBSD: dev_hppa.h,v 1.1 1998/06/23 18:46:42 mickey Exp $	*/
+/*	$OpenBSD: dev_hppa.h,v 1.1.1.1 1998/06/23 18:46:42 mickey Exp $	*/
 
 struct hppa_dev {
 	dev_t	bootdev;

@@ -1,4 +1,4 @@
-/*	$OpenBSD: dev_hppa.c,v 1.1 1998/06/23 18:46:42 mickey Exp $	*/
+/*	$OpenBSD: dev_hppa.c,v 1.1.1.1 1998/06/23 18:46:42 mickey Exp $	*/
 /*	$NOWHERE: dev_hppa.c,v 2.1 1998/06/17 20:51:54 mickey Exp $	*/
 
 /*

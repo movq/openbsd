@@ -1,4 +1,4 @@
-/*	$OpenBSD: conf.c,v 1.1 1998/06/23 18:46:41 mickey Exp $	*/
+/*	$OpenBSD: conf.c,v 1.1.1.1 1998/06/23 18:46:41 mickey Exp $	*/
 
 /*
  * Copyright (c) 1998 Michael Shalayeff

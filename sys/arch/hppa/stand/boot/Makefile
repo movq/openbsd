@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.1 1998/06/23 18:46:41 mickey Exp $
+#	$OpenBSD: Makefile,v 1.1.1.1 1998/06/23 18:46:41 mickey Exp $
 
 PROG=	boot
 SRCS=	srt0.S boot.c cmd.c vars.c bootarg.c conf.c
