@@ -34,14 +34,11 @@ divert(-1)
 #
 
 divert(0)
-VERSIONID(`@(#)local_procmail.m4	8.6 (Berkeley) 10/20/96')
+VERSIONID(`@(#)local_procmail.m4	8.3 (Berkeley) 10/29/95')
 divert(-1)
 
-define(`LOCAL_MAILER_PATH',
-	ifelse(_ARG_, `',
-		ifdef(`PROCMAIL_MAILER_PATH',
-			PROCMAIL_MAILER_PATH,
-			`/usr/local/bin/procmail'),
-		_ARG_))
-define(`LOCAL_MAILER_FLAGS', `SPfhn9')
+define(`PROCMAIL_PATH',
+	ifelse(_ARG_, `', `/usr/local/bin/procmail', `_ARG_'))
+define(`LOCAL_MAILER_FLAGS', `SPfhn')
+define(`LOCAL_MAILER_PATH', PROCMAIL_PATH)
 define(`LOCAL_MAILER_ARGS', `procmail -Y -a $h -d $u')

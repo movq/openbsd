@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1983, 1995-1997 Eric P. Allman
+ * Copyright (c) 1983 Eric P. Allman
  * Copyright (c) 1988, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -33,7 +33,7 @@
  */
 
 #ifndef lint
-static char sccsid[] = "@(#)convtime.c	8.9 (Berkeley) 2/1/97";
+static char sccsid[] = "@(#)convtime.c	8.1 (Berkeley) 6/7/93";
 #endif /* not lint */
 
 # include "sendmail.h"
@@ -79,11 +79,6 @@ convtime(p, units)
 		{
 			c = units;
 			p--;
-		}
-		else if (strchr("wdhms", c) == NULL)
-		{
-			usrerr("Invalid time unit `%c'", c);
-			c = units;
 		}
 		switch (c)
 		{
@@ -149,10 +144,7 @@ pintvl(intvl, brief)
 	hr = intvl % 24;
 	intvl /= 24;
 	if (brief)
-	{
 		dy = intvl;
-		wk = 0;
-	}
 	else
 	{
 		dy = intvl % 7;
@@ -166,38 +158,37 @@ pintvl(intvl, brief)
 	{
 		if (dy > 0)
 		{
-			(void) snprintf(p, SPACELEFT(buf, p), "%d+", dy);
+			(void) sprintf(p, "%d+", dy);
 			p += strlen(p);
 		}
-		(void) snprintf(p, SPACELEFT(buf, p), "%02d:%02d:%02d",
-			hr, mi, se);
+		(void) sprintf(p, "%02d:%02d:%02d", hr, mi, se);
 		return (buf);
 	}
 
 	/* use the verbose form */
 	if (wk > 0)
 	{
-		(void) snprintf(p, SPACELEFT(buf, p), ", %d week%s", wk, PLURAL(wk));
+		(void) sprintf(p, ", %d week%s", wk, PLURAL(wk));
 		p += strlen(p);
 	}
 	if (dy > 0)
 	{
-		(void) snprintf(p, SPACELEFT(buf, p), ", %d day%s", dy, PLURAL(dy));
+		(void) sprintf(p, ", %d day%s", dy, PLURAL(dy));
 		p += strlen(p);
 	}
 	if (hr > 0)
 	{
-		(void) snprintf(p, SPACELEFT(buf, p), ", %d hour%s", hr, PLURAL(hr));
+		(void) sprintf(p, ", %d hour%s", hr, PLURAL(hr));
 		p += strlen(p);
 	}
 	if (mi > 0)
 	{
-		(void) snprintf(p, SPACELEFT(buf, p), ", %d minute%s", mi, PLURAL(mi));
+		(void) sprintf(p, ", %d minute%s", mi, PLURAL(mi));
 		p += strlen(p);
 	}
 	if (se > 0)
 	{
-		(void) snprintf(p, SPACELEFT(buf, p), ", %d second%s", se, PLURAL(se));
+		(void) sprintf(p, ", %d second%s", se, PLURAL(se));
 		p += strlen(p);
 	}
 

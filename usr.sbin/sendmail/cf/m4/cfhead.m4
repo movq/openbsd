@@ -86,13 +86,8 @@ define(`LOCAL_RULE_2',
 
 S2
 ')
-define(`LOCAL_RULESETS',
-`divert(9)
-
-')
 define(`LOCAL_RULE_3', `divert(2)')
 define(`LOCAL_CONFIG', `divert(6)')
-define(`MAILER_DEFINITIONS', `divert(7)')
 define(`LOCAL_NET_CONFIG', `define(`_LOCAL_RULES_', 1)divert(1)')
 define(`UUCPSMTP', `R DOL(*) < @ $1 .UUCP > DOL(*)	DOL(1) < @ $2 > DOL(2)')
 define(`CONCAT', `$1$2$3$4$5$6$7')
@@ -106,32 +101,24 @@ define(`SITE', `ifelse(CONCAT($'2`, $3), SU,
 		CONCAT(C, $3, $'1`))')
 sinclude(_CF_DIR_`'siteconfig/$1.m4)')
 define(`EXPOSED_USER', `PUSHDIVERT(5)CE$1
-POPDIVERT`'dnl`'')
+POPDIVERT`'dnl')
 define(`LOCAL_USER', `PUSHDIVERT(5)CL$1
-POPDIVERT`'dnl`'')
+POPDIVERT`'dnl')
 define(`MASQUERADE_AS', `define(`MASQUERADE_NAME', $1)')
 define(`MASQUERADE_DOMAIN', `PUSHDIVERT(5)CM$1
-POPDIVERT`'dnl`'')
+POPDIVERT`'dnl')
 define(`MASQUERADE_DOMAIN_FILE', `PUSHDIVERT(5)FM$1
-POPDIVERT`'dnl`'')
-define(`GENERICS_DOMAIN', `PUSHDIVERT(5)CG$1
-POPDIVERT`'dnl`'')
-define(`GENERICS_DOMAIN_FILE', `PUSHDIVERT(5)FG$1
-POPDIVERT`'dnl`'')
+POPDIVERT`'dnl')
 define(`_OPTINS', `ifdef(`$1', `$2$1$3')')
 
 m4wrap(`include(_CF_DIR_`m4/proto.m4')')
 
 # set up default values for options
-define(`ALIAS_FILE', `/etc/aliases')
 define(`confMAILER_NAME', ``MAILER-DAEMON'')
 define(`confFROM_LINE', `From $g  $d')
 define(`confOPERATORS', `.:%@!^/[]+')
 define(`confSMTP_LOGIN_MSG', `$j Sendmail $v/$Z; $b')
-define(`confRECEIVED_HEADER', `$?sfrom $s $.$?_($?s$|from $.$_)
-	$.by $j ($v/$Z)$?r with $r$. id $i$?u
-	for $u; $|;
-	$.$b')
+define(`confRECEIVED_HEADER', `$?sfrom $s $.$?_($?s$|from $.$_) $.by $j ($v/$Z)$?r with $r$. id $i$?u for $u$.; $b')
 define(`confSEVEN_BIT_INPUT', `False')
 define(`confEIGHT_BIT_HANDLING', `pass8')
 define(`confALIAS_WAIT', `10')
@@ -157,4 +144,4 @@ define(`confMIME_FORMAT_ERRORS', `True')
 define(`confFORWARD_PATH', `$z/.forward.$w:$z/.forward')
 
 divert(0)dnl
-VERSIONID(`@(#)cfhead.m4	8.9 (Berkeley) 1/18/97')
+VERSIONID(`@(#)cfhead.m4	8.3 (Berkeley) 9/15/95')

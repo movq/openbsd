@@ -34,15 +34,11 @@ divert(-1)
 #
 
 divert(0)
-VERSIONID(`@(#)bestmx_is_local.m4	8.5 (Berkeley) 3/28/97')
+VERSIONID(`@(#)bestmx_is_local.m4	8.2 (Berkeley) 10/29/95')
 divert(-1)
 
 LOCAL_CONFIG
-# turn on bestMX lookup table
 Kbestmx bestmx
-
-# limit bestmx to these domains
-CB`'_ARG_
 
 LOCAL_NET_CONFIG
 
@@ -54,13 +50,9 @@ LOCAL_NET_CONFIG
 # Warning: this may generate a lot of extra DNS traffic -- a
 # lower cost method is to list all the expected best MX hosts
 # in $=w.  This should be fine (and easier to administer) for
-# low to medium traffic hosts.  If you use the limited bestmx
-# by passing in a set of possible domains it will improve things.
+# low to medium traffic hosts.
 
-ifelse(_ARG_, `', `', `#')dnl		unlimited bestmx
 R$* < @ $* > $*			$: $1 < @ $2 @@ $(bestmx $2 $) > $3
-ifelse(_ARG_, `', `#', `')dnl		limit bestmx to $=B
-R$* < @ $* $=B . > $*		$: $1 < @ $2 $3 . @@ $(bestmx $2 $3 . $) > $4
 R$* $=O $* < @ $* @@ $=w . > $*	$@ $>97 $1 $2 $3
 R$* < @ $* @@ $=w . > $*	$#local $: $1
 R$* < @ $* @@ $* > $*		$: $1 < @ $2 > $4
