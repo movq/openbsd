@@ -1,4 +1,4 @@
-/*	$OpenBSD: debug.c,v 1.1 2000/06/18 07:30:41 jason Exp $	*/
+/*	$OpenBSD: debug.c,v 1.1.1.1 2000/06/18 07:30:41 jason Exp $	*/
 
 /*
  * Copyright (c) 2000 Network Security Technologies, Inc. http://www.netsec.net
