@@ -25,7 +25,7 @@ SM_UNUSED(static char copyright[]) =
 	The Regents of the University of California.  All rights reserved.\n";
 #endif /* ! lint */
 
-SM_RCSID("@(#)$Sendmail: main.c,v 8.887.2.27 2003/08/04 17:23:37 ca Exp $")
+SM_RCSID("@(#)$Sendmail: main.c,v 8.887.2.22 2003/03/06 18:38:08 ca Exp $")
 
 
 #if NETINET || NETINET6
@@ -940,18 +940,16 @@ main(argc, argv, envp)
 				*p++ = '\0';
 				if (*p != '\0')
 				{
-					i = strlen(p) + 1;
-					ep = sm_malloc_x(i);
-					cleanstrcpy(ep, p, i);
+					ep = sm_malloc_x(strlen(p) + 1);
+					cleanstrcpy(ep, p, MAXNAME);
 					macdefine(&BlankEnvelope.e_macro,
 						  A_HEAP, 's', ep);
 				}
 			}
 			if (*optarg != '\0')
 			{
-				i = strlen(optarg) + 1;
-				ep = sm_malloc_x(i);
-				cleanstrcpy(ep, optarg, i);
+				ep = sm_malloc_x(strlen(optarg) + 1);
+				cleanstrcpy(ep, optarg, MAXNAME);
 				macdefine(&BlankEnvelope.e_macro, A_HEAP,
 					  'r', ep);
 			}
@@ -2370,7 +2368,13 @@ main(argc, argv, envp)
 					pid_t ret;
 					int group;
 
-					CHECK_RESTART;
+					if (ShutdownRequest != NULL)
+						shutdown_daemon();
+					else if (RestartRequest != NULL)
+						restart_daemon();
+					else if (RestartWorkGroup)
+						restart_marked_work_groups();
+
 					while ((ret = sm_wait(&status)) <= 0)
 						continue;
 
@@ -2388,9 +2392,8 @@ main(argc, argv, envp)
 								  "persistent queue runner=%d core dumped, signal=%d",
 								  group, WTERMSIG(status));
 
-							/* don't restart this */
-							mark_work_group_restart(
-								group, -1);
+							/* don't restart this one */
+							mark_work_group_restart(group, -1);
 							continue;
 						}
 
@@ -2411,8 +2414,7 @@ main(argc, argv, envp)
 						sm_syslog(LOG_DEBUG, NOQID,
 							  "persistent queue runner=%d, exited",
 							  group);
-						mark_work_group_restart(group,
-									-1);
+						mark_work_group_restart(group, -1);
 					}
 				}
 				finis(true, true, ExitStat);
@@ -2441,7 +2443,13 @@ main(argc, argv, envp)
 				for (;;)
 				{
 					(void) pause();
-					CHECK_RESTART;
+					if (ShutdownRequest != NULL)
+						shutdown_daemon();
+					else if (RestartRequest != NULL)
+						restart_daemon();
+					else if (RestartWorkGroup)
+						restart_marked_work_groups();
+
 					if (doqueuerun())
 						(void) runqueue(true, false,
 								false, false);
@@ -2635,7 +2643,7 @@ main(argc, argv, envp)
 
 		/* collect body for UUCP return */
 		if (OpMode != MD_VERIFY)
-			collect(InChannel, false, NULL, &MainEnvelope, true);
+			collect(InChannel, false, NULL, &MainEnvelope);
 		finis(true, true, EX_USAGE);
 		/* NOTREACHED */
 	}
@@ -2695,7 +2703,7 @@ main(argc, argv, envp)
 		MainEnvelope.e_flags &= ~EF_FATALERRS;
 		Errors = 0;
 		buffer_errors();
-		collect(InChannel, false, NULL, &MainEnvelope, true);
+		collect(InChannel, false, NULL, &MainEnvelope);
 
 		/* header checks failed */
 		if (Errors > 0)

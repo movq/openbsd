@@ -1,4 +1,4 @@
-/*	$OpenBSD: pmap.c,v 1.76 2003/09/19 23:12:22 miod Exp $	*/
+/*	$OpenBSD: pmap.c,v 1.74 2003/08/20 19:35:50 miod Exp $	*/
 /*
  * Copyright (c) 2001, 2002, 2003 Miodrag Vallat
  * Copyright (c) 1998-2001 Steve Murphree, Jr.
@@ -221,6 +221,9 @@ batc_entry_t batc_entry[BATC_MAX];
 #endif	/* PMAP_USE_BATC */
 
 vaddr_t kmapva = 0;
+extern vaddr_t bugromva;
+extern vaddr_t sramva;
+extern vaddr_t obiova;
 
 /*
  * Internal routines
@@ -587,8 +590,7 @@ pmap_cache_ctrl(pmap_t pmap, vaddr_t s, vaddr_t e, u_int mode)
 {
 	int spl;
 	pt_entry_t *pte;
-	vaddr_t va;
-	paddr_t pa;
+	vaddr_t va, pteva;
 	boolean_t kflush;
 	int cpu;
 	u_int users;
@@ -636,10 +638,10 @@ pmap_cache_ctrl(pmap_t pmap, vaddr_t s, vaddr_t e, u_int mode)
 		/*
 		 * Data cache should be copied back and invalidated.
 		 */
-		pa = ptoa(PG_PFNUM(*pte));
+		pteva = ptoa(PG_PFNUM(*pte));
 		for (cpu = 0; cpu < MAX_CPUS; cpu++)
 			if (cpu_sets[cpu])
-				cmmu_flush_remote_cache(cpu, pa, PAGE_SIZE);
+				cmmu_flush_remote_cache(cpu, pteva, PAGE_SIZE);
 	}
 	PMAP_UNLOCK(pmap, spl);
 }
@@ -864,21 +866,21 @@ pmap_bootstrap(vaddr_t load_start, paddr_t *phys_start, paddr_t *phys_end,
 	vaddr = pmap_map(vaddr, (paddr_t)kmap, *phys_start,
 	    VM_PROT_WRITE | VM_PROT_READ, CACHE_INH);
 
-#ifdef DEBUG
 	if (vaddr != *virt_start) {
 		/*
 		 * This should never happen because we now round the PDT
 		 * table size up to a page boundry in the quest to get
 		 * mc88110 working. - XXX smurph
 		 */
+#ifdef DEBUG
 		if ((pmap_con_dbg & (CD_BOOT | CD_FULL)) == (CD_BOOT | CD_FULL)) {
 			printf("1: vaddr %x *virt_start 0x%x *phys_start 0x%x\n", vaddr,
 			       *virt_start, *phys_start);
 		}
+#endif
 		*virt_start = vaddr;
 		*phys_start = round_page(*phys_start);
 	}
-#endif
 
 #if defined (MVME187) || defined (MVME197)
 	/*
@@ -940,7 +942,7 @@ pmap_bootstrap(vaddr_t load_start, paddr_t *phys_start, paddr_t *phys_end,
 	 * OBIO should be mapped cache inhibited.
 	 */
 
-	ptable = pmap_table_build();
+	ptable = pmap_table_build(0);
 #ifdef DEBUG
 	if ((pmap_con_dbg & (CD_BOOT | CD_FULL)) == (CD_BOOT | CD_FULL)) {
 		printf("pmap_bootstrap: -> pmap_table_build\n");
@@ -949,8 +951,11 @@ pmap_bootstrap(vaddr_t load_start, paddr_t *phys_start, paddr_t *phys_end,
 
 	for (; ptable->size != (size_t)(-1); ptable++){
 		if (ptable->size) {
+			/*
+			 * size-1, 'cause pmap_map rounds up to next pagenumber
+			 */
 			pmap_map(ptable->virt_start, ptable->phys_start,
-			    ptable->phys_start + ptable->size,
+			    ptable->phys_start + (ptable->size - 1),
 			    ptable->prot, ptable->cacheability);
 		}
 	}
@@ -998,7 +1003,6 @@ pmap_bootstrap(vaddr_t load_start, paddr_t *phys_start, paddr_t *phys_end,
 		if ((pte = pmap_pte(kernel_pmap, virt)) == PT_ENTRY_NULL)
 			pmap_expand_kmap(virt, VM_PROT_READ | VM_PROT_WRITE);
 	}
-
 	/*
 	 * Switch to using new page tables
 	 */
@@ -1198,7 +1202,8 @@ pmap_create(void)
 		 * memory for page tables should be CACHE DISABLED on MVME188
 		 */
 		pmap_cache_ctrl(kernel_pmap,
-		    (vaddr_t)segdt, (vaddr_t)segdt + s, CACHE_INH);
+		    (vaddr_t)segdt, (vaddr_t)segdt+ (SDT_SIZE*2),
+		    CACHE_INH);
 	}
 #endif
 	/*
@@ -2593,7 +2598,7 @@ void
 pmap_changebit(struct vm_page *pg, int set, int mask)
 {
 	pv_entry_t pvl, pvep;
-	pt_entry_t *pte, npte, opte;
+	pt_entry_t *pte, npte;
 	pmap_t pmap;
 	int spl;
 	vaddr_t va;
@@ -2651,8 +2656,8 @@ changebit_Retry:
 		/*
 		 * Update bits
 		 */
-		opte = invalidate_pte(pte);
-		npte = (opte | set) & mask;
+		*pte = invalidate_pte(pte);
+		npte = (*pte | set) & mask;
 
 		/*
 		 * Flush TLB of which cpus using pmap.
@@ -2660,8 +2665,8 @@ changebit_Retry:
 		 * Invalidate pte temporarily to avoid the modified bit
 		 * and/or the reference being written back by any other cpu.
 		 */
-		*pte = npte;
-		if (npte != opte) {
+		if (npte != *pte) {
+			*pte = npte;
 			flush_atc_entry(users, va, kflush);
 		}
 

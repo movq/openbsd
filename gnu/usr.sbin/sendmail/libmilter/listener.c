@@ -9,7 +9,7 @@
  */
 
 #include <sm/gen.h>
-SM_RCSID("@(#)$Sendmail: listener.c,v 8.85.2.12 2003/08/04 18:47:29 ca Exp $")
+SM_RCSID("@(#)$Sendmail: listener.c,v 8.85.2.9 2003/01/03 22:14:40 ca Exp $")
 
 /*
 **  listener.c -- threaded network listener
@@ -382,18 +382,18 @@ mi_milteropen(conn, backlog, name)
 				{
 # if NETINET
 				  case AF_INET:
-					(void) memmove(&addr.sin.sin_addr,
-						       hp->h_addr,
-						       INADDRSZ);
+					memmove(&addr.sin.sin_addr,
+						hp->h_addr,
+						INADDRSZ);
 					addr.sin.sin_port = port;
 					break;
 # endif /* NETINET */
 
 # if NETINET6
 				  case AF_INET6:
-					(void) memmove(&addr.sin6.sin6_addr,
-						       hp->h_addr,
-						       IN6ADDRSZ);
+					memmove(&addr.sin6.sin6_addr,
+						hp->h_addr,
+						IN6ADDRSZ);
 					addr.sin6.sin6_port = port;
 					break;
 # endif /* NETINET6 */
@@ -659,7 +659,7 @@ mi_listener(conn, dbg, smfi, timeout, backlog)
 {
 	socket_t connfd = INVALID_SOCKET;
 	int sockopt = 1;
-	int r, mistop;
+	int r;
 	int ret = MI_SUCCESS;
 	int mcnt = 0;	/* error count for malloc() failures */
 	int tcnt = 0;	/* error count for thread_create() failures */
@@ -678,15 +678,11 @@ mi_listener(conn, dbg, smfi, timeout, backlog)
 
 	clilen = L_socksize;
 	(void) smutex_unlock(&L_Mutex);
-	while ((mistop = mi_stop()) == MILTER_CONT)
+	while (mi_stop() == MILTER_CONT)
 	{
 		(void) smutex_lock(&L_Mutex);
 		if (!ValidSocket(listenfd))
 		{
-			ret = MI_FAILURE;
-			smi_log(SMI_LOG_ERR,
-				"%s: listenfd=%d corrupted, terminating, errno=%d",
-				smfi->xxfi_name, listenfd, errno);
 			(void) smutex_unlock(&L_Mutex);
 			break;
 		}
@@ -732,7 +728,7 @@ mi_listener(conn, dbg, smfi, timeout, backlog)
 		}
 		scnt = 0;	/* reset error counter for select() */
 
-		(void) memset(&cliaddr, '\0', sizeof cliaddr);
+		memset(&cliaddr, '\0', sizeof cliaddr);
 		connfd = accept(listenfd, (struct sockaddr *) &cliaddr,
 				&clilen);
 		save_errno = errno;
@@ -808,7 +804,7 @@ mi_listener(conn, dbg, smfi, timeout, backlog)
 			continue;
 		}
 		mcnt = 0;	/* reset error counter for malloc() */
-		(void) memset(ctx, '\0', sizeof *ctx);
+		memset(ctx, '\0', sizeof *ctx);
 		ctx->ctx_sd = connfd;
 		ctx->ctx_dbg = dbg;
 		ctx->ctx_timeout = timeout;
@@ -858,12 +854,7 @@ mi_listener(conn, dbg, smfi, timeout, backlog)
 	if (ret != MI_SUCCESS)
 		mi_stop_milters(MILTER_ABRT);
 	else
-	{
-		if (mistop != MILTER_CONT)
-			smi_log(SMI_LOG_INFO, "%s: mi_stop=%d",
-				smfi->xxfi_name, mistop);
 		mi_closener();
-	}
 	(void) smutex_destroy(&L_Mutex);
 	return ret;
 }

@@ -1,4 +1,4 @@
-/*	$OpenBSD: trap.c,v 1.51 2003/09/17 22:22:32 miod Exp $	*/
+/*	$OpenBSD: trap.c,v 1.49 2003/09/06 15:07:43 miod Exp $	*/
 /*
  * Copyright (c) 1998 Steve Murphree, Jr.
  * Copyright (c) 1996 Nivas Madhur
@@ -73,9 +73,20 @@
 #include <machine/psl.h>		/* FIP_E, etc. */
 #include <machine/trap.h>
 
-#include <machine/db_machdep.h>
 #ifdef DDB
+#include <machine/db_machdep.h>
 #include <ddb/db_output.h>		/* db_printf()		*/
+#else 
+   #define PC_REGS(regs) cputyp == CPU_88110 ? (regs->exip & ~3) :\
+           ((regs->sxip & 2) ?  regs->sxip & ~3 : \
+	(regs->snip & 2 ? regs->snip & ~3 : regs->sfip & ~3))
+
+#define inst_return(I) (((I)&0xfffffbffU) == 0xf400c001U ? TRUE : FALSE)
+#define inst_call(I) ({ unsigned i = (I); \
+	   ((((i) & 0xf8000000U) == 0xc8000000U || /*bsr*/ \
+      ((i) & 0xfffffbe0U) == 0xf400c800U)   /*jsr*/ \
+	   ? TRUE : FALSE) \
+      ;})
 #endif /* DDB */
 #define SSBREAKPOINT (0xF000D1F8U) /* Single Step Breakpoint */
 
@@ -99,6 +110,8 @@ extern int procfs_domem(struct proc *, struct proc *, void *, struct uio *);
 
 extern void regdump(struct trapframe *f);
 void error_fatal(struct m88100_saved_state *frame);
+void error_fault(struct m88100_saved_state *frame);
+void error_reset(struct m88100_saved_state *frame);
 
 char  *trap_type[] = {
 	"Reset",
@@ -539,10 +552,13 @@ user_fault:
 		 * T_STEPBPT trap.
 		 */
 		{
-			unsigned va;
+			register unsigned va;
 			unsigned instr;
 			struct uio uio;
 			struct iovec iov;
+
+			/* compute address of break instruction */
+			va = pc;
 
 			/* read break instruction */
 			copyin((caddr_t)pc, &instr, sizeof(unsigned));
@@ -1041,9 +1057,13 @@ m88110_user_fault:
 		 * T_STEPBPT trap.
 		 */
 		{
+			register unsigned va;
 			unsigned instr;
 			struct uio uio;
 			struct iovec iov;
+
+			/* compute address of break instruction */
+			va = pc;
 
 			/* read break instruction */
 			copyin((caddr_t)pc, &instr, sizeof(unsigned));
@@ -1122,6 +1142,14 @@ m88110_user_fault:
 #endif /* MVME197 */
 
 void
+test_trap(struct m88100_saved_state *frame)
+{
+	DEBUG_MSG("\n[test_trap (Good News[tm]) frame 0x%08x]\n", frame);
+	regdump((struct trapframe*)frame);
+	bugreturn();
+}
+
+void
 error_fatal(struct m88100_saved_state *frame)
 {
 	switch (frame->vector) {
@@ -1138,10 +1166,6 @@ error_fatal(struct m88100_saved_state *frame)
 		break;
 	}
 	regdump((struct trapframe*)frame);
-#ifdef M88100
-	DEBUG_MSG("trap trace %d -> %d -> %d -> %d  ", last_trap[0], last_trap[1], last_trap[2], last_trap[3]);
-	DEBUG_MSG("last exception vector = %d\n", last_vector);
-#endif 
 #if DDB 
 	Debugger();
 	DEBUG_MSG("You really can't restart after exception %d!\n", frame->vector);
@@ -1149,6 +1173,40 @@ error_fatal(struct m88100_saved_state *frame)
 #endif /* DDB */
 	bugreturn();  /* This gets us to Bug instead of a loop forever */
 
+}
+
+void
+error_fault(struct m88100_saved_state *frame)
+{
+	DEBUG_MSG("\n[ERROR EXCEPTION (Bad News[tm]) frame 0x%08x]\n", frame);
+	DEBUG_MSG("This is usually an exception within an exception.  The trap\n");
+	DEBUG_MSG("frame shadow registers you are about to see are invalid.\n");
+	DEBUG_MSG("(read totaly useless)  But R1 to R31 might be interesting.\n");
+	regdump((struct trapframe*)frame);
+#ifdef M88100
+	DEBUG_MSG("trap trace %d -> %d -> %d -> %d  ", last_trap[0], last_trap[1], last_trap[2], last_trap[3]);
+	DEBUG_MSG("last exception vector = %d\n", last_vector);
+#endif 
+#if DDB 
+	Debugger();
+	DEBUG_MSG("You really can't restart after an error exception!\n");
+	Debugger();
+#endif /* DDB */
+	bugreturn();  /* This gets us to Bug instead of a loop forever */
+}
+
+void
+error_reset(struct m88100_saved_state *frame) 
+{
+	DEBUG_MSG("\n[RESET EXCEPTION (Really Bad News[tm]) frame 0x%08x]\n", frame);
+	DEBUG_MSG("This is usually caused by a branch to a NULL function pointer.\n");
+	DEBUG_MSG("e.g. jump to address 0.  Use the debugger trace command to track it down.\n");
+#if DDB 
+	Debugger();
+	DEBUG_MSG("It's useless to restart after a reset exception! You might as well reboot.\n");
+	Debugger();
+#endif /* DDB */
+	bugreturn();  /* This gets us to Bug instead of a loop forever */
 }
 
 #ifdef M88100

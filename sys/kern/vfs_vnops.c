@@ -1,4 +1,4 @@
-/*	$OpenBSD: vfs_vnops.c,v 1.44 2003/09/23 16:51:12 millert Exp $	*/
+/*	$OpenBSD: vfs_vnops.c,v 1.43 2003/07/21 22:44:50 tedu Exp $	*/
 /*	$NetBSD: vfs_vnops.c,v 1.20 1996/02/04 02:18:41 christos Exp $	*/
 
 /*
@@ -50,7 +50,6 @@
 #include <sys/ioctl.h>
 #include <sys/tty.h>
 #include <sys/cdio.h>
-#include <sys/poll.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -58,14 +57,14 @@ int	vn_read(struct file *fp, off_t *off, struct uio *uio,
 	    struct ucred *cred);
 int	vn_write(struct file *fp, off_t *off, struct uio *uio, 
 	    struct ucred *cred);
-int	vn_poll(struct file *fp, int events, struct proc *p);
+int	vn_select(struct file *fp, int which, struct proc *p);
 int	vn_kqfilter(struct file *fp, struct knote *kn);
 int 	vn_closefile(struct file *fp, struct proc *p);
 int	vn_ioctl(struct file *fp, u_long com, caddr_t data,
 	    struct proc *p);
 
 struct 	fileops vnops =
-	{ vn_read, vn_write, vn_ioctl, vn_poll, vn_kqfilter, vn_statfile,
+	{ vn_read, vn_write, vn_ioctl, vn_select, vn_kqfilter, vn_statfile,
 	  vn_closefile };
 
 /*
@@ -468,16 +467,17 @@ vn_ioctl(fp, com, data, p)
 }
 
 /*
- * File table vnode poll routine.
+ * File table vnode select routine.
  */
 int
-vn_poll(fp, events, p)
+vn_select(fp, which, p)
 	struct file *fp;
-	int events;
+	int which;
 	struct proc *p;
 {
 
-	return (VOP_POLL(((struct vnode *)fp->f_data), events, p));
+	return (VOP_SELECT(((struct vnode *)fp->f_data), which, fp->f_flag,
+			   fp->f_cred, p));
 }
 
 /*

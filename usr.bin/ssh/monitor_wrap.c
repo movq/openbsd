@@ -25,7 +25,7 @@
  */
 
 #include "includes.h"
-RCSID("$OpenBSD: monitor_wrap.c,v 1.32 2003/09/23 20:17:11 markus Exp $");
+RCSID("$OpenBSD: monitor_wrap.c,v 1.31 2003/08/28 12:54:34 markus Exp $");
 
 #include <openssl/bn.h>
 #include <openssl/dh.h>
@@ -64,16 +64,6 @@ extern z_stream outgoing_stream;
 extern struct monitor *pmonitor;
 extern Buffer input, output;
 
-int
-mm_is_monitor(void)
-{
-	/*
-	 * m_pid is only set in the privileged part, and
-	 * points to the unprivileged child.
-	 */
-	return (pmonitor->m_pid > 0);
-}
-
 void
 mm_request_send(int socket, enum monitor_reqtype type, Buffer *m)
 {
@@ -102,7 +92,7 @@ mm_request_receive(int socket, Buffer *m)
 	res = atomicio(read, socket, buf, sizeof(buf));
 	if (res != sizeof(buf)) {
 		if (res == 0)
-			cleanup_exit(255);
+			fatal_cleanup();
 		fatal("%s: read: %ld", __func__, (long)res);
 	}
 	msg_len = GET_32BIT(buf);
@@ -654,8 +644,9 @@ mm_pty_allocate(int *ptyfd, int *ttyfd, char *namebuf, int namebuflen)
 }
 
 void
-mm_session_pty_cleanup2(Session *s)
+mm_session_pty_cleanup2(void *session)
 {
+	Session *s = session;
 	Buffer m;
 
 	if (s->ttyfd == -1)

@@ -1,4 +1,4 @@
-/*	$OpenBSD: ppp_tty.c,v 1.19 2003/09/23 16:51:13 millert Exp $	*/
+/*	$OpenBSD: ppp_tty.c,v 1.17 2003/08/15 20:32:19 tedu Exp $	*/
 /*	$NetBSD: ppp_tty.c,v 1.12 1997/03/24 21:23:10 christos Exp $	*/
 
 /*
@@ -170,7 +170,7 @@ void	ppplogchar(struct ppp_softc *, int);
 #define CCOUNT(q)	((q)->c_cc)
 
 #define PPP_LOWAT	100	/* Process more output when < LOWAT on queue */
-#define	PPP_HIWAT	400	/* Don't start a new packet if HIWAT on queue */
+#define	PPP_HIWAT	400	/* Don't start a new packet if HIWAT on que */
 
 /*
  * Line specific open routine for async tty devices.
@@ -706,7 +706,7 @@ pppasyncctlp(sc)
     struct tty *tp;
     int s;
 
-    /* Put a placeholder byte in canq for ttpoll()/ttnread(). */
+    /* Put a placeholder byte in canq for ttselect()/ttnread(). */
     s = spltty();
     tp = (struct tty *) sc->sc_devp;
     putc(0, &tp->t_canq);

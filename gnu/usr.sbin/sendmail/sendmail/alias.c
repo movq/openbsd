@@ -13,7 +13,7 @@
 
 #include <sendmail.h>
 
-SM_RCSID("@(#)$Sendmail: alias.c,v 8.214.2.1 2003/07/28 17:47:55 ca Exp $")
+SM_RCSID("@(#)$Sendmail: alias.c,v 8.214 2002/05/24 20:50:16 gshapiro Exp $")
 
 #define SEPARATOR ':'
 # define ALIAS_SPEC_SEPARATORS	" ,/:"
@@ -94,7 +94,7 @@ alias(a, sendq, aliaslevel, e)
 		if (aliaslookup(obuf, &status, a->q_host) != NULL)
 		{
 			if (LogLevel > 8)
-				sm_syslog(LOG_WARNING, e->e_id,
+				syslog(LOG_WARNING,
 				       "possible spam from <> to list: %s, redirected to %s\n",
 				       a->q_user, obuf);
 			a->q_user = sm_rpool_strdup_x(e->e_rpool, obuf);

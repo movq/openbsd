@@ -7,7 +7,7 @@
  */
 
 #include "includes.h"
-RCSID("$OpenBSD: ssh-keyscan.c,v 1.45 2003/09/19 11:30:39 markus Exp $");
+RCSID("$OpenBSD: ssh-keyscan.c,v 1.44 2003/06/28 16:23:06 deraadt Exp $");
 
 #include <sys/queue.h>
 #include <errno.h>
@@ -660,7 +660,7 @@ fatal(const char *fmt,...)
 	if (nonfatal_fatal)
 		longjmp(kexjmp, -1);
 	else
-		exit(255);
+		fatal_cleanup();
 }
 
 static void

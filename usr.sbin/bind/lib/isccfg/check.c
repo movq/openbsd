@@ -100,7 +100,6 @@ check_options(cfg_obj_t *options, isc_log_t *logctx) {
 #define STUBZONE	4
 #define HINTZONE	8
 #define FORWARDZONE	16
-#define DELEGATIONZONE	32
 
 typedef struct {
 	const char *name;
@@ -131,7 +130,6 @@ check_zoneconf(cfg_obj_t *zconfig, isc_symtab_t *symtab, isc_log_t *logctx,
 	{ "notify", MASTERZONE | SLAVEZONE },
 	{ "also-notify", MASTERZONE | SLAVEZONE },
 	{ "dialup", MASTERZONE | SLAVEZONE | STUBZONE },
-	{ "delegation-only", HINTZONE | STUBZONE },
 	{ "forward", MASTERZONE | SLAVEZONE | STUBZONE | FORWARDZONE},
 	{ "forwarders", MASTERZONE | SLAVEZONE | STUBZONE | FORWARDZONE},
 	{ "maintain-ixfr-base", MASTERZONE | SLAVEZONE },
@@ -191,8 +189,6 @@ check_zoneconf(cfg_obj_t *zconfig, isc_symtab_t *symtab, isc_log_t *logctx,
 		ztype = FORWARDZONE;
 	else if (strcasecmp(typestr, "hint") == 0)
 		ztype = HINTZONE;
-	else if (strcasecmp(typestr, "delegation-only") == 0)
-		ztype = DELEGATIONZONE;
 	else {
 		cfg_obj_log(obj, logctx, ISC_LOG_ERROR,
 			    "zone '%s': invalid type %s",

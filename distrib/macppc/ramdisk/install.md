@@ -1,4 +1,4 @@
-#	$OpenBSD: install.md,v 1.22 2003/09/22 01:31:39 krw Exp $
+#	$OpenBSD: install.md,v 1.19 2003/03/02 16:09:55 krw Exp $
 #
 #
 # Copyright (c) 1996 The NetBSD Foundation, Inc.
@@ -84,8 +84,11 @@ OpenFirmware manual -and- the PowerPC OpenBSD Installation Guide for doing
 setup this way.
 
 __EOT
-	ask_yn "Do you want to initialize the MBR and the MSDOS partition?" yes
-	[[ $resp == n ]] && exit
+	ask "Do you want to initialize the MBR and the MSDOS partition?" y
+	case $resp in
+	n*|N*)	exit 0	;;
+	*)		;;
+	esac
 
 	cat << __EOT
 An MBR record with an OpenBSD usable partition table will now be copied to your
@@ -125,7 +128,7 @@ the Apple software, the "Unused" section must be changed to type "OpenBSD" name
 then be edited normally.
 
 WARNING: the MBR partitioning code will HAPPILY overwrite/destroy any HFS
-         partitions on the disk, including the partition table. Choose the
+	 partitions on the disk, including the partition table. Choose the
          MBR option carefully, knowing this fact.
 __EOT
 
@@ -144,15 +147,18 @@ __EOT
 }
 
 md_checkforMBRdisklabel() {
-	local _disk=$1 rval=0
+	local _disk=$1
 
-	ask_yn "Are you *sure* you want to put a MBR disklabel on the disk?"
-	[[ $resp == n ]] && exit
-
-	ask_yn "Have you initialized an MSDOS partition using OpenFirmware?"
+	ask "Are you *sure* you want to put a MBR disklabel on the disk?" n
 	case $resp in
-	n)	md_init_mbr $_disk;;
-	y)	cat << __EOT
+	n*|N*)	echo "aborting install"
+		exit 0;;
+	esac
+
+	ask "Have you initialized an MSDOS partition using OpenFirmware?" n
+	case $resp in
+	n*|N*)	md_init_mbr $_disk;;
+	*)	cat << __EOT
 You may keep your current setup if you want to be able to use any already
 loaded OS. However you will be asked to prepare an empty partition for OpenBSD
 later. There must also be at least ~0.5MB free space in the boot partition to
@@ -162,18 +168,21 @@ Also note that the boot partition must be included as partition 'i' in the
 OpenBSD disklabel.
 
 __EOT
-		ask_yn "Keep the current MSDOS partition setup?" yes
-		[[ $resp == n ]] && md_init_mbr $_disk
-		;;
+		ask "Do you want to keep the current MSDOS partition setup?" y
+		case $resp in
+		n*|N*)	md_init_mbr $_disk;;
+		esac
+	;;
 	esac
 
-	disklabel -r $_disk >/dev/null 2>/tmp/checkfordisklabel
-
+	disklabel -r $_disk > /dev/null 2> /tmp/checkfordisklabel
 	if grep "no disk label" /tmp/checkfordisklabel; then
 		rval=1
 	elif grep "disk label corrupted" /tmp/checkfordisklabel; then
 		rval=2
-	fi >/dev/null 2>&1
+	else
+		rval=0
+	fi
 
 	rm -f /tmp/checkfordisklabel
 	return $rval
@@ -228,8 +237,12 @@ $(fdisk $_disk)
 (You will be permitted to edit this information again.)
 -------------------------------------------------------
 __EOT
-		ask_yn "Is the above information correct?"
-		[[ $resp == y ]] && break
+		ask "Is the above information correct?" n
+
+		case $resp in
+		n*|N*)	;;
+		*)	break ;;
+		esac
 	done
 
 	cat << __EOT
@@ -244,25 +257,26 @@ __EOT
 }
 
 md_prep_disklabel() {
-	local _disk=$1 _q
+	local _disk=$1
 
 	md_checkfordisklabel $_disk
 	case $? in
-	0)	_q="Do you wish to edit the existing disklabel on $_disk?"
+	0)	ask "Do you wish to edit the existing disklabel on $_disk?" y
 		;;
 	1)	md_prep_fdisk $_disk
 		echo "WARNING: $_disk has no label"
-		_q="Do you want to create one with the disklabel editor?"
+		ask "Do you want to create one with the disklabel editor?" y
 		;;
 	2)	echo "WARNING: The disklabel on $_disk is invalid."
-		_q="Do you want to try and repair the damage using the disklabel editor?"
+		ask "Do you want to try and repair the damage using the disklabel editor?" y
 		;;
+
 	esac
 
-	if [[ -n $_q ]]; then
-		ask_yn "$_q" yes
-		[[ $resp == n ]] && return
-	fi
+	case $resp in
+	y*|Y*)	;;
+	*)	return ;;
+	esac
 
 	# display example
 	cat << __EOT

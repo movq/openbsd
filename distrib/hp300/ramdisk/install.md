@@ -1,4 +1,4 @@
-#	$OpenBSD: install.md,v 1.36 2003/09/21 02:11:42 krw Exp $
+#	$OpenBSD: install.md,v 1.35 2002/11/07 01:28:52 krw Exp $
 #	$NetBSD: install.md,v 1.1.2.4 1996/08/26 15:45:14 gwr Exp $
 #
 # Copyright (c) 1996 The NetBSD Foundation, Inc.
@@ -56,17 +56,18 @@ md_installboot() {
 	echo "done."
 }
 
-# $1 is the disk to check
 md_checkfordisklabel() {
-	local rval=0
+	# $1 is the disk to check
+	local rval
 
-	disklabel -r $1 >/dev/null 2>/tmp/checkfordisklabel
-
+	disklabel -r $1 > /dev/null 2> /tmp/checkfordisklabel
 	if grep "no disk label" /tmp/checkfordisklabel; then
 		rval=1
 	elif grep "disk label corrupted" /tmp/checkfordisklabel; then
 		rval=2
-	fi >/dev/null 2>&1
+	else
+		rval=0
+	fi
 
 	rm -f /tmp/checkfordisklabel
 	return $rval

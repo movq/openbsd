@@ -13,7 +13,7 @@
 
 #include <sendmail.h>
 
-SM_RCSID("@(#)$Sendmail: daemon.c,v 8.613.2.17 2003/07/30 20:17:04 ca Exp $")
+SM_RCSID("@(#)$Sendmail: daemon.c,v 8.613.2.14 2003/02/11 17:17:22 ca Exp $")
 
 #if defined(SOCK_STREAM) || defined(__GNU_LIBRARY__)
 # define USE_SOCK_STREAM	1
@@ -235,7 +235,13 @@ getrequests(e)
 
 		/* see if we are rejecting connections */
 		(void) sm_blocksignal(SIGALRM);
-		CHECK_RESTART;
+
+		if (ShutdownRequest != NULL)
+			shutdown_daemon();
+		else if (RestartRequest != NULL)
+			restart_daemon();
+		else if (RestartWorkGroup)
+			restart_marked_work_groups();
 
 		for (idx = 0; idx < NDaemons; idx++)
 		{
@@ -277,7 +283,13 @@ getrequests(e)
 		}
 
 		/* May have been sleeping above, check again */
-		CHECK_RESTART;
+		if (ShutdownRequest != NULL)
+			shutdown_daemon();
+		else if (RestartRequest != NULL)
+			restart_daemon();
+		else if (RestartWorkGroup)
+			restart_marked_work_groups();
+
 		getrequests_checkdiskspace(e);
 
 #if XDEBUG
@@ -323,8 +335,15 @@ getrequests(e)
 			fd_set readfds;
 			struct timeval timeout;
 
-			CHECK_RESTART;
+			if (ShutdownRequest != NULL)
+				shutdown_daemon();
+			else if (RestartRequest != NULL)
+				restart_daemon();
+			else if (RestartWorkGroup)
+				restart_marked_work_groups();
+
 			FD_ZERO(&readfds);
+
 			for (idx = 0; idx < NDaemons; idx++)
 			{
 				/* wait for a connection */
@@ -361,7 +380,13 @@ getrequests(e)
 				   NULL, NULL, &timeout);
 
 			/* Did someone signal while waiting? */
-			CHECK_RESTART;
+			if (ShutdownRequest != NULL)
+				shutdown_daemon();
+			else if (RestartRequest != NULL)
+				restart_daemon();
+			else if (RestartWorkGroup)
+				restart_marked_work_groups();
+
 
 
 			curdaemon = -1;
@@ -3338,9 +3363,7 @@ getauthinfo(fd, may_be_forged)
 		/* try to match the reverse against the forward lookup */
 		hp = sm_gethostbyname(RealHostName, family);
 		if (hp == NULL)
-		{
 			*may_be_forged = true;
-		}
 		else
 		{
 			for (ha = hp->h_addr_list; *ha != NULL; ha++)

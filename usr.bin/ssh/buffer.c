@@ -12,7 +12,7 @@
  */
 
 #include "includes.h"
-RCSID("$OpenBSD: buffer.c,v 1.20 2003/09/19 09:03:00 markus Exp $");
+RCSID("$OpenBSD: buffer.c,v 1.18 2003/09/16 21:02:39 markus Exp $");
 
 #include "xmalloc.h"
 #include "buffer.h"
@@ -39,7 +39,6 @@ buffer_free(Buffer *buffer)
 {
 	if (buffer->alloc > 0) {
 		memset(buffer->buf, 0, buffer->alloc);
-		buffer->alloc = 0;
 		xfree(buffer->buf);
 	}
 }
@@ -169,7 +168,7 @@ buffer_ptr(Buffer *buffer)
 void
 buffer_dump(Buffer *buffer)
 {
-	u_int i;
+	int i;
 	u_char *ucp = buffer->buf;
 
 	for (i = buffer->offset; i < buffer->end; i++) {

@@ -3,7 +3,7 @@
  * (Modifications made here may easily be lost!)
  *
  * Created from the file:
- *	OpenBSD: vnode_if.src,v 1.23 2003/09/23 16:46:02 millert Exp 
+ *	OpenBSD: vnode_if.src,v 1.22 2003/07/21 22:44:50 tedu Exp 
  * by the script:
  *	OpenBSD: vnode_if.sh,v 1.13 2003/06/02 23:28:07 millert Exp 
  */
@@ -477,33 +477,37 @@ int VOP_IOCTL(vp, command, data, fflag, cred, p)
 	return (VCALL(vp, VOFFSET(vop_ioctl), &a));
 }
 
-int vop_poll_vp_offsets[] = {
-	VOPARG_OFFSETOF(struct vop_poll_args,a_vp),
+int vop_select_vp_offsets[] = {
+	VOPARG_OFFSETOF(struct vop_select_args,a_vp),
 	VDESC_NO_OFFSET
 };
-struct vnodeop_desc vop_poll_desc = {
+struct vnodeop_desc vop_select_desc = {
 	0,
-	"vop_poll",
+	"vop_select",
 	0,
-	vop_poll_vp_offsets,
+	vop_select_vp_offsets,
 	VDESC_NO_OFFSET,
-	VDESC_NO_OFFSET,
-	VOPARG_OFFSETOF(struct vop_poll_args, a_p),
+	VOPARG_OFFSETOF(struct vop_select_args, a_cred),
+	VOPARG_OFFSETOF(struct vop_select_args, a_p),
 	VDESC_NO_OFFSET,
 	NULL,
 };
 
-int VOP_POLL(vp, events, p)
+int VOP_SELECT(vp, which, fflags, cred, p)
 	struct vnode *vp;
-	int events;
+	int which;
+	int fflags;
+	struct ucred *cred;
 	struct proc *p;
 {
-	struct vop_poll_args a;
-	a.a_desc = VDESC(vop_poll);
+	struct vop_select_args a;
+	a.a_desc = VDESC(vop_select);
 	a.a_vp = vp;
-	a.a_events = events;
+	a.a_which = which;
+	a.a_fflags = fflags;
+	a.a_cred = cred;
 	a.a_p = p;
-	return (VCALL(vp, VOFFSET(vop_poll), &a));
+	return (VCALL(vp, VOFFSET(vop_select), &a));
 }
 
 int vop_kqfilter_vp_offsets[] = {
@@ -1364,7 +1368,7 @@ struct vnodeop_desc *vfs_op_descs[] = {
 	&vop_write_desc,
 	&vop_lease_desc,
 	&vop_ioctl_desc,
-	&vop_poll_desc,
+	&vop_select_desc,
 	&vop_kqfilter_desc,
 	&vop_revoke_desc,
 	&vop_fsync_desc,

@@ -35,7 +35,7 @@
  */
 
 #include "includes.h"
-RCSID("$OpenBSD: authfd.c,v 1.62 2003/09/18 13:02:21 miod Exp $");
+RCSID("$OpenBSD: authfd.c,v 1.61 2003/06/28 16:23:06 deraadt Exp $");
 
 #include <openssl/evp.h>
 
@@ -114,8 +114,7 @@ ssh_get_authentication_socket(void)
 static int
 ssh_request_reply(AuthenticationConnection *auth, Buffer *request, Buffer *reply)
 {
-	int l;
-	u_int len;
+	int l, len;
 	char buf[1024];
 
 	/* Get the length of the message, and format it in the buffer. */
@@ -148,7 +147,7 @@ ssh_request_reply(AuthenticationConnection *auth, Buffer *request, Buffer *reply
 	/* Extract the length, and check it for sanity. */
 	len = GET_32BIT(buf);
 	if (len > 256 * 1024)
-		fatal("Authentication response too long: %u", len);
+		fatal("Authentication response too long: %d", len);
 
 	/* Read the rest of the response in to the buffer. */
 	buffer_clear(reply);
@@ -293,7 +292,7 @@ ssh_get_num_identities(AuthenticationConnection *auth, int version)
 
 	/* Get the number of entries in the response and check it for sanity. */
 	auth->howmany = buffer_get_int(&auth->identities);
-	if ((u_int)auth->howmany > 1024)
+	if (auth->howmany > 1024)
 		fatal("Too many identities in authentication reply: %d",
 		    auth->howmany);
 

@@ -1,4 +1,4 @@
-/*	$OpenBSD: bpf.c,v 1.38 2003/09/23 16:51:13 millert Exp $	*/
+/*	$OpenBSD: bpf.c,v 1.37 2003/07/29 23:02:52 itojun Exp $	*/
 /*	$NetBSD: bpf.c,v 1.33 1997/02/21 23:59:35 thorpej Exp $	*/
 
 /*
@@ -48,7 +48,6 @@
 #include <sys/vnode.h>
 #include <sys/file.h>
 #include <sys/socket.h>
-#include <sys/poll.h>
 #include <sys/kernel.h>
 
 #include <net/if.h>
@@ -84,7 +83,7 @@ int	bpf_movein(struct uio *, int, struct mbuf **, struct sockaddr *);
 void	bpf_attachd(struct bpf_d *, struct bpf_if *);
 void	bpf_detachd(struct bpf_d *);
 int	bpf_setif(struct bpf_d *, struct ifreq *);
-int	bpfpoll(dev_t, int, struct proc *);
+int	bpfselect(dev_t, int, struct proc *);
 int	bpfkqfilter(dev_t, struct knote *);
 static __inline void bpf_wakeup(struct bpf_d *);
 void	bpf_catchpacket(struct bpf_d *, u_char *, size_t, size_t,
@@ -929,37 +928,46 @@ bpf_ifname(ifp, ifr)
 }
 
 /*
- * Support for poll() system call
+ * Support for select() system call
+ *
+ * Return true iff the specific operation will not block indefinitely.
+ * Otherwise, return false but make a note that a selwakeup() must be done.
  */
 int
-bpfpoll(dev, events, p)
+bpfselect(dev, rw, p)
 	register dev_t dev;
-	int events;
+	int rw;
 	struct proc *p;
 {
 	register struct bpf_d *d;
-	register int s, revents;
+	register int s;
 
-	revents = events & (POLLIN | POLLRDNORM);
-	if (revents == 0)
-		return (0);		/* only support reading */
-
+	if (rw != FREAD)
+		return (0);
 	/*
 	 * An imitation of the FIONREAD ioctl code.
 	 */
 	d = &bpf_dtab[minor(dev)];
+
 	s = splimp();
-	if (d->bd_hlen == 0 && (!d->bd_immediate || d->bd_slen == 0)) {
-		revents = 0;		/* no data waiting */
+	if (d->bd_hlen != 0 || (d->bd_immediate && d->bd_slen != 0)) {
 		/*
-		 * if there's a timeout, mark the time we started waiting.
+		 * There is data waiting.
 		 */
-		if (d->bd_rtout != -1 && d->bd_rdStart == 0)
-			d->bd_rdStart = ticks;
-		selrecord(p, &d->bd_sel);
+		splx(s);
+		return (1);
 	}
+
+	/*
+	 * if there isn't data waiting, and there's a timeout,
+	 * mark the time we started waiting.
+	 */
+	if (d->bd_rtout != -1 && d->bd_rdStart == 0)
+		d->bd_rdStart = ticks;
+			    
+	selrecord(p, &d->bd_sel);
 	splx(s);
-	return (revents);
+	return (0);
 }
 
 struct filterops bpfread_filtops =

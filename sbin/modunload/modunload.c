@@ -1,4 +1,4 @@
-/*	$OpenBSD: modunload.c,v 1.14 2003/09/19 17:36:03 deraadt Exp $	*/
+/*	$OpenBSD: modunload.c,v 1.13 2003/07/02 21:44:58 deraadt Exp $	*/
 /*	$NetBSD: modunload.c,v 1.9 1995/05/28 05:23:05 jtc Exp $	*/
 
 /*
@@ -50,6 +50,8 @@
 
 #include "pathnames.h"
 
+static int devfd;
+
 static void
 usage(void)
 {
@@ -60,10 +62,16 @@ usage(void)
 	exit(1);
 }
 
+static void
+cleanup(void)
+{
+	(void)close(devfd);
+}
+
 int
 main(int argc, char *argv[])
 {
-	int c, devfd;
+	int c;
 	long modnum = -1;
 	char *modname = NULL;
 	char *endptr, *post = NULL;
@@ -100,6 +108,8 @@ main(int argc, char *argv[])
 	 */
 	if ((devfd = open(_PATH_LKM, O_RDWR, 0)) == -1)
 		err(2, "%s", _PATH_LKM);
+
+	atexit(cleanup);
 
 	/*
 	 * Unload the requested module.
