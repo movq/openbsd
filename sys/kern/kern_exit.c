@@ -1,4 +1,4 @@
-/*	$OpenBSD: kern_exit.c,v 1.40 2002/01/25 15:00:26 art Exp $	*/
+/*	$OpenBSD: kern_exit.c,v 1.37 2001/11/12 01:26:09 art Exp $	*/
 /*	$NetBSD: kern_exit.c,v 1.39 1996/04/22 01:38:25 christos Exp $	*/
 
 /*
@@ -43,6 +43,7 @@
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/map.h>
 #include <sys/ioctl.h>
 #include <sys/proc.h>
 #include <sys/tty.h>
@@ -118,7 +119,8 @@ exit1(p, rv)
 
 	if (p->p_flag & P_PROFIL)
 		stopprofclock(p);
-	p->p_ru = pool_get(&rusage_pool, PR_WAITOK);
+	MALLOC(p->p_ru, struct rusage *, sizeof(struct rusage),
+		M_ZOMBIE, M_WAITOK);
 	/*
 	 * If parent is waiting for us to exit or exec, P_PPWAIT is set; we
 	 * wake up the parent early to avoid deadlock.
@@ -516,7 +518,7 @@ proc_zap(p)
 	struct proc *p;
 {
 
-	pool_put(&rusage_pool, p->p_ru);
+	FREE(p->p_ru, M_ZOMBIE);
 
 	/*
 	 * Finally finished with old proc entry.
@@ -536,7 +538,7 @@ proc_zap(p)
 	 */
 	if (--p->p_cred->p_refcnt == 0) {
 		crfree(p->p_cred->pc_ucred);
-		pool_put(&pcred_pool, p->p_cred);
+		FREE(p->p_cred, M_SUBPROC);
 	}
 
 	/*

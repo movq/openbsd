@@ -1,4 +1,4 @@
-/*	$OpenBSD: ufs_readwrite.c,v 1.24 2002/01/09 17:55:56 tholo Exp $	*/
+/*	$OpenBSD: ufs_readwrite.c,v 1.22 2001/12/10 03:04:58 art Exp $	*/
 /*	$NetBSD: ufs_readwrite.c,v 1.9 1996/05/11 18:27:57 mycroft Exp $	*/
 
 /*-
@@ -76,21 +76,22 @@ READ(v)
 		int a_ioflag;
 		struct ucred *a_cred;
 	} */ *ap = v;
-	register struct vnode *vp;
-	register struct inode *ip;
-	register struct uio *uio;
-	register FS *fs;
+	struct vnode *vp;
+	struct inode *ip;
+	struct uio *uio;
+	FS *fs;
+	void *win;
+	vsize_t bytelen;
 	struct buf *bp;
 	daddr_t lbn, nextlbn;
 	off_t bytesinfile;
 	long size, xfersize, blkoffset;
 	int error;
-	u_short mode;
 
 	vp = ap->a_vp;
 	ip = VTOI(vp);
-	mode = ip->i_ffs_mode;
 	uio = ap->a_uio;
+	error = 0;
 
 #ifdef DIAGNOSTIC
 	if (uio->uio_rw != UIO_READ)
@@ -110,6 +111,24 @@ READ(v)
 
 	if (uio->uio_resid == 0)
 		return (0);
+	if (uio->uio_offset >= ip->i_ffs_size)
+		goto out;
+
+	if (vp->v_type == VREG) {
+		while (uio->uio_resid > 0) {
+			bytelen = min(ip->i_ffs_size - uio->uio_offset,
+			    uio->uio_resid);
+			if (bytelen == 0)
+				break;
+			win = ubc_alloc(&vp->v_uobj, uio->uio_offset,
+			    &bytelen, UBC_READ);
+			error = uiomove(win, bytelen, uio);
+			ubc_release(win, 0);
+			if (error)
+			        break;
+		}
+		goto out;
+	}
 
 	for (error = 0, bp = NULL; uio->uio_resid > 0; bp = NULL) {
 		if ((bytesinfile = ip->i_ffs_size - uio->uio_offset) <= 0)
@@ -124,23 +143,14 @@ READ(v)
 		if (bytesinfile < xfersize)
 			xfersize = bytesinfile;
 
-#ifdef LFS_READWRITE
-		(void)lfs_check(vp, lbn);
-		error = cluster_read(vp, &ip->i_ci, ip->i_ffs_size, lbn, 
-		    size, NOCRED, &bp);
-#else
 		if (lblktosize(fs, nextlbn) >= ip->i_ffs_size)
 			error = bread(vp, lbn, size, NOCRED, &bp);
-		else if (doclusterread)
-			error = cluster_read(vp, &ip->i_ci,
-			    ip->i_ffs_size, lbn, size, NOCRED, &bp);
 		else if (lbn - 1 == ip->i_ci.ci_lastr) {
 			int nextsize = BLKSIZE(fs, ip, nextlbn);
 			error = breadn(vp, lbn,
 			    size, &nextlbn, &nextsize, 1, NOCRED, &bp);
 		} else
 			error = bread(vp, lbn, size, NOCRED, &bp);
-#endif
 		if (error)
 			break;
 		ip->i_ci.ci_lastr = lbn;
@@ -158,7 +168,7 @@ READ(v)
 				break;
 			xfersize = size;
 		}
-		error = uiomove((char *)bp->b_data + blkoffset, (int)xfersize,
+		error = uiomove((char *)bp->b_data + blkoffset, xfersize,
 				uio);
 		if (error)
 			break;
@@ -166,6 +176,7 @@ READ(v)
 	}
 	if (bp != NULL)
 		brelse(bp);
+out:
 	ip->i_flag |= IN_ACCESS;
 	return (error);
 }
@@ -183,15 +194,19 @@ WRITE(v)
 		int a_ioflag;
 		struct ucred *a_cred;
 	} */ *ap = v;
-	register struct vnode *vp;
-	register struct uio *uio;
-	register struct inode *ip;
-	register FS *fs;
+	struct vnode *vp;
+	struct uio *uio;
+	struct inode *ip;
+	FS *fs;
 	struct buf *bp;
 	struct proc *p;
 	daddr_t lbn;
 	off_t osize;
 	int blkoffset, error, extended, flags, ioflag, resid, size, xfersize;
+	void *win;
+	vsize_t bytelen;
+	off_t oldoff;
+	boolean_t rv;
 
 	extended = 0;
 	ioflag = ap->a_ioflag;
@@ -203,13 +218,6 @@ WRITE(v)
 	if (uio->uio_rw != UIO_WRITE)
 		panic("%s: mode", WRITE_S);
 #endif
-
-	/*
-	 * If writing 0 bytes, succeed and do not change
-	 * update time or file offset (standards compliance)
-	 */
-	if (uio->uio_resid == 0)
-		return (0);
 
 	switch (vp->v_type) {
 	case VREG:
@@ -246,9 +254,76 @@ WRITE(v)
 
 	resid = uio->uio_resid;
 	osize = ip->i_ffs_size;
-	flags = ioflag & IO_SYNC ? B_SYNC : 0;
+	error = 0;
 
-	for (error = 0; uio->uio_resid > 0;) {
+	if (vp->v_type != VREG)
+		goto bcache;
+
+	while (uio->uio_resid > 0) {
+		struct uvm_object *uobj = &vp->v_uobj;
+		oldoff = uio->uio_offset;
+		blkoffset = blkoff(fs, uio->uio_offset);
+		bytelen = min(fs->fs_bsize - blkoffset, uio->uio_resid);
+ 
+		/*
+		 * XXXUBC if file is mapped and this is the last block,
+		 * process one page at a time.
+		 */
+
+		error = ufs_balloc_range(vp, uio->uio_offset, bytelen,
+		    ap->a_cred, ioflag & IO_SYNC ? B_SYNC : 0);
+		if (error) {
+			return error;
+		}
+
+		win = ubc_alloc(uobj, uio->uio_offset, &bytelen, UBC_WRITE);
+		error = uiomove(win, bytelen, uio);
+		ubc_release(win, 0);
+
+		/*
+		 * flush what we just wrote if necessary.
+		 * XXXUBC simplistic async flushing.
+		 */
+
+		if (ioflag & IO_SYNC) {
+			simple_lock(&uobj->vmobjlock);
+#if 1
+			/*
+			 * XXX 
+			 * flush whole blocks in case there are deps.
+			 * otherwise we can dirty and flush part of
+			 * a block multiple times and the softdep code
+			 * will get confused.  fixing this the right way
+			 * is complicated so we'll work around it for now.
+			 */
+                      
+			rv = uobj->pgops->pgo_flush(
+			    uobj, oldoff & ~(fs->fs_bsize - 1),
+			    (oldoff + bytelen + fs->fs_bsize - 1) &
+			    ~(fs->fs_bsize - 1),
+			    PGO_CLEANIT|PGO_SYNCIO);
+#else
+			rv = uobj->pgops->pgo_flush(
+			    uobj, oldoff, oldoff + bytelen,
+			    PGO_CLEANIT|PGO_SYNCIO);
+#endif
+			simple_unlock(uobj->vmobjlock);
+		} else if (oldoff >> 16 != uio->uio_offset >> 16) {
+			simple_lock(&uobj->vmobjlock);
+			rv = uobj->pgops->pgo_flush(uobj,
+			    (oldoff >> 16) << 16,
+			    (uio->uio_offset >> 16) << 16, PGO_CLEANIT);
+			simple_unlock(&uobj->vmobjlock);
+		}
+		if (error) {
+			break;
+		}
+	}
+	goto out;
+
+bcache:
+	flags = ioflag & IO_SYNC ? B_SYNC : 0;
+	while (uio->uio_resid > 0) {
 		lbn = lblkno(fs, uio->uio_offset);
 		blkoffset = blkoff(fs, uio->uio_offset);
 		xfersize = fs->fs_bsize - blkoffset;
@@ -267,21 +342,16 @@ WRITE(v)
 			uvm_vnp_setsize(vp, ip->i_ffs_size);
 			extended = 1;
 		}
-		(void)uvm_vnp_uncache(vp);
 
 		size = BLKSIZE(fs, ip, lbn) - bp->b_resid;
 		if (size < xfersize)
 			xfersize = size;
 
-		error =
-		    uiomove((char *)bp->b_data + blkoffset, xfersize, uio);
+		error = uiomove((char *)bp->b_data + blkoffset, xfersize, uio);
 
 		if (error != 0)
 			bzero((char *)bp->b_data + blkoffset, xfersize);
 
-#ifdef LFS_READWRITE
-		(void)VOP_BWRITE(bp);
-#else
 		if (ioflag & IO_SYNC)
 			(void)bwrite(bp);
 		else if (xfersize + blkoffset == fs->fs_bsize) {
@@ -291,16 +361,16 @@ WRITE(v)
 				bawrite(bp);
 		} else
 			bdwrite(bp);
-#endif
 		if (error || xfersize == 0)
 			break;
-		ip->i_flag |= IN_CHANGE | IN_UPDATE;
 	}
 	/*
 	 * If we successfully wrote any data, and we are not the superuser
 	 * we clear the setuid and setgid bits as a precaution against
 	 * tampering.
 	 */
+out:
+	ip->i_flag |= IN_CHANGE | IN_UPDATE;
 	if (resid > uio->uio_resid && ap->a_cred && ap->a_cred->cr_uid != 0)
 		ip->i_ffs_mode &= ~(ISUID | ISGID);
 	if (resid > uio->uio_resid)

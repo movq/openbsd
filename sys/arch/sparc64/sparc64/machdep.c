@@ -1,4 +1,4 @@
-/*	$OpenBSD: machdep.c,v 1.31 2002/01/23 17:51:52 art Exp $	*/
+/*	$OpenBSD: machdep.c,v 1.27 2001/12/04 23:22:42 art Exp $	*/
 /*	$NetBSD: machdep.c,v 1.108 2001/07/24 19:30:14 eeh Exp $ */
 
 /*-
@@ -88,6 +88,7 @@
 #include <sys/signalvar.h>
 #include <sys/proc.h>
 #include <sys/user.h>
+#include <sys/map.h>
 #include <sys/buf.h>
 #include <sys/device.h>
 #include <sys/reboot.h>
@@ -146,6 +147,7 @@ int bus_space_debug = 0; /* This may be used by macros elsewhere. */
 #endif
 
 struct vm_map *exec_map = NULL;
+struct vm_map *mb_map = NULL;
 extern vaddr_t avail_end;
 
 int	physmem;
@@ -313,6 +315,12 @@ cpu_startup()
 	 */
         exec_map = uvm_km_suballoc(kernel_map, &minaddr, &maxaddr,
                                  16*NCARGS, VM_MAP_PAGEABLE, FALSE, NULL);
+
+	/*
+	 * Finally, allocate mbuf cluster submap.
+	 */
+        mb_map = uvm_km_suballoc(kernel_map, &minaddr, &maxaddr,
+	    VM_MBUF_SIZE, VM_MAP_INTRSAFE, FALSE, NULL);
 
 #ifdef DEBUG
 	pmapdebug = opmapdebug;
@@ -1260,7 +1268,7 @@ _bus_dmamap_load_mbuf(t, map, m, flags)
 			/* Exceeded the size of our dmamap */
 			map->_dm_type = 0;
 			map->_dm_source = NULL;
-			return (EFBIG);
+			return E2BIG;
 		}
 	}
 
@@ -1329,7 +1337,7 @@ _bus_dmamap_load_uio(t, map, uio, flags)
 			/* Exceeded the size of our dmamap */
 			map->_dm_type = 0;
 			map->_dm_source = NULL;
-			return (EFBIG);
+			return (E2BIG);
 		}
 	}
 

@@ -1,4 +1,4 @@
-/*	$OpenBSD: uipc_socket.c,v 1.40 2002/01/23 00:39:48 art Exp $	*/
+/*	$OpenBSD: uipc_socket.c,v 1.39 2001/11/28 17:18:00 ericj Exp $	*/
 /*	$NetBSD: uipc_socket.c,v 1.21 1996/02/04 02:17:52 christos Exp $	*/
 
 /*
@@ -79,7 +79,8 @@ void
 soinit(void)
 {
 
-	pool_init(&socket_pool, sizeof(struct socket), 0, 0, 0, "sockpl", NULL);
+	pool_init(&socket_pool, sizeof(struct socket), 0, 0, 0,
+	    "sockpl", 0, NULL, NULL, M_SOCKET);
 }
 
 /*

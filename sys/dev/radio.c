@@ -1,4 +1,4 @@
-/* $OpenBSD: radio.c,v 1.5 2002/01/10 18:38:24 mickey Exp $ */
+/* $OpenBSD: radio.c,v 1.2 2001/12/05 10:27:06 mickey Exp $ */
 /* $RuOBSD: radio.c,v 1.7 2001/12/04 06:03:05 tm Exp $ */
 
 /*
@@ -33,24 +33,22 @@
 #include <sys/proc.h>
 #include <sys/errno.h>
 #include <sys/ioctl.h>
-#include <sys/fcntl.h>
 #include <sys/device.h>
-#include <sys/vnode.h>
 #include <sys/radioio.h>
-#include <sys/conf.h>
 
 #include <dev/radio_if.h>
 #include <dev/radiovar.h>
 
 int	radioprobe(struct device *, void *, void *);
 void	radioattach(struct device *, struct device *, void *);
-int	radiodetach(struct device *, int);
-int	radioactivate(struct device *, enum devact);
+int	radioopen(dev_t, int, int, struct proc *);
+int	radioclose(dev_t, int, int, struct proc *);
+int	radioioctl(dev_t, u_long, caddr_t, int, struct proc *);
 int	radioprint(void *, const char *);
 
 struct cfattach radio_ca = {
 	sizeof(struct radio_softc), radioprobe, radioattach,
-	radiodetach, radioactivate
+	NULL, NULL
 };
 
 struct cfdriver radio_cd = {
@@ -60,7 +58,8 @@ struct cfdriver radio_cd = {
 int
 radioprobe(struct device *parent, void *match, void *aux)
 {
-	return (1);
+	printf("\n");		/* stub!?, fixme */
+	return 1;
 }
 
 void
@@ -87,7 +86,7 @@ radioopen(dev_t dev, int flags, int fmt, struct proc *p)
 	if (unit >= radio_cd.cd_ndevs ||
 	    (sc = radio_cd.cd_devs[unit]) == NULL ||
 	     sc->hw_if == NULL)
-		return (ENXIO);
+		return (ENXIO); 
 
 	if (sc->hw_if->open != NULL)
 		return (sc->hw_if->open(sc->hw_hdl, flags, fmt, p));
@@ -96,7 +95,7 @@ radioopen(dev_t dev, int flags, int fmt, struct proc *p)
 }
 
 int
-radioclose(dev_t dev, int flags, int fmt, struct proc *p)
+radioclose(dev_t dev, int flags, int fmt, struct proc *p) 
 {
 	struct radio_softc *sc;
 
@@ -127,21 +126,17 @@ radioioctl(dev_t dev, u_long cmd, caddr_t data, int flags, struct proc *p)
 					(struct radio_info *)data);
 			break;
 	case RIOCSINFO:
-		if (!(flags & FWRITE))
-			return (EACCES);
 		if (sc->hw_if->set_info)
 			error = (sc->hw_if->set_info)(sc->hw_hdl,
 				(struct radio_info *)data);
 		break;
 	case RIOCSSRCH:
-		if (!(flags & FWRITE))
-			return (EACCES);
 		if (sc->hw_if->search)
 			error = (sc->hw_if->search)(sc->hw_hdl,
 					*(int *)data);
 		break;
 	default:
-		error = (ENOTTY);
+		error = EINVAL;
 	}
 
 	return (error);
@@ -152,7 +147,7 @@ radioioctl(dev_t dev, u_long cmd, caddr_t data, int flags, struct proc *p)
  * probed/attached to the hardware driver
  */
 
-struct device *
+struct device  *
 radio_attach_mi(struct radio_hw_if *rhwp, void *hdlp, struct device *dev)
 {
 	struct radio_attach_args arg;
@@ -165,42 +160,5 @@ radio_attach_mi(struct radio_hw_if *rhwp, void *hdlp, struct device *dev)
 int
 radioprint(void *aux, const char *pnp)
 {
-	if (pnp != NULL)
-		printf("radio at %s", pnp);
-	return (UNCONF);
-}
-
-int
-radiodetach(struct device *self, int flags)
-{
-	/*struct radio_softc *sc = (struct radio_softc *)self;*/
-	int maj, mn;
-
-	/* locate the major number */
-	for (maj = 0; maj < nchrdev; maj++)
-		if (cdevsw[maj].d_open == radioopen)
-			break;
-
-	/* Nuke the vnodes for any open instances (calls close). */
-	mn = self->dv_unit;
-	vdevgone(maj, mn, mn, VCHR);
-
-	return (0);
-}
-
-int
-radioactivate(struct device *self, enum devact act)
-{
-	struct radio_softc *sc = (struct radio_softc *)self;
-
-	switch (act) {
-	case DVACT_ACTIVATE:
-		return (EOPNOTSUPP);
-		break;
-
-	case DVACT_DEACTIVATE:
-		sc->sc_dying = 1;
-		break;
-	}
-	return (0);
+	return UNCONF;
 }

@@ -1,4 +1,4 @@
-/*	$OpenBSD: macintr.c,v 1.9 2002/01/26 15:22:52 drahn Exp $	*/
+/*	$OpenBSD: macintr.c,v 1.6 2001/11/06 19:53:15 miod Exp $	*/
 
 /*-
  * Copyright (c) 1995 Per Fogelstrom
@@ -48,7 +48,6 @@
 #include <sys/systm.h>
 
 #include <uvm/uvm.h>
-#include <ddb/db_var.h>
 
 #include <machine/autoconf.h>
 #include <machine/intr.h>
@@ -210,8 +209,7 @@ int
 macintr_prog_button (void *arg)
 {
 #ifdef DDB
-	if (db_console)
-		Debugger();
+        Debugger();
 #else
 	printf("programmer button pressed, debugger not available\n");
 #endif
@@ -400,14 +398,15 @@ intr_calculatemasks()
 	/*
 	 * There are tty, network and disk drivers that use free() at interrupt
 	 * time, so imp > (tty | net | bio).
-	 *
+	 */
+	imask[IPL_IMP] |= imask[IPL_TTY] | imask[IPL_NET] | imask[IPL_BIO];
+
+	/*
 	 * Enforce a hierarchy that gives slow devices a better chance at not
 	 * dropping data.
 	 */
+	imask[IPL_TTY] |= imask[IPL_NET] | imask[IPL_BIO];
 	imask[IPL_NET] |= imask[IPL_BIO];
-	imask[IPL_TTY] |= imask[IPL_NET];
-	imask[IPL_IMP] |= imask[IPL_TTY];
-	imask[IPL_CLOCK] |= imask[IPL_IMP] | SPL_CLOCK;
 
 	/*
 	 * These are pseudo-levels.
@@ -511,8 +510,11 @@ mac_ext_intr()
 	struct intrhand *ih;
 	volatile unsigned long int_state;
 
-	pcpl = cpl;	/* Turn off all */
+	pcpl = splhigh();	/* Turn off all */
 
+#if 0
+printf("mac_intr \n");
+#endif
 	int_state = read_irq();
 	if (int_state == 0)
 		goto out;
@@ -524,24 +526,19 @@ start:
 	o_imen = imen;
 	r_imen = 1 << irq;
 
-	if ((cpl & r_imen) != 0) {
+	if ((pcpl & r_imen) != 0) {
 		ipending |= r_imen;	/* Masked! Mark this as pending */
 		imen |= r_imen;
 		enable_irq(~imen);
 	} else {
-		splraise(intrmask[irq]);
-
-		/*
-		 * enable interrupts for the duration of the
-		 * interrupt handler 
-		 */
-		ppc_intr_enable(1);
 		ih = intrhand[irq];
 		while (ih) {
+#if 0
+printf("calling handler %x\n", ih->ih_fun);
+#endif
 			(*ih->ih_fun)(ih->ih_arg);
 			ih = ih->ih_next;
 		}
-		ppc_intr_disable();
 
 		uvmexp.intrs++;
 		evirq[hwirq[irq]].ev_count++;
@@ -551,9 +548,7 @@ start:
 		goto start;
 
 out:
-	ppc_intr_enable(1);
 	splx(pcpl);	/* Process pendings. */
-	ppc_intr_disable();
 }
 
 void

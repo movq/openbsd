@@ -1,4 +1,4 @@
-/*	$OpenBSD: mfs_vnops.c,v 1.20 2002/01/23 01:40:59 art Exp $	*/
+/*	$OpenBSD: mfs_vnops.c,v 1.17 2001/12/04 22:44:32 art Exp $	*/
 /*	$NetBSD: mfs_vnops.c,v 1.8 1996/03/17 02:16:32 christos Exp $	*/
 
 /*
@@ -42,6 +42,7 @@
 #include <sys/kernel.h>
 #include <sys/proc.h>
 #include <sys/buf.h>
+#include <sys/map.h>
 #include <sys/vnode.h>
 #include <sys/malloc.h>
 
@@ -92,7 +93,8 @@ struct vnodeopv_entry_desc mfs_vnodeop_entries[] = {
 	{ &vop_pathconf_desc, mfs_pathconf },		/* pathconf */
 	{ &vop_advlock_desc, mfs_advlock },		/* advlock */
 	{ &vop_bwrite_desc, mfs_bwrite },		/* bwrite */
-	{ (struct vnodeop_desc*)NULL, (int(*) __P((void *)))NULL }
+	{ &vop_mmap_desc, mfs_mmap },
+	{ NULL, NULL }
 };
 struct vnodeopv_desc mfs_vnodeop_opv_desc =
 	{ &mfs_vnodeop_p, mfs_vnodeop_entries };
@@ -321,9 +323,9 @@ mfs_reclaim(v)
 	struct vop_reclaim_args /* {
 		struct vnode *a_vp;
 	} */ *ap = v;
-	struct vnode *vp = ap->a_vp;
+	register struct vnode *vp = ap->a_vp;
 
-	free(vp->v_data, M_MFSNODE);
+	FREE(vp->v_data, M_MFSNODE);
 	vp->v_data = NULL;
 	return (0);
 }

@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_wi_pci.c,v 1.13 2002/01/28 21:42:40 mickey Exp $	*/
+/*	$OpenBSD: if_wi_pci.c,v 1.9 2001/10/25 19:40:14 mickey Exp $	*/
 
 /*
  * Copyright (c) 2001 Todd C. Miller <Todd.Miller@courtesan.com>
@@ -134,7 +134,6 @@ static const struct wi_pci_product {
 	{ PCI_VENDOR_EUMITCOM, PCI_PRODUCT_EUMITCOM_WL11000P, 1 },
 	{ PCI_VENDOR_3COM, PCI_PRODUCT_3COM_3CRWE777A, 1 },
 	{ PCI_VENDOR_NETGEAR, PCI_PRODUCT_NETGEAR_MA301, 1 },
-	{ PCI_VENDOR_COREGA, PCI_PRODUCT_COREGA_CGWLPCIA11, 1 },
 	{ PCI_VENDOR_INTERSIL, PCI_PRODUCT_INTERSIL_MINI_PCI_WLAN, 0 },
 	{ 0, 0 }
 };
@@ -202,7 +201,6 @@ wi_pci_attach(parent, self, aux)
 
 		memt = iot;
 		memh = ioh;
-		sc->sc_pci = 1;
 	}
 
 	sc->wi_btag = iot;
@@ -234,21 +232,19 @@ wi_pci_attach(parent, self, aux)
 	}
 	printf(": %s", intrstr);
 
-	if (pp->pp_plx) {
+	if (pp->pp_plx)
 		/*
 		 * Setup the PLX chip for level interrupts and config index 1
 		 * XXX - should really reset the PLX chip too.
 		 */
 		bus_space_write_1(memt, memh,
 		    WI_PLX_COR_OFFSET, WI_PLX_COR_VALUE);
-
-		wi_attach(sc, 1);
-	} else {
+	else {
 		bus_space_write_2(iot, ioh, WI_PCI_COR, WI_PCI_SOFT_RESET);
 		DELAY(100*1000); /* 100 m sec */
 		bus_space_write_2(iot, ioh, WI_PCI_COR, 0x0);
 		DELAY(100*1000); /* 100 m sec */
-
-		wi_attach(sc, 0);
 	}
+
+	wi_attach(sc, 1);
 }

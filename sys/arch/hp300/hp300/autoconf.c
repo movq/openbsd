@@ -1,4 +1,4 @@
-/*	$OpenBSD: autoconf.c,v 1.21 2002/01/16 20:51:45 miod Exp $	*/
+/*	$OpenBSD: autoconf.c,v 1.20 2001/12/10 00:58:02 miod Exp $	*/
 /*	$NetBSD: autoconf.c,v 1.45 1999/04/10 17:31:02 kleink Exp $	*/
 
 /*
@@ -71,7 +71,7 @@
 #include <sys/device.h>
 #include <sys/disklabel.h>
 #include <sys/malloc.h>
-#include <sys/extent.h>
+#include <sys/map.h>
 #include <sys/mount.h>
 #include <sys/queue.h>
 #include <sys/reboot.h>
@@ -106,7 +106,8 @@
  */
 int	cold;		    /* if 1, still working on cold-start */
 
-struct	extent *extio;
+/* XXX must be allocated statically because of early console init */
+struct	map extiomap[EIOMAPSIZE/16];
 
 extern	caddr_t internalhpib;
 extern	char *extiobase;
@@ -1244,22 +1245,18 @@ iomap(pa, size)
 	caddr_t pa;
 	int size;
 {
-	int error;
+	int ix, npf;
 	caddr_t kva;
-
-	if (size == 0)
-		return NULL;
 
 #ifdef DEBUG
 	if (((int)pa & PGOFSET) || (size & PGOFSET))
 		panic("iomap: unaligned");
 #endif
-	error = extent_alloc(extio, size, PAGE_SIZE, 0, EX_NOBOUNDARY,
-	    EX_NOWAIT | EX_MALLOCOK, (u_long *)&kva);
-
-	if (error != 0)
-		return NULL;
-
+	npf = btoc(size);
+	ix = rmalloc(extiomap, npf);
+	if (ix == 0)
+		return(0);
+	kva = extiobase + ctob(ix-1);
 	physaccess(kva, pa, size, PG_RW|PG_CI);
 	return(kva);
 }
@@ -1272,7 +1269,7 @@ iounmap(kva, size)
 	caddr_t kva;
 	int size;
 {
-	int error;
+	int ix;
 
 #ifdef DEBUG
 	if (((int)kva & PGOFSET) || (size & PGOFSET))
@@ -1280,11 +1277,7 @@ iounmap(kva, size)
 	if (kva < extiobase || kva >= extiobase + ctob(EIOMAPSIZE))
 		panic("iounmap: bad address");
 #endif
-
 	physunaccess(kva, size);
-
-	error = extent_free(extio, (u_long)kva, size, EX_NOWAIT);
-
-	if (error != 0)
-		printf("iounmap: extent_free failed\n");
+	ix = btoc(kva - extiobase) + 1;
+	rmfree(extiomap, btoc(size), ix);
 }

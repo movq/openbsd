@@ -1,4 +1,4 @@
-/*	$OpenBSD: vfs_syscalls.c,v 1.86 2002/01/21 18:50:45 millert Exp $	*/
+/*	$OpenBSD: vfs_syscalls.c,v 1.83 2001/11/27 05:27:12 art Exp $	*/
 /*	$NetBSD: vfs_syscalls.c,v 1.71 1996/04/23 10:29:02 mycroft Exp $	*/
 
 /*
@@ -105,26 +105,18 @@ sys_mount(p, v, retval)
 	u_long fstypenum = 0;
 #endif
 	char fstypename[MFSNAMELEN];
-	char fspath[MNAMELEN];
 	struct vattr va;
 	struct nameidata nd;
 	struct vfsconf *vfsp;
-	struct timeval tv;
 
 	if (usermount == 0 && (error = suser(p->p_ucred, &p->p_acflag)))
 		return (error);
 
 	/*
-	 * Mount points must fit in MNAMELEN, not MAXPATHLEN.
-	 */
-	error = copyinstr(SCARG(uap, path), fspath, MNAMELEN, NULL);
-	if (error)
-		return(error);
-
-	/*
 	 * Get vnode to be covered
 	 */
-	NDINIT(&nd, LOOKUP, FOLLOW | LOCKLEAF, UIO_SYSSPACE, fspath, p);
+	NDINIT(&nd, LOOKUP, FOLLOW | LOCKLEAF, UIO_USERSPACE,
+	    SCARG(uap, path), p);
 	if ((error = namei(&nd)) != 0)
 		return (error);
 	vp = nd.ni_vp;
@@ -268,10 +260,6 @@ update:
 	 * Mount the filesystem.
 	 */
 	error = VFS_MOUNT(mp, SCARG(uap, path), SCARG(uap, data), &nd, p);
-	if (!error) {
-		microtime(&tv);
-		mp->mnt_stat.f_ctime = tv.tv_sec;
-	}
 	if (mp->mnt_flag & MNT_UPDATE) {
 		vrele(vp);
 		if (mp->mnt_flag & MNT_WANTRDWR)
@@ -505,7 +493,6 @@ sys_sync(p, v, retval)
 		if ((mp->mnt_flag & MNT_RDONLY) == 0) {
 			asyncflag = mp->mnt_flag & MNT_ASYNC;
 			mp->mnt_flag &= ~MNT_ASYNC;
-			uvm_vnp_sync(mp);
 			VFS_SYNC(mp, MNT_NOWAIT, p->p_ucred, p);
 			if (asyncflag)
 				mp->mnt_flag |= MNT_ASYNC;
@@ -1076,6 +1063,13 @@ sys_fhopen(p, v, retval)
 	}
 	if ((error = VOP_OPEN(vp, flags, cred, p)) != 0)
 		goto bad;
+
+	if (vp->v_type == VREG &&
+	    uvn_attach(vp, flags & FWRITE ? VM_PROT_WRITE : 0) == NULL) {
+		error = EIO;
+		goto bad;
+	}
+
 	if (flags & FWRITE)
 		vp->v_writecount++;
 
@@ -1486,8 +1480,6 @@ sys_unlink(p, v, retval)
 		error = EBUSY;
 		goto out;
 	}
-
-	(void)uvm_vnp_uncache(vp);
 
 	VOP_LEASE(nd.ni_dvp, p, p->p_ucred, LEASE_WRITE);
 	VOP_LEASE(vp, p, p->p_ucred, LEASE_WRITE);
@@ -2350,7 +2342,6 @@ out:
 		if (fromnd.ni_dvp != tdvp)
 			VOP_LEASE(fromnd.ni_dvp, p, p->p_ucred, LEASE_WRITE);
 		if (tvp) {
-			(void)uvm_vnp_uncache(tvp);
 			VOP_LEASE(tvp, p, p->p_ucred, LEASE_WRITE);
 		}
 		error = VOP_RENAME(fromnd.ni_dvp, fromnd.ni_vp, &fromnd.ni_cnd,

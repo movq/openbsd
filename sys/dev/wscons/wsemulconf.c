@@ -1,4 +1,4 @@
-/* $OpenBSD: wsemulconf.c,v 1.5 2002/01/03 21:58:59 jason Exp $ */
+/* $OpenBSD: wsemulconf.c,v 1.4 2001/12/01 18:41:33 deraadt Exp $ */
 /* $NetBSD: wsemulconf.c,v 1.4 2000/01/05 11:19:37 drochner Exp $ */
 
 /*
@@ -31,8 +31,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "wsdisplay.h"
-
 #include <sys/cdefs.h>
 
 #include <sys/param.h>
@@ -45,7 +43,7 @@
 #include <dev/wscons/wscons_callbacks.h>
 
 static const struct wsemul_ops *wsemul_conf[] = {
-#if defined(WSEMUL_SUN) || (NWSEMUL_SUN > 0)
+#ifdef WSEMUL_SUN
 	&wsemul_sun_ops,
 #endif
 #ifndef WSEMUL_NO_VT100

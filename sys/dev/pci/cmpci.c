@@ -1,4 +1,4 @@
-/*	$OpenBSD: cmpci.c,v 1.6 2002/01/20 19:56:53 ericj Exp $	*/
+/*	$OpenBSD: cmpci.c,v 1.5 2001/10/31 11:00:24 art Exp $	*/
 
 /*
  * Copyright (c) 2000 Takuya SHIOZAKI
@@ -137,9 +137,9 @@ int cmpci_getdev __P((void *, struct audio_device *));
 int cmpci_set_port __P((void *, mixer_ctrl_t *));
 int cmpci_get_port __P((void *, mixer_ctrl_t *));
 int cmpci_query_devinfo __P((void *, mixer_devinfo_t *));
-void *cmpci_malloc __P((void *, int, size_t, int, int));
+void *cmpci_malloc __P((void *, u_long, int, int));
 void cmpci_free __P((void *, void *, int));
-size_t cmpci_round_buffersize __P((void *, int, size_t));
+u_long cmpci_round_buffersize __P((void *, u_long));
 paddr_t cmpci_mappage __P((void *, void *, off_t, int));
 int cmpci_get_props __P((void *));
 int cmpci_trigger_output __P((void *, void *, void *, int,
@@ -1115,10 +1115,9 @@ cmpci_print_dmamem(p)
 #endif /* DEBUG */
 
 void *
-cmpci_malloc(handle, direction, size, type, flags)
+cmpci_malloc(handle, size, type, flags)
 	void  *handle;
-	int direction;
-	size_t size;
+	u_long size;
 	int    type, flags;
 {
 	struct cmpci_softc *sc = handle;
@@ -1454,11 +1453,10 @@ cmpci_get_port(handle, cp)
 }
 
 /* ARGSUSED */
-size_t
-cmpci_round_buffersize(handle, direction, bufsize)
+u_long
+cmpci_round_buffersize(handle, bufsize)
 	void *handle;
-	int direction;
-	size_t bufsize;
+	u_long bufsize;
 {
 	if (bufsize > 0x10000)
 	    bufsize = 0x10000;

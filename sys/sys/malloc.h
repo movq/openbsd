@@ -1,4 +1,4 @@
-/*	$OpenBSD: malloc.h,v 1.53 2002/01/28 11:54:30 art Exp $	*/
+/*	$OpenBSD: malloc.h,v 1.49 2001/11/28 19:28:14 art Exp $	*/
 /*	$NetBSD: malloc.h,v 1.39 1998/07/12 19:52:01 augustss Exp $	*/
 
 /*
@@ -65,22 +65,25 @@
 #define	M_FREE		0	/* should be on free list */
 #define	M_MBUF		1	/* mbuf */
 #define	M_DEVBUF	2	/* device driver memory */
-/* 3 - free */
+#define	M_SOCKET	3	/* socket structure */
 #define	M_PCB		4	/* protocol control block */
 #define	M_RTABLE	5	/* routing tables */
 /* 6 - free */
 #define	M_FTABLE	7	/* fragment reassembly header */
-/* 8 - free */
+#define	M_ZOMBIE	8	/* zombie proc status */
 #define	M_IFADDR	9	/* interface address */
 #define	M_SOOPTS	10	/* socket options */
 #define	M_SYSCTL	11	/* sysctl buffers (persistent storage) */
 #define	M_NAMEI		12	/* namei path name buffer */
-/* 13 - free */
+#define	M_GPROF		13	/* kernel profiling buffer */
 #define	M_IOCTLOPS	14	/* ioctl data buffer */
-/* 15-18 - free */
+
+#define	M_CRED		16	/* credentials */
+#define	M_PGRP		17	/* process group header */
+#define	M_SESSION	18	/* session header */
 #define	M_IOV		19	/* large iov's */
 #define	M_MOUNT		20	/* vfs mount struct */
-/* 21 - free */
+
 #define	M_NFSREQ	22	/* NFS request header */
 #define	M_NFSMNT	23	/* NFS mount structure */
 #define	M_NFSNODE	24	/* NFS vnode private part */
@@ -90,7 +93,8 @@
 #define	M_UFSMNT	28	/* UFS mount structure */
 #define	M_SHM		29	/* SVID compatible shared memory segments */
 #define	M_VMMAP		30	/* VM map structures */
-/* 31-33 - free */
+#define	M_VMPAGE	31	/* VM page structures */
+/* 32-33 - free */
 #define	M_VMPMAP	34	/* VM pmap */
 #define	M_VMPVENT	35	/* VM phys-virt mapping entry */
 /* 36-37 - free */
@@ -101,9 +105,10 @@
 #define	M_SUBPROC	42	/* Proc sub-structures */
 #define	M_SEGMENT	43	/* Segment for LFS */
 #define	M_LFSNODE	44	/* LFS vnode private part */
-/* 45 - free */
+#define	M_FFSNODE	45	/* FFS vnode private part */
 #define	M_MFSNODE	46	/* MFS vnode private part */
-/* 47-48 - free */
+#define	M_NQLEASE	47	/* Nqnfs lease */
+#define	M_NQMHOST	48	/* Nqnfs host address table */
 #define	M_NETADDR	49	/* Export host address structure */
 #define	M_NFSSVC	50	/* Nfs server structure */
 #define	M_NFSUID	51	/* Nfs uid mapping structure */
@@ -120,41 +125,51 @@
 #define	M_TTYS		62	/* allocated tty structures */
 #define	M_EXEC		63	/* argument lists & other mem used by exec */
 #define	M_MISCFSMNT	64	/* miscfs mount structures */
-/* 65 - free */
+
 #define	M_ADOSFSMNT	66	/* adosfs mount structures */
-/* 67 - free */
+
 #define	M_ANODE		68	/* adosfs anode structures and tables. */
-/* 69-70 - free */
+#define	M_IPQ		69	/* IP packet queue entry */
+#define	M_AFS		70	/* Andrew File System */
 #define	M_ADOSFSBITMAP	71	/* adosfs bitmap */
 #define	M_EXT2FSNODE	72	/* EXT2FS vnode private part */
-/* 73 - free */
+#define	M_PFIL		73	/* packer filter */
 #define	M_PFKEY		74	/* pfkey data */
 #define	M_TDB		75	/* Transforms database */
 #define	M_XDATA		76	/* IPsec data */
-/* 77 - free */
+#define M_VFS           77      /* VFS file systems */
 #define	M_PAGEDEP	78	/* File page dependencies */
 #define	M_INODEDEP	79	/* Inode dependencies */
 #define	M_NEWBLK	80	/* New block allocation */
-/* 81-82 - free */
+#define	M_BMSAFEMAP	81	/* Block or frag alloc'ed from cyl group map */
+#define	M_ALLOCDIRECT	82	/* Block or frag dependency for an inode */
 #define	M_INDIRDEP	83	/* Indirect block dependencies */
-/* 84-91 - free */
+#define	M_ALLOCINDIR	84	/* Block dependency for an indirect block */
+#define	M_FREEFRAG	85	/* Previously used frag for an inode */
+#define	M_FREEBLKS	86	/* Blocks freed from an inode */
+#define	M_FREEFILE	87	/* Inode deallocated */
+#define	M_DIRADD	88	/* New directory entry */
+#define	M_MKDIR		89	/* New directory */
+#define	M_DIRREM	90	/* Directory entry deleted */
+#define M_VMPBUCKET	91	/* VM page buckets */
 #define M_VMSWAP	92	/* VM swap structures */
-/* 93-96 - free */
+
 #define	M_RAIDFRAME	97	/* Raidframe data */
 #define M_UVMAMAP	98	/* UVM amap and related */
 #define M_UVMAOBJ	99	/* UVM aobj and related */
-/* 100 - free */
+#define M_POOL		100	/* Pool memory */
 #define	M_USB		101	/* USB general */
 #define	M_USBDEV	102	/* USB device driver */
 #define	M_USBHC		103	/* USB host controller */
-/* 104 - free */
+#define M_PIPE		104	/* Pipe structures */
 #define M_MEMDESC	105	/* Memory range */
-/* 106-107 - free */
+/* 106 - free */
+#define M_KNOTE		107	/* kernel event queue */  
 #define M_CRYPTO_DATA   108	/* Crypto framework data buffers (keys etc.) */
-/* 109 - free */
+#define M_IPSEC_POLICY  109	/* IPsec SPD structures */
 #define M_CREDENTIALS   110	/* IPsec-related credentials and ID info */
 #define M_PACKET_TAGS   111	/* Packet-attached information */
-/* 112-122 - free */
+#define M_CRYPTO_OPS    112	/* Crypto framework operation structures */
 
 /* KAME IPv6 */
 #define	M_IP6OPT	123	/* IPv6 options */
@@ -169,25 +184,25 @@
 	"free",		/* 0 M_FREE */ \
 	"mbuf",		/* 1 M_MBUF */ \
 	"devbuf",	/* 2 M_DEVBUF */ \
-	NULL, \
+	"socket",	/* 3 M_SOCKET */ \
 	"pcb",		/* 4 M_PCB */ \
 	"routetbl",	/* 5 M_RTABLE */ \
 	NULL,		/* 6 */ \
 	"fragtbl",	/* 7 M_FTABLE */ \
-	NULL, \
+	"zombie",	/* 8 M_ZOMBIE */ \
 	"ifaddr",	/* 9 M_IFADDR */ \
 	"soopts",	/* 10 M_SOOPTS */ \
 	"sysctl",	/* 11 M_SYSCTL */ \
 	"namei",	/* 12 M_NAMEI */ \
-	NULL, \
+	"gprof",	/* 13 M_GPROF */ \
 	"ioctlops",	/* 14 M_IOCTLOPS */ \
 	NULL, \
-	NULL, \
-	NULL, \
-	NULL, \
+	"cred",		/* 16 M_CRED */ \
+	"pgrp",		/* 17 M_PGRP */ \
+	"session",	/* 18 M_SESSION */ \
 	"iov",		/* 19 M_IOV */ \
 	"mount",	/* 20 M_MOUNT */ \
-	NULL, \
+	"fhandle",	/* 21 M_FHANDLE */ \
 	"NFS req",	/* 22 M_NFSREQ */ \
 	"NFS mount",	/* 23 M_NFSMNT */ \
 	"NFS node",	/* 24 M_NFSNODE */ \
@@ -197,9 +212,9 @@
 	"UFS mount",	/* 28 M_UFSMNT */ \
 	"shm",		/* 29 M_SHM */ \
 	"VM map",	/* 30 M_VMMAP */ \
-	NULL, \
-	NULL, \
-	NULL, \
+	"VM page",	/* 31 M_VMPAGE */ \
+	NULL,	/* 32 */ \
+	NULL,	/* 33 */ \
 	"VM pmap",	/* 34 M_VMPMAP */ \
 	"VM pvmap",	/* 35 M_VMPVENT */ \
 	NULL,	/* 36 */ \
@@ -211,10 +226,10 @@
 	"subproc",	/* 42 M_SUBPROC */ \
 	"LFS segment",	/* 43 M_SEGMENT */ \
 	"LFS node",	/* 44 M_LFSNODE */ \
-	NULL, \
+	"FFS node",	/* 45 M_FFSNODE */ \
 	"MFS node",	/* 46 M_MFSNODE */ \
-	NULL, \
-	NULL, \
+	"NQNFS Lease",	/* 47 M_NQLEASE */ \
+	"NQNFS Host",	/* 48 M_NQMHOST */ \
 	"Export Host",	/* 49 M_NETADDR */ \
 	"NFS srvsock",	/* 50 M_NFSSVC */ \
 	"NFS uid",	/* 51 M_NFSUID */ \
@@ -235,41 +250,48 @@
 	"adosfs mount",	/* 66 M_ADOSFSMNT */ \
 	NULL, \
 	"adosfs anode",	/* 68 M_ANODE */ \
-	NULL, \
-	NULL, \
+	"IP queue ent", /* 69 M_IPQ */ \
+	"afs",		/* 70 M_AFS */ \
 	"adosfs bitmap", /* 71 M_ADOSFSBITMAP */ \
 	"EXT2FS node",	/* 72 M_EXT2FSNODE */ \
-	NULL, \
+	"pfil",		/* 73 M_PFIL */ \
 	"pfkey data",   /* 74 M_PFKEY */ \
 	"tdb",		/* 75 M_TDB */ \
 	"xform_data",	/* 76 M_XDATA */ \
-	NULL, \
-	"pagedep",	/* 78 M_PAGEDEP */ \
-	"inodedep",	/* 79 M_INODEDEP */ \
-	"newblk",	/* 80 M_NEWBLK */ \
-	NULL, \
-	NULL, \
-	"indirdep",	/* 83 M_INDIRDEP */ \
-	NULL, NULL, NULL, NULL, \
-	NULL, NULL, NULL, NULL, \
+	"vfs",          /* 77 M_VFS */ \
+ 	"pagedep",	/* 78 M_PAGEDEP */ \
+ 	"inodedep",	/* 79 M_INODEDEP */ \
+ 	"newblk",	/* 80 M_NEWBLK */ \
+ 	"bmsafemap",	/* 81 M_BMSAFEMAP */ \
+ 	"allocdirect",	/* 82 M_ALLOCDIRECT */ \
+ 	"indirdep",	/* 83 M_INDIRDEP */ \
+ 	"allocindir",	/* 84 M_ALLOCINDIR */ \
+ 	"freefrag",	/* 85 M_FREEFRAG */ \
+ 	"freeblks",	/* 86 M_FREEBLKS */ \
+ 	"freefile",	/* 87 M_FREEFILE */ \
+ 	"diradd",	/* 88 M_DIRADD */ \
+ 	"mkdir",	/* 89 M_MKDIR */ \
+ 	"dirrem",	/* 90 M_DIRREM */ \
+ 	"VM page bucket", /* 91 M_VMPBUCKET */ \
 	"VM swap",	/* 92 M_VMSWAP */ \
 	NULL, NULL, NULL, NULL, \
 	"RaidFrame data", /* 97 M_RAIDFRAME */ \
 	"UVM amap",	/* 98 M_UVMAMAP */ \
 	"UVM aobj",	/* 99 M_UVMAOBJ */ \
-	NULL, \
+	"pool",		/* 100 M_POOL */ \
 	"USB",		/* 101 M_USB */ \
 	"USB device",	/* 102 M_USBDEV */ \
 	"USB HC",	/* 103 M_USBHC */ \
-	NULL, \
+	"pipe", 	/* 104 M_PIPE */ \
 	"memdesc",	/* 105 M_MEMDESC */ \
 	NULL,	/* 106 */ \
-	NULL, \
+	"knote",	/* 107 M_KNOTE */ \
 	"crypto data",	/* 108 M_CRYPTO_DATA */ \
-	NULL, \
+	"SPD info",	/* 109 M_IPSEC_POLICY */ \
 	"IPsec creds",	/* 110 M_CREDENTIALS */ \
 	"packet tags",	/* 111 M_PACKET_TAGS */ \
-	NULL, NULL, NULL, NULL, NULL, \
+	"crypto ops",	/* 112 M_CRYPTO_OPS */ \
+	NULL, NULL, NULL, NULL, \
 	NULL, NULL, NULL, NULL, NULL, \
 	NULL, \
 	"ip6_options",	/* 123 M_IP6OPT */ \

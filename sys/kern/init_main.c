@@ -1,4 +1,4 @@
-/*	$OpenBSD: init_main.c,v 1.92 2002/01/30 20:29:44 nordin Exp $	*/
+/*	$OpenBSD: init_main.c,v 1.88 2001/12/04 23:22:42 art Exp $	*/
 /*	$NetBSD: init_main.c,v 1.84.4.1 1996/06/02 09:08:06 mrg Exp $	*/
 
 /*
@@ -50,6 +50,7 @@
 #include <sys/kernel.h>
 #include <sys/kthread.h>
 #include <sys/mount.h>
+#include <sys/map.h>
 #include <sys/proc.h>
 #include <sys/resourcevar.h>
 #include <sys/signalvar.h>
@@ -101,7 +102,7 @@ extern void nfs_init __P((void));
 char	copyright[] =
 "Copyright (c) 1982, 1986, 1989, 1991, 1993\n"
 "\tThe Regents of the University of California.  All rights reserved.\n"
-"Copyright (c) 1995-2002 OpenBSD. All rights reserved.  http://www.OpenBSD.org\n";
+"Copyright (c) 1995-2001 OpenBSD. All rights reserved.  http://www.OpenBSD.org\n";
 
 /* Components of the first process -- never freed. */
 struct	session session0;
@@ -220,6 +221,8 @@ main(framep)
 
 	cpu_configure();
 
+	ubc_init();		/* Initialize the unified buffer cache */
+
 	/* Initialize sysctls (must be done before any processes run) */
 	sysctl_init();
 
@@ -243,7 +246,6 @@ main(framep)
 	 */
 	LIST_INSERT_HEAD(&allproc, p, p_list);
 	p->p_pgrp = &pgrp0;
-	LIST_INSERT_HEAD(PIDHASH(0), p, p_hash);
 	LIST_INSERT_HEAD(PGRPHASH(0), &pgrp0, pg_hash);
 	LIST_INIT(&pgrp0.pg_members);
 	LIST_INSERT_HEAD(&pgrp0.pg_members, p, p_pglist);
@@ -295,7 +297,7 @@ main(framep)
 
 	/* Allocate a prototype map so we have something to fork. */
 	uvmspace_init(&vmspace0, pmap_kernel(), round_page(VM_MIN_ADDRESS),
-	    trunc_page(VM_MAX_ADDRESS), TRUE);
+	    trunc_page(VM_MAX_ADDRESS));
 	p->p_vmspace = &vmspace0;
 
 	p->p_addr = proc0paddr;				/* XXX */

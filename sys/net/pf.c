@@ -1,4 +1,4 @@
-/*	$OpenBSD: pf.c,v 1.185 2002/01/23 00:39:48 art Exp $ */
+/*	$OpenBSD: pf.c,v 1.180 2001/12/18 00:14:20 jasoni Exp $ */
 
 /*
  * Copyright (c) 2001 Daniel Hartmeier
@@ -259,8 +259,8 @@ int			 pf_add_sport(struct pf_port_list *, u_int16_t);
 int			 pf_chk_sport(struct pf_port_list *, u_int16_t);
 int			 pf_normalize_tcp(int, struct ifnet *, struct mbuf *,
 			     int, int, void *, struct pf_pdesc *);
-void			 pf_route(struct mbuf **, struct pf_rule *, int);
-void			 pf_route6(struct mbuf **, struct pf_rule *, int);
+void			 pf_route(struct mbuf *, struct pf_rule *);
+void			 pf_route6(struct mbuf *, struct pf_rule *);
 
 
 #if NPFLOG > 0
@@ -415,8 +415,7 @@ pf_compare_nats(struct pf_nat *a, struct pf_nat *b)
 	    a->af != b->af ||
 	    a->snot != b->snot ||
 	    a->dnot != b->dnot ||
-	    a->ifnot != b->ifnot ||
-	    a->no != b->no)
+	    a->ifnot != b->ifnot)
 		return (1);
 	if (PF_ANEQ(&a->saddr, &b->saddr, a->af))
 		return (1);
@@ -436,11 +435,6 @@ pf_compare_nats(struct pf_nat *a, struct pf_nat *b)
 int
 pf_compare_binats(struct pf_binat *a, struct pf_binat *b)
 {
-	if (a->proto != b->proto ||
-	    a->dnot != b->dnot ||
-	    a->af != b->af ||
-	    a->no != b->no)
-		return (1);
 	if (PF_ANEQ(&a->saddr, &b->saddr, a->af))
 		return (1);
 	if (PF_ANEQ(&a->daddr, &b->daddr, a->af))
@@ -448,6 +442,10 @@ pf_compare_binats(struct pf_binat *a, struct pf_binat *b)
 	if (PF_ANEQ(&a->dmask, &b->dmask, a->af))
 		return (1);
 	if (PF_ANEQ(&a->raddr, &b->raddr, a->af))
+		return (1);
+	if (a->proto != b->proto ||
+	    a->dnot != b->dnot ||
+	    a->af != b->af)
 		return (1);
 	if (strcmp(a->ifname, b->ifname))
 		return (1);
@@ -465,8 +463,7 @@ pf_compare_rdrs(struct pf_rdr *a, struct pf_rdr *b)
 	    a->snot != b->snot ||
 	    a->dnot != b->dnot ||
 	    a->ifnot != b->ifnot ||
-	    a->opts != b->opts ||
-	    a->no != b->no)
+	    a->opts != b->opts)
 		return (1);
 	if (PF_ANEQ(&a->saddr, &b->saddr, a->af))
 		return (1);
@@ -959,20 +956,21 @@ pf_print_flags(u_int8_t f)
 void
 pfattach(int num)
 {
+	/* XXX - no M_* tags, but they are not used anyway */
 	pool_init(&pf_tree_pl, sizeof(struct pf_tree_node), 0, 0, 0, "pftrpl",
-	    NULL);
+	    0, NULL, NULL, 0);
 	pool_init(&pf_rule_pl, sizeof(struct pf_rule), 0, 0, 0, "pfrulepl",
-	    NULL);
+	    0, NULL, NULL, 0);
 	pool_init(&pf_nat_pl, sizeof(struct pf_nat), 0, 0, 0, "pfnatpl",
-	    NULL);
+	    0, NULL, NULL, 0);
 	pool_init(&pf_binat_pl, sizeof(struct pf_binat), 0, 0, 0, "pfbinatpl",
-	    NULL);
+	    0, NULL, NULL, 0);
 	pool_init(&pf_rdr_pl, sizeof(struct pf_rdr), 0, 0, 0, "pfrdrpl",
-	    NULL);
+	    0, NULL, NULL, 0);
 	pool_init(&pf_state_pl, sizeof(struct pf_state), 0, 0, 0, "pfstatepl",
-	    NULL);
+	    0, NULL, NULL, 0);
 	pool_init(&pf_sport_pl, sizeof(struct pf_port_node), 0, 0, 0, "pfsport",
-	    NULL);
+	    0, NULL, NULL, 0);
 
 	TAILQ_INIT(&pf_rules[0]);
 	TAILQ_INIT(&pf_rules[1]);
@@ -1019,6 +1017,9 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 	int error = 0;
 	int s;
 
+	if (!(flags & FWRITE))
+		return (EACCES);
+
 	/* XXX keep in sync with switch() below */
 	if (securelevel > 1)
 		switch (cmd) {
@@ -1038,29 +1039,9 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 		case DIOCSETDEBUG:
 		case DIOCGETSTATES:
 		case DIOCGETTIMEOUT:
-		case DIOCCLRRULECTRS:
 			break;
 		default:
 			return EPERM;
-		}
-
-	if (!(flags & FWRITE))
-		switch (cmd) {
-		case DIOCGETRULES:
-		case DIOCGETRULE:
-		case DIOCGETNATS:
-		case DIOCGETNAT:
-		case DIOCGETRDRS:
-		case DIOCGETRDR:
-		case DIOCGETSTATE:
-		case DIOCGETSTATUS:
-		case DIOCGETSTATES:
-		case DIOCGETTIMEOUT:
-		case DIOCGETBINATS:
-		case DIOCGETBINAT:
-			break;
-		default:
-			return (EACCES);
 		}
 
 	switch (cmd) {
@@ -2149,17 +2130,6 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 		break;
 	}
 
-	case DIOCCLRRULECTRS: {
-		struct pf_rule *rule;
-
-		s = splsoftnet();
-		TAILQ_FOREACH(rule, pf_rules_active, entries)
-			rule->evaluations = rule->packets =
-			    rule->bytes = 0;
-		splx(s);
-		break;
-	}
-
 	default:
 		error = ENODEV;
 		break;
@@ -2729,8 +2699,6 @@ pf_get_nat(struct ifnet *ifp, u_int8_t proto, struct pf_addr *saddr,
 		else
 			n = TAILQ_NEXT(n, entries);
 	}
-	if (nm && nm->no)
-		return (NULL);
 	return (nm);
 }
 
@@ -2760,8 +2728,6 @@ pf_get_binat(int direction, struct ifnet *ifp, u_int8_t proto,
 		else
 			b = TAILQ_NEXT(b, entries);
 	}
-	if (bm && bm->no)
-		return (NULL);
 	return (bm);
 }
 
@@ -2786,8 +2752,6 @@ pf_get_rdr(struct ifnet *ifp, u_int8_t proto, struct pf_addr *saddr,
 		else
 			r = TAILQ_NEXT(r, entries);
 	}
-	if (rm && rm->no)
-		return (NULL);
 	return (rm);
 }
 
@@ -4600,7 +4564,7 @@ pf_pull_hdr(struct mbuf *m, int off, void *p, int len,
 
 #ifdef INET
 void
-pf_route(struct mbuf **m, struct pf_rule *r, int dir)
+pf_route(struct mbuf *m, struct pf_rule *r)
 {
 	struct mbuf *m0, *m1;
 	struct route iproute;
@@ -4611,15 +4575,15 @@ pf_route(struct mbuf **m, struct pf_rule *r, int dir)
 	int hlen;
 	int len, off, error = 0;
 
+	if (m == NULL)
+		return;
+
 	if (r->rt == PF_DUPTO) {
-		m0 = m_copym2(*m, 0, M_COPYALL, M_NOWAIT);
+		m0 = m_copym2(m, 0, M_COPYALL, M_NOWAIT);
 		if (m0 == NULL)
 			return;
-	} else {
-		if (r->direction != dir)
-			return;
-		m0 = *m;
-	}
+	} else
+		m0 = m;
 
 	ip = mtod(m0, struct ip *);
 	hlen = ip->ip_hl << 2;
@@ -4784,8 +4748,6 @@ sendorfree:
 	}
 
 done:
-	if (r->rt != PF_DUPTO)
-		*m = NULL;
 	if (ro == &iproute && ro->ro_rt)
 		RTFREE(ro->ro_rt);
 	return;
@@ -4798,7 +4760,7 @@ bad:
 
 #ifdef INET6
 void
-pf_route6(struct mbuf **m, struct pf_rule *r, int dir)
+pf_route6(struct mbuf *m, struct pf_rule *r)
 {
 	struct mbuf *m0;
 	struct m_tag *mtag;
@@ -4813,14 +4775,11 @@ pf_route6(struct mbuf **m, struct pf_rule *r, int dir)
 		return;
 
 	if (r->rt == PF_DUPTO) {
-		m0 = m_copym2(*m, 0, M_COPYALL, M_NOWAIT);
+		m0 = m_copym2(m, 0, M_COPYALL, M_NOWAIT);
 		if (m0 == NULL)
 			return;
-	} else {
-		if (r->direction != dir)
-			return;
-		m0 = *m;
-	}
+	} else
+		m0 = m;
 
 	ip6 = mtod(m0, struct ip6_hdr *);
 
@@ -4859,8 +4818,6 @@ pf_route6(struct mbuf **m, struct pf_rule *r, int dir)
 		m_freem(m0);
 
 done:
-	if (r->rt != PF_DUPTO)
-		*m = NULL;
 	return;
 
 bad:
@@ -5028,9 +4985,14 @@ done:
 			PFLOG_PACKET(ifp, h, m, AF_INET, dir, reason, r);
 	}
 
-	/* pf_route can free the mbuf causing *m0 to become NULL */
-	if (r && r->rt)
-		pf_route(m0, r, dir);
+	/* pf_route can free the mbuf causing *m to become NULL */
+	if (r && r->rt) {
+		pf_route(m, r);
+		if (r->rt != PF_DUPTO) {
+			/* m0 already freed */
+			*m0 = NULL;
+		}
+	}
 
 	return (action);
 }
@@ -5205,9 +5167,14 @@ done:
 			PFLOG_PACKET(ifp, h, m, AF_INET6, dir, reason, r);
 	}
 
-	/* pf_route6 can free the mbuf causing *m0 to become NULL */
-	if (r && r->rt)
-		pf_route6(m0, r, dir);
+	/* pf_route6 can free the mbuf causing *m to become NULL */
+	if (r && r->rt) {
+		pf_route6(m, r);
+		if (r->rt != PF_DUPTO) {
+			/* m0 already freed */
+			*m0 = NULL;
+		}
+	}
 
 	return (action);
 }

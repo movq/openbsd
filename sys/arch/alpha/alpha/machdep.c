@@ -1,4 +1,4 @@
-/* $OpenBSD: machdep.c,v 1.65 2002/01/23 17:51:52 art Exp $ */
+/* $OpenBSD: machdep.c,v 1.61 2001/12/08 02:24:05 art Exp $ */
 /* $NetBSD: machdep.c,v 1.210 2000/06/01 17:12:38 thorpej Exp $ */
 
 /*-
@@ -69,6 +69,7 @@
 #include <sys/systm.h>
 #include <sys/signalvar.h>
 #include <sys/kernel.h>
+#include <sys/map.h>
 #include <sys/proc.h>
 #include <sys/sched.h>
 #include <sys/buf.h>
@@ -149,6 +150,7 @@ int	bufpages = 0;
 #endif
 
 struct vm_map *exec_map = NULL;
+struct vm_map *mb_map = NULL;
 struct vm_map *phys_map = NULL;
 
 int	maxmem;			/* max memory per process */
@@ -954,6 +956,9 @@ cpu_startup()
 	 */
 	phys_map = uvm_km_suballoc(kernel_map, &minaddr, &maxaddr,
 				   VM_PHYS_SIZE, 0, FALSE, NULL);
+
+	mb_map = uvm_km_suballoc(kernel_map, &minaddr, &maxaddr,
+			VM_MBUF_SIZE, VM_MAP_INTRSAFE, FALSE, NULL);
 
 #if defined(DEBUG)
 	pmapdebug = opmapdebug;
@@ -1977,14 +1982,18 @@ cpu_exec_ecoff_hook(p, epp)
 	struct exec_package *epp;
 {
 	struct ecoff_exechdr *execp = (struct ecoff_exechdr *)epp->ep_hdr;
+#ifdef COMPAT_OSF1
+	extern struct emul emul_osf1;
+#endif
 	extern struct emul emul_native;
 	int error;
-	extern int osf1_exec_ecoff_hook(struct proc *, struct exec_package *);
+	extern int osf1_exec_ecoff_hook(struct proc *p,
+					struct exec_package *epp);
 
 	switch (execp->f.f_magic) {
 #ifdef COMPAT_OSF1
 	case ECOFF_MAGIC_ALPHA:
-		error = osf1_exec_ecoff_hook(p, epp);
+		epp->ep_emul = &emul_osf1;
 		break;
 #endif
 

@@ -1,4 +1,4 @@
-/*	$OpenBSD: machdep.c,v 1.65 2002/01/23 17:51:52 art Exp $	*/
+/*	$OpenBSD: machdep.c,v 1.63 2001/12/08 02:24:06 art Exp $	*/
 /*	$NetBSD: machdep.c,v 1.95 1997/08/27 18:31:17 is Exp $	*/
 
 /*
@@ -130,6 +130,7 @@ void fdintr __P((int));
 u_int16_t amiga_ttyspl = PSL_S|PSL_IPL4;
 
 struct vm_map *exec_map = NULL;
+struct vm_map *mb_map = NULL;
 struct vm_map *phys_map = NULL;
 
 /*
@@ -472,6 +473,9 @@ again:
 	 */
 	phys_map = uvm_km_suballoc(kernel_map, &minaddr, &maxaddr,
 				   VM_PHYS_SIZE, 0, FALSE, NULL);
+
+	mb_map = uvm_km_suballoc(kernel_map, &minaddr, &maxaddr,
+				 VM_MBUF_SIZE, VM_MAP_INTRSAFE, FALSE, NULL);
 
 #ifdef DEBUG
 	pmapdebug = opmapdebug;

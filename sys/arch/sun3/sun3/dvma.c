@@ -1,4 +1,4 @@
-/*	$OpenBSD: dvma.c,v 1.15 2002/01/17 01:10:11 miod Exp $	*/
+/*	$OpenBSD: dvma.c,v 1.14 2001/11/06 19:53:16 miod Exp $	*/
 /*	$NetBSD: dvma.c,v 1.5 1996/11/20 18:57:29 gwr Exp $	*/
 
 /*-
@@ -42,7 +42,7 @@
 #include <sys/device.h>
 #include <sys/proc.h>
 #include <sys/malloc.h>
-#include <sys/extent.h>
+#include <sys/map.h>
 #include <sys/buf.h>
 #include <sys/vnode.h>
 #include <sys/user.h>
@@ -63,7 +63,7 @@
 
 /* Resource map used by dvma_mapin/dvma_mapout */
 #define	NUM_DVMA_SEGS 10
-struct	extent *dvma_segmap;
+struct map dvma_segmap[NUM_DVMA_SEGS];
 
 /* XXX: Might need to tune this... */
 vm_size_t dvma_segmap_size = 6 * NBSG;
@@ -99,9 +99,8 @@ dvma_init()
 	 * Create the VM pool used for mapping whole segments
 	 * into DVMA space for the purpose of data transfer.
 	 */
-	dvma_segmap = extent_create("dvma_segmap",
-	    (u_long)segmap_addr, (u_long)segmap_addr + NUM_DVMA_SEGS * NBSG,
-	    M_DEVBUF, NULL, 0, EX_NOWAIT);
+	rminit(dvma_segmap, dvma_segmap_size, segmap_addr,
+		   "dvma_segmap", NUM_DVMA_SEGS);
 }
 
 /*
@@ -182,7 +181,7 @@ dvma_mapin(kva, len)
 	vm_offset_t seg_kva, seg_dma, seg_len, seg_off;
 	register vm_offset_t v, x;
 	register int sme;
-	int s, error;
+	int s;
 
 	/* Get seg-aligned address and length. */
 	seg_kva = (vm_offset_t)kva;
@@ -197,17 +196,14 @@ dvma_mapin(kva, len)
 	s = splimp();
 
 	/* Allocate the DVMA segment(s) */
-	error = extent_alloc(dvma_segmap, seg_len, NBSG,
-	    0, EX_NOBOUNDARY, EX_NOWAIT, (u_long *)&seg_dma);
-	if (error != 0)
-		seg_dma = NULL;
+	seg_dma = rmalloc(dvma_segmap, seg_len);
 
 #ifdef	DIAGNOSTIC
 	if (seg_dma & SEGOFSET)
 		panic("dvma_mapin: seg not aligned");
 #endif
 
-	if (seg_dma != NULL) {
+	if (seg_dma != 0) {
 		/* Duplicate the mappings into DMA space. */
 		v = seg_kva;
 		x = seg_dma;
@@ -247,7 +243,7 @@ dvma_mapout(dma, len)
 	vm_offset_t seg_dma, seg_len, seg_off;
 	register vm_offset_t v, x;
 	register int sme;
-	int s, error;
+	int s;
 
 	/* Get seg-aligned address and length. */
 	seg_dma = (vm_offset_t)dma;
@@ -279,10 +275,6 @@ dvma_mapout(dma, len)
 		v += NBSG;
 	}
 
-	error = extent_free(dvma_segmap, (u_long)seg_dma, seg_len, EX_NOWAIT);
-
-	if (error != 0)
-		printf("dvma_mapout: extent_free failed\n");
-
+	rmfree(dvma_segmap, seg_len, seg_dma);
 	splx(s);
 }

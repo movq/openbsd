@@ -1,5 +1,5 @@
-/*	$OpenBSD: uvm_amap.c,v 1.21 2002/01/23 00:39:48 art Exp $	*/
-/*	$NetBSD: uvm_amap.c,v 1.27 2000/11/25 06:27:59 chs Exp $	*/
+/*	$OpenBSD: uvm_amap.c,v 1.17 2001/12/04 23:22:42 art Exp $	*/
+/*	$NetBSD: uvm_amap.c,v 1.33 2001/07/22 13:34:12 wiz Exp $	*/
 
 /*
  *
@@ -101,7 +101,7 @@ static struct vm_amap *amap_alloc1 __P((int, int, int));
  * chunk.    note that the "plus one" part is needed because a reference
  * count of zero is neither positive or negative (need a way to tell
  * if we've got one zero or a bunch of them).
- * 
+ *
  * here are some in-line functions to help us.
  */
 
@@ -157,7 +157,8 @@ amap_init()
 	 * Initialize the vm_amap pool.
 	 */
 	pool_init(&uvm_amap_pool, sizeof(struct vm_amap), 0, 0, 0,
-	    "amappl", &pool_allocator_nointr);
+	    "amappl", 0, pool_page_alloc_nointr, pool_page_free_nointr,
+	    M_UVMAMAP);
 }
 
 /*
@@ -254,6 +255,7 @@ amap_free(amap)
 	UVMHIST_FUNC("amap_free"); UVMHIST_CALLED(maphist);
 
 	KASSERT(amap->am_ref == 0 && amap->am_nused == 0);
+	LOCK_ASSERT(simple_lock_held(&amap->am_l));
 
 	free(amap->am_slots, M_UVMAMAP);
 	free(amap->am_bckptr, M_UVMAMAP);
@@ -281,7 +283,7 @@ amap_free(amap)
  */
 void
 amap_extend(entry, addsize)
-	vm_map_entry_t entry;
+	struct vm_map_entry *entry;
 	vsize_t addsize;
 {
 	struct vm_amap *amap = entry->aref.ar_amap;
@@ -322,7 +324,7 @@ amap_extend(entry, addsize)
 		}
 #endif
 		amap_unlock(amap);
-		UVMHIST_LOG(maphist,"<- done (case 1), amap = 0x%x, sltneed=%d", 
+		UVMHIST_LOG(maphist,"<- done (case 1), amap = 0x%x, sltneed=%d",
 		    amap, slotneed, 0, 0);
 		return;				/* done! */
 	}
@@ -335,10 +337,10 @@ amap_extend(entry, addsize)
 #ifdef UVM_AMAP_PPREF
 		if (amap->am_ppref && amap->am_ppref != PPREF_NONE) {
 			if ((slotoff + slotmapped) < amap->am_nslot)
-				amap_pp_adjref(amap, slotoff + slotmapped, 
+				amap_pp_adjref(amap, slotoff + slotmapped,
 				    (amap->am_nslot - (slotoff + slotmapped)),
 				    1);
-			pp_setreflen(amap->am_ppref, amap->am_nslot, 1, 
+			pp_setreflen(amap->am_ppref, amap->am_nslot, 1,
 			   slotneed - amap->am_nslot);
 		}
 #endif
@@ -348,7 +350,7 @@ amap_extend(entry, addsize)
 		 * no need to zero am_anon since that was done at
 		 * alloc time and we never shrink an allocation.
 		 */
-		UVMHIST_LOG(maphist,"<- done (case 2), amap = 0x%x, slotneed=%d", 
+		UVMHIST_LOG(maphist,"<- done (case 2), amap = 0x%x, slotneed=%d",
 		    amap, slotneed, 0, 0);
 		return;
 	}
@@ -357,7 +359,7 @@ amap_extend(entry, addsize)
 	 * case 3: we need to malloc a new amap and copy all the amap
 	 * data over from old amap to the new one.
 	 *
-	 * XXXCDC: could we take advantage of a kernel realloc()?  
+	 * XXXCDC: could we take advantage of a kernel realloc()?
 	 */
 
 	amap_unlock(amap);	/* unlock in case we sleep in malloc */
@@ -410,7 +412,7 @@ amap_extend(entry, addsize)
 		memset(newppref + amap->am_nslot, 0, sizeof(int) * slotadded);
 		amap->am_ppref = newppref;
 		if ((slotoff + slotmapped) < amap->am_nslot)
-			amap_pp_adjref(amap, slotoff + slotmapped, 
+			amap_pp_adjref(amap, slotoff + slotmapped,
 			    (amap->am_nslot - (slotoff + slotmapped)), 1);
 		pp_setreflen(newppref, amap->am_nslot, 1, slotadded);
 	}
@@ -431,7 +433,7 @@ amap_extend(entry, addsize)
 	if (oldppref && oldppref != PPREF_NONE)
 		free(oldppref, M_UVMAMAP);
 #endif
-	UVMHIST_LOG(maphist,"<- done (case 3), amap = 0x%x, slotneed=%d", 
+	UVMHIST_LOG(maphist,"<- done (case 3), amap = 0x%x, slotneed=%d",
 	    amap, slotneed, 0, 0);
 }
 
@@ -450,11 +452,13 @@ amap_extend(entry, addsize)
  */
 void
 amap_share_protect(entry, prot)
-	vm_map_entry_t entry;
+	struct vm_map_entry *entry;
 	vm_prot_t prot;
 {
 	struct vm_amap *amap = entry->aref.ar_amap;
 	int slots, lcv, slot, stop;
+
+	LOCK_ASSERT(simple_lock_held(&amap->am_l));
 
 	AMAP_B2SLOT(slots, (entry->end - entry->start));
 	stop = entry->aref.ar_pageoff + slots;
@@ -485,7 +489,7 @@ amap_share_protect(entry, prot)
 /*
  * amap_wipeout: wipeout all anon's in an amap; then free the amap!
  *
- * => called from amap_unref when the final reference to an amap is 
+ * => called from amap_unref when the final reference to an amap is
  *	discarded (i.e. when reference count == 1)
  * => the amap should be locked (by the caller)
  */
@@ -499,18 +503,20 @@ amap_wipeout(amap)
 	UVMHIST_FUNC("amap_wipeout"); UVMHIST_CALLED(maphist);
 	UVMHIST_LOG(maphist,"(amap=0x%x)", amap, 0,0,0);
 
+	LOCK_ASSERT(simple_lock_held(&amap->am_l));
+
 	for (lcv = 0 ; lcv < amap->am_nused ; lcv++) {
 		int refs;
 
 		slot = amap->am_slots[lcv];
 		anon = amap->am_anon[slot];
 
-		if (anon == NULL || anon->an_ref == 0) 
+		if (anon == NULL || anon->an_ref == 0)
 			panic("amap_wipeout: corrupt amap");
 
 		simple_lock(&anon->an_lock); /* lock anon */
 
-		UVMHIST_LOG(maphist,"  processing anon 0x%x, ref=%d", anon, 
+		UVMHIST_LOG(maphist,"  processing anon 0x%x, ref=%d", anon,
 		    anon->an_ref, 0, 0);
 
 		refs = --anon->an_ref;
@@ -536,7 +542,7 @@ amap_wipeout(amap)
 /*
  * amap_copy: ensure that a map entry's "needs_copy" flag is false
  *	by copying the amap if necessary.
- * 
+ *
  * => an entry with a null amap pointer will get a new (blank) one.
  * => the map that the map entry belongs to must be locked by caller.
  * => the amap currently attached to "entry" (if any) must be unlocked.
@@ -549,8 +555,8 @@ amap_wipeout(amap)
 
 void
 amap_copy(map, entry, waitf, canchunk, startva, endva)
-	vm_map_t map;
-	vm_map_entry_t entry;
+	struct vm_map *map;
+	struct vm_map_entry *entry;
 	int waitf;
 	boolean_t canchunk;
 	vaddr_t startva, endva;
@@ -589,7 +595,7 @@ amap_copy(map, entry, waitf, canchunk, startva, endva)
 				UVM_MAP_CLIP_END(map, entry, endva);
 		}
 
-		UVMHIST_LOG(maphist, "<- done [creating new amap 0x%x->0x%x]", 
+		UVMHIST_LOG(maphist, "<- done [creating new amap 0x%x->0x%x]",
 		entry->start, entry->end, 0, 0);
 		entry->aref.ar_pageoff = 0;
 		entry->aref.ar_amap = amap_alloc(entry->end - entry->start, 0,
@@ -620,7 +626,7 @@ amap_copy(map, entry, waitf, canchunk, startva, endva)
 	 * looks like we need to copy the map.
 	 */
 
-	UVMHIST_LOG(maphist,"  amap=%p, ref=%d, must copy it", 
+	UVMHIST_LOG(maphist,"  amap=%p, ref=%d, must copy it",
 	    entry->aref.ar_amap, entry->aref.ar_amap->am_ref, 0, 0);
 	AMAP_B2SLOT(slots, entry->end - entry->start);
 	amap = amap_alloc1(slots, 0, waitf);
@@ -677,7 +683,7 @@ amap_copy(map, entry, waitf, canchunk, startva, endva)
 		srcamap->am_flags &= ~AMAP_SHARED;   /* clear shared flag */
 #ifdef UVM_AMAP_PPREF
 	if (srcamap->am_ppref && srcamap->am_ppref != PPREF_NONE) {
-		amap_pp_adjref(srcamap, entry->aref.ar_pageoff, 
+		amap_pp_adjref(srcamap, entry->aref.ar_pageoff,
 		    (entry->end - entry->start) >> PAGE_SHIFT, -1);
 	}
 #endif
@@ -786,6 +792,7 @@ ReStart:
 			 */
 			nanon = uvm_analloc();
 			if (nanon) {
+				/* nanon is locked! */
 				npg = uvm_pagealloc(NULL, 0, nanon, 0);
 			} else
 				npg = NULL;	/* XXX: quiet gcc warning */
@@ -797,7 +804,8 @@ ReStart:
 				 * we can't ...
 				 */
 				if (nanon) {
-					simple_lock(&nanon->an_lock);
+					nanon->an_ref--;
+					simple_unlock(&nanon->an_lock);
 					uvm_anfree(nanon);
 				}
 				simple_unlock(&anon->an_lock);
@@ -805,7 +813,7 @@ ReStart:
 				uvm_wait("cownowpage");
 				goto ReStart;
 			}
-	
+
 			/*
 			 * got it... now we can copy the data and replace anon
 			 * with our new one...
@@ -824,6 +832,7 @@ ReStart:
 			uvm_lock_pageq();
 			uvm_pageactivate(npg);
 			uvm_unlock_pageq();
+			simple_unlock(&nanon->an_lock);
 		}
 
 		simple_unlock(&anon->an_lock);
@@ -986,7 +995,7 @@ amap_wiperange(amap, slotoff, slots)
 	struct vm_amap *amap;
 	int slotoff, slots;
 {
-	int byanon, lcv, stop, curslot, ptr, slotend;
+	int byanon, lcv, stop, curslot, ptr;
 	struct vm_anon *anon;
 
 	/*
@@ -1002,23 +1011,26 @@ amap_wiperange(amap, slotoff, slots)
 		byanon = FALSE;
 		lcv = 0;
 		stop = amap->am_nused;
-		slotend = slotoff + slots;
 	}
 
-	while (lcv < stop) {
+	/*
+	 * ok, now do it!
+	 */
+
+	for (; lcv < stop; lcv++) {
 		int refs;
 
-  		if (byanon) {
-			curslot = lcv++;	/* lcv advances here */
-			if (amap->am_anon[curslot] == NULL)
+		/*
+		 * verify the anon is ok.
+		 */
+		if (byanon) {
+			if (amap->am_anon[lcv] == NULL)
 				continue;
+			curslot = lcv;
 		} else {
 			curslot = amap->am_slots[lcv];
-			if (curslot < slotoff || curslot >= slotend) {
-				lcv++;		/* lcv advances here */
+			if (curslot < slotoff || curslot >= stop)
 				continue;
-			}
-			stop--;	/* drop stop, since anon will be removed */
 		}
 		anon = amap->am_anon[curslot];
 
