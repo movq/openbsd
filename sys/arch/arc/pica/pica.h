@@ -36,7 +36,7 @@
  * SUCH DAMAGE.
  *
  *	from: @(#)pica.h	8.1 (Berkeley) 6/10/93
- *      $Id: pica.h,v 1.1 1996/06/24 09:07:18 pefo Exp $
+ *      $Id: pica.h,v 1.1.1.1 1996/06/24 09:07:18 pefo Exp $
  */
 
 /*

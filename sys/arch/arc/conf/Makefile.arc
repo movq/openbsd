@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile.arc,v 1.1 1996/06/24 09:07:20 pefo Exp $
+#	$OpenBSD: Makefile.arc,v 1.1.1.1 1996/06/24 09:07:20 pefo Exp $
 
 #	@(#)Makefile.arc	8.2 (Berkeley) 2/16/94
 #

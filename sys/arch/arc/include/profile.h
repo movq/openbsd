@@ -1,4 +1,4 @@
-/*      $OpenBSD: profile.h,v 1.1 1996/06/24 09:07:18 pefo Exp $	*/
+/*      $OpenBSD: profile.h,v 1.1.1.1 1996/06/24 09:07:18 pefo Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993

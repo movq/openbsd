@@ -1,4 +1,4 @@
-/*	$OpenBSD: vm_machdep.c,v 1.1 1996/06/24 09:07:21 pefo Exp $	*/
+/*	$OpenBSD: vm_machdep.c,v 1.1.1.1 1996/06/24 09:07:21 pefo Exp $	*/
 /*
  * Copyright (c) 1988 University of Utah.
  * Copyright (c) 1992, 1993
@@ -39,7 +39,7 @@
  * from: Utah Hdr: vm_machdep.c 1.21 91/04/06
  *
  *	from: @(#)vm_machdep.c	8.3 (Berkeley) 1/4/94
- *      $Id: vm_machdep.c,v 1.1 1996/06/24 09:07:21 pefo Exp $
+ *      $Id: vm_machdep.c,v 1.1.1.1 1996/06/24 09:07:21 pefo Exp $
  */
 
 

@@ -1,4 +1,4 @@
-/*	$OpenBSD: isabus.c,v 1.1 1996/06/24 09:07:18 pefo Exp $	*/
+/*	$OpenBSD: isabus.c,v 1.1.1.1 1996/06/24 09:07:18 pefo Exp $	*/
 /*	$NetBSD: isa.c,v 1.33 1995/06/28 04:30:51 cgd Exp $	*/
 
 /*-

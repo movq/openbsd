@@ -1,4 +1,4 @@
-/*	$OpenBSD: varargs.h,v 1.1 1996/06/24 09:07:18 pefo Exp $	*/
+/*	$OpenBSD: varargs.h,v 1.1.1.1 1996/06/24 09:07:18 pefo Exp $	*/
 /*	$NetBSD: varargs.h,v 1.8 1995/03/28 18:19:30 jtc Exp $	*/
 
 /*-
