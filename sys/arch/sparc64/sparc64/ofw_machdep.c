@@ -1,4 +1,4 @@
-/*	$OpenBSD: ofw_machdep.c,v 1.4 2002/01/03 22:09:35 jason Exp $	*/
+/*	$OpenBSD: ofw_machdep.c,v 1.3 2001/08/20 20:23:53 jason Exp $	*/
 /*	$NetBSD: ofw_machdep.c,v 1.16 2001/07/20 00:07:14 eeh Exp $	*/
 
 /*
@@ -557,15 +557,15 @@ prom_get_msgbuf(len, align)
  * Low-level prom I/O routines.
  */
 
-static u_int stdin;
-static u_int stdout;
+static u_int stdin = NULL;
+static u_int stdout = NULL;
 
 int 
 OF_stdin() 
 {
 	u_int chosen;
 
-	if (stdin != 0) 
+	if (stdin != NULL) 
 		return stdin;
 		
 	chosen = OF_finddevice("/chosen");
@@ -578,7 +578,7 @@ OF_stdout()
 {
 	u_int chosen;
 
-	if (stdout != 0) 
+	if (stdout != NULL) 
 		return stdout;
 		
 	chosen = OF_finddevice("/chosen");

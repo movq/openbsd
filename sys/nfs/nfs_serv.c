@@ -1,4 +1,4 @@
-/*	$OpenBSD: nfs_serv.c,v 1.30 2002/01/16 21:51:16 ericj Exp $	*/
+/*	$OpenBSD: nfs_serv.c,v 1.28 2001/11/27 05:27:12 art Exp $	*/
 /*     $NetBSD: nfs_serv.c,v 1.34 1997/05/12 23:37:12 fvdl Exp $       */
 
 /*
@@ -109,8 +109,8 @@ nfsrv3_access(nfsd, slp, procp, mrq)
 	struct vnode *vp;
 	nfsfh_t nfh;
 	fhandle_t *fhp;
-	u_int32_t *tl;
-	int32_t t1;
+	register u_int32_t *tl;
+	register int32_t t1;
 	caddr_t bpos;
 	int error = 0, rdonly, cache = 0, getret;
 	char *cp2;
@@ -171,13 +171,13 @@ nfsrv_getattr(nfsd, slp, procp, mrq)
 	struct mbuf *nam = nfsd->nd_nam;
 	caddr_t dpos = nfsd->nd_dpos;
 	struct ucred *cred = &nfsd->nd_cr;
-	struct nfs_fattr *fp;
+	register struct nfs_fattr *fp;
 	struct vattr va;
 	struct vnode *vp;
 	nfsfh_t nfh;
 	fhandle_t *fhp;
-	u_int32_t *tl;
-	int32_t t1;
+	register u_int32_t *tl;
+	register int32_t t1;
 	caddr_t bpos;
 	int error = 0, rdonly, cache;
 	char *cp2;
@@ -217,13 +217,13 @@ nfsrv_setattr(nfsd, slp, procp, mrq)
 	caddr_t dpos = nfsd->nd_dpos;
 	struct ucred *cred = &nfsd->nd_cr;
 	struct vattr va, preat;
-	struct nfsv2_sattr *sp;
-	struct nfs_fattr *fp;
+	register struct nfsv2_sattr *sp;
+	register struct nfs_fattr *fp;
 	struct vnode *vp;
 	nfsfh_t nfh;
 	fhandle_t *fhp;
-	u_int32_t *tl;
-	int32_t t1;
+	register u_int32_t *tl;
+	register int32_t t1;
 	caddr_t bpos;
 	int error = 0, rdonly, cache, preat_ret = 1, postat_ret = 1;
 	int v3 = (nfsd->nd_flag & ND_NFSV3), gcheck = 0;
@@ -346,14 +346,14 @@ nfsrv_lookup(nfsd, slp, procp, mrq)
 	struct mbuf *nam = nfsd->nd_nam;
 	caddr_t dpos = nfsd->nd_dpos;
 	struct ucred *cred = &nfsd->nd_cr;
-	struct nfs_fattr *fp;
+	register struct nfs_fattr *fp;
 	struct nameidata nd;
 	struct vnode *vp, *dirp;
 	nfsfh_t nfh;
 	fhandle_t *fhp;
-	caddr_t cp;
-	u_int32_t *tl;
-	int32_t t1;
+	register caddr_t cp;
+	register u_int32_t *tl;
+	register int32_t t1;
 	caddr_t bpos;
 	int error = 0, cache, len, dirattr_ret = 1;
 	int v3 = (nfsd->nd_flag & ND_NFSV3);
@@ -421,10 +421,10 @@ nfsrv_readlink(nfsd, slp, procp, mrq)
 	caddr_t dpos = nfsd->nd_dpos;
 	struct ucred *cred = &nfsd->nd_cr;
 	struct iovec iv[(NFS_MAXPATHLEN+MLEN-1)/MLEN];
-	struct iovec *ivp = iv;
-	struct mbuf *mp;
-	u_int32_t *tl;
-	int32_t t1;
+	register struct iovec *ivp = iv;
+	register struct mbuf *mp;
+	register u_int32_t *tl;
+	register int32_t t1;
 	caddr_t bpos;
 	int error = 0, rdonly, cache, i, tlen, len, getret;
 	int v3 = (nfsd->nd_flag & ND_NFSV3);
@@ -520,13 +520,13 @@ nfsrv_read(nfsd, slp, procp, mrq)
 	struct mbuf *nam = nfsd->nd_nam;
 	caddr_t dpos = nfsd->nd_dpos;
 	struct ucred *cred = &nfsd->nd_cr;
-	struct iovec *iv;
+	register struct iovec *iv;
 	struct iovec *iv2;
-	struct mbuf *m;
-	struct nfs_fattr *fp;
-	u_int32_t *tl;
-	int32_t t1;
-	int i;
+	register struct mbuf *m;
+	register struct nfs_fattr *fp;
+	register u_int32_t *tl;
+	register int32_t t1;
+	register int i;
 	caddr_t bpos;
 	int error = 0, rdonly, cache, cnt, len, left, siz, tlen, getret;
 	int v3 = (nfsd->nd_flag & ND_NFSV3), reqlen;
@@ -686,14 +686,14 @@ nfsrv_write(nfsd, slp, procp, mrq)
 	struct mbuf *nam = nfsd->nd_nam;
 	caddr_t dpos = nfsd->nd_dpos;
 	struct ucred *cred = &nfsd->nd_cr;
-	struct iovec *ivp;
-	int i, cnt;
-	struct mbuf *mp;
-	struct nfs_fattr *fp;
+	register struct iovec *ivp;
+	register int i, cnt;
+	register struct mbuf *mp;
+	register struct nfs_fattr *fp;
 	struct iovec *iv;
 	struct vattr va, forat;
-	u_int32_t *tl;
-	int32_t t1;
+	register u_int32_t *tl;
+	register int32_t t1;
 	caddr_t bpos;
 	int error = 0, rdonly, cache, len, forat_ret = 1;
 	int ioflags, aftat_ret = 1, retlen, zeroing, adjust;
@@ -869,17 +869,17 @@ nfsrv_writegather(ndp, slp, procp, mrq)
 	struct proc *procp;
 	struct mbuf **mrq;
 {
-	struct iovec *ivp;
-	struct mbuf *mp;
-	struct nfsrv_descript *wp, *nfsd, *owp, *swp;
-	struct nfs_fattr *fp;
-	int i = 0;
+	register struct iovec *ivp;
+	register struct mbuf *mp;
+	register struct nfsrv_descript *wp, *nfsd, *owp, *swp;
+	register struct nfs_fattr *fp;
+	register int i = 0;
 	struct iovec *iov;
 	struct nfsrvw_delayhash *wpp;
 	struct ucred *cred;
 	struct vattr va, forat;
-	u_int32_t *tl;
-	int32_t t1;
+	register u_int32_t *tl;
+	register int32_t t1;
 	caddr_t bpos, dpos;
 	int error = 0, rdonly, cache, len = 0, forat_ret = 1;
 	int ioflags, aftat_ret = 1, s, adjust, v3, zeroing;
@@ -965,10 +965,10 @@ nfsmout:
 	     */
 	    s = splsoftclock();
 	    owp = NULL;
-	    wp = LIST_FIRST(&slp->ns_tq);
+	    wp = slp->ns_tq.lh_first;
 	    while (wp && wp->nd_time < nfsd->nd_time) {
 		owp = wp;
-		wp = LIST_NEXT(wp, nd_tq);
+		wp = wp->nd_tq.le_next;
 	    }
 	    if (owp) {
 		LIST_INSERT_AFTER(owp, nfsd, nd_tq);
@@ -978,16 +978,16 @@ nfsmout:
 	    if (nfsd->nd_mrep) {
 		wpp = NWDELAYHASH(slp, nfsd->nd_fh.fh_fid.fid_data);
 		owp = NULL;
-		wp = LIST_FIRST(wpp);
+		wp = wpp->lh_first;
 		while (wp &&
 		    bcmp((caddr_t)&nfsd->nd_fh,(caddr_t)&wp->nd_fh,NFSX_V3FH)) {
 		    owp = wp;
-		    wp = LIST_NEXT(wp, nd_hash);
+		    wp = wp->nd_hash.le_next;
 		}
 		while (wp && wp->nd_off < nfsd->nd_off &&
-		   !bcmp((caddr_t)&nfsd->nd_fh,(caddr_t)&wp->nd_fh,NFSX_V3FH)) {
+		    !bcmp((caddr_t)&nfsd->nd_fh,(caddr_t)&wp->nd_fh,NFSX_V3FH)) {
 		    owp = wp;
-		    wp = LIST_NEXT(wp, nd_hash);
+		    wp = wp->nd_hash.le_next;
 		}
 		if (owp) {
 		    LIST_INSERT_AFTER(owp, nfsd, nd_hash);
@@ -997,7 +997,7 @@ nfsmout:
 		     * coalesce.
 		     */
 		    for(; nfsd && NFSW_CONTIG(owp, nfsd); nfsd = wp) {
-			wp = LIST_NEXT(nfsd, nd_hash);
+			wp = nfsd->nd_hash.le_next;
 			if (NFSW_SAMECRED(owp, nfsd))
 			    nfsrvw_coalesce(owp, nfsd);
 		    }
@@ -1015,8 +1015,8 @@ nfsmout:
 loop1:
 	cur_usec = (u_quad_t)time.tv_sec * 1000000 + (u_quad_t)time.tv_usec;
 	s = splsoftclock();
-	for (nfsd = LIST_FIRST(&slp->ns_tq); nfsd != NULL; nfsd = owp) {
-		owp = LIST_NEXT(nfsd, nd_tq);
+	for (nfsd = slp->ns_tq.lh_first; nfsd; nfsd = owp) {
+		owp = nfsd->nd_tq.le_next;
 		if (nfsd->nd_time > cur_usec)
 		    break;
 		if (nfsd->nd_mreq)
@@ -1135,7 +1135,7 @@ loop1:
 			nfsd->nd_time = 0;
 			LIST_INSERT_HEAD(&slp->ns_tq, nfsd, nd_tq);
 		    }
-		    nfsd = LIST_FIRST(&swp->nd_coalesce);
+		    nfsd = swp->nd_coalesce.lh_first;
 		    if (nfsd) {
 			LIST_REMOVE(nfsd, nd_tq);
 		    }
@@ -1153,15 +1153,13 @@ loop1:
 	 * Search for a reply to return.
 	 */
 	s = splsoftclock();
-	for (nfsd = LIST_FIRST(&slp->ns_tq); nfsd != NULL;
-	    nfsd = LIST_NEXT(nfsd, nd_tq)) {
+	for (nfsd = slp->ns_tq.lh_first; nfsd; nfsd = nfsd->nd_tq.le_next)
 		if (nfsd->nd_mreq) {
 		    LIST_REMOVE(nfsd, nd_tq);
 		    *mrq = nfsd->nd_mreq;
 		    *ndp = nfsd;
 		    break;
 		}
-	}
 	splx(s);
 	return (0);
 }
@@ -1176,11 +1174,11 @@ loop1:
  */
 void
 nfsrvw_coalesce(owp, nfsd)
-        struct nfsrv_descript *owp;
-        struct nfsrv_descript *nfsd;
+        register struct nfsrv_descript *owp;
+        register struct nfsrv_descript *nfsd;
 {
-        int overlap;
-        struct mbuf *mp;
+        register int overlap;
+        register struct mbuf *mp;
 
         LIST_REMOVE(nfsd, nd_hash);
         LIST_REMOVE(nfsd, nd_tq);
@@ -1234,13 +1232,13 @@ nfsrv_create(nfsd, slp, procp, mrq)
 	struct mbuf *nam = nfsd->nd_nam;
 	caddr_t dpos = nfsd->nd_dpos;
 	struct ucred *cred = &nfsd->nd_cr;
-	struct nfs_fattr *fp;
+	register struct nfs_fattr *fp;
 	struct vattr va, dirfor, diraft;
-	struct nfsv2_sattr *sp;
-	u_int32_t *tl;
+	register struct nfsv2_sattr *sp;
+	register u_int32_t *tl;
 	struct nameidata nd;
-	caddr_t cp;
-	int32_t t1;
+	register caddr_t cp;
+	register int32_t t1;
 	caddr_t bpos;
 	int error = 0, cache, len, tsize, dirfor_ret = 1, diraft_ret = 1;
 	dev_t rdev = 0;
@@ -1474,9 +1472,9 @@ nfsrv_mknod(nfsd, slp, procp, mrq)
 	caddr_t dpos = nfsd->nd_dpos;
 	struct ucred *cred = &nfsd->nd_cr;
 	struct vattr va, dirfor, diraft;
-	u_int32_t *tl;
+	register u_int32_t *tl;
 	struct nameidata nd;
-	int32_t t1;
+	register int32_t t1;
 	caddr_t bpos;
 	int error = 0, cache, len, dirfor_ret = 1, diraft_ret = 1;
 	u_int32_t major, minor;
@@ -1622,8 +1620,8 @@ nfsrv_remove(nfsd, slp, procp, mrq)
 	caddr_t dpos = nfsd->nd_dpos;
 	struct ucred *cred = &nfsd->nd_cr;
 	struct nameidata nd;
-	u_int32_t *tl;
-	int32_t t1;
+	register u_int32_t *tl;
+	register int32_t t1;
 	caddr_t bpos;
 	int error = 0, cache, len, dirfor_ret = 1, diraft_ret = 1;
 	int v3 = (nfsd->nd_flag & ND_NFSV3);
@@ -1665,8 +1663,6 @@ nfsrv_remove(nfsd, slp, procp, mrq)
 			error = EBUSY;
 			goto out;
 		}
-		if (vp->v_flag & VTEXT)
-			uvm_vnp_uncache(vp);
 out:
 		if (!error) {
 			error = VOP_REMOVE(nd.ni_dvp, nd.ni_vp, &nd.ni_cnd);
@@ -1705,8 +1701,8 @@ nfsrv_rename(nfsd, slp, procp, mrq)
 	struct mbuf *nam = nfsd->nd_nam;
 	caddr_t dpos = nfsd->nd_dpos;
 	struct ucred *cred = &nfsd->nd_cr;
-	u_int32_t *tl;
-	int32_t t1;
+	register u_int32_t *tl;
+	register int32_t t1;
 	caddr_t bpos;
 	int error = 0, cache, len, len2, fdirfor_ret = 1, fdiraft_ret = 1;
 	int tdirfor_ret = 1, tdiraft_ret = 1;
@@ -1886,8 +1882,8 @@ nfsrv_link(nfsd, slp, procp, mrq)
 	caddr_t dpos = nfsd->nd_dpos;
 	struct ucred *cred = &nfsd->nd_cr;
 	struct nameidata nd;
-	u_int32_t *tl;
-	int32_t t1;
+	register u_int32_t *tl;
+	register int32_t t1;
 	caddr_t bpos;
 	int error = 0, rdonly, cache, len, dirfor_ret = 1, diraft_ret = 1;
 	int getret = 1, v3 = (nfsd->nd_flag & ND_NFSV3);
@@ -1983,8 +1979,8 @@ nfsrv_symlink(nfsd, slp, procp, mrq)
 	struct ucred *cred = &nfsd->nd_cr;
 	struct vattr va, dirfor, diraft;
 	struct nameidata nd;
-	u_int32_t *tl;
-	int32_t t1;
+	register u_int32_t *tl;
+	register int32_t t1;
 	struct nfsv2_sattr *sp;
 	char *bpos, *pathcp = NULL, *cp2;
 	struct uio io;
@@ -2123,11 +2119,11 @@ nfsrv_mkdir(nfsd, slp, procp, mrq)
 	caddr_t dpos = nfsd->nd_dpos;
 	struct ucred *cred = &nfsd->nd_cr;
 	struct vattr va, dirfor, diraft;
-	struct nfs_fattr *fp;
+	register struct nfs_fattr *fp;
 	struct nameidata nd;
-	caddr_t cp;
-	u_int32_t *tl;
-	int32_t t1;
+	register caddr_t cp;
+	register u_int32_t *tl;
+	register int32_t t1;
 	caddr_t bpos;
 	int error = 0, cache, len, dirfor_ret = 1, diraft_ret = 1;
 	int v3 = (nfsd->nd_flag & ND_NFSV3);
@@ -2236,8 +2232,8 @@ nfsrv_rmdir(nfsd, slp, procp, mrq)
 	struct mbuf *nam = nfsd->nd_nam;
 	caddr_t dpos = nfsd->nd_dpos;
 	struct ucred *cred = &nfsd->nd_cr;
-	u_int32_t *tl;
-	int32_t t1;
+	register u_int32_t *tl;
+	register int32_t t1;
 	caddr_t bpos;
 	int error = 0, cache, len, dirfor_ret = 1, diraft_ret = 1;
 	int v3 = (nfsd->nd_flag & ND_NFSV3);
@@ -2365,12 +2361,12 @@ nfsrv_readdir(nfsd, slp, procp, mrq)
 	struct mbuf *nam = nfsd->nd_nam;
 	caddr_t dpos = nfsd->nd_dpos;
 	struct ucred *cred = &nfsd->nd_cr;
-	char *bp, *be;
-	struct mbuf *mp;
-	struct dirent *dp;
-	caddr_t cp;
-	u_int32_t *tl;
-	int32_t t1;
+	register char *bp, *be;
+	register struct mbuf *mp;
+	register struct dirent *dp;
+	register caddr_t cp;
+	register u_int32_t *tl;
+	register int32_t t1;
 	caddr_t bpos;
 	struct mbuf *mb, *mb2, *mreq, *mp2;
 	char *cpos, *cend, *cp2, *rbuf;
@@ -2626,12 +2622,12 @@ nfsrv_readdirplus(nfsd, slp, procp, mrq)
 	struct mbuf *nam = nfsd->nd_nam;
 	caddr_t dpos = nfsd->nd_dpos;
 	struct ucred *cred = &nfsd->nd_cr;
-	char *bp, *be;
-	struct mbuf *mp;
-	struct dirent *dp;
-	caddr_t cp;
-	u_int32_t *tl;
-	int32_t t1;
+	register char *bp, *be;
+	register struct mbuf *mp;
+	register struct dirent *dp;
+	register caddr_t cp;
+	register u_int32_t *tl;
+	register int32_t t1;
 	caddr_t bpos;
 	struct mbuf *mb, *mb2, *mreq, *mp2;
 	char *cpos, *cend, *cp2, *rbuf;
@@ -2927,8 +2923,8 @@ nfsrv_commit(nfsd, slp, procp, mrq)
 	struct vnode *vp;
 	nfsfh_t nfh;
 	fhandle_t *fhp;
-	u_int32_t *tl;
-	int32_t t1;
+	register u_int32_t *tl;
+	register int32_t t1;
 	caddr_t bpos;
 	int error = 0, rdonly, for_ret = 1, aft_ret = 1, cnt, cache;
 	char *cp2;
@@ -2985,10 +2981,10 @@ nfsrv_statfs(nfsd, slp, procp, mrq)
 	struct mbuf *nam = nfsd->nd_nam;
 	caddr_t dpos = nfsd->nd_dpos;
 	struct ucred *cred = &nfsd->nd_cr;
-	struct statfs *sf;
-	struct nfs_statfs *sfp;
-	u_int32_t *tl;
-	int32_t t1;
+	register struct statfs *sf;
+	register struct nfs_statfs *sfp;
+	register u_int32_t *tl;
+	register int32_t t1;
 	caddr_t bpos;
 	int error = 0, rdonly, cache, getret = 1;
 	int v3 = (nfsd->nd_flag & ND_NFSV3);
@@ -3064,9 +3060,9 @@ nfsrv_fsinfo(nfsd, slp, procp, mrq)
 	struct mbuf *nam = nfsd->nd_nam;
 	caddr_t dpos = nfsd->nd_dpos;
 	struct ucred *cred = &nfsd->nd_cr;
-	u_int32_t *tl;
-	struct nfsv3_fsinfo *sip;
-	int32_t t1;
+	register u_int32_t *tl;
+	register struct nfsv3_fsinfo *sip;
+	register int32_t t1;
 	caddr_t bpos;
 	int error = 0, rdonly, cache, getret = 1, pref;
 	char *cp2;
@@ -3135,9 +3131,9 @@ nfsrv_pathconf(nfsd, slp, procp, mrq)
 	struct mbuf *nam = nfsd->nd_nam;
 	caddr_t dpos = nfsd->nd_dpos;
 	struct ucred *cred = &nfsd->nd_cr;
-	u_int32_t *tl;
-	struct nfsv3_pathconf *pc;
-	int32_t t1;
+	register u_int32_t *tl;
+	register struct nfsv3_pathconf *pc;
+	register int32_t t1;
 	caddr_t bpos;
 	int error = 0, rdonly, cache, getret = 1;
 	register_t linkmax, namemax, chownres, notrunc;
@@ -3250,9 +3246,9 @@ nfsrv_noop(nfsd, slp, procp, mrq)
  */
 int
 nfsrv_access(vp, flags, cred, rdonly, p, override)
-	struct vnode *vp;
+	register struct vnode *vp;
 	int flags;
-	struct ucred *cred;
+	register struct ucred *cred;
 	int rdonly;
 	struct proc *p;
 	int override;
@@ -3278,11 +3274,10 @@ nfsrv_access(vp, flags, cred, rdonly, p, override)
 			}
 		}
 		/*
-		 * If there's shared text associated with
-		 * the inode, try to free it up once.  If
-		 * we fail, we can't allow writing.
+		 * If the vnode is in use as a process's text,
+		 * we can't allow writing.
 		 */
-		if ((vp->v_flag & VTEXT) && !uvm_vnp_uncache(vp))
+		if ((vp->v_flag & VTEXT))
 			return (ETXTBSY);
 	}
 	error = VOP_ACCESS(vp, flags, cred, p);

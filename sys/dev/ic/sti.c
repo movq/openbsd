@@ -1,4 +1,4 @@
-/*	$OpenBSD: sti.c,v 1.10 2002/01/25 21:35:26 mickey Exp $	*/
+/*	$OpenBSD: sti.c,v 1.9 2001/12/08 02:24:07 art Exp $	*/
 
 /*
  * Copyright (c) 2000-2001 Michael Shalayeff
@@ -350,7 +350,9 @@ sti_attach_common(sc)
 
 	/* attach WSDISPLAY */
 	bzero(&waa, sizeof(waa));
-	waa.console = sc->sc_flags & STI_CONSOLE? 1 : 0;
+#if notyet
+	waa.console = sc->sc_dev.dv_unit == 0;
+#endif
 	waa.scrdata = &sti_default_screenlist;
 	waa.accessops = &sti_accessops;
 	waa.accesscookie = sc;

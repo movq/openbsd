@@ -1,9 +1,9 @@
-/*	$OpenBSD: uvm_page_i.h,v 1.14 2002/01/02 22:23:25 miod Exp $	*/
-/*	$NetBSD: uvm_page_i.h,v 1.14 2000/11/27 07:47:42 chs Exp $	*/
+/*	$OpenBSD: uvm_page_i.h,v 1.12 2001/11/28 19:28:15 art Exp $	*/
+/*	$NetBSD: uvm_page_i.h,v 1.19 2001/06/27 23:57:17 thorpej Exp $	*/
 
-/* 
+/*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
- * Copyright (c) 1991, 1993, The Regents of the University of California.  
+ * Copyright (c) 1991, 1993, The Regents of the University of California.
  *
  * All rights reserved.
  *
@@ -21,7 +21,7 @@
  * 3. All advertising materials mentioning features or use of this software
  *    must display the following acknowledgement:
  *	This product includes software developed by Charles D. Cranor,
- *      Washington University, the University of California, Berkeley and 
+ *      Washington University, the University of California, Berkeley and
  *      its contributors.
  * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
@@ -45,17 +45,17 @@
  *
  * Copyright (c) 1987, 1990 Carnegie-Mellon University.
  * All rights reserved.
- * 
+ *
  * Permission to use, copy, modify and distribute this software and
  * its documentation is hereby granted, provided that both the copyright
  * notice and this permission notice appear in all copies of the
  * software, derivative works or modified versions, and any portions
  * thereof, and that both notices appear in supporting documentation.
- * 
- * CARNEGIE MELLON ALLOWS FREE USE OF THIS SOFTWARE IN ITS "AS IS" 
- * CONDITION.  CARNEGIE MELLON DISCLAIMS ANY LIABILITY OF ANY KIND 
+ *
+ * CARNEGIE MELLON ALLOWS FREE USE OF THIS SOFTWARE IN ITS "AS IS"
+ * CONDITION.  CARNEGIE MELLON DISCLAIMS ANY LIABILITY OF ANY KIND
  * FOR ANY DAMAGES WHATSOEVER RESULTING FROM THE USE OF THIS SOFTWARE.
- * 
+ *
  * Carnegie Mellon requests users of this software to return to
  *
  *  Software Distribution Coordinator  or  Software.Distribution@CS.CMU.EDU
@@ -159,12 +159,8 @@ uvm_pagewire(pg)
 			TAILQ_REMOVE(&uvm.page_active, pg, pageq);
 			pg->pqflags &= ~PQ_ACTIVE;
 			uvmexp.active--;
-		}
-		if (pg->pqflags & PQ_INACTIVE) {
-			if (pg->pqflags & PQ_SWAPBACKED)
-				TAILQ_REMOVE(&uvm.page_inactive_swp, pg, pageq);
-			else
-				TAILQ_REMOVE(&uvm.page_inactive_obj, pg, pageq);
+		} else if (pg->pqflags & PQ_INACTIVE) {
+			TAILQ_REMOVE(&uvm.page_inactive, pg, pageq);
 			pg->pqflags &= ~PQ_INACTIVE;
 			uvmexp.inactive--;
 		}
@@ -174,12 +170,12 @@ uvm_pagewire(pg)
 }
 
 /*
- * uvm_pageunwire: unwire the page.   
+ * uvm_pageunwire: unwire the page.
  *
  * => activate if wire count goes to zero.
  * => caller must lock page queues
  */
- 
+
 PAGE_INLINE void
 uvm_pageunwire(pg)
 	struct vm_page *pg;
@@ -194,11 +190,12 @@ uvm_pageunwire(pg)
 }
 
 /*
- * uvm_pagedeactivate: deactivate page -- no pmaps have access to page
+ * uvm_pagedeactivate: deactivate page
  *
  * => caller must lock page queues
  * => caller must check to make sure page is not wired
  * => object that page belongs to must be locked (so we can adjust pg->flags)
+ * => caller must clear the reference on the page before calling
  */
 
 PAGE_INLINE void
@@ -212,15 +209,9 @@ uvm_pagedeactivate(pg)
 	}
 	if ((pg->pqflags & PQ_INACTIVE) == 0) {
 		KASSERT(pg->wire_count == 0);
-		if (pg->pqflags & PQ_SWAPBACKED)
-			TAILQ_INSERT_TAIL(&uvm.page_inactive_swp, pg, pageq);
-		else
-			TAILQ_INSERT_TAIL(&uvm.page_inactive_obj, pg, pageq);
+		TAILQ_INSERT_TAIL(&uvm.page_inactive, pg, pageq);
 		pg->pqflags |= PQ_INACTIVE;
 		uvmexp.inactive++;
-#ifndef UBC
-		pmap_clear_reference(pg);
-#endif
 		/*
 		 * update the "clean" bit.  this isn't 100%
 		 * accurate, and doesn't have to be.  we'll
@@ -244,10 +235,7 @@ uvm_pageactivate(pg)
 	struct vm_page *pg;
 {
 	if (pg->pqflags & PQ_INACTIVE) {
-		if (pg->pqflags & PQ_SWAPBACKED)
-			TAILQ_REMOVE(&uvm.page_inactive_swp, pg, pageq);
-		else
-			TAILQ_REMOVE(&uvm.page_inactive_obj, pg, pageq);
+		TAILQ_REMOVE(&uvm.page_inactive, pg, pageq);
 		pg->pqflags &= ~PQ_INACTIVE;
 		uvmexp.inactive--;
 	}

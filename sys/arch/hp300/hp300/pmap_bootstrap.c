@@ -1,4 +1,4 @@
-/*	$OpenBSD: pmap_bootstrap.c,v 1.15 2002/01/10 21:10:45 miod Exp $	*/
+/*	$OpenBSD: pmap_bootstrap.c,v 1.13 2001/12/14 21:44:04 miod Exp $	*/
 /*	$NetBSD: pmap_bootstrap.c,v 1.13 1997/06/10 18:56:50 veego Exp $	*/
 
 /* 

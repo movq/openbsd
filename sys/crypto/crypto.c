@@ -1,4 +1,4 @@
-/*	$OpenBSD: crypto.c,v 1.32 2002/01/23 01:33:07 art Exp $	*/
+/*	$OpenBSD: crypto.c,v 1.30 2001/11/13 18:54:32 deraadt Exp $	*/
 /*
  * The author of this code is Angelos D. Keromytis (angelos@cis.upenn.edu)
  *
@@ -412,9 +412,9 @@ crypto_getreq(int num)
 
 	if (crypto_pool_initialized == 0) {
 		pool_init(&cryptop_pool, sizeof(struct cryptop), 0, 0,
-		    0, "cryptop", NULL);
+		    PR_FREEHEADER, "cryptop", 0, NULL, NULL, M_CRYPTO_OPS);
 		pool_init(&cryptodesc_pool, sizeof(struct cryptodesc), 0, 0,
-		    0, "cryptodesc", NULL);
+		    PR_FREEHEADER, "cryptodesc", 0, NULL, NULL, M_CRYPTO_OPS);
 		crypto_pool_initialized = 1;
 	}
 

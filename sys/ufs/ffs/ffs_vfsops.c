@@ -1,4 +1,4 @@
-/*	$OpenBSD: ffs_vfsops.c,v 1.50 2002/01/25 02:30:27 millert Exp $	*/
+/*	$OpenBSD: ffs_vfsops.c,v 1.47 2001/12/10 04:45:32 art Exp $	*/
 /*	$NetBSD: ffs_vfsops.c,v 1.19 1996/02/09 22:22:26 christos Exp $	*/
 
 /*
@@ -94,6 +94,11 @@ struct inode_vtbl ffs_vtbl = {
 	ffs_inode_free,
 	ffs_balloc,
 	ffs_bufatoff
+};
+
+struct genfs_ops ffs_genfsops = {
+	ffs_gop_size,
+	ffs_gop_alloc,
 };
 
 extern u_long nextgennumber;
@@ -737,11 +742,14 @@ ffs_mountfs(devvp, mp, p)
 	else
 		mp->mnt_stat.f_fsid.val[1] = mp->mnt_vfc->vfc_typenum;
 	mp->mnt_maxsymlinklen = fs->fs_maxsymlinklen;
+	mp->mnt_fs_bshift = fs->fs_bshift;
+	mp->mnt_dev_bshift = DEV_BSHIFT;
 	mp->mnt_flag |= MNT_LOCAL;
 	ump->um_mountp = mp;
 	ump->um_dev = dev;
 	ump->um_devvp = devvp;
 	ump->um_nindir = fs->fs_nindir;
+	ump->um_lognindir = ffs(fs->fs_nindir) - 1;
 	ump->um_bptrtodb = fs->fs_fsbtodb;
 	ump->um_seqinc = fs->fs_frag;
 	for (i = 0; i < MAXQUOTAS; i++)
@@ -1119,6 +1127,7 @@ retry:
 	ip->i_fs = fs = ump->um_fs;
 	ip->i_dev = dev;
 	ip->i_number = ino;
+	LIST_INIT(&ip->i_pcbufhd);
 	ip->i_vtbl = &ffs_vtbl;
 
 	/*
@@ -1178,6 +1187,8 @@ retry:
 	/*
 	 * Finish inode initialization now that aliasing has been resolved.
 	 */
+
+	genfs_node_init(vp, &ffs_genfsops);
 	ip->i_devvp = ump->um_devvp;
 	VREF(ip->i_devvp);
 	/*
@@ -1199,6 +1210,7 @@ retry:
 		ip->i_ffs_uid = ip->i_din.ffs_din.di_ouid;	/* XXX */
 		ip->i_ffs_gid = ip->i_din.ffs_din.di_ogid;	/* XXX */
 	}							/* XXX */
+	uvm_vnp_setsize(vp, ip->i_ffs_size);
 
 	*vpp = vp;
 	return (0);
@@ -1325,7 +1337,7 @@ ffs_init(vfsp)
 		return (0);
 	done = 1;
 	pool_init(&ffs_ino_pool, sizeof(struct inode), 0, 0, 0, "ffsino",
-	    &pool_allocator_nointr);
+	    0, pool_page_alloc_nointr, pool_page_free_nointr, M_FFSNODE);
 	softdep_initialize();
 	return (ufs_init(vfsp));
 }
@@ -1344,12 +1356,6 @@ ffs_sysctl(name, namelen, oldp, oldlenp, newp, newlen, p)
 	struct proc *p;
 {
 	extern int doclusterread, doclusterwrite, doreallocblks, doasyncfree;
-#ifdef FFS_SOFTUPDATES
-	extern int max_softdeps, tickdelay, stat_worklist_push;
-	extern int stat_blk_limit_push, stat_ino_limit_push, stat_blk_limit_hit;
-	extern int stat_ino_limit_hit, stat_sync_limit_hit, stat_indir_blk_ptrs;
-	extern int stat_inode_bitmap, stat_direct_blk_ptrs, stat_dir_entry;
-#endif
 
 	/* all sysctl names at this level are terminal */
 	if (namelen != 1)
@@ -1367,32 +1373,6 @@ ffs_sysctl(name, namelen, oldp, oldlenp, newp, newlen, p)
 		    &doreallocblks));
 	case FFS_ASYNCFREE:
 		return (sysctl_int(oldp, oldlenp, newp, newlen, &doasyncfree));
-#ifdef FFS_SOFTUPDATES
-	case FFS_MAX_SOFTDEPS:
-		return (sysctl_int(oldp, oldlenp, newp, newlen, &max_softdeps));
-	case FFS_SD_TICKDELAY:
-		return (sysctl_int(oldp, oldlenp, newp, newlen, &tickdelay));
-	case FFS_SD_WORKLIST_PUSH:
-		return (sysctl_rdint(oldp, oldlenp, newp, stat_worklist_push));
-	case FFS_SD_BLK_LIMIT_PUSH:
-		return (sysctl_rdint(oldp, oldlenp, newp, stat_blk_limit_push));
-	case FFS_SD_INO_LIMIT_PUSH:
-		return (sysctl_rdint(oldp, oldlenp, newp, stat_ino_limit_push));
-	case FFS_SD_BLK_LIMIT_HIT:
-		return (sysctl_rdint(oldp, oldlenp, newp, stat_blk_limit_hit));
-	case FFS_SD_INO_LIMIT_HIT:
-		return (sysctl_rdint(oldp, oldlenp, newp, stat_ino_limit_hit));
-	case FFS_SD_SYNC_LIMIT_HIT:
-		return (sysctl_rdint(oldp, oldlenp, newp, stat_sync_limit_hit));
-	case FFS_SD_INDIR_BLK_PTRS:
-		return (sysctl_rdint(oldp, oldlenp, newp, stat_indir_blk_ptrs));
-	case FFS_SD_INODE_BITMAP:
-		return (sysctl_rdint(oldp, oldlenp, newp, stat_inode_bitmap));
-	case FFS_SD_DIRECT_BLK_PTRS:
-		return (sysctl_rdint(oldp, oldlenp, newp, stat_direct_blk_ptrs));
-	case FFS_SD_DIR_ENTRY:
-		return (sysctl_rdint(oldp, oldlenp, newp, stat_dir_entry));
-#endif
 	default:
 		return (EOPNOTSUPP);
 	}

@@ -1,4 +1,4 @@
-/*	$OpenBSD: uipc_mbuf.c,v 1.49 2002/01/25 15:50:22 art Exp $	*/
+/*	$OpenBSD: uipc_mbuf.c,v 1.44 2001/12/18 23:07:49 deraadt Exp $	*/
 /*	$NetBSD: uipc_mbuf.c,v 1.15.4.1 1996/06/13 17:11:44 cgd Exp $	*/
 
 /*
@@ -80,6 +80,7 @@
 #include <sys/systm.h>
 #include <sys/proc.h>
 #include <sys/malloc.h>
+#include <sys/map.h>
 #define MBTYPES
 #include <sys/mbuf.h>
 #include <sys/kernel.h>
@@ -95,18 +96,15 @@
 struct	pool mbpool;		/* mbuf pool */
 struct	pool mclpool;		/* mbuf cluster pool */
 
-struct vm_map *mb_map;
+extern	struct vm_map *mb_map;
+int	needqueuedrain;
 
-void	*mclpool_alloc __P((struct pool *, int));
-void	mclpool_release __P((struct pool *, void *));
+void	*mclpool_alloc __P((unsigned long, int, int));
+void	mclpool_release __P((void *, unsigned long, int));
 struct mbuf *m_copym0 __P((struct mbuf *, int, int, int, int));
 
 const char *mclpool_warnmsg =
     "WARNING: mclpool limit reached; increase NMBCLUSTERS";
-
-struct pool_allocator mclpool_allocator = {
-	mclpool_alloc, mclpool_release, 0,
-};
 
 /*
  * Initialize the mbuf allcator.
@@ -114,16 +112,9 @@ struct pool_allocator mclpool_allocator = {
 void
 mbinit()
 {
-	vaddr_t minaddr, maxaddr;
-
-	mb_map = uvm_km_suballoc(kernel_map, &minaddr, &maxaddr,
-	    VM_MBUF_SIZE, VM_MAP_INTRSAFE, FALSE, NULL);
-
-	pool_init(&mbpool, MSIZE, 0, 0, 0, "mbpl", NULL);
-	pool_init(&mclpool, MCLBYTES, 0, 0, 0, "mclpl", &mclpool_allocator);
-
-	pool_set_drain_hook(&mbpool, m_reclaim, NULL);
-	pool_set_drain_hook(&mclpool, m_reclaim, NULL);
+	pool_init(&mbpool, MSIZE, 0, 0, 0, "mbpl", 0, NULL, NULL, 0);
+	pool_init(&mclpool, MCLBYTES, 0, 0, 0, "mclpl", 0, mclpool_alloc,
+	    mclpool_release, 0);
 
 	/*
 	 * Set the hard limit on the mclpool to the number of
@@ -144,7 +135,10 @@ mbinit()
 
 
 void *
-mclpool_alloc(struct pool *pp, int flags)
+mclpool_alloc(sz, flags, mtype)
+	unsigned long sz;
+	int flags;
+	int mtype;
 {
 	boolean_t waitok = (flags & PR_WAITOK) ? TRUE : FALSE;
 
@@ -153,18 +147,73 @@ mclpool_alloc(struct pool *pp, int flags)
 }
 
 void
-mclpool_release(struct pool *pp, void *v)
+mclpool_release(v, sz, mtype)
+	void *v;
+	unsigned long sz;
+	int mtype;
 {
 	uvm_km_free_poolpage1(mb_map, (vaddr_t)v);
 }
 
+/*
+ * When MGET failes, ask protocols to free space when short of memory,
+ * then re-attempt to allocate an mbuf.
+ */
+struct mbuf *
+m_retry(i, t)
+	int i, t;
+{
+	register struct mbuf *m;
+
+	if (i & M_DONTWAIT) {
+		needqueuedrain = 1;
+		setsoftnet();
+		return (NULL);
+	}
+	m_reclaim();
+#define m_retry(i, t)	NULL
+	MGET(m, i, t);
+#undef m_retry
+	if (m != NULL)
+		mbstat.m_wait++;
+	else
+		mbstat.m_drops++;
+	return (m);
+}
+
+/*
+ * As above; retry an MGETHDR.
+ */
+struct mbuf *
+m_retryhdr(i, t)
+	int i, t;
+{
+	register struct mbuf *m;
+
+	if (i & M_DONTWAIT) {
+		needqueuedrain = 1;
+		setsoftnet();
+		return (NULL);
+	}
+	m_reclaim();
+#define m_retryhdr(i, t) NULL
+	MGETHDR(m, i, t);
+#undef m_retryhdr
+	if (m != NULL)
+		mbstat.m_wait++;
+	else
+		mbstat.m_drops++;
+	return (m);
+}
+
 void
-m_reclaim(void *arg, int flags)
+m_reclaim()
 {
 	register struct domain *dp;
 	register struct protosw *pr;
 	int s = splimp();
 
+	needqueuedrain = 0;
 	for (dp = domains; dp; dp = dp->dom_next)
 		for (pr = dp->dom_protosw; pr < dp->dom_protoswNPROTOSW; pr++)
 			if (pr->pr_drain)

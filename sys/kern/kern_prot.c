@@ -1,4 +1,4 @@
-/*	$OpenBSD: kern_prot.c,v 1.20 2002/01/23 15:46:48 art Exp $	*/
+/*	$OpenBSD: kern_prot.c,v 1.18 2001/06/22 23:55:24 art Exp $	*/
 /*	$NetBSD: kern_prot.c,v 1.33 1996/02/09 18:59:42 christos Exp $	*/
 
 /*
@@ -54,7 +54,6 @@
 #include <sys/times.h>
 #include <sys/malloc.h>
 #include <sys/filedesc.h>
-#include <sys/pool.h>
 
 #include <sys/mount.h>
 #include <sys/syscallargs.h>
@@ -557,7 +556,7 @@ crget()
 {
 	struct ucred *cr;
 
-	cr = pool_get(&ucred_pool, PR_WAITOK);
+	MALLOC(cr, struct ucred *, sizeof(*cr), M_CRED, M_WAITOK);
 	bzero((caddr_t)cr, sizeof(*cr));
 	cr->cr_ref = 1;
 	return (cr);
@@ -571,9 +570,12 @@ void
 crfree(cr)
 	struct ucred *cr;
 {
+	int s;
 
+	s = splimp();				/* ??? */
 	if (--cr->cr_ref == 0)
-		pool_put(&ucred_pool, cr);
+		FREE((caddr_t)cr, M_CRED);
+	(void) splx(s);
 }
 
 /*

@@ -1,4 +1,4 @@
-/*	$OpenBSD: vm_machdep.c,v 1.47 2002/01/16 20:50:17 miod Exp $	*/
+/*	$OpenBSD: vm_machdep.c,v 1.43 2001/12/16 23:49:47 miod Exp $	*/
 
 /*
  * Copyright (c) 1998 Steve Murphree, Jr.
@@ -50,6 +50,7 @@
 #include <sys/proc.h>
 #include <sys/signalvar.h>
 #include <sys/malloc.h>
+#include <sys/map.h>
 #include <sys/buf.h>
 #include <sys/user.h>
 #include <sys/vnode.h>
@@ -63,6 +64,7 @@
 #include <machine/cpu.h>
 #include <machine/cpu_number.h>
 #include <machine/locore.h>
+#include <machine/pte.h>
 #include <machine/trap.h>
 
 extern struct extent *iomap_extent;
@@ -432,24 +434,23 @@ int
 badvaddr(vm_offset_t va, int size)
 {
 	register int 	x;
+
 	if (badaddr(va, size)) {
 		return -1;
 	}
 
 	switch (size) {
 	case 1:
-		x = *(unsigned char *volatile)va;
+		x = *(volatile unsigned char *)va;
 		break;
 	case 2:
-		x = *(unsigned short *volatile)va;
+		x = *(volatile unsigned short *)va;
 		break;
 	case 4:
-		x = *(unsigned long *volatile)va;
+		x = *(volatile unsigned long *)va;
 		break;
-	default:
-                return -1;
 	}
-	return(0);
+	return(x);
 }
 
 int

@@ -1,4 +1,4 @@
-/*	$OpenBSD: machdep.c,v 1.77 2002/01/23 17:51:52 art Exp $	*/
+/*	$OpenBSD: machdep.c,v 1.74 2001/12/06 18:53:01 millert Exp $	*/
 /*	$NetBSD: machdep.c,v 1.121 1999/03/26 23:41:29 mycroft Exp $	*/
 
 /*
@@ -55,7 +55,7 @@
 #include <sys/kernel.h>
 #include <sys/device.h>
 #include <sys/malloc.h>
-#include <sys/extent.h>
+#include <sys/map.h>
 #include <sys/mbuf.h>
 #include <sys/mount.h>
 #include <sys/msgbuf.h>
@@ -111,6 +111,7 @@
 char	machine[] = MACHINE;	/* from <machine/param.h> */
 
 struct vm_map *exec_map = NULL;  
+struct vm_map *mb_map = NULL;
 struct vm_map *phys_map = NULL;
 
 extern paddr_t avail_start, avail_end;
@@ -145,12 +146,6 @@ extern struct emul emul_hpux;
 #ifdef COMPAT_SUNOS
 extern struct emul emul_sunos;
 #endif
-
-/*
- * XXX some storage space must be allocated statically because of
- * early console init
- */
-char	extiospace[EXTENT_FIXED_STORAGE_SIZE(EIOMAPSIZE / 16)];
 
 /* prototypes for local functions */
 caddr_t	allocsys __P((caddr_t));
@@ -215,8 +210,7 @@ hp300_init()
 void
 consinit()
 {
-	extern struct extent *extio;
-	extern char *extiobase;
+	extern struct map extiomap[];
 
 	/*
 	 * Initialize some variables for sanity.
@@ -229,10 +223,8 @@ consinit()
 	/*
 	 * Initialize the DIO resource map.
 	 */
-	extio = extent_create("extio",
-	    (u_long)extiobase, (u_long)extiobase + ctob(EIOMAPSIZE),
-	    M_DEVBUF, extiospace, sizeof(extiospace), EX_NOWAIT);
-	    
+	rminit(extiomap, (long)EIOMAPSIZE, (long)1, "extio", EIOMAPSIZE/16);
+
 	/*
 	 * Initialize the console before we print anything out.
 	 */
@@ -347,6 +339,9 @@ cpu_startup()
 	 */
 	phys_map = uvm_km_suballoc(kernel_map, &minaddr, &maxaddr,
 				   VM_PHYS_SIZE, 0, FALSE, NULL);
+
+	mb_map = uvm_km_suballoc(kernel_map, &minaddr, &maxaddr,
+				 VM_MBUF_SIZE, VM_MAP_INTRSAFE, FALSE, NULL);
 
 #ifdef DEBUG
 	pmapdebug = opmapdebug;

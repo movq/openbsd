@@ -1,4 +1,4 @@
-/*	$OpenBSD: kern_proc.c,v 1.12 2002/01/25 15:00:26 art Exp $	*/
+/*	$OpenBSD: kern_proc.c,v 1.8 2001/03/23 18:42:06 art Exp $	*/
 /*	$NetBSD: kern_proc.c,v 1.14 1996/02/09 18:59:41 christos Exp $	*/
 
 /*
@@ -38,6 +38,7 @@
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/map.h>
 #include <sys/kernel.h>
 #include <sys/proc.h>
 #include <sys/buf.h>
@@ -76,11 +77,6 @@ struct proclist allproc;
 struct proclist zombproc;
 
 struct pool proc_pool;
-struct pool rusage_pool;
-struct pool ucred_pool;
-struct pool pgrp_pool;
-struct pool session_pool;
-struct pool pcred_pool;
 
 /*
  * Locking of this proclist is special; it's accessed in a
@@ -115,17 +111,7 @@ procinit()
 	uihashtbl = hashinit(maxproc / 16, M_PROC, M_WAITOK, &uihash);
 
 	pool_init(&proc_pool, sizeof(struct proc), 0, 0, 0, "procpl",
-	    &pool_allocator_nointr);
-	pool_init(&rusage_pool, sizeof(struct rusage), 0, 0, 0, "zombiepl",
-	    &pool_allocator_nointr);
-	pool_init(&ucred_pool, sizeof(struct ucred), 0, 0, 0, "ucredpl",
-	    &pool_allocator_nointr);
-	pool_init(&pgrp_pool, sizeof(struct pgrp), 0, 0, 0, "pgrppl",
-	    &pool_allocator_nointr);
-	pool_init(&session_pool, sizeof(struct session), 0, 0, 0, "sessionpl",
-	    &pool_allocator_nointr);
-	pool_init(&pcred_pool, sizeof(struct pcred), 0, 0, 0, "pcredpl",
-	    &pool_allocator_nointr);
+		0, pool_page_alloc_nointr, pool_page_free_nointr, M_PROC);
 }
 
 /*
@@ -239,14 +225,16 @@ enterpgrp(p, pgid, mksess)
 #endif
 		if ((np = pfind(savepid)) == NULL || np != p)
 			return (ESRCH);
-		pgrp = pool_get(&pgrp_pool, PR_WAITOK);
+		MALLOC(pgrp, struct pgrp *, sizeof(struct pgrp), M_PGRP,
+		    M_WAITOK);
 		if (mksess) {
 			register struct session *sess;
 
 			/*
 			 * new session
 			 */
-			sess = pool_get(&session_pool, PR_WAITOK);
+			MALLOC(sess, struct session *, sizeof(struct session),
+			    M_SESSION, M_WAITOK);
 			sess->s_leader = p;
 			sess->s_count = 1;
 			sess->s_ttyvp = NULL;
@@ -313,8 +301,9 @@ pgdelete(pgrp)
 	    pgrp->pg_session->s_ttyp->t_pgrp == pgrp)
 		pgrp->pg_session->s_ttyp->t_pgrp = NULL;
 	LIST_REMOVE(pgrp, pg_hash);
-	SESSRELE(pgrp->pg_session);
-	pool_put(&pgrp_pool, pgrp);
+	if (--pgrp->pg_session->s_count == 0)
+		FREE(pgrp->pg_session, M_SESSION);
+	FREE(pgrp, M_PGRP);
 }
 
 /*

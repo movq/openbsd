@@ -1,4 +1,4 @@
-#	$OpenBSD: files,v 1.237 2002/01/29 15:48:29 jason Exp $
+#	$OpenBSD: files,v 1.233 2001/12/10 04:45:31 art Exp $
 #	$NetBSD: files,v 1.87 1996/05/19 17:17:50 jonathan Exp $
 
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
@@ -121,7 +121,7 @@ file	dev/ic/adw.c		adw
 
 # BusLogic MultiMaster and MultiMaster Ultra SCSI controllers
 device	bha: scsi
-file	dev/ic/bha.c		bha & (bha_pci | bha_isa | bha_eisa) needs-flag
+file	dev/ic/bha.c		bha
 
 # ICP Vortex GDT RAID controllers
 device	gdt: scsi
@@ -493,6 +493,7 @@ file kern/subr_log.c
 file kern/subr_pool.c
 file kern/subr_prf.c
 file kern/subr_prof.c
+file kern/subr_rmap.c
 file kern/subr_userconf.c		boot_config
 file kern/subr_xxx.c
 file kern/sys_generic.c
@@ -532,6 +533,7 @@ file kern/vfs_syscalls.c
 file kern/vfs_vnops.c
 file kern/vnode_if.c
 file miscfs/deadfs/dead_vnops.c
+file miscfs/genfs/genfs_vnops.c
 file miscfs/fdesc/fdesc_vfsops.c	fdesc
 file miscfs/fdesc/fdesc_vnops.c		fdesc
 file miscfs/fifofs/fifo_vnops.c		fifo
@@ -674,6 +676,7 @@ file crypto/crypto.c			(inet & ipsec) | crypto
 file crypto/cryptodev.c			((inet & ipsec) | crypto)	needs-flag
 file crypto/criov.c			(inet & ipsec) | crypto
 file crypto/cryptosoft.c		(inet & ipsec) | crypto
+file crypto/cryptombuf.c		(inet & ipsec) | crypto
 file crypto/xform.c			(inet & ipsec) | crypto
 file crypto/deflate.c			(inet & ipsec) | crypto
 file netatalk/aarp.c			netatalk
@@ -799,6 +802,7 @@ file xfs/xfs_syscalls-dummy.c		!xfs
 file uvm/uvm_amap.c
 file uvm/uvm_anon.c
 file uvm/uvm_aobj.c
+file uvm/uvm_bio.c
 file uvm/uvm_device.c
 file uvm/uvm_fault.c
 file uvm/uvm_glue.c

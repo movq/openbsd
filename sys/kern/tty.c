@@ -1,4 +1,4 @@
-/*	$OpenBSD: tty.c,v 1.50 2002/01/30 20:45:35 nordin Exp $	*/
+/*	$OpenBSD: tty.c,v 1.48 2001/11/06 19:53:20 miod Exp $	*/
 /*	$NetBSD: tty.c,v 1.68.4.2 1996/06/06 16:04:52 thorpej Exp $	*/
 
 /*-
@@ -155,6 +155,11 @@ u_char const char_type[] = {
 #undef	NO
 #undef	TB
 #undef	VT
+
+/* Macros to clear/set/test flags. */
+#define	SET(t, f)	(t) |= (f)
+#define	CLR(t, f)	(t) &= ~((unsigned)(f))
+#define	ISSET(t, f)	((t) & (f))
 
 #define	islower(c)	((c) >= 'a' && (c) <= 'z')
 #define	isupper(c)	((c) >= 'A' && (c) <= 'Z')
@@ -977,7 +982,6 @@ ttioctl(tp, cmd, data, flag, p)
 		    ((p->p_session->s_ttyvp || tp->t_session) &&
 		     (tp->t_session != p->p_session)))
 			return (EPERM);
-		SESSHOLD(p->p_session);
 		tp->t_session = p->p_session;
 		tp->t_pgrp = p->p_pgrp;
 		p->p_session->s_ttyp = tp;

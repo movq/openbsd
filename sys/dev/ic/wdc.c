@@ -1,4 +1,4 @@
-/*      $OpenBSD: wdc.c,v 1.46 2002/01/23 00:39:47 art Exp $     */
+/*      $OpenBSD: wdc.c,v 1.43 2001/11/06 19:53:18 miod Exp $     */
 /*	$NetBSD: wdc.c,v 1.68 1999/06/23 19:00:17 bouyer Exp $ */
 
 
@@ -659,7 +659,7 @@ wdcattach(chp)
 	if (inited == 0) {
 		/* Initialize the wdc_xfer pool. */
 		pool_init(&wdc_xfer_pool, sizeof(struct wdc_xfer), 0,
-		    0, 0, "wdcspl", NULL);
+		    0, 0, "wdcspl", 0, NULL, NULL, M_DEVBUF);
 		inited++;
 	}
 	TAILQ_INIT(&chp->ch_queue->sc_xfer);
@@ -1244,10 +1244,6 @@ wdc_probe_caps(drvp, params)
 			    ATA_CONFIG_DMA_OFF;
 			drvp->drive_flags |= DRIVE_DMA | DRIVE_MODE;
 		}
-	}
-	if ((wdc->cap & WDC_CAPABILITY_UDMA) == 0) {
-		/* don't care about UDMA modes */
-		return;
 	}
 	if (cf_flags & ATA_CONFIG_UDMA_SET) {
 		if ((cf_flags & ATA_CONFIG_UDMA_MODES) ==
@@ -1983,12 +1979,11 @@ bad:
 }
 
 int
-wdc_ioctl(drvp, xfer, addr, flag, p)
+wdc_ioctl(drvp, xfer, addr, flag)
 	struct ata_drive_datas *drvp;
 	u_long xfer;
 	caddr_t addr;
 	int flag;
-	struct proc *p;
 {
 	int error = 0;
 

@@ -1,4 +1,4 @@
-/*	$OpenBSD: nfs_subs.c,v 1.40 2002/01/16 21:51:16 ericj Exp $	*/
+/*	$OpenBSD: nfs_subs.c,v 1.37 2001/12/10 02:19:34 art Exp $	*/
 /*	$NetBSD: nfs_subs.c,v 1.27.4.3 1996/07/08 20:34:24 jtc Exp $	*/
 
 /*
@@ -39,6 +39,40 @@
  *	@(#)nfs_subs.c	8.8 (Berkeley) 5/22/95
  */
 
+/*
+ * Copyright 2000 Wasabi Systems, Inc.
+ * All rights reserved.
+ *
+ * Written by Frank van der Linden for Wasabi Systems, Inc.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *      This product includes software developed for the NetBSD Project by
+ *      Wasabi Systems, Inc.
+ * 4. The name of Wasabi Systems, Inc. may not be used to endorse
+ *    or promote products derived from this software without specific prior
+ *    written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY WASABI SYSTEMS, INC. ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL WASABI SYSTEMS, INC
+ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
 
 /*
  * These functions support the macros and help fiddle mbuf chains for
@@ -552,8 +586,8 @@ nfsm_reqh(vp, procid, hsiz, bposp)
 	int hsiz;
 	caddr_t *bposp;
 {
-	struct mbuf *mb;
-	caddr_t bpos;
+	register struct mbuf *mb;
+	register caddr_t bpos;
 
 	MGET(mb, M_WAIT, MT_DATA);
 	if (hsiz >= MINCLSIZE)
@@ -575,7 +609,7 @@ nfsm_reqh(vp, procid, hsiz, bposp)
 struct mbuf *
 nfsm_rpchead(cr, nmflag, procid, auth_type, auth_len, auth_str, verf_len,
 	verf_str, mrest, mrest_len, mbp, xidp)
-	struct ucred *cr;
+	register struct ucred *cr;
 	int nmflag;
 	int procid;
 	int auth_type;
@@ -588,10 +622,10 @@ nfsm_rpchead(cr, nmflag, procid, auth_type, auth_len, auth_str, verf_len,
 	struct mbuf **mbp;
 	u_int32_t *xidp;
 {
-	struct mbuf *mb;
-	u_int32_t *tl;
-	caddr_t bpos;
-	int i;
+	register struct mbuf *mb;
+	register u_int32_t *tl;
+	register caddr_t bpos;
+	register int i;
 	struct mbuf *mreq, *mb2;
 	int siz, grpsiz, authsiz;
 
@@ -728,13 +762,13 @@ nfsm_rpchead(cr, nmflag, procid, auth_type, auth_len, auth_str, verf_len,
 int
 nfsm_mbuftouio(mrep, uiop, siz, dpos)
 	struct mbuf **mrep;
-	struct uio *uiop;
+	register struct uio *uiop;
 	int siz;
 	caddr_t *dpos;
 {
-	char *mbufcp, *uiocp;
-	int xfer, left, len;
-	struct mbuf *mp;
+	register char *mbufcp, *uiocp;
+	register int xfer, left, len;
+	register struct mbuf *mp;
 	long uiosiz, rem;
 	int error = 0;
 
@@ -803,14 +837,14 @@ nfsm_mbuftouio(mrep, uiop, siz, dpos)
  */
 int
 nfsm_uiotombuf(uiop, mq, siz, bpos)
-	struct uio *uiop;
+	register struct uio *uiop;
 	struct mbuf **mq;
 	int siz;
 	caddr_t *bpos;
 {
-	char *uiocp;
-	struct mbuf *mp, *mp2;
-	int xfer, left, mlen;
+	register char *uiocp;
+	register struct mbuf *mp, *mp2;
+	register int xfer, left, mlen;
 	int uiosiz, clflg, rem;
 	char *cp;
 
@@ -895,9 +929,9 @@ nfsm_disct(mdp, dposp, siz, left, cp2)
 	int left;
 	caddr_t *cp2;
 {
-	struct mbuf *mp, *mp2;
-	int siz2, xfer;
-	caddr_t p;
+	register struct mbuf *mp, *mp2;
+	register int siz2, xfer;
+	register caddr_t p;
 
 	mp = *mdp;
 	while (left == 0) {
@@ -957,8 +991,8 @@ nfs_adv(mdp, dposp, offs, left)
 	int offs;
 	int left;
 {
-	struct mbuf *m;
-	int s;
+	register struct mbuf *m;
+	register int s;
 
 	m = *mdp;
 	s = left;
@@ -984,7 +1018,7 @@ nfsm_strtmbuf(mb, bpos, cp, siz)
 	char *cp;
 	long siz;
 {
-	struct mbuf *m1 = NULL, *m2;
+	register struct mbuf *m1 = NULL, *m2;
 	long left, xfer, len, tlen;
 	u_int32_t *tl;
 	int putsize;
@@ -1084,7 +1118,7 @@ int
 nfs_vfs_init(vfsp)
 	struct vfsconf *vfsp;
 {
-	int i;
+	register int i;
 
 	/* Ensure async daemons disabled */
 	for (i = 0; i < NFS_MAXASYNCDAEMON; i++)
@@ -1116,12 +1150,12 @@ nfs_loadattrcache(vpp, mdp, dposp, vaper)
 	caddr_t *dposp;
 	struct vattr *vaper;
 {
-	struct vnode *vp = *vpp;
-	struct vattr *vap;
-	struct nfs_fattr *fp;
+	register struct vnode *vp = *vpp;
+	register struct vattr *vap;
+	register struct nfs_fattr *fp;
 	extern int (**spec_nfsv2nodeop_p) __P((void *));
-	struct nfsnode *np;
-	int32_t t1;
+	register struct nfsnode *np;
+	register int32_t t1;
 	caddr_t cp2;
 	int error = 0;
 	int32_t rdev;
@@ -1241,17 +1275,14 @@ nfs_loadattrcache(vpp, mdp, dposp, vaper)
 		vap->va_filerev = 0;
 	}
 	if (vap->va_size != np->n_size) {
-		if (vap->va_type == VREG) {
-			if (np->n_flag & NMODIFIED) {
-				if (vap->va_size < np->n_size)
-					vap->va_size = np->n_size;
-				else
-					np->n_size = vap->va_size;
-			} else
-				np->n_size = vap->va_size;
-			uvm_vnp_setsize(vp, np->n_size);
-		} else
+		if ((np->n_flag & NMODIFIED) && vap->va_size < np->n_size) {
+			vap->va_size = np->n_size;
+		} else {
 			np->n_size = vap->va_size;
+			if (vap->va_type == VREG) {
+				uvm_vnp_setsize(vp, np->n_size);
+			}
+		}
 	}
 	np->n_attrstamp = time.tv_sec;
 	if (vaper != NULL) {
@@ -1299,11 +1330,11 @@ nfs_attrtimeo (np)
  */
 int
 nfs_getattrcache(vp, vaper)
-	struct vnode *vp;
+	register struct vnode *vp;
 	struct vattr *vaper;
 {
-	struct nfsnode *np = VTONFS(vp);
-	struct vattr *vap;
+	register struct nfsnode *np = VTONFS(vp);
+	register struct vattr *vap;
 
 	if ((time.tv_sec - np->n_attrstamp) >= nfs_attrtimeo(np)) {
 		nfsstats.attrcache_misses++;
@@ -1340,7 +1371,7 @@ nfs_getattrcache(vp, vaper)
  */
 int
 nfs_namei(ndp, fhp, len, slp, nam, mdp, dposp, retdirp, p, kerbflag)
-	struct nameidata *ndp;
+	register struct nameidata *ndp;
 	fhandle_t *fhp;
 	int len;
 	struct nfssvc_sock *slp;
@@ -1351,9 +1382,9 @@ nfs_namei(ndp, fhp, len, slp, nam, mdp, dposp, retdirp, p, kerbflag)
 	struct proc *p;
 	int kerbflag;
 {
-	int i, rem;
-	struct mbuf *md;
-	char *fromcp, *tocp;
+	register int i, rem;
+	register struct mbuf *md;
+	register char *fromcp, *tocp;
 	struct vnode *dp;
 	int error, rdonly;
 	struct componentname *cnp = &ndp->ni_cnd;
@@ -1457,12 +1488,12 @@ out:
 void
 nfsm_adj(mp, len, nul)
 	struct mbuf *mp;
-	int len;
+	register int len;
 	int nul;
 {
-	struct mbuf *m;
-	int count, i;
-	char *cp;
+	register struct mbuf *m;
+	register int count, i;
+	register char *cp;
 
 	/*
 	 * Trim from tail.  Scan the mbuf chain,
@@ -1520,15 +1551,15 @@ void
 nfsm_srvwcc(nfsd, before_ret, before_vap, after_ret, after_vap, mbp, bposp)
 	struct nfsrv_descript *nfsd;
 	int before_ret;
-	struct vattr *before_vap;
+	register struct vattr *before_vap;
 	int after_ret;
 	struct vattr *after_vap;
 	struct mbuf **mbp;
 	char **bposp;
 {
-	struct mbuf *mb = *mbp, *mb2;
-	char *bpos = *bposp;
-	u_int32_t *tl;
+	register struct mbuf *mb = *mbp, *mb2;
+	register char *bpos = *bposp;
+	register u_int32_t *tl;
 
 	if (before_ret) {
 		nfsm_build(tl, u_int32_t *, NFSX_UNSIGNED);
@@ -1555,10 +1586,10 @@ nfsm_srvpostopattr(nfsd, after_ret, after_vap, mbp, bposp)
 	struct mbuf **mbp;
 	char **bposp;
 {
-	struct mbuf *mb = *mbp, *mb2;
-	char *bpos = *bposp;
-	u_int32_t *tl;
-	struct nfs_fattr *fp;
+	register struct mbuf *mb = *mbp, *mb2;
+	register char *bpos = *bposp;
+	register u_int32_t *tl;
+	register struct nfs_fattr *fp;
 
 	if (after_ret) {
 		nfsm_build(tl, u_int32_t *, NFSX_UNSIGNED);
@@ -1575,9 +1606,9 @@ nfsm_srvpostopattr(nfsd, after_ret, after_vap, mbp, bposp)
 
 void
 nfsm_srvfattr(nfsd, vap, fp)
-	struct nfsrv_descript *nfsd;
-	struct vattr *vap;
-	struct nfs_fattr *fp;
+	register struct nfsrv_descript *nfsd;
+	register struct vattr *vap;
+	register struct nfs_fattr *fp;
 {
 
 	fp->fa_nlink = txdr_unsigned(vap->va_nlink);
@@ -1634,8 +1665,8 @@ nfsrv_fhtovp(fhp, lockflag, vpp, cred, slp, nam, rdonlyp, kerbflag)
 	int kerbflag;
 {
 	struct proc *p = curproc;	/* XXX */
-	struct mount *mp;
-	int i;
+	register struct mount *mp;
+	register int i;
 	struct ucred *credanon;
 	int error, exflags;
 	struct sockaddr_in *saddr;
@@ -1654,7 +1685,7 @@ nfsrv_fhtovp(fhp, lockflag, vpp, cred, slp, nam, rdonlyp, kerbflag)
 
 	saddr = mtod(nam, struct sockaddr_in *);
 	if (saddr->sin_family == AF_INET &&
-	    ((ntohs(saddr->sin_port) >= IPPORT_RESERVED && !nfs_norsvport) ||
+	    (ntohs(saddr->sin_port) >= IPPORT_RESERVED ||
 	    (slp->ns_so->so_type == SOCK_STREAM && ntohs(saddr->sin_port) == 20))) {
 		vput(*vpp);
 		return (NFSERR_AUTHERR | AUTH_TOOWEAK);
@@ -1701,7 +1732,7 @@ netaddr_match(family, haddr, nam)
 	union nethostaddr *haddr;
 	struct mbuf *nam;
 {
-	struct sockaddr_in *inetaddr;
+	register struct sockaddr_in *inetaddr;
 
 	switch (family) {
 	case AF_INET:
@@ -1713,7 +1744,7 @@ netaddr_match(family, haddr, nam)
 #ifdef ISO
 	case AF_ISO:
 	    {
-		struct sockaddr_iso *isoaddr1, *isoaddr2;
+		register struct sockaddr_iso *isoaddr1, *isoaddr2;
 
 		isoaddr1 = mtod(nam, struct sockaddr_iso *);
 		isoaddr2 = mtod(haddr->had_nam, struct sockaddr_iso *);
@@ -1741,24 +1772,214 @@ void
 nfs_clearcommit(mp)
 	struct mount *mp;
 {
-	struct vnode *vp, *nvp;
-	struct buf *bp, *nbp;
+	struct vnode *vp;
+	struct vm_page *pg;
+	struct nfsnode *np;
 	int s;
 
 	s = splbio();
-loop:
-	for (vp = LIST_FIRST(&mp->mnt_vnodelist); vp != NULL; vp = nvp) {
-		if (vp->v_mount != mp)	/* Paranoia */
-			goto loop;
-		nvp = LIST_NEXT(vp, v_mntvnodes);
-		for (bp = LIST_FIRST(&vp->v_dirtyblkhd); bp != NULL; bp = nbp) {
-			nbp = LIST_NEXT(bp, b_vnbufs);
-			if ((bp->b_flags & (B_BUSY | B_DELWRI | B_NEEDCOMMIT))
-				== (B_DELWRI | B_NEEDCOMMIT))
-				bp->b_flags &= ~B_NEEDCOMMIT;
+	LIST_FOREACH(vp, &mp->mnt_vnodelist, v_mntvnodes) {
+		if (vp->v_type == VNON)
+			continue;
+		np = VTONFS(vp);
+		np->n_pushlo = np->n_pushhi = np->n_pushedlo =
+		    np->n_pushedhi = 0;
+		np->n_commitflags &=
+		    ~(NFS_COMMIT_PUSH_VALID | NFS_COMMIT_PUSHED_VALID);
+		simple_lock(&vp->v_uobj.vmobjlock);
+		TAILQ_FOREACH(pg, &vp->v_uobj.memq, listq) {
+			pg->flags &= ~PG_NEEDCOMMIT;
 		}
+		simple_unlock(&vp->v_uobj.vmobjlock);
 	}
 	splx(s);
+}
+
+void
+nfs_merge_commit_ranges(vp)
+	struct vnode *vp;
+{
+	struct nfsnode *np = VTONFS(vp);
+
+	if (!(np->n_commitflags & NFS_COMMIT_PUSHED_VALID)) {
+		np->n_pushedlo = np->n_pushlo;
+		np->n_pushedhi = np->n_pushhi;
+		np->n_commitflags |= NFS_COMMIT_PUSHED_VALID;
+	} else {
+		if (np->n_pushlo < np->n_pushedlo)
+			np->n_pushedlo = np->n_pushlo;
+		if (np->n_pushhi > np->n_pushedhi)
+			np->n_pushedhi = np->n_pushhi;
+	}
+
+	np->n_pushlo = np->n_pushhi = 0;
+	np->n_commitflags &= ~NFS_COMMIT_PUSH_VALID;
+
+#ifdef fvdl_debug
+	printf("merge: committed: %u - %u\n", (unsigned)np->n_pushedlo,
+	    (unsigned)np->n_pushedhi);
+#endif
+}
+
+int
+nfs_in_committed_range(vp, off, len)
+	struct vnode *vp;
+	off_t off, len;
+{
+	struct nfsnode *np = VTONFS(vp);
+	off_t lo, hi;
+
+	if (!(np->n_commitflags & NFS_COMMIT_PUSHED_VALID))
+		return 0;
+	lo = off;
+	hi = lo + len;
+
+	return (lo >= np->n_pushedlo && hi <= np->n_pushedhi);
+}
+
+int
+nfs_in_tobecommitted_range(vp, off, len)
+	struct vnode *vp;
+	off_t off, len;
+{
+	struct nfsnode *np = VTONFS(vp);
+	off_t lo, hi;
+
+	if (!(np->n_commitflags & NFS_COMMIT_PUSH_VALID))
+		return 0;
+	lo = off;
+	hi = lo + len;
+
+	return (lo >= np->n_pushlo && hi <= np->n_pushhi);
+}
+
+void
+nfs_add_committed_range(vp, off, len)
+	struct vnode *vp;
+	off_t off, len;
+{
+	struct nfsnode *np = VTONFS(vp);
+	off_t lo, hi;
+
+	lo = off;
+	hi = lo + len;
+
+	if (!(np->n_commitflags & NFS_COMMIT_PUSHED_VALID)) {
+		np->n_pushedlo = lo;
+		np->n_pushedhi = hi;
+		np->n_commitflags |= NFS_COMMIT_PUSHED_VALID;
+	} else {
+		if (hi > np->n_pushedhi)
+			np->n_pushedhi = hi;
+		if (lo < np->n_pushedlo)
+			np->n_pushedlo = lo;
+	}
+#ifdef fvdl_debug
+	printf("add: committed: %u - %u\n", (unsigned)np->n_pushedlo,
+	    (unsigned)np->n_pushedhi);
+#endif
+}
+
+void
+nfs_del_committed_range(vp, off, len)
+	struct vnode *vp;
+	off_t off, len;
+{
+	struct nfsnode *np = VTONFS(vp);
+	off_t lo, hi;
+
+	if (!(np->n_commitflags & NFS_COMMIT_PUSHED_VALID))
+		return;
+
+	lo = off;
+	hi = lo + len;
+
+	if (lo > np->n_pushedhi || hi < np->n_pushedlo)
+		return;
+	if (lo <= np->n_pushedlo)
+		np->n_pushedlo = hi;
+	else if (hi >= np->n_pushedhi)
+		np->n_pushedhi = lo;
+	else {
+		/*
+		 * XXX There's only one range. If the deleted range
+		 * is in the middle, pick the largest of the
+		 * contiguous ranges that it leaves.
+		 */
+		if ((np->n_pushedlo - lo) > (hi - np->n_pushedhi))
+			np->n_pushedhi = lo;
+		else
+			np->n_pushedlo = hi;
+	}
+#ifdef fvdl_debug
+	printf("del: committed: %u - %u\n", (unsigned)np->n_pushedlo,
+	    (unsigned)np->n_pushedhi);
+#endif
+}
+
+void
+nfs_add_tobecommitted_range(vp, off, len)
+	struct vnode *vp;
+	off_t off, len;
+{
+	struct nfsnode *np = VTONFS(vp);
+	off_t lo, hi;
+
+	lo = off;
+	hi = lo + len;
+
+	if (!(np->n_commitflags & NFS_COMMIT_PUSH_VALID)) {
+		np->n_pushlo = lo;
+		np->n_pushhi = hi;
+		np->n_commitflags |= NFS_COMMIT_PUSH_VALID;
+	} else {
+		if (lo < np->n_pushlo)
+			np->n_pushlo = lo;
+		if (hi > np->n_pushhi)
+			np->n_pushhi = hi;
+	}
+#ifdef fvdl_debug
+	printf("add: tobecommitted: %u - %u\n", (unsigned)np->n_pushlo,
+	    (unsigned)np->n_pushhi);
+#endif
+}
+
+void
+nfs_del_tobecommitted_range(vp, off, len)
+	struct vnode *vp;
+	off_t off, len;
+{
+	struct nfsnode *np = VTONFS(vp);
+	off_t lo, hi;
+
+	if (!(np->n_commitflags & NFS_COMMIT_PUSH_VALID))
+		return;
+
+	lo = off;
+	hi = lo + len;
+
+	if (lo > np->n_pushhi || hi < np->n_pushlo)
+		return;
+
+	if (lo <= np->n_pushlo)
+		np->n_pushlo = hi;
+	else if (hi >= np->n_pushhi)
+		np->n_pushhi = lo;
+	else {
+		/*
+		 * XXX There's only one range. If the deleted range
+		 * is in the middle, pick the largest of the
+		 * contiguous ranges that it leaves.
+		 */
+		if ((np->n_pushlo - lo) > (hi - np->n_pushhi))
+			np->n_pushhi = lo;
+		else
+			np->n_pushlo = hi;
+	}
+#ifdef fvdl_debug
+	printf("del: tobecommitted: %u - %u\n", (unsigned)np->n_pushlo,
+	    (unsigned)np->n_pushhi);
+#endif
 }
 
 /*
@@ -1768,9 +1989,9 @@ loop:
 int
 nfsrv_errmap(nd, err)
 	struct nfsrv_descript *nd;
-	int err;
+	register int err;
 {
-	short *defaulterrp, *errp;
+	register short *defaulterrp, *errp;
 
 	if (nd->nd_flag & ND_NFSV3) {
 	    if (nd->nd_procnum <= NFSPROC_COMMIT) {
@@ -1797,10 +2018,10 @@ nfsrv_errmap(nd, err)
  */
 void
 nfsrvw_sort(list, num)
-        gid_t *list;
-        int num;
+        register gid_t *list;
+        register int num;
 {
-	int i, j;
+	register int i, j;
 	gid_t v;
 
 	/* Insertion sort. */
@@ -1818,9 +2039,9 @@ nfsrvw_sort(list, num)
  */
 void
 nfsrv_setcred(incred, outcred)
-	struct ucred *incred, *outcred;
+	register struct ucred *incred, *outcred;
 {
-	int i;
+	register int i;
 
 	bzero((caddr_t)outcred, sizeof (struct ucred));
 	outcred->cr_ref = 1;
