@@ -1,4 +1,4 @@
-/*	$OpenBSD: pathnames.h,v 1.1 1996/05/31 05:40:02 tholo Exp $	*/
+/*	$OpenBSD: pathnames.h,v 1.1.1.1 1996/05/31 05:40:02 tholo Exp $	*/
 
 /*
  * Copyright (c) 1996 SigmaSoft, Th. Lockert <tholo@sigmasoft.com>

@@ -1,4 +1,4 @@
-/*	$OpenBSD: mvcur.c,v 1.1 1996/05/31 05:40:01 tholo Exp $	*/
+/*	$OpenBSD: mvcur.c,v 1.1.1.1 1996/05/31 05:40:01 tholo Exp $	*/
 
 /*
  * Copyright (c) 1996 SigmaSoft, Th. Lockert <tholo@sigmasoft.com>
@@ -31,7 +31,7 @@
  */
 
 #ifndef lint
-static char rcsid[] = "$OpenBSD: mvcur.c,v 1.1 1996/05/31 05:40:01 tholo Exp $";
+static char rcsid[] = "$OpenBSD: mvcur.c,v 1.1.1.1 1996/05/31 05:40:01 tholo Exp $";
 #endif
 
 #include <string.h>
