@@ -6,7 +6,7 @@
 */
 /*
 ** NAME:    $Source: /home/mike/src/cvs/openbsd/src/lib/libpthread/stdio/Attic/xprintf.c,v $
-** VERSION: $Revision: 1.1 $
+** VERSION: $Revision: 1.1.1.1 $
 ** DATE:    $Date: 1998/07/21 13:22:19 $
 **
 ** ONELINER:   A replacement for formatted printing programs.

@@ -31,7 +31,7 @@
  * SUCH DAMAGE.
  *
  *	from: @(#)atexit.h	5.1 (Berkeley) 5/15/90
- *	$Id: atexit.h,v 1.1 1998/07/21 13:22:19 peter Exp $
+ *	$Id: atexit.h,v 1.1.1.1 1998/07/21 13:22:19 peter Exp $
  */
 
 /* must be at least 32 to guarantee ANSI conformance */
