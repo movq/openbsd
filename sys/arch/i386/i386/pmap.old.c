@@ -1,4 +1,4 @@
-/*	$OpenBSD: pmap.old.c,v 1.34 2000/01/29 21:41:51 mickey Exp $	*/
+/*	$OpenBSD: pmap.old.c,v 1.37 2001/03/22 20:44:59 niklas Exp $	*/
 /*	$NetBSD: pmap.c,v 1.36 1996/05/03 19:42:22 christos Exp $	*/
 
 /*
@@ -280,8 +280,7 @@ pmap_bootstrap(virtual_start)
 	SYSMAP(caddr_t		,CMAP1		,CADDR1	   ,1		)
 	SYSMAP(caddr_t		,CMAP2		,CADDR2	   ,1		)
 	SYSMAP(caddr_t		,XXX_mmap	,vmmap	   ,1		)
-	SYSMAP(struct msgbuf *	,msgbufmap	,msgbufp   ,
-	    btoc(sizeof(struct msgbuf))		)
+	SYSMAP(struct msgbuf *	,msgbufmap	,msgbufp   ,btoc(MSGBUFSIZE))
 	SYSMAP(bootarg_t *	,bootargmap	,bootargp  ,btoc(bootargc))
 	virtual_avail = va;
 #endif
@@ -291,7 +290,6 @@ pmap_bootstrap(virtual_start)
 	 */
 	virtual_avail = reserve_dumppages(virtual_avail);
 
-#if !defined(UVM)
 	/* flawed, no mappings?? */
 	if (ctob(physmem) > 31*1024*1024 && MAXKPDE != NKPDE) {
 		vm_offset_t p;
@@ -305,7 +303,6 @@ pmap_bootstrap(virtual_start)
 			PTD[KPTDI+i] = (pd_entry_t)p |
 			    PG_V | PG_KW;
 	}
-#endif
 }
 
 void
@@ -1123,8 +1120,8 @@ pmap_enter(pmap, va, pa, prot, wired, access_type)
 
 #ifdef DEBUG
 	if (pmapdebug & (PDB_FOLLOW|PDB_ENTER))
-		printf("pmap_enter(%x, %x, %x, %x, %x)",
-		       pmap, va, pa, prot, wired);
+		printf("pmap_enter(%x, %x, %x, %x, %x)", pmap, va, pa, prot,
+		    wired);
 #endif
 
 	if (pmap == NULL)
