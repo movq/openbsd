@@ -33,14 +33,12 @@ PUSHDIVERT(-1)
 # SUCH DAMAGE.
 #
 
-ifdef(`PROCMAIL_MAILER_PATH',,
-	`ifdef(`PROCMAIL_PATH',
-		`define(`PROCMAIL_MAILER_PATH', PROCMAIL_PATH)',
-		`define(`PROCMAIL_MAILER_PATH', /usr/local/bin/procmail)')')
+ifdef(`PROCMAIL_PATH',,
+	`define(`PROCMAIL_PATH', /usr/local/bin/procmail)')
 ifdef(`PROCMAIL_MAILER_FLAGS',,
-	`define(`PROCMAIL_MAILER_FLAGS', `SPhnu9')')
+	`define(`PROCMAIL_MAILER_FLAGS', `Shu')')
 ifdef(`PROCMAIL_MAILER_ARGS',,
-	`define(`PROCMAIL_MAILER_ARGS', `procmail -Y -m $h $f $u')')
+	`define(`PROCMAIL_MAILER_ARGS', `procmail -m $h $f $u')')
 
 POPDIVERT
 
@@ -48,7 +46,7 @@ POPDIVERT
 ###   PROCMAIL Mailer specification   ###
 ##################*****##################
 
-VERSIONID(`@(#)procmail.m4	8.6 (Berkeley) 4/30/97')
+VERSIONID(`@(#)procmail.m4	8.4 (Berkeley) 4/23/95')
 
-Mprocmail,	P=PROCMAIL_MAILER_PATH, F=CONCAT(`DFM', PROCMAIL_MAILER_FLAGS), S=11/31, R=21/31, T=DNS/RFC822/X-Unix,
+Mprocmail,	P=PROCMAIL_PATH, F=CONCAT(`DFMm', PROCMAIL_MAILER_FLAGS), S=11/31, R=21/31, T=DNS/RFC822/X-Unix,
 		ifdef(`PROCMAIL_MAILER_MAX', `M=PROCMAIL_MAILER_MAX, ')A=PROCMAIL_MAILER_ARGS

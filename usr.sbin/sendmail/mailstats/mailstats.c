@@ -40,10 +40,9 @@ static char copyright[] =
 #endif /* not lint */
 
 #ifndef lint
-static char sccsid[] = "@(#)mailstats.c	8.10 (Berkeley) 5/30/97";
+static char sccsid[] = "@(#)mailstats.c	8.3 (Berkeley) 12/27/93";
 #endif /* not lint */
 
-#define NOT_SENDMAIL
 #include <sendmail.h>
 #include <mailstats.h>
 #include <pathnames.h>
@@ -66,14 +65,14 @@ main(argc, argv)
 	bool mnames;
 	long frmsgs = 0, frbytes = 0, tomsgs = 0, tobytes = 0;
 	char mtable[MAXMAILERS][MNAMELEN+1];
-	char sfilebuf[MAXLINE];
+	char sfilebuf[100];
 	char buf[MAXLINE];
 	extern char *ctime();
 
 	cfile = _PATH_SENDMAILCF;
 	sfile = NULL;
 	mnames = TRUE;
-	while ((ch = getopt(argc, argv, "C:f:o")) != -1)
+	while ((ch = getopt(argc, argv, "C:f:o")) != EOF)
 	{
 		switch (ch)
 		{
@@ -92,8 +91,7 @@ main(argc, argv)
 		  case '?':
 		  default:
   usage:
-			fputs("usage: mailstats [-C cffile] [-f stfile] -o\n",
-				stderr);
+			fputs("usage: mailstats [-C cffile] [-f stfile]\n", stderr);
 			exit(EX_USAGE);
 		}
 	}
@@ -128,39 +126,14 @@ main(argc, argv)
 			break;
 
 		  case 'O':		/* option -- see if .st file */
-			if (strncasecmp(b, " StatusFile", 11) == 0 &&
-			    !isalnum(b[11]))
-			{
-				/* new form -- find value */
-				b = strchr(b, '=');
-				if (b == NULL)
-					continue;
-				while (isspace(*++b))
-					continue;
-			}
-			else if (*b++ != 'S')
-			{
-				/* something else boring */
+			if (*b++ != 'S')
 				continue;
-			}
 
-			/* this is the S or StatusFile option -- save it */
-			if (strlen(b) >= sizeof sfilebuf)
-			{
-				fprintf(stderr,
-					"StatusFile filename too long: %.30s...\n",
-					s);
-				exit(EX_CONFIG);
-			}
+			/* yep -- save this */
 			strcpy(sfilebuf, b);
-			b = strchr(sfilebuf, '#');
-			if (b == NULL)
-				b = strchr(sfilebuf, '\n');
-			if (b == NULL)
-				b = &sfilebuf[strlen(sfilebuf)];
-			while (isspace(*--b))
-				continue;
-			*++b = '\0';
+			b = strchr(sfilebuf, '\n');
+			if (b != NULL)
+				*b = '\0';
 			if (sfile == NULL)
 				sfile = sfilebuf;
 
@@ -198,24 +171,13 @@ main(argc, argv)
 		exit (EX_OSFILE);
 	}
 
-	if ((fd = open(sfile, O_RDONLY)) < 0 ||
-	    (i = read(fd, &stat, sizeof stat)) < 0)
-	{
+	if ((fd = open(sfile, O_RDONLY)) < 0) {
 		fputs("mailstats: ", stderr);
 		perror(sfile);
 		exit(EX_NOINPUT);
 	}
-	if (i == 0)
-	{
-		sleep(1);
-		i = read(fd, &stat, sizeof stat);
-		if (i == 0)
-		{
-			bzero((ARBPTR_T) &stat, sizeof stat);
-			(void) time(&stat.stat_itime);
-		}
-	}
-	else if (i != sizeof stat || stat.stat_size != sizeof(stat))
+	if (read(fd, &stat, sizeof(stat)) != sizeof(stat) ||
+	    stat.stat_size != sizeof(stat))
 	{
 		fputs("mailstats: file size changed.\n", stderr);
 		exit(EX_OSERR);

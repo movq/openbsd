@@ -39,11 +39,10 @@ static char copyright[] =
 #endif /* not lint */
 
 #ifndef lint
-static char sccsid[] = "@(#)praliases.c	8.5 (Berkeley) 5/28/97";
+static char sccsid[] = "@(#)praliases.c	8.3 (Berkeley) 3/6/94";
 #endif /* not lint */
 
 #include <ndbm.h>
-#define NOT_SENDMAIL
 #include <sendmail.h>
 #ifdef NEWDB
 #include <db.h>
@@ -67,7 +66,7 @@ main(argc, argv)
 #endif
 
 	filename = "/etc/aliases";
-	while ((ch = getopt(argc, argv, "f:")) != -1)
+	while ((ch = getopt(argc, argv, "f:")) != EOF)
 		switch((char)ch) {
 		case 'f':
 			filename = optarg;
@@ -81,11 +80,6 @@ main(argc, argv)
 	argv += optind;
 
 #ifdef NEWDB
-	if (strlen(filename) + 4 >= sizeof buf)
-	{
-		fprintf(stderr, "Alias filename too long: %.30s...\n", filename);
-		exit(EX_USAGE);
-	}
 	(void) strcpy(buf, filename);
 	(void) strcat(buf, ".db");
 	if (db = dbopen(buf, O_RDONLY, 0444 , DB_HASH, NULL)) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1983, 1995-1997 Eric P. Allman
+ * Copyright (c) 1983 Eric P. Allman
  * Copyright (c) 1988, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -33,7 +33,7 @@
  */
 
 #ifndef lint
-static char sccsid[] = "@(#)stats.c	8.11 (Berkeley) 4/9/97";
+static char sccsid[] = "@(#)stats.c	8.3 (Berkeley) 8/28/93";
 #endif /* not lint */
 
 # include "sendmail.h"
@@ -49,7 +49,6 @@ bool	GotStats = FALSE;	/* set when we have stats to merge */
 **  MARKSTATS -- mark statistics
 */
 
-void
 markstats(e, to)
 	register ENVELOPE *e;
 	register ADDRESS *to;
@@ -83,7 +82,6 @@ markstats(e, to)
 **		merges the Stat structure with the sfile file.
 */
 
-void
 poststats(sfile)
 	char *sfile;
 {
@@ -97,12 +95,13 @@ poststats(sfile)
 	(void) time(&Stat.stat_itime);
 	Stat.stat_size = sizeof Stat;
 
-	fd = safeopen(sfile, O_RDWR, 0644, SFF_REGONLY|SFF_NOLINK|SFF_OPENASROOT);
+	fd = open(sfile, O_RDWR);
 	if (fd < 0)
 	{
 		errno = 0;
 		return;
 	}
+	(void) lockfile(fd, sfile, NULL, LOCK_EX);
 	if (read(fd, (char *) &stat, sizeof stat) == sizeof stat &&
 	    stat.stat_size == sizeof stat)
 	{
