@@ -1,4 +1,4 @@
-/*	$OpenBSD: ndbm.c,v 1.20 2004/09/15 00:26:07 deraadt Exp $	*/
+/*	$OpenBSD: ndbm.c,v 1.19 2004/06/21 23:13:22 marc Exp $	*/
 
 /*-
  * Copyright (c) 1990, 1993
@@ -36,7 +36,7 @@
 #if 0
 static char sccsid[] = "@(#)dbm.c	8.6 (Berkeley) 11/7/95";
 #else
-static const char rcsid[] = "$OpenBSD: ndbm.c,v 1.20 2004/09/15 00:26:07 deraadt Exp $";
+static const char rcsid[] = "$OpenBSD: ndbm.c,v 1.19 2004/06/21 23:13:22 marc Exp $";
 #endif
 #endif /* LIBC_SCCS and not lint */
 
@@ -139,9 +139,9 @@ firstkey()
  *	DATUM on success
  *	NULL on failure
  */
-/* ARGSUSED */
 datum
-nextkey(datum key)
+nextkey(key)
+	datum key;
 {
 	datum item;
 
