@@ -1,4 +1,4 @@
-#	$Sendmail: IRIX.5.x,v 8.11 1999/07/24 23:37:45 gshapiro Exp $
+#	$Id: IRIX.5.x,v 1.1.1.2 2001/01/15 20:51:58 millert Exp $
 define(`confCC', `cc -mips2')
 define(`confMAPDEF', `-DNDBM -DNIS')
 define(`confENVDEF', `-DIRIX5')

@@ -1,4 +1,4 @@
-#	$Sendmail: IRIX.6.x,v 8.20 1999/12/13 02:08:29 ca Exp $
+#	$Id: IRIX.6.x,v 1.1.1.2 2001/01/15 20:51:58 millert Exp $
 define(`confCC', `cc -mips3 -n32 -OPT:Olimit=2700')
 define(`confLIBSEARCHPATH', `/lib32 /usr/lib32')
 define(`confMAPDEF', `-DNDBM -DNIS -DMAP_REGEX')

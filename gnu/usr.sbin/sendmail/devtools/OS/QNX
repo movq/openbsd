@@ -1,4 +1,4 @@
-#	$Sendmail: QNX,v 8.6 1999/04/05 20:00:39 gshapiro Exp $
+#	$Id: QNX,v 1.1.1.2 2001/01/15 20:52:01 millert Exp $
 PUSHDIVERT(1)
 #
 # For this Makefile to work you must compile and install the libdb package

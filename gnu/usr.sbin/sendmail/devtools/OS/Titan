@@ -1,4 +1,4 @@
-#	$Sendmail: Titan,v 8.6 1999/02/07 03:21:22 gshapiro Exp $
+#	$Id: Titan,v 1.1.1.2 2001/01/15 20:52:03 millert Exp $
 define(`confCC', `cc -43')
 define(`confBEFORE', `stddef.h stdlib.h')
 define(`confMAPDEF', `-DNDBM')

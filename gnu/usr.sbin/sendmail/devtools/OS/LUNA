@@ -1,4 +1,4 @@
-#	$Sendmail: LUNA,v 8.10 1999/04/24 05:37:55 gshapiro Exp $
+#	$Id: LUNA,v 1.1.1.2 2001/01/15 20:51:59 millert Exp $
 define(`confBEFORE', `dirent.h stddef.h stdlib.h unistd.h limits.h time.h sys/time.h')
 define(`confMAPDEF', `-DNDBM')
 define(`confMBINDIR', `/usr/lib')

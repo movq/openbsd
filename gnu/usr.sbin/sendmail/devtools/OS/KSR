@@ -1,4 +1,4 @@
-#	$Sendmail: KSR,v 8.6 1999/04/24 05:37:55 gshapiro Exp $
+#	$Id: KSR,v 1.1.1.2 2001/01/15 20:51:59 millert Exp $
 define(`confMAPDEF', `-DNDBM -DNIS')
 define(`confLIBDIRS', `-L/usr/shlib -L/usr/lib')
 define(`confLIBS', `-ldbm')

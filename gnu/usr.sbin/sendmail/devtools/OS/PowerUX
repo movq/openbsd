@@ -1,4 +1,4 @@
-#	$Sendmail: PowerUX,v 8.7 1999/06/02 22:53:39 gshapiro Exp $
+#	$Id: PowerUX,v 1.1.1.2 2001/01/15 20:52:01 millert Exp $
 define(`confENVDEF', `-D__svr4__')
 define(`confLIBS', `-Bstatic -lsocket -lnsl -lelf -lgen')
 define(`confMBINDIR', `/usr/local/etc')

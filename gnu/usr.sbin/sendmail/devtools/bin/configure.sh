@@ -8,7 +8,7 @@
 # the sendmail distribution.
 #
 #
-#	$Sendmail: configure.sh,v 8.39 2000/02/26 01:32:07 gshapiro Exp $
+#	$Id: configure.sh,v 1.1.1.2 2001/01/15 20:51:52 millert Exp $
 
 #
 #  Special script to autoconfigure for M4 generation of Makefile
@@ -171,12 +171,12 @@ done
 case $found_roff
 in
 	groff)
-		echo "ifdef(\`confNROFF',,define(\`confNROFF', \`$found_roff -Tascii'))dnl"
+		echo "ifdef(\`confNROFF',,\`define(\`confNROFF', \`$found_roff -Tascii')')dnl"
 		;;
 	nroff)
-		echo "ifdef(\`confNROFF',,define(\`confNROFF', \`$found_roff'))dnl"
+		echo "ifdef(\`confNROFF',,\`define(\`confNROFF', \`$found_roff')')dnl"
 		;;
 	*)
-		echo "ifdef(\`confNROFF',,define(\`confNO_MAN_BUILD'))dnl"
+		echo "ifdef(\`confNROFF',,\`define(\`confNO_MAN_BUILD')')dnl"
 		;;
 esac

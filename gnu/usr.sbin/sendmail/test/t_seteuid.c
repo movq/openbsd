@@ -16,7 +16,7 @@
 #include <stdio.h>
 
 #ifndef lint
-static char id[] = "@(#)$Sendmail: t_seteuid.c,v 8.4 1999/08/28 00:25:28 gshapiro Exp $";
+static char id[] = "@(#)$Id: t_seteuid.c,v 1.1.1.2 2001/01/15 20:52:20 millert Exp $";
 #endif /* ! lint */
 
 #ifdef __hpux

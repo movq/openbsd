@@ -10,7 +10,7 @@ divert(-1)
 #
 #  Definitions for Makefile construction for sendmail
 #
-#	$Id: smlib.m4,v 1.1 2001/01/15 20:51:54 millert Exp $
+#	$Id: smlib.m4,v 1.1.1.1 2001/01/15 20:51:54 millert Exp $
 #
 divert(0)dnl
 

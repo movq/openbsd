@@ -1,4 +1,4 @@
-#	$Sendmail: SunOS.4.0,v 8.9 1999/06/02 22:53:41 gshapiro Exp $
+#	$Id: SunOS.4.0,v 1.1.1.2 2001/01/15 20:52:02 millert Exp $
 define(`confBEFORE', `stdlib.h stddef.h limits.h')
 define(`confMAPDEF', `-DNDBM -DNIS')
 define(`confENVDEF', `-DSUNOS403')
