@@ -42,7 +42,7 @@
 # Created      : 14/01/96
 # Last updated : 14/01/96
 #
-#	$Id: Makefile,v 1.1 1996/04/24 11:08:30 deraadt Exp $
+#	$Id: Makefile,v 1.1.1.1 1996/04/24 11:08:30 deraadt Exp $
 #
 
 S=	../../..

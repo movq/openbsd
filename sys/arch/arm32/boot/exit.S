@@ -45,7 +45,7 @@
  *
  * Based on kate/boot/_exit.s
  *
- *    $Id: exit.S,v 1.1 1996/04/24 11:08:32 deraadt Exp $
+ *    $Id: exit.S,v 1.1.1.1 1996/04/24 11:08:32 deraadt Exp $
  */
 
 #include "regs.h"

@@ -41,7 +41,7 @@
  * Created      : 16/05/95
  * Last updated : 16/05/95
  *
- *    $Id: memset.S,v 1.1 1996/04/24 11:08:28 deraadt Exp $
+ *    $Id: memset.S,v 1.1.1.1 1996/04/24 11:08:28 deraadt Exp $
  */
 
 sp	.req	r13

@@ -42,7 +42,7 @@
  * Created      : 18/09/94
  * Last updated : 10/01/96
  *
- *    $Id: vconsole.h,v 1.1 1996/04/24 11:08:46 deraadt Exp $
+ *    $Id: vconsole.h,v 1.1.1.1 1996/04/24 11:08:46 deraadt Exp $
  */
 
 #ifdef _KERNEL

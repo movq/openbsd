@@ -41,7 +41,7 @@
  * Created      : 02/04/95
  * Last updated : 04/06/95
  *
- *    $Id: scratch.S,v 1.1 1996/04/24 11:08:28 deraadt Exp $
+ *    $Id: scratch.S,v 1.1.1.1 1996/04/24 11:08:28 deraadt Exp $
  */
 
 #include "assym.h"

@@ -45,7 +45,7 @@
  *
  * Based on kate/library/exitos.s
  *
- *    $Id: exitos.S,v 1.1 1996/04/24 11:08:32 deraadt Exp $
+ *    $Id: exitos.S,v 1.1.1.1 1996/04/24 11:08:32 deraadt Exp $
  *
  */
 

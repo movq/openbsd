@@ -42,7 +42,7 @@
  * Created      : 14/01/96
  * Last updated : 14/01/96
  *
- *	$Id: regs.h,v 1.1 1996/04/24 11:08:32 deraadt Exp $
+ *	$Id: regs.h,v 1.1.1.1 1996/04/24 11:08:32 deraadt Exp $
  */
 
 fp	.req	r11

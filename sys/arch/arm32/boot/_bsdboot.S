@@ -44,7 +44,7 @@
  *
  * Based on kate/boot/_boot.s
  *
- *	$Id: _bsdboot.S,v 1.1 1996/04/24 11:08:31 deraadt Exp $
+ *	$Id: _bsdboot.S,v 1.1.1.1 1996/04/24 11:08:31 deraadt Exp $
  */
 
 #include "regs.h"

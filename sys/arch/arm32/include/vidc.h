@@ -45,7 +45,7 @@
  *
  * Based on kate/display/vidc.h
  *
- *    $Id: vidc.h,v 1.1 1996/04/24 11:08:46 deraadt Exp $
+ *    $Id: vidc.h,v 1.1.1.1 1996/04/24 11:08:46 deraadt Exp $
  */
 
 #ifndef __vidc_h

@@ -43,7 +43,7 @@
  * Created      : 12/09/94
  * Last updated : 12/09/94
  *
- *    $Id: areahand.S,v 1.1 1996/04/24 11:08:31 deraadt Exp $
+ *    $Id: areahand.S,v 1.1.1.1 1996/04/24 11:08:31 deraadt Exp $
  */
 
 #include "regs.h"

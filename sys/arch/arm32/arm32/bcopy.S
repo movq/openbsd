@@ -43,7 +43,7 @@
  * Created      : 16/05/95
  * Last updated : 16/05/95
  *
- *    $Id: bcopy.S,v 1.1 1996/04/24 11:08:23 deraadt Exp $
+ *    $Id: bcopy.S,v 1.1.1.1 1996/04/24 11:08:23 deraadt Exp $
  */
 
 sp	.req	r13

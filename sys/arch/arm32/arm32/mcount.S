@@ -30,7 +30,7 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- *	$Id: mcount.S,v 1.1 1996/04/24 11:08:27 deraadt Exp $
+ *	$Id: mcount.S,v 1.1.1.1 1996/04/24 11:08:27 deraadt Exp $
  */
 
 fp	.req	r11

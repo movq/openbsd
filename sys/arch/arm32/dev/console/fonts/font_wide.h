@@ -45,7 +45,7 @@
  *
  * Based on kate/display/14widen.h
  *
- *    $Id: font_wide.h,v 1.1 1996/04/24 11:08:38 deraadt Exp $
+ *    $Id: font_wide.h,v 1.1.1.1 1996/04/24 11:08:38 deraadt Exp $
  */
  
 unsigned char font_terminal_14widen_data[] = {

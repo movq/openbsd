@@ -43,7 +43,7 @@
  * Created      : 08/10/94
  * Last updated : 12/05/95
  *
- *    $Id: blockio.S,v 1.1 1996/04/24 11:08:24 deraadt Exp $
+ *    $Id: blockio.S,v 1.1.1.1 1996/04/24 11:08:24 deraadt Exp $
  */
 
 sp	.req	r13
