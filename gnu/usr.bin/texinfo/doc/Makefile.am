@@ -1,5 +1,5 @@
 ## Makefile.am for texinfo/emacs.
-## $Id: Makefile.am,v 1.1 1997/08/01 22:01:12 kstailey Exp $
+## $Id: Makefile.am,v 1.1.1.1 1997/08/01 22:01:12 kstailey Exp $
 ## Run automake in .. to produce Makefile.in from this.
 
 info_TEXINFOS = info-stnd.texi info.texi texinfo.texi

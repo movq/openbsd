@@ -1,5 +1,5 @@
 ## Makefile.am for texinfo.
-## $Id: Makefile.am,v 1.1 1997/08/01 21:59:31 kstailey Exp $
+## $Id: Makefile.am,v 1.1.1.1 1997/08/01 21:59:31 kstailey Exp $
 ## Process this file with automake to produce Makefile.in in all directories.
 
 ## Be sure we're using the right version of Automake.
