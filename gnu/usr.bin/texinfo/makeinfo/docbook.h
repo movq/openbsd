@@ -1,5 +1,5 @@
 /* docbook.h -- docbook declarations.
-   $Id: docbook.h,v 1.1 2002/06/10 13:21:15 espie Exp $
+   $Id: docbook.h,v 1.1.1.1 2002/06/10 13:21:15 espie Exp $
 
    Copyright (C) 2001 Free Software Foundation, Inc.
 
