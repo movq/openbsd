@@ -31,7 +31,7 @@
  * SUCH DAMAGE.
  *
  *	from: @(#)pathnames.h	5.2 (Berkeley) 4/9/90
- *	$Id: pathnames.h,v 1.1 1996/10/18 03:37:10 tholo Exp $
+ *	$Id: pathnames.h,v 1.1.1.1 1996/10/18 03:37:10 tholo Exp $
  */
 
 #define	_PATH_RLOGIN	"/usr/bin/rlogin"
