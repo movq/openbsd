@@ -1,4 +1,4 @@
-#	$Id: NEWS-OS.4.x,v 1.1.1.2 2001/01/15 20:51:59 millert Exp $
+#	$Sendmail: NEWS-OS.4.x,v 8.8 1999/04/24 05:37:56 gshapiro Exp $
 define(`confBEFORE', `limits.h')
 define(`confMAPDEF', `-DNDBM')
 define(`confLIBS', `-lmld')

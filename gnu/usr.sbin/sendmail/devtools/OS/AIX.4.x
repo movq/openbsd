@@ -1,4 +1,4 @@
-#	$Id: AIX.4.x,v 1.1.1.2 2001/01/15 20:51:55 millert Exp $
+#	$Sendmail: AIX.4.x,v 8.16 2001/05/29 23:57:19 ca Exp $
 define(`confMAPDEF', `-DNDBM -DNIS -DMAP_REGEX')
 define(`confENVDEF', `-D_AIX4')
 define(`confOPTIMIZE', `-O3 -qstrict')
@@ -8,3 +8,4 @@ define(`confEBINDIR', `/usr/lib')
 define(`confSBINGRP', `system')
 define(`confDEPEND_TYPE', `AIX')
 define(`confLDOPTS', `-blibpath:/usr/lib:/lib')
+define(`confSM_OS_HEADER', `sm_os_aix')

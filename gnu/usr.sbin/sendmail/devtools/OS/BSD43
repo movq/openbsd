@@ -1,4 +1,4 @@
-#	$Id: BSD43,v 1.1.1.2 2001/01/15 20:51:56 millert Exp $
+#	$Sendmail: BSD43,v 8.10 2001/01/25 19:03:44 gshapiro Exp $
 define(`confBEFORE', `unistd.h stddef.h stdlib.h dirent.h sys/time.h')
 define(`confMAPDEF', `-DNDBM')
 define(`confENVDEF', `-DoldBSD43')

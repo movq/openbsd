@@ -1,4 +1,4 @@
-#	$Id: generic.m4,v 1.1.1.2 2001/01/15 20:51:54 millert Exp $
+#	$Sendmail: generic.m4,v 8.5 1999/05/24 18:38:33 rand Exp $
 # dependencies
 
 # give a null "depend" list so that the startup script will work

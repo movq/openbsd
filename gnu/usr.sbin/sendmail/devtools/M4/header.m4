@@ -9,7 +9,7 @@
 #
 #  Definitions for Makefile construction for sendmail
 #
-#	$Id: header.m4,v 1.1.1.2 2001/01/15 20:51:53 millert Exp $
+#	$Sendmail: header.m4,v 8.26 1999/08/09 18:57:22 gshapiro Exp $
 #
 changecom(^A)
 undefine(`format')
