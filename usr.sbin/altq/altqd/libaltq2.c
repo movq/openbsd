@@ -1,4 +1,4 @@
-/*	$OpenBSD: libaltq2.c,v 1.1 2001/06/27 18:23:17 kjc Exp $	*/
+/*	$OpenBSD: libaltq2.c,v 1.1.1.1 2001/06/27 18:23:17 kjc Exp $	*/
 /*
  * this file contains functions and variables needed to use libaltq.
  * since these are defined in rsvpd, they should be separated in order
