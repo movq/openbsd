@@ -155,7 +155,8 @@ bind_ttl(isc_textregion_t *source, isc_uint32_t *ttl) {
 	 */
 	if (source->length > sizeof(buf) - 1)
 		return(DNS_R_SYNTAX);
-	strlcpy(buf, source->base, sizeof(buf));
+	strncpy(buf, source->base, source->length);
+	buf[source->length] = '\0';
 	s = buf;
 
 	do {

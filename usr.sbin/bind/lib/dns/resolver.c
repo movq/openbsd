@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1999-2003  Internet Software Consortium.
+ * Copyright (C) 1999-2002  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -15,7 +15,7 @@
  * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $ISC: resolver.c,v 1.218.2.24 2003/09/22 00:32:39 marka Exp $ */
+/* $ISC: resolver.c,v 1.218.2.12 2002/07/15 02:28:07 marka Exp $ */
 
 #include <config.h>
 
@@ -35,7 +35,6 @@
 #include <dns/ncache.h>
 #include <dns/peer.h>
 #include <dns/rdata.h>
-#include <dns/rdataclass.h>
 #include <dns/rdatalist.h>
 #include <dns/rdataset.h>
 #include <dns/rdatastruct.h>
@@ -278,8 +277,6 @@ struct dns_resolver {
 #define ISFORWARDER(a)			(((a)->flags & \
 					 FCTX_ADDRINFO_FORWARDER) != 0)
 
-#define NXDOMAIN(r) (((r)->attributes & DNS_RDATASETATTR_NXDOMAIN) != 0)
-
 static void destroy(dns_resolver_t *res);
 static void empty_bucket(dns_resolver_t *res);
 static isc_result_t resquery_send(resquery_t *query);
@@ -293,80 +290,6 @@ static isc_result_t ncache_adderesult(dns_message_t *message,
 				      isc_stdtime_t now, dns_ttl_t maxttl,
 				      dns_rdataset_t *ardataset,
 				      isc_result_t *eresultp);
-
-static isc_boolean_t
-fix_mustbedelegationornxdomain(dns_message_t *message, fetchctx_t *fctx) {
-	dns_name_t *name;
-	dns_name_t *domain = &fctx->domain;
-	dns_rdataset_t *rdataset;
-	dns_rdatatype_t type;
-	isc_result_t result;
-	isc_boolean_t keep_auth = ISC_FALSE;
-
-	if (message->rcode == dns_rcode_nxdomain)
-		return (ISC_FALSE);
-
-	/*
-	 * Look for BIND 8 style delegations.
-	 * Also look for answers to ANY queries where the duplicate NS RRset
-	 * may have been stripped from the authority section.
-	 */
-	if (message->counts[DNS_SECTION_ANSWER] != 0 &&
-	    (fctx->type == dns_rdatatype_ns ||
-	     fctx->type == dns_rdatatype_any)) {
-		result = dns_message_firstname(message, DNS_SECTION_ANSWER);
-		while (result == ISC_R_SUCCESS) {
-			name = NULL;
-			dns_message_currentname(message, DNS_SECTION_ANSWER,
-						&name);
-			for (rdataset = ISC_LIST_HEAD(name->list);
-			     rdataset != NULL;
-			     rdataset = ISC_LIST_NEXT(rdataset, link)) {
-				type = rdataset->type;
-				if (type != dns_rdatatype_ns)
-					continue;
-				if (dns_name_issubdomain(name, domain))
-					return (ISC_FALSE);
-			}
-			result = dns_message_nextname(message,
-						      DNS_SECTION_ANSWER);
-		}
-	}
-
-	/* Look for referral. */
-	if (message->counts[DNS_SECTION_AUTHORITY] == 0)
-		goto munge;
-
-	result = dns_message_firstname(message, DNS_SECTION_AUTHORITY);
-	while (result == ISC_R_SUCCESS) {
-		name = NULL;
-		dns_message_currentname(message, DNS_SECTION_AUTHORITY, &name);
-		for (rdataset = ISC_LIST_HEAD(name->list);
-		     rdataset != NULL;
-		     rdataset = ISC_LIST_NEXT(rdataset, link)) {
-			type = rdataset->type;
-			if (type == dns_rdatatype_soa &&
-			    dns_name_equal(name, domain))
-				keep_auth = ISC_TRUE;
-			if (type != dns_rdatatype_ns &&
-			    type != dns_rdatatype_soa)
-				continue;
-			if (dns_name_equal(name, domain))
-				goto munge;
-			if (dns_name_issubdomain(name, domain))
-				return (ISC_FALSE);
-		}
-		result = dns_message_nextname(message, DNS_SECTION_AUTHORITY);
-	}
-
- munge:
-	message->rcode = dns_rcode_nxdomain;
-	message->counts[DNS_SECTION_ANSWER] = 0;
-	if (!keep_auth)
-		message->counts[DNS_SECTION_AUTHORITY] = 0;
-	message->counts[DNS_SECTION_ADDITIONAL] = 0;
-	return (ISC_TRUE);
-}
 
 static inline isc_result_t
 fctx_starttimer(fetchctx_t *fctx) {
@@ -723,11 +646,7 @@ fctx_addopt(dns_message_t *message) {
 	/*
 	 * Set EXTENDED-RCODE, VERSION, and Z to 0, and the DO bit to 1.
 	 */
-#ifdef ISC_RFC2535
 	rdatalist->ttl = DNS_MESSAGEEXTFLAG_DO;
-#else
-	rdatalist->ttl = 0;
-#endif
 
 	/*
 	 * No EDNS options.
@@ -1581,13 +1500,20 @@ fctx_getaddresses(fetchctx_t *fctx) {
 		options = stdoptions;
 		/*
 		 * If this name is a subdomain of the query domain, tell
-		 * the ADB to start looking using zone/hint data. This keeps
-		 * us from getting stuck if the nameserver is beneath the
-		 * zone cut and we don't know its address (e.g. because the
-		 * A record has expired).
+		 * the ADB to start looking at "." if it doesn't know the
+		 * address.  This keeps us from getting stuck if the
+		 * nameserver is beneath the zone cut and we don't know its
+		 * address (e.g. because the A record has expired).
+		 * By restarting from ".", we ensure that any missing glue
+		 * will be reestablished.
+		 *
+		 * A further optimization would be to get the ADB to start
+		 * looking at the most enclosing zone cut above fctx->domain.
+		 * We don't expect this situation to happen very frequently,
+		 * so we've chosen the simple solution.
 		 */
 		if (dns_name_issubdomain(&ns.name, &fctx->domain))
-			options |= DNS_ADBFIND_STARTATZONE;
+			options |= DNS_ADBFIND_STARTATROOT;
 		options |= DNS_ADBFIND_GLUEOK;
 		options |= DNS_ADBFIND_HINTOK;
 
@@ -2304,7 +2230,7 @@ fctx_create(dns_resolver_t *res, dns_name_t *name, dns_rdatatype_t type,
 	/*
 	 * Compute an expiration time for the entire fetch.
 	 */
-	isc_interval_set(&interval, 30, 0);		/* XXXRTH constant */
+	isc_interval_set(&interval, 90, 0);		/* XXXRTH constant */
 	iresult = isc_time_nowplusinterval(&fctx->expires, &interval);
 	if (iresult != ISC_R_SUCCESS) {
 		UNEXPECTED_ERROR(__FILE__, __LINE__,
@@ -3009,10 +2935,7 @@ cache_name(fetchctx_t *fctx, dns_name_t *name, isc_stdtime_t now) {
 					eresult = DNS_R_DNAME;
 				}
 			}
-			if (rdataset->trust == dns_trust_glue &&
-			    (rdataset->type == dns_rdatatype_ns ||
-		             (rdataset->type == dns_rdatatype_sig &&
-			      rdataset->covers == dns_rdatatype_ns))) {
+			if (rdataset->trust == dns_trust_glue) {
 				/*
 				 * If the trust level is 'dns_trust_glue'
 				 * then we are adding data from a referral
@@ -3041,7 +2964,8 @@ cache_name(fetchctx_t *fctx, dns_name_t *name, isc_stdtime_t now) {
 					 * a negative cache entry, so we
 					 * must set eresult appropriately.
 					 */
-					 if (NXDOMAIN(ardataset))
+					 if (ardataset->covers ==
+					     dns_rdatatype_any)
 						 eresult =
 							 DNS_R_NCACHENXDOMAIN;
 					 else
@@ -3148,7 +3072,7 @@ ncache_adderesult(dns_message_t *message, dns_db_t *cache, dns_dbnode_t *node,
 			 * The cache data is also a negative cache
 			 * entry.
 			 */
-			if (NXDOMAIN(ardataset))
+			if (ardataset->covers == dns_rdatatype_any)
 				*eresultp = DNS_R_NCACHENXDOMAIN;
 			else
 				*eresultp = DNS_R_NCACHENXRRSET;
@@ -3167,7 +3091,7 @@ ncache_adderesult(dns_message_t *message, dns_db_t *cache, dns_dbnode_t *node,
 			result = ISC_R_SUCCESS;
 		}
 	} else if (result == ISC_R_SUCCESS) {
-		if (NXDOMAIN(ardataset))
+		if (covers == dns_rdatatype_any)
 			*eresultp = DNS_R_NCACHENXDOMAIN;
 		else
 			*eresultp = DNS_R_NCACHENXRRSET;
@@ -3577,28 +3501,16 @@ noanswer_response(fetchctx_t *fctx, dns_name_t *oqname) {
 					 *
 					 * Only one set of NS RRs is allowed.
 					 */
-					if (rdataset->type ==
-					    dns_rdatatype_ns) {
-						if (ns_name != NULL &&
-						    name != ns_name)
-							return (DNS_R_FORMERR);
-						ns_name = name;
-					}
+					if (ns_name != NULL && name != ns_name)
+						return (DNS_R_FORMERR);
+					ns_name = name;
 					name->attributes |=
 						DNS_NAMEATTR_CACHE;
 					rdataset->attributes |=
 						DNS_RDATASETATTR_CACHE;
 					rdataset->trust = dns_trust_glue;
 					ns_rdataset = rdataset;
-				}
-			}
-			for (rdataset = ISC_LIST_HEAD(name->list);
-			     rdataset != NULL;
-			     rdataset = ISC_LIST_NEXT(rdataset, link)) {
-				type = rdataset->type;
-				if (type == dns_rdatatype_sig)
-					type = rdataset->covers;
-				if (type == dns_rdatatype_soa ||
+				} else if (type == dns_rdatatype_soa ||
 					   type == dns_rdatatype_nxt) {
 					/*
 					 * SOA, SIG SOA, NXT, or SIG NXT.
@@ -3612,18 +3524,11 @@ noanswer_response(fetchctx_t *fctx, dns_name_t *oqname) {
 							return (DNS_R_FORMERR);
 						soa_name = name;
 					}
-					if (ns_name == NULL) {
-						negative_response = ISC_TRUE;
-						name->attributes |=
-							DNS_NAMEATTR_NCACHE;
-						rdataset->attributes |=
-							DNS_RDATASETATTR_NCACHE;
-					} else {
-						name->attributes |=
-							DNS_NAMEATTR_CACHE;
-						rdataset->attributes |=
-							DNS_RDATASETATTR_CACHE;
-					}
+					negative_response = ISC_TRUE;
+					name->attributes |=
+						DNS_NAMEATTR_NCACHE;
+					rdataset->attributes |=
+						DNS_RDATASETATTR_NCACHE;
 					if (aa)
 						rdataset->trust =
 						    dns_trust_authauthority;
@@ -3941,8 +3846,8 @@ answer_response(fetchctx_t *fctx) {
 			for (rdataset = ISC_LIST_HEAD(name->list);
 			     rdataset != NULL;
 			     rdataset = ISC_LIST_NEXT(rdataset, link)) {
-				isc_boolean_t found_dname = ISC_FALSE;
 				found = ISC_FALSE;
+				want_chaining = ISC_FALSE;
 				aflag = 0;
 				if (rdataset->type == dns_rdatatype_dname) {
 					/*
@@ -3969,8 +3874,6 @@ answer_response(fetchctx_t *fctx) {
 						want_chaining = ISC_FALSE;
 					} else if (result != ISC_R_SUCCESS)
 						return (result);
-					else
-						found_dname = ISC_TRUE;
 				} else if (rdataset->type == dns_rdatatype_sig
 					   && rdataset->covers ==
 					   dns_rdatatype_dname) {
@@ -4016,7 +3919,7 @@ answer_response(fetchctx_t *fctx) {
 					/*
 					 * DNAME chaining.
 					 */
-					if (found_dname) {
+					if (want_chaining) {
 						/*
 						 * Copy the the dname into the
 						 * qname fixed name.
@@ -4448,34 +4351,6 @@ resquery_response(isc_task_t *task, isc_event_t *event) {
 	}
 
 	/*
-	 * Enforce delegations only zones like NET and COM.
-	 */
-	if (!ISFORWARDER(query->addrinfo) &&
-	    dns_view_isdelegationonly(fctx->res->view, &fctx->domain) &&
-	    !dns_name_equal(&fctx->domain, &fctx->name) &&
-	    fix_mustbedelegationornxdomain(message, fctx)) {
-		char namebuf[DNS_NAME_FORMATSIZE];
-		char domainbuf[DNS_NAME_FORMATSIZE];
-		char addrbuf[ISC_SOCKADDR_FORMATSIZE];
-		char classbuf[64];
-		char typebuf[64];
-
-		dns_name_format(&fctx->name, namebuf, sizeof(namebuf));
-		dns_name_format(&fctx->domain, domainbuf, sizeof(domainbuf));
-		dns_rdatatype_format(fctx->type, typebuf, sizeof(typebuf));
-		dns_rdataclass_format(fctx->res->rdclass, classbuf,
-				      sizeof(classbuf));
-		isc_sockaddr_format(&query->addrinfo->sockaddr, addrbuf,
-				    sizeof(addrbuf));
-
-		isc_log_write(dns_lctx, DNS_LOGCATEGORY_DELEGATION_ONLY,
-			     DNS_LOGMODULE_RESOLVER, ISC_LOG_NOTICE,
-			     "enforced delegation-only for '%s' (%s/%s/%s) "
-			     "from %s",
-			     domainbuf, namebuf, typebuf, classbuf, addrbuf);
-	}
-
-	/*
 	 * Did we get any answers?
 	 */
 	if (message->counts[DNS_SECTION_ANSWER] > 0 &&
@@ -4586,19 +4461,15 @@ resquery_response(isc_task_t *task, isc_event_t *event) {
 		}
 
 		if (get_nameservers) {
-			dns_name_t *name;
 			dns_fixedname_init(&foundname);
 			fname = dns_fixedname_name(&foundname);
 			if (result != ISC_R_SUCCESS) {
 				fctx_done(fctx, DNS_R_SERVFAIL);
 				return;
 			}
-			if ((options & DNS_FETCHOPT_UNSHARED) == 0)
-				name = &fctx->name;
-			else
-				name = &fctx->domain;
 			result = dns_view_findzonecut(fctx->res->view,
-						      name, fname,
+						      &fctx->domain,
+						      fname,
 						      now, 0, ISC_TRUE,
 						      &fctx->nameservers,
 						      NULL);
@@ -4786,7 +4657,7 @@ dns_resolver_create(dns_view_t *view,
 			DESTROYLOCK(&res->buckets[i].lock);
 			goto cleanup_buckets;
 		}
-		snprintf(name, sizeof(name), "res%u", i);
+		sprintf(name, "res%u", i);
 		isc_task_setname(res->buckets[i].task, name, res);
 		ISC_LIST_INIT(res->buckets[i].fctxs);
 		res->buckets[i].exiting = ISC_FALSE;

@@ -85,19 +85,19 @@ totext_key(ARGS_TOTEXT) {
 	/* flags */
 	flags = uint16_fromregion(&sr);
 	isc_region_consume(&sr, 2);
-	snprintf(buf, sizeof(buf), "%u", flags);
+	sprintf(buf, "%u", flags);
 	RETERR(str_totext(buf, target));
 	RETERR(str_totext(" ", target));
 
 	/* protocol */
-	snprintf(buf, sizeof(buf), "%u", sr.base[0]);
+	sprintf(buf, "%u", sr.base[0]);
 	isc_region_consume(&sr, 1);
 	RETERR(str_totext(buf, target));
 	RETERR(str_totext(" ", target));
 
 	/* algorithm */
 	algorithm = sr.base[0];
-	snprintf(buf, sizeof(buf), "%u", algorithm);
+	sprintf(buf, "%u", algorithm);
 	isc_region_consume(&sr, 1);
 	RETERR(str_totext(buf, target));
 
@@ -125,7 +125,7 @@ totext_key(ARGS_TOTEXT) {
 
 		RETERR(str_totext(" ; key id = ", target));
 		dns_rdata_toregion(rdata, &tmpr);
-		snprintf(buf, sizeof(buf), "%u", dst_region_computeid(&tmpr, algorithm));
+		sprintf(buf, "%u", dst_region_computeid(&tmpr, algorithm));
 		RETERR(str_totext(buf, target));
 	}
 	return (ISC_R_SUCCESS);

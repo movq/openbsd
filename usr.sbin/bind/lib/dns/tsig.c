@@ -114,7 +114,7 @@ tsig_log(dns_tsigkey_t *key, int level, const char *fmt, ...) {
 	if (key != NULL)
 		dns_name_format(&key->name, namestr, sizeof(namestr));
 	else
-		strlcpy(namestr, "<null>", sizeof(namestr));
+		strcpy(namestr, "<null>");
 	va_start(ap, fmt);
 	vsnprintf(message, sizeof(message), fmt, ap);
 	va_end(ap);

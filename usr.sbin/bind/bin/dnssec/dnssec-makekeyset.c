@@ -284,13 +284,13 @@ main(int argc, char *argv[]) {
 				      savednamestr, namestr);
 		}
 		if (output == NULL) {
-			size_t len;
-			len = strlen("keyset-") + strlen(namestr) + 1;
-			output = isc_mem_allocate(mctx, len);
+			output = isc_mem_allocate(mctx,
+						  strlen("keyset-") +
+						  strlen(namestr) + 1);
 			if (output == NULL)
 				fatal("out of memory");
-			strlcpy(output, "keyset-", len);
-			strlcat(output, namestr, len);
+			strcpy(output, "keyset-");
+			strcat(output, namestr);
 		}
 		if (domain == NULL) {
 			dns_fixedname_init(&fdomain);

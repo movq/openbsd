@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2000-2003  Internet Software Consortium.
+ * Copyright (C) 2000-2002  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -15,7 +15,7 @@
  * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $ISC: dighost.c,v 1.221.2.19 2003/07/25 04:36:43 marka Exp $ */
+/* $ISC: dighost.c,v 1.221.2.14 2002/08/06 02:40:11 marka Exp $ */
 
 /*
  * Notice to programmers:  Do not use this code as an example of how to
@@ -54,7 +54,6 @@
 #include <isc/netaddr.h>
 #include <isc/netdb.h>
 #include <isc/print.h>
-#include <isc/random.h>
 #include <isc/result.h>
 #include <isc/string.h>
 #include <isc/task.h>
@@ -117,7 +116,6 @@ int lookup_counter = 0;
  *   10  Internal error
  */
 int exitcode = 0;
-int fatalexit = 0;
 char keynametext[MXNAME];
 char keyfile[MXNAME] = "";
 char keysecret[MXNAME] = "";
@@ -202,85 +200,54 @@ hex_dump(isc_buffer_t *b) {
 		printf("\n");
 }
 
-/*
- * Append 'len' bytes of 'text' at '*p', failing with
- * ISC_R_NOSPACE if that would advance p past 'end'.
- */
-static isc_result_t
-append(const char *text, int len, char **p, char *end) {
-	if (len > end - *p)
-		return (ISC_R_NOSPACE);
-	memcpy(*p, text, len);
-	*p += len;
-	return (ISC_R_SUCCESS);
-}
-
-static isc_result_t
-reverse_octets(const char *in, char **p, char *end) {
-	char *dot = strchr(in, '.');
-	int len;
-	if (dot != NULL) {
-		isc_result_t result;
-		result = reverse_octets(dot + 1, p, end);
-		if (result != ISC_R_SUCCESS)
-			return (result);
-		result = append(".", 1, p, end);
-		if (result != ISC_R_SUCCESS)
-			return (result);
-		len = dot - in;
-	} else {
-		len = strlen(in);
-	}
-	return (append(in, len, p, end));
-}
 
 isc_result_t
-get_reverse(char *reverse, char *value, isc_boolean_t ip6_int,
-	    isc_boolean_t strict)
-{
-	int r;
+get_reverse(char *reverse, char *value, isc_boolean_t nibble) {
+	int adrs[4];
+	char working[MXNAME];
+	int remaining;
+	int i, n;
 	isc_result_t result;
-	isc_netaddr_t addr;
 
-	addr.family = AF_INET6;
-	r = inet_pton(AF_INET6, value, &addr.type.in6);
-	if (r > 0) {
-		/* This is a valid IPv6 address. */
+	result = DNS_R_BADDOTTEDQUAD;
+	reverse[0] = 0;
+
+	debug("get_reverse(%s)", value);
+	if (strspn(value, "0123456789.") == strlen(value)) {
+		n = sscanf(value, "%d.%d.%d.%d",
+			   &adrs[0], &adrs[1],
+			   &adrs[2], &adrs[3]);
+		if (n == 0) {
+			return (DNS_R_BADDOTTEDQUAD);
+		}
+		reverse[MXNAME - 1] = 0;
+		for (i = n - 1; i >= 0; i--) {
+			snprintf(working, sizeof(working), "%d.",
+				 adrs[i]);
+			remaining = MXNAME - strlen(reverse) - 1;
+			strncat(reverse, working, remaining);
+		}
+		remaining = MXNAME - strlen(reverse) - 1;
+		strncat(reverse, "in-addr.arpa.", remaining);
+		result = ISC_R_SUCCESS;
+	} else if (strspn(value, "0123456789abcdefABCDEF:") 
+		   == strlen(value)) {
+		isc_netaddr_t addr;
 		dns_fixedname_t fname;
 		dns_name_t *name;
-		unsigned int options = DNS_BYADDROPT_IPV6NIBBLE;
-
-		if (ip6_int)
-			options |= DNS_BYADDROPT_IPV6INT;
+		
+		addr.family = AF_INET6;
+		n = inet_pton(AF_INET6, value, &addr.type.in6);
+		if (n <= 0)
+			return (DNS_R_BADDOTTEDQUAD);
 		dns_fixedname_init(&fname);
 		name = dns_fixedname_name(&fname);
-		result = dns_byaddr_createptrname2(&addr, options, name);
+		result = dns_byaddr_createptrname(&addr, nibble, name);
 		if (result != ISC_R_SUCCESS)
 			return (result);
 		dns_name_format(name, reverse, MXNAME);
-		return (ISC_R_SUCCESS);
-	} else {
-		/*
-		 * Not a valid IPv6 address.  Assume IPv4.
-		 * If 'strict' is not set, construct the
-		 * in-addr.arpa name by blindly reversing
-		 * octets whether or not they look like integers,
-		 * so that this can be used for RFC2317 names
-		 * and such.
-		 */
-		char *p = reverse;
-		char *end = reverse + MXNAME;
-		if (strict && inet_pton(AF_INET, value, &addr.type.in) != 1)
-			return (DNS_R_BADDOTTEDQUAD);
-		result = reverse_octets(value, &p, end);
-		if (result != ISC_R_SUCCESS)
-			return (result);
-		/* Append .in-addr.arpa. and a terminating NUL. */
-		result = append(".in-addr.arpa.", 15, &p, end);
-		if (result != ISC_R_SUCCESS)
-			return (result);
-		return (ISC_R_SUCCESS);
 	}
+	return (result);
 }
 
 void
@@ -294,8 +261,6 @@ fatal(const char *format, ...) {
 	fprintf(stderr, "\n");
 	if (exitcode < 10)
 		exitcode = 10;
-	if (fatalexit != 0)
-		exitcode = fatalexit;
 	exit(exitcode);
 }
 
@@ -334,7 +299,8 @@ make_server(const char *servname) {
 	if (srv == NULL)
 		fatal("Memory allocation failure in %s:%d",
 		      __FILE__, __LINE__);
-	strlcpy(srv->servername, servname, MXNAME);
+	strncpy(srv->servername, servname, MXNAME);
+	srv->servername[MXNAME-1] = 0;
 	ISC_LINK_INIT(srv, link);
 	return (srv);
 }
@@ -412,7 +378,7 @@ make_empty_lookup(void) {
 	looknew->retries = tries;
 	looknew->nsfound = 0;
 	looknew->tcp_mode = ISC_FALSE;
-	looknew->ip6_int = ISC_FALSE;
+	looknew->nibble = ISC_FALSE;
 	looknew->comments = ISC_TRUE;
 	looknew->stats = ISC_TRUE;
 	looknew->section_question = ISC_TRUE;
@@ -443,8 +409,9 @@ clone_lookup(dig_lookup_t *lookold, isc_boolean_t servers) {
 
 	looknew = make_empty_lookup();
 	INSIST(looknew != NULL);
-	strlcpy(looknew->textname, lookold->textname, MXNAME);
-	strlcpy(looknew->cmdline, lookold->cmdline, MXNAME);
+	strncpy(looknew->textname, lookold->textname, MXNAME);
+	strncpy(looknew->cmdline, lookold->cmdline, MXNAME);
+	looknew->textname[MXNAME-1] = 0;
 	looknew->rdtype = lookold->rdtype;
 	looknew->qrdtype = lookold->qrdtype;
 	looknew->rdclass = lookold->rdclass;
@@ -594,7 +561,8 @@ make_searchlist_entry(char *domain) {
 	if (search == NULL)
 		fatal("Memory allocation failure in %s:%d",
 		      __FILE__, __LINE__);
-	strlcpy(search->origin, domain, MXNAME);
+	strncpy(search->origin, domain, MXNAME);
+	search->origin[MXNAME-1] = 0;
 	ISC_LINK_INIT(search, link);
 	return (search);
 }
@@ -721,6 +689,7 @@ setup_libs(void) {
 	 * just use random() now for getting id values, but doing so
 	 * does NOT ensure that id's can't be guessed.
 	 */
+	srandom(getpid());
 
 	result = isc_net_probeipv4();
 	if (result == ISC_R_SUCCESS)
@@ -1193,7 +1162,6 @@ insert_soa(dig_lookup_t *lookup) {
 void
 setup_lookup(dig_lookup_t *lookup) {
 	isc_result_t result;
-	isc_uint32_t id;
 	int len;
 	dig_server_t *serv;
 	dig_query_t *query;
@@ -1307,8 +1275,7 @@ setup_lookup(dig_lookup_t *lookup) {
 	trying(store, lookup);
 	INSIST(dns_name_isabsolute(lookup->name));
 
-	isc_random_get(&id);
-	lookup->sendmsg->id = (unsigned short)id & 0xFFFF;
+	lookup->sendmsg->id = (unsigned short)(random() & 0xFFFF);
 	lookup->sendmsg->opcode = dns_opcode_query;
 	lookup->msgcounter = 0;
 	/*
@@ -1429,7 +1396,6 @@ setup_lookup(dig_lookup_t *lookup) {
 		query->first_soa_rcvd = ISC_FALSE;
 		query->second_rr_rcvd = ISC_FALSE;
 		query->first_repeat_rcvd = ISC_FALSE;
-		query->warn_id = ISC_TRUE;
 		query->first_rr_serial = 0;
 		query->second_rr_serial = 0;
 		query->servname = serv->servername;
@@ -1735,15 +1701,14 @@ connect_timeout(isc_task_t *task, isc_event_t *event) {
 			      l->retries);
 			l->retries--;
 			n = requeue_lookup(l, ISC_TRUE);
+			n->origin = query->lookup->origin;
 			cancel_lookup(l);
-			check_next_lookup(l);
 		}
 	} else {
 		fputs(l->cmdline, stdout);
 		printf(";; connection timed out; no servers could be "
 		       "reached\n");
 		cancel_lookup(l);
-		check_next_lookup(l);
 		if (exitcode < 9)
 			exitcode = 9;
 	}
@@ -2039,7 +2004,7 @@ check_for_more_data(dig_query_t *query, dns_message_t *msg,
 					query->second_rr_rcvd = ISC_TRUE;
 					query->second_rr_serial = 0;
 					debug("got the second rr as nonsoa");
-					goto next_rdata;
+					continue;
 				}
 
 				/*
@@ -2223,35 +2188,25 @@ recv_done(isc_task_t *task, isc_event_t *event) {
 
  	result = dns_message_peekheader(b, &id, &msgflags);
 	if (result != ISC_R_SUCCESS || l->sendmsg->id != id) {
-		match = ISC_FALSE;
 		if (l->tcp_mode) {
-			isc_boolean_t fail = ISC_TRUE;
-			if (result == ISC_R_SUCCESS) {
-				if (!query->first_soa_rcvd ||
-				     query->warn_id)
-					printf(";; %s: ID mismatch: "
-					       "expected ID %u, got %u\n",
-					       query->first_soa_rcvd ?
-					       "WARNING" : "ERROR",
-					       l->sendmsg->id, id);
-				if (query->first_soa_rcvd)
-					fail = ISC_FALSE;
-				query->warn_id = ISC_FALSE;
-			} else
+			if (result == ISC_R_SUCCESS)
+				printf(";; ERROR: ID mismatch: "
+				       "expected ID %u, got %u\n",
+				       l->sendmsg->id, id);
+			else
 				printf(";; ERROR: short (< header size) message\n");
-			if (fail) {
-				isc_event_free(&event);
-				clear_query(query);
-				check_next_lookup(l);
-				UNLOCK_LOOKUP;
-				return;
-			}
-			match = ISC_TRUE;
-		} else if (result == ISC_R_SUCCESS)
+			isc_event_free(&event);
+			clear_query(query);
+			check_next_lookup(l);
+			UNLOCK_LOOKUP;
+			return;
+		}
+		if (result == ISC_R_SUCCESS)
 			printf(";; Warning: ID mismatch: "
 			       "expected ID %u, got %u\n", l->sendmsg->id, id);
 		else
 			printf(";; Warning: short (< header size) message received\n");
+		match = ISC_FALSE;
 	}
 
 	if (!match) {
@@ -2528,25 +2483,11 @@ get_address(char *host, in_port_t port, isc_sockaddr_t *sockaddr) {
 			hints.ai_family = PF_INET;
 		else if (!have_ipv4)
 			hints.ai_family = PF_INET6;
-		else {
+		else
 			hints.ai_family = PF_UNSPEC;
-#ifdef AI_ADDRCONFIG
-			hints.ai_flags = AI_ADDRCONFIG;
-#endif
-		}
 		debug ("before getaddrinfo()");
 		isc_app_block();
-#ifdef AI_ADDRCONFIG
- again:
-#endif
 		result = getaddrinfo(host, NULL, &hints, &res);
-#ifdef AI_ADDRCONFIG
-		if (result == EAI_BADFLAGS &&
-		    (hints.ai_flags & AI_ADDRCONFIG) != 0) {
-			hints.ai_flags &= ~AI_ADDRCONFIG;
-			goto again;
-		}
-#endif
 		isc_app_unblock();
 		if (result != 0) {
 			fatal("Couldn't find server '%s': %s",

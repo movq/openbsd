@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1998-2003  Internet Software Consortium.
+ * Copyright (C) 1998-2002  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -15,7 +15,7 @@
  * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $ISC: rdata.c,v 1.147.2.11 2003/07/30 01:04:15 marka Exp $ */
+/* $ISC: rdata.c,v 1.147.2.7 2002/03/27 23:52:33 marka Exp $ */
 
 #include <config.h>
 #include <ctype.h>
@@ -620,7 +620,7 @@ unknown_fromtext(dns_rdataclass_t rdclass, dns_rdatatype_t type,
 
 	result = isc_lex_getmastertoken(lexer, &token, isc_tokentype_number,
 					ISC_FALSE);
-	if (result == ISC_R_SUCCESS && token.value.as_ulong > 65535U)
+	if (result == ISC_R_SUCCESS && token.value.as_ulong > 65535)
 		return (ISC_R_RANGE);
 	result = isc_buffer_allocate(mctx, &buf, token.value.as_ulong);
 	if (result != ISC_R_SUCCESS)
@@ -759,7 +759,7 @@ rdata_totext(dns_rdata_t *rdata, dns_rdata_textctx_t *tctx,
 {
 	isc_result_t result = ISC_R_NOTIMPLEMENTED;
 	isc_boolean_t use_default = ISC_FALSE;
-	char buf[sizeof("65536")];
+	char buf[sizeof "65536"];
 	isc_region_t sr;
 
 	REQUIRE(rdata != NULL);
@@ -777,11 +777,11 @@ rdata_totext(dns_rdata_t *rdata, dns_rdata_textctx_t *tctx,
 	TOTEXTSWITCH
 
 	if (use_default) {
-		strlcpy(buf, "\\# ", sizeof(buf));
+		sprintf(buf, "\\# ");
 		result = str_totext(buf, target);
 		dns_rdata_toregion(rdata, &sr);
 		INSIST(sr.length < 65536);
-		snprintf(buf, sizeof(buf), "%u", sr.length);
+		sprintf(buf, "%u", sr.length);
 		result = str_totext(buf, target);
 		if (sr.length != 0 && result == ISC_R_SUCCESS) {
 			if ((tctx->flags & DNS_STYLEFLAG_MULTILINE) != 0)
@@ -952,9 +952,10 @@ dns_rdata_digest(dns_rdata_t *rdata, dns_digestfunc_t digest, void *arg) {
 unsigned int
 dns_rdatatype_attributes(dns_rdatatype_t type)
 {
-	if (type < (sizeof(typeattr)/sizeof(typeattr[0])))
-		return (typeattr[type].flags);
-	return (DNS_RDATATYPEATTR_UNKNOWN);
+	if (type > 255)
+		return (DNS_RDATATYPEATTR_UNKNOWN);
+
+	return (typeattr[type].flags);
 }
 
 #define NUMBERSIZE sizeof("037777777777") /* 2^32-1 octal + NUL */
@@ -975,7 +976,7 @@ dns_mnemonic_fromtext(unsigned int *valuep, isc_textregion_t *source,
 		 * strtoul() requires null termination, so we must make
 		 * a copy.
 		 */
-		strlcpy(buffer, source->base, NUMBERSIZE);
+		strncpy(buffer, source->base, NUMBERSIZE);
 		INSIST(buffer[source->length] == '\0');
 
 		n = strtoul(buffer, &e, 10);
@@ -1014,7 +1015,7 @@ dns_mnemonic_totext(unsigned int value, isc_buffer_t *target,
 		}
 		i++;
 	}
-	snprintf(buf, sizeof buf, "%u", value);
+	sprintf(buf, "%u", value);
 	return (str_totext(buf, target));
 }
 
@@ -1052,7 +1053,8 @@ dns_rdataclass_fromtext(dns_rdataclass_t *classp, isc_textregion_t *source) {
 			char *endp;
 			unsigned int val;
 
-			strlcpy(buf, source->base + 5, sizeof(buf));
+			strncpy(buf, source->base + 5, source->length - 5);
+			buf[source->length - 5] = '\0';
 			val = strtoul(buf, &endp, 10);
 			if (*endp == '\0' && val <= 0xffff) {
 				*classp = (dns_rdataclass_t)val;
@@ -1082,7 +1084,7 @@ dns_rdataclass_fromtext(dns_rdataclass_t *classp, isc_textregion_t *source) {
 
 isc_result_t
 dns_rdataclass_totext(dns_rdataclass_t rdclass, isc_buffer_t *target) {
-	char buf[sizeof("CLASS65535")];
+	char buf[sizeof("CLASS65536")];
 
 	switch (rdclass) {
 	case dns_rdataclass_any:
@@ -1098,7 +1100,7 @@ dns_rdataclass_totext(dns_rdataclass_t rdclass, isc_buffer_t *target) {
 	case dns_rdataclass_reserved0:
 		return (str_totext("RESERVED0", target));
 	default:
-		snprintf(buf, sizeof(buf), "CLASS%u", rdclass);
+		sprintf(buf, "CLASS%u", rdclass);
 		return (str_totext(buf, target));
 	}
 }
@@ -1156,7 +1158,8 @@ dns_rdatatype_fromtext(dns_rdatatype_t *typep, isc_textregion_t *source) {
 		char *endp;
 		unsigned int val;
 
-		strlcpy(buf, source->base + 4, sizeof(buf));
+		strncpy(buf, source->base + 4, source->length - 4);
+		buf[source->length - 4] = '\0';
 		val = strtoul(buf, &endp, 10);
 		if (*endp == '\0' && val <= 0xffff) {
 			*typep = (dns_rdatatype_t)val;
@@ -1169,12 +1172,14 @@ dns_rdatatype_fromtext(dns_rdatatype_t *typep, isc_textregion_t *source) {
 
 isc_result_t
 dns_rdatatype_totext(dns_rdatatype_t type, isc_buffer_t *target) {
-	char buf[sizeof("TYPE65536")];
+	char buf[sizeof "TYPE65536"];
 
-	if (type < (sizeof(typeattr)/sizeof(typeattr[0])))
-		return (str_totext(typeattr[type].name, target));
-	snprintf(buf, sizeof buf, "TYPE%u", type);
-	return (str_totext(buf, target));
+	if (type > 255) {
+		sprintf(buf, "TYPE%u", type);
+		return (str_totext(buf, target));
+	}
+
+	return (str_totext(typeattr[type].name, target));
 }
 
 void
@@ -1285,7 +1290,7 @@ dns_keyflags_fromtext(dns_keyflags_t *flagsp, isc_textregion_t *source)
 		 * strtoul() requires null termination, so we must make
 		 * a copy.
 		 */
-		strlcpy(buffer, source->base, NUMBERSIZE);
+		strncpy(buffer, source->base, NUMBERSIZE);
 		INSIST(buffer[source->length] == '\0');
 
 		n = strtoul(buffer, &e, 0); /* Allow hex/octal. */
@@ -1364,7 +1369,7 @@ txt_totext(isc_region_t *source, isc_buffer_t *target) {
 		if (*sp < 0x20 || *sp >= 0x7f) {
 			if (tl < 4)
 				return (ISC_R_NOSPACE);
-			snprintf(tp, tl, "\\%03u", *sp++);
+			sprintf(tp, "\\%03u", *sp++);
 			tp += 4;
 			tl -= 4;
 			continue;
@@ -1815,7 +1820,7 @@ atob_tobuffer(isc_lex_t *lexer, isc_buffer_t *target) {
 	 */
 	RETERR(isc_lex_getmastertoken(lexer, &token, isc_tokentype_number,
 				      ISC_FALSE));
-	if ((token.value.as_ulong % 4) != 0U)
+	if ((token.value.as_ulong % 4) != 0)
 		isc_buffer_subtract(target,  4 - (token.value.as_ulong % 4));
 
 	/*
@@ -1937,7 +1942,7 @@ btoa_totext(unsigned char *inbuf, int inbuflen, isc_buffer_t *target) {
 	 * Put byte count and checksum information at end of buffer,
 	 * delimited by 'x'
 	 */
-	snprintf(buf, sizeof(buf), "x %d %x %x %x", inbuflen, Ceor, Csum, Crot);
+	sprintf(buf, "x %d %x %x %x", inbuflen, Ceor, Csum, Crot);
 	return (str_totext(buf, target));
 }
 
@@ -2050,6 +2055,7 @@ dns_rdatatype_questiononly(dns_rdatatype_t type) {
 
 isc_boolean_t
 dns_rdataclass_ismeta(dns_rdataclass_t rdclass) {
+	REQUIRE(rdclass < 65536);
 
 	if (rdclass == dns_rdataclass_reserved0
 	    || rdclass == dns_rdataclass_none

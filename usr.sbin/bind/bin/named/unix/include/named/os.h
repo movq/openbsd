@@ -29,12 +29,6 @@ void
 ns_os_daemonize(void);
 
 void
-ns_os_opendevnull(void);
-
-void
-ns_os_closedevnull(void);
-
-void
 ns_os_chroot(const char *root);
 
 void
@@ -47,15 +41,9 @@ void
 ns_os_minprivs(void);
 
 void
-ns_os_preopenpidfile(const char *filename);
-
-void
 ns_os_writepidfile(const char *filename, isc_boolean_t first_time);
 
 void
 ns_os_shutdown(void);
-
-void
-ns_os_tzset(void);
 
 #endif /* NS_OS_H */

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2000, 2001, 2003  Internet Software Consortium.
+ * Copyright (C) 2000, 2001  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -15,7 +15,7 @@
  * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $ISC: lwresd.c,v 1.37.2.2 2003/07/22 04:03:34 marka Exp $ */
+/* $ISC: lwresd.c,v 1.37 2001/08/07 01:58:55 marka Exp $ */
 
 /*
  * Main program for the Lightweight Resolver Daemon.
@@ -432,7 +432,6 @@ ns_lwdmanager_detach(ns_lwresd_t **lwresdp) {
 	INSIST(VALID_LWRESD(*lwresdp));
 
 	lwresd = *lwresdp;
-	*lwresdp = NULL;
 
 	LOCK(&lwresd->lock);
 	INSIST(lwresd->refs > 0);
@@ -451,6 +450,7 @@ ns_lwdmanager_detach(ns_lwresd_t **lwresdp) {
 	lwresd->magic = 0;
 	isc_mem_put(mctx, lwresd, sizeof(*lwresd));
 	isc_mem_detach(&mctx);
+	lwresdp = NULL;
 }
 
 
@@ -495,7 +495,7 @@ ns_lwreslistener_detach(ns_lwreslistener_t **listenerp) {
 	if (listener->manager != NULL)
 		ns_lwdmanager_detach(&listener->manager);
 
-	if (listener->sock != NULL)
+	if (listener->sock != 0)
 		isc_socket_detach(&listener->sock);
 
 	listener->magic = 0;
@@ -563,21 +563,18 @@ listener_bind(ns_lwreslistener_t *listener, isc_sockaddr_t *address) {
 	if (result != ISC_R_SUCCESS) {
 		isc_log_write(ns_g_lctx, NS_LOGCATEGORY_GENERAL,
 			      NS_LOGMODULE_LWRESD, ISC_LOG_WARNING,
-			      "failed to create lwres socket: %s",
+			      "failed to create socket: %s",
 			      isc_result_totext(result));
 		return (result);
 	}
 
 	result = isc_socket_bind(sock, &listener->address);
 	if (result != ISC_R_SUCCESS) {
-		char socktext[ISC_SOCKADDR_FORMATSIZE];
-		isc_sockaddr_format(&listener->address, socktext,
-				    sizeof(socktext));
 		isc_socket_detach(&sock);
 		isc_log_write(ns_g_lctx, NS_LOGCATEGORY_GENERAL,
 			      NS_LOGMODULE_LWRESD, ISC_LOG_WARNING,
-			      "failed to add lwres socket: %s: %s",
-			      socktext, isc_result_totext(result));
+			      "failed to bind socket: %s",
+			      isc_result_totext(result));
 		return (result);
 	}
 	listener->sock = sock;
@@ -701,10 +698,8 @@ configure_listener(isc_sockaddr_t *address, ns_lwresd_t *lwresd,
 	 */
 	if (oldlistener == NULL) {
 		result = listener_bind(listener, address);
-		if (result != ISC_R_SUCCESS) {
-			ns_lwreslistener_detach(&listener);
-			return (ISC_R_SUCCESS);
-		}
+		if (result != ISC_R_SUCCESS)
+			return (result);
 	} else
 		listener_copysock(oldlistener, listener);
 
@@ -716,7 +711,7 @@ configure_listener(isc_sockaddr_t *address, ns_lwresd_t *lwresd,
 			      "lwres: failed to start %s: %s", socktext,
 			      isc_result_totext(result));
 		ns_lwreslistener_detach(&listener);
-		return (ISC_R_SUCCESS);
+		return (result);
 	}
 
 	if (oldlistener != NULL) {
@@ -747,9 +742,6 @@ ns_lwresd_configure(isc_mem_t *mctx, cfg_obj_t *config) {
 	ns_lwreslistenerlist_t newlisteners;
 	isc_result_t result;
 	char socktext[ISC_SOCKADDR_FORMATSIZE];
-	isc_sockaddr_t *addrs = NULL;
-	ns_lwresd_t *lwresd = NULL;
-	isc_uint32_t count = 0;
 
 	REQUIRE(mctx != NULL);
 	REQUIRE(config != NULL);
@@ -775,10 +767,16 @@ ns_lwresd_configure(isc_mem_t *mctx, cfg_obj_t *config) {
 	     element != NULL;
 	     element = cfg_list_next(element))
 	{
+		ns_lwresd_t *lwresd;
 		in_port_t port;
+		isc_sockaddr_t *addrs = NULL;
+		isc_uint32_t count;
 
 		lwres = cfg_listelt_value(element);
-		CHECK(ns_lwdmanager_create(mctx, lwres, &lwresd));
+		lwresd = NULL;
+		result = ns_lwdmanager_create(mctx, lwres, &lwresd);
+		if (result != ISC_R_SUCCESS)
+			return (result);
 
 		port = lwresd_g_listenport;
 		if (port == 0)
@@ -792,19 +790,33 @@ ns_lwresd_configure(isc_mem_t *mctx, cfg_obj_t *config) {
 
 			localhost.s_addr = htonl(INADDR_LOOPBACK);
 			isc_sockaddr_fromin(&address, &localhost, port);
-			CHECK(configure_listener(&address, lwresd, mctx,
-						 &newlisteners));
+			result = configure_listener(&address, lwresd,
+						    mctx, &newlisteners);
 		} else {
 			isc_uint32_t i;
 
-			CHECK(ns_config_getiplist(config, listenerslist,
-						  port, mctx, &addrs, &count));
-			for (i = 0; i < count; i++)
-				CHECK(configure_listener(&addrs[i], lwresd,
-							 mctx, &newlisteners));
-			ns_config_putiplist(mctx, &addrs, count);
+			result = ns_config_getiplist(config, listenerslist,
+						     port, mctx,
+						     &addrs, &count);
+			if (result != ISC_R_SUCCESS)
+				goto failure;
+			
+			for (i = 0; i < count; i++) {
+				result = configure_listener(&addrs[i], lwresd,
+							    mctx,
+							    &newlisteners);
+				if (result != ISC_R_SUCCESS)
+					goto failure;
+			}
 		}
+
+	failure:
+		if (addrs != NULL)
+			ns_config_putiplist(mctx, &addrs, count);
+
 		ns_lwdmanager_detach(&lwresd);
+		if (result != ISC_R_SUCCESS)
+			return (result);
 	}
 
 	/*
@@ -815,30 +827,21 @@ ns_lwresd_configure(isc_mem_t *mctx, cfg_obj_t *config) {
 	while (!ISC_LIST_EMPTY(listeners)) {
 		listener = ISC_LIST_HEAD(listeners);
 		ISC_LIST_UNLINK(listeners, listener, link);
-
-		isc_sockaddr_format(&listener->address,
-				    socktext, sizeof(socktext));
-
 		listener_shutdown(listener);
 		ns_lwreslistener_detach(&listener);
 
+		isc_sockaddr_format(&listener->address,
+				    socktext, sizeof(socktext));
 		isc_log_write(ns_g_lctx, ISC_LOGCATEGORY_GENERAL,
 			      NS_LOGMODULE_LWRESD, ISC_LOG_NOTICE,
 			      "lwres no longer listening on %s", socktext);
+
 	}
-
- cleanup:
 	ISC_LIST_APPENDLIST(listeners, newlisteners, link);
-
-	if (addrs != NULL)
-		ns_config_putiplist(mctx, &addrs, count);
-
-	if (lwresd != NULL)
-		ns_lwdmanager_detach(&lwresd);
 
 	UNLOCK(&listeners_lock);
 
-	return (result);
+	return (ISC_R_SUCCESS);
 }
 
 void
