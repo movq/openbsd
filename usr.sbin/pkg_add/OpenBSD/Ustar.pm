@@ -1,4 +1,4 @@
-# $OpenBSD: Ustar.pm,v 1.1 2003/10/16 17:43:34 espie Exp $
+# $OpenBSD: Ustar.pm,v 1.1.1.1 2003/10/16 17:43:34 espie Exp $
 #
 # Copyright (c) 2002 Marc Espie.
 # 
