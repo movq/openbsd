@@ -1,5 +1,5 @@
 /*
- * $Id: log.h,v 1.1 1997/11/23 20:27:34 brian Exp $
+ * $Id: log.h,v 1.1.1.1 1997/11/23 20:27:34 brian Exp $
  */
 
 #define LogMIN		(1)

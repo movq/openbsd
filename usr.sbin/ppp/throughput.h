@@ -1,5 +1,5 @@
 /*
- * $Id: throughput.h,v 1.1 1997/11/23 20:27:37 brian Exp $
+ * $Id: throughput.h,v 1.1.1.1 1997/11/23 20:27:37 brian Exp $
  */
 
 #define SAMPLE_PERIOD 5

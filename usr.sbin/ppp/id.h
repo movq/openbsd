@@ -1,5 +1,5 @@
 /*
- * $Id: id.h,v 1.1 1997/11/23 20:27:34 brian Exp $
+ * $Id: id.h,v 1.1.1.1 1997/11/23 20:27:34 brian Exp $
  */
 
 extern void ID0init(void);

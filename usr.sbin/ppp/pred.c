@@ -5,7 +5,7 @@
  * Updated by: Carsten Bormann <cabo@cs.tu-berlin.de>
  * Original  : Dave Rand <dlr@bungi.com>/<dave_rand@novell.com>
  *
- * $Id: pred.c,v 1.1 1997/11/23 20:27:35 brian Exp $
+ * $Id: pred.c,v 1.1.1.1 1997/11/23 20:27:35 brian Exp $
  *
  */
 

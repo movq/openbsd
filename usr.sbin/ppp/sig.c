@@ -1,5 +1,5 @@
 /*
- * $Id: sig.c,v 1.1 1997/11/23 20:27:36 brian Exp $
+ * $Id: sig.c,v 1.1.1.1 1997/11/23 20:27:36 brian Exp $
  */
 
 #include <sys/types.h>
