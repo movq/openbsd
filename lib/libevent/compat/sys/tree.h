@@ -1,4 +1,4 @@
-/*	$OpenBSD: tree.h,v 1.1 2002/06/15 18:01:48 provos Exp $	*/
+/*	$OpenBSD: tree.h,v 1.1.1.1 2002/06/15 18:01:48 provos Exp $	*/
 /*
  * Copyright 2002 Niels Provos <provos@citi.umich.edu>
  * All rights reserved.
