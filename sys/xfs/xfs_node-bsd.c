@@ -37,7 +37,7 @@
 #include <xfs/xfs_deb.h>
 #include <xfs/xfs_vnodeops.h>
 
-RCSID("$Id: xfs_node-bsd.c,v 1.3.8.1 2002/06/11 03:33:13 art Exp $");
+RCSID("$Id: xfs_node-bsd.c,v 1.3.8.2 2003/05/19 22:28:37 tedu Exp $");
 
 extern vop_t **xfs_vnodeop_p;
 
@@ -533,9 +533,9 @@ xfs_dnlc_enter(struct vnode *dvp,
  * The real change is sys/kern/vfs_cache:1.20
  */
 
-#if __NetBSD_Version__ >= 104120000
+#if __NetBSD_Version__ >= 104120000 || defined(__OpenBSD__)
 	if (cache_lookup(dvp, &dummy, cnp) != -1) {
-	    VOP_UNLOCK(dummy, 0);
+	    VOP_UNLOCK(dummy, 0, cnp->cn_proc);
 	    printf ("XFS PANIC WARNING! xfs_dnlc_enter: %s already in cache\n",
 		    cnp->cn_nameptr);
 	}
@@ -700,7 +700,7 @@ xfs_dnlc_lock(struct vnode *dvp,
  * (see the comment above for version information).
  */
 
-#if __NetBSD_Version__ >= 104120000
+#if __NetBSD_Version__ >= 104120000 || defined(__OpenBSD__)
 
 int
 xfs_dnlc_lookup(struct vnode *dvp,
