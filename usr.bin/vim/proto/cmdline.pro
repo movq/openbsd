@@ -1,4 +1,4 @@
-/*	$OpenBSD: cmdline.pro,v 1.1 1996/09/07 21:40:28 downsj Exp $	*/
+/*	$OpenBSD: cmdline.pro,v 1.1.1.1 1996/09/07 21:40:28 downsj Exp $	*/
 /* cmdline.c */
 void add_to_history __PARMS((int histype, char_u *new_entry));
 char_u *getcmdline __PARMS((int firstc, long count));

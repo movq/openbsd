@@ -1,4 +1,4 @@
-/*	$OpenBSD: buffer.pro,v 1.1 1996/09/07 21:40:28 downsj Exp $	*/
+/*	$OpenBSD: buffer.pro,v 1.1.1.1 1996/09/07 21:40:28 downsj Exp $	*/
 /* buffer.c */
 int open_buffer __PARMS((void));
 void close_buffer __PARMS((WIN *win, BUF *buf, int free_buf, int del_buf));
