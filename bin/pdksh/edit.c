@@ -1,4 +1,4 @@
-/*	$OpenBSD: edit.c,v 1.1 1996/08/14 06:19:10 downsj Exp $	*/
+/*	$OpenBSD: edit.c,v 1.1.1.1 1996/08/14 06:19:10 downsj Exp $	*/
 
 /*
  * Command line editing - common code

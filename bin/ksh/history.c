@@ -1,4 +1,4 @@
-/*	$OpenBSD: history.c,v 1.1 1996/08/14 06:19:11 downsj Exp $	*/
+/*	$OpenBSD: history.c,v 1.1.1.1 1996/08/14 06:19:11 downsj Exp $	*/
 
 /*
  * command history

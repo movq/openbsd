@@ -1,4 +1,4 @@
-/*	$OpenBSD: tty.c,v 1.1 1996/08/14 06:19:12 downsj Exp $	*/
+/*	$OpenBSD: tty.c,v 1.1.1.1 1996/08/14 06:19:12 downsj Exp $	*/
 
 #include "sh.h"
 #include "ksh_stat.h"

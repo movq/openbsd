@@ -1,4 +1,4 @@
-/*	$OpenBSD: c_sh.c,v 1.1 1996/08/14 06:19:10 downsj Exp $	*/
+/*	$OpenBSD: c_sh.c,v 1.1.1.1 1996/08/14 06:19:10 downsj Exp $	*/
 
 /*
  * built-in Bourne commands

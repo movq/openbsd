@@ -1,4 +1,4 @@
-/*	$OpenBSD: edit.h,v 1.1 1996/08/14 06:19:10 downsj Exp $	*/
+/*	$OpenBSD: edit.h,v 1.1.1.1 1996/08/14 06:19:10 downsj Exp $	*/
 
 /* NAME:
  *      edit.h - globals for edit modes

@@ -1,4 +1,4 @@
-/*	$OpenBSD: ksh_times.h,v 1.1 1996/08/14 06:19:11 downsj Exp $	*/
+/*	$OpenBSD: ksh_times.h,v 1.1.1.1 1996/08/14 06:19:11 downsj Exp $	*/
 
 #include <sys/times.h>
 
