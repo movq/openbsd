@@ -4,8 +4,8 @@ File		:	pwd.h			-	Provide mission header ioctl.h for CodeWarrior
 Author	:	Matthias Neeracher
 Language	:	MPW C/C++
 $Log: pwd.h,v $
-Revision 1.1  1996/10/18 03:36:59  tholo
-Initial revision
+Revision 1.1.1.1  1996/10/18 03:36:59  tholo
+New release from Cyclic Software
 
 Revision 1.1  1996/07/26 20:08:29  kingdon
 Check in new macintosh directory from Mike Ladwig.  I believe that this
