@@ -1,13 +1,12 @@
 #!./perl
 #
-# $Id: soundex.t,v 1.1.1.1 1996/08/19 10:13:15 downsj Exp $
+# $Id: soundex.t,v 1.1.1.2 2000/04/06 16:10:45 millert Exp $
 #
 # test module for soundex.pl
 #
 # $Log: soundex.t,v $
-# Revision 1.1.1.1  1996/08/19 10:13:15  downsj
-# Import of Perl 5.003 into the tree.  Makefile.bsd-wrapper and
-# config.sh.OpenBSD are the only local changes.
+# Revision 1.1.1.2  2000/04/06 16:10:45  millert
+# virgin perl 5.6.0
 #
 # Revision 1.2  1994/03/24  00:30:27  mike
 # Subtle bug (any excuse :-) spotted by Rich Pinder <rpinder@hsc.usc.edu>
@@ -22,7 +21,7 @@
 
 BEGIN {
     chdir 't' if -d 't';
-    @INC = '../lib';
+    unshift @INC, '../lib';
 }
 
 use Text::Soundex;
