@@ -3,7 +3,7 @@
 
 
 #
-# $Id: lln.t,v 1.1 2003/12/03 02:43:51 millert Exp $
+# $Id: lln.t,v 1.1.1.1 2003/12/03 02:43:51 millert Exp $
 # Author: Slaven Rezic
 #
 
