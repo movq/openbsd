@@ -38,4 +38,4 @@
  *	1.4	add oldmon support and network support.
  */
 
-char *version = "$Revision: 1.1.1.1 $";
+char *version = "$Revision: 1.2 $";
