@@ -1,5 +1,5 @@
 #
-# $Id: Makefile.sim,v 1.1.1.2 1996/09/15 01:56:32 etheisen Exp $
+# $Id: Makefile.sim,v 1.1.1.3 2000/04/09 07:58:33 millert Exp $
 #
 # To install mgm separately as tmac.gm:
 # make -f Makefile.sub tmacdir=/usr/local/lib/groff/tmac srcdir=. \
@@ -21,8 +21,8 @@ install = install -m 644
 
 # Do not change anything below this line
 srcdir = .
-version = 1.29
-mdate = 1996-09-06
+version = 1.32
+mdate = 1999-09-03
 
 .SUFFIXES: .n .man
 
