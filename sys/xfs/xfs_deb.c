@@ -34,7 +34,7 @@
 #include <xfs/xfs_deb.h>
 #include <xfs/xfs_debug.h>
 
-/* $Id: xfs_deb.c,v 1.2.4.3 2003/03/28 00:41:30 niklas Exp $ */
+/* $arla: xfs_deb.c,v 1.15 2002/09/07 10:45:03 lha Exp $ */
 
 /* X is on */
 #define X(y) y
