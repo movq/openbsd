@@ -1,4 +1,5 @@
-/* $OpenBSD: varmodifiers.h,v 1.1 2000/07/17 23:09:06 espie Exp $ */
+/* $OpenPackages$ */
+/* $OpenBSD: varmodifiers.h,v 1.2 2001/05/03 13:41:15 espie Exp $ */
 
 /*
  * Copyright (c) 1999 Marc Espie.
@@ -28,8 +29,9 @@
  */
 #ifndef VARMODIFIERS_H
 #define VARMODIFIERS_H
-extern char *VarModifiers_Apply __P((char *, SymTable *, Boolean, 
-	Boolean *, char *, char, size_t *));
-extern char *Var_GetTail __P((char *));
-extern char *Var_GetHead __P((char *));
+extern char *VarModifiers_Apply(char *, const struct Name *, SymTable *, 
+	Boolean, Boolean *, const char *, int, size_t *);
+extern char *Var_GetTail(char *);
+extern char *Var_GetHead(char *);
+extern void VarModifiers_Init(void);
 #endif
