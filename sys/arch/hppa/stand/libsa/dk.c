@@ -1,4 +1,4 @@
-/*	$OpenBSD: dk.c,v 1.1 1998/06/23 18:46:42 mickey Exp $	*/
+/*	$OpenBSD: dk.c,v 1.1.1.1 1998/06/23 18:46:42 mickey Exp $	*/
 
 /*
  * Copyright 1996 1995 by Open Software Foundation, Inc.   

@@ -1,4 +1,4 @@
-/*	$OpenBSD: cache_s.s,v 1.1 1998/06/23 18:46:42 mickey Exp $	*/
+/*	$OpenBSD: cache_s.s,v 1.1.1.1 1998/06/23 18:46:42 mickey Exp $	*/
 /*	$NOWHERE: cache_s.s,v 2.1 1998/06/22 19:34:46 mickey Exp $	*/
 
 /*
@@ -42,8 +42,8 @@
 /*
  * HISTORY
  * $Log: cache_s.s,v $
- * Revision 1.1  1998/06/23 18:46:42  mickey
- * Initial revision
+ * Revision 1.1.1.1  1998/06/23 18:46:42  mickey
+ * ok, it boots, include and libkern to come
  *
  * Revision 2.1  1998/06/22 19:34:46  mickey
  * add cache manipulating routines

@@ -1,4 +1,4 @@
-/*	$OpenBSD: srt0.S,v 1.1 1998/06/23 18:46:41 mickey Exp $	*/
+/*	$OpenBSD: srt0.S,v 1.1.1.1 1998/06/23 18:46:41 mickey Exp $	*/
 
 /*
  * Copyright 1996 1995 by Open Software Foundation, Inc.   
