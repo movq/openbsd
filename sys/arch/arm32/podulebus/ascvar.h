@@ -1,7 +1,7 @@
-/* $NetBSD: ics2101var.h,v 1.1 1995/07/19 19:58:50 brezak Exp $ */
+/* $NetBSD: ascvar.h,v 1.1 1996/03/07 23:54:31 mark Exp $ */
+
 /*
- * Copyright (c) 1994, 1995 Ken Hornstein.  All rights reserved.
- * Copyright (c) 1995 John T. Kohl.  All rights reserved.
+ * Copyright (c) 1996 Mark Brinicombe
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -13,35 +13,40 @@
  *    documentation and/or other materials provided with the distribution.
  * 3. All advertising materials mentioning features or use of this software
  *    must display the following acknowledgement:
- *	This product includes software developed by Ken Hornstein.
- * 4. The name of the authors may not be used to endorse or promote products
- *      derived from this software without specific prior written permission.
+ *      This product includes software developed by Mark Brinicombe
+ *      for the NetBSD Project.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission
  *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHORS ``AS IS'' AND ANY EXPRESS OR
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
  * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
  * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
  * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- *	$Id: ics2101var.h,v 1.1 1995/10/18 08:52:34 deraadt Exp $
  */
 
-#define ICSMIX_LEFT		0		/* Value for left channel */
-#define ICSMIX_RIGHT		1		/* Value for right channel */
+#ifndef _ASCVAR_H_
+#define _ASCVAR_H_
 
-struct ics2101_softc {
-	u_short sc_selio;		/* select I/O address */
-	u_short sc_dataio;		/* data I/O address */
-	int sc_flags;			/* Various flags */
-#define ICS_FLIP	0x01		/* flip channels */
-	u_char sc_setting[ICSMIX_CHAN_5+1][2]; /* current settings */
-	u_char sc_mute[ICSMIX_CHAN_5+1][2];/* muted? */
-};
+#include <arm32/podulebus/sbicvar.h>
+#include <arm32/podulebus/ascreg.h>
 
-void ics2101_mix_attenuate __P((struct ics2101_softc *, u_int, u_int, u_int));
-void ics2101_mix_mute __P((struct ics2101_softc *, u_int, u_int, u_int));
+#define ASC_POLL 1
+
+struct	asc_softc {
+	struct sbic_softc	sc_softc;
+
+	podule_t		*sc_podule;
+	int			sc_podule_number;
+	irqhandler_t		sc_ih;
+
+	vu_int			sc_pagereg;
+	vu_int			sc_intstat;
+	};
+
+#endif /* _ASCVAR_H_ */
