@@ -1,4 +1,4 @@
-# $OpenBSD: PackingElement.pm,v 1.8 2004/03/30 08:53:35 espie Exp $
+# $OpenBSD: PackingElement.pm,v 1.7 2004/01/28 22:12:01 espie Exp $
 #
 # Copyright (c) 2003 Marc Espie.
 # 
@@ -44,8 +44,7 @@ sub Factory
 		if (defined $keyword{$cmd}) {
 			$keyword{$cmd}->add(@_, $args);
 		} else {
-		    print STDERR "Unknown element: \@$cmd $args\n";
-		    exit(1);
+		    OpenBSD::PackingElement::Other->add(@_, "\@$cmd $args");
 		}
 	} else {
 		OpenBSD::PackingElement::File->add(@_, $_);
@@ -208,6 +207,9 @@ sub add_size
 }
 
 sub IsFile() { 1 }
+
+package OpenBSD::PackingElement::Other;
+our @ISA=qw(OpenBSD::PackingElement);
 
 package OpenBSD::PackingElement::Ignore;
 our @ISA=qw(OpenBSD::PackingElement);
