@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_sn.c,v 1.1 1997/02/06 16:02:42 pefo Exp $	*/
+/*	$OpenBSD: if_sn.c,v 1.1.1.1 1997/02/06 16:02:42 pefo Exp $	*/
 /*
  * National Semiconductor  SONIC Driver
  * Copyright (c) 1991   Algorithmics Ltd (http://www.algor.co.uk)

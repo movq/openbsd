@@ -1,4 +1,4 @@
-/*	$OpenBSD: sys_machdep.c,v 1.1 1997/02/06 16:02:46 pefo Exp $	*/
+/*	$OpenBSD: sys_machdep.c,v 1.1.1.1 1997/02/06 16:02:46 pefo Exp $	*/
 /*	$NetBSD: sys_machdep.c,v 1.6 1994/10/26 21:10:42 cgd Exp $	*/
 
 /*

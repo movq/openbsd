@@ -1,4 +1,4 @@
-/*	$OpenBSD: trap.c,v 1.1 1997/02/06 16:02:46 pefo Exp $	*/
+/*	$OpenBSD: trap.c,v 1.1.1.1 1997/02/06 16:02:46 pefo Exp $	*/
 /*
  * Copyright (c) 1988 University of Utah.
  * Copyright (c) 1992, 1993
@@ -39,7 +39,7 @@
  * from: Utah Hdr: trap.c 1.32 91/04/06
  *
  *	from: @(#)trap.c	8.5 (Berkeley) 1/11/94
- *      $Id: trap.c,v 1.1 1997/02/06 16:02:46 pefo Exp $
+ *      $Id: trap.c,v 1.1.1.1 1997/02/06 16:02:46 pefo Exp $
  */
 
 #include <sys/param.h>

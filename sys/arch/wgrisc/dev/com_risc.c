@@ -1,4 +1,4 @@
-/*	$OpenBSD: com_risc.c,v 1.1 1997/02/06 16:02:42 pefo Exp $	*/
+/*	$OpenBSD: com_risc.c,v 1.1.1.1 1997/02/06 16:02:42 pefo Exp $	*/
 
 /*
  * Copyright (c) 1993, 1994 Charles Hannum.

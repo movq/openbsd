@@ -1,4 +1,4 @@
-/*	$OpenBSD: limits.h,v 1.1 1997/02/06 16:02:43 pefo Exp $	*/
+/*	$OpenBSD: limits.h,v 1.1.1.1 1997/02/06 16:02:43 pefo Exp $	*/
 /*	$NetBSD: limits.h,v 1.8 1995/03/28 18:19:16 jtc Exp $	*/
 
 /*
