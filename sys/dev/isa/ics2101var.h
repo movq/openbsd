@@ -28,7 +28,7 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- *	$Id: ics2101var.h,v 1.1 1995/10/18 08:52:34 deraadt Exp $
+ *	$Id: ics2101var.h,v 1.1.1.1 1995/10/18 08:52:34 deraadt Exp $
  */
 
 #define ICSMIX_LEFT		0		/* Value for left channel */
