@@ -1,5 +1,5 @@
 dnl Process this file with autoconf to produce a configure script.
-dnl $Id: configure.ac,v 1.1 2002/06/10 13:20:14 espie Exp $
+dnl $Id: configure.ac,v 1.1.1.1 2002/06/10 13:20:14 espie Exp $
 dnl
 AC_PREREQ(2.52)dnl Minimum Autoconf version required.
 dnl
