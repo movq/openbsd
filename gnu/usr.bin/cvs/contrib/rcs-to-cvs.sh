@@ -1,6 +1,6 @@
 #! /bin/sh
 #
-# $Id: rcs-to-cvs.sh,v 1.1 1995/12/19 09:21:40 deraadt Exp $
+# $Id: rcs-to-cvs.sh,v 1.1.1.1 1995/12/19 09:21:40 deraadt Exp $
 # Based on the CVS 1.0 checkin csh script.
 # Contributed by Per Cederqvist <ceder@signum.se>.
 # Rewritten in sh by David MacKenzie <djm@cygnus.com>.
