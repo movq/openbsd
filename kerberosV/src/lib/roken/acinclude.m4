@@ -1,9 +1,9 @@
-dnl $Id: acinclude.m4,v 1.1.1.1 2001/05/25 07:51:07 hin Exp $
+dnl $Id: acinclude.m4,v 1.1.1.2 2004/10/29 15:55:38 biorn Exp $
 dnl
 dnl Only put things that for some reason can't live in the `cf'
 dnl directory in this file.
 dnl
 
-dnl $KTH: misc.m4,v 1.1 1997/12/14 15:59:04 joda Exp $
+dnl $xId: misc.m4,v 1.1 1997/12/14 15:59:04 joda Exp $
 dnl
 define(upcase,`echo $1 | tr abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ`)dnl
