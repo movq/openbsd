@@ -1,4 +1,4 @@
-# $OpenBSD: Makefile,v 1.1 1999/05/24 01:30:20 angelos Exp $
+# $OpenBSD: Makefile,v 1.1.1.1 1999/05/24 01:30:20 angelos Exp $
 
 PROG=	keynote-sign
 LINKS=	${BINDIR}/keynote-sign ${BINDIR}/keynote-sigver
