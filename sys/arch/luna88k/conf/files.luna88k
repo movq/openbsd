@@ -1,4 +1,4 @@
-#	$OpenBSD: files.luna88k,v 1.1 2004/04/21 15:23:47 aoyama Exp $
+#	$OpenBSD: files.luna88k,v 1.1.1.1 2004/04/21 15:23:47 aoyama Exp $
 #	
 maxpartitions 16
 

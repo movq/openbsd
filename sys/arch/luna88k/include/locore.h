@@ -1,4 +1,4 @@
-/*	$OpenBSD: locore.h,v 1.1 2004/04/21 15:23:57 aoyama Exp $	*/
+/*	$OpenBSD: locore.h,v 1.1.1.1 2004/04/21 15:23:57 aoyama Exp $	*/
 
 #ifndef _MACHINE_LOCORE_H_
 #define _MACHINE_LOCORE_H_

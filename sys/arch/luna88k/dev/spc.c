@@ -1,4 +1,4 @@
-/* $OpenBSD: spc.c,v 1.1 2004/04/21 15:23:55 aoyama Exp $ */
+/* $OpenBSD: spc.c,v 1.1.1.1 2004/04/21 15:23:55 aoyama Exp $ */
 /* $NetBSD: spc.c,v 1.4 2003/07/05 19:00:17 tsutsui Exp $ */
 
 /*-

@@ -1,4 +1,4 @@
-/*	$OpenBSD: spinlock.h,v 1.1 2004/04/21 15:23:58 aoyama Exp $	*/
+/*	$OpenBSD: spinlock.h,v 1.1.1.1 2004/04/21 15:23:58 aoyama Exp $	*/
 
 #ifndef _M88K_SPINLOCK_H_
 #define _M88K_SPINLOCK_H_

@@ -1,4 +1,4 @@
-/*	$OpenBSD: ptrace.h,v 1.1 2004/04/21 15:23:58 aoyama Exp $ */
+/*	$OpenBSD: ptrace.h,v 1.1.1.1 2004/04/21 15:23:58 aoyama Exp $ */
 /*
  * Copyright (c) 1999, Steve Murphree, Jr.
  * Copyright (c) 1992, 1993

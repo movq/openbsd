@@ -1,4 +1,4 @@
-/*	$OpenBSD: param.h,v 1.1 2004/04/21 15:23:57 aoyama Exp $ */
+/*	$OpenBSD: param.h,v 1.1.1.1 2004/04/21 15:23:57 aoyama Exp $ */
 /*
  * Copyright (c) 1999 Steve Murphree, Jr.
  * Copyright (c) 1988 University of Utah.

@@ -1,4 +1,4 @@
-/* $OpenBSD: timekeeper.c,v 1.1 2004/04/21 15:23:56 aoyama Exp $ */
+/* $OpenBSD: timekeeper.c,v 1.1.1.1 2004/04/21 15:23:56 aoyama Exp $ */
 /* $NetBSD: timekeeper.c,v 1.1 2000/01/05 08:48:56 nisimura Exp $ */
 
 /*-

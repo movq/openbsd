@@ -1,4 +1,4 @@
-/*	$OpenBSD: reg.h,v 1.1 2004/04/21 15:23:58 aoyama Exp $ */
+/*	$OpenBSD: reg.h,v 1.1.1.1 2004/04/21 15:23:58 aoyama Exp $ */
 /*
  * Copyright (c) 1999 Steve Murphree, Jr.
  * Copyright (c) 1996 Nivas Madhur

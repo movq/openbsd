@@ -1,4 +1,4 @@
-/*	$OpenBSD: pmap_table.h,v 1.1 2004/04/21 15:23:58 aoyama Exp $ */
+/*	$OpenBSD: pmap_table.h,v 1.1.1.1 2004/04/21 15:23:58 aoyama Exp $ */
 /*
  * Mach Operating System
  * Copyright (c) 1992 Carnegie Mellon University

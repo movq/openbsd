@@ -1,4 +1,4 @@
-/*	$OpenBSD: mb89352.c,v 1.1 2004/04/21 15:23:54 aoyama Exp $	*/
+/*	$OpenBSD: mb89352.c,v 1.1.1.1 2004/04/21 15:23:54 aoyama Exp $	*/
 /*	$NetBSD: mb89352.c,v 1.5 2000/03/23 07:01:31 thorpej Exp $	*/
 /*	NecBSD: mb89352.c,v 1.4 1998/03/14 07:31:20 kmatsuda Exp	*/
 
