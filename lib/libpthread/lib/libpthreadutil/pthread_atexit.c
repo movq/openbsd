@@ -36,7 +36,7 @@
  */
 
 #ifndef lint
-static const char rcsid[] = "$Id: pthread_atexit.c,v 1.1 1998/07/21 13:22:22 peter Exp $";
+static const char rcsid[] = "$Id: pthread_atexit.c,v 1.1.1.1 1998/07/21 13:22:22 peter Exp $";
 #endif
 
 #define PTHREAD_KERNEL
