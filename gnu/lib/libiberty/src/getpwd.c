@@ -1,17 +1,5 @@
 /* getpwd.c - get the working directory */
 
-/*
-
-@deftypefn Supplemental char* getpwd (void)
-
-Returns the current working directory.  This implementation caches the
-result on the assumption that the process will not call @code{chdir}
-between calls to @code{getpwd}.
-
-@end deftypefn
-
-*/
-
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif

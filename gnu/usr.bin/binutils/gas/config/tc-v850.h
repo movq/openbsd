@@ -1,6 +1,5 @@
 /* tc-v850.h -- Header file for tc-v850.c.
-   Copyright 1996, 1997, 1998, 2000, 2001, 2002
-   Free Software Foundation, Inc.
+   Copyright (C) 1996, 1997 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -17,11 +16,11 @@
    You should have received a copy of the GNU General Public License
    along with GAS; see the file COPYING.  If not, write to the Free
    Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+   02111-1307, USA. */
 
 #define TC_V850
 
-#include "elf/v850.h"
+#include <elf/v850.h>
 
 #define TARGET_BYTES_BIG_ENDIAN 0
 
@@ -35,44 +34,30 @@
 /* The target BFD format.  */
 #define TARGET_FORMAT 		"elf32-v850"
 
+#define MD_APPLY_FIX3
 #define md_operand(x)
 
-#define tc_fix_adjustable(FIX) v850_fix_adjustable (FIX)
-extern bfd_boolean v850_fix_adjustable PARAMS ((struct fix *));
-
-#define TC_FORCE_RELOCATION(FIX) v850_force_relocation(FIX)
+#define obj_fix_adjustable(fixP) v850_fix_adjustable(fixP)
+#define TC_FORCE_RELOCATION(fixp) v850_force_relocation(fixp)
 extern int v850_force_relocation PARAMS ((struct fix *));
-
-#ifdef OBJ_ELF
-/* Values passed to md_apply_fix3 don't include the symbol value.  */
-#define MD_APPLY_SYM_VALUE(FIX) 0
-#endif
 
 /* Permit temporary numeric labels.  */
 #define LOCAL_LABELS_FB 1
 
-#define DIFF_EXPR_OK		/* foo-. gets turned into PC relative relocs.  */
+#define DIFF_EXPR_OK		/* foo-. gets turned into PC relative relocs */
 
 /* We don't need to handle .word strangely.  */
 #define WORKING_DOT_WORD
 
 #define md_number_to_chars number_to_chars_littleendian
-
+     
 /* We need to handle lo(), hi(), etc etc in .hword, .word, etc
    directives, so we have to parse "cons" expressions ourselves.  */
 #define TC_PARSE_CONS_EXPRESSION(EXP, NBYTES) parse_cons_expression_v850 (EXP)
-extern void parse_cons_expression_v850 PARAMS ((expressionS *));
-
 #define TC_CONS_FIX_NEW cons_fix_new_v850
-extern void cons_fix_new_v850 PARAMS ((fragS *, int, int, expressionS *));
-
-#define TC_GENERIC_RELAX_TABLE md_relax_table
 extern const struct relax_type md_relax_table[];
+#define TC_GENERIC_RELAX_TABLE md_relax_table
 
-/* When relaxing, we need to generate
-   relocations for alignment directives.  */
-#define HANDLE_ALIGN(frag) v850_handle_align (frag)
-extern void v850_handle_align PARAMS ((fragS *));
 
 /* This section must be in the small data area (pointed to by GP).  */
 #define SHF_V850_GPREL		0x10000000
@@ -96,7 +81,5 @@ extern void v850_handle_align PARAMS ((fragS *));
   { ".call_table_data",	SHT_PROGBITS,	SHF_ALLOC + SHF_WRITE },	   \
   { ".call_table_text",	SHT_PROGBITS,	SHF_ALLOC + SHF_WRITE + SHF_EXECINSTR },
 
-#define MD_PCREL_FROM_SECTION(FIX, SEC) v850_pcrel_from_section (FIX, SEC)
-extern long v850_pcrel_from_section PARAMS ((struct fix *, asection *));
-
-#define DWARF2_LINE_MIN_INSN_LENGTH 2
+#define MD_PCREL_FROM_SECTION(fixP,section) v850_pcrel_from_section (fixP, section)
+extern long v850_pcrel_from_section ();

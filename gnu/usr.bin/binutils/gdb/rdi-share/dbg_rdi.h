@@ -11,8 +11,8 @@
  */
 
 /*
- * RCS $Revision: 1.2 $
- * Checkin $Date: 2004/05/21 20:23:37 $
+ * RCS $Revision: 1.1 $
+ * Checkin $Date: 2004/05/21 19:15:55 $
  */
 
 #ifndef dbg_rdi__h

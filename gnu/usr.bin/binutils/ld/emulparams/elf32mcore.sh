@@ -19,33 +19,68 @@ EMBEDDED=yes
 # explicitly set first, and since the NOP code is only used as a
 # fill value between independantly viable peices of code, it should
 # not matter.
-NOP=0x0e0e0e0e
+NOP=0x0e0e
 
 OTHER_BSS_SYMBOLS="__bss_start__ = . ;"
 OTHER_BSS_END_SYMBOLS="__bss_end__ = . ;"
 
-# This sets the stack to the top of the simulator memory (2^19 bytes).
-STACK_ADDR=0x80000
+# Hmmm, there's got to be a better way.  This sets the stack to the
+# top of the simulator memory (2^19 bytes).
+OTHER_RELOCATING_SECTIONS='.stack 0x80000 : { _stack = .; *(.stack) }'
 
 TEMPLATE_NAME=elf32
 GENERATE_SHLIB_SCRIPT=yes
 
 # This code gets inserted into the generic elf32.sc linker script
 # and allows us to define our own command line switches.
-PARSE_AND_LIST_PROLOGUE='
+PARSE_AND_LIST_ARGS='
+
 #define OPTION_BASE_FILE		300
-'
 
-PARSE_AND_LIST_LONGOPTS='
+#include "getopt.h"
+
+static struct option longopts[] =
+{
   {"base-file", required_argument, NULL, OPTION_BASE_FILE},
-'
+  {NULL, no_argument, NULL, 0}
+};
 
-PARSE_AND_LIST_OPTIONS='
-  fprintf (file, _("  --base_file <basefile>\n"));
-  fprintf (file, _("\t\t\tGenerate a base file for relocatable DLLs\n"));
-'
+static void
+gld_elf32mcore_list_options (file)
+     FILE * file;
+{
+  fprintf (file, _("  --base_file <basefile>      Generate a base file for relocatable DLLs\n"));
+}
 
-PARSE_AND_LIST_ARGS_CASES='
+static int
+gld_elf32mcore_parse_args (argc, argv)
+     int argc;
+     char ** argv;
+{
+  int        longind;
+  int        optc;
+  int        prevoptind = optind;
+  int        prevopterr = opterr;
+  int        wanterror;
+  static int lastoptind = -1;
+
+  if (lastoptind != optind)
+    opterr = 0;
+  
+  wanterror  = opterr;
+  lastoptind = optind;
+
+  optc   = getopt_long_only (argc, argv, "-", longopts, & longind);
+  opterr = prevopterr;
+
+  switch (optc)
+    {
+    default:
+      if (wanterror)
+	xexit (1);
+      optind =  prevoptind;
+      return 0;
+
     case OPTION_BASE_FILE:
       link_info.base_file = (PTR) fopen (optarg, FOPEN_WB);
       if (link_info.base_file == NULL)
@@ -56,4 +91,9 @@ PARSE_AND_LIST_ARGS_CASES='
 	  xexit (1);
 	}
       break;
+    }
+  
+  return 1;
+}
+
 '

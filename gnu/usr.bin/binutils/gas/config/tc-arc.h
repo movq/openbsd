@@ -1,6 +1,5 @@
 /* tc-arc.h - Macros and type defines for the ARC.
-   Copyright 1994, 1995, 1997, 2000, 2001, 2002
-   Free Software Foundation, Inc.
+   Copyright (C) 1994, 1995, 1997, 1999 Free Software Foundation, Inc.
    Contributed by Doug Evans (dje@cygnus.com).
 
    This file is part of GAS, the GNU Assembler.
@@ -18,7 +17,7 @@
    You should have received a copy of the GNU General Public License
    along with GAS; see the file COPYING.  If not, write to the Free
    Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+   02111-1307, USA. */
 
 #define TC_ARC 1
 
@@ -28,19 +27,7 @@
 
 #define TARGET_ARCH bfd_arch_arc
 
-#define DIFF_EXPR_OK
-#define REGISTER_PREFIX '%'
-
-#ifdef LITTLE_ENDIAN
-#undef LITTLE_ENDIAN
-#endif
-
-#ifdef BIG_ENDIAN
-#undef BIG_ENDIAN
-#endif
-
 #define LITTLE_ENDIAN   1234
-
 #define BIG_ENDIAN      4321
 
 /* The endianness of the target format may change based on command
@@ -54,21 +41,31 @@ extern const char *arc_target_format;
 
 #define LISTING_HEADER "ARC GAS "
 
+#define TC_HANDLES_FX_DONE
+
+#define MD_APPLY_FIX3
+
 /* The ARC needs to parse reloc specifiers in .word.  */
 
-extern void arc_parse_cons_expression PARAMS ((struct expressionS *, unsigned));
+extern void arc_parse_cons_expression ();
 #define TC_PARSE_CONS_EXPRESSION(EXP, NBYTES) \
 arc_parse_cons_expression (EXP, NBYTES)
 
-extern void arc_cons_fix_new PARAMS ((struct frag *, int, int, struct expressionS *));
+extern void arc_cons_fix_new ();
 #define TC_CONS_FIX_NEW(FRAG, WHERE, NBYTES, EXP) \
 arc_cons_fix_new (FRAG, WHERE, NBYTES, EXP)
 
-#define DWARF2_LINE_MIN_INSN_LENGTH 4
+#if 0
+/* Extra stuff that we need to keep track of for each symbol.  */
+struct arc_tc_sy
+{
+  /* The real name, if the symbol was renamed.  */
+  char *real_name;
+};
 
-/* Values passed to md_apply_fix3 don't include the symbol value.  */
-#define MD_APPLY_SYM_VALUE(FIX) 0
+#define TC_SYMFIELD_TYPE struct arc_tc_sy
 
-/* No shared lib support, so we don't need to ensure externally
-   visible symbols can be overridden.  */
-#define EXTERN_FORCE_RELOC 0
+/* Finish up the symbol.  */
+extern int arc_frob_symbol PARAMS ((symbolS *));
+#define tc_frob_symbol(sym, punt) punt = arc_frob_symbol (sym)
+#endif

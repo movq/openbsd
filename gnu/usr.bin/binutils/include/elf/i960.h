@@ -1,5 +1,5 @@
 /* Intel 960 ELF support for BFD.
-   Copyright 1999, 2000 Free Software Foundation, Inc.
+   Copyright (C) 1999 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -32,6 +32,7 @@ START_RELOC_NUMBERS (elf_i960_reloc_type)
      RELOC_NUMBER (R_960_OPTCALL,   5)
      RELOC_NUMBER (R_960_OPTCALLX,  6)
      RELOC_NUMBER (R_960_OPTCALLXA, 7)
-END_RELOC_NUMBERS (R_960_max)
+     EMPTY_RELOC (R_960_max)
+END_RELOC_NUMBERS
 
 #endif /* _ELF_I960_H */

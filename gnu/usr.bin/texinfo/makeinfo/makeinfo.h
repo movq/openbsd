@@ -1,7 +1,7 @@
-/* makeinfo.h -- declarations for Makeinfo.
-   $Id: makeinfo.h,v 1.4 2002/06/10 13:51:03 espie Exp $
+/* makeinfo.h -- Declarations for Makeinfo.
+   $Id: makeinfo.h,v 1.1 1996/12/15 21:39:27 downsj Exp $
 
-   Copyright (C) 1996, 97, 98, 99, 2000, 01, 02 Free Software Foundation, Inc.
+   Copyright (C) 1996 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,44 +19,66 @@
 
    Written by Brian Fox (bfox@ai.mit.edu). */
 
-#ifndef MAKEINFO_H
+/* Why, oh why, did I ever listen to rms when he said:
+   "Don't make lots of small files, just make one big one!"  I've
+   regretted it ever since with this program, and with readline.
+   bfox@ai.mit.edu Thu Jul 11 07:54:32 1996 */
+
+#if !defined (MAKEINFO_H)
 #define MAKEINFO_H
 
-#ifdef COMPILING_MAKEINFO
-#  define DECLARE(type,var,init) type var = init
+#if defined (COMPILING_MAKEINFO)
+#  define DECLARE(type, var, init) type var = init
 #else
-#  define DECLARE(type,var,init) extern type var
+#  define DECLARE(type, var, init)  extern type var
 #endif
 
-/* Hardcoded per GNU standards, not dependent on argv[0].  */
-DECLARE (char *, progname, "makeinfo");
-
-enum reftype
+enum insertion_type
 {
-  menu_reference, followed_reference
+  menu, detailmenu, quotation, lisp, smalllisp, example, smallexample,
+  display, itemize, format, enumerate, cartouche, multitable, table,
+  ftable, vtable, group, ifinfo, flushleft, flushright, ifset,
+  ifclear, deffn, defun, defmac, defspec, defvr, defvar, defopt,
+  deftypefn, deftypefun, deftypevr, deftypevar, defcv, defivar, defop,
+  defmethod, deftypemethod, deftp, direntry, bad_type
 };
 
-extern char *get_xref_token ();
-
-/* Nonzero means a string is in execution, as opposed to a file. */
-DECLARE (int, executing_string, 0);
+DECLARE (int, insertion_level, 0);
 
-/* Nonzero means to inhibit writing macro expansions to the output
-   stream, because it has already been written. */
-DECLARE (int, me_inhibit_expansion, 0);
+#if defined (COMPILING_MAKEINFO)
+char *insertion_type_names[] =
+{
+  "menu", "detailmenu", "quotation", "lisp", "smalllisp", "example",
+  "smallexample", "display", "itemize", "format", "enumerate",
+  "cartouche", "multitable", "table", "ftable", "vtable", "group",
+  "ifinfo", "flushleft", "flushright", "ifset", "ifclear", "deffn",
+  "defun", "defmac", "defspec", "defvr", "defvar", "defopt",
+  "deftypefn", "deftypefun", "deftypevr", "deftypevar", "defcv",
+  "defivar", "defop", "defmethod", "deftypemethod", "deftp", "direntry",
+  "bad_type"
+};
+#endif
 
-extern char *expansion (), *text_expansion (), *full_expansion ();
-
+typedef struct istack_elt
+{
+  struct istack_elt *next;
+  char *item_function;
+  char *filename;
+  int line_number;
+  int filling_enabled;
+  int indented_fill;
+  enum insertion_type insertion;
+  int inhibited;
+  int in_fixed_width_font;
+} INSERTION_ELT;
+
+DECLARE (INSERTION_ELT *, insertion_stack, (INSERTION_ELT *)NULL);
+
 /* Current output stream. */
-DECLARE (FILE *, output_stream, NULL);
-
-DECLARE (char *, pretty_output_filename, NULL);
-
-/* Current output file name.  */
-DECLARE (char *, current_output_filename, NULL);
+DECLARE (FILE *, output_stream, (FILE *)NULL);
 
 /* Output paragraph buffer. */
-DECLARE (unsigned char *, output_paragraph, NULL);
+DECLARE (unsigned char *, output_paragraph, (unsigned char *)NULL);
 
 /* Offset into OUTPUT_PARAGRAPH. */
 DECLARE (int, output_paragraph_offset, 0);
@@ -64,160 +86,45 @@ DECLARE (int, output_paragraph_offset, 0);
 /* The output paragraph "cursor" horizontal position. */
 DECLARE (int, output_column, 0);
 
-/* Position in the output file. */
-DECLARE (int, output_position, 0);
-
-/* The offset into OUTPUT_PARAGRAPH where we have a meta character
-   produced by a markup such as @code or @dfn.  */
-DECLARE (int, meta_char_pos, -1);
-
-/* Nonzero means output_paragraph contains text. */
+/* Non-zero means output_paragraph contains text. */
 DECLARE (int, paragraph_is_open, 0);
-
-/* Nonzero means that `start_paragraph' MUST be called before we pay
-   any attention to `close_paragraph' calls. */
-DECLARE (int, must_start_paragraph, 0);
-
-/* Nonzero means that we have seen "@top" once already. */
-DECLARE (int, top_node_seen, 0);
-
-/* Nonzero means that we have seen a non-"@top" node already. */
-DECLARE (int, non_top_node_seen, 0);
-
-/* Nonzero indicates that indentation is temporarily turned off. */
-DECLARE (int, no_indent, 1);
-
-/* Nonzero indicates that filling a line also indents the new line. */
-DECLARE (int, indented_fill, 0);
-
-/* Nonzero means forcing output text to be flushright. */
-DECLARE (int, force_flush_right, 0);
 
 /* The amount of indentation to apply at the start of each line. */
 DECLARE (int, current_indent, 0);
 
-/* The column at which long lines are broken. */
-DECLARE (int, fill_column, 72);
-
-/* Nonzero means that words are not to be split, even in long lines.  This
-   gets changed for cm_w (). */
-DECLARE (int, non_splitting_words, 0);
-
-/* Amount by which @example indentation increases/decreases. */
-DECLARE (int, default_indentation_increment, 5);
-
-/* Nonzero means that we are currently hacking the insides of an
-   insertion which would use a fixed width font. */
-DECLARE (int, in_fixed_width_font, 0);
-
-/* Nonzero if we are currently processing a multitable command */
+/* nonzero if we are currently processing a multitable command */
 DECLARE (int, multitable_active, 0);
 
-/* Nonzero means that we're generating HTML. */
-DECLARE (int, html, 0);
-
-/* Nonzero means that we're generating XML. */
-DECLARE (int, xml, 0);
-
-/* Nonzero means that we're generating DocBook. */
-DECLARE (int, docbook, 0);
-
-/* Nonzero means true 8-bit output for Info and plain text.  */
-DECLARE (int, enable_encoding, 0);
-
-/* Nonzero means escape characters in HTML output. */
-DECLARE (int, escape_html, 1);
-extern char *escape_string (); /* do HTML escapes */
-
-/* Access key number for next menu entry to be generated (1 to 9, or 10 to
-   mean no access key)  */
-DECLARE (int, next_menu_item_number, 1);
-
-/* Nonzero means that the use of paragraph_start_indent is inhibited.
-   @example uses this to line up the left columns of the example text.
-   A negative value for this variable is incremented each time it is used.
-   @noindent uses this to inhibit indentation for a single paragraph.  */
-DECLARE (int, inhibit_paragraph_indentation, 0);
-
-/* Nonzero indicates that filling will take place on long lines. */
-DECLARE (int, filling_enabled, 1);
-
-/* The current node's node name. */
-DECLARE (char *, current_node, NULL);
-
-/* Command name in the process of being hacked. */
-DECLARE (char *, command, NULL);
-
-/* @copying ... @end copying. */
-DECLARE (char *, copying_text, NULL);
-
-/* @documentdescription ... @end documentdescription. */
-DECLARE (char *, document_description, NULL);
-
-/* Nonzero if the last character inserted has the syntax class of NEWLINE. */
-DECLARE (int, last_char_was_newline, 1);
+/* The column at which long lines are broken. */
+DECLARE (int, fill_column, 72);
 
 /* The current input file state. */
 DECLARE (char *, input_filename, (char *)NULL);
 DECLARE (char *, input_text, (char *)NULL);
-DECLARE (int, input_text_length, 0);
+DECLARE (int, size_of_input_text, 0);
 DECLARE (int, input_text_offset, 0);
 DECLARE (int, line_number, 0);
-DECLARE (char *, toplevel_output_filename, NULL);
+
 #define curchar() input_text[input_text_offset]
-
-/* A colon separated list of directories to search for files included
-   with @include.  This can be controlled with the `-I' option to makeinfo. */
-DECLARE (char *, include_files_path, NULL);
+/* **************************************************************** */
+/*								    */
+/*			      Global Defines  			    */
+/*								    */
+/* **************************************************************** */
 
-/* The filename of the current input file.  This is never freed. */
-DECLARE (char *, node_filename, NULL);
-
-/* Nonzero means do not output "Node: Foo" for node separations, that
-   is, generate plain text.  (--no-headers) */
-DECLARE (int, no_headers, 0);
+/* Error levels */
+#define NO_ERROR 0
+#define SYNTAX	 2
+#define FATAL	 4
 
-/* Nonzero means that we process @html and @rawhtml even when not
-   generating HTML.  (--ifhtml) */
-DECLARE (int, process_html, 0);
-
-/* Positive means process @ifinfo (even if not generating Info);
-   zero means don't process @ifinfo (even if we are);
-   -1 means we don't know yet.  (--ifinfo) */
-DECLARE (int, process_info, -1);
-
-/* Positive means process @ifplaintext (even if not generating plain text);
-   zero means we don't process @ifplaintext (even if we are);
-   -1 means we don't know yet.  (--ifplaintext) */
-DECLARE (int, process_plaintext, -1);
-
-/* Nonzero means that we process @tex and @iftex.  (--iftex) */
-DECLARE (int, process_tex, 0);
-
-/* Maximum number of references to a single node before complaining.
-   (--reference-limit) */
-DECLARE (int, reference_warning_limit, 1000);
-
-/* Default is to check node references.  (--no-validate) */
-DECLARE (int, validating, 1);
-
-/* Nonzero means print information about what is going on.  (--verbose) */
-DECLARE (int, verbose_mode, 0);
-
-/* Nonzero means prefix each @chapter, ... with a number like 1. (--number-sections) */
-DECLARE (int, number_sections, 0);
-
-/* Nonzero means split size.  When zero, DEFAULT_SPLIT_SIZE is used. */
-DECLARE (int, split_size, 0);
-
-/* Nonzero means expand node names and references while validating.
-   This will avoid errors when the Texinfo document uses features
-   like @@ and @value inconsistently in node names, but will slow
-   the program by about 80%.  You HAVE been warned.  */
-DECLARE (int, expensive_validation, 0);
-
 /* C's standard macros don't check to make sure that the characters being
    changed are within range.  So I have to check explicitly. */
+
+/* GNU Library doesn't have toupper().  Until GNU gets this fixed, I will
+   have to do it. */
+#ifndef toupper
+#define toupper(c) ((c) - 32)
+#endif
 
 #define coerce_to_upper(c) ((islower(c) ? toupper(c) : (c)))
 #define coerce_to_lower(c) ((isupper(c) ? tolower(c) : (c)))
@@ -229,9 +136,9 @@ DECLARE (int, expensive_validation, 0);
 #define META(c) ((c) | (meta_character_bit))
 #define UNMETA(c) ((c) & (~meta_character_bit))
 
-#define whitespace(c)       ((c) == '\t' || (c) == ' ')
-#define sentence_ender(c)   ((c) == '.'  || (c) == '?' || (c) == '!')
-#define cr_or_whitespace(c) (whitespace(c) || (c) == '\r' || (c) == '\n')
+#define whitespace(c) (((c) == '\t') || ((c) == ' '))
+#define sentence_ender(c) ((c) == '.' || (c) == '?' || (c) == '!')
+#define cr_or_whitespace(c) (((c) == '\t') || ((c) == ' ') || ((c) == '\n'))
 
 #ifndef isletter
 #define isletter(c) (((c) >= 'A' && (c) <= 'Z') || ((c) >= 'a' && (c) <= 'z'))
@@ -249,42 +156,38 @@ DECLARE (int, expensive_validation, 0);
 #define digit_value(c) ((c) - '0')
 #endif
 
-#define HTML_SAFE "$-_.+!*'()"
-#define URL_SAFE_CHAR(ch) (isalnum (ch) || strchr (HTML_SAFE, ch))
+#define member(c, s) (strchr (s, c) != NULL)
 
 #define COMMAND_PREFIX '@'
-
-#define END_VERBATIM "end verbatim"
 
 /* Stuff for splitting large files. */
 #define SPLIT_SIZE_THRESHOLD 70000  /* What's good enough for Stallman... */
 #define DEFAULT_SPLIT_SIZE 50000    /* Is probably good enough for me. */
-DECLARE (int, splitting, 1);    /* Defaults to true for now. */
 
-#define command_char(c) (!cr_or_whitespace(c) \
-                         && (c) != '{' \
-                         && (c) != '}' \
-                         && (c) != '=')
+DECLARE (int, splitting, 1);	/* Defaults to true for now. */
+
+typedef void COMMAND_FUNCTION (); /* So I can say COMMAND_FUNCTION *foo; */
+
+#define command_char(c) ((!whitespace(c)) && \
+			 ((c) != '\n') && \
+			 ((c) != '{') && \
+			 ((c) != '}') && \
+			 ((c) != '='))
 
 #define skip_whitespace() \
-     while ((input_text_offset != input_text_length) && \
-             whitespace (curchar())) \
+     while ((input_text_offset != size_of_input_text) && \
+	     whitespace (curchar())) \
        input_text_offset++
 
 #define skip_whitespace_and_newlines() \
   do { \
-   while (input_text_offset != input_text_length \
-          && cr_or_whitespace (curchar ())) \
+   while ((input_text_offset != size_of_input_text) && \
+	  (whitespace (curchar ()) || (curchar () == '\n'))) \
       { \
-         if (curchar () == '\n') \
-           line_number++; \
-         input_text_offset++; \
+	 if (curchar () == '\n') \
+	   line_number++; \
+	 input_text_offset++; \
       } \
    } while (0)
 
-/* Return nonzero if STRING is the text at input_text + input_text_offset,
-   else zero. */
-#define looking_at(string) \
-  (strncmp (input_text + input_text_offset, string, strlen (string)) == 0)
-
-#endif /* not MAKEINFO_H */
+#endif /* !MAKEINFO_H */

@@ -1,6 +1,6 @@
 /* Handle list of needed message catalogs
    Copyright (C) 1995, 1996, 1997 Free Software Foundation, Inc.
-   Contributed by Ulrich Drepper <drepper@gnu.ai.mit.edu>, 1995.
+   Written by Ulrich Drepper <drepper@gnu.ai.mit.edu>, 1995.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -65,9 +65,7 @@
 /* Rename the non ANSI C functions.  This is required by the standard
    because some ANSI C functions will require linking with this object
    file and the name space must not be polluted.  */
-# ifndef stpcpy
-#  define stpcpy(dest, src) __stpcpy(dest, src)
-# endif
+# define stpcpy(dest, src) __stpcpy(dest, src)
 #else
 # ifndef HAVE_STPCPY
 static char *stpcpy PARAMS ((char *dest, const char *src));
@@ -352,7 +350,7 @@ _nl_make_l10nflist (l10nfile_list, dirlist, dirlist_len, mask, language,
    names.  */
 const char *
 _nl_normalize_codeset (codeset, name_len)
-     const unsigned char *codeset;
+     const char *codeset;
      size_t name_len;
 {
   int len = 0;

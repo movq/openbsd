@@ -1,7 +1,9 @@
-/* nodes.c -- how to get an Info file and node.
-   $Id: nodes.c,v 1.1.1.4 2002/06/10 13:21:07 espie Exp $
+/* nodes.c -- How to get an Info file and node. */
 
-   Copyright (C) 1993, 98, 99, 2000 Free Software Foundation, Inc.
+/* This file is part of GNU Info, a program for reading online documentation
+   stored in Info format.
+
+   Copyright (C) 1993 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,8 +21,17 @@
 
    Written by Brian Fox (bfox@ai.mit.edu). */
 
-#include "info.h"
-
+#include <stdio.h>
+#include <ctype.h>
+#include <sys/types.h>
+#if defined (HAVE_SYS_FILE_H)
+#include <sys/file.h>
+#endif /* HAVE_SYS_FILE_H */
+#include <sys/errno.h>
+#include <sys/stat.h>
+#if defined (HAVE_STRING_H)
+#include <string.h>
+#endif /* HAVE_STRING_H */
 #include "nodes.h"
 #include "search.h"
 #include "filesys.h"
@@ -29,6 +40,24 @@
 #if defined (HANDLE_MAN_PAGES)
 #  include "man.h"
 #endif /* HANDLE_MAN_PAGES */
+
+#if !defined (O_RDONLY)
+#if defined (HAVE_SYS_FCNTL_H)
+#include <sys/fcntl.h>
+#else /* !HAVE_SYS_FCNTL_H */
+#include <fcntl.h>
+#endif /* !HAVE_SYS_FCNTL_H */
+#endif /* !O_RDONLY */
+
+#if !defined (errno)
+extern int errno;
+#endif /* !errno */
+
+/* **************************************************************** */
+/*								    */
+/*		     Functions Static to this File		    */
+/*								    */
+/* **************************************************************** */
 
 static void forget_info_file (), remember_info_file ();
 static void free_file_buffer_tags (), free_info_tag ();
@@ -42,7 +71,8 @@ static NODE *info_node_of_file_buffer_tags ();
 static long get_node_length ();
 
 /* Magic number that RMS used to decide how much a tags table pointer could
-   be off by.  I feel that it should be much smaller, like 4.  */
+   be off by.  I feel that it should be much smaller, like on the order of
+   4. */
 #define DEFAULT_INFO_FUDGE 1000
 
 /* Passed to *_internal functions.  INFO_GET_TAGS says to do what is
@@ -50,36 +80,46 @@ static long get_node_length ();
 #define INFO_NO_TAGS  0
 #define INFO_GET_TAGS 1
 
-/* Global variables.  */
+/* **************************************************************** */
+/*								    */
+/*			 Global Variables			    */
+/*								    */
+/* **************************************************************** */
 
 /* When non-zero, this is a string describing the recent file error. */
-char *info_recent_file_error = NULL;
+char *info_recent_file_error = (char *)NULL;
 
 /* The list of already loaded nodes. */
-FILE_BUFFER **info_loaded_files = NULL;
+FILE_BUFFER **info_loaded_files = (FILE_BUFFER **)NULL;
 
 /* The number of slots currently allocated to LOADED_FILES. */
 int info_loaded_files_slots = 0;
 
-/* Public functions for node manipulation.  */
+/* **************************************************************** */
+/*								    */
+/*		 Public Functions for Node Manipulation		    */
+/*								    */
+/* **************************************************************** */
 
-/* Used to build `dir' menu from `localdir' files found in INFOPATH. */
+/* Used to build "dir" menu from "localdir" files found in INFOPATH. */
 extern void maybe_build_dir_node ();
 
 /* Return a pointer to a NODE structure for the Info node (FILENAME)NODENAME.
-   If FILENAME is NULL, `dir' is used.
-   IF NODENAME is NULL, `Top' is used.
-   If the node cannot be found, return NULL. */
+   FILENAME can be passed as NULL, in which case the filename of "dir" is used.
+   NODENAME can be passed as NULL, in which case the nodename of "Top" is used.
+   If the node cannot be found, return a NULL pointer. */
 NODE *
 info_get_node (filename, nodename)
      char *filename, *nodename;
 {
+  FILE_BUFFER *file_buffer;
   NODE *node;
-  FILE_BUFFER *file_buffer = NULL;
 
-  info_recent_file_error = NULL;
+  file_buffer = (FILE_BUFFER *)NULL;
+  info_recent_file_error = (char *)NULL;
+
   info_parse_node (nodename, DONT_SKIP_NEWLINES);
-  nodename = NULL;
+  nodename = (char *)NULL;
 
   if (info_parsed_filename)
     filename = info_parsed_filename;
@@ -93,33 +133,32 @@ info_get_node (filename, nodename)
 
   /* If the file to be looked up is "dir", build the contents from all of
      the "dir"s and "localdir"s found in INFOPATH. */
-  if (is_dir_name (filename))
+  if (strcasecmp (filename, "dir") == 0)
     maybe_build_dir_node (filename);
 
-  /* Find the correct info file, or give up.  */
+  /* Find the correct info file. */
   file_buffer = info_find_file (filename);
+
   if (!file_buffer)
     {
       if (filesys_error_number)
-        info_recent_file_error =
-          filesys_error_string (filename, filesys_error_number);
-      return NULL;
+	info_recent_file_error =
+	  filesys_error_string (filename, filesys_error_number);
+      return ((NODE *)NULL);
     }
 
-  /* Look for the node.  */
   node = info_get_node_of_file_buffer (nodename, file_buffer);
-
-  /* If the node not found was "Top", try again with different case.  */
+  /* If the node looked for was "Top", try again looking for the node under
+     a slightly different name. */
   if (!node && (nodename == NULL || strcasecmp (nodename, "Top") == 0))
     {
       node = info_get_node_of_file_buffer ("Top", file_buffer);
       if (!node)
-        node = info_get_node_of_file_buffer ("top", file_buffer);
+	node = info_get_node_of_file_buffer ("top", file_buffer);
       if (!node)
-        node = info_get_node_of_file_buffer ("TOP", file_buffer);
+	node = info_get_node_of_file_buffer ("TOP", file_buffer);
     }
-
-  return node;
+  return (node);
 }
 
 /* Return a pointer to a NODE structure for the Info node NODENAME in
@@ -131,12 +170,12 @@ info_get_node_of_file_buffer (nodename, file_buffer)
      char *nodename;
      FILE_BUFFER *file_buffer;
 {
-  NODE *node = NULL;
+  NODE *node = (NODE *)NULL;
 
   /* If we are unable to find the file, we have to give up.  There isn't
      anything else we can do. */
   if (!file_buffer)
-    return NULL;
+    return ((NODE *)NULL);
 
   /* If the file buffer was gc'ed, reload the contents now. */
   if (!file_buffer->contents)
@@ -153,19 +192,18 @@ info_get_node_of_file_buffer (nodename, file_buffer)
     {
       node = (NODE *)xmalloc (sizeof (NODE));
       node->filename = file_buffer->fullpath;
-      node->parent   = NULL;
-      node->nodename = xstrdup ("*");
+      node->parent   = (char *)NULL;
+      node->nodename = strdup ("*");
       node->contents = file_buffer->contents;
       node->nodelen = file_buffer->filesize;
       node->flags = 0;
-      node->display_pos = 0;
     }
 #if defined (HANDLE_MAN_PAGES)
   /* If the file buffer is the magic one associated with manpages, call
      the manpage node finding function instead. */
   else if (file_buffer->flags & N_IsManPage)
     {
-        node = get_manpage_node (file_buffer, nodename);
+	node = get_manpage_node (file_buffer, nodename);
     }
 #endif /* HANDLE_MAN_PAGES */
   /* If this is the "main" info file, it might contain a tags table.  Search
@@ -178,7 +216,7 @@ info_get_node_of_file_buffer (nodename, file_buffer)
     }
 
   /* Return the results of our node search. */
-  return node;
+  return (node);
 }
 
 /* Locate the file named by FILENAME, and return the information structure
@@ -190,7 +228,7 @@ FILE_BUFFER *
 info_find_file (filename)
      char *filename;
 {
-  return info_find_file_internal (filename, INFO_GET_TAGS);
+  return (info_find_file_internal (filename, INFO_GET_TAGS));
 }
 
 /* Load the info file FILENAME, remembering information about it in a
@@ -199,11 +237,15 @@ FILE_BUFFER *
 info_load_file (filename)
      char *filename;
 {
-  return info_load_file_internal (filename, INFO_GET_TAGS);
+  return (info_load_file_internal (filename, INFO_GET_TAGS));
 }
 
 
-/* Private functions implementation.  */
+/* **************************************************************** */
+/*								    */
+/*		    Private Functions Implementation		    */
+/*								    */
+/* **************************************************************** */
 
 /* The workhorse for info_find_file ().  Non-zero 2nd argument says to
    try to build a tags table (or otherwise glean the nodes) for this
@@ -215,72 +257,64 @@ info_find_file_internal (filename, get_tags)
      char *filename;
      int get_tags;
 {
-  int i;
-  FILE_BUFFER *file_buffer;
+  register int i;
+  register FILE_BUFFER *file_buffer;
 
   /* First try to find the file in our list of already loaded files. */
   if (info_loaded_files)
     {
-      for (i = 0; (file_buffer = info_loaded_files[i]); i++)
-        if ((FILENAME_CMP (filename, file_buffer->filename) == 0)
-            || (FILENAME_CMP (filename, file_buffer->fullpath) == 0)
-            || (!IS_ABSOLUTE (filename)
-                && FILENAME_CMP (filename,
-                                filename_non_directory (file_buffer->fullpath))
-                    == 0))
-          {
-            struct stat new_info, *old_info;
+      for (i = 0; file_buffer = info_loaded_files[i]; i++)
+	if ((strcmp (filename, file_buffer->filename) == 0) ||
+	    (strcmp (filename, file_buffer->fullpath) == 0) ||
+	    ((*filename != '/') &&
+	     strcmp (filename,
+		     filename_non_directory (file_buffer->fullpath)) == 0))
+	  {
+	    struct stat new_info, *old_info;
 
-            /* This file is loaded.  If the filename that we want is
-               specifically "dir", then simply return the file buffer. */
-            if (is_dir_name (filename_non_directory (filename)))
-              return file_buffer;
+	    /* This file is loaded.  If the filename that we want is
+	       specifically "dir", then simply return the file buffer. */
+	    if (strcasecmp (filename_non_directory (filename), "dir") == 0)
+	      return (file_buffer);
 
 #if defined (HANDLE_MAN_PAGES)
-            /* Do the same for the magic MANPAGE file. */
-            if (file_buffer->flags & N_IsManPage)
-              return file_buffer;
+	    /* Do the same for the magic MANPAGE file. */
+	    if (file_buffer->flags & N_IsManPage)
+	      return (file_buffer);
 #endif /* HANDLE_MAN_PAGES */
 
-            /* The file appears to be already loaded, and is not "dir".  Check
-               to see if it's changed since the last time it was loaded.  */
-            if (stat (file_buffer->fullpath, &new_info) == -1)
-              {
-                filesys_error_number = errno;
-                return NULL;
-              }
+	    /* The file appears to be already loaded, and it is not "dir".
+	       Check to see if it has changed since the last time it was
+	       loaded. */
+	    if (stat (file_buffer->fullpath, &new_info) == -1)
+	      {
+		filesys_error_number = errno;
+		return ((FILE_BUFFER *)NULL);
+	      }
 
-            old_info = &file_buffer->finfo;
+	    old_info = &file_buffer->finfo;
 
-            if (new_info.st_size != old_info->st_size
-                || new_info.st_mtime != old_info->st_mtime)
-              {
-                /* The file has changed.  Forget that we ever had loaded it
-                   in the first place. */
-                forget_info_file (filename);
-                break;
-              }
-            else
-              {
-                /* The info file exists, and has not changed since the last
-                   time it was loaded.  If the caller requested a nodes list
-                   for this file, and there isn't one here, build the nodes
-                   for this file_buffer.  In any case, return the file_buffer
-                   object. */
-                if (!file_buffer->contents)
-                  {
-                    /* The file's contents have been gc'ed.  Reload it.  */
-                    info_reload_file_buffer_contents (file_buffer);
-                    if (!file_buffer->contents)
-                      return NULL;
-                  }
+	    if ((new_info.st_size != old_info->st_size) ||
+		(new_info.st_mtime != old_info->st_mtime))
+	      {
+		/* The file has changed.  Forget that we ever had loaded it
+		   in the first place. */
+		forget_info_file (filename);
+		break;
+	      }
+	    else
+	      {
+		/* The info file exists, and has not changed since the last
+		   time it was loaded.  If the caller requested a nodes list
+		   for this file, and there isn't one here, build the nodes
+		   for this file_buffer.  In any case, return the file_buffer
+		   object. */
+		if (get_tags && !file_buffer->tags)
+		  build_tags_and_nodes (file_buffer);
 
-                if (get_tags && !file_buffer->tags)
-                  build_tags_and_nodes (file_buffer);
-
-                return file_buffer;
-              }
-          }
+		return (file_buffer);
+	      }
+	  }
     }
 
   /* The file wasn't loaded.  Try to load it now. */
@@ -297,7 +331,7 @@ info_find_file_internal (filename, get_tags)
   if (file_buffer)
     remember_info_file (file_buffer);
 
-  return file_buffer;
+  return (file_buffer);
 }
 
 /* The workhorse function for info_load_file ().  Non-zero second argument
@@ -312,8 +346,8 @@ info_load_file_internal (filename, get_tags)
   char *fullpath, *contents;
   long filesize;
   struct stat finfo;
-  int retcode, compressed;
-  FILE_BUFFER *file_buffer = NULL;
+  int retcode;
+  FILE_BUFFER *file_buffer = (FILE_BUFFER *)NULL;
 
   /* Get the full pathname of this file, as known by the info system.
      That is to say, search along INFOPATH and expand tildes, etc. */
@@ -325,24 +359,26 @@ info_load_file_internal (filename, get_tags)
   /* If the file referenced by the name returned from info_find_fullpath ()
      doesn't exist, then try again with the last part of the filename
      appearing in lowercase. */
-  /* This is probably not needed at all on those systems which define
-     FILENAME_CMP to be strcasecmp.  But let's do it anyway, lest some
-     network redirector supports case sensitivity.  */
   if (retcode < 0)
     {
       char *lowered_name;
       char *basename;
 
-      lowered_name = xstrdup (filename);
-      basename = filename_non_directory (lowered_name);
+      lowered_name = strdup (filename);
+      basename = (char *) strrchr (lowered_name, '/');
+
+      if (basename)
+	basename++;
+      else
+	basename = lowered_name;
 
       while (*basename)
-        {
-          if (isupper (*basename))
-            *basename = tolower (*basename);
+	{
+	  if (isupper (*basename))
+	    *basename = tolower (*basename);
 
-          basename++;
-        }
+	  basename++;
+	}
 
       fullpath = info_find_fullpath (lowered_name);
       free (lowered_name);
@@ -354,33 +390,33 @@ info_load_file_internal (filename, get_tags)
   if (retcode < 0)
     {
       filesys_error_number = errno;
-      return NULL;
+      return ((FILE_BUFFER *)NULL);
     }
 
   /* Otherwise, try to load the file. */
-  contents = filesys_read_info_file (fullpath, &filesize, &finfo, &compressed);
+  contents = filesys_read_info_file (fullpath, &filesize, &finfo);
 
   if (!contents)
-    return NULL;
+    return ((FILE_BUFFER *)NULL);
 
   /* The file was found, and can be read.  Allocate FILE_BUFFER and fill
      in the various members. */
   file_buffer = make_file_buffer ();
-  file_buffer->filename = xstrdup (filename);
-  file_buffer->fullpath = xstrdup (fullpath);
+  file_buffer->filename = strdup (filename);
+  file_buffer->fullpath = strdup (fullpath);
   file_buffer->finfo = finfo;
   file_buffer->filesize = filesize;
   file_buffer->contents = contents;
-  if (compressed)
+  if (file_buffer->filesize != file_buffer->finfo.st_size)
     file_buffer->flags |= N_IsCompressed;
 
   /* If requested, build the tags and nodes for this file buffer. */
   if (get_tags)
     build_tags_and_nodes (file_buffer);
 
-  return file_buffer;
+  return (file_buffer);
 }
-
+
 /* Grovel FILE_BUFFER->contents finding tags and nodes, and filling in the
    various slots.  This can also be used to rebuild a tag or node table. */
 void
@@ -408,81 +444,81 @@ build_tags_and_nodes (file_buffer)
   if (position != -1)
     while (1)
       {
-        long tags_table_begin, tags_table_end;
+	long tags_table_begin, tags_table_end;
 
-        binding.end = position;
-        binding.start = binding.end - 5 - strlen (TAGS_TABLE_END_LABEL);
-        if (binding.start < 0)
-          binding.start = 0;
+	binding.end = position;
+	binding.start = binding.end - 5 - strlen (TAGS_TABLE_END_LABEL);
+	if (binding.start < 0)
+	  binding.start = 0;
 
-        position = find_node_separator (&binding);
+	position = find_node_separator (&binding);
 
-        /* For this test, (and all others here) failure indicates a bogus
-           tags table.  Grovel the file. */
-        if (position == -1)
-          break;
+	/* For this test, (and all others here) failure indicates a bogus
+	   tags table.  Grovel the file. */
+	if (position == -1)
+	  break;
 
-        /* Remember the end of the tags table. */
-        binding.start = position;
-        tags_table_end = binding.start;
-        binding.end = 0;
+	/* Remember the end of the tags table. */
+	binding.start = position;
+	tags_table_end = binding.start;
+	binding.end = 0;
 
-        /* Locate the start of the tags table. */
-        position = search_backward (TAGS_TABLE_BEG_LABEL, &binding);
+	/* Locate the start of the tags table. */
+	position = search_backward (TAGS_TABLE_BEG_LABEL, &binding);
 
-        if (position == -1)
-          break;
+	if (position == -1)
+	  break;
 
-        binding.end = position;
-        binding.start = binding.end - 5 - strlen (TAGS_TABLE_BEG_LABEL);
-        position = find_node_separator (&binding);
+	binding.end = position;
+	binding.start = binding.end - 5 - strlen (TAGS_TABLE_BEG_LABEL);
+	position = find_node_separator (&binding);
 
-        if (position == -1)
-          break;
+	if (position == -1)
+	  break;
 
-        /* The file contains a valid tags table.  Fill the FILE_BUFFER's
-           tags member. */
-        file_buffer->flags |= N_HasTagsTable;
-        tags_table_begin = position;
+	/* The file contains a valid tags table.  Fill the FILE_BUFFER's
+	   tags member. */
+	file_buffer->flags |= N_HasTagsTable;
+	tags_table_begin = position;
 
-        /* If this isn't an indirect tags table, just remember the nodes
-           described locally in this tags table.  Note that binding.end
-           is pointing to just after the beginning label. */
-        binding.start = binding.end;
-        binding.end = file_buffer->filesize;
+	/* If this isn't an indirect tags table, just remember the nodes
+	   described locally in this tags table.  Note that binding.end
+	   is pointing to just after the beginning label. */
+	binding.start = binding.end;
+	binding.end = file_buffer->filesize;
 
-        if (!looking_at (TAGS_TABLE_IS_INDIRECT_LABEL, &binding))
-          {
-            binding.start = tags_table_begin;
-            binding.end = tags_table_end;
-            get_nodes_of_tags_table (file_buffer, &binding);
-            return;
-          }
-        else
-          {
-            /* This is an indirect tags table.  Build TAGS member. */
-            SEARCH_BINDING indirect;
+	if (!looking_at (TAGS_TABLE_IS_INDIRECT_LABEL, &binding))
+	  {
+	    binding.start = tags_table_begin;
+	    binding.end = tags_table_end;
+	    get_nodes_of_tags_table (file_buffer, &binding);
+	    return;
+	  }
+	else
+	  {
+	    /* This is an indirect tags table.  Build TAGS member. */
+	    SEARCH_BINDING indirect;
 
-            indirect.start = tags_table_begin;
-            indirect.end = 0;
-            indirect.buffer = binding.buffer;
-            indirect.flags = S_FoldCase;
+	    indirect.start = tags_table_begin;
+	    indirect.end = 0;
+	    indirect.buffer = binding.buffer;
+	    indirect.flags = S_FoldCase;
 
-            position = search_backward (INDIRECT_TAGS_TABLE_LABEL, &indirect);
+	    position = search_backward (INDIRECT_TAGS_TABLE_LABEL, &indirect);
 
-            if (position == -1)
-              {
-                /* This file is malformed.  Give up. */
-                return;
-              }
+	    if (position == -1)
+	      {
+		/* This file is malformed.  Give up. */
+		return;
+	      }
 
-            indirect.start = position;
-            indirect.end = tags_table_begin;
-            binding.start = tags_table_begin;
-            binding.end = tags_table_end;
-            get_tags_of_indirect_tags_table (file_buffer, &indirect, &binding);
-            return;
-          }
+	    indirect.start = position;
+	    indirect.end = tags_table_begin;
+	    binding.start = tags_table_begin;
+	    binding.end = tags_table_end;
+	    get_tags_of_indirect_tags_table (file_buffer, &indirect, &binding);
+	    return;
+	  }
       }
 
   /* This file doesn't contain any kind of tags table.  Grovel the
@@ -512,7 +548,6 @@ get_nodes_of_info_file (file_buffer)
       int start, end;
       char *nodeline;
       TAG *entry;
-      int anchor = 0;
 
       /* Skip past the characters just found. */
       binding.start = nodestart;
@@ -523,50 +558,40 @@ get_nodes_of_info_file (file_buffer)
 
       /* Find "Node:" */
       start = string_in_line (INFO_NODE_LABEL, nodeline);
-      /* No Node:.  Maybe it's a Ref:.  */
-      if (start == -1)
-        {
-          start = string_in_line (INFO_REF_LABEL, nodeline);
-          if (start != -1)
-            anchor = 1;
-        }
 
       /* If not there, this is not the start of a node. */
       if (start == -1)
-        continue;
+	continue;
 
       /* Find the start of the nodename. */
       start += skip_whitespace (nodeline + start);
 
       /* Find the end of the nodename. */
       end = start +
-        skip_node_characters (nodeline + start, DONT_SKIP_NEWLINES);
+	skip_node_characters (nodeline + start, DONT_SKIP_NEWLINES);
 
       /* Okay, we have isolated the node name, and we know where the
-         node starts.  Remember this information. */
-      entry = xmalloc (sizeof (TAG));
-      entry->nodename = xmalloc (1 + (end - start));
+	 node starts.  Remember this information in a NODE structure. */
+      entry = (TAG *)xmalloc (sizeof (TAG));
+      entry->nodename = (char *)xmalloc (1 + (end - start));
       strncpy (entry->nodename, nodeline + start, end - start);
-      entry->nodename[end - start] = 0;
+      entry->nodename[end - start] = '\0';
       entry->nodestart = nodestart;
-      if (anchor)
-        entry->nodelen = 0;
-      else
-        {
-          SEARCH_BINDING node_body;
+      {
+	SEARCH_BINDING node_body;
 
-          node_body.buffer = binding.buffer + binding.start;
-          node_body.start = 0;
-          node_body.end = binding.end - binding.start;
-          node_body.flags = S_FoldCase;
-          entry->nodelen = get_node_length (&node_body);
-        }
+	node_body.buffer = binding.buffer + binding.start;
+	node_body.start = 0;
+	node_body.end = binding.end - binding.start;
+	node_body.flags = S_FoldCase;
+	entry->nodelen = get_node_length (&node_body);
+      }
 
       entry->filename = file_buffer->fullpath;
 
       /* Add this tag to the array of tag structures in this FILE_BUFFER. */
       add_pointer_to_array (entry, tags_index, file_buffer->tags,
-                            file_buffer->tags_slots, 100, TAG *);
+			    file_buffer->tags_slots, 100, TAG *);
     }
 }
 
@@ -575,16 +600,17 @@ static long
 get_node_length (binding)
      SEARCH_BINDING *binding;
 {
-  int i;
+  register int i;
   char *body;
 
-  /* [A node] ends with either a ^_, a ^L, or end of file.  */
+  /* From the Info-RFC file:
+     [A node] ends with either a ^_, a ^L, or the end of file. */
   for (i = binding->start, body = binding->buffer; i < binding->end; i++)
     {
       if (body[i] == INFO_FF || body[i] == INFO_COOKIE)
-        break;
+	break;
     }
-  return i - binding->start;
+  return ((long) i - binding->start);
 }
 
 /* Build and save the array of nodes in FILE_BUFFER by searching through the
@@ -594,10 +620,9 @@ get_nodes_of_tags_table (file_buffer, buffer_binding)
      FILE_BUFFER *file_buffer;
      SEARCH_BINDING *buffer_binding;
 {
-  int name_offset;
+  int offset, tags_index = 0;
   SEARCH_BINDING *search;
   long position;
-  int tags_index = 0;
 
   search = copy_binding (buffer_binding);
 
@@ -620,8 +645,6 @@ get_nodes_of_tags_table (file_buffer, buffer_binding)
     {
       TAG *entry;
       char *nodedef;
-      unsigned p;
-      int anchor = 0;
 
       /* Prepare to skip this line. */
       search->start = position;
@@ -629,62 +652,53 @@ get_nodes_of_tags_table (file_buffer, buffer_binding)
 
       /* Skip past informative "(Indirect)" tags table line. */
       if (!tags_index && looking_at (TAGS_TABLE_IS_INDIRECT_LABEL, search))
-        continue;
+	continue;
 
       /* Find the label preceding the node name. */
-      name_offset =
-        string_in_line (INFO_NODE_LABEL, search->buffer + search->start);
-
-      /* If no node label, maybe it's an anchor.  */
-      if (name_offset == -1)
-        {
-          name_offset = string_in_line (INFO_REF_LABEL,
-                                        search->buffer + search->start);
-          if (name_offset != -1)
-            anchor = 1;
-        }
+      offset =
+	string_in_line (INFO_NODE_LABEL, search->buffer + search->start);
 
       /* If not there, not a defining line, so we must be out of the
-         tags table.  */
-      if (name_offset == -1)
-        break;
+	 tags table. */
+      if (offset == -1)
+	break;
 
-      entry = xmalloc (sizeof (TAG));
-
-      /* Find the beginning of the node definition. */
-      search->start += name_offset;
+      /* Point to the beginning of the node definition. */
+      search->start += offset;
       nodedef = search->buffer + search->start;
       nodedef += skip_whitespace (nodedef);
 
-      /* Move past the node's name in this tag to the TAGSEP character. */
-      for (p = 0; nodedef[p] && nodedef[p] != INFO_TAGSEP; p++)
-        ;
-      if (nodedef[p] != INFO_TAGSEP)
-        continue;
+      /* Move past the node's name. */
+      for (offset = 0;
+	   (nodedef[offset]) && (nodedef[offset] != INFO_TAGSEP);
+	   offset++);
 
-      entry->nodename = xmalloc (p + 1);
-      strncpy (entry->nodename, nodedef, p);
-      entry->nodename[p] = 0;
-      p++;
-      entry->nodestart = atol (nodedef + p);
+      if (nodedef[offset] != INFO_TAGSEP)
+	continue;
 
-      /* If a node, we don't know the length yet, but if it's an
-         anchor, the length is 0. */
-      entry->nodelen = anchor ? 0 : -1;
+      entry = (TAG *)xmalloc (sizeof (TAG));
+      entry->nodename = (char *)xmalloc (1 + offset);
+      strncpy (entry->nodename, nodedef, offset);
+      entry->nodename[offset] = '\0';
+      offset++;
+      entry->nodestart = (long) atol (nodedef + offset);
+
+      /* We don't know the length of this node yet. */
+      entry->nodelen = -1;
 
       /* The filename of this node is currently known as the same as the
-         name of this file. */
+	 name of this file. */
       entry->filename = file_buffer->fullpath;
 
       /* Add this node structure to the array of node structures in this
-         FILE_BUFFER. */
+	 FILE_BUFFER. */
       add_pointer_to_array (entry, tags_index, file_buffer->tags,
-                            file_buffer->tags_slots, 100, TAG *);
+			    file_buffer->tags_slots, 100, TAG *);
     }
   free (search);
 }
 
-/* A structure used only in `get_tags_of_indirect_tags_table' to hold onto
+/* A structure used only in get_tags_of_indirect_tags_table () to hold onto
    an intermediate value. */
 typedef struct {
   char *filename;
@@ -699,8 +713,8 @@ get_tags_of_indirect_tags_table (file_buffer, indirect_binding, tags_binding)
      FILE_BUFFER *file_buffer;
      SEARCH_BINDING *indirect_binding, *tags_binding;
 {
-  int i;
-  SUBFILE **subfiles = NULL;
+  register int i;
+  SUBFILE **subfiles = (SUBFILE **)NULL;
   int subfiles_index = 0, subfiles_slots = 0;
   TAG *entry;
 
@@ -720,23 +734,23 @@ get_tags_of_indirect_tags_table (file_buffer, indirect_binding, tags_binding)
 
     while (line < end)
       {
-        int colon;
+	int colon;
 
-        colon = string_in_line (":", line);
+	colon = string_in_line (":", line);
 
-        if (colon == -1)
-          break;
+	if (colon == -1)
+	  break;
 
-        subfile = (SUBFILE *)xmalloc (sizeof (SUBFILE));
-        subfile->filename = (char *)xmalloc (colon);
-        strncpy (subfile->filename, line, colon - 1);
-        subfile->filename[colon - 1] = 0;
-        subfile->first_byte = (long) atol (line + colon);
+	subfile = (SUBFILE *)xmalloc (sizeof (SUBFILE));
+	subfile->filename = (char *)xmalloc (colon);
+	strncpy (subfile->filename, line, colon - 1);
+	subfile->filename[colon - 1] = '\0';
+	subfile->first_byte = (long) atol (line + colon);
 
-        add_pointer_to_array
-          (subfile, subfiles_index, subfiles, subfiles_slots, 10, SUBFILE *);
+	add_pointer_to_array
+	  (subfile, subfiles_index, subfiles, subfiles_slots, 10, SUBFILE *);
 
-        while (*line++ != '\n');
+	while (*line++ != '\n');
       }
   }
 
@@ -749,15 +763,15 @@ get_tags_of_indirect_tags_table (file_buffer, indirect_binding, tags_binding)
     }
   else
     {
-      int tags_index;
+      register int tags_index;
       long header_length;
       SEARCH_BINDING binding;
 
       /* Find the length of the header of the file containing the indirect
-         tags table.  This header appears at the start of every file.  We
-         want the absolute position of each node within each subfile, so
-         we subtract the start of the containing subfile from the logical
-         position of the node, and then add the length of the header in. */
+	 tags table.  This header appears at the start of every file.  We
+	 want the absolute position of each node within each subfile, so
+	 we subtract the start of the containing subfile from the logical
+	 position of the node, and then add the length of the header in. */
       binding.buffer = file_buffer->contents;
       binding.start = 0;
       binding.end = file_buffer->filesize;
@@ -765,86 +779,81 @@ get_tags_of_indirect_tags_table (file_buffer, indirect_binding, tags_binding)
 
       header_length = find_node_separator (&binding);
       if (header_length == -1)
-        header_length = 0;
+	header_length = 0;
 
       /* Build the file buffer's list of subfiles. */
       {
-        char *containing_dir = xstrdup (file_buffer->fullpath);
-        char *temp = filename_non_directory (containing_dir);
-        int len_containing_dir;
+	char *containing_dir, *temp;
+	int len_containing_dir;
 
-        if (temp > containing_dir)
-          {
-            if (HAVE_DRIVE (file_buffer->fullpath) &&
-                temp == containing_dir + 2)
-              {
-                /* Avoid converting "d:foo" into "d:/foo" below.  */
-                *temp = '.';
-                temp += 2;
-              }
-            temp[-1] = 0;
-          }
+	containing_dir = strdup (file_buffer->fullpath);
+	temp = (char *) strrchr (containing_dir, '/');
 
-        len_containing_dir = strlen (containing_dir);
+	if (temp)
+	  *temp = '\0';
 
-        for (i = 0; subfiles[i]; i++);
+	len_containing_dir = strlen (containing_dir);
 
-        file_buffer->subfiles = (char **) xmalloc ((1 + i) * sizeof (char *));
+	for (i = 0; subfiles[i]; i++);
 
-        for (i = 0; subfiles[i]; i++)
-          {
-            char *fullpath;
+	file_buffer->subfiles = (char **) xmalloc ((1 + i) * sizeof (char *));
 
-            fullpath = (char *) xmalloc
-              (2 + strlen (subfiles[i]->filename) + len_containing_dir);
+	for (i = 0; subfiles[i]; i++)
+	  {
+	    char *fullpath;
 
-            sprintf (fullpath, "%s/%s",
-                     containing_dir, subfiles[i]->filename);
+	    fullpath = (char *) xmalloc
+	      (2 + strlen (subfiles[i]->filename) + len_containing_dir);
 
-            file_buffer->subfiles[i] = fullpath;
-          }
-        file_buffer->subfiles[i] = NULL;
-        free (containing_dir);
+	    sprintf (fullpath, "%s/%s",
+		     containing_dir, subfiles[i]->filename);
+
+	    file_buffer->subfiles[i] = fullpath;
+	  }
+	file_buffer->subfiles[i] = (char *)NULL;
+	free (containing_dir);
       }
 
       /* For each node in the file's tags table, remember the starting
-         position. */
-      for (tags_index = 0; (entry = file_buffer->tags[tags_index]);
-           tags_index++)
-        {
-          for (i = 0;
-               subfiles[i] && entry->nodestart >= subfiles[i]->first_byte;
-               i++);
+	 position. */
+      for (tags_index = 0;
+	   entry = file_buffer->tags[tags_index];
+	   tags_index++)
+	{
+	  for (i = 0;
+	       subfiles[i] && entry->nodestart >= subfiles[i]->first_byte;
+	       i++);
 
-          /* If the Info file containing the indirect tags table is
-             malformed, then give up. */
-          if (!i)
-            {
-              /* The Info file containing the indirect tags table is
-                 malformed.  Give up. */
-              for (i = 0; subfiles[i]; i++)
-                {
-                  free (subfiles[i]->filename);
-                  free (subfiles[i]);
-                  free (file_buffer->subfiles[i]);
-                }
-              file_buffer->subfiles = NULL;
-              free_file_buffer_tags (file_buffer);
-              return;
-            }
+	  /* If the Info file containing the indirect tags table is
+	     malformed, then give up. */
+	  if (!i)
+	    {
+	      /* The Info file containing the indirect tags table is
+		 malformed.  Give up. */
+	      for (i = 0; subfiles[i]; i++)
+		{
+		  free (subfiles[i]->filename);
+		  free (subfiles[i]);
+		  free (file_buffer->subfiles[i]);
+		}
+	      file_buffer->subfiles = (char **)NULL;
+	      free_file_buffer_tags (file_buffer);
+	      return;
+	    }
 
-          /* SUBFILES[i] is the index of the first subfile whose logical
-             first byte is greater than the logical offset of this node's
-             starting position.  This means that the subfile directly
-             preceding this one is the one containing the node. */
+	  /* SUBFILES[i] is the index of the first subfile whose logical
+	     first byte is greater than the logical offset of this node's
+	     starting position.  This means that the subfile directly
+	     preceding this one is the one containing the node. */
 
-          entry->filename = file_buffer->subfiles[i - 1];
-          entry->nodestart -= subfiles[i - 1]->first_byte;
-          entry->nodestart += header_length;
-        }
+	  entry->filename = file_buffer->subfiles[i - 1];
+	  entry->nodestart -= subfiles[i -1]->first_byte;
+	  entry->nodestart += header_length;
+	  entry->nodelen = -1;
+	}
 
       /* We have successfully built the tags table.  Remember that it
-         was indirect. */
+	 was indirect. */
       file_buffer->flags |= N_TagsIndirect;
     }
 
@@ -858,219 +867,144 @@ get_tags_of_indirect_tags_table (file_buffer, indirect_binding, tags_binding)
   free (subfiles);
 }
 
-
-/* Return the node that contains TAG in FILE_BUFFER, else
-   (pathologically) NULL.  Called from info_node_of_file_buffer_tags.  */
-static NODE *
-find_node_of_anchor (file_buffer, tag)
-     FILE_BUFFER *file_buffer;
-     TAG *tag;
-{
-  int anchor_pos, node_pos;
-  TAG *node_tag;
-  NODE *node;
-  
-  /* Look through the tag list for the anchor.  */
-  for (anchor_pos = 0; file_buffer->tags[anchor_pos]; anchor_pos++)
-    {
-      TAG *t = file_buffer->tags[anchor_pos];
-      if (t->nodestart == tag->nodestart)
-        break;        
-    }
-  
-  /* Should not happen, because we should always find the anchor.  */
-  if (!file_buffer->tags[anchor_pos])
-    return NULL;
-  
-  /* We've found the anchor.  Look backwards in the tag table for the
-     preceding node (we're assuming the tags are given in order),
-     skipping over any preceding anchors.  */
-  for (node_pos = anchor_pos - 1;
-       node_pos >= 0 && file_buffer->tags[node_pos]->nodelen == 0;
-       node_pos--)
-    ;
-  
-  /* An info file with an anchor before any nodes is pathological, but
-     it's possible, so don't crash.  */
-  if (node_pos < 0)
-    return NULL;
-  
-  /* We have the tag for the node that contained the anchor tag.  */
-  node_tag = file_buffer->tags[node_pos]; 
-
-  /* Look up the node name in the tag table to get the actual node.
-     This is a recursive call, but it can't recurse again, because we
-     call it with a real node.  */
-  node = info_node_of_file_buffer_tags (file_buffer, node_tag->nodename);
-  
-  /* Start displaying the node at the anchor position.  */
-  if (node)
-    { /* The nodestart for real nodes is three characters before the `F'
-         in the `File:' line (a newline, the CTRL-_, and another
-         newline).  The nodestart for anchors is the actual position.
-         But we offset by only 2, rather than 3, because if an anchor is
-         at the beginning of a paragraph, it's nicer for it to end up on
-         the beginning of the first line of the paragraph rather than
-         the blank line before it.  (makeinfo has no way of knowing that
-         a paragraph is going to start, so we can't fix it there.)  */
-      node->display_pos = file_buffer->tags[anchor_pos]->nodestart
-                          - (node_tag->nodestart + 2);
-
-      /* Otherwise an anchor at the end of a node ends up displaying at
-         the end of the last line of the node (way over on the right of
-         the screen), which looks wrong.  */
-      if (node->display_pos >= node->nodelen)
-        node->display_pos = node->nodelen - 1;
-      
-      /* Don't search in the node for the xref text, it's not there.  */
-      node->flags |= N_FromAnchor;
-    }
-  
-  return node;
-}
-
-
 /* Return the node from FILE_BUFFER which matches NODENAME by searching
-   the tags table in FILE_BUFFER, or NULL.  */
+   the tags table in FILE_BUFFER.  If the node could not be found, return
+   a NULL pointer. */
 static NODE *
 info_node_of_file_buffer_tags (file_buffer, nodename)
      FILE_BUFFER *file_buffer;
      char *nodename;
 {
+  register int i;
   TAG *tag;
-  int i;
 
-  /* If no tags at all (possibly a misformatted info file), quit.  */
-  if (!file_buffer->tags) {
-    return NULL;
-  }
-  
-  for (i = 0; (tag = file_buffer->tags[i]); i++)    
+  for (i = 0; tag = file_buffer->tags[i]; i++)
     if (strcmp (nodename, tag->nodename) == 0)
       {
-        FILE_BUFFER *subfile = info_find_file_internal (tag->filename,
-                                                        INFO_NO_TAGS);
-        if (!subfile)
-          return NULL;
+	FILE_BUFFER *subfile;
 
-        if (!subfile->contents)
-          {
-            info_reload_file_buffer_contents (subfile);
-            if (!subfile->contents)
-              return NULL;
-          }
+	subfile = info_find_file_internal (tag->filename, INFO_NO_TAGS);
 
-        /* If we were able to find this file and load it, then return
-           the node within it. */
-        {
-          NODE *node = xmalloc (sizeof (NODE));
-          node->filename    = subfile->fullpath;
-          node->parent      = NULL;
-          node->nodename    = tag->nodename;
-          node->contents    = subfile->contents + tag->nodestart;
-          node->display_pos = 0;
-          node->flags       = 0;
+	if (!subfile)
+	  return ((NODE *)NULL);
 
-          if (file_buffer->flags & N_HasTagsTable)
-            {
-              node->flags |= N_HasTagsTable;
+	if (!subfile->contents)
+	  {
+	    info_reload_file_buffer_contents (subfile);
 
-              if (file_buffer->flags & N_TagsIndirect)
-                {
-                  node->flags |= N_TagsIndirect;
-                  node->parent = file_buffer->fullpath;
-                }
-            }
+	    if (!subfile->contents)
+	      return ((NODE *)NULL);
+	  }
 
-          if (subfile->flags & N_IsCompressed)
-            node->flags |= N_IsCompressed;
+	/* If we were able to find this file and load it, then return
+	   the node within it. */
+	{
+	  NODE *node;
 
-          /* If TAG->nodelen hasn't been calculated yet, then we aren't
-             in a position to trust the entry pointer.  Adjust things so
-             that ENTRY->nodestart gets the exact address of the start of
-             the node separator which starts this node, and NODE->contents
-             gets the address of the line defining this node.  If we cannot
-             do that, the node isn't really here. */
-          if (tag->nodelen == -1)
-            {
-              int min, max;
-              char *node_sep;
-              SEARCH_BINDING node_body;
-              char *buff_end;
+	  node = (NODE *)xmalloc (sizeof (NODE));
+	  node->filename = (subfile->fullpath);
+	  node->nodename = tag->nodename;
+	  node->contents = subfile->contents + tag->nodestart;
+	  node->flags	 = 0;
+	  node->parent	 = (char *)NULL;
 
-              min = max = DEFAULT_INFO_FUDGE;
+	  if (file_buffer->flags & N_HasTagsTable)
+	    {
+	      node->flags |= N_HasTagsTable;
 
-              if (tag->nodestart < DEFAULT_INFO_FUDGE)
-                min = tag->nodestart;
+	      if (file_buffer->flags & N_TagsIndirect)
+		{
+		  node->flags |= N_TagsIndirect;
+		  node->parent = file_buffer->fullpath;
+		}
+	    }
 
-              if (DEFAULT_INFO_FUDGE >
-                  (subfile->filesize - tag->nodestart))
-                max = subfile->filesize - tag->nodestart;
+	  if (subfile->flags & N_IsCompressed)
+	    node->flags |= N_IsCompressed;
 
-              /* NODE_SEP gets the address of the separator which defines
-                 this node, or NULL if the node wasn't found.
-                 NODE->contents is side-effected to point to right after
-                 the separator. */
-              node_sep = adjust_nodestart (node, min, max);
-              if (node_sep == NULL)
-                {
-                  free (node);
-                  return NULL;
-                }
-              /* Readjust tag->nodestart. */
-              tag->nodestart = node_sep - subfile->contents;
+	  /* If TAG->nodelen hasn't been calculated yet, then we aren't
+	     in a position to trust the entry pointer.  Adjust things so
+	     that ENTRY->nodestart gets the exact address of the start of
+	     the node separator which starts this node, and NODE->contents
+	     gets the address of the line defining this node.  If we cannot
+	     do that, the node isn't really here. */
+	  if (tag->nodelen == -1)
+	    {
+	      int min, max;
+	      char *node_sep;
+	      SEARCH_BINDING node_body;
+	      char *buff_end;
 
-              /* Calculate the length of the current node. */
-              buff_end = subfile->contents + subfile->filesize;
+	      min = max = DEFAULT_INFO_FUDGE;
 
-              node_body.buffer = node->contents;
-              node_body.start = 0;
-              node_body.end = buff_end - node_body.buffer;
-              node_body.flags = 0;
-              tag->nodelen = get_node_length (&node_body);
-              node->nodelen = tag->nodelen;
-            }
+	      if (tag->nodestart < DEFAULT_INFO_FUDGE)
+		min = tag->nodestart;
 
-          else if (tag->nodelen == 0) /* anchor, return containing node */
-            {
-              free (node);
-              node = find_node_of_anchor (file_buffer, tag);
-            }
-            
-          else
-            {
-              /* Since we know the length of this node, we have already
-                 adjusted tag->nodestart to point to the exact start of
-                 it.  Simply skip the node separator. */
-              node->contents += skip_node_separator (node->contents);
-              node->nodelen = tag->nodelen;
-            }
+	      if (DEFAULT_INFO_FUDGE >
+		  (subfile->filesize - tag->nodestart))
+		max = subfile->filesize - tag->nodestart;
 
-          return node;
-        }
+	      /* NODE_SEP gets the address of the separator which defines
+		 this node, or (char *)NULL if the node wasn't found.
+		 NODE->contents is side-effected to point to right after
+		 the separator. */
+	      node_sep = adjust_nodestart (node, min, max);
+	      if (node_sep == (char *)NULL)
+		{
+		  free (node);
+		  return ((NODE *)NULL);
+		}
+	      /* Readjust tag->nodestart. */
+	      tag->nodestart = node_sep - subfile->contents;
+
+	      /* Calculate the length of the current node. */
+	      buff_end = subfile->contents + subfile->filesize;
+
+	      node_body.buffer = node->contents;
+	      node_body.start = 0;
+	      node_body.end = buff_end - node_body.buffer;
+	      node_body.flags = 0;
+	      tag->nodelen = get_node_length (&node_body);
+	    }
+	  else
+	    {
+	      /* Since we know the length of this node, we have already
+		 adjusted tag->nodestart to point to the exact start of
+		 it.  Simply skip the node separator. */
+	      node->contents += skip_node_separator (node->contents);
+	    }
+
+	  node->nodelen = tag->nodelen;
+	  return (node);
+	}
       }
 
   /* There was a tag table for this file, and the node wasn't found.
      Return NULL, since this file doesn't contain the desired node. */
-  return NULL;
+  return ((NODE *)NULL);
 }
 
-/* Managing file_buffers, nodes, and tags.  */
+/* **************************************************************** */
+/*								    */
+/*		Managing file_buffers, nodes, and tags.		    */
+/*								    */
+/* **************************************************************** */
 
 /* Create a new, empty file buffer. */
 FILE_BUFFER *
 make_file_buffer ()
 {
-  FILE_BUFFER *file_buffer = xmalloc (sizeof (FILE_BUFFER));
+  FILE_BUFFER *file_buffer;
 
-  file_buffer->filename = file_buffer->fullpath = NULL;
-  file_buffer->contents = NULL;
-  file_buffer->tags = NULL;
-  file_buffer->subfiles = NULL;
+  file_buffer = (FILE_BUFFER *)xmalloc (sizeof (FILE_BUFFER));
+  file_buffer->filename = file_buffer->fullpath = (char *)NULL;
+  file_buffer->contents = (char *)NULL;
+  file_buffer->tags = (TAG **)NULL;
+  file_buffer->subfiles = (char **)NULL;
   file_buffer->tags_slots = 0;
   file_buffer->flags = 0;
 
-  return file_buffer;
+  return (file_buffer);
 }
 
 /* Add FILE_BUFFER to our list of already loaded info files. */
@@ -1084,7 +1018,7 @@ remember_info_file (file_buffer)
     ;
 
   add_pointer_to_array (file_buffer, i, info_loaded_files,
-                        info_loaded_files_slots, 10, FILE_BUFFER *);
+			info_loaded_files_slots, 10, FILE_BUFFER *);
 }
 
 /* Forget the contents, tags table, nodes list, and names of FILENAME. */
@@ -1092,35 +1026,31 @@ static void
 forget_info_file (filename)
      char *filename;
 {
-  int i;
+  register int i;
   FILE_BUFFER *file_buffer;
 
   if (!info_loaded_files)
     return;
 
   for (i = 0; file_buffer = info_loaded_files[i]; i++)
-    if (FILENAME_CMP (filename, file_buffer->filename) == 0
-        || FILENAME_CMP (filename, file_buffer->fullpath) == 0)
+    if ((strcmp (filename, file_buffer->filename) == 0) ||
+	(strcmp (filename, file_buffer->fullpath) == 0))
       {
-        free (file_buffer->filename);
-        free (file_buffer->fullpath);
+	free (file_buffer->filename);
+	free (file_buffer->fullpath);
 
-        if (file_buffer->contents)
-          free (file_buffer->contents);
-        
-        /* free_file_buffer_tags () also kills the subfiles list, since
-           the subfiles list is only of use in conjunction with tags. */
-        free_file_buffer_tags (file_buffer);
+	if (file_buffer->contents)
+	  free (file_buffer->contents);
+	
+	/* Note that free_file_buffer_tags () also kills the subfiles
+	   list, since the subfiles list is only of use in conjunction
+	   with tags. */
+	free_file_buffer_tags (file_buffer);
 
-        /* Move rest of list down.  */
-        while (info_loaded_files[i + 1])
-          {
-            info_loaded_files[i] = info_loaded_files[i + 1];
-            i++;
-          }
-        info_loaded_files[i] = 0;
+	while (info_loaded_files[i] = info_loaded_files[++i])
+	  ;
 
-        break;
+	break;
       }
 }
 
@@ -1129,27 +1059,27 @@ static void
 free_file_buffer_tags (file_buffer)
      FILE_BUFFER *file_buffer;
 {
-  int i;
+  register int i;
 
   if (file_buffer->tags)
     {
-      TAG *tag;
+      register TAG *tag;
 
-      for (i = 0; (tag = file_buffer->tags[i]); i++)
-        free_info_tag (tag);
+      for (i = 0; tag = file_buffer->tags[i]; i++)
+	free_info_tag (tag);
 
       free (file_buffer->tags);
-      file_buffer->tags = NULL;
+      file_buffer->tags = (TAG **)NULL;
       file_buffer->tags_slots = 0;
     }
 
   if (file_buffer->subfiles)
     {
       for (i = 0; file_buffer->subfiles[i]; i++)
-        free (file_buffer->subfiles[i]);
+	free (file_buffer->subfiles[i]);
 
       free (file_buffer->subfiles);
-      file_buffer->subfiles = NULL;
+      file_buffer->subfiles = (char **)NULL;
     }
 }
 
@@ -1176,7 +1106,6 @@ static void
 info_reload_file_buffer_contents (fb)
      FILE_BUFFER *fb;
 {
-  int is_compressed;
 
 #if defined (HANDLE_MAN_PAGES)
   /* If this is the magic manpage node, don't try to reload, just give up. */
@@ -1188,9 +1117,8 @@ info_reload_file_buffer_contents (fb)
 
   /* Let the filesystem do all the work for us. */
   fb->contents =
-    filesys_read_info_file (fb->fullpath, &(fb->filesize), &(fb->finfo),
-                            &is_compressed);
-  if (is_compressed)
+    filesys_read_info_file (fb->fullpath, &(fb->filesize), &(fb->finfo));
+  if (fb->filesize != (long) (fb->finfo.st_size))
     fb->flags |= N_IsCompressed;
 }
 
@@ -1232,29 +1160,29 @@ adjust_nodestart (node, min, max)
       sep_len = skip_node_separator (node->contents);
 
       /* If we managed to skip a node separator, then check for this node
-         being the right one. */
+	 being the right one. */
       if (sep_len != 0)
-        {
-          char *nodedef, *nodestart;
-          int offset;
+	{
+	  char *nodedef, *nodestart;
+	  int offset;
 
-          nodestart = node_body.buffer + position + sep_len;
-          nodedef = nodestart;
-          offset = string_in_line (INFO_NODE_LABEL, nodedef);
+	  nodestart = node_body.buffer + position + sep_len;
+	  nodedef = nodestart;
+	  offset = string_in_line (INFO_NODE_LABEL, nodedef);
 
-          if (offset != -1)
-            {
-              nodedef += offset;
-              nodedef += skip_whitespace (nodedef);
-              offset = skip_node_characters (nodedef, DONT_SKIP_NEWLINES);
-              if ((offset == strlen (node->nodename)) &&
-                  (strncmp (node->nodename, nodedef, offset) == 0))
-                {
-                  node->contents = nodestart;
-                  return node_body.buffer + position;
-                }
-            }
-        }
+	  if (offset != -1)
+	    {
+	      nodedef += offset;
+	      nodedef += skip_whitespace (nodedef);
+	      offset = skip_node_characters (nodedef, DONT_SKIP_NEWLINES);
+	      if ((offset == strlen (node->nodename)) &&
+		  (strncmp (node->nodename, nodedef, offset) == 0))
+		{
+		  node->contents = nodestart;
+		  return (node_body.buffer + position);
+		}
+	    }
+	}
     }
 
   /* Oh well, I guess we have to try to find it in a larger area. */
@@ -1267,7 +1195,7 @@ adjust_nodestart (node, min, max)
 
   /* If the node couldn't be found, we lose big. */
   if (position == -1)
-    return NULL;
+    return ((char *)NULL);
 
   /* Otherwise, the node was found, but the tags table could need updating
      (if we used a tag to get here, that is).  Set the flag in NODE->flags. */
@@ -1275,5 +1203,5 @@ adjust_nodestart (node, min, max)
   node->contents += skip_node_separator (node->contents);
   if (node->flags & N_HasTagsTable)
     node->flags |= N_UpdateTags;
-  return node_body.buffer + position;
+  return (node_body.buffer + position);
 }

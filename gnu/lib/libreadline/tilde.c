@@ -48,31 +48,26 @@
 #include "tilde.h"
 
 #if defined (TEST) || defined (STATIC_MALLOC)
-static void *xmalloc (), *xrealloc ();
+static char *xmalloc (), *xrealloc ();
 #else
-#  include "xmalloc.h"
+#  if defined __STDC__
+extern char *xmalloc (int);
+extern char *xrealloc (void *, int);
+#  else
+extern char *xmalloc (), *xrealloc ();
+#  endif /* !__STDC__ */
 #endif /* TEST || STATIC_MALLOC */
 
 #if !defined (HAVE_GETPW_DECLS)
-extern struct passwd *getpwuid PARAMS((uid_t));
-extern struct passwd *getpwnam PARAMS((const char *));
+extern struct passwd *getpwuid (), *getpwnam ();
 #endif /* !HAVE_GETPW_DECLS */
 
 #if !defined (savestring)
-#include <stdio.h>
-static char *
-xstrdup(const char *s) 
-{
-	char * cp;
-	cp = strdup(s);
-	if (cp == NULL) {
-		fprintf (stderr, "xstrdup: out of virtual memory\n"); 
-		exit (2);
-	}
-	return(cp);
-}
-#define savestring(x) xstrdup(x)
-#endif /* !savestring  */
+#  ifndef strcpy
+extern char *strcpy ();
+#  endif
+#define savestring(x) strcpy (xmalloc (1 + strlen (x)), (x))
+#endif /* !savestring */
 
 #if !defined (NULL)
 #  if defined (__STDC__)
@@ -85,54 +80,49 @@ xstrdup(const char *s)
 /* If being compiled as part of bash, these will be satisfied from
    variables.o.  If being compiled as part of readline, they will
    be satisfied from shell.o. */
-extern char *sh_get_home_dir PARAMS((void));
-extern char *sh_get_env_value PARAMS((const char *));
+extern char *get_home_dir __P((void));
+extern char *get_env_value __P((char *));
 
 /* The default value of tilde_additional_prefixes.  This is set to
    whitespace preceding a tilde so that simple programs which do not
    perform any word separation get desired behaviour. */
-static const char *default_prefixes[] =
-  { " ~", "\t~", (const char *)NULL };
+static char *default_prefixes[] =
+  { " ~", "\t~", (char *)NULL };
 
 /* The default value of tilde_additional_suffixes.  This is set to
    whitespace or newline so that simple programs which do not
    perform any word separation get desired behaviour. */
-static const char *default_suffixes[] =
-  { " ", "\n", (const char *)NULL };
+static char *default_suffixes[] =
+  { " ", "\n", (char *)NULL };
 
 /* If non-null, this contains the address of a function that the application
    wants called before trying the standard tilde expansions.  The function
    is called with the text sans tilde, and returns a malloc()'ed string
    which is the expansion, or a NULL pointer if the expansion fails. */
-tilde_hook_func_t *tilde_expansion_preexpansion_hook = (tilde_hook_func_t *)NULL;
+CPFunction *tilde_expansion_preexpansion_hook = (CPFunction *)NULL;
 
 /* If non-null, this contains the address of a function to call if the
    standard meaning for expanding a tilde fails.  The function is called
    with the text (sans tilde, as in "foo"), and returns a malloc()'ed string
    which is the expansion, or a NULL pointer if there is no expansion. */
-tilde_hook_func_t *tilde_expansion_failure_hook = (tilde_hook_func_t *)NULL;
+CPFunction *tilde_expansion_failure_hook = (CPFunction *)NULL;
 
 /* When non-null, this is a NULL terminated array of strings which
    are duplicates for a tilde prefix.  Bash uses this to expand
    `=~' and `:~'. */
-char **tilde_additional_prefixes = (char **)default_prefixes;
+char **tilde_additional_prefixes = default_prefixes;
 
 /* When non-null, this is a NULL terminated array of strings which match
    the end of a username, instead of just "/".  Bash sets this to
    `:' and `=~'. */
-char **tilde_additional_suffixes = (char **)default_suffixes;
-
-static int tilde_find_prefix PARAMS((const char *, int *));
-static int tilde_find_suffix PARAMS((const char *));
-static char *isolate_tilde_prefix PARAMS((const char *, int *));
-static char *glue_prefix_and_suffix PARAMS((char *, const char *, int));
+char **tilde_additional_suffixes = default_suffixes;
 
 /* Find the start of a tilde expansion in STRING, and return the index of
    the tilde which starts the expansion.  Place the length of the text
    which identified this tilde starter in LEN, excluding the tilde itself. */
 static int
 tilde_find_prefix (string, len)
-     const char *string;
+     char *string;
      int *len;
 {
   register int i, j, string_len;
@@ -167,7 +157,7 @@ tilde_find_prefix (string, len)
    the character which ends the tilde definition.  */
 static int
 tilde_find_suffix (string)
-     const char *string;
+     char *string;
 {
   register int i, j, string_len;
   register char **suffixes;
@@ -196,16 +186,16 @@ tilde_find_suffix (string)
 /* Return a new string which is the result of tilde expanding STRING. */
 char *
 tilde_expand (string)
-     const char *string;
+     char *string;
 {
   char *result;
   int result_size, result_index;
 
   result_index = result_size = 0;
   if (result = strchr (string, '~'))
-    result = (char *)xmalloc (result_size = (strlen (string) + 16));
+    result = xmalloc (result_size = (strlen (string) + 16));
   else
-    result = (char *)xmalloc (result_size = (strlen (string) + 1));
+    result = xmalloc (result_size = (strlen (string) + 1));
 
   /* Scan through STRING expanding tildes as we come to them. */
   while (1)
@@ -219,7 +209,7 @@ tilde_expand (string)
 
       /* Copy the skipped text into the result. */
       if ((result_index + start + 1) > result_size)
-	result = (char *)xrealloc (result, 1 + (result_size += (start + 20)));
+	result = xrealloc (result, 1 + (result_size += (start + 20)));
 
       strncpy (result + result_index, string, start);
       result_index += start;
@@ -236,7 +226,7 @@ tilde_expand (string)
 	break;
 
       /* Expand the entire tilde word, and copy it into RESULT. */
-      tilde_word = (char *)xmalloc (1 + end);
+      tilde_word = xmalloc (1 + end);
       strncpy (tilde_word, string, end);
       tilde_word[end] = '\0';
       string += end;
@@ -245,17 +235,16 @@ tilde_expand (string)
       free (tilde_word);
 
       len = strlen (expansion);
-#ifdef __CYGWIN__
+#ifdef __CYGWIN32__
       /* Fix for Cygwin to prevent ~user/xxx from expanding to //xxx when
-	 $HOME for `user' is /.  On cygwin, // denotes a network drive. */
+         $HOME for `user' is /.  On cygwin, // denotes a network drive. */
       if (len > 1 || *expansion != '/' || *string != '/')
 #endif
 	{
 	  if ((result_index + len + 1) > result_size)
-	    result = (char *)xrealloc (result, 1 + (result_size += (len + 20)));
+	    result = xrealloc (result, 1 + (result_size += (len + 20)));
 
-	  strlcpy (result + result_index, expansion,
-		   result_size - result_index);
+	  strcpy (result + result_index, expansion);
 	  result_index += len;
 	}
       free (expansion);
@@ -271,13 +260,13 @@ tilde_expand (string)
    the location it points to. */
 static char *
 isolate_tilde_prefix (fname, lenp)
-     const char *fname;
+     char *fname;
      int *lenp;
 {
   char *ret;
   int i;
 
-  ret = (char *)xmalloc (strlen (fname));
+  ret = xmalloc (strlen (fname));
 #if defined (__MSDOS__)
   for (i = 1; fname[i] && fname[i] != '/' && fname[i] != '\\'; i++)
 #else
@@ -294,8 +283,7 @@ isolate_tilde_prefix (fname, lenp)
    SUFFIND. */
 static char *
 glue_prefix_and_suffix (prefix, suffix, suffind)
-     char *prefix;
-     const char *suffix;
+     char *prefix, *suffix;
      int suffind;
 {
   char *ret;
@@ -303,10 +291,10 @@ glue_prefix_and_suffix (prefix, suffix, suffind)
 
   plen = (prefix && *prefix) ? strlen (prefix) : 0;
   slen = strlen (suffix + suffind);
-  ret = (char *)xmalloc (plen + slen + 1);
+  ret = xmalloc (plen + slen + 1);
   if (plen)
-    strlcpy (ret, prefix, plen + slen + 1);
-  strlcat (ret, suffix + suffind, plen + slen + 1);
+    strcpy (ret, prefix);
+  strcpy (ret + plen, suffix + suffind);
   return ret;
 }
 
@@ -315,7 +303,7 @@ glue_prefix_and_suffix (prefix, suffix, suffind)
    This always returns a newly-allocated string, never static storage. */
 char *
 tilde_expand_word (filename)
-     const char *filename;
+     char *filename;
 {
   char *dirname, *expansion, *username;
   int user_len;
@@ -333,12 +321,12 @@ tilde_expand_word (filename)
   if (filename[1] == '\0' || filename[1] == '/')
     {
       /* Prefix $HOME to the rest of the string. */
-      expansion = sh_get_env_value ("HOME");
+      expansion = get_env_value ("HOME");
 
       /* If there is no HOME variable, look up the directory in
 	 the password database. */
-      if (expansion == 0 || *expansion == '\0')
-	expansion = sh_get_home_dir ();
+      if (expansion == 0)
+	expansion = get_home_dir ();
 
       return (glue_prefix_and_suffix (expansion, filename, 1));
     }
@@ -407,10 +395,9 @@ main (argc, argv)
       printf ("~expand: ");
       fflush (stdout);
 
-      if (!fgets (line, sizeof(line), stdin))
-	strlcpy (line, "done", sizeof(line));
-      else if (line[strlen(line) - 1] == '\n')
-	      line[strlen(line) - 1] = '\0';
+      if (!gets (line))
+	strcpy (line, "done");
+
       if ((strcmp (line, "done") == 0) ||
 	  (strcmp (line, "quit") == 0) ||
 	  (strcmp (line, "exit") == 0))
@@ -428,28 +415,28 @@ main (argc, argv)
 
 static void memory_error_and_abort ();
 
-static void *
+static char *
 xmalloc (bytes)
-     size_t bytes;
+     int bytes;
 {
-  void *temp = (char *)malloc (bytes);
+  char *temp = (char *)malloc (bytes);
 
   if (!temp)
     memory_error_and_abort ();
   return (temp);
 }
 
-static void *
+static char *
 xrealloc (pointer, bytes)
-     void *pointer;
+     char *pointer;
      int bytes;
 {
-  void *temp;
+  char *temp;
 
   if (!pointer)
-    temp = malloc (bytes);
+    temp = (char *)malloc (bytes);
   else
-    temp = realloc (pointer, bytes);
+    temp = (char *)realloc (pointer, bytes);
 
   if (!temp)
     memory_error_and_abort ();

@@ -1,6 +1,5 @@
-/* Target-dependent definitions for PA-RISC.
-
-   Copyright 2003, 2004 Free Software Foundation, Inc.
+/* Common target dependent code for GDB on HPPA systems.
+   Copyright 2003 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -20,45 +19,14 @@
    Boston, MA 02111-1307, USA.  */
 
 #ifndef HPPA_TDEP_H
-#define HPPA_TDEP_H 1
+#define HPPA_TDEP_H
 
-struct trad_frame_saved_reg;
-
-/* PA-RISC acrhitecture-specific information.  */
-
+/* Target-dependent structure in gdbarch.  */
 struct gdbarch_tdep
 {
-  int dummy;
+  /* The number of bytes in an address.  For now, this field is designed
+     to allow us to differentiate hppa32 from hppa64 targets.  */
+  int bytes_per_address;
 };
 
-/* Register numbers of various important registers.  */
-
-enum hppa_regnum
-{
-  HPPA_R0_REGNUM,		/* %r0 */
-  HPPA_R1_REGNUM,		/* %r1 */
-  HPPA_RP_REGNUM,		/* %rp (%r2) */
-  HPPA_R3_REGNUM,		/* %r3 */
-  HPPA_R18_REGNUM = 18,		/* %r18 */
-  HPPA_SP_REGNUM = 30,		/* %sp (%r30) */
-  HPPA_R31_REGNUM = 31, 	/* %r31 */
-  HPPA_SAR_REGNUM = 32,
-  HPPA_PCOQ_HEAD_REGNUM,
-  HPPA_PCOQ_TAIL_REGNUM
-};
-
-
-struct hppa_frame_cache
-{
-  /* Base address.  */
-  CORE_ADDR base;
-  CORE_ADDR pc;
-
-  /* Frame size.  */
-  size_t frame_size;
-
-  /* Table of saved registers.  */
-  struct trad_frame_saved_reg *saved_regs;
-};
-
-#endif  /* hppa-tdep.h */
+#endif  /* HPPA_TDEP_H */

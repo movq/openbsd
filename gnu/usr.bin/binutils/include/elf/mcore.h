@@ -1,5 +1,5 @@
 /* Motorola MCore support for BFD.
-   Copyright 1995, 1999, 2000 Free Software Foundation, Inc.
+   Copyright (C) 1995, 1999 Free Software Foundation, Inc.
 
 This file is part of BFD, the Binary File Descriptor library.
 
@@ -38,7 +38,8 @@ START_RELOC_NUMBERS (elf_mcore_reloc_type)
   RELOC_NUMBER (R_MCORE_COPY, 10)
   RELOC_NUMBER (R_MCORE_GLOB_DAT, 11)
   RELOC_NUMBER (R_MCORE_JUMP_SLOT, 12)
-END_RELOC_NUMBERS (R_MCORE_max)
+  EMPTY_RELOC  (R_MCORE_max)
+END_RELOC_NUMBERS
 
 /* Section Attributes.  */
 #define SHF_MCORE_NOREAD	0x80000000

@@ -1,7 +1,9 @@
-/* session.h -- Functions found in session.c.
-   $Id: session.h,v 1.1.1.4 2002/06/10 13:21:10 espie Exp $
+/* session.h -- Functions found in session.c. */
 
-   Copyright (C) 1993, 98, 99, 2001 Free Software Foundation, Inc.
+/* This file is part of GNU Info, a program for reading online documentation
+   stored in Info format.
+
+   Copyright (C) 1993 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,10 +21,10 @@
 
    Written by Brian Fox (bfox@ai.mit.edu). */
 
-#ifndef SESSION_H
-#define SESSION_H
+#if !defined (_SESSION_H_)
+#define _SESSION_H_
 
-#include "info.h"
+#include "general.h"
 #include "dribble.h"
 
 /* All commands that can be invoked from within info_session () receive
@@ -53,11 +55,11 @@ extern int info_scroll_behaviour;
 extern char *info_scroll_choices[];
 
 /* Values for info_scroll_behaviour. */
-#define IS_Continuous 0 /* Try to get first menu item, or failing that, the
-                           "Next:" pointer, or failing that, the "Up:" and
-                           "Next:" of the up. */
+#define IS_Continuous 0	/* Try to get first menu item, or failing that, the
+			   "Next:" pointer, or failing that, the "Up:" and
+			   "Next:" of the up. */
 #define IS_NextOnly   1 /* Try to get "Next:" menu item. */
-#define IS_PageOnly   2 /* Simply give up at the bottom of a node. */
+#define IS_PageOnly   2	/* Simply give up at the bottom of a node. */
 
 /* Utility functions found in session.c */
 extern void info_dispatch_on_key ();
@@ -65,6 +67,7 @@ extern unsigned char info_get_input_char (), info_get_another_input_char ();
 extern unsigned char info_input_pending_p ();
 extern void remember_window_and_node (), set_remembered_pagetop_and_point ();
 extern void set_window_pagetop (), info_set_node_of_window ();
+extern char *pretty_keyseq ();
 extern void initialize_keyseq (), add_char_to_keyseq ();
 extern void info_gather_typeahead ();
 extern FILE_BUFFER *file_buffer_of_window ();
@@ -73,7 +76,6 @@ extern void info_select_reference ();
 extern int info_any_buffered_input_p ();
 extern void print_node ();
 extern void dump_node_to_file (), dump_nodes_to_file ();
-extern char *program_name_from_file_name ();
 
 /* Do the physical deletion of WINDOW, and forget this window and
    associated nodes. */
@@ -108,8 +110,6 @@ extern void info_move_to_prev_xref (), info_move_to_next_xref ();
 extern void info_scroll_forward (), info_scroll_backward ();
 extern void info_redraw_display (), info_toggle_wrap ();
 extern void info_move_to_window_line ();
-extern void info_up_line (), info_down_line ();
-extern void info_scroll_half_screen_down (), info_scroll_half_screen_up ();
 
 /* Manipulating multiple windows. */
 extern void info_split_window (), info_delete_window ();
@@ -123,8 +123,6 @@ extern void info_last_node (), info_first_node (), info_history_node ();
 extern void info_goto_node (), info_top_node (), info_dir_node ();
 extern void info_global_next_node (), info_global_prev_node ();
 extern void info_kill_node (), info_view_file ();
-extern void info_menu_sequence ();
-extern NODE *info_follow_menus (/* initial_node, menus, errstr, errarg */);
 
 /* Selecting cross references. */
 extern void info_menu_digit (), info_menu_item (), info_xref_item ();
@@ -138,8 +136,6 @@ extern void info_initialize_numeric_arg (), info_numeric_arg_digit_loop ();
 
 /* Searching commands. */
 extern void info_search (), isearch_forward (), isearch_backward ();
-extern void info_search_case_sensitively (), info_search_backward ();
-extern void info_search_next (), info_search_previous ();
 
 /* Dumping and printing nodes. */
 extern void info_print_node ();
@@ -147,4 +143,4 @@ extern void info_print_node ();
 /* Miscellaneous commands. */
 extern void info_abort_key (), info_quit (), info_do_lowercase_version ();
 
-#endif /* not SESSION_H */
+#endif /* _SESSION_H_ */

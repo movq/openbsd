@@ -1,7 +1,9 @@
-/* filesys.h -- external declarations for filesys.c.
-   $Id: filesys.h,v 1.3 2000/02/09 02:18:39 espie Exp $
+/* filesys.h -- External declarations of functions and vars in filesys.c. */
 
-   Copyright (C) 1993, 97, 98 Free Software Foundation, Inc.
+/* This file is part of GNU Info, a program for reading online documentation
+   stored in Info format.
+
+   Copyright (C) 1993 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,8 +21,8 @@
 
    Written by Brian Fox (bfox@ai.mit.edu). */
 
-#ifndef INFO_FILESYS_H
-#define INFO_FILESYS_H
+#if !defined (_FILESYS_H_)
+#define _FILESYS_H_
 
 /* The path on which we look for info files.  You can initialize this
    from the environment variable INFOPATH if there is one, or you can
@@ -42,11 +44,6 @@ extern void info_add_path ();
    system.  This looks in INFO_PATHS in order to find the correct file.
    If it can't find the file, it returns NULL. */
 extern char *info_find_fullpath ();
-
-/* Given a chunk of text and its length, convert all CRLF pairs at the
-   EOLs into a single Newline character.  Return the length of produced
-   text.  */
-long convert_eols ();
 
 /* Read the contents of PATHNAME, returning a buffer with the contents of
    that file in it, and returning the size of that buffer in FILESIZE.
@@ -71,12 +68,9 @@ extern int filesys_error_number;
    Advance IDX to the character after the colon. */
 extern char *extract_colon_unit ();
 
-/* Return true if FILENAME is `dir', with a possible compression suffix.  */
-extern int is_dir_name ();
-
 /* The default value of INFOPATH. */
 #if !defined (DEFAULT_INFOPATH)
-#  define DEFAULT_INFOPATH "/usr/local/info:/usr/info:/usr/local/lib/info:/usr/lib/info:/usr/local/gnu/info:/usr/local/gnu/lib/info:/usr/gnu/info:/usr/gnu/lib/info:/opt/gnu/info:/usr/share/info:/usr/share/lib/info:/usr/local/share/info:/usr/local/share/lib/info:/usr/gnu/lib/emacs/info:/usr/local/gnu/lib/emacs/info:/usr/local/lib/emacs/info:/usr/local/emacs/info:."
+! #  define DEFAULT_INFOPATH "/usr/local/info:/usr/info:/usr/local/lib/info:/usr/lib/info:/usr/local/gnu/info:/usr/local/gnu/lib/info:/usr/gnu/info:/usr/gnu/lib/info:/opt/gnu/info:/usr/share/info:/usr/share/lib/info:/usr/local/share/info:/usr/local/share/lib/info:/usr/gnu/lib/emacs/info:/usr/local/gnu/lib/emacs/info:/usr/local/lib/emacs/info:/usr/local/emacs/info:."
 #endif /* !DEFAULT_INFOPATH */
 
 #if !defined (S_ISREG) && defined (S_IFREG)
@@ -87,4 +81,4 @@ extern int is_dir_name ();
 #  define S_ISDIR(m) (((m) & S_IFMT) == S_IFDIR)
 #endif /* !S_ISDIR && S_IFDIR */
 
-#endif /* not INFO_FILESYS_H */
+#endif /* !_FILESYS_H_ */

@@ -1,4 +1,4 @@
-@c Copyright 1999 Free Software Foundation, Inc.
+@c Copyright (C) 1999 Free Software Foundation, Inc.
 @c This is part of the GAS manual.
 @c For copying conditions, see the file as.texinfo.
 @page
@@ -15,7 +15,7 @@
 
 @cindex PJ options
 @cindex options, PJ
-@code{@value{AS}} has two additional command-line options for the picoJava
+@code{@value{AS}} has two addiitional command-line options for the picoJava
 architecture.
 @table @code
 @item -ml

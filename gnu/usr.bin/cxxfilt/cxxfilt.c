@@ -22,22 +22,13 @@ along with GCC; see the file COPYING.  If not, write to the Free
 Software Foundation, 59 Temple Place - Suite 330, Boston, MA
 02111-1307, USA.  */
 
-#if 0
 #include "config.h"
 #include "bfd.h"
 #include "bucomm.h"
-#endif
 #include "libiberty.h"
 #include "demangle.h"
 #include "getopt.h"
 #include "safe-ctype.h"
-#include <stdio.h>
-
-char *program_name;
-#if 0
-#define PARAMS(x) x
-#define ATTRIBUTE_NORETURN
-#endif
 
 static int flags = DMGL_PARAMS | DMGL_ANSI | DMGL_VERBOSE;
 
@@ -201,7 +192,7 @@ main (argc, argv)
 	  strip_underscore = 0;
 	  break;
 	case 'v':
-	  printf("c++filt 2.14");
+	  print_version ("c++filt");
 	  return (0);
 	case '_':
 	  strip_underscore = 1;
@@ -250,7 +241,7 @@ main (argc, argv)
 	  /* Folks should explicitly indicate the appropriate alphabet for
 	     each demangling.  Providing a default would allow the
 	     question to go unconsidered.  */
-	  errx (1, "Internal error: no symbol alphabet for current style");
+	  fatal ("Internal error: no symbol alphabet for current style");
 	}
 
       for (;;)

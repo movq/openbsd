@@ -22,36 +22,36 @@ Boston, MA 02111-1307, USA.  */
 #include "ansidecl.h"
 #include "libiberty.h"
 
-#ifdef ANSI_PROTOTYPES
+#if defined (ANSI_PROTOTYPES) || defined (ALMOST_STDC)
+#define USE_STDARG
+#endif
+
+#ifdef USE_STDARG
 #include <stdarg.h>
 #else
 #include <varargs.h>
 #endif
 
-/*
-
-@deftypefn Extension int asprintf (char **@var{resptr}, const char *@var{format}, ...)
-
-Like @code{sprintf}, but instead of passing a pointer to a buffer, you
-pass a pointer to a pointer.  This function will compute the size of
-the buffer needed, allocate memory with @code{malloc}, and store a
-pointer to the allocated memory in @code{*@var{resptr}}.  The value
-returned is the same as @code{sprintf} would return.  If memory could
-not be allocated, zero is returned and @code{NULL} is stored in
-@code{*@var{resptr}}.
-
-@end deftypefn
-
-*/
-
+/* VARARGS */
+#ifdef USE_STDARG
 int
-asprintf VPARAMS ((char **buf, const char *fmt, ...))
+asprintf (char **buf, const char *fmt, ...)
+#else
+int
+asprintf (buf, fmt, va_alist)
+     char **buf;
+     const char *fmt;
+     va_dcl
+#endif
 {
   int status;
-  VA_OPEN (ap, fmt);
-  VA_FIXEDARG (ap, char **, buf);
-  VA_FIXEDARG (ap, const char *, fmt);
+  va_list ap;
+#ifdef USE_STDARG
+  va_start (ap, fmt);
+#else
+  va_start (ap);
+#endif
   status = vasprintf (buf, fmt, ap);
-  VA_CLOSE (ap);
+  va_end (ap);
   return status;
 }

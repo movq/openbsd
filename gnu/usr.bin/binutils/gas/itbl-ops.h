@@ -1,5 +1,5 @@
 /* itbl-ops.h
-   Copyright 1997, 1999, 2000 Free Software Foundation, Inc.
+   Copyright (C) 1997  Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -81,7 +81,7 @@ typedef enum
     e_invproc			/* invalid processor */
   } e_processor;
 
-/* 0 means an instruction table was not specified.  */
+/* 0 means an instruction table was not specified. */
 extern int itbl_have_entries;
 
 /* These routines are visible to the main part of the assembler */
@@ -92,14 +92,14 @@ char *itbl_get_field PARAMS ((char **s));
 unsigned long itbl_assemble PARAMS ((char *name, char *operands));
 int itbl_disassemble PARAMS ((char *str, unsigned long insn));
 int itbl_parse PARAMS ((char *tbl));	/* parses insn tbl */
-int itbl_get_reg_val PARAMS ((char *name, unsigned long *pval));
-int itbl_get_val PARAMS ((e_processor processor, e_type type, char *name,
-			  unsigned long *pval));
+unsigned long itbl_get_reg_val PARAMS ((char *name));
+unsigned long itbl_get_val PARAMS ((e_processor processor, e_type type,
+				    char *name));
 char *itbl_get_name PARAMS ((e_processor processor, e_type type,
 			     unsigned long val));
 
 /* These routines are called by the table parser used to build the
-   dynamic list of new processor instructions and registers.  */
+   dynamic list of new processor instructions and registers. */
 
 struct itbl_entry *itbl_add_reg PARAMS ((int yyproc, int yytype,
 					 char *regname, int regnum));

@@ -1,7 +1,9 @@
-/* info-utils.c -- miscellanous.
-   $Id: info-utils.c,v 1.1.1.4 2002/06/10 13:21:04 espie Exp $
+/* info-utils.c -- Useful functions for manipulating Info file quirks. */
 
-   Copyright (C) 1993, 98 Free Software Foundation, Inc.
+/* This file is part of GNU Info, a program for reading online documentation
+   stored in Info format.
+
+   Copyright (C) 1993 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,15 +21,22 @@
 
    Written by Brian Fox (bfox@ai.mit.edu). */
 
-#include "info.h"
+#include <stdio.h>		/* For "NULL".  Yechhh! */
+#include <ctype.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#if defined (HAVE_STRING_H)
+#  include <string.h>
+#endif /* HAVE_STRING_H */
 #include "info-utils.h"
+
 #if defined (HANDLE_MAN_PAGES)
 #  include "man.h"
 #endif /* HANDLE_MAN_PAGES */
 
 /* When non-zero, various display and input functions handle ISO Latin
    character sets correctly. */
-int ISO_Latin_p = 1;
+int ISO_Latin_p = 0;
 
 /* Variable which holds the most recent filename parsed as a result of
    calling info_parse_xxx (). */
@@ -75,7 +84,7 @@ info_parse_node (string, newlines_okay)
 
       /* Find the closing paren. */
       while (string[i] && string[i] != ')')
-        i++;
+	i++;
 
       /* Remember parsed filename. */
       saven_filename (string, i);
@@ -84,7 +93,7 @@ info_parse_node (string, newlines_okay)
       string += i;
 
       if (*string)
-        string++;
+	string++;
     }
 
   /* Parse out nodename. */
@@ -127,9 +136,9 @@ info_parse_label (label, node)
 }
 
 /* **************************************************************** */
-/*                                                                  */
-/*                  Finding and Building Menus                      */
-/*                                                                  */
+/*								    */
+/*		    Finding and Building Menus			    */
+/*								    */
 /* **************************************************************** */
 
 /* Return a NULL terminated array of REFERENCE * which represents the menu
@@ -237,23 +246,23 @@ info_references_internal (label, binding)
       offset = string_in_line (":", refdef);
 
       /* When searching for menu items, if no colon, there is no
-         menu item on this line. */
+	 menu item on this line. */
       if (offset == -1)
-        {
-          if (searching_for_menu_items)
-            continue;
-          else
-            {
-              int temp;
+	{
+	  if (searching_for_menu_items)
+	    continue;
+	  else
+	    {
+	      int temp;
 
-              temp = skip_line (refdef);
-              offset = string_in_line (":", refdef + temp);
-              if (offset == -1)
-                continue;       /* Give up? */
-              else
-                offset += temp;
-            }
-        }
+	      temp = skip_line (refdef);
+	      offset = string_in_line (":", refdef + temp);
+	      if (offset == -1)
+		continue;	/* Give up? */
+	      else
+		offset += temp;
+	    }
+	}
 
       entry = (REFERENCE *)xmalloc (sizeof (REFERENCE));
       entry->filename = (char *)NULL;
@@ -268,38 +277,38 @@ info_references_internal (label, binding)
       entry->end = refdef - binding->buffer;
 
       /* If this reference entry continues with another ':' then the
-         nodename is the same as the label. */
+	 nodename is the same as the label. */
       if (*refdef == ':')
-        {
-          entry->nodename = xstrdup (entry->label);
-        }
+	{
+	  entry->nodename = strdup (entry->label);
+	}
       else
-        {
-          /* This entry continues with a specific nodename.  Parse the
-             nodename from the specification. */
+	{
+	  /* This entry continues with a specific nodename.  Parse the
+	     nodename from the specification. */
 
-          refdef += skip_whitespace_and_newlines (refdef);
+	  refdef += skip_whitespace_and_newlines (refdef);
 
-          if (searching_for_menu_items)
-            info_parse_node (refdef, DONT_SKIP_NEWLINES);
-          else
-            info_parse_node (refdef, SKIP_NEWLINES);
+	  if (searching_for_menu_items)
+	    info_parse_node (refdef, DONT_SKIP_NEWLINES);
+	  else
+	    info_parse_node (refdef, SKIP_NEWLINES);
 
-          if (info_parsed_filename)
-            entry->filename = xstrdup (info_parsed_filename);
+	  if (info_parsed_filename)
+	    entry->filename = strdup (info_parsed_filename);
 
-          if (info_parsed_nodename)
-            entry->nodename = xstrdup (info_parsed_nodename);
-        }
+	  if (info_parsed_nodename)
+	    entry->nodename = strdup (info_parsed_nodename);
+	}
 
       add_pointer_to_array
-        (entry, refs_index, refs, refs_slots, 50, REFERENCE *);
+	(entry, refs_index, refs, refs_slots, 50, REFERENCE *);
     }
   return (refs);
 }
 
-/* Get the entry associated with LABEL in REFERENCES.  Return a pointer
-   to the ENTRY if found, or NULL. */
+/* Get the entry associated with LABEL in MENU.  Return a pointer to the
+   REFERENCE if found, or NULL. */
 REFERENCE *
 info_get_labeled_reference (label, references)
      char *label;
@@ -311,7 +320,7 @@ info_get_labeled_reference (label, references)
   for (i = 0; references && (entry = references[i]); i++)
     {
       if (strcmp (label, entry->label) == 0)
-        return (entry);
+	return (entry);
     }
   return ((REFERENCE *)NULL);
 }
@@ -366,13 +375,13 @@ info_free_references (references)
   if (references)
     {
       for (i = 0; references && (entry = references[i]); i++)
-        {
-          maybe_free (entry->label);
-          maybe_free (entry->filename);
-          maybe_free (entry->nodename);
+	{
+	  maybe_free (entry->label);
+	  maybe_free (entry->filename);
+	  maybe_free (entry->nodename);
 
-          free (entry);
-        }
+	  free (entry);
+	}
 
       free (references);
     }
@@ -402,24 +411,24 @@ canonicalize_whitespace (string)
   for (i = 0, j = 0; string[i]; i++)
     {
       if (whitespace_or_newline (string[i]))
-        {
-          whitespace_found++;
-          whitespace_loc = i;
-          continue;
-        }
+	{
+	  whitespace_found++;
+	  whitespace_loc = i;
+	  continue;
+	}
       else
-        {
-          if (whitespace_found && whitespace_loc)
-            {
-              whitespace_found = 0;
+	{
+	  if (whitespace_found && whitespace_loc)
+	    {
+	      whitespace_found = 0;
 
-              /* Suppress whitespace at start of string. */
-              if (j)
-                temp[j++] = ' ';
-            }
+	      /* Suppress whitespace at start of string. */
+	      if (j)
+		temp[j++] = ' ';
+	    }
 
-          temp[j++] = string[i];
-        }
+	  temp[j++] = string[i];
+	}
     }
 
   /* Kill trailing whitespace. */
@@ -442,59 +451,60 @@ printed_representation (character, hpos)
      int hpos;
 {
   register int i = 0;
-  int printable_limit = ISO_Latin_p ? 255 : 127;
+  int printable_limit;
 
-  if (raw_escapes_p && character == '\033')
-    the_rep[i++] = character;
-  /* Show CTRL-x as ^X.  */
-  else if (iscntrl (character) && character < 127)
+  if (ISO_Latin_p)
+    printable_limit = 160;
+  else
+    printable_limit = 127;
+
+  if (character == '\177')
+    {
+      the_rep[i++] = '^';
+      the_rep[i++] = '?';
+    }
+  else if (iscntrl (character))
     {
       switch (character)
-        {
-        case '\r':
-        case '\n':
-          the_rep[i++] = character;
-          break;
+	{
+	case '\r':
+	case '\n':
+	  the_rep[i++] = character;
+	  break;
 
-        case '\t':
-          {
-            int tw;
+	case '\t':
+	  {
+	    int tw;
 
-            tw = ((hpos + 8) & 0xf8) - hpos;
-            while (i < tw)
-              the_rep[i++] = ' ';
-          }
-          break;
+	    tw = ((hpos + 8) & 0xf8) - hpos;
+	    while (i < tw)
+	      the_rep[i++] = ' ';
+	  }
+	  break;
 
-        default:
-          the_rep[i++] = '^';
-          the_rep[i++] = (character | 0x40);
-        }
+	default:
+	  the_rep[i++] = '^';
+	  the_rep[i++] = (character | 0x40);
+	}
     }
-  /* Show META-x as 0370.  */
   else if (character > printable_limit)
     {
       sprintf (the_rep + i, "\\%0o", character);
       i = strlen (the_rep);
     }
-  else if (character == DEL)
-    {
-      the_rep[i++] = '^';
-      the_rep[i++] = '?';
-    }
   else
     the_rep[i++] = character;
 
-  the_rep[i] = 0;
+  the_rep[i] = '\0';
 
-  return the_rep;
+  return (the_rep);
 }
 
 
 /* **************************************************************** */
-/*                                                                  */
-/*                  Functions Static To This File                   */
-/*                                                                  */
+/*								    */
+/*		    Functions Static To This File		    */
+/*								    */
 /* **************************************************************** */
 
 /* Amount of space allocated to INFO_PARSED_FILENAME via xmalloc (). */
@@ -521,7 +531,7 @@ saven_filename (filename, len)
      int len;
 {
   saven_string (filename, len,
-                &info_parsed_filename, &parsed_filename_size);
+		&info_parsed_filename, &parsed_filename_size);
 }
 
 /* Remember NODENAME in PARSED_NODENAME.  An empty NODENAME is translated
@@ -540,7 +550,7 @@ saven_nodename (nodename, len)
      int len;
 {
   saven_string (nodename, len,
-                &info_parsed_nodename, &parsed_nodename_size);
+		&info_parsed_nodename, &parsed_nodename_size);
 }
 
 /* Remember STRING in STRING_P.  STRING_P should currently have STRING_SIZE_P
@@ -555,7 +565,7 @@ save_string (string, string_p, string_size_p)
   if (!string || !*string)
     {
       if (*string_p)
-        free (*string_p);
+	free (*string_p);
 
       *string_p = (char *)NULL;
       *string_size_p = 0;
@@ -563,8 +573,8 @@ save_string (string, string_p, string_size_p)
   else
     {
       if (strlen (string) >= *string_size_p)
-        *string_p = (char *)xrealloc
-          (*string_p, (*string_size_p = 1 + strlen (string)));
+	*string_p = (char *)xrealloc
+	  (*string_p, (*string_size_p = 1 + strlen (string)));
 
       strcpy (*string_p, string);
     }
@@ -581,7 +591,7 @@ saven_string (string, len, string_p, string_size_p)
   if (!string)
     {
       if (*string_p)
-        free (*string_p);
+	free (*string_p);
 
       *string_p = (char *)NULL;
       *string_size_p = 0;
@@ -589,7 +599,7 @@ saven_string (string, len, string_p, string_size_p)
   else
     {
       if (len >= *string_size_p)
-        *string_p = (char *)xrealloc (*string_p, (*string_size_p = 1 + len));
+	*string_p = (char *)xrealloc (*string_p, (*string_size_p = 1 + len));
 
       strncpy (*string_p, string, len);
       (*string_p)[len] = '\0';
@@ -601,13 +611,14 @@ char *
 filename_non_directory (pathname)
      char *pathname;
 {
-  register char *filename = pathname + strlen (pathname);
+  char *filename;
 
-  if (HAVE_DRIVE (pathname))
-    pathname += 2;
+  filename = (char *) strrchr (pathname, '/');
 
-  while (filename > pathname && !IS_SLASH (filename[-1]))
-    filename--;
+  if (filename)
+    filename++;
+  else
+    filename = pathname;
 
   return (filename);
 }
@@ -654,21 +665,7 @@ get_internal_info_window (name)
 
   for (win = windows; win; win = win->next)
     if (internal_info_node_p (win->node) &&
-        (strcmp (win->node->nodename, name) == 0))
-      break;
-
-  return (win);
-}
-
-/* Return a window displaying the node NODE. */
-WINDOW *
-get_window_of_node (node)
-     NODE *node;
-{
-  WINDOW *win = (WINDOW *)NULL;
-
-  for (win = windows; win; win = win->next)
-    if (win->node == node)
+	(strcmp (win->node->nodename, name) == 0))
       break;
 
   return (win);

@@ -1,20 +1,21 @@
-/* Copyright (C) 1995-1998, 2000, 2001 Free Software Foundation, Inc.
-   Contributed by Ulrich Drepper <drepper@gnu.ai.mit.edu>, 1995.
+/* Copyright (C) 1995, 1996 Free Software Foundation, Inc.
+This file is part of the GNU C Library.
+Contributed by Ulrich Drepper <drepper@gnu.ai.mit.edu>, 1995.
 
-   This program is free software; you can redistribute it and/or modify it
-   under the terms of the GNU Library General Public License as published
-   by the Free Software Foundation; either version 2, or (at your option)
-   any later version.
+The GNU C Library is free software; you can redistribute it and/or
+modify it under the terms of the GNU Library General Public License as
+published by the Free Software Foundation; either version 2 of the
+License, or (at your option) any later version.
 
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
+The GNU C Library is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+Library General Public License for more details.
 
-   You should have received a copy of the GNU Library General Public
-   License along with this program; if not, write to the Free Software
-   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307,
-   USA.  */
+You should have received a copy of the GNU Library General Public
+License along with the GNU C Library; see the file COPYING.LIB.  If
+not, write to the Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+Boston, MA 02111-1307, USA.  */
 
 #ifdef HAVE_CONFIG_H
 # include <config.h>
@@ -22,7 +23,6 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <sys/types.h>
 
 #include "loadinfo.h"
 
@@ -36,18 +36,6 @@
 #endif
 
 /* @@ end of prolog @@ */
-
-char *
-_nl_find_language (name)
-     const char *name;
-{
-  while (name[0] != '\0' && name[0] != '_' && name[0] != '@'
-	 && name[0] != '+' && name[0] != ',')
-    ++name;
-
-  return (char *) name;
-}
-
 
 int
 _nl_explode_name (name, language, modifier, territory, codeset,
@@ -80,7 +68,9 @@ _nl_explode_name (name, language, modifier, territory, codeset,
   mask = 0;
   syntax = undecided;
   *language = cp = name;
-  cp = _nl_find_language (*language);
+  while (cp[0] != '\0' && cp[0] != '_' && cp[0] != '@'
+	 && cp[0] != '+' && cp[0] != ',')
+    ++cp;
 
   if (*language == cp)
     /* This does not make sense: language has to be specified.  Use
@@ -174,7 +164,7 @@ _nl_explode_name (name, language, modifier, territory, codeset,
 	}
     }
 
-  /* For CEN syntax values it might be important to have the
+  /* For CEN sytnax values it might be important to have the
      separator character in the file name, not for XPG syntax.  */
   if (syntax == xpg)
     {

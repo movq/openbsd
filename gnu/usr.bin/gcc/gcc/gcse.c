@@ -4211,7 +4211,7 @@ cprop_insn (insn, alter_jumps)
       /* Find an assignment that sets reg_used and is available
 	 at the start of the block.  */
       set = find_avail_set (regno, insn);
-      if (! set || set->expr->volatil)
+      if (! set)
 	continue;
 
       pat = set->expr;

@@ -44,6 +44,12 @@
 #  include <unistd.h>
 #endif
 
+#if defined (HAVE_STRING_H)
+#  include <string.h>
+#else
+#  include <strings.h>
+#endif /* !HAVE_STRING_H */
+
 #include "history.h"
 #include "histlib.h"
 
@@ -65,13 +71,9 @@ static HIST_ENTRY **the_history = (HIST_ENTRY **)NULL;
    history that we save. */
 static int history_stifled;
 
-/* The current number of slots allocated to the input_history. */
-static int history_size;
-
 /* If HISTORY_STIFLED is non-zero, then this is the maximum number of
    entries to remember. */
-int history_max_entries;
-int max_input_history;	/* backwards compatibility */
+int max_input_history;
 
 /* The current location of the interactive history pointer.  Just makes
    life easier for outside callers. */
@@ -79,6 +81,9 @@ int history_offset;
 
 /* The number of strings currently stored in the history list. */
 int history_length;
+
+/* The current number of slots allocated to the input_history. */
+static int history_size;
 
 /* The logical `base' of the history array.  It defaults to 1. */
 int history_base = 1;
@@ -129,7 +134,9 @@ history_total_bytes ()
 {
   register int i, result;
 
-  for (i = result = 0; the_history && the_history[i]; i++)
+  result = 0;
+
+  for (i = 0; the_history && the_history[i]; i++)
     result += strlen (the_history[i]->line);
 
   return (result);
@@ -210,16 +217,16 @@ history_get (offset)
    is  set to NULL. */
 void
 add_history (string)
-     const char *string;
+     char *string;
 {
   HIST_ENTRY *temp;
 
-  if (history_stifled && (history_length == history_max_entries))
+  if (history_stifled && (history_length == max_input_history))
     {
       register int i;
 
       /* If the history is stifled, and history_length is zero,
-	 and it equals history_max_entries, we don't save items. */
+	 and it equals max_input_history, we don't save items. */
       if (history_length == 0)
 	return;
 
@@ -270,15 +277,15 @@ add_history (string)
 HIST_ENTRY *
 replace_history_entry (which, line, data)
      int which;
-     const char *line;
+     char *line;
      histdata_t data;
 {
-  HIST_ENTRY *temp, *old_value;
+  HIST_ENTRY *temp = (HIST_ENTRY *)xmalloc (sizeof (HIST_ENTRY));
+  HIST_ENTRY *old_value;
 
   if (which >= history_length)
     return ((HIST_ENTRY *)NULL);
 
-  temp = (HIST_ENTRY *)xmalloc (sizeof (HIST_ENTRY));
   old_value = the_history[which];
 
   temp->line = savestring (line);
@@ -296,12 +303,12 @@ remove_history (which)
      int which;
 {
   HIST_ENTRY *return_value;
-  register int i;
 
   if (which >= history_length || !history_length)
     return_value = (HIST_ENTRY *)NULL;
   else
     {
+      register int i;
       return_value = the_history[which];
 
       for (i = which; i < history_length; i++)
@@ -318,13 +325,13 @@ void
 stifle_history (max)
      int max;
 {
-  register int i, j;
-
   if (max < 0)
     max = 0;
 
   if (history_length > max)
     {
+      register int i, j;
+
       /* This loses because we cannot free the data. */
       for (i = 0, j = history_length - max; i < j; i++)
 	{
@@ -340,22 +347,22 @@ stifle_history (max)
     }
 
   history_stifled = 1;
-  max_input_history = history_max_entries = max;
+  max_input_history = max;
 }
 
-/* Stop stifling the history.  This returns the previous maximum
-   number of history entries.  The value is positive if the history
-   was stifled,  negative if it wasn't. */
+/* Stop stifling the history.  This returns the previous amount the 
+   history was stifled by.  The value is positive if the history was
+   stifled,  negative if it wasn't. */
 int
 unstifle_history ()
 {
   if (history_stifled)
     {
       history_stifled = 0;
-      return (history_max_entries);
+      return (-max_input_history);
     }
-  else
-    return (-history_max_entries);
+
+  return (max_input_history);
 }
 
 int

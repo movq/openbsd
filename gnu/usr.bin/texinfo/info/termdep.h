@@ -1,7 +1,9 @@
-/* termdep.h -- System things that terminal.c depends on.
-   $Id: termdep.h,v 1.4 2002/06/10 13:51:03 espie Exp $
+/* termdep.h -- System things that terminal.c depends on. */
 
-   Copyright (C) 1993, 96, 97, 98, 2001 Free Software Foundation, Inc.
+/* This file is part of GNU Info, a program for reading online documentation
+   stored in Info format.
+
+   Copyright (C) 1993 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,40 +21,49 @@
 
    Written by Brian Fox (bfox@ai.mit.edu). */
 
-#ifndef INFO_TERMDEP_H
-#define INFO_TERMDEP_H
+#if !defined (_TERMDEP_H_)
+#  define _TERMDEP_H_
 
-/* NeXT supplies <termios.h> but it is broken.  Probably Autoconf should
-   have a separate test, but anyway ... */
-#ifdef NeXT
-#undef HAVE_TERMIOS_H
-#endif
-
-#ifdef HAVE_TERMIOS_H
-#  include <termios.h>
+#if defined (HAVE_SYS_FCNTL_H)
+#  include <sys/fcntl.h>
 #else
-#  if defined (HAVE_TERMIO_H)
-#    include <termio.h>
-#    if defined (HAVE_SYS_PTEM_H)
-#      if defined (M_UNIX) || !defined (M_XENIX)
-#        include <sys/stream.h>
-#        include <sys/ptem.h>
-#        undef TIOCGETC
-#      else /* M_XENIX */
-#        define tchars tc
-#      endif /* M_XENIX */
-#    endif /* HAVE_SYS_PTEM_H */
-#  else /* !HAVE_TERMIO_H */
-#    include <sgtty.h>
-#  endif /* !HAVE_TERMIO_H */
-#endif /* !HAVE_TERMIOS_H */
+#  include <fcntl.h>
+#endif /* !HAVE_SYS_FCNTL_H */
 
-#ifdef GWINSZ_IN_SYS_IOCTL
-#  include <sys/ioctl.h>
-#endif
+#if defined (HAVE_TERMIO_H)
+#  include <termio.h>
+#  include <string.h>
+#  if defined (HAVE_SYS_PTEM_H)
+#    if defined (M_UNIX) || !defined (M_XENIX)
+#      include <sys/stream.h>
+#      include <sys/ptem.h>
+#      undef TIOCGETC
+#    else /* M_XENIX */
+#      define tchars tc
+#    endif /* M_XENIX */
+#  endif /* HAVE_SYS_PTEM_H */
+#else /* !HAVE_TERMIO_H */
+#  if defined (HAVE_SYS_FILE_H)
+#    include <sys/file.h>
+#  endif /* HAVE_SYS_FILE_H */
+#  include <sgtty.h>
+#  include <strings.h>
+#endif /* !HAVE_TERMIO_H */
 
-#ifdef HAVE_SYS_TTOLD_H
+#if defined (HAVE_SYS_TTOLD_H)
 #  include <sys/ttold.h>
 #endif /* HAVE_SYS_TTOLD_H */
 
-#endif /* not INFO_TERMDEP_H */
+#if !defined (HAVE_STRCHR)
+#  undef strchr
+#  undef strrchr
+#  define strchr index
+#  define strrchr rindex
+#endif /* !HAVE_STRCHR */
+
+#if !defined (HAVE_MEMCPY)
+#undef memcpy
+#define memcpy(dest, source, count) bcopy(source, dest, count)
+#endif /* !HAVE_MEMCPY */
+
+#endif /* _TERMDEP_H_ */

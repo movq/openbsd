@@ -22,7 +22,6 @@ hertz.h
 hist.c
 hist.h
 i386.c
-mips.c
 search_list.c
 search_list.h
 source.c

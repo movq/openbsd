@@ -40,29 +40,37 @@
 /*								    */
 /* **************************************************************** */
 
+static void
+memory_error_and_abort (fname)
+     char *fname;
+{
+  fprintf (stderr, "%s: out of virtual memory\n", fname);
+  exit (2);
+}
+
 /* Return a pointer to free()able block of memory large enough
    to hold BYTES number of bytes.  If the memory cannot be allocated,
    print an error message and abort. */
-PTR_T
+char *
 xmalloc (bytes)
-     size_t bytes;
+     int bytes;
 {
-  PTR_T temp;
+  char *temp;
 
-  temp = malloc (bytes);
+  temp = (char *)malloc (bytes);
   if (temp == 0)
     memory_error_and_abort ("xmalloc");
   return (temp);
 }
 
-PTR_T
+char *
 xrealloc (pointer, bytes)
      PTR_T pointer;
-     size_t bytes;
+     int bytes;
 {
-  PTR_T temp;
+  char *temp;
 
-  temp = pointer ? realloc (pointer, bytes) : malloc (bytes);
+  temp = pointer ? (char *)realloc (pointer, bytes) : (char *)malloc (bytes);
 
   if (temp == 0)
     memory_error_and_abort ("xrealloc");

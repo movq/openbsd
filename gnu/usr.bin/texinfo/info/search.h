@@ -1,7 +1,9 @@
-/* search.h -- Structure used to search large bodies of text, with bounds.
-   $Id: search.h,v 1.3 2000/02/09 02:18:40 espie Exp $
+/* search.h -- Structure used to search large bodies of text, with bounds. */
 
-   Copyright (C) 1993, 97, 98 Free Software Foundation, Inc.
+/* This file is part of GNU Info, a program for reading online documentation
+   stored in Info format.
+
+   Copyright (C) 1993 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -29,18 +31,18 @@
    They return a long, which is the offset from the start of the buffer
    at which the match was found.  An offset of -1 indicates failure. */
 
-#ifndef INFO_SEARCH_H
-#define INFO_SEARCH_H
+#if !defined (_SEARCH_H_)
+#define _SEARCH_H_
 
 typedef struct {
-  char *buffer;                 /* The buffer of text to search. */
-  long start;                   /* Offset of the start of the search. */
-  long end;                     /* Offset of the end of the searh. */
-  int flags;                    /* Flags controlling the type of search. */
+  char *buffer;			/* The buffer of text to search. */
+  long start;			/* Offset of the start of the search. */
+  long end;			/* Offset of the end of the searh. */
+  int flags;			/* Flags controlling the type of search. */
 } SEARCH_BINDING;
 
-#define S_FoldCase      0x01    /* Set means fold case in searches. */
-#define S_SkipDest      0x02    /* Set means return pointing after the dest. */
+#define S_FoldCase	0x01	/* Set means fold case in searches. */
+#define S_SkipDest	0x02	/* Set means return pointing after the dest. */
 
 SEARCH_BINDING *make_binding (), *copy_binding ();
 extern long search_forward (), search_backward (), search ();
@@ -49,6 +51,11 @@ extern int looking_at ();
 /* Note that STRING_IN_LINE () always returns the offset of the 1st character
    after the string. */
 extern int string_in_line ();
+
+/* Some unixes don't have strcasecmp or strncasecmp. */
+#if !defined (HAVE_STRCASECMP)
+extern int strcasecmp (), strncasecmp ();
+#endif /* !HAVE_STRCASECMP */
 
 /* Function names that start with "skip" are passed a string, and return
    an offset from the start of that string.  Function names that start
@@ -64,4 +71,5 @@ extern int skip_node_characters (), skip_node_separator ();
 extern long find_node_separator (), find_tags_table ();
 extern long find_node_in_binding ();
 
-#endif /* not INFO_SEARCH_H */
+#endif /* !_SEARCH_H_ */
+

@@ -2,19 +2,25 @@
    This file is in the public domain. */
 
 /*
+NAME
+	basename -- return pointer to last component of a pathname
 
-@deftypefn Supplemental char* basename (const char *@var{name})
+SYNOPSIS
+	char *basename (const char *name)
 
-Returns a pointer to the last component of pathname @var{name}.
-Behavior is undefined if the pathname ends in a directory separator.
+DESCRIPTION
+	Given a pointer to a string containing a typical pathname
+	(/usr/src/cmd/ls/ls.c for example), returns a pointer to the
+	last component of the pathname ("ls.c" in this case).
 
-@end deftypefn
-
+BUGS
+	Presumes a UNIX or DOS/Windows style path with UNIX or DOS/Windows 
+	style separators.
 */
 
 #include "ansidecl.h"
 #include "libiberty.h"
-#include "safe-ctype.h"
+#include <ctype.h>
 
 #ifndef DIR_SEPARATOR
 #define DIR_SEPARATOR '/'
@@ -44,7 +50,7 @@ basename (name)
 
 #if defined (HAVE_DOS_BASED_FILE_SYSTEM)
   /* Skip over the disk name in MSDOS pathnames. */
-  if (ISALPHA (name[0]) && name[1] == ':') 
+  if (isalpha (name[0]) && name[1] == ':') 
     name += 2;
 #endif
 

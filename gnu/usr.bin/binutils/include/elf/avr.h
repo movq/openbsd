@@ -1,5 +1,5 @@
 /* AVR ELF support for BFD.
-   Copyright 1999, 2000 Free Software Foundation, Inc.
+   Copyright (C) 1999, 2000 Free Software Foundation, Inc.
    Contributed by Denis Chertykov <denisc@overta.ru>
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -30,7 +30,6 @@ along with this program; if not, write to the Free Software Foundation, Inc.,
 #define E_AVR_MACH_AVR2 2
 #define E_AVR_MACH_AVR3 3
 #define E_AVR_MACH_AVR4 4
-#define E_AVR_MACH_AVR5 5
 
 /* Relocations.  */
 START_RELOC_NUMBERS (elf_avr_reloc_type)
@@ -53,6 +52,7 @@ START_RELOC_NUMBERS (elf_avr_reloc_type)
      RELOC_NUMBER (R_AVR_HI8_LDI_PM_NEG,       16)
      RELOC_NUMBER (R_AVR_HH8_LDI_PM_NEG,       17)
      RELOC_NUMBER (R_AVR_CALL,		       18)
-END_RELOC_NUMBERS (R_AVR_max)
+     EMPTY_RELOC  (R_AVR_max)
+END_RELOC_NUMBERS
 
 #endif /* _ELF_AVR_H */

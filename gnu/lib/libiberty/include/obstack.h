@@ -1,7 +1,5 @@
 /* obstack.h - object stack macros
-   Copyright 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1996, 1997, 1998,
-   1999, 2000
-   Free Software Foundation, Inc.
+   Copyright (C) 1988,89,90,91,92,93,94,96,97,98 Free Software Foundation, Inc.
 
 
    NOTE: The canonical source of this file is maintained with the GNU C Library.
@@ -145,16 +143,12 @@ extern "C" {
 
 #if defined _LIBC || defined HAVE_STRING_H
 # include <string.h>
-# if defined __STDC__ && __STDC__
-#  define _obstack_memcpy(To, From, N) memcpy ((To), (From), (N))
-# else
-#  define _obstack_memcpy(To, From, N) memcpy ((To), (char *)(From), (N))
-# endif
+# define _obstack_memcpy(To, From, N) memcpy ((To), (From), (N))
 #else
 # ifdef memcpy
-#  define _obstack_memcpy(To, From, N) memcpy ((To), (char *)(From), (N))
+#  define _obstack_memcpy(To, From, N) memcpy ((To), (From), (N))
 # else
-#  define _obstack_memcpy(To, From, N) bcopy ((char *)(From), (To), (N))
+#  define _obstack_memcpy(To, From, N) bcopy ((From), (To), (N))
 # endif
 #endif
 
@@ -391,7 +385,7 @@ __extension__								\
    int __len = (length);						\
    if (__o->next_free + __len > __o->chunk_limit)			\
      _obstack_newchunk (__o, __len);					\
-   _obstack_memcpy (__o->next_free, (where), __len);			\
+   _obstack_memcpy (__o->next_free, (char *) (where), __len);		\
    __o->next_free += __len;						\
    (void) 0; })
 
@@ -401,7 +395,7 @@ __extension__								\
    int __len = (length);						\
    if (__o->next_free + __len + 1 > __o->chunk_limit)			\
      _obstack_newchunk (__o, __len + 1);				\
-   _obstack_memcpy (__o->next_free, (where), __len);			\
+   _obstack_memcpy (__o->next_free, (char *) (where), __len);		\
    __o->next_free += __len;						\
    *(__o->next_free)++ = 0;						\
    (void) 0; })
@@ -516,14 +510,14 @@ __extension__								\
 ( (h)->temp = (length),							\
   (((h)->next_free + (h)->temp > (h)->chunk_limit)			\
    ? (_obstack_newchunk ((h), (h)->temp), 0) : 0),			\
-  _obstack_memcpy ((h)->next_free, (where), (h)->temp),			\
+  _obstack_memcpy ((h)->next_free, (char *) (where), (h)->temp),	\
   (h)->next_free += (h)->temp)
 
 # define obstack_grow0(h,where,length)					\
 ( (h)->temp = (length),							\
   (((h)->next_free + (h)->temp + 1 > (h)->chunk_limit)			\
    ? (_obstack_newchunk ((h), (h)->temp + 1), 0) : 0),			\
-  _obstack_memcpy ((h)->next_free, (where), (h)->temp),			\
+  _obstack_memcpy ((h)->next_free, (char *) (where), (h)->temp),	\
   (h)->next_free += (h)->temp,						\
   *((h)->next_free)++ = 0)
 

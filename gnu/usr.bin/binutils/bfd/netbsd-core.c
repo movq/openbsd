@@ -1,7 +1,5 @@
 /* BFD back end for NetBSD style core files
-   Copyright 1988, 1989, 1991, 1992, 1993, 1996, 1998, 1999, 2000, 2001,
-   2002
-   Free Software Foundation, Inc.
+   Copyright 1988, 1989, 1991, 1992, 1993, 1996 Free Software Foundation, Inc.
    Written by Paul Kranenburg, EUR
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -18,25 +16,24 @@ GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
-Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
+Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. */
 
 #include "bfd.h"
 #include "sysdep.h"
 #include "libbfd.h"
 #include "libaout.h"           /* BFD a.out internal data structures */
 
+#include <stdio.h>
+#include <sys/types.h>
 #include <sys/param.h>
 #include <sys/dir.h>
 #include <signal.h>
 #include <sys/core.h>
+#include <errno.h>
 
-/* The machine ID for OpenBSD/sparc64 and older versions of
-   NetBSD/sparc64 overlaps with M_MIPS1.  */
-#define M_SPARC64_OPENBSD       M_MIPS1
-
-/* Offset of StackGhost cookie within `struct md_coredump' on
-   OpenBSD/sparc.  */
-#define CORE_WCOOKIE_OFFSET     344
+/*
+ * FIXME: On NetBSD/sparc CORE_FPU_OFFSET should be (sizeof(struct trapframe))
+ */
 
 struct netbsd_core_struct {
 	struct core core;
@@ -44,183 +41,134 @@ struct netbsd_core_struct {
 
 /* forward declarations */
 
-static const bfd_target *netbsd_core_file_p
-  PARAMS ((bfd *abfd));
-static char *netbsd_core_file_failing_command
-  PARAMS ((bfd *abfd));
-static int netbsd_core_file_failing_signal
-  PARAMS ((bfd *abfd));
-static bfd_boolean netbsd_core_file_matches_executable_p
-  PARAMS ((bfd *core_bfd, bfd *exec_bfd));
-static void swap_abort
-  PARAMS ((void));
+static const bfd_target *	netbsd_core_core_file_p PARAMS ((bfd *abfd));
+static char *		netbsd_core_core_file_failing_command PARAMS ((bfd *abfd));
+static int 		netbsd_core_core_file_failing_signal PARAMS ((bfd *abfd));
+static boolean		netbsd_core_core_file_matches_executable_p
+			 PARAMS ((bfd *core_bfd, bfd *exec_bfd));
 
 /* Handle NetBSD-style core dump file.  */
 
 /* ARGSUSED */
 static const bfd_target *
-netbsd_core_file_p (abfd)
+netbsd_core_core_file_p (abfd)
      bfd *abfd;
 
 {
-  int i, val;
-  file_ptr offset;
-  asection *asect;
-  struct core core;
-  struct coreseg coreseg;
-  bfd_size_type amt = sizeof core;
+	int		i, val, offset;
+	asection	*asect, *asect2;
+	struct core	core;
+	struct coreseg	coreseg;
 
-  val = bfd_bread ((void *) &core, amt, abfd);
-  if (val != sizeof core)
-    {
-      /* Too small to be a core file */
-      bfd_set_error (bfd_error_wrong_format);
-      return 0;
-    }
-
-  if (CORE_GETMAGIC (core) != COREMAGIC)
-    {
-      bfd_set_error (bfd_error_wrong_format);
-      return 0;
-    }
-
-  amt = sizeof (struct netbsd_core_struct);
-  rawptr = (struct netbsd_core_struct *) bfd_zalloc (abfd, amt);
-  if (rawptr == NULL)
-    return 0;
-
-  rawptr->core = core;
-  abfd->tdata.netbsd_core_data = rawptr;
-
-  offset = core.c_hdrsize;
-  for (i = 0; i < core.c_nseg; i++)
-    {
-      const char *sname;
-      flagword flags;
-
-      if (bfd_seek (abfd, offset, SEEK_SET) != 0)
-	goto punt;
-
-      val = bfd_bread ((void *) &coreseg, (bfd_size_type) sizeof coreseg, abfd);
-      if (val != sizeof coreseg)
-	{
-	  bfd_set_error (bfd_error_file_truncated);
-	  goto punt;
-	}
-      if (CORE_GETMAGIC (coreseg) != CORESEGMAGIC)
-	{
-	  bfd_set_error (bfd_error_wrong_format);
-	  goto punt;
+	val = bfd_read ((void *)&core, 1, sizeof core, abfd);
+	if (val != sizeof core) {
+		/* Too small to be a core file */
+		bfd_set_error(bfd_error_wrong_format);
+		return 0;
 	}
 
-      offset += core.c_seghdrsize;
-
-      switch (CORE_GETFLAG (coreseg))
-	{
-	case CORE_CPU:
-	  sname = ".reg";
-	  flags = SEC_ALLOC + SEC_HAS_CONTENTS;
-	  break;
-	case CORE_DATA:
-	  sname = ".data";
-	  flags = SEC_ALLOC + SEC_LOAD + SEC_HAS_CONTENTS;
-	  break;
-	case CORE_STACK:
-	  sname = ".stack";
-	  flags = SEC_ALLOC + SEC_LOAD + SEC_HAS_CONTENTS;
-	  break;
-	default:
-	  sname = ".unknown";
-	  flags = SEC_ALLOC + SEC_HAS_CONTENTS;
-	  break;
+	if (CORE_GETMAGIC(core) != COREMAGIC) {
+		bfd_set_error(bfd_error_wrong_format);
+		return 0;
 	}
-      asect = bfd_make_section_anyway (abfd, sname);
-      if (asect == NULL)
-	goto punt;
 
-      asect->flags = flags;
-      asect->_raw_size = coreseg.c_size;
-      asect->vma = coreseg.c_addr;
-      asect->filepos = offset;
-      asect->alignment_power = 2;
+	rawptr = (struct netbsd_core_struct *)
+		bfd_zalloc (abfd, sizeof (struct netbsd_core_struct));
+	if (rawptr == NULL) {
+		bfd_set_error(bfd_error_no_memory);
+		return 0;
+	}
 
-      if (CORE_GETMID (core) == M_SPARC_NETBSD
-          && CORE_GETFLAG (coreseg) == CORE_CPU
-          && coreseg.c_size > CORE_WCOOKIE_OFFSET)
-        {
-          /* Truncate the .reg section.  */
-          asect->_raw_size = CORE_WCOOKIE_OFFSET;
+	rawptr->core = core;
+	abfd->tdata.netbsd_core_data = rawptr;
 
-          /* And create the .wcookie section.  */
-          asect = bfd_make_section_anyway (abfd, ".wcookie");
-          if (asect == NULL)
-            goto punt;
+	offset = core.c_hdrsize;
+	for (i = 0; i < core.c_nseg; i++) {
 
-          asect->flags = SEC_ALLOC + SEC_HAS_CONTENTS;
-          asect->_raw_size = 4;
-          asect->vma = 0;
-          asect->filepos = offset + CORE_WCOOKIE_OFFSET;
-          asect->alignment_power = 2;
-        }
+		if (bfd_seek (abfd, offset, SEEK_SET) != 0)
+			goto punt;
 
-      offset += coreseg.c_size;
-    }
+		val = bfd_read ((void *)&coreseg, 1, sizeof coreseg, abfd);
+		if (val != sizeof coreseg) {
+			bfd_set_error(bfd_error_file_truncated);
+			goto punt;
+		}
+		if (CORE_GETMAGIC(coreseg) != CORESEGMAGIC) {
+			bfd_set_error(bfd_error_wrong_format);
+			goto punt;
+		}
 
-  /* Set architecture from machine ID.  */
-  switch (CORE_GETMID (core))
-    {
-    case M_X86_64_NETBSD:
-      bfd_default_set_arch_mach (abfd, bfd_arch_i386, bfd_mach_x86_64);
-      break;
+		offset += core.c_seghdrsize;
 
-    case M_386_NETBSD:
-      bfd_default_set_arch_mach (abfd, bfd_arch_i386, bfd_mach_i386_i386);
-      break;
+		asect = (asection *) bfd_zalloc (abfd, sizeof(asection));
+		if (asect == NULL) {
+			bfd_set_error(bfd_error_no_memory);
+		}
 
-    case M_68K_NETBSD:
-    case M_68K4K_NETBSD:
-      bfd_default_set_arch_mach (abfd, bfd_arch_m68k, 0);
-      break;
+		asect->_raw_size = coreseg.c_size;
+		asect->vma = coreseg.c_addr;
+		asect->filepos = offset;
+		asect->alignment_power = 2;
+		asect->next = abfd->sections;
+		abfd->sections = asect;
+		abfd->section_count++;
+		offset += coreseg.c_size;
 
-    case M_88K_OPENBSD:
-      bfd_default_set_arch_mach (abfd, bfd_arch_m88k, 0);
-      break;
+		switch (CORE_GETFLAG(coreseg)) {
+		case CORE_CPU:
+			asect->name = ".reg";
+			asect->flags = SEC_ALLOC + SEC_HAS_CONTENTS;
+#ifdef CORE_FPU_OFFSET
+			/* Hackish... */
+			asect->_raw_size = CORE_FPU_OFFSET;
+			asect2 = (asection *)bfd_zalloc (abfd,
+							 sizeof (asection));
+			if (asect2 == NULL) {
+				bfd_set_error(bfd_error_no_memory);
+				goto punt;
+			}
+			asect2->_raw_size = coreseg.c_size - CORE_FPU_OFFSET;
+			asect2->vma = 0;
+			asect2->filepos = asect->filepos + CORE_FPU_OFFSET;
+			asect2->alignment_power = 2;
+			asect2->next = abfd->sections;
+			asect2->name = ".reg2";
+			asect2->flags = SEC_ALLOC + SEC_HAS_CONTENTS;
+			abfd->sections = asect2;
+			abfd->section_count++;
+#endif
 
-    case M_HPPA_OPENBSD:
-      bfd_default_set_arch_mach (abfd, bfd_arch_hppa, 0);
-      break;
+			break;
+		case CORE_DATA:
+			asect->name = ".data";
+			asect->flags = SEC_ALLOC+SEC_LOAD+SEC_HAS_CONTENTS;
+			break;
+		case CORE_STACK:
+			asect->name = ".stack";
+			asect->flags = SEC_ALLOC+SEC_LOAD+SEC_HAS_CONTENTS;
+			break;
+		}
+	}
 
-    case M_POWERPC_NETBSD:
-      bfd_default_set_arch_mach (abfd, bfd_arch_powerpc, bfd_mach_ppc);
-      break;
+	/* OK, we believe you.  You're a core file (sure, sure).  */
+	return abfd->xvec;
 
-    case M_SPARC_NETBSD:
-      bfd_default_set_arch_mach (abfd, bfd_arch_sparc, bfd_mach_sparc);
-      break;
-
-    case M_SPARC64_NETBSD:
-    case M_SPARC64_OPENBSD:
-      bfd_default_set_arch_mach (abfd, bfd_arch_sparc, bfd_mach_sparc_v9);
-      break;
-
-    case M_VAX_NETBSD:
-    case M_VAX4K_NETBSD:
-      bfd_default_set_arch_mach (abfd, bfd_arch_vax, 0);
-      break;
-    }
-
-  /* OK, we believe you.  You're a core file (sure, sure).  */
-  return abfd->xvec;
-
- punt:
-  bfd_release (abfd, abfd->tdata.any);
-  abfd->tdata.any = NULL;
-  bfd_section_list_clear (abfd);
-  return 0;
+punt:	{
+		asection	*anext;
+		for (asect = abfd->sections; asect; asect = anext) {
+			anext = asect->next;
+			free((void *)asect);
+		}
+	}
+	free ((void *)rawptr);
+	abfd->tdata.netbsd_core_data = NULL;
+	abfd->sections = NULL;
+	abfd->section_count = 0;
+	return 0;
 }
 
 static char*
-netbsd_core_file_failing_command (abfd)
+netbsd_core_core_file_failing_command (abfd)
 	bfd *abfd;
 {
  /*return core_command (abfd);*/
@@ -229,7 +177,7 @@ netbsd_core_file_failing_command (abfd)
 
 /* ARGSUSED */
 static int
-netbsd_core_file_failing_signal (abfd)
+netbsd_core_core_file_failing_signal (abfd)
 	bfd *abfd;
 {
   /*return core_signal (abfd);*/
@@ -237,34 +185,90 @@ netbsd_core_file_failing_signal (abfd)
 }
 
 /* ARGSUSED */
-static bfd_boolean
-netbsd_core_file_matches_executable_p  (core_bfd, exec_bfd)
-     bfd *core_bfd ATTRIBUTE_UNUSED;
-     bfd *exec_bfd ATTRIBUTE_UNUSED;
+static boolean
+netbsd_core_core_file_matches_executable_p  (core_bfd, exec_bfd)
+     bfd *core_bfd, *exec_bfd;
 {
-  return TRUE;		/* FIXME, We have no way of telling at this point */
+	return true;	/* FIXME, We have no way of telling at this point */
 }
 
+/* No archive file support via this BFD */
+#define	netbsd_openr_next_archived_file	bfd_generic_openr_next_archived_file
+#define	netbsd_generic_stat_arch_elt		bfd_generic_stat_arch_elt
+#define	netbsd_slurp_armap			bfd_false
+#define	netbsd_slurp_extended_name_table	bfd_true
+#define	netbsd_write_armap			(boolean (*) PARAMS	\
+    ((bfd *arch, unsigned int elength, struct orl *map, \
+      unsigned int orl_count, int stridx))) bfd_false
+#define	netbsd_truncate_arname		bfd_dont_truncate_arname
+#define	aout_32_openr_next_archived_file	bfd_generic_openr_next_archived_file
+
+#define	netbsd_close_and_cleanup		bfd_generic_close_and_cleanup
+#define	netbsd_set_section_contents		(boolean (*) PARAMS	\
+        ((bfd *abfd, asection *section, PTR data, file_ptr offset,	\
+        bfd_size_type count))) bfd_false
+#define	netbsd_get_section_contents		bfd_generic_get_section_contents
+#define	netbsd_new_section_hook		(boolean (*) PARAMS	\
+	((bfd *, sec_ptr))) bfd_true
+#define	netbsd_get_symtab_upper_bound	bfd_0u
+#define	netbsd_get_symtab			(unsigned int (*) PARAMS \
+        ((bfd *, struct symbol_cache_entry **))) bfd_0u
+#define	netbsd_get_reloc_upper_bound		(unsigned int (*) PARAMS \
+	((bfd *, sec_ptr))) bfd_0u
+#define	netbsd_canonicalize_reloc		(unsigned int (*) PARAMS \
+	((bfd *, sec_ptr, arelent **, struct symbol_cache_entry**))) bfd_0u
+#define	netbsd_make_empty_symbol		(struct symbol_cache_entry * \
+	(*) PARAMS ((bfd *))) bfd_false
+#define	netbsd_print_symbol			(void (*) PARAMS	\
+	((bfd *, PTR, struct symbol_cache_entry  *,			\
+	bfd_print_symbol_type))) bfd_false
+#define	netbsd_get_symbol_info		(void (*) PARAMS	\
+	((bfd *, struct symbol_cache_entry  *,			\
+	symbol_info *))) bfd_false
+#define	netbsd_get_lineno			(alent * (*) PARAMS	\
+	((bfd *, struct symbol_cache_entry *))) bfd_nullvoidptr
+#define	netbsd_set_arch_mach			(boolean (*) PARAMS	\
+	((bfd *, enum bfd_architecture, unsigned long))) bfd_false
+#define	netbsd_find_nearest_line		(boolean (*) PARAMS	\
+        ((bfd *abfd, struct sec  *section,				\
+         struct symbol_cache_entry  **symbols,bfd_vma offset,		\
+         CONST char **file, CONST char **func, unsigned int *line))) bfd_false
+#define	netbsd_sizeof_headers		(int (*) PARAMS	\
+	((bfd *, boolean))) bfd_0
+
+#define netbsd_bfd_debug_info_start		bfd_void
+#define netbsd_bfd_debug_info_end		bfd_void
+#define netbsd_bfd_debug_info_accumulate	(void (*) PARAMS	\
+	((bfd *, struct sec *))) bfd_void
+#define netbsd_bfd_get_relocated_section_contents bfd_generic_get_relocated_section_contents
+#define netbsd_bfd_relax_section		bfd_generic_relax_section
+#define netbsd_bfd_seclet_link \
+  ((boolean (*) PARAMS ((bfd *, PTR, boolean))) bfd_false)
+#define netbsd_bfd_reloc_type_lookup \
+  ((CONST struct reloc_howto_struct *(*) PARAMS ((bfd *, bfd_reloc_code_real_type))) bfd_nullvoidptr)
+#define netbsd_bfd_make_debug_symbol \
+  ((asymbol *(*) PARAMS ((bfd *, void *, unsigned long))) bfd_nullvoidptr)
+
 /* If somebody calls any byte-swapping routines, shoot them.  */
 static void
-swap_abort ()
+swap_abort()
 {
-  abort (); /* This way doesn't require any declaration for ANSI to fuck up */
+  abort(); /* This way doesn't require any declaration for ANSI to fuck up */
 }
 #define	NO_GET	((bfd_vma (*) PARAMS ((   const bfd_byte *))) swap_abort )
 #define	NO_PUT	((void    (*) PARAMS ((bfd_vma, bfd_byte *))) swap_abort )
 #define	NO_SIGNED_GET \
-  ((bfd_signed_vma (*) PARAMS ((const bfd_byte *))) swap_abort )
+	((bfd_signed_vma (*) PARAMS ((    const bfd_byte *))) swap_abort )
 
 const bfd_target netbsd_core_vec =
   {
     "netbsd-core",
     bfd_target_unknown_flavour,
-    BFD_ENDIAN_UNKNOWN,		/* target byte order */
-    BFD_ENDIAN_UNKNOWN,		/* target headers byte order */
+    true,			/* target byte order */
+    true,			/* target headers byte order */
     (HAS_RELOC | EXEC_P |	/* object flags */
      HAS_LINENO | HAS_DEBUG |
-     HAS_SYMS | HAS_LOCALS | WP_TEXT | D_PAGED),
+     HAS_SYMS | HAS_LOCALS | DYNAMIC | WP_TEXT | D_PAGED),
     (SEC_HAS_CONTENTS | SEC_ALLOC | SEC_LOAD | SEC_RELOC), /* section flags */
     0,			                                   /* symbol prefix */
     ' ',						   /* ar_pad_char */
@@ -280,7 +284,7 @@ const bfd_target netbsd_core_vec =
      _bfd_dummy_target,		/* unknown format */
      _bfd_dummy_target,		/* object file */
      _bfd_dummy_target,		/* archive */
-     netbsd_core_file_p		/* a core file */
+     netbsd_core_core_file_p		/* a core file */
     },
     {				/* bfd_set_format */
      bfd_false, bfd_false,
@@ -290,18 +294,16 @@ const bfd_target netbsd_core_vec =
      bfd_false, bfd_false,
      bfd_false, bfd_false
     },
-
+    
        BFD_JUMP_TABLE_GENERIC (_bfd_generic),
        BFD_JUMP_TABLE_COPY (_bfd_generic),
-       BFD_JUMP_TABLE_CORE (netbsd),
+       BFD_JUMP_TABLE_CORE (netbsd_core),
        BFD_JUMP_TABLE_ARCHIVE (_bfd_noarchive),
        BFD_JUMP_TABLE_SYMBOLS (_bfd_nosymbols),
        BFD_JUMP_TABLE_RELOCS (_bfd_norelocs),
        BFD_JUMP_TABLE_WRITE (_bfd_generic),
        BFD_JUMP_TABLE_LINK (_bfd_nolink),
        BFD_JUMP_TABLE_DYNAMIC (_bfd_nodynamic),
-
-    NULL,
 
     (PTR) 0			/* backend_data */
 };

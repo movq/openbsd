@@ -1,5 +1,5 @@
 /* tc-c30.c -- Assembly code for the Texas Instruments TMS320C30
-   Copyright 1998, 1999, 2000, 2001, 2002 Free Software Foundation, Inc.
+   Copyright (C) 1998, 1999 Free Software Foundation.
    Contributed by Steven Haworth (steve@pm.cse.rmit.edu.au)
 
    This file is part of GAS, the GNU Assembler.
@@ -19,26 +19,20 @@
    Software Foundation, 59 Temple Place - Suite 330, Boston, MA
    02111-1307, USA.  */
 
-/* Texas Instruments TMS320C30 machine specific gas.
+/*
+   Texas Instruments TMS320C30 machine specific gas.
    Written by Steven Haworth (steve@pm.cse.rmit.edu.au).
    Bugs & suggestions are completely welcome.  This is free software.
-   Please help us make it better.  */
+   Please help us make it better.
+ */
 
 #include "as.h"
-#include "safe-ctype.h"
 #include "opcode/tic30.h"
-#ifdef ANSI_PROTOTYPES
-#include <stdarg.h>
-#else
-#include <varargs.h>
-#endif
 
-/* Put here all non-digit non-letter charcters that may occur in an
-   operand.  */
+/* put here all non-digit non-letter charcters that may occur in an operand */
 static char operand_special_chars[] = "%$-+(,)*._~/<>&^!:[@]";
-static char *ordinal_names[] = {
-  "first", "second", "third", "fourth", "fifth"
-};
+static char *ordinal_names[] =
+{"first", "second", "third", "fourth", "fifth"};
 
 const int md_reloc_size = 0;
 
@@ -47,19 +41,19 @@ const char line_comment_chars[] = "*";
 const char line_separator_chars[] = "";
 
 const char *md_shortopts = "";
-struct option md_longopts[] = {
+struct option md_longopts[] =
+{
   {NULL, no_argument, NULL, 0}
 };
 
 size_t md_longopts_size = sizeof (md_longopts);
 
-/* Chars that mean this number is a floating point constant.  */
+/* Chars that mean this number is a floating point constant */
 /* As in 0f12.456 */
 /* or    0d1.2345e12 */
 const char FLT_CHARS[] = "fFdDxX";
 
-/* Chars that can be used to separate mant from exp in floating point
-   nums.  */
+/* Chars that can be used to separate mant from exp in floating point nums */
 const char EXP_CHARS[] = "eE";
 
 /* tables for lexical analysis */
@@ -78,31 +72,61 @@ static char digit_chars[256];
 #define is_identifier_char(x) (identifier_chars[(unsigned char) x])
 #define is_digit_char(x) (digit_chars[(unsigned char) x])
 
-const pseudo_typeS md_pseudo_table[] = {
+const pseudo_typeS md_pseudo_table[] =
+{
   {0, 0, 0}
 };
 
-int debug PARAMS ((const char *string, ...));
+#undef USE_STDOUT
+#define USE_STDOUT 1
+
+#ifdef USE_STDARG
+
+#include <stdarg.h>
 
 int
-debug VPARAMS ((const char *string, ...))
+debug (const char *string,...)
 {
   if (flag_debug)
     {
+      va_list argptr;
       char str[100];
 
-      VA_OPEN (argptr, string);
-      VA_FIXEDARG (argptr, const char *, string);
+      va_start (argptr, string);
       vsprintf (str, string, argptr);
-      VA_CLOSE (argptr);
       if (str[0] == '\0')
 	return (0);
+      va_end (argptr);
       fputs (str, USE_STDOUT ? stdout : stderr);
       return strlen (str);
     }
   else
     return 0;
 }
+#else
+int
+debug (string, va_alist)
+     const char *string;
+     va_dcl
+{
+  if (flag_debug)
+    {
+      va_list argptr;
+      char str[100];
+      int cnt;
+
+      va_start (argptr, string);
+      cnt = vsprintf (str, string, argptr);
+      if (str[0] == NULL)
+	return (0);
+      va_end (argptr);
+      fputs (str, USE_STDOUT ? stdout : stderr);
+      return (cnt);
+    }
+  else
+    return 0;
+}
+#endif
 
 /* hash table for opcode lookup */
 static struct hash_control *op_hash;
@@ -165,25 +189,25 @@ md_begin ()
 
     for (c = 0; c < 256; c++)
       {
-	if (ISLOWER (c) || ISDIGIT (c))
+	if (islower (c) || isdigit (c))
 	  {
 	    opcode_chars[c] = c;
 	    register_chars[c] = c;
 	  }
-	else if (ISUPPER (c))
+	else if (isupper (c))
 	  {
-	    opcode_chars[c] = TOLOWER (c);
+	    opcode_chars[c] = tolower (c);
 	    register_chars[c] = opcode_chars[c];
 	  }
 	else if (c == ')' || c == '(')
 	  {
 	    register_chars[c] = c;
 	  }
-	if (ISUPPER (c) || ISLOWER (c) || ISDIGIT (c))
+	if (isupper (c) || islower (c) || isdigit (c))
 	  operand_chars[c] = c;
-	if (ISDIGIT (c) || c == '-')
+	if (isdigit (c) || c == '-')
 	  digit_chars[c] = c;
-	if (ISALPHA (c) || c == '_' || c == '.' || ISDIGIT (c))
+	if (isalpha (c) || c == '_' || c == '.' || isdigit (c))
 	  identifier_chars[c] = c;
 	if (c == ' ' || c == '\t')
 	  space_chars[c] = c;
@@ -206,32 +230,42 @@ md_begin ()
 #define PC_Register 0x00000000
 #define PC_Relative 0x02000000
 
-typedef struct {
+typedef struct
+{
   unsigned op_type;
-  struct {
-    int resolved;
-    unsigned address;
-    char *label;
-    expressionS direct_expr;
-  } direct;
-  struct {
-    unsigned mod;
-    int ARnum;
-    unsigned char disp;
-  } indirect;
-  struct {
-    unsigned opcode;
-  } reg;
-  struct {
-    int resolved;
-    int decimal_found;
-    float f_number;
-    int s_number;
-    unsigned int u_number;
-    char *label;
-    expressionS imm_expr;
-  } immediate;
-} operand;
+  struct
+    {
+      int resolved;
+      unsigned address;
+      char *label;
+      expressionS direct_expr;
+    }
+  direct;
+  struct
+    {
+      unsigned mod;
+      int ARnum;
+      unsigned char disp;
+    }
+  indirect;
+  struct
+    {
+      unsigned opcode;
+    }
+  reg;
+  struct
+    {
+      int resolved;
+      int decimal_found;
+      float f_number;
+      int s_number;
+      unsigned int u_number;
+      char *label;
+      expressionS imm_expr;
+    }
+  immediate;
+}
+operand;
 
 int tic30_parallel_insn PARAMS ((char *));
 operand *tic30_operand PARAMS ((char *));
@@ -239,14 +273,15 @@ char *tic30_find_parallel_insn PARAMS ((char *, char *));
 
 template *opcode;
 
-struct tic30_insn {
-  template *tm;			/* Template of current instruction */
-  unsigned opcode;		/* Final opcode */
-  unsigned int operands;	/* Number of given operands */
-  /* Type of operand given in instruction */
-  operand *operand_type[MAX_OPERANDS];
-  unsigned addressing_mode;	/* Final addressing mode of instruction */
-};
+struct tic30_insn
+  {
+    template *tm;		/* Template of current instruction */
+    unsigned opcode;		/* Final opcode */
+    int operands;		/* Number of given operands */
+    /* Type of operand given in instruction */
+    operand *operand_type[MAX_OPERANDS];
+    unsigned addressing_mode;	/* Final addressing mode of instruction */
+  };
 
 struct tic30_insn insn;
 static int found_parallel_insn;
@@ -259,7 +294,7 @@ md_assemble (line)
   char *current_posn;
   char *token_start;
   char save_char;
-  unsigned int count;
+  int count;
 
   debug ("In md_assemble() with argument %s\n", line);
   memset (&insn, '\0', sizeof (insn));
@@ -282,7 +317,7 @@ md_assemble (line)
       return;
     }
   /* Check if instruction is a parallel instruction by seeing if the first
-     character is a q.  */
+     character is a q. */
   if (*token_start == 'q')
     {
       if (tic30_parallel_insn (token_start))
@@ -405,11 +440,11 @@ md_assemble (line)
   /* Check that number of operands is correct */
   if (insn.operands != insn.tm->operands)
     {
-      unsigned int i;
-      unsigned int numops = insn.tm->operands;
+      int i;
+      int numops = insn.tm->operands;
       /* If operands are not the same, then see if any of the operands are not
          required.  Then recheck with number of given operands.  If they are still not
-         the same, then give an error, otherwise carry on.  */
+         the same, then give an error, otherwise carry on. */
       for (i = 0; i < insn.tm->operands; i++)
 	if (insn.tm->operand_types[i] & NotReq)
 	  numops--;
@@ -430,7 +465,7 @@ md_assemble (line)
 	  if (insn.tm->opcode_modifier == AddressMode)
 	    {
 	      int addr_insn = 0;
-	      /* Store instruction uses the second operand for the address mode.  */
+	      /* Store instruction uses the second operand for the address mode. */
 	      if ((insn.tm->operand_types[1] & (Indirect | Direct)) == (Indirect | Direct))
 		addr_insn = 1;
 	      if (insn.operand_type[addr_insn]->op_type & (AllReg))
@@ -449,11 +484,11 @@ md_assemble (line)
 	  return;
 	}
     }
-  /* Now set the addressing mode for 3 operand instructions.  */
+  /* Now set the addressing mode for 3 operand instructions. */
   if ((insn.tm->operand_types[0] & op3T1) && (insn.tm->operand_types[1] & op3T2))
     {
       /* Set the addressing mode to the values used for 2 operand instructions in the
-         G addressing field of the opcode.  */
+         G addressing field of the opcode. */
       char *p;
       switch (insn.operand_type[0]->op_type)
 	{
@@ -487,7 +522,7 @@ md_assemble (line)
 	}
       /* Now make up the opcode for the 3 operand instructions.  As in parallel
          instructions, there will be no unresolved values, so they can be fully formed
-         and added to the frag table.  */
+         and added to the frag table. */
       insn.opcode = insn.tm->base_opcode;
       if (insn.operand_type[0]->op_type & Indirect)
 	{
@@ -514,7 +549,7 @@ md_assemble (line)
       char *p;
       int am_insn = -1;
       insn.opcode = insn.tm->base_opcode;
-      /* Create frag for instruction - all instructions are 4 bytes long.  */
+      /* Create frag for instruction - all instructions are 4 bytes long. */
       p = frag_more (INSN_SIZE);
       if ((insn.operands > 0) && (insn.tm->opcode_modifier == AddressMode))
 	{
@@ -711,7 +746,7 @@ md_assemble (line)
 		  md_number_to_chars (p, (valueT) insn.opcode, INSN_SIZE);
 		  fix = fix_new_exp (frag_now, p + 3 - (frag_now->fr_literal), 1, &insn.operand_type[0]->direct.direct_expr, 0, 0);
 		  /* Ensure that the assembler doesn't complain about fitting a 24-bit
-		     address into 8 bits.  */
+		     address into 8 bits. */
 		  fix->fx_no_overflow = 1;
 		}
 	    }
@@ -755,18 +790,18 @@ md_assemble (line)
 	}
       else if (insn.tm->operand_types[0] & NotReq)
 	{
-	  /* Check for NOP instruction without arguments.  */
+	  /* Check for NOP instruction without arguments. */
 	  md_number_to_chars (p, (valueT) insn.opcode, INSN_SIZE);
 	}
       else if (insn.tm->operands == 0)
 	{
-	  /* Check for instructions without operands.  */
+	  /* Check for instructions without operands. */
 	  md_number_to_chars (p, (valueT) insn.opcode, INSN_SIZE);
 	}
     }
   debug ("Addressing mode: %08X\n", insn.addressing_mode);
   {
-    unsigned int i;
+    int i;
     for (i = 0; i < insn.operands; i++)
       {
 	if (insn.operand_type[i]->immediate.label)
@@ -778,12 +813,13 @@ md_assemble (line)
   debug ("\n");
 }
 
-struct tic30_par_insn {
+struct tic30_par_insn
+{
   partemplate *tm;		/* Template of current parallel instruction */
-  unsigned operands[2];		/* Number of given operands for each insn */
+  int operands[2];		/* Number of given operands for each insn */
   /* Type of operand given in instruction */
   operand *operand_type[2][MAX_OPERANDS];
-  int swap_operands;		/* Whether to swap operands around.  */
+  int swap_operands;		/* Whether to swap operands around. */
   unsigned p_field;		/* Value of p field in multiply add/sub instructions */
   unsigned opcode;		/* Final opcode */
 };
@@ -817,7 +853,7 @@ tic30_parallel_insn (char *token)
 	{0};
 	char second_opcode[6] =
 	{0};
-	unsigned int i;
+	int i;
 	int current_opcode = -1;
 	int char_ptr = 0;
 
@@ -991,7 +1027,7 @@ tic30_parallel_insn (char *token)
     int num_ind = 0;
     for (count = 0; count < 2; count++)
       {
-	unsigned int i;
+	int i;
 	for (i = 0; i < p_insn.operands[count]; i++)
 	  {
 	    if ((p_insn.operand_type[count][i]->op_type &
@@ -1003,7 +1039,7 @@ tic30_parallel_insn (char *token)
 	    /* Get number of R register and indirect reference contained within the first
 	       two operands of each instruction.  This is required for the multiply
 	       parallel instructions which require two R registers and two indirect
-	       references, but not in any particular place.  */
+	       references, but not in any particular place. */
 	    if ((p_insn.operand_type[count][i]->op_type & Rn) && i < 2)
 	      num_rn++;
 	    else if ((p_insn.operand_type[count][i]->op_type & Indirect) && i < 2)
@@ -1073,7 +1109,7 @@ tic30_parallel_insn (char *token)
   debug ("P field: %08X\n", p_insn.p_field);
   /* Finalise opcode.  This is easier for parallel instructions as they have to be
      fully resolved, there are no memory addresses allowed, except through indirect
-     addressing, so there are no labels to resolve.  */
+     addressing, so there are no labels to resolve. */
   {
     p_insn.opcode = p_insn.tm->base_opcode;
     switch (p_insn.tm->oporder)
@@ -1165,14 +1201,14 @@ tic30_parallel_insn (char *token)
 	  }
 	break;
       }
-  }				/* Opcode is finalised at this point for all parallel instructions.  */
+  }				/* Opcode is finalised at this point for all parallel instructions. */
   {				/* Output opcode */
     char *p;
     p = frag_more (INSN_SIZE);
     md_number_to_chars (p, (valueT) p_insn.opcode, INSN_SIZE);
   }
   {
-    unsigned int i, j;
+    int i, j;
     for (i = 0; i < 2; i++)
       for (j = 0; j < p_insn.operands[i]; j++)
 	free (p_insn.operand_type[i][j]);
@@ -1186,7 +1222,7 @@ operand *
 tic30_operand (token)
      char *token;
 {
-  unsigned int count;
+  int count;
   char ind_buffer[strlen (token)];
   operand *current_op;
 
@@ -1244,7 +1280,7 @@ tic30_operand (token)
       ind_buffer[0] = *token;
       for (count = 1; count < strlen (token); count++)
 	{			/* Strip operand */
-	  ind_buffer[buffer_posn] = TOLOWER (*(token + count));
+	  ind_buffer[buffer_posn] = tolower (*(token + count));
 	  if ((*(token + count - 1) == 'a' || *(token + count - 1) == 'A') &&
 	      (*(token + count) == 'r' || *(token + count) == 'R'))
 	    {
@@ -1267,7 +1303,7 @@ tic30_operand (token)
 	  if (*(token + count) == '(')
 	    {
 	      /* Parenthesis found, so check if a displacement value is inside.  If so, get
-	         the value and remove it from the buffer.  */
+	         the value and remove it from the buffer. */
 	      if (is_digit_char (*(token + count + 1)))
 		{
 		  char disp[10];
@@ -1390,7 +1426,7 @@ tic30_operand (token)
 	      current_op->immediate.resolved = 1;
 	    }
 	  current_op->op_type = Disp | Abs24 | Imm16 | Imm24;
-	  if (current_op->immediate.u_number <= 31)
+	  if (current_op->immediate.u_number >= 0 && current_op->immediate.u_number <= 31)
 	    current_op->op_type |= IVector;
 	}
     }
@@ -1423,7 +1459,7 @@ tic30_find_parallel_insn (current_line, next_line)
   char *parallel_insn;
 
   debug ("In tic30_find_parallel_insn()\n");
-  while (!is_end_of_line[(unsigned char) *next_line])
+  while (!is_end_of_line[(int) *next_line])
     {
       if (*next_line == PARALLEL_SEPARATOR && *(next_line + 1) == PARALLEL_SEPARATOR)
 	{
@@ -1459,16 +1495,16 @@ tic30_find_parallel_insn (current_line, next_line)
 	  int char_ptr = 0;
 	  char c;
 
-	  while (!is_end_of_line[(unsigned char) (c = *line)])
+	  while (!is_end_of_line[(int) (c = *line)] && *line)
 	    {
 	      if (is_opcode_char (c) && search_status == NONE)
 		{
-		  opcode[char_ptr++] = TOLOWER (c);
+		  opcode[char_ptr++] = tolower (c);
 		  search_status = START_OPCODE;
 		}
 	      else if (is_opcode_char (c) && search_status == START_OPCODE)
 		{
-		  opcode[char_ptr++] = TOLOWER (c);
+		  opcode[char_ptr++] = tolower (c);
 		}
 	      else if (!is_opcode_char (c) && search_status == START_OPCODE)
 		{
@@ -1507,7 +1543,7 @@ tic30_find_parallel_insn (current_line, next_line)
 #undef END_OPERANDS
 
 /* In order to get gas to ignore any | chars at the start of a line,
-   this function returns true if a | is found in a line.  */
+   this function returns true if a | is found in a line. */
 
 int
 tic30_unrecognized_line (c)
@@ -1519,8 +1555,8 @@ tic30_unrecognized_line (c)
 
 int
 md_estimate_size_before_relax (fragP, segment)
-     fragS *fragP ATTRIBUTE_UNUSED;
-     segT segment ATTRIBUTE_UNUSED;
+     fragS *fragP;
+     segT segment;
 {
   debug ("In md_estimate_size_before_relax()\n");
   return 0;
@@ -1528,18 +1564,17 @@ md_estimate_size_before_relax (fragP, segment)
 
 void
 md_convert_frag (abfd, sec, fragP)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     segT sec ATTRIBUTE_UNUSED;
-     register fragS *fragP ATTRIBUTE_UNUSED;
+     bfd *abfd;
+     segT sec;
+     register fragS *fragP;
 {
   debug ("In md_convert_frag()\n");
 }
 
-void
-md_apply_fix3 (fixP, valP, seg)
+int
+md_apply_fix (fixP, valP)
      fixS *fixP;
      valueT *valP;
-     segT seg ATTRIBUTE_UNUSED;
 {
   valueT value = *valP;
 
@@ -1551,39 +1586,42 @@ md_apply_fix3 (fixP, valP, seg)
   debug ("fx_offset = %d\n", (int) fixP->fx_offset);
   {
     char *buf = fixP->fx_frag->fr_literal + fixP->fx_where;
-
     value /= INSN_SIZE;
     if (fixP->fx_size == 1)
-      /* Special fix for LDP instruction.  */
-      value = (value & 0x00FF0000) >> 16;
-
+      {				/* Special fix for LDP instruction. */
+	value = (value & 0x00FF0000) >> 16;
+      }
     debug ("new value = %ld\n", (long) value);
     md_number_to_chars (buf, value, fixP->fx_size);
   }
-
-  if (fixP->fx_addsy == NULL && fixP->fx_pcrel == 0)
-    fixP->fx_done = 1;
+  return 1;
 }
 
 int
 md_parse_option (c, arg)
-     int c ATTRIBUTE_UNUSED;
-     char *arg ATTRIBUTE_UNUSED;
+     int c;
+     char *arg;
 {
+  int i;
+
   debug ("In md_parse_option()\n");
+  for (i = 0; i < c; i++)
+    {
+      printf ("%c\n", arg[c]);
+    }
   return 0;
 }
 
 void
 md_show_usage (stream)
-     FILE *stream ATTRIBUTE_UNUSED;
+     FILE *stream;
 {
   debug ("In md_show_usage()\n");
 }
 
 symbolS *
 md_undefined_symbol (name)
-     char *name ATTRIBUTE_UNUSED;
+     char *name;
 {
   debug ("In md_undefined_symbol()\n");
   return (symbolS *) 0;
@@ -1612,7 +1650,7 @@ md_pcrel_from (fixP)
   debug ("fx_size = %d\n", fixP->fx_size);
   /* Find the opcode that represents the current instruction in the fr_literal
      storage area, and check bit 21.  Bit 21 contains whether the current instruction
-     is a delayed one or not, and then set the offset value appropriately.  */
+     is a delayed one or not, and then set the offset value appropriately. */
   if (fixP->fx_frag->fr_literal[fixP->fx_where - fixP->fx_size + 1] & 0x20)
     offset = 3;
   else
@@ -1644,8 +1682,7 @@ md_atof (what_statement_type, literalP, sizeP)
   debug ("literal = %s\n", literalP);
   debug ("line = ");
   token = input_line_pointer;
-  while (!is_end_of_line[(unsigned char) *input_line_pointer]
-	 && (*input_line_pointer != ','))
+  while (!is_end_of_line[(unsigned) *input_line_pointer] && (*input_line_pointer) && (*input_line_pointer != ','))
     {
       debug ("%c", *input_line_pointer);
       input_line_pointer++;
@@ -1779,7 +1816,7 @@ md_number_to_chars (buf, val, n)
 
 arelent *
 tc_gen_reloc (section, fixP)
-     asection *section ATTRIBUTE_UNUSED;
+     asection *section;
      fixS *fixP;
 {
   arelent *rel;
@@ -1808,7 +1845,10 @@ tc_gen_reloc (section, fixP)
   rel->sym_ptr_ptr = (asymbol **) xmalloc (sizeof (asymbol *));
   *rel->sym_ptr_ptr = symbol_get_bfdsym (fixP->fx_addsy);
   rel->address = fixP->fx_frag->fr_address + fixP->fx_where;
-  rel->addend = 0;
+  if (fixP->fx_pcrel)
+    rel->addend = fixP->fx_addnumber;
+  else
+    rel->addend = 0;
   rel->howto = bfd_reloc_type_lookup (stdoutput, code);
   if (!rel->howto)
     {
@@ -1822,8 +1862,14 @@ tc_gen_reloc (section, fixP)
 }
 
 void
+tc_aout_pre_write_hook ()
+{
+  debug ("In tc_aout_pre_write_hook()\n");
+}
+
+void
 md_operand (expressionP)
-     expressionS *expressionP ATTRIBUTE_UNUSED;
+     expressionS *expressionP;
 {
   debug ("In md_operand()\n");
 }
@@ -1834,7 +1880,7 @@ char *
 output_invalid (c)
      char c;
 {
-  if (ISPRINT (c))
+  if (isprint (c))
     sprintf (output_invalid_buf, "'%c'", c);
   else
     sprintf (output_invalid_buf, "(0x%x)", (unsigned) c);

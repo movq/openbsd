@@ -30,10 +30,6 @@
 #include <stdio.h>
 #include <sys/types.h>
 
-#if defined (HAVE_UNISTD_H)
-#  include <unistd.h>
-#endif
-
 #if defined (FD_SET) && !defined (HAVE_SELECT)
 #  define HAVE_SELECT
 #endif
@@ -58,7 +54,7 @@ extern char *strchr (), *strrchr ();
 #include "readline.h"
 #include "rlprivate.h"
 
-static int find_matching_open PARAMS((char *, int, int));
+static int find_matching_open __P((char *, int, int));
 
 /* Non-zero means try to blink the matching open parenthesis when the
    close parenthesis is inserted. */
@@ -67,8 +63,6 @@ int rl_blink_matching_paren = 1;
 #else /* !HAVE_SELECT */
 int rl_blink_matching_paren = 0;
 #endif /* !HAVE_SELECT */
-
-static int _paren_blink_usec = 500000;
 
 /* Change emacs_standard_keymap to have bindings for paren matching when
    ON_OR_OFF is 1, change them back to self_insert when ON_OR_OFF == 0. */
@@ -91,23 +85,11 @@ _rl_enable_paren_matching (on_or_off)
 }
 
 int
-rl_set_paren_blink_timeout (u)
-     int u;
-{
-  int o;
-
-  o = _paren_blink_usec;
-  if (u > 0)
-    _paren_blink_usec = u;
-  return (o);
-}
-
-int
 rl_insert_close (count, invoking_key)
      int count, invoking_key;
 {
   if (rl_explicit_arg || !rl_blink_matching_paren)
-    _rl_insert_char (count, invoking_key);
+    rl_insert (count, invoking_key);
   else
     {
 #if defined (HAVE_SELECT)
@@ -115,7 +97,7 @@ rl_insert_close (count, invoking_key)
       struct timeval timer;
       fd_set readfds;
 
-      _rl_insert_char (1, invoking_key);
+      rl_insert (1, invoking_key);
       (*rl_redisplay_function) ();
       match_point =
 	find_matching_open (rl_line_buffer, rl_point - 2, invoking_key);
@@ -127,7 +109,7 @@ rl_insert_close (count, invoking_key)
       FD_ZERO (&readfds);
       FD_SET (fileno (rl_instream), &readfds);
       timer.tv_sec = 0;
-      timer.tv_usec = _paren_blink_usec;
+      timer.tv_usec = 500000;
 
       orig_point = rl_point;
       rl_point = match_point;
@@ -135,7 +117,7 @@ rl_insert_close (count, invoking_key)
       ready = select (1, &readfds, (fd_set *)NULL, (fd_set *)NULL, &timer);
       rl_point = orig_point;
 #else /* !HAVE_SELECT */
-      _rl_insert_char (count, invoking_key);
+      rl_insert (count, invoking_key);
 #endif /* !HAVE_SELECT */
     }
   return 0;

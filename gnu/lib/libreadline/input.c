@@ -63,7 +63,6 @@ extern int errno;
 
 /* System-specific feature definitions and include files. */
 #include "rldefs.h"
-#include "rlmbutil.h"
 
 /* Some standard library routines. */
 #include "readline.h"
@@ -79,15 +78,9 @@ extern int errno;
 
 /* Non-null means it is a pointer to a function to run while waiting for
    character input. */
-rl_hook_func_t *rl_event_hook = (rl_hook_func_t *)NULL;
+Function *rl_event_hook = (Function *)NULL;
 
-rl_getc_func_t *rl_getc_function = rl_getc;
-
-static int _keyboard_input_timeout = 100000;		/* 0.1 seconds; it's in usec */
-
-static int ibuffer_space PARAMS((void));
-static int rl_get_char PARAMS((int *));
-static int rl_gather_tyi PARAMS((void));
+Function *rl_getc_function = rl_getc;
 
 /* **************************************************************** */
 /*								    */
@@ -139,8 +132,8 @@ rl_get_char (key)
 /* Stuff KEY into the *front* of the input buffer.
    Returns non-zero if successful, zero if there is
    no space left in the buffer. */
-int
-_rl_unget_char (key)
+static int
+rl_unget_char (key)
      int key;
 {
   if (ibuffer_space ())
@@ -154,10 +147,9 @@ _rl_unget_char (key)
   return (0);
 }
 
-/* If a character is available to be read, then read it and stuff it into
-   IBUFFER.  Otherwise, just return.  Returns number of characters read
-   (0 if none available) and -1 on error (EIO). */
-static int
+/* If a character is available to be read, then read it
+   and stuff it into IBUFFER.  Otherwise, just return. */
+static void
 rl_gather_tyi ()
 {
   int tty;
@@ -177,18 +169,14 @@ rl_gather_tyi ()
   FD_SET (tty, &readfds);
   FD_SET (tty, &exceptfds);
   timeout.tv_sec = 0;
-  timeout.tv_usec = _keyboard_input_timeout;
-  result = select (tty + 1, &readfds, (fd_set *)NULL, &exceptfds, &timeout);
-  if (result <= 0)
-    return 0;	/* Nothing to read. */
+  timeout.tv_usec = 100000;	/* 0.1 seconds */
+  if (select (tty + 1, &readfds, (fd_set *)NULL, &exceptfds, &timeout) <= 0)
+    return;	/* Nothing to read. */
 #endif
 
   result = -1;
 #if defined (FIONREAD)
-  errno = 0;
   result = ioctl (tty, FIONREAD, &chars_avail);
-  if (result == -1 && errno == EIO)
-    return -1;
 #endif
 
 #if defined (O_NDELAY)
@@ -201,14 +189,14 @@ rl_gather_tyi ()
 
       fcntl (tty, F_SETFL, tem);
       if (chars_avail == -1 && errno == EAGAIN)
-	return 0;
+	return;
     }
 #endif /* O_NDELAY */
 
   /* If there's nothing available, don't waste time trying to read
      something. */
   if (chars_avail <= 0)
-    return 0;
+    return;
 
   tem = ibuffer_space ();
 
@@ -232,28 +220,10 @@ rl_gather_tyi ()
       if (chars_avail)
 	rl_stuff_char (input);
     }
-
-  return 1;
-}
-
-int
-rl_set_keyboard_input_timeout (u)
-     int u;
-{
-  int o;
-
-  o = _keyboard_input_timeout;
-  if (u > 0)
-    _keyboard_input_timeout = u;
-  return (o);
 }
 
 /* Is there input available to be read on the readline input file
-   descriptor?  Only works if the system has select(2) or FIONREAD.
-   Uses the value of _keyboard_input_timeout as the timeout; if another
-   readline function wants to specify a timeout and not leave it up to
-   the user, it should use _rl_input_queued(timeout_value_in_microseconds)
-   instead. */
+   descriptor?  Only works if the system has select(2) or FIONREAD. */
 int
 _rl_input_available ()
 {
@@ -261,7 +231,7 @@ _rl_input_available ()
   fd_set readfds, exceptfds;
   struct timeval timeout;
 #endif
-#if !defined (HAVE_SELECT) && defined(FIONREAD)
+#if defined(FIONREAD)
   int chars_avail;
 #endif
   int tty;
@@ -274,30 +244,16 @@ _rl_input_available ()
   FD_SET (tty, &readfds);
   FD_SET (tty, &exceptfds);
   timeout.tv_sec = 0;
-  timeout.tv_usec = _keyboard_input_timeout;
+  timeout.tv_usec = 100000;	/* 0.1 seconds */
   return (select (tty + 1, &readfds, (fd_set *)NULL, &exceptfds, &timeout) > 0);
-#else
+#endif
 
 #if defined (FIONREAD)
   if (ioctl (tty, FIONREAD, &chars_avail) == 0)
     return (chars_avail);
 #endif
 
-#endif
-
   return 0;
-}
-
-int
-_rl_input_queued (t)
-     int t;
-{
-  int old_timeout, r;
-
-  old_timeout = rl_set_keyboard_input_timeout (t);
-  r = _rl_input_available ();
-  rl_set_keyboard_input_timeout (old_timeout);
-  return r;
 }
 
 void
@@ -308,7 +264,7 @@ _rl_insert_typein (c)
   char *string;
 
   i = key = 0;
-  string = (char *)xmalloc (ibuffer_len + 1);
+  string = xmalloc (ibuffer_len + 1);
   string[i++] = (char) c;
 
   while ((t = rl_get_char (&key)) &&
@@ -317,7 +273,7 @@ _rl_insert_typein (c)
     string[i++] = key;
 
   if (t)
-    _rl_unget_char (key);
+    rl_unget_char (key);
 
   string[i] = '\0';
   rl_insert_text (string);
@@ -337,7 +293,6 @@ rl_stuff_char (key)
     {
       key = NEWLINE;
       rl_pending_input = EOF;
-      RL_SETSTATE (RL_STATE_INPUTPENDING);
     }
   ibuffer[push_index++] = key;
   if (push_index >= ibuffer_len)
@@ -352,16 +307,6 @@ rl_execute_next (c)
      int c;
 {
   rl_pending_input = c;
-  RL_SETSTATE (RL_STATE_INPUTPENDING);
-  return 0;
-}
-
-/* Clear any pending input pushed with rl_execute_next() */
-int
-rl_clear_pending_input ()
-{
-  rl_pending_input = 0;
-  RL_UNSETSTATE (RL_STATE_INPUTPENDING);
   return 0;
 }
 
@@ -382,7 +327,7 @@ rl_read_key ()
   if (rl_pending_input)
     {
       c = rl_pending_input;
-      rl_clear_pending_input ();
+      rl_pending_input = 0;
     }
   else
     {
@@ -396,13 +341,7 @@ rl_read_key ()
 	  while (rl_event_hook && rl_get_char (&c) == 0)
 	    {
 	      (*rl_event_hook) ();
-	      if (rl_done)		/* XXX - experimental */
-		return ('\n');
-	      if (rl_gather_tyi () < 0)	/* XXX - EIO */
-		{
-		  rl_done = 1;
-		  return ('\n');
-		}
+	      rl_gather_tyi ();
 	    }
 	}
       else
@@ -453,7 +392,7 @@ rl_getc (stream)
 
       if (errno == X_EWOULDBLOCK || errno == X_EAGAIN)
 	{
-	  if (sh_unset_nodelay_mode (fileno (stream)) < 0)
+	  if (unset_nodelay_mode (fileno (stream)) < 0)
 	    return (EOF);
 	  continue;
 	}
@@ -468,73 +407,3 @@ rl_getc (stream)
 	return (EOF);
     }
 }
-
-#if defined (HANDLE_MULTIBYTE)
-/* read multibyte char */
-int
-_rl_read_mbchar (mbchar, size)
-     char *mbchar;
-     int size;
-{
-  int mb_len = 0;
-  size_t mbchar_bytes_length;
-  wchar_t wc;
-  mbstate_t ps, ps_back;
-
-  memset(&ps, 0, sizeof (mbstate_t));
-  memset(&ps_back, 0, sizeof (mbstate_t));
-  
-  while (mb_len < size)
-    {
-      RL_SETSTATE(RL_STATE_MOREINPUT);
-      mbchar[mb_len++] = rl_read_key ();
-      RL_UNSETSTATE(RL_STATE_MOREINPUT);
-
-      mbchar_bytes_length = mbrtowc (&wc, mbchar, mb_len, &ps);
-      if (mbchar_bytes_length == (size_t)(-1))
-	break;		/* invalid byte sequence for the current locale */
-      else if (mbchar_bytes_length == (size_t)(-2))
-	{
-	  /* shorted bytes */
-	  ps = ps_back;
-	  continue;
-	} 
-      else if (mbchar_bytes_length > (size_t)(0))
-	break;
-    }
-
-  return mb_len;
-}
-
-/* Read a multibyte-character string whose first character is FIRST into
-   the buffer MB of length MBLEN.  Returns the last character read, which
-   may be FIRST.  Used by the search functions, among others.  Very similar
-   to _rl_read_mbchar. */
-int
-_rl_read_mbstring (first, mb, mblen)
-     int first;
-     char *mb;
-     int mblen;
-{
-  int i, c;
-  mbstate_t ps;
-
-  c = first;
-  memset (mb, 0, mblen);
-  for (i = 0; i < mblen; i++)
-    {
-      mb[i] = (char)c;
-      memset (&ps, 0, sizeof (mbstate_t));
-      if (_rl_get_char_len (mb, &ps) == -2)
-	{
-	  /* Read more for multibyte character */
-	  RL_SETSTATE (RL_STATE_MOREINPUT);
-	  c = rl_read_key ();
-	  RL_UNSETSTATE (RL_STATE_MOREINPUT);
-	}
-      else
-	break;
-    }
-  return c;
-}
-#endif /* HANDLE_MULTIBYTE */

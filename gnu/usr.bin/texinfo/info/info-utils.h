@@ -1,7 +1,9 @@
-/* info-utils.h -- Exported functions and variables from info-utils.c.
-   $Id: info-utils.h,v 1.3 2000/02/09 02:18:39 espie Exp $   
+/* info-utils.h -- Exported functions and variables from info-util.c. */
 
-   Copyright (C) 1993, 96, 98 Free Software Foundation, Inc.
+/* This file is part of GNU Info, a program for reading online documentation
+   stored in Info format.
+
+   Copyright (C) 1993 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,8 +21,20 @@
 
    Written by Brian Fox (bfox@ai.mit.edu). */
 
-#ifndef INFO_UTILS_H
-#define INFO_UTILS_H
+#if !defined (_INFO_UTILS_H_)
+#define _INFO_UTILS_H_
+
+#if !defined (HAVE_STRCHR)
+#  undef strchr
+#  undef strrchr
+#  define strchr index
+#  define strrchr rindex
+#endif /* !HAVE_STRCHR */
+
+#if !defined (HAVE_MEMCPY)
+#  undef memcpy
+#  define memcpy(dest, source, count) bcopy(source, dest, count)
+#endif /* !HAVE_MEMCPY */
 
 #include "nodes.h"
 #include "window.h"
@@ -30,10 +44,10 @@
    cross reference.  Arrays of such references can be built by calling
    info_menus_of_node () or info_xrefs_of_node (). */
 typedef struct {
-  char *label;          /* User Label. */
-  char *filename;       /* File where this node can be found. */
-  char *nodename;       /* Name of the node. */
-  int start, end;       /* Offsets within the containing node of LABEL. */
+  char *label;		/* User Label. */
+  char *filename;	/* File where this node can be found. */
+  char *nodename;	/* Name of the node. */
+  int start, end;	/* Offsets within the containing node of LABEL. */
 } REFERENCE;
 
 /* When non-zero, various display and input functions handle ISO Latin
@@ -108,14 +122,14 @@ extern void name_internal_node ();
    Info window. */
 extern WINDOW *get_internal_info_window ();
 
-/* Return a window displaying the node NODE. */
-extern WINDOW *get_window_of_node ();
-
 /* Return the node addressed by LABEL in NODE (usually one of "Prev:",
    "Next:", "Up:", "File:", or "Node:".  After a call to this function,
-   the globals `info_parsed_nodename' and `info_parsed_filename' contain
+   the global INFO_PARSED_NODENAME and INFO_PARSED_FILENAME contain
    the information. */
 extern void info_parse_label (/* label, node */);
+
+#define info_label_was_found \
+   (info_parsed_nodename != NULL || info_parsed_filename != NULL)
 
 #define info_file_label_of_node(n) info_parse_label (INFO_FILE_LABEL, n)
 #define info_next_label_of_node(n) info_parse_label (INFO_NEXT_LABEL, n)
@@ -123,8 +137,8 @@ extern void info_parse_label (/* label, node */);
 #define info_prev_label_of_node(n) \
   do { \
     info_parse_label (INFO_PREV_LABEL, n); \
-    if (!info_parsed_nodename && !info_parsed_filename) \
+    if (!info_label_was_found) \
       info_parse_label (INFO_ALTPREV_LABEL, n); \
   } while (0)
 
-#endif /* not INFO_UTILS_H */
+#endif /* !_INFO_UTILS_H_ */

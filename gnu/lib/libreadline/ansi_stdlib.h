@@ -25,24 +25,11 @@
 
 /* String conversion functions. */
 extern int atoi ();
-
-extern double atof ();
-extern double strtod ();
+extern long int atol ();
 
 /* Memory allocation functions. */
-/* Generic pointer type. */
-#ifndef PTR_T
-
-#if defined (__STDC__)
-#  define PTR_T	void *
-#else
-#  define PTR_T char *
-#endif
-
-#endif /* PTR_T */
-
-extern PTR_T malloc ();
-extern PTR_T realloc ();
+extern char *malloc ();
+extern char *realloc ();
 extern void free ();
 
 /* Other miscellaneous functions. */

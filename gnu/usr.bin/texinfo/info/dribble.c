@@ -1,6 +1,9 @@
-/* dribble.c -- dribble files for Info.
+/* dribble.c -- Dribble files for Info. */
 
-   Copyright (C) 1993, 98 Free Software Foundation, Inc.
+/* This file is part of GNU Info, a program for reading online documentation
+   stored in Info format.
+
+   Copyright (C) 1993 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,7 +21,7 @@
 
    Written by Brian Fox (bfox@ai.mit.edu). */
 
-#include "info.h"
+#include <stdio.h>
 #include "dribble.h"
 
 /* When non-zero, it is a stream to write all input characters to for the
@@ -34,8 +37,7 @@ open_dribble_file (name)
   /* Perhaps close existing dribble file. */
   close_dribble_file ();
 
-  /* Keystrokes can be non-printable characters, so we need binary I/O.  */
-  info_dribble_file = fopen (name, FOPEN_WBIN);
+  info_dribble_file = fopen (name, "w");
 
 #if defined (HAVE_SETVBUF)
   if (info_dribble_file)

@@ -1,7 +1,9 @@
-/* window.c -- windows in Info.
-   $Id: window.c,v 1.4 2002/06/10 13:51:03 espie Exp $
+/* window.c -- Windows in Info. */
 
-   Copyright (C) 1993, 97, 98, 2001, 02 Free Software Foundation, Inc.
+/* This file is part of GNU Info, a program for reading online documentation
+   stored in Info format.
+
+   Copyright (C) 1993 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,7 +21,10 @@
 
    Written by Brian Fox (bfox@ai.mit.edu). */
 
-#include "info.h"
+#include <stdio.h>
+#include <ctype.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include "nodes.h"
 #include "window.h"
 #include "display.h"
@@ -27,16 +32,16 @@
 #include "infomap.h"
 
 /* The window which describes the screen. */
-WINDOW *the_screen = NULL;
+WINDOW *the_screen = (WINDOW *)NULL;
 
 /* The window which describes the echo area. */
-WINDOW *the_echo_area = NULL;
+WINDOW *the_echo_area = (WINDOW *)NULL;
 
 /* The list of windows in Info. */
-WINDOW *windows = NULL;
+WINDOW *windows = (WINDOW *)NULL;
 
 /* Pointer to the active window in WINDOW_LIST. */
-WINDOW *active_window = NULL;
+WINDOW *active_window = (WINDOW *)NULL;
 
 /* The size of the echo area in Info.  It never changes, irregardless of the
    size of the screen. */
@@ -53,9 +58,9 @@ void
 window_initialize_windows (width, height)
      int width, height;
 {
-  the_screen = xmalloc (sizeof (WINDOW));
-  the_echo_area = xmalloc (sizeof (WINDOW));
-  windows = xmalloc (sizeof (WINDOW));
+  the_screen = (WINDOW *)xmalloc (sizeof (WINDOW));
+  the_echo_area = (WINDOW *)xmalloc (sizeof (WINDOW));
+  windows = (WINDOW *)xmalloc (sizeof (WINDOW));
   active_window = windows;
 
   zero_mem (the_screen, sizeof (WINDOW));
@@ -82,7 +87,7 @@ window_initialize_windows (width, height)
      area. */
   the_echo_area->height = ECHO_AREA_HEIGHT;
   active_window->height = the_screen->height - 1 - the_echo_area->height;
-  window_new_screen_size (width, height, NULL);
+  window_new_screen_size (width, height, (VFunction *)NULL);
 
   /* The echo area uses a different keymap than normal info windows. */
   the_echo_area->keymap = echo_area_keymap;
@@ -99,7 +104,7 @@ window_initialize_windows (width, height)
 
 /* If non-null, a function to call with WINDOW as argument when the function
    window_new_screen_size () has deleted WINDOW. */
-VFunction *window_deletion_notifier = NULL;
+VFunction *window_deletion_notifier = (VFunction *)NULL;
 
 void
 window_new_screen_size (width, height)
@@ -131,36 +136,36 @@ window_new_screen_size (width, height)
   while ((height - echo_area_required) / numwins <= WINDOW_MIN_SIZE)
     {
       /* If only one window, make the size of it be zero, and return
-         immediately. */
+	 immediately. */
       if (!windows->next)
-        {
-          windows->height = 0;
-          maybe_free (windows->line_starts);
-          windows->line_starts = NULL;
-          windows->line_count = 0;
-          break;
-        }
+	{
+	  windows->height = 0;
+	  maybe_free (windows->line_starts);
+	  windows->line_starts = (char **)NULL;
+	  windows->line_count = 0;
+	  break;
+	}
 
       /* If we have some temporary windows, delete one of them. */
       for (win = windows; win; win = win->next)
-        if (win->flags & W_TempWindow)
-          break;
+	if (win->flags & W_TempWindow)
+	  break;
 
       /* Otherwise, delete the first window, and try again. */
       if (!win)
-        win = windows;
+	win = windows;
 
       if (window_deletion_notifier)
-        (*window_deletion_notifier) (win);
+	(*window_deletion_notifier) (win);
 
       window_delete_window (win);
       numwins--;
     }
 
   /* The screen has changed height and width. */
-  delta_height = height - the_screen->height;   /* This is how much. */
-  the_screen->height = height;                  /* This is the new height. */
-  the_screen->width = width;                    /* This is the new width. */
+  delta_height = height - the_screen->height;	/* This is how much. */
+  the_screen->height = height;			/* This is the new height. */
+  the_screen->width = width;			/* This is the new width. */
 
   /* Set the start of the echo area. */
   the_echo_area->first_row = height - the_echo_area->height;
@@ -181,34 +186,34 @@ window_new_screen_size (width, height)
   for (win = windows; win; win = win->next)
     {
       if ((win->width != width) && ((win->flags & W_InhibitMode) == 0))
-        {
-          win->width = width;
-          maybe_free (win->modeline);
-          win->modeline = xmalloc (1 + width);
-        }
+	{
+	  win->width = width;
+	  maybe_free (win->modeline);
+	  win->modeline = (char *)xmalloc (1 + width);
+	}
 
       win->height += delta_each;
 
       /* If the previous height of this window was zero, it was the only
-         window, and it was not visible.  Thus we need to compensate for
-         the echo_area. */
+	 window, and it was not visible.  Thus we need to compensate for
+	 the echo_area. */
       if (win->height == delta_each)
-        win->height -= (1 + the_echo_area->height);
+	win->height -= (1 + the_echo_area->height);
 
       /* If this is not the first window in the chain, then change the
-         first row of it.  We cannot just add delta_each to the first row,
-         since this window's first row is the sum of the collective increases
-         that have gone before it.  So we just add one to the location of the
-         previous window's modeline. */
+	 first row of it.  We cannot just add delta_each to the first row,
+	 since this window's first row is the sum of the collective increases
+	 that have gone before it.  So we just add one to the location of the
+	 previous window's modeline. */
       if (win->prev)
-        win->first_row = (win->prev->first_row + win->prev->height) + 1;
+	win->first_row = (win->prev->first_row + win->prev->height) + 1;
 
       /* The last window in the chain gets the extra space (or shrinkage). */
       if (!win->next)
-        win->height += delta_leftover;
+	win->height += delta_leftover;
 
       if (win->node)
-        recalculate_line_starts (win);
+	recalculate_line_starts (win);
 
       win->flags |= W_UpdateWindow;
     }
@@ -227,32 +232,32 @@ window_new_screen_size (width, height)
       win = windows;
 
       while (win)
-        {
-          if ((win->height < WINDOW_MIN_HEIGHT) ||
-              (win->height > avail))
-            {
-              WINDOW *lastwin;
+	{
+	  if ((win->height < WINDOW_MIN_HEIGHT) ||
+	      (win->height > avail))
+	    {
+	      WINDOW *lastwin;
 
-              /* Split the space among the available windows. */
-              delta_each = avail / numwins;
-              delta_leftover = avail - (delta_each * numwins);
+	      /* Split the space among the available windows. */
+	      delta_each = avail / numwins;
+	      delta_leftover = avail - (delta_each * numwins);
 
-              for (win = windows; win; win = win->next)
-                {
-                  lastwin = win;
-                  if (win->prev)
-                    win->first_row =
-                      (win->prev->first_row + win->prev->height) + 1;
-                  win->height = delta_each;
-                }
+	      for (win = windows; win; win = win->next)
+		{
+		  lastwin = win;
+		  if (win->prev)
+		    win->first_row =
+		      (win->prev->first_row + win->prev->height) + 1;
+		  win->height = delta_each;
+		}
 
-              /* Give the leftover space (if any) to the last window. */
-              lastwin->height += delta_leftover;
-              break;
-            }
-          else
-            win= win->next;
-        }
+	      /* Give the leftover space (if any) to the last window. */
+	      lastwin->height += delta_leftover;
+	      break;
+	    }
+	  else
+	    win= win->next;
+	}
     }
 }
 
@@ -271,14 +276,14 @@ window_make_window (node)
 
   /* If there isn't enough room to make another window, return now. */
   if ((active_window->height / 2) < WINDOW_MIN_SIZE)
-    return (NULL);
+    return ((WINDOW *)NULL);
 
   /* Make and initialize the new window.
      The fudging about with -1 and +1 is because the following window in the
      chain cannot start at window->height, since that is where the modeline
      for the previous window is displayed.  The inverse adjustment is made
      in window_delete_window (). */
-  window = xmalloc (sizeof (WINDOW));
+  window = (WINDOW *)xmalloc (sizeof (WINDOW));
   window->width = the_screen->width;
   window->height = (active_window->height / 2) - 1;
 #if defined (SPLIT_BEFORE_ACTIVE)
@@ -289,8 +294,8 @@ window_make_window (node)
 #endif
   window->keymap = info_keymap;
   window->goal_column = -1;
-  window->modeline = xmalloc (1 + window->width);
-  window->line_starts = NULL;
+  window->modeline = (char *)xmalloc (1 + window->width);
+  window->line_starts = (char **)NULL;
   window->flags = W_UpdateWindow | W_WindowVisible;
   window_set_node_of_window (window, node);
 
@@ -407,25 +412,25 @@ window_change_window_height (window, amount)
   /* WINDOW decreasing in size? */
   if (amount < 0)
     {
-      int abs_amount = -amount; /* It is easier to deal with this way. */
+      int abs_amount = -amount;	/* It is easier to deal with this way. */
 
       /* If the resultant window would be too small, stop here. */
       if ((window->height - abs_amount) < WINDOW_MIN_HEIGHT)
-        return;
+	return;
 
       /* If we have two neighboring windows, choose the smaller one to get
-         larger. */
+	 larger. */
       if (next && prev)
-        {
-          if (prev->height < next->height)
-            shrink_me_growing_prev (window, prev, abs_amount);
-          else
-            shrink_me_growing_next (window, next, abs_amount);
-        }
+	{
+	  if (prev->height < next->height)
+	    shrink_me_growing_prev (window, prev, abs_amount);
+	  else
+	    shrink_me_growing_next (window, next, abs_amount);
+	}
       else if (next)
-        shrink_me_growing_next (window, next, abs_amount);
+	shrink_me_growing_next (window, next, abs_amount);
       else
-        shrink_me_growing_prev (window, prev, abs_amount);
+	shrink_me_growing_prev (window, prev, abs_amount);
     }
 
   /* WINDOW increasing in size? */
@@ -434,65 +439,65 @@ window_change_window_height (window, amount)
       int total_avail, next_avail = 0, prev_avail = 0;
 
       if (next)
-        next_avail = next->height - WINDOW_MIN_SIZE;
+	next_avail = next->height - WINDOW_MIN_SIZE;
 
       if (prev)
-        prev_avail = prev->height - WINDOW_MIN_SIZE;
+	prev_avail = prev->height - WINDOW_MIN_SIZE;
 
       total_avail = next_avail + prev_avail;
 
       /* If there isn't enough space available to grow this window, give up. */
       if (amount > total_avail)
-        return;
+	return;
 
       /* If there aren't two neighboring windows, or if one of the neighbors
-         is larger than the other one by at least AMOUNT, grow that one. */
+	 is larger than the other one by at least AMOUNT, grow that one. */
       if ((next && !prev) || ((next_avail - amount) >= prev_avail))
-        grow_me_shrinking_next (window, next, amount);
+	grow_me_shrinking_next (window, next, amount);
       else if ((prev && !next) || ((prev_avail - amount) >= next_avail))
-        grow_me_shrinking_prev (window, prev, amount);
+	grow_me_shrinking_prev (window, prev, amount);
       else
-        {
-          int change;
+	{
+	  int change;
 
-          /* This window has two neighbors.  They both must be shrunk in to
-             make enough space for WINDOW to grow.  Make them both the same
-             size. */
-          if (prev_avail > next_avail)
-            {
-              change = prev_avail - next_avail;
-              grow_me_shrinking_prev (window, prev, change);
-              amount -= change;
-            }
-          else
-            {
-              change = next_avail - prev_avail;
-              grow_me_shrinking_next (window, next, change);
-              amount -= change;
-            }
+	  /* This window has two neighbors.  They both must be shrunk in to
+	     make enough space for WINDOW to grow.  Make them both the same
+	     size. */
+	  if (prev_avail > next_avail)
+	    {
+	      change = prev_avail - next_avail;
+	      grow_me_shrinking_prev (window, prev, change);
+	      amount -= change;
+	    }
+	  else
+	    {
+	      change = next_avail - prev_avail;
+	      grow_me_shrinking_next (window, next, change);
+	      amount -= change;
+	    }
 
-          /* Both neighbors are the same size.  Split the difference in
-             AMOUNT between them. */
-          while (amount)
-            {
-              window->height++;
-              amount--;
+	  /* Both neighbors are the same size.  Split the difference in
+	     AMOUNT between them. */
+	  while (amount)
+	    {
+	      window->height++;
+	      amount--;
 
-              /* Odd numbers grow next, even grow prev. */
-              if (amount & 1)
-                {
-                  prev->height--;
-                  window->first_row--;
-                }
-              else
-                {
-                  next->height--;
-                  next->first_row++;
-                }
-            }
-          window_adjust_pagetop (prev);
-          window_adjust_pagetop (next);
-        }
+	      /* Odd numbers grow next, even grow prev. */
+	      if (amount & 1)
+		{
+		  prev->height--;
+		  window->first_row--;
+		}
+	      else
+		{
+		  next->height--;
+		  next->first_row++;
+		}
+	    }
+	  window_adjust_pagetop (prev);
+	  window_adjust_pagetop (next);
+	}
     }
   if (prev)
     prev->flags |= W_UpdateWindow;
@@ -521,10 +526,10 @@ window_tile_windows (style)
 
   for (win = windows; win; win = win->next)
     if (do_internals || !win->node ||
-        (win->node->flags & N_IsInternal) == 0)
+	(win->node->flags & N_IsInternal) == 0)
       {
-        avail += win->height;
-        numwins++;
+	avail += win->height;
+	numwins++;
       }
 
   if (numwins <= 1 || !the_screen->height)
@@ -535,15 +540,15 @@ window_tile_windows (style)
   per_win_height = avail / numwins;
   leftover = avail - (per_win_height * numwins);
 
-  last_adjusted = NULL;
+  last_adjusted = (WINDOW *)NULL;
   for (win = windows; win; win = win->next)
     {
       if (do_internals || !win->node ||
-          (win->node->flags & N_IsInternal) == 0)
-        {
-          last_adjusted = win;
-          win->height = per_win_height;
-        }
+	  (win->node->flags & N_IsInternal) == 0)
+	{
+	  last_adjusted = win;
+	  win->height = per_win_height;
+	}
     }
 
   if (last_adjusted)
@@ -553,7 +558,7 @@ window_tile_windows (style)
   for (win = windows; win; win = win->next)
     {
       if (win->prev)
-        win->first_row = win->prev->first_row + win->prev->height + 1;
+	win->first_row = win->prev->first_row + win->prev->height + 1;
 
       window_adjust_pagetop (win);
       win->flags |= W_UpdateWindow;
@@ -586,11 +591,11 @@ window_toggle_wrap (window)
       window_adjust_pagetop (window);
 
       /* If the pagetop hasn't changed maybe we can do some scrolling now
-         to speed up the display.  Many of the line starts will be the same,
-         so scrolling here is a very good optimization.*/
+	 to speed up the display.  Many of the line starts will be the same,
+	 so scrolling here is a very good optimization.*/
       if (old_pagetop == window->pagetop)
-        display_scroll_line_starts
-          (window, old_pagetop, old_starts, old_lines);
+	display_scroll_line_starts
+	  (window, old_pagetop, old_starts, old_lines);
       maybe_free (old_starts);
     }
   window->flags |= W_UpdateWindow;
@@ -607,12 +612,10 @@ window_set_node_of_window (window, node)
   window->point = 0;
   recalculate_line_starts (window);
   window->flags |= W_UpdateWindow;
-  /* The display_pos member is nonzero if we're displaying an anchor.  */
-  window->point = node ? node->display_pos : 0;
   window_adjust_pagetop (window);
   window_make_modeline (window);
 }
-
+
 /* Delete WINDOW from the list of known windows.  If this window was the
    active window, make the next window in the chain be the active window.
    If the active window is the next or previous window, choose that window
@@ -647,12 +650,12 @@ window_delete_window (window)
   if (window == active_window)
     {
       /* If there isn't a next window, then there must be a previous one,
-         since we cannot delete the last window.  If there is a next window,
-         prefer to use that as the active window. */
+	 since we cannot delete the last window.  If there is a next window,
+	 prefer to use that as the active window. */
       if (next)
-        active_window = next;
+	active_window = next;
       else
-        active_window = prev;
+	active_window = prev;
     }
 
   if (next && active_window == next)
@@ -671,13 +674,13 @@ window_delete_window (window)
       int diff;
 
       /* Try to adjust the visible part of the node so that as little
-         text as possible has to move. */
+	 text as possible has to move. */
       diff = window_to_fix->first_row - window->first_row;
       window_to_fix->first_row = window->first_row;
 
       window_to_fix->pagetop -= diff;
       if (window_to_fix->pagetop < 0)
-        window_to_fix->pagetop = 0;
+	window_to_fix->pagetop = 0;
     }
 
   /* The `+ 1' is to offset the difference between the first_row locations.
@@ -722,24 +725,24 @@ character_width (character, hpos)
   int width = 1;
 
   if (ISO_Latin_p)
-    printable_limit = 255;
+    printable_limit = 160;
 
   if (character > printable_limit)
     width = 3;
   else if (iscntrl (character))
     {
       switch (character)
-        {
-        case '\r':
-        case '\n':
-          width = the_screen->width - hpos;
-          break;
-        case '\t':
-          width = ((hpos + 8) & 0xf8) - hpos;
-          break;
-        default:
-          width = 2;
-        }
+	{
+	case '\r':
+	case '\n':
+	  width = the_screen->width - hpos;
+	  break;
+	case '\t':
+	  width = ((hpos + 8) & 0xf8) - hpos;
+	  break;
+	default:
+	  width = 2;
+	}
     }
   else if (character == DEL)
     width = 2;
@@ -758,27 +761,14 @@ string_width (string, hpos)
 
   for (width = 0, i = 0; string[i]; i++)
     {
-      /* Support ANSI escape sequences for -R.  */
-      if (raw_escapes_p
-	  && string[i] == '\033'
-	  && string[i+1] == '['
-	  && isdigit (string[i+2])
-	  && (string[i+3] == 'm'
-	      || (isdigit (string[i+3]) && string[i+4] == 'm')))
-	{
-	  while (string[i] != 'm')
-	    i++;
-	  this_char_width = 0;
-	}
-      else
-	this_char_width = character_width (string[i], hpos);
+      this_char_width = character_width (string[i], hpos);
       width += this_char_width;
       hpos += this_char_width;
     }
   return (width);
 }
 
-/* Quickly guess the approximate number of lines that NODE would
+/* Quickly guess the approximate number of lines to that NODE would
    take to display.  This really only counts carriage returns. */
 int
 window_physical_lines (node)
@@ -805,12 +795,12 @@ calculate_line_starts (window)
      WINDOW *window;
 {
   register int i, hpos;
-  char **line_starts = NULL;
+  char **line_starts = (char **)NULL;
   int line_starts_index = 0, line_starts_slots = 0;
   int bump_index;
   NODE *node;
 
-  window->line_starts = NULL;
+  window->line_starts = (char **)NULL;
   window->line_count = 0;
   node = window->node;
 
@@ -830,86 +820,61 @@ calculate_line_starts (window)
       unsigned int cwidth, c;
 
       add_pointer_to_array (line, line_starts_index, line_starts,
-                            line_starts_slots, 100, char *);
+			    line_starts_slots, 100, char *);
       if (bump_index)
-        {
-          i++;
-          bump_index = 0;
-        }
+	{
+	  i++;
+	  bump_index = 0;
+	}
 
       while (1)
-        {
-	  /* The cast to unsigned char is for 8-bit characters, which
-	     could be passed as negative integers to character_width
-	     and wreak havoc on some naive implementations of iscntrl.  */
-          c = (unsigned char) node->contents[i];
+	{
+	  c = node->contents[i];
+	  cwidth = character_width (c, hpos);
 
-	  /* Support ANSI escape sequences for -R.  */
-	  if (raw_escapes_p
-	      && c == '\033'
-	      && node->contents[i+1] == '['
-	      && isdigit (node->contents[i+2]))
+	  /* If this character fits within this line, just do the next one. */
+	  if ((hpos + cwidth) < window->width)
 	    {
-	      if (node->contents[i+3] == 'm')
-		{
-		  i += 3;
-		  cwidth = 0;
-		}
-	      else if (isdigit (node->contents[i+3])
-		       && node->contents[i+4] == 'm')
-		{
-		  i += 4;
-		  cwidth = 0;
-		}
-	      else
-		cwidth = character_width (c, hpos);
+	      i++;
+	      hpos += cwidth;
+	      continue;
 	    }
 	  else
-	    cwidth = character_width (c, hpos);
+	    {
+	      /* If this character would position the cursor at the start of
+		 the next printed screen line, then do the next line. */
+	      if (c == '\n' || c == '\r' || c == '\t')
+		{
+		  i++;
+		  hpos = 0;
+		  break;
+		}
+	      else
+		{
+		  /* This character passes the window width border.  Postion
+		     the cursor after the printed character, but remember this
+		     line start as where this character is.  A bit tricky. */
 
-          /* If this character fits within this line, just do the next one. */
-          if ((hpos + cwidth) < window->width)
-            {
-              i++;
-              hpos += cwidth;
-              continue;
-            }
-          else
-            {
-              /* If this character would position the cursor at the start of
-                 the next printed screen line, then do the next line. */
-              if (c == '\n' || c == '\r' || c == '\t')
-                {
-                  i++;
-                  hpos = 0;
-                  break;
-                }
-              else
-                {
-                  /* This character passes the window width border.  Postion
-                     the cursor after the printed character, but remember this
-                     line start as where this character is.  A bit tricky. */
+		  /* If this window doesn't wrap lines, proceed to the next
+		     physical line here. */
+		  if (window->flags & W_NoWrap)
+		    {
+		      hpos = 0;
+		      while (i < node->nodelen && node->contents[i] != '\n')
+			i++;
 
-                  /* If this window doesn't wrap lines, proceed to the next
-                     physical line here. */
-                  if (window->flags & W_NoWrap)
-                    {
-                      hpos = 0;
-                      while (i < node->nodelen && node->contents[i] != '\n')
-                        i++;
-
-                      if (node->contents[i] == '\n')
-                        i++;
-                    }
-                  else
-                    {
-                      hpos = the_screen->width - hpos;
-                      bump_index++;
-                    }
-                  break;
-                }
-            }
-        }
+		      if (node->contents[i] == '\n')
+			i++;
+		    }
+		  else
+		    {
+		      hpos = the_screen->width - hpos;
+		      bump_index++;
+		    }
+		  break;
+		}
+	    }
+	}
     }
   window->line_starts = line_starts;
   window->line_count = line_starts_index;
@@ -951,7 +916,7 @@ window_adjust_pagetop (window)
       line_start = window->line_starts[line];
 
       if ((line_start - contents) > window->point)
-        break;
+	break;
     }
 
   /* The line index preceding the line start which is past point is the
@@ -964,26 +929,26 @@ window_adjust_pagetop (window)
       (line - window->pagetop > (window->height - 1)))
     {
       /* The user-settable variable "scroll-step" is used to attempt
-         to make point visible, iff it is non-zero.  If that variable
-         is zero, then the line containing point is centered within
-         the window. */
+	 to make point visible, iff it is non-zero.  If that variable
+	 is zero, then the line containing point is centered within
+	 the window. */
       if (window_scroll_step < window->height)
-        {
-          if ((line < window->pagetop) &&
-              ((window->pagetop - window_scroll_step) <= line))
-            window->pagetop -= window_scroll_step;
-          else if ((line - window->pagetop > (window->height - 1)) &&
-                   ((line - (window->pagetop + window_scroll_step)
-                     < window->height)))
-            window->pagetop += window_scroll_step;
-          else
-            window->pagetop = line - ((window->height - 1) / 2);
-        }
+	{
+	  if ((line < window->pagetop) &&
+	      ((window->pagetop - window_scroll_step) <= line))
+	    window->pagetop -= window_scroll_step;
+	  else if ((line - window->pagetop > (window->height - 1)) &&
+		   ((line - (window->pagetop + window_scroll_step)
+		     < window->height)))
+	    window->pagetop += window_scroll_step;
+	  else
+	    window->pagetop = line - ((window->height - 1) / 2);
+	}
       else
-        window->pagetop = line - ((window->height - 1) / 2);
+	window->pagetop = line - ((window->height - 1) / 2);
 
       if (window->pagetop < 0)
-        window->pagetop = 0;
+	window->pagetop = 0;
       window->flags |= W_UpdateWindow;
     }
 }
@@ -1005,7 +970,7 @@ window_line_of_point (window)
   for (i = start; i < window->line_count; i++)
     {
       if ((window->line_starts[i] - window->node->contents) > window->point)
-        break;
+	break;
     }
 
   return (i - 1);
@@ -1044,23 +1009,7 @@ window_get_cursor_column (window)
   end = window->point - (line - window->node->contents);
 
   for (hpos = 0, i = 0; i < end; i++)
-    {
-      /* Support ANSI escape sequences for -R.  */
-      if (raw_escapes_p
-	  && line[i] == '\033'
-	  && line[i+1] == '['
-	  && isdigit (line[i+2]))
-	{
-	  if (line[i+3] == 'm')
-	    i += 3;
-	  else if (isdigit (line[i+3]) && line[i+4] == 'm')
-	    i += 4;
-	  else
-	    hpos += character_width (line[i], hpos);
-	}
-      else
-	hpos += character_width (line[i], hpos);
-    }
+    hpos += character_width (line[i], hpos);
 
   return (hpos);
 }
@@ -1076,20 +1025,11 @@ window_chars_to_goal (line, goal)
 
   for (hpos = 0, i = 0; line[i] != '\n'; i++)
     {
-      /* Support ANSI escape sequences for -R.  */
-      if (raw_escapes_p
-	  && line[i] == '\033'
-	  && line[i+1] == '['
-	  && isdigit (line[i+2])
-	  && (line[i+3] == 'm'
-	      || (isdigit (line[i+3]) && line[i+4] == 'm')))
-	while (line[i] != 'm')
-	  i++;
-      else
-	check = hpos + character_width (line[i], hpos);
+
+      check = hpos + character_width (line[i], hpos);
 
       if (check > goal)
-        break;
+	break;
 
       hpos = check;
     }
@@ -1116,81 +1056,81 @@ window_make_modeline (window)
   if (window->pagetop == 0)
     {
       if (lines_remaining <= window->height)
-        strcpy (location_indicator, "All");
+	strcpy (location_indicator, "All");
       else
-        strcpy (location_indicator, "Top");
+	strcpy (location_indicator, "Top");
     }
   else
     {
       if (lines_remaining <= window->height)
-        strcpy (location_indicator, "Bot");
+	strcpy (location_indicator, "Bot");
       else
-        {
-          float pt, lc;
-          int percentage;
+	{
+	  float pt, lc;
+	  int percentage;
 
-          pt = (float)window->pagetop;
-          lc = (float)window->line_count;
+	  pt = (float)window->pagetop;
+	  lc = (float)window->line_count;
 
-          percentage = 100 * (pt / lc);
+	  percentage = 100 * (pt / lc);
 
-          sprintf (location_indicator, "%2d%%", percentage);
-        }
+	  sprintf (location_indicator, "%2d%%", percentage);
+	}
     }
 
   /* Calculate the maximum size of the information to stick in MODELINE. */
   {
     int modeline_len = 0;
-    char *parent = NULL, *filename = "*no file*";
+    char *parent = (char *)NULL, *filename = "*no file*";
     char *nodename = "*no node*";
-    char *update_message = NULL;
+    char *update_message = (char *)NULL;
     NODE *node = window->node;
 
     if (node)
       {
-        if (node->nodename)
-          nodename = node->nodename;
+	if (node->nodename)
+	  nodename = node->nodename;
 
-        if (node->parent)
-          {
-            parent = filename_non_directory (node->parent);
-            modeline_len += strlen ("Subfile: ") + strlen (node->filename);
-          }
+	if (node->parent)
+	  {
+	    parent = filename_non_directory (node->parent);
+	    modeline_len += strlen ("Subfile: ") + strlen (node->filename);
+	  }
 
-        if (node->filename)
-          filename = filename_non_directory (node->filename);
+	if (node->filename)
+	  filename = filename_non_directory (node->filename);
 
-        if (node->flags & N_UpdateTags)
-          update_message = _("--*** Tags out of Date ***");
+	if (node->flags & N_UpdateTags)
+	  update_message = "--*** Tags out of Date ***";
       }
 
     if (update_message)
       modeline_len += strlen (update_message);
     modeline_len += strlen (filename);
     modeline_len += strlen (nodename);
-    modeline_len += 4;          /* strlen (location_indicator). */
+    modeline_len += 4;		/* strlen (location_indicator). */
 
     /* 10 for the decimal representation of the number of lines in this
        node, and the remainder of the text that can appear in the line. */
-    modeline_len += 10 + strlen (_("-----Info: (), lines ----, "));
+    modeline_len += 10 + strlen ("-----Info: (), lines ----, ");
     modeline_len += window->width;
 
-    modeline = xmalloc (1 + modeline_len);
+    modeline = (char *)xmalloc (1 + modeline_len);
 
     /* Special internal windows have no filename. */
     if (!parent && !*filename)
-      sprintf (modeline, _("-%s---Info: %s, %d lines --%s--"),
-               (window->flags & W_NoWrap) ? "$" : "-",
-               nodename, window->line_count, location_indicator);
+      sprintf (modeline, "-%s---Info: %s, %d lines --%s--",
+	       (window->flags & W_NoWrap) ? "$" : "-",
+	       nodename, window->line_count, location_indicator);
     else
-      sprintf (modeline, _("-%s%s-Info: (%s)%s, %d lines --%s--"),
-               (window->flags & W_NoWrap) ? "$" : "-",
-               (node && (node->flags & N_IsCompressed)) ? "zz" : "--",
-               parent ? parent : filename,
-               nodename, window->line_count, location_indicator);
+      sprintf (modeline, "-%s%s-Info: (%s)%s, %d lines --%s--",
+	       (window->flags & W_NoWrap) ? "$" : "-",
+	       (node && (node->flags & N_IsCompressed)) ? "zz" : "--",
+	       parent ? parent : filename,
+	       nodename, window->line_count, location_indicator);
 
     if (parent)
-      sprintf (modeline + strlen (modeline), _(" Subfile: %s"), filename);
+      sprintf (modeline + strlen (modeline), " Subfile: %s", filename);
 
     if (update_message)
       sprintf (modeline + strlen (modeline), "%s", update_message);
@@ -1201,9 +1141,9 @@ window_make_modeline (window)
       modeline[window->width] = '\0';
     else
       {
-        while (i < window->width)
-          modeline[i++] = '-';
-        modeline[i] = '\0';
+	while (i < window->width)
+	  modeline[i++] = '-';
+	modeline[i] = '\0';
       }
 
     strcpy (window->modeline, modeline);
@@ -1256,10 +1196,14 @@ window_set_state (window, state)
 }
 
 
-/* Manipulating home-made nodes.  */
+/* **************************************************************** */
+/*								    */
+/*		   Manipulating Home-Made Nodes			    */
+/*								    */
+/* **************************************************************** */
 
 /* A place to buffer echo area messages. */
-static NODE *echo_area_node = NULL;
+static NODE *echo_area_node = (NODE *)NULL;
 
 /* Make the node of the_echo_area be an empty one. */
 static void
@@ -1271,7 +1215,7 @@ free_echo_area ()
       free (echo_area_node);
     }
 
-  echo_area_node = NULL;
+  echo_area_node = (NODE *)NULL;
   window_set_node_of_window (the_echo_area, echo_area_node);
 }
   
@@ -1303,7 +1247,7 @@ window_message_in_echo_area (format, arg1, arg2)
    and ARG2.  The message appears immediately, but does not destroy
    any existing message.  A future call to unmessage_in_echo_area ()
    restores the old contents. */
-static NODE **old_echo_area_nodes = NULL;
+static NODE **old_echo_area_nodes = (NODE **)NULL;
 static int old_echo_area_nodes_index = 0;
 static int old_echo_area_nodes_slots = 0;
 
@@ -1315,10 +1259,10 @@ message_in_echo_area (format, arg1, arg2)
   if (echo_area_node)
     {
       add_pointer_to_array (echo_area_node, old_echo_area_nodes_index,
-                            old_echo_area_nodes, old_echo_area_nodes_slots,
-                            4, NODE *);
+			    old_echo_area_nodes, old_echo_area_nodes_slots,
+			    4, NODE *);
     }
-  echo_area_node = NULL;
+  echo_area_node = (NODE *)NULL;
   window_message_in_echo_area (format, arg1, arg2);
 }
 
@@ -1335,7 +1279,7 @@ unmessage_in_echo_area ()
 }
 
 /* A place to build a message. */
-static char *message_buffer = NULL;
+static char *message_buffer = (char *)NULL;
 static int message_buffer_index = 0;
 static int message_buffer_size = 0;
 
@@ -1348,30 +1292,29 @@ message_buffer_resize (length)
   if (!message_buffer)
     {
       message_buffer_size = length + 1;
-      message_buffer = xmalloc (message_buffer_size);
+      message_buffer = (char *)xmalloc (message_buffer_size);
       message_buffer_index = 0;
     }
 
   while (message_buffer_size <= message_buffer_index + length)
     message_buffer = (char *)
       xrealloc (message_buffer,
-                message_buffer_size += 100 + (2 * length));
+		message_buffer_size += 100 + (2 * length));
 }
 
 /* Format MESSAGE_BUFFER with the results of printing FORMAT with ARG1 and
    ARG2. */
 static void
-build_message_buffer (format, arg1, arg2, arg3)
+build_message_buffer (format, arg1, arg2)
      char *format;
-     void *arg1, *arg2, *arg3;
+     void *arg1, *arg2;
 {
   register int i, len;
-  void *args[3];
+  void *args[2];
   int arg_index = 0;
 
   args[0] = arg1;
   args[1] = arg2;
-  args[2] = arg3;
 
   len = strlen (format);
 
@@ -1380,129 +1323,70 @@ build_message_buffer (format, arg1, arg2, arg3)
   for (i = 0; format[i]; i++)
     {
       if (format[i] != '%')
-        {
-          message_buffer[message_buffer_index++] = format[i];
-          len--;
-        }
+	{
+	  message_buffer[message_buffer_index++] = format[i];
+	  len--;
+	}
       else
-        {
-          char c;
-          char *fmt_start = format + i;
-          char *fmt;
-          int fmt_len, formatted_len;
-	  int paramed = 0;
+	{
+	  char c;
 
-	format_again:
-          i++;
-          while (format[i] && strchr ("-. +0123456789", format[i]))
-            i++;
-          c = format[i];
+	  c = format[++i];
 
-          if (c == '\0')
-            abort ();
+	  switch (c)
+	    {
+	    case '%':		/* Insert a percent sign. */
+	      message_buffer_resize (len + 1);
+	      message_buffer[message_buffer_index++] = '%';
+	      break;
 
-	  if (c == '$') {
-	    /* position parameter parameter */
-	    /* better to use bprintf from bfox's metahtml? */
-	    arg_index = atoi(fmt_start + 1) - 1;
-	    if (arg_index < 0)
-	      arg_index = 0;
-	    if (arg_index >= 2)
-	      arg_index = 1;
-	    paramed = 1;
-	    goto format_again;
-	  }
+	    case 's':		/* Insert the current arg as a string. */
+	      {
+		char *string;
+		int string_len;
 
-          fmt_len = format + i - fmt_start + 1;
-          fmt = (char *) xmalloc (fmt_len + 1);
-          strncpy (fmt, fmt_start, fmt_len);
-          fmt[fmt_len] = '\0';
+		string = (char *)args[arg_index++];
+		string_len = strlen (string);
 
-	  if (paramed) {
-	    /* removed positioned parameter */
-	    char *p;
-	    for (p = fmt + 1; *p && *p != '$'; p++) {
-	      ;
+		message_buffer_resize (len + string_len);
+		sprintf
+		  (message_buffer + message_buffer_index, "%s", string);
+		message_buffer_index += string_len;
+	      }
+	      break;
+
+	    case 'd':		/* Insert the current arg as an integer. */
+	      {
+		long long_val;
+		int integer;
+
+		long_val = (long)args[arg_index++];
+		integer = (int)long_val;
+
+		message_buffer_resize (len + 32);
+		sprintf
+		  (message_buffer + message_buffer_index, "%d", integer);
+		message_buffer_index = strlen (message_buffer);
+	      }
+	      break;
+
+	    case 'c':		/* Insert the current arg as a character. */
+	      {
+		long long_val;
+		int character;
+
+		long_val = (long)args[arg_index++];
+		character = (int)long_val;
+
+		message_buffer_resize (len + 1);
+		message_buffer[message_buffer_index++] = character;
+	      }
+	      break;
+
+	    default:
+	      abort ();
 	    }
-	    strcpy(fmt + 1, p + 1);
-	  }
-
-          /* If we have "%-98s", maybe 98 calls for a longer string.  */
-          if (fmt_len > 2)
-            {
-              int j;
-
-              for (j = fmt_len - 2; j >= 0; j--)
-                if (isdigit (fmt[j]) || fmt[j] == '$')
-                  break;
-
-              formatted_len = atoi (fmt + j);
-            }
-          else
-            formatted_len = c == 's' ? 0 : 1; /* %s can produce empty string */
-
-          switch (c)
-            {
-            case '%':           /* Insert a percent sign. */
-              message_buffer_resize (len + formatted_len);
-              sprintf
-                (message_buffer + message_buffer_index, fmt, "%");
-              message_buffer_index += formatted_len;
-              break;
-
-            case 's':           /* Insert the current arg as a string. */
-              {
-                char *string;
-                int string_len;
-
-                string = (char *)args[arg_index++];
-                string_len = strlen (string);
-
-                if (formatted_len > string_len)
-                  string_len = formatted_len;
-                message_buffer_resize (len + string_len);
-                sprintf
-                  (message_buffer + message_buffer_index, fmt, string);
-                message_buffer_index += string_len;
-              }
-              break;
-
-            case 'd':           /* Insert the current arg as an integer. */
-              {
-                long long_val;
-                int integer;
-
-                long_val = (long)args[arg_index++];
-                integer = (int)long_val;
-
-                message_buffer_resize (len + formatted_len > 32
-                                       ? formatted_len : 32);
-                sprintf
-                  (message_buffer + message_buffer_index, fmt, integer);
-                message_buffer_index = strlen (message_buffer);
-              }
-              break;
-
-            case 'c':           /* Insert the current arg as a character. */
-              {
-                long long_val;
-                int character;
-
-                long_val = (long)args[arg_index++];
-                character = (int)long_val;
-
-                message_buffer_resize (len + formatted_len);
-                sprintf
-                  (message_buffer + message_buffer_index, fmt, character);
-                message_buffer_index += formatted_len;
-              }
-              break;
-
-            default:
-              abort ();
-            }
-          free (fmt);
-        }
+	}
     }
   message_buffer[message_buffer_index] = '\0';
 }
@@ -1517,7 +1401,7 @@ build_message_node (format, arg1, arg2)
   NODE *node;
 
   message_buffer_index = 0;
-  build_message_buffer (format, arg1, arg2, 0);
+  build_message_buffer (format, arg1, arg2);
 
   node = message_buffer_to_node ();
   return (node);
@@ -1529,16 +1413,15 @@ message_buffer_to_node ()
 {
   NODE *node;
 
-  node = xmalloc (sizeof (NODE));
-  node->filename = NULL;
-  node->parent = NULL;
-  node->nodename = NULL;
+  node = (NODE *)xmalloc (sizeof (NODE));
+  node->filename = (char *)NULL;
+  node->parent = (char *)NULL;
+  node->nodename = (char *)NULL;
   node->flags = 0;
-  node->display_pos =0;
 
   /* Make sure that this buffer ends with a newline. */
   node->nodelen = 1 + strlen (message_buffer);
-  node->contents = xmalloc (1 + node->nodelen);
+  node->contents = (char *)xmalloc (1 + node->nodelen);
   strcpy (node->contents, message_buffer);
   node->contents[node->nodelen - 1] = '\n';
   node->contents[node->nodelen] = '\0';
@@ -1554,11 +1437,11 @@ initialize_message_buffer ()
 
 /* Print FORMAT with ARG1,2 to the end of the current message buffer. */
 void
-printf_to_message_buffer (format, arg1, arg2, arg3)
+printf_to_message_buffer (format, arg1, arg2)
      char *format;
-     void *arg1, *arg2, *arg3;
+     void *arg1, *arg2;
 {
-  build_message_buffer (format, arg1, arg2, arg3);
+  build_message_buffer (format, arg1, arg2);
 }
 
 /* Return the current horizontal position of the "cursor" on the most
@@ -1591,7 +1474,7 @@ pad_to (count, string)
   else
     {
       while (i < count)
-        string[i++] = ' ';
+	string[i++] = ' ';
     }
   string[i] = '\0';
 

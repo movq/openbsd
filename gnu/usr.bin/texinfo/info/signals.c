@@ -1,7 +1,9 @@
-/* signals.c -- install and maintain Info signal handlers.
-   $Id: signals.c,v 1.1.1.3 2000/02/09 01:25:00 espie Exp $
+/* signals.c -- Install and maintain Info signal handlers. */
 
-   Copyright (C) 1993, 94, 95, 98 Free Software Foundation, Inc.
+/* This file is part of GNU Info, a program for reading online documentation
+   stored in Info format.
+
+   Copyright (C) 1993, 1994, 1995 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -23,13 +25,10 @@
 #include "signals.h"
 
 /* **************************************************************** */
-/*                                                                  */
-/*              Pretending That We Have POSIX Signals               */
-/*                                                                  */
+/*								    */
+/*		Pretending That We Have POSIX Signals		    */
+/*								    */
 /* **************************************************************** */
-
-/* Non-zero when our signal handler has been called to handle SIGWINCH. */
-static int in_sigwinch = 0;
 
 #if !defined (HAVE_SIGPROCMASK) && defined (HAVE_SIGSETMASK)
 /* Perform OPERATION on NEWSET, perhaps leaving information in OLDSET. */
@@ -58,37 +57,33 @@ sigprocmask (operation, newset, oldset)
 #endif /* !HAVE_SIGPROCMASK && HAVE_SIGSETMASK */
 
 /* **************************************************************** */
-/*                                                                  */
-/*                  Signal Handling for Info                        */
-/*                                                                  */
+/*								    */
+/*		    Signal Handling for Info			    */
+/*								    */
 /* **************************************************************** */
 
-typedef RETSIGTYPE signal_handler ();
+typedef void SigHandlerType;
+typedef SigHandlerType SigHandler ();
 
-static RETSIGTYPE info_signal_handler ();
-static signal_handler *old_TSTP, *old_TTOU, *old_TTIN;
-static signal_handler *old_WINCH, *old_INT, *old_USR1;
+static SigHandlerType info_signal_handler ();
+static SigHandler *old_TSTP, *old_TTOU, *old_TTIN;
+static SigHandler *old_WINCH, *old_INT;
 
 void
 initialize_info_signal_handler ()
 {
 #if defined (SIGTSTP)
-  old_TSTP = (signal_handler *) signal (SIGTSTP, info_signal_handler);
-  old_TTOU = (signal_handler *) signal (SIGTTOU, info_signal_handler);
-  old_TTIN = (signal_handler *) signal (SIGTTIN, info_signal_handler);
+  old_TSTP = (SigHandler *) signal (SIGTSTP, info_signal_handler);
+  old_TTOU = (SigHandler *) signal (SIGTTOU, info_signal_handler);
+  old_TTIN = (SigHandler *) signal (SIGTTIN, info_signal_handler);
 #endif /* SIGTSTP */
 
 #if defined (SIGWINCH)
-  old_WINCH = (signal_handler *) signal (SIGWINCH, info_signal_handler);
+  old_WINCH = (SigHandler *) signal (SIGWINCH, info_signal_handler);
 #endif
 
 #if defined (SIGINT)
-  old_INT = (signal_handler *) signal (SIGINT, info_signal_handler);
-#endif
-
-#if defined (SIGUSR1)
-  /* Used by DJGPP to simulate SIGTSTP on Ctrl-Z.  */
-  old_USR1 = (signal_handler *) signal (SIGUSR1, info_signal_handler);
+  old_INT = (SigHandler *) signal (SIGINT, info_signal_handler);
 #endif
 }
 
@@ -103,24 +98,11 @@ redisplay_after_signal ()
   fflush (stdout);
 }
 
-static void
-reset_info_window_sizes ()
-{
-  terminal_goto_xy (0, 0);
-  fflush (stdout);
-  terminal_unprep_terminal ();
-  terminal_get_screen_size ();
-  terminal_prep_terminal ();
-  display_initialize_display (screenwidth, screenheight);
-  window_new_screen_size (screenwidth, screenheight, NULL);
-  redisplay_after_signal ();
-}
-
-static RETSIGTYPE
+static SigHandlerType
 info_signal_handler (sig)
      int sig;
 {
-  signal_handler **old_signal_handler;
+  SigHandler **old_signal_handler;
 
   switch (sig)
     {
@@ -134,73 +116,58 @@ info_signal_handler (sig)
 #endif
       {
 #if defined (SIGTSTP)
-        if (sig == SIGTSTP)
-          old_signal_handler = &old_TSTP;
-        if (sig == SIGTTOU)
-          old_signal_handler = &old_TTOU;
-        if (sig == SIGTTIN)
-          old_signal_handler = &old_TTIN;
+	if (sig == SIGTSTP)
+	  old_signal_handler = &old_TSTP;
+	if (sig == SIGTTOU)
+	  old_signal_handler = &old_TTOU;
+	if (sig == SIGTTIN)
+	  old_signal_handler = &old_TTIN;
 #endif /* SIGTSTP */
-        if (sig == SIGINT)
-          old_signal_handler = &old_INT;
+	if (sig == SIGINT)
+	  old_signal_handler = &old_INT;
 
-        /* For stop signals, restore the terminal IO, leave the cursor
-           at the bottom of the window, and stop us. */
-        terminal_goto_xy (0, screenheight - 1);
-        terminal_clear_to_eol ();
-        fflush (stdout);
-        terminal_unprep_terminal ();
-        signal (sig, *old_signal_handler);
-        UNBLOCK_SIGNAL (sig);
-        kill (getpid (), sig);
+	/* For stop signals, restore the terminal IO, leave the cursor
+	   at the bottom of the window, and stop us. */
+	terminal_goto_xy (0, screenheight - 1);
+	terminal_clear_to_eol ();
+	fflush (stdout);
+	terminal_unprep_terminal ();
+	signal (sig, *old_signal_handler);
+ 	UNBLOCK_SIGNAL (sig);
+	kill (getpid (), sig);
 
-        /* The program is returning now.  Restore our signal handler,
-           turn on terminal handling, redraw the screen, and place the
-           cursor where it belongs. */
-        terminal_prep_terminal ();
-        *old_signal_handler = (signal_handler *) signal (sig, info_signal_handler);
-        redisplay_after_signal ();
-        fflush (stdout);
+	/* The program is returning now.  Restore our signal handler,
+	   turn on terminal handling, redraw the screen, and place the
+	   cursor where it belongs. */
+	terminal_prep_terminal ();
+	*old_signal_handler = (SigHandler *) signal (sig, info_signal_handler);
+	redisplay_after_signal ();
+	fflush (stdout);
       }
       break;
 
-#if defined (SIGWINCH) || defined (SIGUSR1)
-#ifdef SIGWINCH
+#if defined (SIGWINCH)
     case SIGWINCH:
-#endif
-#ifdef SIGUSR1
-    case SIGUSR1:
-#endif
       {
-        if (!in_sigwinch) {
-          in_sigwinch++;
-          
-          /* Turn off terminal IO, tell our parent that the window has changed,
-             then reinitialize the terminal and rebuild our windows. */
-#ifdef SIGWINCH
-          if (sig == SIGWINCH)
-            old_signal_handler = &old_WINCH;
-#endif
-#ifdef SIGUSR1
-          if (sig == SIGUSR1)
-            old_signal_handler = &old_USR1;
-#endif
-          terminal_goto_xy (0, 0);
-          fflush (stdout);
-          terminal_unprep_terminal ();
-          signal (sig, *old_signal_handler);
-          UNBLOCK_SIGNAL (sig);
-          kill (getpid (), sig);
+	/* Turn off terminal IO, tell our parent that the window has changed,
+	   then reinitialize the terminal and rebuild our windows. */
+	old_signal_handler = &old_WINCH;
+	terminal_goto_xy (0, 0);
+	fflush (stdout);
+	terminal_unprep_terminal ();
+	signal (sig, *old_signal_handler);
+ 	UNBLOCK_SIGNAL (sig);
+	kill (getpid (), sig);
 
-          /* After our old signal handler returns... */
-          *old_signal_handler
-            = (signal_handler *) signal (sig, info_signal_handler);
-          terminal_prep_terminal ();
-          reset_info_window_sizes ();
-          in_sigwinch--;
-        }
+	/* After our old signal handler returns... */
+	terminal_get_screen_size ();
+	terminal_prep_terminal ();
+	display_initialize_display (screenwidth, screenheight);
+	window_new_screen_size (screenwidth, screenheight, (VFunction *)NULL);
+	*old_signal_handler = (SigHandler *) signal (sig, info_signal_handler);
+	redisplay_after_signal ();
       }
       break;
-#endif /* SIGWINCH || SIGUSR1 */
+#endif /* SIGWINCH */
     }
 }
