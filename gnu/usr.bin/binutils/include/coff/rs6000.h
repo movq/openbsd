@@ -29,7 +29,7 @@ struct external_filehdr {
 	 (x).f_magic != U802TOCMAGIC)
 
 #define	FILHDR	struct external_filehdr
-#define	FILHSZ	20
+#define	FILHSZ	sizeof(FILHDR)
 
 
 /********************** AOUT "OPTIONAL HEADER" **********************/
@@ -62,9 +62,8 @@ typedef struct
 }
 AOUTHDR;
 
-#define AOUTSZ 72
+#define AOUTSZ (sizeof(AOUTHDR))
 #define SMALL_AOUTSZ (28)
-#define AOUTHDRSZ 72
 
 #define	RS6K_AOUTHDR_OMAGIC	0x0107	/* old: text & data writeable */
 #define	RS6K_AOUTHDR_NMAGIC	0x0108	/* new: text r/o, data r/w */
@@ -97,7 +96,7 @@ struct external_scnhdr {
 #define _LOADER	".loader"
 
 #define	SCNHDR	struct external_scnhdr
-#define	SCNHSZ	40
+#define	SCNHSZ	sizeof(SCNHDR)
 
 /* XCOFF uses a special .loader section with type STYP_LOADER.  */
 #define STYP_LOADER 0x1000
@@ -126,7 +125,7 @@ struct external_lineno {
 
 
 #define	LINENO	struct external_lineno
-#define	LINESZ	6
+#define	LINESZ	sizeof(LINENO) 
 
 
 /********************** SYMBOLS **********************/

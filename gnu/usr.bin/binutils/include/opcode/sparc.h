@@ -1,6 +1,5 @@
 /* Definitions for opcode table for the sparc.
-   Copyright (C) 1989, 91, 92, 93, 94, 95, 96, 1997
-   Free Software Foundation, Inc.
+   Copyright 1989, 1991, 1992, 1995 Free Software Foundation, Inc.
 
 This file is part of GAS, the GNU Assembler, GDB, the GNU debugger, and
 the GNU Binutils.
@@ -20,8 +19,6 @@ along with GAS or GDB; see the file COPYING.	If not, write to
 the Free Software Foundation, 59 Temple Place - Suite 330,
 Boston, MA 02111-1307, USA.  */
 
-#include <ansidecl.h>
-
 /* The SPARC opcode table (and other related data) is defined in
    the opcodes library in sparc-opc.c.  If you change anything here, make
    sure you fix up that file, and vice versa.  */
@@ -30,73 +27,38 @@ Boston, MA 02111-1307, USA.  */
     instruction's name rather than the args.  This would make gas faster, pinsn
     slower, but would mess up some macros a bit.  xoxorich. */
 
-/* List of instruction sets variations.
-   These values are such that each element is either a superset of a
-   preceding each one or they conflict in which case SPARC_OPCODE_CONFLICT_P
-   returns non-zero.
-   The values are indices into `sparc_opcode_archs' defined in sparc-opc.c.
-   Don't change this without updating sparc-opc.c.  */
+#define sparc_architecture	bfd_sparc_architecture
+#define architecture_pname	bfd_sparc_architecture_pname
+#define sparc_opcode		bfd_sparc_opcode
+#define sparc_opcodes		bfd_sparc_opcodes
 
-enum sparc_opcode_arch_val {
-  SPARC_OPCODE_ARCH_V6 = 0,
-  SPARC_OPCODE_ARCH_V7,
-  SPARC_OPCODE_ARCH_V8,
-  SPARC_OPCODE_ARCH_SPARCLET,
-  SPARC_OPCODE_ARCH_SPARCLITE,
-  /* v9 variants must appear last */
-  SPARC_OPCODE_ARCH_V9,
-  SPARC_OPCODE_ARCH_V9A, /* v9 with ultrasparc additions */
-  SPARC_OPCODE_ARCH_BAD /* error return from sparc_opcode_lookup_arch */
+/*
+ * Structure of an opcode table entry.
+ * This enumerator must parallel the architecture_pname array
+ * in bfd/opc-sparc.c.
+ */
+enum sparc_architecture {
+	v6 = 0,
+	v7,
+	v8,
+	sparclite,
+	v9
 };
 
-/* The highest architecture in the table.  */
-#define SPARC_OPCODE_ARCH_MAX (SPARC_OPCODE_ARCH_BAD - 1)
+extern const char *architecture_pname[];
 
-/* Given an enum sparc_opcode_arch_val, return the bitmask to use in
-   insn encoding/decoding.  */
-#define SPARC_OPCODE_ARCH_MASK(arch) (1 << (arch))
+/* Sparclite and v9 are both supersets of v8; we can't bump between them.  */
 
-/* Given a valid sparc_opcode_arch_val, return non-zero if it's v9.  */
-#define SPARC_OPCODE_ARCH_V9_P(arch) ((arch) >= SPARC_OPCODE_ARCH_V9)
-
-/* Table of cpu variants.  */
-
-struct sparc_opcode_arch {
-  const char *name;
-  /* Mask of sparc_opcode_arch_val's supported.
-     EG: For v7 this would be
-     (SPARC_OPCODE_ARCH_MASK (..._V6) | SPARC_OPCODE_ARCH_MASK (..._V7)).
-     These are short's because sparc_opcode.architecture is.  */
-  short supported;
-};
-
-extern const struct sparc_opcode_arch sparc_opcode_archs[];
-
-/* Given architecture name, look up it's sparc_opcode_arch_val value.  */
-extern enum sparc_opcode_arch_val sparc_opcode_lookup_arch
-  PARAMS ((const char *));
-
-/* Return the bitmask of supported architectures for ARCH.  */
-#define SPARC_OPCODE_SUPPORTED(ARCH) (sparc_opcode_archs[ARCH].supported)
-
-/* Non-zero if ARCH1 conflicts with ARCH2.
-   IE: ARCH1 as a supported bit set that ARCH2 doesn't, and vice versa.  */
-#define SPARC_OPCODE_CONFLICT_P(ARCH1, ARCH2) \
-(((SPARC_OPCODE_SUPPORTED (ARCH1) & SPARC_OPCODE_SUPPORTED (ARCH2)) \
-  != SPARC_OPCODE_SUPPORTED (ARCH1)) \
- && ((SPARC_OPCODE_SUPPORTED (ARCH1) & SPARC_OPCODE_SUPPORTED (ARCH2)) \
-     != SPARC_OPCODE_SUPPORTED (ARCH2)))
-
-/* Structure of an opcode table entry.  */
+#define ARCHITECTURES_CONFLICT_P(ARCH1, ARCH2) ((ARCH1) == sparclite && (ARCH2) == v9)
 
 struct sparc_opcode {
-  const char *name;
-  unsigned long match;	/* Bits that must be set. */
-  unsigned long lose;	/* Bits that must not be set. */
-  const char *args;
-  /* This was called "delayed" in versions before the flags. */
-  char flags;
-  short architecture;	/* Bitmask of sparc_opcode_arch_val's.  */
+	const char *name;
+	unsigned long match;	/* Bits that must be set. */
+	unsigned long lose;	/* Bits that must not be set. */
+	const char *args;
+ /* This was called "delayed" in versions before the flags. */
+	char flags;
+	enum sparc_architecture architecture;
 };
 
 #define	F_DELAYED	1	/* Delayed branch */
@@ -104,8 +66,9 @@ struct sparc_opcode {
 #define	F_UNBR		4	/* Unconditional branch */
 #define	F_CONDBR	8	/* Conditional branch */
 #define	F_JSR		16	/* Subroutine call */
-#define F_FLOAT		32	/* Floating point instruction (not a branch) */
-#define F_FBR		64	/* Floating point branch */
+/* ??? One can argue this shouldn't be here and the architecture
+   field should be used instead.  */
+#define F_NOTV9		32	/* Doesn't exist in v9 */
 /* FIXME: Add F_ANACHRONISTIC flag for v9.  */
 
 /*
@@ -139,8 +102,6 @@ Kinds of operands:
 	m	alternate space register (asr) in rd
 	M	alternate space register (asr) in rs1
 	h	22 high bits.
-	X	5 bit unsigned immediate
-	Y	6 bit unsigned immediate
 	K	MEMBAR mask (7 bits). (v9)
 	j	10 bit Immediate. (v9)
 	I	11 bit Immediate. (v9)
@@ -160,15 +121,12 @@ Kinds of operands:
 	z	%icc. (v9)
 	Z	%xcc. (v9)
 	q	Floating point queue.
-	r	Single register that is both rs1 and rd.
-	O	Single register that is both rs2 and rd.
+	r	Single register that is both rs1 and rsd.
 	Q	Coprocessor queue.
 	S	Special case.
 	t	Trap base register.
 	w	Window invalid mask register.
 	y	Y register.
-	u	sparclet coprocessor registers in rd position
-	U	sparclet coprocessor registers in rs1 position
 	E	%ccr. (v9)
 	s	%fprs. (v9)
 	P	%pc.  (v9)
@@ -182,12 +140,9 @@ Kinds of operands:
 	?	Privileged Register in rs1 (v9)
 	*	Prefetch function constant. (v9)
 	x	OPF field (v9 impdep).
-	0	32/64 bit immediate for set or setx (v9) insns
-	_	Ancillary state register in rd (v9a)
-	/	Ancillary state register in rs1 (v9a)
 
 The following chars are unused: (note: ,[] are used as punctuation)
-[345]
+[uOUXY3450]
 
 */
 
@@ -209,7 +164,6 @@ The following chars are unused: (note: ,[] are used as punctuation)
 #define RS1(x)		(((x)&0x1f) << 14) /* rs1 field */
 #define ASI_RS2(x)	(SIMM13(x))
 #define MEMBAR(x)	((x)&0x7f)
-#define SLCPOP(x)	(((x)&0x7f) << 6) /* sparclet cpop */
 
 #define ANNUL	(1<<29)
 #define BPRED	(1<<19)	/* v9 */
@@ -218,17 +172,17 @@ The following chars are unused: (note: ,[] are used as punctuation)
 #define	RS1_G0	RS1(~0)
 #define	RS2_G0	RS2(~0)
 
-extern const struct sparc_opcode sparc_opcodes[];
-extern const int sparc_num_opcodes;
+extern struct sparc_opcode sparc_opcodes[];
+extern const int bfd_sparc_num_opcodes;
 
-extern int sparc_encode_asi PARAMS ((const char *));
-extern const char *sparc_decode_asi PARAMS ((int));
-extern int sparc_encode_membar PARAMS ((const char *));
-extern const char *sparc_decode_membar PARAMS ((int));
-extern int sparc_encode_prefetch PARAMS ((const char *));
-extern const char *sparc_decode_prefetch PARAMS ((int));
-extern int sparc_encode_sparclet_cpreg PARAMS ((const char *));
-extern const char *sparc_decode_sparclet_cpreg PARAMS ((int));
+#define NUMOPCODES bfd_sparc_num_opcodes
+
+int sparc_encode_asi ();
+char *sparc_decode_asi ();
+int sparc_encode_membar ();
+char *sparc_decode_membar ();
+int sparc_encode_prefetch ();
+char *sparc_decode_prefetch ();
 
 /*
  * Local Variables:

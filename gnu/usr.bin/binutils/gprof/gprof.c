@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1983, 1998 Regents of the University of California.
+ * Copyright (c) 1983 Regents of the University of California.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms are permitted
@@ -23,15 +23,16 @@
 #include "call_graph.h"
 #include "cg_arcs.h"
 #include "cg_print.h"
-#include "corefile.h"
+#include "core.h"
 #include "gmon_io.h"
 #include "hertz.h"
 #include "hist.h"
 #include "source.h"
 #include "sym_ids.h"
 
+#define VERSION "2.6"
+
 const char *whoami;
-const char *function_mapping_file;
 const char *a_out_name = A_OUTNAME;
 long hz = HZ_WRONG;
 
@@ -42,7 +43,6 @@ int debug_level = 0;
 int output_style = 0;
 int output_width = 80;
 bool bsd_style_output = FALSE;
-bool demangle = TRUE;
 bool discard_underscores = TRUE;
 bool ignore_direct_calls = FALSE;
 bool ignore_static_funcs = FALSE;
@@ -50,13 +50,12 @@ bool ignore_zeros = TRUE;
 bool line_granularity = FALSE;
 bool print_descriptions = TRUE;
 bool print_path = FALSE;
-bool ignore_non_functions = FALSE;
 File_Format file_format = FF_AUTO;
 
 bool first_output = TRUE;
 
 char copyright[] =
- "@(#) Copyright (c) 1983 Regents of the University of California.\n\
+"@(#) Copyright (c) 1983 Regents of the University of California.\n\
  All rights reserved.\n";
 
 static char *gmon_name = GMONNAME;	/* profile filename */
@@ -68,23 +67,15 @@ bfd *abfd;
  */
 static char *default_excluded_list[] =
 {
-  "_gprof_mcount", "mcount", "_mcount", "__mcount", "__mcount_internal",
-  "__mcleanup",
+  "_gprof_mcount", "mcount", "_mcount", "__mcleanup",
   "<locore>", "<hicore>",
   0
 };
-
-/* Codes used for the long options with no short synonyms.  150 isn't
-   special; it's just an arbitrary non-ASCII char value.  */
-
-#define OPTION_DEMANGLE		(150)
-#define OPTION_NO_DEMANGLE	(OPTION_DEMANGLE + 1)
 
 static struct option long_options[] =
 {
   {"line", no_argument, 0, 'l'},
   {"no-static", no_argument, 0, 'a'},
-  {"ignore-non-functions", no_argument, 0, 'D'},
 
     /* output styles: */
 
@@ -96,16 +87,12 @@ static struct option long_options[] =
   {"no-graph", optional_argument, 0, 'Q'},
   {"exec-counts", optional_argument, 0, 'C'},
   {"no-exec-counts", optional_argument, 0, 'Z'},
-  {"function-ordering", no_argument, 0, 'r'},
-  {"file-ordering", required_argument, 0, 'R'},
   {"file-info", no_argument, 0, 'i'},
   {"sum", no_argument, 0, 's'},
 
     /* various options to affect output: */
 
   {"all-lines", no_argument, 0, 'x'},
-  {"demangle", no_argument, 0, OPTION_DEMANGLE},
-  {"no-demangle", no_argument, 0, OPTION_NO_DEMANGLE},
   {"directory-path", required_argument, 0, 'I'},
   {"display-unused-functions", no_argument, 0, 'z'},
   {"min-count", required_argument, 0, 'm'},
@@ -141,23 +128,19 @@ static struct option long_options[] =
 static void
 DEFUN (usage, (stream, status), FILE * stream AND int status)
 {
-  fprintf (stream, _("\
-Usage: %s [-[abcDhilLsTvwxyz]] [-[ACeEfFJnNOpPqQZ][name]] [-I dirs]\n\
+  fprintf (stream, "\
+Usage: %s [-[abchilLsTvwxyz]] [-[ACeEfFJnNOpPqQZ][name]] [-I dirs]\n\
 	[-d[num]] [-k from/to] [-m min-count] [-t table-length]\n\
 	[--[no-]annotated-source[=name]] [--[no-]exec-counts[=name]]\n\
 	[--[no-]flat-profile[=name]] [--[no-]graph[=name]]\n\
 	[--[no-]time=name] [--all-lines] [--brief] [--debug[=level]]\n\
-	[--function-ordering] [--file-ordering]\n\
 	[--directory-path=dirs] [--display-unused-functions]\n\
 	[--file-format=name] [--file-info] [--help] [--line] [--min-count=n]\n\
 	[--no-static] [--print-path] [--separate-files]\n\
 	[--static-call-graph] [--sum] [--table-length=len] [--traditional]\n\
-	[--version] [--width=n] [--ignore-non-functions]\n\
-	[--demangle] [--no-demangle]\n\
-	[image-file] [profile-file...]\n"),
+	[--version] [--width=n]\n\
+	[image-file] [profile-file...]\n",
 	   whoami);
-  if (status == 0)
-    fprintf (stream, _("Report bugs to %s\n"), REPORT_BUGS_TO);
   done (status);
 }
 
@@ -169,17 +152,11 @@ DEFUN (main, (argc, argv), int argc AND char **argv)
   Sym **cg = 0;
   int ch, user_specified = 0;
 
-#if defined (HAVE_SETLOCALE) && defined (HAVE_LC_MESSAGES)
-  setlocale (LC_MESSAGES, "");
-#endif
-  bindtextdomain (PACKAGE, LOCALEDIR);
-  textdomain (PACKAGE);
-
   whoami = argv[0];
   xmalloc_set_program_name (whoami);
 
   while ((ch = getopt_long (argc, argv,
-	"aA::bBcCdD::e:E:f:F:hiI:J::k:lLm:n::N::O:p::P::q::Q::st:Tvw:xyzZ::",
+	"aA::bBcCd::e:E:f:F:hiI:J::k:lLm:n::N::O:p::P::q::Q::st:Tvw:xyzZ::",
 			    long_options, 0))
 	 != EOF)
     {
@@ -226,11 +203,8 @@ DEFUN (main, (argc, argv), int argc AND char **argv)
 	    }
 	  DBG (ANYDEBUG, printf ("[main] debug-level=0x%x\n", debug_level));
 #ifndef DEBUG
-	  printf (_("%s: debugging not supported; -d ignored\n"), whoami);
+	  printf ("%s: debugging not supported; -d ignored\n", whoami);
 #endif	/* DEBUG */
-	  break;
-	case 'D':
-	  ignore_non_functions = TRUE;
 	  break;
 	case 'E':
 	  sym_id_add (optarg, EXCL_TIME);
@@ -279,7 +253,7 @@ DEFUN (main, (argc, argv), int argc AND char **argv)
 	  print_path = TRUE;
 	  break;
 	case 'm':
-	  bb_min_calls = (unsigned long) strtoul (optarg, (char **) NULL, 10);
+	  bb_min_calls = atoi (optarg);
 	  break;
 	case 'n':
 	  sym_id_add (optarg, INCL_TIME);
@@ -299,14 +273,11 @@ DEFUN (main, (argc, argv), int argc AND char **argv)
 	    case 'b':
 	      file_format = FF_BSD;
 	      break;
-	    case '4':
-	      file_format = FF_BSD44;
-	      break;
 	    case 'p':
 	      file_format = FF_PROF;
 	      break;
 	    default:
-	      fprintf (stderr, _("%s: unknown file format %s\n"),
+	      fprintf (stderr, "%s: unknown file format %s\n",
 		       optarg, whoami);
 	      done (1);
 	    }
@@ -346,15 +317,6 @@ DEFUN (main, (argc, argv), int argc AND char **argv)
 	  output_style |= STYLE_CALL_GRAPH;
 	  user_specified |= STYLE_CALL_GRAPH;
 	  break;
-	case 'r':
-	  output_style |= STYLE_FUNCTION_ORDER;
-	  user_specified |= STYLE_FUNCTION_ORDER;
-	  break;
-	case 'R':
-	  output_style |= STYLE_FILE_ORDER;
-	  user_specified |= STYLE_FILE_ORDER;
-	  function_mapping_file = optarg;
-	  break;
 	case 'Q':
 	  if (optarg)
 	    {
@@ -389,11 +351,7 @@ DEFUN (main, (argc, argv), int argc AND char **argv)
 	  bsd_style_output = TRUE;
 	  break;
 	case 'v':
-	  /* This output is intended to follow the GNU standards document.  */
-	  printf (_("GNU gprof %s\n"), VERSION);
-	  printf (_("Based on BSD gprof, copyright 1983 Regents of the University of California.\n"));
-	  printf (_("\
-This program is free software.  This program has absolutely no warranty.\n"));
+	  printf ("%s version %s\n", whoami, VERSION);
 	  done (0);
 	case 'w':
 	  output_width = atoi (optarg);
@@ -423,31 +381,9 @@ This program is free software.  This program has absolutely no warranty.\n"));
 	    }
 	  user_specified |= STYLE_ANNOTATED_SOURCE;
 	  break;
-	case OPTION_DEMANGLE:
-	  demangle = TRUE;
-	  break;
-	case OPTION_NO_DEMANGLE:
-	  demangle = FALSE;
-	  break;
 	default:
 	  usage (stderr, 1);
 	}
-    }
-
-  /* Don't allow both ordering options, they modify the arc data in-place.  */
-  if ((user_specified & STYLE_FUNCTION_ORDER)
-      && (user_specified & STYLE_FILE_ORDER))
-    {
-      fprintf (stderr,_("\
-%s: Only one of --function-ordering and --file-ordering may be specified.\n"),
-	       whoami);
-      done (1);
-    }
-
-  /* --sum implies --line, otherwise we'd lose b-b counts in gmon.sum */
-  if (output_style & STYLE_SUMMARY_FILE)
-    {
-      line_granularity = 1;
     }
 
   /* append value of GPROF_PATH to source search list if set: */
@@ -473,7 +409,7 @@ This program is free software.  This program has absolutely no warranty.\n"));
     {
       sym_id_add (*sp, EXCL_TIME);
       sym_id_add (*sp, EXCL_GRAPH);
-#ifdef __alpha__
+#ifdef __osf__
       sym_id_add (*sp, EXCL_FLAT);
 #endif
     }
@@ -538,7 +474,7 @@ This program is free software.  This program has absolutely no warranty.\n"));
       while (optind++ < argc);
 #else
       fprintf (stderr,
-	       _("%s: sorry, file format `prof' is not yet supported\n"),
+	       "%s: sorry, file format `prof' is not yet supported\n",
 	       whoami);
       done (1);
 #endif
@@ -599,14 +535,14 @@ This program is free software.  This program has absolutely no warranty.\n"));
   if ((output_style & STYLE_FLAT_PROFILE)
       && !(gmon_input & INPUT_HISTOGRAM))
     {
-      fprintf (stderr, _("%s: gmon.out file is missing histogram\n"), whoami);
+      fprintf (stderr, "%s: gmon.out file is missing histogram\n", whoami);
       done (1);
     }
 
   if ((output_style & STYLE_CALL_GRAPH) && !(gmon_input & INPUT_CALL_GRAPH))
     {
       fprintf (stderr,
-	       _("%s: gmon.out file is missing call-graph data\n"), whoami);
+	       "%s: gmon.out file is missing call-graph data\n", whoami);
       done (1);
     }
 
@@ -639,14 +575,6 @@ This program is free software.  This program has absolutely no warranty.\n"));
   if (output_style & STYLE_ANNOTATED_SOURCE)
     {
       print_annotated_source ();
-    }
-  if (output_style & STYLE_FUNCTION_ORDER)
-    {
-      cg_print_function_ordering ();
-    }
-  if (output_style & STYLE_FILE_ORDER)
-    {
-      cg_print_file_ordering ();
     }
   return 0;
 }

@@ -1,5 +1,5 @@
 /* BFD backend for hp-ux 9000/300
-   Copyright (C) 1990, 91, 94, 95, 97, 99, 2000 Free Software Foundation, Inc.
+   Copyright (C) 1990, 1991, 1994, 1995 Free Software Foundation, Inc.
    Written by Glenn Engel.
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -215,10 +215,6 @@ MY (callback) (abfd)
   obj_datasec (abfd)->vma = N_DATADDR (*execp);
   obj_bsssec (abfd)->vma = N_BSSADDR (*execp);
 
-  obj_textsec (abfd)->lma = obj_textsec (abfd)->vma;
-  obj_datasec (abfd)->lma = obj_datasec (abfd)->vma;
-  obj_bsssec (abfd)->lma = obj_bsssec (abfd)->vma;
-
   /* The file offsets of the sections */
   obj_textsec (abfd)->filepos = N_TXTOFF (*execp);
   obj_datasec (abfd)->filepos = N_DATOFF (*execp);
@@ -270,8 +266,11 @@ MY (write_object_contents) (abfd)
   file_ptr text_end;
 
   memset (&exec_bytes, 0, sizeof (exec_bytes));
-
+#if CHOOSE_RELOC_SIZE
+  CHOOSE_RELOC_SIZE (abfd);
+#else
   obj_reloc_entry_size (abfd) = RELOC_STD_SIZE;
+#endif
 
   if (adata (abfd).magic == undecided_magic)
     NAME (aout,adjust_sizes_and_vmas) (abfd, &text_size, &text_end);
@@ -333,9 +332,9 @@ MY (write_object_contents) (abfd)
 
 static void
 convert_sym_type (sym_pointer, cache_ptr, abfd)
-     struct external_nlist *sym_pointer ATTRIBUTE_UNUSED;
+     struct external_nlist *sym_pointer;
      aout_symbol_type *cache_ptr;
-     bfd *abfd ATTRIBUTE_UNUSED;
+     bfd *abfd;
 {
   int name_type;
   int new_type;
@@ -393,12 +392,7 @@ convert_sym_type (sym_pointer, cache_ptr, abfd)
 	    default:
 	      abort ();
 	    case N_UNDF | N_EXT:
-	      /* If the value is nonzero, then just treat this as a
-                 common symbol.  I don't know if this is correct in
-                 all cases, but it is more correct than treating it as
-                 a weak undefined symbol.  */
-	      if (cache_ptr->symbol.value == 0)
-		new_type = N_WEAKU;
+	      new_type = N_WEAKU;
 	      break;
 	    case N_ABS | N_EXT:
 	      new_type = N_WEAKA;
@@ -478,7 +472,10 @@ NAME (aout,swap_exec_header_in) (abfd, raw_bytes, execp)
       rawptr = (struct aout_data_struct *) bfd_zalloc (abfd, sizeof (*rawptr));
 
       if (rawptr == NULL)
-	return;
+	{
+	  bfd_set_error (bfd_error_no_memory);
+	  return;
+	}
       abfd->tdata.aout_data = rawptr;
       obj_aout_subformat (abfd) = gnu_encap_format;
     }
@@ -529,7 +526,10 @@ MY (slurp_symbol_table) (abfd)
   strings = (char *) bfd_alloc (abfd,
 				symbol_bytes + SYM_EXTRA_BYTES);
   if (!strings)
-    return false;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return false;
+    }
   syms = (struct external_nlist *) (strings + SYM_EXTRA_BYTES);
   if (bfd_seek (abfd, obj_sym_filepos (abfd), SEEK_SET) != 0
       || bfd_read ((PTR) syms, symbol_bytes, 1, abfd) != symbol_bytes)
@@ -556,7 +556,10 @@ MY (slurp_symbol_table) (abfd)
 	    bfd_zalloc (abfd,
 			bfd_get_symcount (abfd) * sizeof (aout_symbol_type)));
   if (cached == NULL && bfd_get_symcount (abfd) != 0)
-    return false;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return false;
+    }
 
   /* as we march thru the hp symbol table, convert it into a list of
      null terminated strings to hold the symbol names.  Make sure any
@@ -623,7 +626,7 @@ MY (swap_std_reloc_in) (abfd, bytes, cache_ptr, symbols, symcount)
      struct hp300hpux_reloc *bytes;
      arelent *cache_ptr;
      asymbol **symbols;
-     bfd_size_type symcount ATTRIBUTE_UNUSED;
+     bfd_size_type symcount;
 {
   int r_index;
   int r_extern = 0;
@@ -743,13 +746,17 @@ doit:
   reloc_cache = (arelent *) bfd_zalloc (abfd, (size_t) (count * sizeof
 							(arelent)));
   if (!reloc_cache && count != 0)
-    return false;
+    {
+    nomem:
+      bfd_set_error (bfd_error_no_memory);
+      return false;
+    }
 
   relocs = (PTR) bfd_alloc (abfd, reloc_size);
   if (!relocs && reloc_size != 0)
     {
       bfd_release (abfd, reloc_cache);
-      return false;
+      goto nomem;
     }
 
   if (bfd_read (relocs, 1, reloc_size, abfd) != reloc_size)

@@ -1,6 +1,6 @@
 #include "config.h"
 
-#if defined(__GNUC__) && !defined(C_ALLOCA)
+#ifdef __GNUC__
 # ifndef alloca
 #  define alloca __builtin_alloca
 # endif
@@ -8,7 +8,7 @@
 #  ifdef _AIX
  #pragma alloca
 #  else
-#  if defined(HAVE_ALLOCA_H) && !defined(C_ALLOCA)
+#  ifdef HAVE_ALLOCA_H
 #   include <alloca.h>
 #  else /* ! defined (HAVE_ALLOCA_H) */
 #   ifdef __STDC__

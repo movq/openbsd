@@ -118,7 +118,10 @@ lynx_core_file_p (abfd)
     bfd_zalloc (abfd, sizeof (struct lynx_core_struct));
 
   if (!core_hdr (abfd))
-    return NULL;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return NULL;
+    }
 
   strncpy (core_command (abfd), pss.pname, PNMLEN + 1);
 
@@ -130,7 +133,10 @@ lynx_core_file_p (abfd)
 
   threadp = (core_st_t *)bfd_alloc (abfd, tcontext_size);
   if (!threadp)
-    return NULL;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return NULL;
+    }
 
   /* Save thread contexts */
 
@@ -155,7 +161,10 @@ lynx_core_file_p (abfd)
 			       pss.slimit,
 			       pagesize + tcontext_size);
   if (!newsect)
-    return NULL;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return NULL;
+    }
 
   newsect = make_bfd_asection (abfd, ".data",
 			       SEC_ALLOC + SEC_LOAD + SEC_HAS_CONTENTS,
@@ -173,7 +182,10 @@ lynx_core_file_p (abfd)
 #endif
 			       );
   if (!newsect)
-    return NULL;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return NULL;
+    }
 
 /* And, now for the .reg/XXX pseudo sections.  Each thread has it's own
    .reg/XXX section, where XXX is the thread id (without leading zeros).  The
@@ -188,7 +200,10 @@ lynx_core_file_p (abfd)
 			       0,
 			       pagesize);
   if (!newsect)
-    return NULL;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return NULL;
+    }
 
   for (secnum = 0; secnum < pss.threadcnt; secnum++)
     {
@@ -201,7 +216,10 @@ lynx_core_file_p (abfd)
 				   0,
 				   pagesize + secnum * sizeof (core_st_t));
       if (!newsect)
-	return NULL;
+	{
+	  bfd_set_error (bfd_error_no_memory);
+	  return NULL;
+	}
     }
 
   return abfd->xvec;

@@ -1,5 +1,5 @@
 /* tc-h8300.c -- Assemble code for the Hitachi H8/300
-   Copyright (C) 1991, 92, 93, 94, 95, 96, 97, 1998 Free Software Foundation.
+   Copyright (C) 1991, 1992 Free Software Foundation.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -14,9 +14,8 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with GAS; see the file COPYING.  If not, write to the Free
-   Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+   along with GAS; see the file COPYING.  If not, write to
+   the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 
 /*
@@ -26,7 +25,6 @@
 
 #include <stdio.h>
 #include "as.h"
-#include "subsegs.h"
 #include "bfd.h"
 #define DEFINE_TABLE
 #define h8_opcodes ops
@@ -49,7 +47,6 @@ const char line_comment_chars[] = "#";
 void cons ();
 
 int Hmode;
-int Smode;
 #define PSIZE (Hmode ? L_32 : L_16)
 #define DMODE (L_16)
 #define DSYMMODE (Hmode ? L_24 : L_16)
@@ -60,15 +57,9 @@ void
 h8300hmode ()
 {
   Hmode = 1;
-  Smode = 0;
 }
 
-void
-h8300smode ()
-{
-  Smode = 1;
-  Hmode = 1;
-}
+
 void
 sbranch (size)
      int size;
@@ -85,7 +76,6 @@ const pseudo_typeS md_pseudo_table[] =
 {
 
   {"h8300h", h8300hmode, 0},
-  {"h8300s", h8300smode, 0},
   {"sbranch", sbranch, L_8},
   {"lbranch", sbranch, L_16},
 
@@ -198,8 +188,8 @@ struct h8_op
   @WREG+
   @-WREG
   #const
-  ccr
-*/
+
+  */
 
 /* try and parse a reg name, returns number of chars consumed */
 int
@@ -210,84 +200,66 @@ parse_reg (src, mode, reg, direction)
      int direction;
 
 {
-  char *end;
-  int len;
-
-  /* Cribbed from get_symbol_end().  */
-  if (!is_name_beginner (*src) || *src == '\001')
-    return 0;
-  end = src+1;
-  while (is_part_of_name (*end) || *end == '\001')
-    end++;
-  len = end - src;
-
-  if (len == 2 && src[0] == 's' && src[1] == 'p')
+  if (src[0] == 's' && src[1] == 'p')
     {
       *mode = PSIZE | REG | direction;
       *reg = 7;
-      return len;
+      return 2;
     }
-  if (len == 3 && src[0] == 'c' && src[1] == 'c' && src[2] == 'r')
+  if (src[0] == 'c' && src[1] == 'c' && src[2] == 'r')
     {
       *mode = CCR;
       *reg = 0;
-      return len;
+      return 3;
     }
-  if (len == 3 && src[0] == 'e' && src[1] == 'x' && src[2] == 'r')
-    {
-      *mode = EXR;
-      *reg = 0;
-      return len;
-    }
-  if (len == 2 && src[0] == 'f' && src[1] == 'p')
+  if (src[0] == 'f' && src[1] == 'p')
     {
       *mode = PSIZE | REG | direction;
       *reg = 6;
-      return len;
+      return 2;
     }
-  if (len == 3 && src[0] == 'e' && src[1] == 'r'
+  if (src[0] == 'e'
+      && src[1] == 'r'
       && src[2] >= '0' && src[2] <= '7')
     {
       *mode = L_32 | REG | direction;
       *reg = src[2] - '0';
       if (!Hmode)
-	as_warn (_("Reg not valid for H8/300"));
-      return len;
+	as_warn ("Reg only legal for H8/300-H");
+
+      return 3;
     }
-  if (len == 2 && src[0] == 'e' && src[1] >= '0' && src[1] <= '7')
+  if (src[0] == 'e'
+      && src[1] >= '0' && src[1] <= '7')
     {
       *mode = L_16 | REG | direction;
       *reg = src[1] - '0' + 8;
       if (!Hmode)
-	as_warn (_("Reg not valid for H8/300"));
-      return len;
+	as_warn ("Reg only legal for H8/300-H");
+      return 2;
     }
 
   if (src[0] == 'r')
     {
       if (src[1] >= '0' && src[1] <= '7')
 	{
-	  if (len == 3 && src[2] == 'l')
+	  if (src[2] == 'l')
 	    {
 	      *mode = L_8 | REG | direction;
 	      *reg = (src[1] - '0') + 8;
-	      return len;
+	      return 3;
 	    }
-	  if (len == 3 && src[2] == 'h')
+	  if (src[2] == 'h')
 	    {
 	      *mode = L_8 | REG | direction;
 	      *reg = (src[1] - '0');
-	      return len;
+	      return 3;
 	    }
-	  if (len == 2)
-	    {
-	      *mode = L_16 | REG | direction;
-	      *reg = (src[1] - '0');
-	      return len;
-	    }
+	  *mode = L_16 | REG | direction;
+	  *reg = (src[1] - '0');
+	  return 2;
 	}
     }
-
   return 0;
 }
 
@@ -302,7 +274,7 @@ parse_exp (s, op)
   input_line_pointer = s;
   expression (op);
   if (op->X_op == O_absent)
-    as_bad (_("missing operand"));
+    as_bad ("missing operand");
   new = input_line_pointer;
   input_line_pointer = save;
   return new;
@@ -311,7 +283,7 @@ parse_exp (s, op)
 static char *
 skip_colonthing (ptr, exp, mode)
      char *ptr;
-     expressionS *exp ATTRIBUTE_UNUSED;
+     expressionS *exp;
      int *mode;
 {
   if (*ptr == ':')
@@ -330,10 +302,6 @@ skip_colonthing (ptr, exp, mode)
 	  if (*ptr == '2')
 	    {
 	      *mode |= L_24;
-	    }
-	  else if (*ptr == '3')
-	    {
-	      *mode |= L_32;
 	    }
 	  else if (*ptr == '1')
 	    {
@@ -399,7 +367,7 @@ static void
 get_operand (ptr, op, dst, direction)
      char **ptr;
      struct h8_op *op;
-     unsigned int dst ATTRIBUTE_UNUSED;
+     unsigned int dst;
      int direction;
 {
   char *src = *ptr;
@@ -408,39 +376,6 @@ get_operand (ptr, op, dst, direction)
   unsigned int len;
 
   op->mode = E;
-
-  /* Gross.  Gross.  ldm and stm have a format not easily handled
-     by get_operand.  We deal with it explicitly here.  */
-  if (src[0] == 'e' && src[1] == 'r' && isdigit(src[2])
-      && src[3] == '-' && src[4] == 'e' && src[5] == 'r' && isdigit(src[6]))
-    {
-      int low, high;
-
-      low = src[2] - '0';
-      high = src[6] - '0';
-
-      if (high < low)
-	as_bad (_("Invalid register list for ldm/stm\n"));
-
-      if (low % 2)
-	as_bad (_("Invalid register list for ldm/stm\n"));
-
-      if (high - low > 3)
-	as_bad (_("Invalid register list for ldm/stm\n"));
-
-      if (high - low != 1
-	  && low % 4)
-	as_bad (_("Invalid register list for ldm/stm\n"));
-
-      /* Even sicker.  We encode two registers into op->reg.  One
-	 for the low register to save, the other for the high
-	 register to save;  we also set the high bit in op->reg
-	 so we know this is "very special".  */
-      op->reg = 0x80000000 | (high << 8) | low;
-      op->mode = REG;
-      *ptr = src + 7;
-      return;
-    }
 
   len = parse_reg (src, &op->mode, &op->reg, direction);
   if (len)
@@ -487,7 +422,7 @@ get_operand (ptr, op, dst, direction)
 
 
 	  if ((mode & SIZE) != PSIZE)
-	    as_bad (_("Wrong size pointer register for architecture."));
+	    as_bad ("Wrong size pointer register for architecture.");
 	  op->mode = RDDEC;
 	  op->reg = num;
 	  *ptr = src + len;
@@ -515,7 +450,7 @@ get_operand (ptr, op, dst, direction)
 
 	  if (*src != ',')
 	    {
-	      as_bad (_("expected @(exp, reg16)"));
+	      as_bad ("expected @(exp, reg16)");
 	      return;
 
 	    }
@@ -524,7 +459,7 @@ get_operand (ptr, op, dst, direction)
 	  len = parse_reg (src, &mode, &op->reg, direction);
 	  if (len == 0 || !(mode & REG))
 	    {
-	      as_bad (_("expected @(exp, reg16)"));
+	      as_bad ("expected @(exp, reg16)");
 	      return;
 	    }
 	  op->mode |= DISP | direction;
@@ -534,7 +469,7 @@ get_operand (ptr, op, dst, direction)
 
 	  if (*src != ')' && '(')
 	    {
-	      as_bad (_("expected @(exp, reg16)"));
+	      as_bad ("expected @(exp, reg16)");
 	      return;
 	    }
 	  *ptr = src + 1;
@@ -550,14 +485,14 @@ get_operand (ptr, op, dst, direction)
 	    {
 	      src++;
 	      if ((mode & SIZE) != PSIZE)
-		as_bad (_("Wrong size pointer register for architecture."));
+		as_bad ("Wrong size pointer register for architecture.");
 	      op->mode = RSINC;
 	      op->reg = num;
 	      *ptr = src;
 	      return;
 	    }
 	  if ((mode & SIZE) != PSIZE)
-	    as_bad (_("Wrong size pointer register for architecture."));
+	    as_bad ("Wrong size pointer register for architecture.");
 
 	  op->mode = direction | IND | PSIZE;
 	  op->reg = num;
@@ -588,14 +523,6 @@ get_operand (ptr, op, dst, direction)
 
       return;
     }
-  else if (strncmp (src, "mach", 4) == 0
-	   || strncmp (src, "macl", 4) == 0)
-    {
-      op->reg = src[3] == 'l';
-      op->mode = MACREG;
-      *ptr = src + 4;
-      return;
-    }
   else
     {
       src = parse_exp (src, &op->exp);
@@ -614,7 +541,7 @@ get_operand (ptr, op, dst, direction)
 	    }
 	  else
 	    {
-	      as_bad (_("expect :8 or :16 here"));
+	      as_bad ("expect :8 or :16 here");
 	    }
 	}
       else
@@ -678,114 +605,104 @@ get_operands (noperands, op_end, operand)
    */
 static
 struct h8_opcode *
-get_specific (opcode, operands, size)
+get_specific (opcode, operands)
      struct h8_opcode *opcode;
      struct h8_op *operands;
-     int size;
 {
   struct h8_opcode *this_try = opcode;
   int found = 0;
 
   unsigned int this_index = opcode->idx;
 
-  /* There's only one ldm/stm and it's easier to just
-     get out quick for them.  */
-  if (strcmp (opcode->name, "stm.l") == 0
-      || strcmp (opcode->name, "ldm.l") == 0)
-    return this_try;
-
   while (this_index == opcode->idx && !found)
     {
+      unsigned int i;
       found = 1;
 
       this_try = opcode++;
-      if (this_try->noperands == 0)
+      for (i = 0; i < this_try->noperands && found; i++)
 	{
-	  int this_size;
+	  op_type op = this_try->args.nib[i];
+	  int x = operands[i].mode;
 
-	  this_size = this_try->how & SN;
-	  if (this_size != size && (this_size != SB || size != SN))
-	    found = 0;
-	}
-      else
-	{
-	  unsigned int i;
-
-	  for (i = 0; i < this_try->noperands && found; i++)
+	  if ((op & (DISP | REG)) == (DISP | REG)
+	      && ((x & (DISP | REG)) == (DISP | REG)))
 	    {
-	      op_type op = this_try->args.nib[i];
-	      int x = operands[i].mode;
-
-	      if ((op & (DISP | REG)) == (DISP | REG)
-		  && ((x & (DISP | REG)) == (DISP | REG)))
-		{
-		  dispreg = operands[i].reg;
-		}
-	      else if (op & REG)
-		{
-		  if (!(x & REG))
-		    found = 0;
-
-		  if (x & L_P)
-		    x = (x & ~L_P) | (Hmode ? L_32 : L_16);
-		  if (op & L_P)
-		    op = (op & ~L_P) | (Hmode ? L_32 : L_16);
-
-		  opsize = op & SIZE;
-
-		  /* The size of the reg is v important */
-		  if ((op & SIZE) != (x & SIZE))
-		    found = 0;
-		}
-	      else if ((op & ABSJMP) && (x & ABS))
-		{
-		  operands[i].mode &= ~ABS;
-		  operands[i].mode |= ABSJMP;
-		  /* But it may not be 24 bits long */
-		  if (!Hmode)
-		    {
-		      operands[i].mode &= ~SIZE;
-		      operands[i].mode |= L_16;
-		    }
-		}
-	      else if ((op & (KBIT | DBIT)) && (x & IMM))
-		{
-		  /* This is ok if the immediate value is sensible */
-		}
-	      else if (op & PCREL)
-		{
-		  /* The size of the displacement is important */
-		  if ((op & SIZE) != (x & SIZE))
-		    found = 0;
-		}
-	      else if ((op & (DISP | IMM | ABS))
-		       && (op & (DISP | IMM | ABS)) == (x & (DISP | IMM | ABS)))
-		{
-		  /* Promote a L_24 to L_32 if it makes us match.  */
-		  if ((x & L_24) && (op & L_32))
-		    {
-		      x &= ~L_24;
-		      x |= L_32;
-		    }
-		  /* Promote an L8 to L_16 if it makes us match.  */
-		  if (op & ABS && op & L_8 && op & DISP) 
-		    {
-		      if (x & L_16)
-			found= 1;
-		    }
-		  else if ((x & SIZE) != 0
-			   && ((op & SIZE) != (x & SIZE)))
-		    found = 0;
-		}
-	      else if ((op & MACREG) != (x & MACREG))
-		{
-		  found = 0;
-		}
-	      else if ((op & MODE) != (x & MODE))
-		{
-		  found = 0;
-		}	
+	      dispreg = operands[i].reg;
 	    }
+	  else if (op & REG)
+	    {
+	      if (!(x & REG))
+		found = 0;
+
+	      if (x & L_P)
+		{
+		  x = (x & ~L_P) | (Hmode ? L_32 : L_16);
+		}
+	      if (op & L_P)
+		{
+		  op = (op & ~L_P) | (Hmode ? L_32 : L_16);
+		}
+
+	      opsize = op & SIZE;
+
+	      /* The size of the reg is v important */
+	      if ((op & SIZE) != (x & SIZE))
+		found = 0;
+	    }
+	  else if ((op & ABSJMP) && (x & ABS))
+	    {
+	      operands[i].mode &= ~ABS;
+	      operands[i].mode |= ABSJMP;
+	      /* But it may not be 24 bits long */
+	      if (!Hmode)
+		{
+		  operands[i].mode &= ~SIZE;
+		  operands[i].mode |= L_16;
+		}
+
+
+	    }
+	  else if ((op & (KBIT | DBIT)) && (x & IMM))
+	    {
+	      /* This is ok if the immediate value is sensible */
+
+	    }
+	  else if (op & PCREL)
+	    {
+
+	      /* The size of the displacement is important */
+	      if ((op & SIZE) != (x & SIZE))
+		found = 0;
+
+	    }
+	  else if ((op & (DISP | IMM | ABS))
+		   && (op & (DISP | IMM | ABS)) == (x & (DISP | IMM | ABS)))
+	    {
+	      /* Got a diplacement,will fit if no size or same size as try */
+	      if (op & ABS && op & L_8) 
+		{
+		  /* We want an 8 bit abs here, but one which looks like 16 bits will do fine */
+		  if (x & L_16)
+		    found= 1;
+		}
+	      else
+	      if ((x & SIZE) != 0
+		  && ((op & SIZE) != (x & SIZE)))
+		found = 0;
+	    }
+#if 0
+	  else if ((op & ABSMOV) && (x & ABS))
+	    {
+	      /* An absmov is only */
+	      /* Ok */
+	    }
+#endif
+	  else if ((op & MODE) != (x & MODE))
+	    {
+	      found = 0;
+	    }
+
 	}
     }
   if (found)
@@ -820,7 +737,7 @@ check_operand (operand, width, string)
 	    }
 	  else 
 	    {
-	      as_warn (_("operand %s0x%lx out of range."), string,
+	      as_warn ("operand %s0x%lx out of range.", string,
 		       (unsigned long) operand->exp.X_add_number);
 	    }
 	}
@@ -828,21 +745,11 @@ check_operand (operand, width, string)
 
 }
 
-/* RELAXMODE has one of 3 values:
-
-   0 Output a "normal" reloc, no relaxing possible for this insn/reloc
-
-   1 Output a relaxable 24bit absolute mov.w address relocation
-     (may relax into a 16bit absolute address).
-
-   2 Output a relaxable 16/24 absolute mov.b address relocation
-     (may relax into an 8bit absolute address).  */
-
 static void
-do_a_fix_imm (offset, operand, relaxmode)
+do_a_fix_imm (offset, operand, relaxing)
      int offset;
      struct h8_op *operand;
-     int relaxmode;
+     int relaxing;
 {
   int idx;
   int size;
@@ -896,40 +803,30 @@ do_a_fix_imm (offset, operand, relaxmode)
 	{
 
 	case L_24:
-	case L_32:
 	  size = 4;
-	  where = (operand->mode & SIZE) == L_24 ? -1 : 0;
-	  if (relaxmode == 2)
-	    idx = R_MOV24B1;
-	  else if (relaxmode == 1)
-	    idx = R_MOVL1;
-	  else
-	    idx = R_RELLONG;
+	  where = -1;
+	  idx = relaxing ? R_MOVLB1 : R_RELLONG;
 	  break;
 	default:
-	  as_bad(_("Can't work out size of operand.\n"));
+	  as_bad("Can't work out size of operand.\n");
+	case L_32:
+	  size = 4;
+	  where = 0;
+	  idx = R_RELLONG;
+	  break;
 	case L_16:
 	  size = 2;
 	  where = 0;
-	  if (relaxmode == 2)
-	    idx = R_MOV16B1;
-	  else
-	    idx = R_RELWORD;
-	  operand->exp.X_add_number = (short)operand->exp.X_add_number;
+	  idx = relaxing ? R_MOVB1 : R_RELWORD;
 	  break;
 	case L_8:
 	  size = 1;
 	  where = 0;
 	  idx = R_RELBYTE;
-	  /* This used to use a cast to char, but that fails if char is an
-	     unsigned type.  We can't use `signed char', as that isn't valid
-	     K&R C.  */
-	  if (operand->exp.X_add_number & 0x80)
-	    operand->exp.X_add_number |= ((offsetT) -1 << 8);
-	  else
-	    operand->exp.X_add_number &= 0xff;
 	}
 
+      /* Sign extend any expression */
+      operand->exp.X_add_number = (short)operand->exp.X_add_number;
       fix_new_exp (frag_now,
 		   offset + where,
 		   size,
@@ -956,20 +853,21 @@ build_bytes (this_try, operand)
   int absat;
   int immat;
   int nib;
-  int movb = 0;
   char asnibbles[30];
   char *p = asnibbles;
 
   if (!(this_try->inbase || Hmode))
-    as_warn (_("Opcode `%s' with these operand types not available in H8/300 mode"),
-	     this_try->name);
+    {
+      as_warn ("Opcode `%s' only available in this mode on H8/300-H",
+	       this_try->name);
+    }
 
   while (*nibble_ptr != E)
     {
       int d;
       c = *nibble_ptr++;
 
-      d = (c & (DST | SRC_IN_DST)) != 0;
+      d = (c & DST) != 0;
 
       if (c < 16)
 	{
@@ -985,6 +883,14 @@ build_bytes (this_try, operand)
 	  else if ((c & DISPREG) == (DISPREG))
 	    {
 	      nib = dispreg;
+	    }
+
+	  else if (c & ABSMOV)
+	    {
+	      operand[d].mode &= ~ABS;
+	      operand[d].mode |= ABSMOV;
+	      immat = nibble_count / 2;
+	      nib = 0;
 	    }
 	  else if (c &  ABS )
 	    {
@@ -1013,7 +919,7 @@ build_bytes (this_try, operand)
 		  nib = 0x8 | c;
 		  break;
 		default:
-		  as_bad (_("Need #1 or #2 here"));
+		  as_bad ("Need #1 or #2 here");
 		}
 	    }
 	  else if (c & KBIT)
@@ -1028,31 +934,21 @@ build_bytes (this_try, operand)
 		  break;
 		case 4:
 		  if (!Hmode)
-		    as_warn (_("#4 not valid on H8/300."));
+		    as_warn ("#4 only valid in h8/300 mode.");
 		  nib = 9;
 		  break;
 
 		default:
-		  as_bad (_("Need #1 or #2 here"));
+		  as_bad ("Need #1 or #2 here");
 		  break;
 		}
 	      /* stop it making a fix */
 	      operand[0].mode = 0;
 	    }
 
-	  if (c & MEMRELAX)
-	    {
-	      operand[d].mode |= MEMRELAX;
-	    }
-
 	  if (c & B31)
 	    {
 	      nib |= 0x8;
-	    }
-
-	  if (c & MACREG)
-	    {
-	      nib = 2 + operand[d].reg;
 	    }
 	}
       nibble_count++;
@@ -1060,28 +956,10 @@ build_bytes (this_try, operand)
       *p++ = nib;
     }
 
-  /* Disgusting.  Why, oh why didn't someone ask us for advice
-     on the assembler format.  */
-  if (strcmp (this_try->name, "stm.l") == 0
-      || strcmp (this_try->name, "ldm.l") == 0)
-    {
-      int high, low;
-      high = (operand[this_try->name[0] == 'l' ? 1 : 0].reg >> 8) & 0xf;
-      low = operand[this_try->name[0] == 'l' ? 1 : 0].reg & 0xf;
-
-      asnibbles[2] = high - low;
-      asnibbles[7] = (this_try->name[0] == 'l') ? high : low;
-    }
-
   for (i = 0; i < this_try->length; i++)
     {
       output[i] = (asnibbles[i * 2] << 4) | asnibbles[i * 2 + 1];
     }
-
-  /* Note if this is a movb instruction -- there's a special relaxation
-     which only applies to them.  */
-  if (strcmp (this_try->name, "mov.b") == 0)
-    movb = 1;
 
   /* output any fixes */
   for (i = 0; i < 2; i++)
@@ -1090,13 +968,11 @@ build_bytes (this_try, operand)
 
       if (x & (IMM | DISP))
 	{
-	  do_a_fix_imm (output - frag_now->fr_literal + immat,
-			operand + i, x & MEMRELAX != 0);
+	  do_a_fix_imm (output - frag_now->fr_literal + immat, operand + i, 0);
 	}
       else if (x & ABS)
 	{
-	  do_a_fix_imm (output - frag_now->fr_literal + absat,
-			operand + i, x & MEMRELAX ? movb + 1 : 0);
+	  do_a_fix_imm (output - frag_now->fr_literal + absat, operand + i, 0);
 	}
       else if (x & PCREL)
 	{
@@ -1109,19 +985,12 @@ build_bytes (this_try, operand)
 
 	  if (operand[i].exp.X_add_number & 1)
 	    {
-	      as_warn (_("branch operand has odd offset (%lx)\n"),
+	      as_warn ("branch operand has odd offset (%lx)\n",
 		       (unsigned long) operand->exp.X_add_number);
 	    }
 
-	  operand[i].exp.X_add_number -= 1;
-	  /* This used to use a cast to char, but that fails if char is an
-	     unsigned type.  We can't use `signed char', as that isn't valid
-	     K&R C.  */
-	  if (operand[i].exp.X_add_number & 0x80)
-	    operand[i].exp.X_add_number |= ((offsetT) -1 << 8);
-	  else
-	    operand[i].exp.X_add_number &= 0xff;
-
+	  operand[i].exp.X_add_number =
+	    (char) (operand[i].exp.X_add_number - 1);
 	  fix_new_exp (frag_now,
 		       output - frag_now->fr_literal + where,
 		       size,
@@ -1138,8 +1007,15 @@ build_bytes (this_try, operand)
 		       1,
 		       &operand[i].exp,
 		       0,
-		       R_MEM_INDIRECT);
+		       R_RELBYTE);
 	}
+
+      else if (x & ABSMOV)
+	{
+	  /* This mov is either absolute long or thru a memory loc */
+	  do_a_fix_imm (output - frag_now->fr_literal + immat, operand + i, 1);
+	}
+
       else if (x & ABSJMP)
 	{
 	  /* This jmp may be a jump or a branch */
@@ -1147,7 +1023,7 @@ build_bytes (this_try, operand)
 	  check_operand (operand + i, Hmode ? 0xffffff : 0xffff, "@");
 	  if (operand[i].exp.X_add_number & 1)
 	    {
-	      as_warn (_("branch operand has odd offset (%lx)\n"),
+	      as_warn ("branch operand has odd offset (%lx)\n",
 		       (unsigned long) operand->exp.X_add_number);
 	    }
 	  if (!Hmode)
@@ -1188,7 +1064,7 @@ clever_message (opcode, operand)
 	    case RD16:
 	      if (operand[argn].mode != RD16)
 		{
-		  as_bad (_("destination operand must be 16 bit register"));
+		  as_bad ("destination operand must be 16 bit register");
 		  return;
 
 		}
@@ -1198,7 +1074,7 @@ clever_message (opcode, operand)
 
 	      if (operand[argn].mode != RS8)
 		{
-		  as_bad (_("source operand must be 8 bit register"));
+		  as_bad ("source operand must be 8 bit register");
 		  return;
 		}
 	      break;
@@ -1206,14 +1082,14 @@ clever_message (opcode, operand)
 	    case ABS16DST:
 	      if (operand[argn].mode != ABS16DST)
 		{
-		  as_bad (_("destination operand must be 16bit absolute address"));
+		  as_bad ("destination operand must be 16bit absolute address");
 		  return;
 		}
 	      break;
 	    case RD8:
 	      if (operand[argn].mode != RD8)
 		{
-		  as_bad (_("destination operand must be 8 bit register"));
+		  as_bad ("destination operand must be 8 bit register");
 		  return;
 		}
 	      break;
@@ -1222,7 +1098,7 @@ clever_message (opcode, operand)
 	    case ABS16SRC:
 	      if (operand[argn].mode != ABS16SRC)
 		{
-		  as_bad (_("source operand must be 16bit absolute address"));
+		  as_bad ("source operand must be 16bit absolute address");
 		  return;
 		}
 	      break;
@@ -1230,7 +1106,7 @@ clever_message (opcode, operand)
 	    }
 	}
     }
-  as_bad (_("invalid operands"));
+  as_bad ("invalid operands");
 }
 
 /* This is the guts of the machine-dependent assembler.  STR points to a
@@ -1252,7 +1128,6 @@ md_assemble (str)
 
   char *dot = 0;
   char c;
-  int size;
 
   /* Drop leading whitespace */
   while (*str == ' ')
@@ -1276,7 +1151,7 @@ md_assemble (str)
 
   if (op_end == op_start)
     {
-      as_bad (_("can't find opcode "));
+      as_bad ("can't find opcode ");
     }
   c = *op_end;
 
@@ -1287,7 +1162,7 @@ md_assemble (str)
 
   if (opcode == NULL)
     {
-      as_bad (_("unknown opcode"));
+      as_bad ("unknown opcode");
       return;
     }
 
@@ -1298,25 +1173,7 @@ md_assemble (str)
   *op_end = c;
   prev_opcode = opcode;
 
-  size = SN;
-  if (dot)
-    {
-      switch (*dot)
-	{
-	case 'b':
-	  size = SB;
-	  break;
-
-	case 'w':
-	  size = SW;
-	  break;
-
-	case 'l':
-	  size = SL;
-	  break;
-	}
-    }
-  opcode = get_specific (opcode, operand, size);
+  opcode = get_specific (opcode, operand);
 
   if (opcode == 0)
     {
@@ -1333,7 +1190,7 @@ md_assemble (str)
     {
       if (opcode->size != *dot)
 	{
-	  as_warn (_("mismatch between opcode size and operand size"));
+	  as_warn ("mismatch between opcode size and operand size");
 	}
     }
 
@@ -1343,23 +1200,23 @@ md_assemble (str)
 
 void
 tc_crawl_symbol_chain (headers)
-     object_headers * headers ATTRIBUTE_UNUSED;
+     object_headers * headers;
 {
-  printf (_("call to tc_crawl_symbol_chain \n"));
+  printf ("call to tc_crawl_symbol_chain \n");
 }
 
 symbolS *
 md_undefined_symbol (name)
-     char *name ATTRIBUTE_UNUSED;
+     char *name;
 {
   return 0;
 }
 
 void
 tc_headers_hook (headers)
-     object_headers * headers ATTRIBUTE_UNUSED;
+     object_headers * headers;
 {
-  printf (_("call to tc_headers_hook \n"));
+  printf ("call to tc_headers_hook \n");
 }
 
 /* Various routines to kill one day */
@@ -1410,7 +1267,7 @@ md_atof (type, litP, sizeP)
 
     default:
       *sizeP = 0;
-      return _("Bad call to MD_ATOF()");
+      return "Bad call to MD_ATOF()";
     }
   t = atof_ieee (input_line_pointer, type, words);
   if (t)
@@ -1433,32 +1290,55 @@ size_t md_longopts_size = sizeof(md_longopts);
 
 int
 md_parse_option (c, arg)
-     int c ATTRIBUTE_UNUSED;
-     char *arg ATTRIBUTE_UNUSED;
+     int c;
+     char *arg;
 {
   return 0;
 }
 
 void
 md_show_usage (stream)
-     FILE *stream ATTRIBUTE_UNUSED;
+     FILE *stream;
 {
 }
 
+int md_short_jump_size;
+
 void
 tc_aout_fix_to_chars ()
 {
-  printf (_("call to tc_aout_fix_to_chars \n"));
+  printf ("call to tc_aout_fix_to_chars \n");
   abort ();
 }
 
 void
-md_convert_frag (headers, seg, fragP)
-     object_headers *headers ATTRIBUTE_UNUSED;
-     segT seg ATTRIBUTE_UNUSED;
-     fragS *fragP ATTRIBUTE_UNUSED;
+md_create_short_jump (ptr, from_addr, to_addr, frag, to_symbol)
+     char *ptr;
+     addressT from_addr;
+     addressT to_addr;
+     fragS *frag;
+     symbolS *to_symbol;
 {
-  printf (_("call to md_convert_frag \n"));
+  as_fatal ("failed sanity check.");
+}
+
+void
+md_create_long_jump (ptr, from_addr, to_addr, frag, to_symbol)
+     char *ptr;
+     addressT from_addr, to_addr;
+     fragS *frag;
+     symbolS *to_symbol;
+{
+  as_fatal ("failed sanity check.");
+}
+
+void
+md_convert_frag (headers, seg, fragP)
+     object_headers *headers;
+     segT seg;
+     fragS *fragP;
+{
+  printf ("call to md_convert_frag \n");
   abort ();
 }
 
@@ -1498,12 +1378,14 @@ md_apply_fix (fixP, val)
     }
 }
 
+int md_long_jump_size;
+
 int
 md_estimate_size_before_relax (fragP, segment_type)
-     register fragS *fragP ATTRIBUTE_UNUSED;
-     register segT segment_type ATTRIBUTE_UNUSED;
+     register fragS *fragP;
+     register segT segment_type;
 {
-  printf (_("call tomd_estimate_size_before_relax \n"));
+  printf ("call tomd_estimate_size_before_relax \n");
   abort ();
 }
 
@@ -1519,7 +1401,7 @@ md_number_to_chars (ptr, use, nbytes)
 }
 long
 md_pcrel_from (fixP)
-     fixS *fixP ATTRIBUTE_UNUSED;
+     fixS *fixP;
 {
   abort ();
 }
@@ -1538,15 +1420,13 @@ tc_reloc_mangle (fix_ptr, intr, base)
 
   /* If this relocation is attached to a symbol then it's ok
      to output it */
-  if (fix_ptr->fx_r_type == TC_CONS_RELOC)
+  if (fix_ptr->fx_r_type == RELOC_32)
     {
       /* cons likes to create reloc32's whatever the size of the reloc..
        */
       switch (fix_ptr->fx_size)
 	{
-	case 4:
-	  intr->r_type = R_RELLONG;
-	  break;
+
 	case 2:
 	  intr->r_type = R_RELWORD;
 	  break;
@@ -1568,24 +1448,7 @@ tc_reloc_mangle (fix_ptr, intr, base)
   intr->r_offset = fix_ptr->fx_offset;
 
   if (symbol_ptr)
-    {
-      if (symbol_ptr->sy_number != -1)
-	intr->r_symndx = symbol_ptr->sy_number;
-      else
-	{
-	  symbolS *segsym;
-
-	  /* This case arises when a reference is made to `.'.  */
-	  segsym = seg_info (S_GET_SEGMENT (symbol_ptr))->dot;
-	  if (segsym == NULL)
-	    intr->r_symndx = -1;
-	  else
-	    {
-	      intr->r_symndx = segsym->sy_number;
-	      intr->r_offset += S_GET_VALUE (symbol_ptr);
-	    }
-	}
-    }
+    intr->r_symndx = symbol_ptr->sy_number;
   else
     intr->r_symndx = -1;
 

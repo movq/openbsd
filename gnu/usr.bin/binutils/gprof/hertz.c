@@ -16,16 +16,20 @@
  * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
+#include <sys/time.h>
 #include "hertz.h"
 
+
+#ifdef __MSDOS__
+#define HERTZ 18
+#endif
 
 int
 hertz ()
 {
 #ifdef HERTZ
   return HERTZ;
-#else /* ! defined (HERTZ) */
-#ifdef HAVE_SETITIMER
+#else
   struct itimerval tim;
 
   tim.it_interval.tv_sec = 0;
@@ -34,19 +38,10 @@ hertz ()
   tim.it_value.tv_usec = 0;
   setitimer (ITIMER_REAL, &tim, 0);
   setitimer (ITIMER_REAL, 0, &tim);
-  if (tim.it_interval.tv_usec >= 2)
+  if (tim.it_interval.tv_usec < 2)
     {
-      return 1000000 / tim.it_interval.tv_usec;
+      return HZ_WRONG;
     }
-#endif /* ! defined (HAVE_SETITIMER) */
-#if defined (HAVE_SYSCONF) && defined (_SC_CLK_TCK)
-  return sysconf (_SC_CLK_TCK);
-#else /* ! defined (HAVE_SYSCONF) || ! defined (_SC_CLK_TCK) */
-#ifdef __MSDOS__
-  return 18;
-#else  /* ! defined (__MSDOS__) */
-  return HZ_WRONG;
-#endif /* ! defined (__MSDOS__) */
-#endif /* ! defined (HAVE_SYSCONF) || ! defined (_SC_CLK_TCK) */
-#endif /* ! defined (HERTZ) */
+  return 1000000 / tim.it_interval.tv_usec;
+#endif
 }

@@ -1,7 +1,7 @@
 # configure.in for GNU CC
 # Process this file with autoconf to generate a configuration script.
 
-# Copyright (C) 1997, 1998, 1999, 2000, 2001 Free Software Foundation, Inc.
+# Copyright (C) 1997, 1998, 1999 Free Software Foundation, Inc.
 
 #This file is part of GNU CC.
 
@@ -53,7 +53,7 @@ AC_MSG_RESULT($library_path_setting)
 if test "$library_path_setting" != "ok"; then
 AC_MSG_ERROR([
 *** LIBRARY_PATH shouldn't contain the current directory when
-*** building gcc. Please change the environment variable
+*** building egcs. Please change the environment variable
 *** and run configure again.])
 fi
 
@@ -79,7 +79,7 @@ AC_MSG_RESULT($gcc_exec_prefix_setting)
 if test "$gcc_exec_prefix_setting" != "ok"; then
 AC_MSG_ERROR([
 *** GCC_EXEC_PREFIX shouldn't contain the current directory when
-*** building gcc. Please change the environment variable
+*** building egcs. Please change the environment variable
 *** and run configure again.])
 fi
 
@@ -396,16 +396,17 @@ GCC_FUNC_PRINTF_PTR
 
 case "${host}" in
 *-*-uwin*)
-  AC_MSG_ERROR([
-*** UWIN may not be used as a host platform because
-*** linking with posix.dll is not allowed by the GNU GPL])
+  # Under some versions of uwin, vfork is notoriously buggy and the test 
+  # can hang configure; on other versions, vfork exists just as a stub.
+  # FIXME: This should be removed once vfork in uwin's runtime is fixed.
+  ac_cv_func_vfork_works=no
   ;;
 esac
 AC_FUNC_VFORK
 
 GCC_NEED_DECLARATIONS(malloc realloc calloc free bcopy bzero bcmp \
 	index rindex getenv atol sbrk abort atof strerror getcwd getwd \
-	strsignal putc_unlocked fputs_unlocked strstr)
+	strsignal putc_unlocked fputs_unlocked)
 
 GCC_NEED_DECLARATIONS(getrlimit setrlimit, [
 #include <sys/types.h>
@@ -525,11 +526,11 @@ changequote([,])dnl
 		;;
 	*-*-openbsd*)
 		tm_file=${cpu_type}/openbsd.h
-		tmake_file="t-libc-ok t-openbsd t-libgcc-pic"
+		tmake_file="t-libc-ok t-openbsd"
 		# avoid surprises, always provide an xm-openbsd file 
 		xm_file=${cpu_type}/xm-openbsd.h
-		# for egcs in tree, we use our own fragment
-		xmake_file=x-openbsd
+		# don't depend on processor x-fragments as well
+		xmake_file=none
  		if test x$enable_threads = xyes; then
  			thread_file='posix'
 			tmake_file="${tmake_file} t-openbsd-thread"
@@ -585,7 +586,7 @@ changequote([,])dnl
 
 		xm_file="alpha/xm-alpha-interix.h xm-interix.h"
 		xmake_file="x-interix alpha/t-pe"
-		tmake_file="alpha/t-interix alpha/t-ieee"
+		tmake_file="alpha/t-interix"
  		if test x$enable_threads = xyes ; then
 			thread_file='posix'
 		fi
@@ -598,7 +599,6 @@ changequote([,])dnl
 	alpha*-*-linux-gnuecoff*)
 		tm_file="${tm_file} alpha/linux-ecoff.h alpha/linux.h"
 		target_cpu_default="MASK_GAS"
-		tmake_file="alpha/t-ieee"
 		gas=no
 		xmake_file=none
 		gas=yes gnu_ld=yes
@@ -606,7 +606,7 @@ changequote([,])dnl
 	alpha*-*-linux-gnulibc1*)
 		tm_file="${tm_file} alpha/elf.h alpha/linux.h alpha/linux-elf.h"
 		target_cpu_default="MASK_GAS"
-		tmake_file="t-linux t-linux-gnulibc1 alpha/t-linux alpha/t-crtbe alpha/t-ieee"
+		tmake_file="t-linux t-linux-gnulibc1 alpha/t-linux alpha/t-crtbe"
 		extra_parts="crtbegin.o crtend.o"
 		xmake_file=none
 		gas=yes gnu_ld=yes
@@ -617,7 +617,7 @@ changequote([,])dnl
 	alpha*-*-linux-gnu*)
 		tm_file="${tm_file} alpha/elf.h alpha/linux.h alpha/linux-elf.h"
 		target_cpu_default="MASK_GAS"
-		tmake_file="t-linux alpha/t-linux alpha/t-crtbe alpha/t-ieee"
+		tmake_file="t-linux alpha/t-linux alpha/t-crtbe"
 		extra_parts="crtbegin.o crtend.o"
 		xmake_file=none
 		gas=yes gnu_ld=yes
@@ -628,7 +628,7 @@ changequote([,])dnl
 	alpha*-*-netbsd*)
 		tm_file="${tm_file} alpha/elf.h alpha/netbsd.h alpha/netbsd-elf.h"
 		target_cpu_default="MASK_GAS"
-		tmake_file="alpha/t-crtbe alpha/t-ieee"
+		tmake_file="alpha/t-crtbe"
 		extra_parts="crtbegin.o crtend.o"
 		xmake_file=none
 		gas=yes gnu_ld=yes
@@ -637,8 +637,6 @@ changequote([,])dnl
 	alpha*-*-openbsd*)
 		# default x-alpha is only appropriate for dec-osf.
 		target_cpu_default="MASK_GAS"
-		tmake_file="alpha/t-ieee"
-		gas=yes gnu_ld=yes
 		;;
 		
 	alpha*-dec-osf*)
@@ -651,7 +649,6 @@ changequote([,])dnl
 			extra_passes="mips-tfile mips-tdump"
 		fi
 		use_collect2=yes
-		tmake_file="alpha/t-ieee"
 		case $machine in
 		  *-*-osf1*)
 		    tm_file="${tm_file} alpha/osf.h alpha/osf12.h alpha/osf2or3.h"
@@ -678,7 +675,6 @@ changequote([,])dnl
 		;;
  	alpha*-*-vxworks*)
 		tm_file="${tm_file} dbx.h alpha/vxworks.h"
-		tmake_file="alpha/t-ieee"
 		if [ x$gas != xyes ]
 		then
 			extra_passes="mips-tfile mips-tdump"
@@ -689,7 +685,7 @@ changequote([,])dnl
 	alpha*-*-winnt*)
 	 	tm_file="${tm_file} alpha/alpha32.h alpha/win-nt.h winnt/win-nt.h"
 		xm_file="${xm_file} config/winnt/xm-winnt.h alpha/xm-winnt.h"
-		tmake_file="t-libc-ok alpha/t-ieee"
+		tmake_file=t-libc-ok
 		xmake_file=winnt/x-winnt
 		extra_host_objs=oldnames.o
 		extra_gcc_objs="spawnv.o oldnames.o"
@@ -704,7 +700,7 @@ changequote([,])dnl
 	alpha*-dec-vms*)
 		tm_file=alpha/vms.h
 		xm_file="${xm_file} alpha/xm-vms.h"
-		tmake_file="alpha/t-vms alpha/t-ieee"
+		tmake_file=alpha/t-vms
 		;;
 	arc-*-elf*)
 		extra_parts="crtinit.o crtfini.o"
@@ -747,7 +743,6 @@ changequote([,])dnl
 		tm_file=arm/netbsd.h
 		xm_file="arm/xm-netbsd.h ${xm_file}"
 		tmake_file="t-netbsd arm/t-netbsd"
-       use_collect2=yes
 		;;
 	arm*-*-linux-gnuaout*)		# ARM GNU/Linux with a.out
 		cpu_type=arm
@@ -756,31 +751,15 @@ changequote([,])dnl
 		tmake_file=arm/t-linux
 		gnu_ld=yes
 		;;
-	arm*-*-linux-gnuoldld*)		# ARM GNU/Linux with old ELF linker
-		xm_file=arm/xm-linux.h
-		xmake_file=x-linux
-		tm_file="arm/linux-oldld.h arm/linux-elf.h"
-		case $machine in
-		armv2*-*-*)
-			tm_file="arm/linux-elf26.h $tm_file"
-			;;
-		esac
-		tmake_file="t-linux arm/t-linux"
-		extra_parts="crtbegin.o crtbeginS.o crtend.o crtendS.o"
-		gnu_ld=yes
-		case x${enable_threads} in
-		x | xyes | xpthreads | xposix)
-			thread_file='posix'
-			;;
-		esac
-		;;
 	arm*-*-linux-gnu*)		# ARM GNU/Linux with ELF
 		xm_file=arm/xm-linux.h
 		xmake_file=x-linux
-		tm_file="arm/linux-elf.h"
 		case $machine in
 		armv2*-*-*)
-			tm_file="arm/linux-elf26.h $tm_file"
+			tm_file=arm/linux-elf26.h
+			;;
+		*)
+			tm_file=arm/linux-elf.h
 			;;
 		esac
 		tmake_file="t-linux arm/t-linux"
@@ -1158,9 +1137,9 @@ changequote([,])dnl
 changequote(,)dnl
 	i[34567]86-*-freebsdelf*)
 changequote([,])dnl
-		tm_file="i386/i386.h i386/att.h svr4.h i386/freebsd-elf.h i386/perform.h"
+		tm_file="i386/i386.h i386/att.h linux.h i386/freebsd-elf.h i386/perform.h"
 		extra_parts="crtbegin.o crtbeginS.o crtend.o crtendS.o"
-		tmake_file=t-freebsd
+		tmake_file=i386/t-freebsd
 		gas=yes
 		gnu_ld=yes
 		stabs=yes
@@ -1169,20 +1148,17 @@ changequote(,)dnl
 	i[34567]86-*-freebsd*)
 changequote([,])dnl
 		tm_file=i386/freebsd.h
-		tmake_file=t-freebsd
+		tmake_file=i386/t-freebsd
 		;;
 changequote(,)dnl
 	i[34567]86-*-netbsd*)
 changequote([,])dnl
 		tm_file=i386/netbsd.h
 		tmake_file=t-netbsd
-       use_collect2=yes
 		;;
 changequote(,)dnl
 	i[34567]86-*-openbsd*)
 changequote([,])dnl
-		# needed to unconfuse gdb
-		tmake_file="t-libc-ok t-openbsd i386/t-openbsd"
 		# we need collect2 until our bug is fixed...
 		use_collect2=yes
 		;;
@@ -1417,10 +1393,11 @@ changequote(,)dnl
 changequote([,])dnl
 		xm_file="xm-siglist.h xm-alloca.h ${xm_file}"
 		xm_defines="USG POSIX SMALL_ARG_MAX"
-		tm_file=i386/sol2.h
-		if test x$gas = xyes; then
-			# Only needed if gas does not support -s
-			tm_file="i386/sol2gas.h ${tm_file}"
+		if test x$stabs = xyes
+		then
+			tm_file=i386/sol2dbg.h
+		else
+			tm_file=i386/sol2.h
 		fi
 		tmake_file=i386/t-sol2
 		extra_parts="crt1.o crti.o crtn.o gcrt1.o gmon.o crtbegin.o crtend.o"
@@ -1469,7 +1446,6 @@ changequote([,])dnl
 		tmake_file="i386/t-crtpic i386/t-udk"
 		xmake_file=x-svr4
 		extra_parts="crtbegin.o crtend.o"
-		install_headers_dir=install-headers-cpio
 		;;
 changequote(,)dnl
 	i[34567]86-*-osf1*)		# Intel 80386's running OSF/1 1.3+
@@ -1566,6 +1542,8 @@ changequote(,)dnl
 	i[34567]86-*-uwin*)
 changequote([,])dnl
 		tm_file=i386/uwin.h
+		xm_file="${xm_file} i386/xm-uwin.h"
+		xm_defines="USG NO_STAB_H NO_SYS_SIGLIST"
 		tmake_file="i386/t-cygwin i386/t-uwin"
 		extra_objs=winnt.o
 		xmake_file=i386/x-cygwin
@@ -1704,7 +1682,7 @@ changequote([,])dnl
 		extra_headers=math-68881.h
 		;;
 	m68000-hp-hpux*)		# HP 9000 series 300
-		xm_file="xm-alloca.h ${xm_file}"
+		xm_file="xm_alloca.h ${xm_file}"
 		xm_defines="USG NO_SYS_SIGLIST"
 		if test x$gas = xyes
 		then
@@ -1883,6 +1861,7 @@ changequote([,])dnl
 		;;
 	m68k-hp-bsd4.4*)		# HP 9000/3xx running 4.4bsd
 		tm_file=m68k/hp3bsd44.h
+		xmake_file=m68k/x-hp3bsd44
 		use_collect2=yes
 		extra_headers=math-68881.h
 		float_format=m68k
@@ -1905,7 +1884,7 @@ changequote([,])dnl
 		extra_headers=math-68881.h
 		;;
 	m68k-hp-hpux7*)	# HP 9000 series 300 running HPUX version 7.
-		xm_file="xm-alloca.h ${xm_file}"
+		xm_file="xm_alloca.h ${xm_file}"
 		xm_defines="USG NO_SYS_SIGLIST"
 		if test x$gas = xyes
 		then
@@ -1921,7 +1900,7 @@ changequote([,])dnl
 		float_format=m68k
 		;;
 	m68k-hp-hpux*)	# HP 9000 series 300
-		xm_file="xm-alloca.h ${xm_file}"
+		xm_file="xm_alloca.h ${xm_file}"
 		xm_defines="USG NO_SYS_SIGLIST"
 		if test x$gas = xyes
 		then
@@ -2051,10 +2030,8 @@ changequote([,])dnl
 		tm_file=m68k/netbsd.h
 		tmake_file=t-netbsd
 		float_format=m68k
-       use_collect2=yes
 		;;
 	m68k*-*-openbsd*)
-		tmake_file="t-libc-ok t-openbsd m68k/t-openbsd"
 		float_format=m68k
 		# we need collect2 until our bug is fixed...
 		use_collect2=yes
@@ -2385,10 +2362,11 @@ changequote([,])dnl
 		;;
 	mips*el-*-openbsd*)	# mips little endian
 		target_cpu_default="MASK_GAS|MASK_ABICALLS"
+		tm_file=mips/openbsd.h
 		;;
 	mips*-*-openbsd*)		# mips big endian
 		target_cpu_default="MASK_GAS|MASK_ABICALLS"
-		tm_file="mips/openbsd-be.h ${tm_file}"
+		tm_file=mips/openbsd-be.h
 		;;
 	mips-sony-bsd* | mips-sony-newsos*)	# Sony NEWS 3600 or risc/news.
 		tm_file="mips/news4.h ${tm_file}"
@@ -2731,7 +2709,6 @@ changequote([,])dnl
 		xm_file="ns32k/xm-netbsd.h ${xm_file}"
 		# On NetBSD, the headers are already okay, except for math.h.
 		tmake_file=t-netbsd
-       use_collect2=yes
 		;;
         pdp11-*-bsd)
 		tm_file="${tm_file} pdp11/2bsd.h"
@@ -2939,24 +2916,24 @@ changequote([,])dnl
 changequote(,)dnl
 	rs6000-ibm-aix4.[12]* | powerpc-ibm-aix4.[12]*)
 changequote([,])dnl
-		tm_file=rs6000/aix41.h
+		if test "$gnu_ld" = yes
+		then
+			tm_file=rs6000/aix41-gld.h
+		else
+			tm_file=rs6000/aix41.h
+		fi
 		if test x$host != x$target
 		then
 			tmake_file=rs6000/t-xnewas
 		else
 			tmake_file=rs6000/t-newas
 		fi
-		if test "$gnu_ld" = yes
-		then
-			xmake_file=rs6000/x-aix41-gld
-		else
-			xmake_file=rs6000/x-aix41
-		fi
+		xmake_file=rs6000/x-aix41
 		float_format=none
 		use_collect2=yes
 		;;
 changequote(,)dnl
-	rs6000-ibm-aix4.[3456789]* | powerpc-ibm-aix4.[3456789]*)
+	rs6000-ibm-aix4.[3456789].* | powerpc-ibm-aix4.[3456789].*)
 changequote([,])dnl
 		tm_file=rs6000/aix43.h
 		if test x$host != x$target
@@ -3039,12 +3016,10 @@ changequote([,])dnl
 	sparc-*-netbsd*)
 		tm_file=sparc/netbsd.h
 		tmake_file=t-netbsd
-       use_collect2=yes
 		;;
 	sparc-*-openbsd*)
 		# we need collect2 until our bug is fixed...
 		use_collect2=yes
-		tmake_file="t-libc-ok t-openbsd sparc/t-openbsd"
 		;;
 	sparc-*-bsd*)
 		tm_file=sparc/bsd.h
@@ -3119,21 +3094,12 @@ changequote([,])dnl
 		fi
 		;;
         sparc-hal-solaris2*)
-                xm_file="xm-siglist.h sparc/xm-sysv4.h sparc/xm-sol2.h"
-                xm_defines="USG POSIX"
+                xm_file=sparc/xm-sol2.h
                 tm_file="sparc/sol2.h sparc/hal.h"
                 tmake_file="sparc/t-halos sparc/t-sol2"
                 xmake_file=sparc/x-sysv4
                 extra_parts="crt1.o crti.o crtn.o gmon.o crtbegin.o crtend.o"
-                case $machine in
-                *-*-solaris2.[0-4])
-                        float_format=i128
-                ;;
-                *)
-                        float_format=none
-                        ;;
-                esac
-		thread_file='solaris'
+                broken_install=yes
                 ;;
 	sparc-*-solaris2*)
 		if test x$gnu_ld = xyes
@@ -3282,12 +3248,9 @@ changequote([,])dnl
 		tm_file="${tm_file} netbsd.h vax/netbsd.h"
 		tmake_file=t-netbsd
 		float_format=vax
-       use_collect2=yes
 		;;
 	vax-*-openbsd*)
 		tmake_file="${tmake_file} vax/t-openbsd"
-		float_format=vax
-		use_collect2=yes
 		;;
 	vax-*-ultrix*)			# vaxen running ultrix
 		tm_file="${tm_file} vax/ultrix.h"
@@ -3363,7 +3326,7 @@ changequote([,])dnl
 	alpha*-*-*)
 		case $machine in
 			alphaev6*)
-				target_cpu_default2="MASK_CPU_EV6|MASK_BWX|MASK_MAX|MASK_FIX"
+				target_cpu_default2="MASK_CPU_EV6|MASK_BWX|MASK_CIX|MASK_MAX"
 				;;
 			alphapca56*)
 				target_cpu_default2="MASK_CPU_EV5|MASK_BWX|MASK_MAX"
@@ -3750,8 +3713,7 @@ ALL_LINGUAS="en_UK"
 
 # NLS support is still experimental, so disable it by default for now.
 AC_ARG_ENABLE(nls,
-[  --enable-nls            use Native Language Support (disabled by default).
-                          EXPERIMENTAL, see ABOUT-GCC-NLS.],
+  [  --enable-nls            use Native Language Support (disabled by default)],
   , enable_nls=no)
 
 AM_GNU_GETTEXT
@@ -3966,55 +3928,7 @@ changequote([,])dnl
 	fi
 elif test x$host = x$target; then
 	# Native build.
-	# Search the same directories that the installed compiler will
-	# search.  Else we may find the wrong assembler and lose.  If we
-	# do not find a suitable assembler binary, then try the user's
-	# path.
-	#
-	# Also note we have to check MD_EXEC_PREFIX before checking the
-	# user's path.  Unfortunately, there is no good way to get at the
-	# value of MD_EXEC_PREFIX here.  So we do a brute force search
-	# through all the known MD_EXEC_PREFIX values.  Ugh.  This needs
-	# to be fixed as part of the make/configure rewrite too.
-
-	if test "x$exec_prefix" = xNONE; then
-		if test "x$prefix" = xNONE; then
-			test_prefix=/usr/local
-		else
-			test_prefix=$prefix
-		fi
-	else
-		test_prefix=$exec_prefix
-	fi
-
-	# If the loop below does not find an assembler, then use whatever
-	# one we can find in the users's path.
-	# user's path.
-	as=as$host_exeext
-
-	test_dirs="$test_prefix/lib/gcc-lib/$target/$gcc_version \
-		   $test_prefix/lib/gcc-lib/$target \
-		   /usr/lib/gcc/$target/$gcc_version \
-		   /usr/lib/gcc/$target \
-		   $test_prefix/$target/bin/$target/$gcc_version \
-		   $test_prefix/$target/bin \
-		   /usr/libexec \
-		   /usr/ccs/gcc \
-		   /usr/ccs/bin \
-		   /udk/usr/ccs/bin \
-		   /bsd43/usr/lib/cmplrs/cc \
-		   /usr/cross64/usr/bin \
-		   /usr/lib/cmplrs/cc \
-		   /sysv/usr/lib/cmplrs/cc \
-		   /svr4/usr/lib/cmplrs/cc \
-		   /usr/bin"
-
-	for dir in $test_dirs; do
-		if test -f $dir/as$host_exeext; then
-			gcc_cv_as=$dir/as$host_exeext
-			break;
-		fi
-	done
+	gcc_cv_as=as$host_exeext
 fi
 if test x$gcc_cv_as != x; then
 	# Check if we have .balign and .p2align

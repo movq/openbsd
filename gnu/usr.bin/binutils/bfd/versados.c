@@ -1,8 +1,9 @@
 /* BFD back-end for VERSAdos-E objects.
-   Copyright 1995, 96, 97, 98, 99, 2000 Free Software Foundation, Inc.
-   Written by Steve Chamberlain of Cygnus Support <sac@cygnus.com>.
 
    Versados is a Motorola trademark.
+
+   Copyright 1995 Free Software Foundation, Inc.
+   Written by Steve Chamberlain of Cygnus Support <sac@cygnus.com>.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -161,7 +162,10 @@ versados_mkobject (abfd)
     {
       tdata_type *tdata = (tdata_type *) bfd_alloc (abfd, sizeof (tdata_type));
       if (tdata == NULL)
-	return false;
+	{
+	  bfd_set_error (bfd_error_no_memory);
+	  return false;
+	}
       abfd->tdata.versados_data = tdata;
       tdata->symbols = NULL;
       VDATA (abfd)->alert = 0x12345678;
@@ -483,12 +487,10 @@ versados_scan (abfd)
   int j;
   int nsecs = 0;
 
-  VDATA (abfd)->stringlen = 0;
   VDATA (abfd)->nrefs = 0;
   VDATA (abfd)->ndefs = 0;
   VDATA (abfd)->ref_idx = 0;
   VDATA (abfd)->def_idx = 0;
-  VDATA (abfd)->pass_2_done = 0;
 
   while (loop)
     {
@@ -552,9 +554,6 @@ versados_scan (abfd)
 
   VDATA (abfd)->strings = bfd_alloc (abfd, VDATA (abfd)->stringlen);
 
-  if ((VDATA (abfd)->symbols == NULL && abfd->symcount > 0)
-      || (VDATA (abfd)->strings == NULL && VDATA (abfd)->stringlen > 0))
-    return false;
 
   /* Actually fill in the section symbols,
      we stick them at the end of the table */
@@ -597,34 +596,20 @@ versados_object_p (abfd)
   struct ext_vheader ext;
   unsigned char len;
 
-  if (bfd_seek (abfd, (file_ptr) 0, SEEK_SET) != 0)
+  if (bfd_seek (abfd, (file_ptr) 0, SEEK_SET))
     return NULL;
 
-  if (bfd_read (&len, 1, 1, abfd) != 1)
-    {
-      if (bfd_get_error () != bfd_error_system_call)
-	bfd_set_error (bfd_error_wrong_format);
-      return NULL;
-    }
 
-  if (bfd_read (&ext.type, 1, len, abfd) != len)
-    {
-      if (bfd_get_error () != bfd_error_system_call)
-	bfd_set_error (bfd_error_wrong_format);
-      return NULL;
-    }
-
-  /* We guess that the language field will never be larger than 10.
-     In sample files, it is always either 0 or 1.  Checking for this
-     prevents confusion with Intel Hex files.  */
-  if (ext.type != VHEADER
-      || ext.lang > 10)
+  bfd_read (&len, 1, 1, abfd);
+  if (bfd_read (&ext.type, 1, len, abfd) != len
+      || ext.type != '1')
     {
       bfd_set_error (bfd_error_wrong_format);
       return NULL;
     }
 
-  /* OK, looks like a record, build the tdata and read in.  */
+  /* ok, looks like a record, build the tdata and read 
+     in.. */
 
   if (!versados_mkobject (abfd)
       || !versados_scan (abfd))
@@ -692,11 +677,11 @@ versados_get_section_contents (abfd, section, location, offset, count)
 
 static boolean
 versados_set_section_contents (abfd, section, location, offset, bytes_to_do)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     sec_ptr section ATTRIBUTE_UNUSED;
-     PTR location ATTRIBUTE_UNUSED;
-     file_ptr offset ATTRIBUTE_UNUSED;
-     bfd_size_type bytes_to_do ATTRIBUTE_UNUSED;
+     bfd *abfd;
+     sec_ptr section;
+     PTR location;
+     file_ptr offset;
+     bfd_size_type bytes_to_do;
 {
   return false;
 }
@@ -705,8 +690,8 @@ versados_set_section_contents (abfd, section, location, offset, bytes_to_do)
 /*ARGSUSED */
 static int
 versados_sizeof_headers (abfd, exec)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     boolean exec ATTRIBUTE_UNUSED;
+     bfd *abfd;
+     boolean exec;
 {
   return 0;
 }
@@ -758,7 +743,7 @@ versados_get_symtab (abfd, alocation)
 /*ARGSUSED */
 void
 versados_get_symbol_info (ignore_abfd, symbol, ret)
-     bfd *ignore_abfd ATTRIBUTE_UNUSED;
+     bfd *ignore_abfd;
      asymbol *symbol;
      symbol_info *ret;
 {
@@ -768,7 +753,7 @@ versados_get_symbol_info (ignore_abfd, symbol, ret)
 /*ARGSUSED */
 void
 versados_print_symbol (ignore_abfd, afile, symbol, how)
-     bfd *ignore_abfd ATTRIBUTE_UNUSED;
+     bfd *ignore_abfd;
      PTR afile;
      asymbol *symbol;
      bfd_print_symbol_type how;
@@ -790,7 +775,7 @@ versados_print_symbol (ignore_abfd, afile, symbol, how)
 
 long
 versados_get_reloc_upper_bound (abfd, asect)
-     bfd *abfd ATTRIBUTE_UNUSED;
+     bfd *abfd;
      sec_ptr asect;
 {
   return (asect->reloc_count + 1) * sizeof (arelent *);
@@ -851,7 +836,7 @@ versados_canonicalize_reloc (abfd, section, relptr, symbols)
 #define versados_bfd_free_cached_info _bfd_generic_bfd_free_cached_info
 #define versados_new_section_hook _bfd_generic_new_section_hook
 
-#define versados_bfd_is_local_label_name bfd_generic_is_local_label_name
+#define versados_bfd_is_local_label bfd_generic_is_local_label
 #define versados_get_lineno _bfd_nosymbols_get_lineno
 #define versados_find_nearest_line _bfd_nosymbols_find_nearest_line
 #define versados_bfd_make_debug_symbol _bfd_nosymbols_bfd_make_debug_symbol
@@ -865,7 +850,6 @@ versados_canonicalize_reloc (abfd, section, relptr, symbols)
 #define versados_bfd_get_relocated_section_contents \
   bfd_generic_get_relocated_section_contents
 #define versados_bfd_relax_section bfd_generic_relax_section
-#define versados_bfd_gc_sections bfd_generic_gc_sections
 #define versados_bfd_link_hash_table_create _bfd_generic_link_hash_table_create
 #define versados_bfd_link_add_symbols _bfd_generic_link_add_symbols
 #define versados_bfd_final_link _bfd_generic_final_link
@@ -875,8 +859,8 @@ const bfd_target versados_vec =
 {
   "versados",			/* name */
   bfd_target_versados_flavour,
-  BFD_ENDIAN_BIG,		/* target byte order */
-  BFD_ENDIAN_BIG,		/* target headers byte order */
+  true,				/* target byte order */
+  true,				/* target headers byte order */
   (HAS_RELOC | EXEC_P |		/* object flags */
    HAS_LINENO | HAS_DEBUG |
    HAS_SYMS | HAS_LOCALS | WP_TEXT | D_PAGED),
@@ -921,7 +905,5 @@ const bfd_target versados_vec =
   BFD_JUMP_TABLE_LINK (versados),
   BFD_JUMP_TABLE_DYNAMIC (_bfd_nodynamic),
 
-  NULL,
-  
   (PTR) 0
 };

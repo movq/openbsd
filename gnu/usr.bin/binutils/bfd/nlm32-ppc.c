@@ -1,5 +1,5 @@
 /* Support for 32-bit PowerPC NLM (NetWare Loadable Module)
-   Copyright (C) 1994, 1995, 1999 Free Software Foundation, Inc.
+   Copyright (C) 1994, 1995 Free Software Foundation, Inc.
 
 This file is part of BFD, the Binary File Descriptor library.
 
@@ -639,11 +639,11 @@ nlm_powerpc_read_reloc (abfd, sym, secp, rel)
 
 static boolean
 nlm_powerpc_mangle_relocs (abfd, sec, data, offset, count)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     asection *sec ATTRIBUTE_UNUSED;
-     PTR data ATTRIBUTE_UNUSED;
-     bfd_vma offset ATTRIBUTE_UNUSED;
-     bfd_size_type count ATTRIBUTE_UNUSED;
+     bfd *abfd;
+     asection *sec;
+     PTR data;
+     bfd_vma offset;
+     bfd_size_type count;
 {
   return true;
 }
@@ -667,7 +667,10 @@ nlm_powerpc_read_import (abfd, sym)
   sym -> symbol.the_bfd = abfd;
   name = bfd_alloc (abfd, symlength + 1);
   if (name == NULL)
-    return false;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return false;
+    }
   if (bfd_read (name, symlength, 1, abfd) != symlength)
     return (false);
   name[symlength] = '\0';
@@ -681,7 +684,10 @@ nlm_powerpc_read_import (abfd, sym)
   nlm_relocs = ((struct nlm_relent *)
 		bfd_alloc (abfd, rcount * sizeof (struct nlm_relent)));
   if (nlm_relocs == (struct nlm_relent *) NULL)
-    return false;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return false;
+    }
   sym -> relocs = nlm_relocs;
   sym -> rcnt = 0;
   while (sym -> rcnt < rcount)

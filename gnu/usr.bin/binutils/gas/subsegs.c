@@ -1,5 +1,5 @@
 /* subsegs.c - subsegments -
-   Copyright (C) 1987, 90, 91, 92, 93, 94, 95, 96, 97, 98, 1999
+   Copyright (C) 1987, 1990, 1991, 1992, 1993, 1994
    Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
@@ -15,9 +15,8 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with GAS; see the file COPYING.  If not, write to the Free
-   Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+   along with GAS; see the file COPYING.  If not, write to
+   the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 /*
  * Segments & sub-segments.
@@ -46,9 +45,6 @@ char const *const seg_name[] =
   "absolute",
 #ifdef MANY_SEGMENTS
   "e0", "e1", "e2", "e3", "e4", "e5", "e6", "e7", "e8", "e9",
-  "e10", "e11", "e12", "e13", "e14", "e15", "e16", "e17", "e18", "e19",
-  "e20", "e21", "e22", "e23", "e24", "e25", "e26", "e27", "e28", "e29",
-  "e30", "e31", "e32", "e33", "e34", "e35", "e36", "e37", "e38", "e39",
 #else
   "text",
   "data",
@@ -209,9 +205,12 @@ subseg_set_rest (seg, subseg)
      segT seg;
      subsegT subseg;
 {
+  long tmp;			/* JF for obstack alignment hacking */
   register frchainS *frcP;	/* crawl frchain chain */
   register frchainS **lastPP;	/* address of last pointer */
   frchainS *newP;		/* address of new frchain */
+  register fragS *former_last_fragP;
+  register fragS *new_fragP;
 
   mri_common_symbol = NULL;
 
@@ -280,6 +279,7 @@ subseg_set_rest (seg, subseg)
       /*
        * This should be the only code that creates a frchainS.
        */
+      extern fragS *frag_alloc ();
       newP = (frchainS *) obstack_alloc (&frchains, sizeof (frchainS));
       newP->frch_subseg = subseg;
       newP->frch_seg = seg;
@@ -287,7 +287,7 @@ subseg_set_rest (seg, subseg)
       newP->fix_root = NULL;
       newP->fix_tail = NULL;
 #endif
-      obstack_begin (&newP->frch_obstack, chunksize);
+      obstack_begin (&newP->frch_obstack, 5000);
 #if __GNUC__ >= 2
       obstack_alignment_mask (&newP->frch_obstack) = __alignof__ (fragS) - 1;
 #endif
@@ -298,16 +298,6 @@ subseg_set_rest (seg, subseg)
 
       *lastPP = newP;
       newP->frch_next = frcP;	/* perhaps NULL */
-
-#ifdef BFD_ASSEMBLER
-      {
-	segment_info_type *seginfo;
-	seginfo = seg_info (seg);
-	if (seginfo && seginfo->frchainP == frcP)
-	  seginfo->frchainP = newP;
-      }
-#endif
-      
       frcP = newP;
     }
   /*
@@ -376,7 +366,7 @@ subseg_new (segname, subseg)
     return new_seg;
   }
 #else
-  as_bad (_("Attempt to switch to nonexistent segment \"%s\""), segname);
+  as_bad ("Attempt to switch to nonexistent segment \"%s\"", segname);
   return now_seg;
 #endif
 }
@@ -523,141 +513,32 @@ section_symbol (sec)
     abort ();
   if (seginfo->sym)
     return seginfo->sym;
-
+  s = symbol_find (sec->name);
+  if (!s)
+    {
 #ifndef EMIT_SECTION_SYMBOLS
 #define EMIT_SECTION_SYMBOLS 1
 #endif
 
-  if (! EMIT_SECTION_SYMBOLS
+      if (! EMIT_SECTION_SYMBOLS
 #ifdef BFD_ASSEMBLER
-      || symbol_table_frozen
+	  && symbol_table_frozen
 #endif
-      )
-    {
-      /* Here we know it won't be going into the symbol table.  */
-      s = symbol_create (sec->name, sec, 0, &zero_address_frag);
-    }
-  else
-    {
-      s = symbol_find_base (sec->name, 0);
-      if (s == NULL)
-	s = symbol_new (sec->name, sec, 0, &zero_address_frag);
+	  )
+	/* Here we know it won't be going into the symbol table.  */
+	s = symbol_create (sec->name, sec, 0, &zero_address_frag);
       else
-	{
-	  if (S_GET_SEGMENT (s) == undefined_section)
-	    {
-	      S_SET_SEGMENT (s, sec);
-	      symbol_set_frag (s, &zero_address_frag);
-	    }
-	}
+	s = symbol_new (sec->name, sec, 0, &zero_address_frag);
+      S_CLEAR_EXTERNAL (s);
+
+      /* Use the BFD section symbol, if possible.  */
+      if (obj_sec_sym_ok_for_reloc (sec))
+	s->bsym = sec->symbol;
     }
-
-  S_CLEAR_EXTERNAL (s);
-
-  /* Use the BFD section symbol, if possible.  */
-  if (obj_sec_sym_ok_for_reloc (sec))
-    symbol_set_bfdsym (s, sec->symbol);
-
   seginfo->sym = s;
   return s;
 }
 
 #endif /* BFD_ASSEMBLER */
-
-/* Return whether the specified segment is thought to hold text.  */
-
-#ifndef BFD_ASSEMBLER
-const char * const nontext_section_names[] =
-{
-  ".eh_frame",
-  ".gcc_except_table",
-#ifdef OBJ_COFF
-#ifndef COFF_LONG_SECTION_NAMES
-  ".eh_fram",
-  ".gcc_exc",
-#endif
-#endif
-  NULL
-};
-#endif /* ! BFD_ASSEMBLER */
-
-int
-subseg_text_p (sec)
-     segT sec;
-{
-#ifdef BFD_ASSEMBLER
-  return (bfd_get_section_flags (stdoutput, sec) & SEC_CODE) != 0;
-#else /* ! BFD_ASSEMBLER */
-  const char * const *p;
-
-  if (sec == data_section || sec == bss_section)
-    return 0;
-
-  for (p = nontext_section_names; *p != NULL; ++p)
-    {
-      if (strcmp (segment_name (sec), *p) == 0)
-	return 0;
-
-#ifdef obj_segment_name
-      if (strcmp (obj_segment_name (sec), *p) == 0)
-	return 0;
-#endif
-    }
-
-  return 1;
-
-#endif /* ! BFD_ASSEMBLER */
-}
-
-void
-subsegs_print_statistics (file)
-     FILE *file;
-{
-  frchainS *frchp;
-  fprintf (file, "frag chains:\n");
-  for (frchp = frchain_root; frchp; frchp = frchp->frch_next)
-    {
-      int count = 0;
-      fragS *fragp;
-
-      /* If frch_subseg is non-zero, it's probably been chained onto
-	 the end of a previous subsection.  Don't count it again.  */
-      if (frchp->frch_subseg != 0)
-	continue;
-
-      /* Skip gas-internal sections.  */
-      if (segment_name (frchp->frch_seg)[0] == '*')
-	continue;
-
-      for (fragp = frchp->frch_root; fragp; fragp = fragp->fr_next)
-	{
-#if 0
-	  switch (fragp->fr_type)
-	    {
-	    case rs_fill:
-	      fprintf (file, "f"); break;
-	    case rs_align:
-	      fprintf (file, "a"); break;
-	    case rs_align_code:
-	      fprintf (file, "c"); break;
-	    case rs_org:
-	      fprintf (file, "o"); break;
-	    case rs_machine_dependent:
-	      fprintf (file, "m"); break;
-	    case rs_space:
-	      fprintf (file, "s"); break;
-	    case 0:
-	      fprintf (file, "0"); break;
-	    default:
-	      fprintf (file, "?"); break;
-	    }
-#endif
-	  count++;
-	}
-      fprintf (file, "\n");
-      fprintf (file, "\t%p %-10s\t%10d frags\n", frchp,
-	       segment_name (frchp->frch_seg), count);
-    }
-}
 
 /* end of subsegs.c */

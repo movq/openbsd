@@ -1,8 +1,7 @@
 /* BFD back-end for AIX on PS/2 core files.
    This was based on trad-core.c, which was written by John Gilmore of
         Cygnus Support.
-   Copyright 1988, 89, 91, 92, 93, 94, 95, 96, 97, 1998
-   Free Software Foundation, Inc.
+   Copyright 1988, 1989, 1991, 1992, 1993, 1994 Free Software Foundation, Inc.
    Written by Minh Tran-Le <TRANLE@INTELLICORP.COM>.
    Converted to back end form by Ian Lance Taylor <ian@cygnus.com>.
 
@@ -25,11 +24,16 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include "bfd.h"
 #include "sysdep.h"
 #include "libbfd.h"
+#include "obstack.h"
 #include "coff/i386.h"
 #include "coff/internal.h"
 #include "libcoff.h"
 
+#include <stdio.h>
+#include <stddef.h>
 #include <signal.h>
+
+#include <errno.h>
 
 #if defined (_AIX) && defined (_I386)
 #define NOCHECKS		/* this is for coredump.h */
@@ -64,8 +68,6 @@ struct trad_core_struct {
   asection *sections[MAX_CORE_SEGS];
 };
 
-static void swap_abort PARAMS ((void));
-
 static const bfd_target *
 aix386_core_file_p (abfd)
      bfd *abfd;
@@ -92,7 +94,10 @@ aix386_core_file_p (abfd)
 
   mergem = (struct mergem *)bfd_zalloc (abfd, sizeof (struct mergem));
   if (mergem == NULL)
-    return 0;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return 0;
+    }
 
   core = &mergem->internal_core;
 
@@ -113,6 +118,7 @@ aix386_core_file_p (abfd)
   if (core_regsec (abfd) == NULL)
     {
     loser:
+      bfd_set_error (bfd_error_no_memory);
       bfd_release (abfd, (char *)mergem);
       return 0;
     }
@@ -232,7 +238,7 @@ aix386_core_file_matches_executable_p (core_bfd, exec_bfd)
 }
 
 /* If somebody calls any byte-swapping routines, shoot them.  */
-static void
+void
 swap_abort()
 {
   abort(); /* This way doesn't require any declaration for ANSI to fuck up */
@@ -245,8 +251,8 @@ const bfd_target aix386_core_vec =
   {
     "aix386-core",
     bfd_target_unknown_flavour,
-    BFD_ENDIAN_BIG,		/* target byte order */
-    BFD_ENDIANG_BIG,		/* target headers byte order */
+    true,			/* target byte order */
+    true,			/* target headers byte order */
   (HAS_RELOC | EXEC_P |		/* object flags */
    HAS_LINENO | HAS_DEBUG |
    HAS_SYMS | HAS_LOCALS | WP_TEXT),
@@ -279,7 +285,5 @@ const bfd_target aix386_core_vec =
      BFD_JUMP_TABLE_LINK (_bfd_nolink),
      BFD_JUMP_TABLE_DYNAMIC (_bfd_nodynamic),
 
-    NULL,
-    
     (PTR) 0
 };

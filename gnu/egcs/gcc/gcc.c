@@ -1,6 +1,5 @@
 /* Compiler driver program that can handle many languages.
-   Copyright (C) 1987, 1989, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
-   2000 Free Software Foundation, Inc.
+   Copyright (C) 1987, 89, 92-98, 1999 Free Software Foundation, Inc.
 
 This file is part of GNU CC.
 
@@ -595,11 +594,11 @@ static struct compiler default_compilers[] =
   {"@c",
    {
 #if USE_CPPLIB
-     "%{E|M|MM:cpp0 -lang-c %{ansi:-std=c89} %{std*} %{nostdinc*}\
+     "%{E|M|MM:cpp -lang-c %{ansi:-std=c89} %{std*} %{nostdinc*}\
 	%{C} %{v} %{A*} %{I*} %{P} %{$} %I\
 	%{C:%{!E:%eGNU C does not support -C without using -E}}\
 	%{M} %{MM} %{MD:-MD %b.d} %{MMD:-MMD %b.d} %{MG}\
-        %{!no-gcc:-D__GNUC__=%v1 -D__GNUC_MINOR__=%v2}\
+        -D__GNUC__=%v1 -D__GNUC_MINOR__=%v2\
 	%{ansi|std=*:%{!std=gnu*:-trigraphs -D__STRICT_ANSI__}}\
 	%{!undef:%{!ansi:%{!std=*:%p}%{std=gnu*:%p}} %P} %{trigraphs}\
         %c %{Os:-D__OPTIMIZE_SIZE__} %{O*:%{!O0:-D__OPTIMIZE__}}\
@@ -613,7 +612,7 @@ static struct compiler default_compilers[] =
                   %{std*} %{nostdinc*} %{A*} %{I*} %I\
                   %{!Q:-quiet} -dumpbase %b.c %{d*} %{m*} %{a*}\
                   %{MD:-MD %b.d} %{MMD:-MMD %b.d} %{MG}\
-                  %{!no-gcc:-D__GNUC__=%v1 -D__GNUC_MINOR__=%v2}\
+                  -D__GNUC__=%v1 -D__GNUC_MINOR__=%v2\
 		  %{ansi|std=*:%{!std=gnu*:-trigraphs -D__STRICT_ANSI__}}\
 		  %{!undef:%{!ansi:%{!std=*:%p}%{std=gnu*:%p}} %P} %{trigraphs}\
                   %c %{Os:-D__OPTIMIZE_SIZE__} %{O*:%{!O0:-D__OPTIMIZE__}}\
@@ -631,11 +630,11 @@ static struct compiler default_compilers[] =
 		     %{c:%W{o*}%{!o*:-o %w%b%O}}%{!c:-o %d%w%u%O}\
                      %{!pipe:%g.s} %A\n }}}}"
 #else /* ! USE_CPPLIB */
-    "cpp0 -lang-c %{ansi:-std=c89} %{std*} %{nostdinc*}\
+    "cpp -lang-c %{ansi:-std=c89} %{std*} %{nostdinc*}\
 	%{C} %{v} %{A*} %{I*} %{P} %{$} %I\
 	%{C:%{!E:%eGNU C does not support -C without using -E}}\
 	%{M} %{MM} %{MD:-MD %b.d} %{MMD:-MMD %b.d} %{MG}\
-        %{!no-gcc:-D__GNUC__=%v1 -D__GNUC_MINOR__=%v2}\
+        -D__GNUC__=%v1 -D__GNUC_MINOR__=%v2\
 	%{ansi|std=*:%{!std=gnu*:-trigraphs -D__STRICT_ANSI__}}\
 	%{!undef:%{!ansi:%{!std=*:%p}%{std=gnu*:%p}} %P} %{trigraphs}\
         %c %{Os:-D__OPTIMIZE_SIZE__} %{O*:%{!O0:-D__OPTIMIZE__}}\
@@ -659,11 +658,11 @@ static struct compiler default_compilers[] =
 #endif /* ! USE_CPPLIB */
   }},
   {"-",
-   {"%{E:cpp0 -lang-c %{ansi:-std=c89} %{std*} %{nostdinc*}\
+   {"%{E:cpp -lang-c %{ansi:-std=c89} %{std*} %{nostdinc*}\
 	%{C} %{v} %{A*} %{I*} %{P} %{$} %I\
 	%{C:%{!E:%eGNU C does not support -C without using -E}}\
 	%{M} %{MM} %{MD:-MD %b.d} %{MMD:-MMD %b.d} %{MG}\
-        %{!no-gcc:-D__GNUC__=%v1 -D__GNUC_MINOR__=%v2}\
+        -D__GNUC__=%v1 -D__GNUC_MINOR__=%v2\
 	%{ansi|std=*:%{!std=gnu*:-trigraphs -D__STRICT_ANSI__}}\
 	%{!undef:%{!ansi:%{!std=*:%p}%{std=gnu*:%p}} %P} %{trigraphs}\
         %c %{Os:-D__OPTIMIZE_SIZE__} %{O*:%{!O0:-D__OPTIMIZE__}}\
@@ -677,10 +676,10 @@ static struct compiler default_compilers[] =
   {".h", {"@c-header"}},
   {"@c-header",
    {"%{!E:%eCompilation of header file requested} \
-    cpp0 %{nostdinc*} %{C} %{v} %{A*} %{I*} %{P} %{$} %I\
+    cpp %{nostdinc*} %{C} %{v} %{A*} %{I*} %{P} %{$} %I\
 	%{C:%{!E:%eGNU C does not support -C without using -E}}\
 	%{M} %{MM} %{MD:-MD %b.d} %{MMD:-MMD %b.d} %{MG}\
-        %{!no-gcc:-D__GNUC__=%v1 -D__GNUC_MINOR__=%v2}\
+        -D__GNUC__=%v1 -D__GNUC_MINOR__=%v2\
 	%{std=*:%{!std=gnu*:-trigraphs -D__STRICT_ANSI__}}\
 	%{!undef:%{!std=*:%p}%{std=gnu*:%p} %P} %{trigraphs}\
         %c %{Os:-D__OPTIMIZE_SIZE__} %{O*:%{!O0:-D__OPTIMIZE__}}\
@@ -708,7 +707,7 @@ static struct compiler default_compilers[] =
 			    %i %A\n }}}}"}},
   {".S", {"@assembler-with-cpp"}},
   {"@assembler-with-cpp",
-   {"cpp0 -lang-asm %{nostdinc*} %{C} %{v} %{A*} %{I*} %{P} %{$} %I\
+   {"cpp -lang-asm %{nostdinc*} %{C} %{v} %{A*} %{I*} %{P} %{$} %I\
 	%{C:%{!E:%eGNU C does not support -C without using -E}}\
 	%{M} %{MM} %{MD:-MD %b.d} %{MMD:-MMD %b.d} %{MG} %{trigraphs}\
         -$ %{!undef:%p %P} -D__ASSEMBLER__ \
@@ -1288,6 +1287,8 @@ static int argbuf_index;
 #define MKTEMP_EACH_FILE
 
 #ifdef MKTEMP_EACH_FILE
+
+extern char *make_temp_file PROTO((const char *));
 
 /* This is the list of suffixes and codes (%g/%u/%U) and the associated
    temp file.  */
@@ -4817,7 +4818,18 @@ main (argc, argv)
   if (access (specs_file, R_OK) == 0)
     read_specs (specs_file, TRUE);
  
+  /* Process any user specified specs in the order given on the command
+     line.  */
+  for (uptr = user_specs_head; uptr; uptr = uptr->next)
+    {
+      char *filename = find_a_file (&startfile_prefixes, uptr->filename, R_OK);
+      read_specs (filename ? filename : uptr->filename, FALSE);
+    }
+
   /* If not cross-compiling, look for startfiles in the standard places.  */
+  /* The fact that these are done here, after reading the specs file,
+     means that it cannot be found in these directories.
+     But that's okay.  It should never be there anyway.  */
   if (*cross_compile == '0')
     {
 #ifdef MD_EXEC_PREFIX
@@ -4878,14 +4890,6 @@ main (argc, argv)
 		    concat (gcc_exec_prefix, machine_suffix,
 			    standard_startfile_prefix, NULL_PTR),
 		    "BINUTILS", 0, 0, NULL_PTR);
-    }
-
-  /* Process any user specified specs in the order given on the command
-     line.  */
-  for (uptr = user_specs_head; uptr; uptr = uptr->next)
-    {
-      char *filename = find_a_file (&startfile_prefixes, uptr->filename, R_OK);
-      read_specs (filename ? filename : uptr->filename, FALSE);
     }
 
   /* If we have a GCC_EXEC_PREFIX envvar, modify it for cpp's sake.  */
@@ -4961,8 +4965,8 @@ main (argc, argv)
 
       if (! verbose_flag)
 	{
-	  printf ("\nFor bug reporting instructions, please see:\n");
-	  printf ("%s.\n", GCCBUGURL);
+	  printf ("\nReport bugs to egcs-bugs@egcs.cygnus.com.\n");
+	  printf ("Please see the file BUGS (included with the sources) first.\n");
 	  
 	  exit (0);
 	}
@@ -5154,8 +5158,8 @@ main (argc, argv)
 
   if (print_help_list)
     {
-      printf ("\nFor bug reporting instructions, please see:\n");
-      printf ("%s\n", GCCBUGURL);
+      printf ("\nReport bugs to egcs-bugs@egcs.cygnus.com.\n");
+      printf ("Please see the file BUGS (included with the sources) first.\n");
     }
   
   exit (error_count > 0 ? (signal_count ? 2 : 1) : 0);

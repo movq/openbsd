@@ -1,6 +1,5 @@
 /* 8 and 16 bit COFF relocation functions, for BFD.
-   Copyright 1990, 91, 92, 93, 94, 95, 96, 97, 1998
-   Free Software Foundation, Inc.
+   Copyright 1990, 1991, 1992, 1993 Free Software Foundation, Inc.
    Written by Cygnus Support.
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -37,6 +36,7 @@ Most of this hacked by  Steve Chamberlain,
 
 #include "bfd.h"
 #include "sysdep.h"
+#include "obstack.h"
 #include "libbfd.h"
 #include "bfdlink.h"
 #include "genlink.h"
@@ -55,8 +55,7 @@ bfd_coff_reloc16_get_value (reloc, link_info, input_section)
      base of the section.  To relocate, we find where the section will
      live in the output and add that in */
 
-  if (bfd_is_und_section (symbol->section)
-      || bfd_is_com_section (symbol->section))
+  if (bfd_is_und_section (symbol->section))
     {
       struct bfd_link_hash_entry *h;
 
@@ -65,9 +64,8 @@ bfd_coff_reloc16_get_value (reloc, link_info, input_section)
 	 we convert this stuff to use a specific final_link function
 	 and change the interface to bfd_relax_section to not require
 	 the generic symbols.  */
-      h = bfd_wrapped_link_hash_lookup (input_section->owner, link_info,
-					bfd_asymbol_name (symbol),
-					false, false, true);
+      h = bfd_link_hash_lookup (link_info->hash, bfd_asymbol_name (symbol),
+				false, false, true);
       if (h != (struct bfd_link_hash_entry *) NULL
 	  && (h->type == bfd_link_hash_defined
 	      || h->type == bfd_link_hash_defweak))
@@ -81,8 +79,7 @@ bfd_coff_reloc16_get_value (reloc, link_info, input_section)
 	{
 	  if (! ((*link_info->callbacks->undefined_symbol)
 		 (link_info, bfd_asymbol_name (symbol),
-		  input_section->owner, input_section, reloc->address,
-		  true)))
+		  input_section->owner, input_section, reloc->address)))
 	    abort ();
 	  value = 0;
 	}
@@ -149,22 +146,24 @@ bfd_coff_reloc16_relax_section (abfd, i, link_info, again)
   /* Get enough memory to hold the stuff */
   bfd *input_bfd = i->owner;
   asection *input_section = i;
-  int *shrinks;
-  int shrink = 0;
+  int shrink = 0 ;
   long reloc_size = bfd_get_reloc_upper_bound (input_bfd, input_section);
   arelent **reloc_vector = NULL;
   long reloc_count;
 
-  /* We only do global relaxation once.  It is not safe to do it multiple
-     times (see discussion of the "shrinks" array below).  */
+  /* We only run this relaxation once.  It might work to run it more
+     often, but it hasn't been tested.  */
   *again = false;
 
   if (reloc_size < 0)
     return false;
 
-  reloc_vector = (arelent **) bfd_malloc (reloc_size);
+  reloc_vector = (arelent **) malloc (reloc_size);
   if (!reloc_vector && reloc_size > 0)
-    return false;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return false;
+    }
 
   /* Get the relocs and think about them */
   reloc_count =
@@ -176,59 +175,14 @@ bfd_coff_reloc16_relax_section (abfd, i, link_info, again)
       return false;
     }
 
-  /* The reloc16.c and related relaxing code is very simple, the price
-     for that simplicity is we can only call this function once for
-     each section.
-
-     So, to get the best results within that limitation, we do multiple
-     relaxing passes over each section here.  That involves keeping track
-     of the "shrink" at each reloc in the section.  This allows us to
-     accurately determine the relative location of two relocs within
-     this section.
-
-     In theory, if we kept the "shrinks" array for each section for the
-     entire link, we could use the generic relaxing code in the linker
-     and get better results, particularly for jsr->bsr and 24->16 bit
-     memory reference relaxations.  */
-     
   if (reloc_count > 0)
     {
-      int another_pass = 0;
-
-      /* Allocate and initialize the shrinks array for this section.
-         The last element is used as an accumlator of shrinks.  */
-      shrinks = (int *) bfd_malloc ((reloc_count + 1) * sizeof (int));
-      memset (shrinks, 0, (reloc_count + 1) * sizeof (int));
-
-      /* Loop until nothing changes in this section.  */
-      do {
-	arelent **parent;
-	unsigned int i;
-	long j;
-
-	another_pass = 0;
-
-	for (i = 0, parent = reloc_vector; *parent; parent++, i++) 
-	  {
-	    /* Let the target/machine dependent code examine each reloc
-	       in this section and attempt to shrink it.  */
-	    shrink = bfd_coff_reloc16_estimate (abfd, input_section, *parent,
-						shrinks[i], link_info);
-
-	    /* If it shrunk, note it in the shrinks array and set up for
-	       another pass.  */
-	    if (shrink != shrinks[i])
-	      {
-	        another_pass = 1;
-		for (j = i + 1; j <= reloc_count; j++)
-		  shrinks[j] += shrink - shrinks[i];
-	      }
-	  }
-  
-      } while (another_pass);
-
-      shrink = shrinks[reloc_count];
-      free((char *)shrinks);
+      arelent **parent;
+      for (parent = reloc_vector; *parent; parent++) 
+	{
+	  shrink = bfd_coff_reloc16_estimate (abfd, input_section,
+					      *parent, shrink, link_info);
+	}
     }
 
   input_section->_cooked_size -= shrink;  
@@ -276,9 +230,12 @@ bfd_coff_reloc16_get_relocated_section_contents(in_abfd,
     return NULL;
   
   
-  reloc_vector = (arelent **) bfd_malloc((size_t) reloc_size);
+  reloc_vector = (arelent **)malloc((size_t) reloc_size);
   if (!reloc_vector && reloc_size != 0)
-    return NULL;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return NULL;
+    }
   
   reloc_count = bfd_canonicalize_reloc (input_bfd, 
 					input_section,

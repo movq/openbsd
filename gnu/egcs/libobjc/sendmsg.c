@@ -613,11 +613,13 @@ __objc_print_dtable_stats()
 
   objc_mutex_lock(__objc_runtime_mutex);
 
+  printf("memory usage: (%s)\n",
 #ifdef OBJC_SPARSE2
-  printf("memory usage: (%s)\n", "2-level sparse arrays");
+	 "2-level sparse arrays"
 #else
-  printf("memory usage: (%s)\n", "3-level sparse arrays");
+	 "3-level sparse arrays"
 #endif
+	 );
 
   printf("arrays: %d = %ld bytes\n", narrays, 
 	 (long)narrays*sizeof(struct sarray));

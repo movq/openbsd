@@ -1,6 +1,5 @@
 /* input_file.c - Deal with Input Files -
-   Copyright (C) 1987, 90, 91, 92, 93, 94, 95, 98, 1999
-   Free Software Foundation, Inc.
+   Copyright (C) 1987, 1990, 1991, 1992 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -15,9 +14,8 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with GAS; see the file COPYING.  If not, write to the Free
-   Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+   along with GAS; see the file COPYING.  If not, write to
+   the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 /*
  * Confines all details of reading source bytes to this module.
@@ -32,7 +30,7 @@
 #include "as.h"
 #include "input-file.h"
 
-static int input_file_get PARAMS ((char *, int));
+static int input_file_get PARAMS ((char **));
 
 /* This variable is non-zero if the file currently being read should be
    preprocessed by app.  It is zero if the file can be read straight in.
@@ -147,11 +145,11 @@ input_file_open (filename, pre)
   else
     {				/* use stdin for the input file. */
       f_in = stdin;
-      file_name = _("{standard input}");	/* For error messages. */
+      file_name = "{standard input}";	/* For error messages. */
     }
   if (f_in == (FILE *) 0)
     {
-      as_bad (_("Can't open %s for reading."), file_name);
+      as_bad ("Can't open %s for reading.", file_name);
       as_perror ("%s", file_name);
       return;
     }
@@ -193,18 +191,19 @@ input_file_close ()
 /* This function is passed to do_scrub_chars.  */
 
 static int
-input_file_get (buf, buflen)
-     char *buf;
-     int buflen;
+input_file_get (from)
+     char **from;
 {
+  static char buf[BUFFER_SIZE];
   int size;
 
-  size = fread (buf, sizeof (char), buflen, f_in);
+  size = fread (buf, sizeof (char), sizeof buf, f_in);
   if (size < 0)
     {
-      as_perror (_("Can't read from %s"), file_name);
+      as_perror ("Can't read from %s", file_name);
       size = 0;
     }
+  *from = buf;
   return size;
 }
 
@@ -231,7 +230,7 @@ input_file_give_next_buffer (where)
     size = fread (where, sizeof (char), BUFFER_SIZE, f_in);
   if (size < 0)
     {
-      as_perror (_("Can't read from %s"), file_name);
+      as_perror ("Can't read from %s", file_name);
       size = 0;
     }
   if (size)
@@ -239,7 +238,7 @@ input_file_give_next_buffer (where)
   else
     {
       if (fclose (f_in))
-	as_perror (_("Can't close %s"), file_name);
+	as_perror ("Can't close %s", file_name);
       f_in = (FILE *) 0;
       return_value = 0;
     }

@@ -144,4 +144,4 @@ list_free(struct objc_list* list)
       objc_free(list);
     }
 }
-#endif /* not __GNU_OBJC_LIST_H */
+#endif __GNU_OBJC_LIST_H

@@ -1,5 +1,5 @@
 # Source file used to test the beq macro.
-	.globl	text_label	.text
+	.globl	text_label	
 text_label:	
 	beq	$4,$5,text_label
 	beq	$4,0,text_label
@@ -21,8 +21,3 @@ text_label:
 	.space	0x20000
 	b	text_label
 	bal	text_label
-
-# Round to a 16 byte boundary, for ease in testing multiple targets.
-	nop
-	nop
-	nop

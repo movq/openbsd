@@ -1,4 +1,4 @@
-.\" Copyright (c) 1991, 92, 93, 94, 95, 96, 97, 1998 Free Software Foundation
+.\" Copyright (c) 1991 Free Software Foundation
 .\" See section COPYING for conditions for redistribution
 .TH objdump 1 "5 November 1991" "cygnus support" "GNU Development Tools"
 .de BP
@@ -21,14 +21,8 @@ objdump \- display information from object files.
 .RB " | " "\-\-target="\c
 .I bfdname\c
 \&\|] 
-.RB "[\|" \-C | \-\-demangle "\|]" 
-.RB "[\|" \-\-debugging "\|]" 
 .RB "[\|" \-d | \-\-disassemble "\|]" 
 .RB "[\|" \-D | \-\-disassemble-all "\|]" 
-.RB "[\|" \-\-disassemble\-zeroes "\|]" 
-.RB "[\|" \-EB | \-EL | \-\-endian=\c
-.I {big|little}\c
-\&\|]
 .RB "[\|" \-f | \-\-file\-headers "\|]"
 .RB "[\|" \-h | \-\-section\-headers
 .RB "| " \-\-headers "\|]" 
@@ -44,13 +38,10 @@ objdump \- display information from object files.
 .RB " | " "\-\-architecture="\c
 .I machine\c
 \&\|] 
-.RB "[\|" \-p | \-\-private\-headers "\|]" 
-.RB "[\|" \-\-prefix\-addresses "\|]" 
 .RB "[\|" \-r | \-\-reloc "\|]" 
 .RB "[\|" \-R | \-\-dynamic\-reloc "\|]" 
 .RB "[\|" \-s | \-\-full\-contents "\|]"
 .RB "[\|" \-S | \-\-source "\|]"
-.RB "[\|" \-\-[no\-]show\-raw\-insn "\|]" 
 .RB "[\|" \-\-stabs "\|]"
 .RB "[\|" \-t | \-\-syms "\|]" 
 .RB "[\|" \-T | \-\-dynamic\-syms "\|]" 
@@ -60,9 +51,6 @@ objdump \- display information from object files.
 \&\|]
 .RB "[\|" "\-\-stop\-address="\c
 .I address\c
-\&\|]
-.RB "[\|" "\-\-adjust\-vma="\c
-.I offset\c
 \&\|]
 .RB "[\|" \-\-version "\|]"
 .RB "[\|" \-\-help "\|]"
@@ -109,15 +97,6 @@ information you could list with `\|\c
 the object file format of each archive member.
 
 .TP
-.BI "\-\-adjust\-vma=" "offset"
-When dumping information, first add
-.I offset
-to all the section addresses.  This is useful if the section addresses
-do not correspond to the symbol table, which can happen when putting
-sections at particular addresses when using a format which can not
-represent section addresses, such as a.out.
-
-.TP
 .BI "\-b " "bfdname"\c
 .TP
 .BI "\-\-target=" "bfdname"
@@ -147,20 +126,6 @@ formats available with the `\|\c
 \|' option.
 
 .TP
-.B \-C
-.TP
-.B \-\-demangle
-Decode (\fIdemangle\fP) low-level symbol names into user-level names.
-Besides removing any initial underscore prepended by the system, this
-makes C++ function names readable.
-
-.TP
-.B \-\-debugging
-Display debugging information.  This attempts to parse debugging
-information stored in the file and print it out using a C like syntax.
-Only certain types of debugging information have been implemented.
-
-.TP
 .B \-d
 .TP
 .B \-\-disassemble
@@ -177,27 +142,6 @@ expected to contain instructions.
 .B \-\-disassemble-all
 Like \fB\-d\fP, but disassemble the contents of all sections, not just
 those expected to contain instructions.
-
-.TP
-.B \-\-prefix\-addresses
-When disassembling, print the complete address on each line.  This is
-the older disassembly format.
-
-.TP
-.B \-\-disassemble\-zeroes
-Normally the disassembly output will skip blocks of zeroes.  This
-option directs the disassembler to disassemble those blocks, just like
-any other data.
-
-.TP
-.B \-EB
-.TP
-.B \-EL
-.TP
-.BI "\-\-endian=" "{big|little}"
-Specify the endianness of the object files.  This only affects
-disassembly.  This can be useful when disassembling a file format which
-does not describe endianness information, such as S-records.
 
 .TP
 .B \-f
@@ -248,31 +192,28 @@ Display information only for section \c
 .B \-\-line\-numbers
 Label the display (using debugging information) with the filename
 and source line numbers corresponding to the object code shown.
-Only useful with \fB\-d\fP, \fB\-D\fP, or \fB\-r\fP.
+Only useful with \fB\-d\fP or \fB\-D\fP.
 
 .TP
 .BI "\-m " "machine"\c
 .TP
 .BI "\-\-architecture=" "machine"
-Specify the architecture to use when disassembling object files.  This
-can be useful when disassembling object files which do not describe
-architecture information, such as S-records.  You can list the available
-architectures with the \fB\-i\fP option. 
-
-.TP
-.B \-p
-.TP
-.B \-\-private\-headers
-Print information that is specific to the object file format.  The
-exact information printed depends upon the object file format.  For
-some object file formats, no additional information is printed.
+Specify the object files \c
+.I objfile\c
+\& are for architecture
+\c
+.I machine\c
+\&.  You can list available architectures using the `\|\c
+.B \-i\c
+\|'
+option. 
 
 .TP
 .B \-r
 .TP
 .B \-\-reloc
 Print the relocation entries of the file.  If used with \fB\-d\fP or
-\fB\-D\fP, the relocations are printed interspersed with the
+\fB\-d\fP, the relocations are printed interspersed with the
 disassembly.
 
 .TP
@@ -297,28 +238,13 @@ Display source code intermixed with disassembly, if possible.  Implies
 \fB-d\fP.
 
 .TP
-.B \-\-show\-raw\-insn
-When disassembling instructions, print the instruction in hex as well as
-in symbolic form.  This is the default except when
-.B \-\-prefix\-addresses
-is used.
-
-.TP
-.B \-\-no\-show\-raw\-insn
-When disassembling instructions, do not print the instruction bytes.
-This is the default when
-.B \-\-prefix\-addresses
-is used.
-
-.TP
 .B \-\-stabs
 Display the contents of the .stab, .stab.index, and .stab.excl
 sections from an ELF file.  This is only useful on systems (such as
 Solaris 2.0) in which .stab debugging symbol-table entries are carried
 in an ELF section.  In most other file formats, debugging symbol-table
 entries are interleaved with linkage symbols, and are visible in the
-.B \-\-syms
-output.
+\-\-syms output.
 
 .TP
 .BI "\-\-start\-address=" "address"
@@ -394,7 +320,7 @@ The GNU Binary Utilities\c
 .BR nm "(" 1 ")."
 
 .SH COPYING
-Copyright (c) 1991, 92, 93, 94, 95, 1996 Free Software Foundation, Inc.
+Copyright (c) 1991 Free Software Foundation, Inc.
 .PP
 Permission is granted to make and distribute verbatim copies of
 this manual provided the copyright notice and this permission notice

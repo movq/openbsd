@@ -1,5 +1,5 @@
 /* ldmisc.h -
-   Copyright (C) 1991, 92, 93, 94, 95, 1996 Free Software Foundation, Inc.
+   Copyright (C) 1991, 92, 93, 94 Free Software Foundation, Inc.
 
    This file is part of GLD, the Gnu Linker.
 
@@ -20,23 +20,13 @@
 #ifndef LDMISC_H
 #define LDMISC_H
 
-#ifdef ANSI_PROTOTYPES
-extern void einfo PARAMS ((const char *, ...));
-extern void minfo PARAMS ((const char *, ...));
-extern void info_msg PARAMS ((const char *, ...));
-extern void lfinfo PARAMS ((FILE *, const char *, ...));
-#else
 /* VARARGS*/
 extern void einfo ();
 /* VARARGS*/
 extern void minfo ();
 /* VARARGS*/
 extern void info_msg ();
-/*VARARGS*/
-extern void lfinfo ();
-#endif
-
-extern void info_assert PARAMS ((const char *, unsigned int));
+extern void info_assert PARAMS ((char *, unsigned int));
 extern void yyerror PARAMS ((const char *));
 extern PTR xmalloc PARAMS ((size_t));
 extern PTR xrealloc PARAMS ((PTR, size_t));
@@ -51,6 +41,6 @@ do { info_assert(__FILE__,__LINE__); } while (0)
 
 extern void print_space PARAMS ((void));
 extern void print_nl PARAMS ((void));
-extern char *demangle PARAMS ((const char *));
+extern void print_address PARAMS ((bfd_vma value));
 
 #endif

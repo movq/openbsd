@@ -1,6 +1,5 @@
 /* atof_generic.c - turn a string of digits into a Flonum
-   Copyright (C) 1987, 90, 91, 92, 93, 94, 95, 96, 1998
-   Free Software Foundation, Inc.
+   Copyright (C) 1987, 1990, 1991, 1992 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -87,10 +86,10 @@ atof_generic (address_of_string_pointer,
 {
   int return_value;		/* 0 means OK. */
   char *first_digit;
-  unsigned int number_of_digits_before_decimal;
-  unsigned int number_of_digits_after_decimal;
+  int number_of_digits_before_decimal;
+  int number_of_digits_after_decimal;
   long decimal_exponent;
-  unsigned int number_of_digits_available;
+  int number_of_digits_available;
   char digits_sign_char;
 
   /*
@@ -170,7 +169,7 @@ atof_generic (address_of_string_pointer,
 	&& (!c || !strchr (string_of_decimal_exponent_marks, c)));
        p++)
     {
-      if (isdigit ((unsigned char) c))
+      if (isdigit (c))
 	{
 	  if (seen_significant_digit || c > '0')
 	    {
@@ -197,9 +196,9 @@ atof_generic (address_of_string_pointer,
    */
   if (c && IS_DECIMAL_MARK (c))
     {
-      unsigned int zeros = 0;	/* Length of current string of zeros */
+      int zeros = 0;		/* Length of current string of zeros */
 
-      for (p++; (c = *p) && isdigit ((unsigned char) c); p++)
+      for (p++; (c = *p) && isdigit (c); p++)
 	{
 	  if (c == '0')
 	    {
@@ -220,7 +219,7 @@ atof_generic (address_of_string_pointer,
 	    && (!c || !strchr (string_of_decimal_exponent_marks, c)));
 	   p++)
 	{
-	  if (isdigit ((unsigned char) c))
+	  if (isdigit (c))
 	    {
 	      /* This may be retracted below. */
 	      number_of_digits_after_decimal++;
@@ -247,7 +246,7 @@ atof_generic (address_of_string_pointer,
     --number_of_digits_after_decimal;
 #endif
 
-  if (flag_m68k_mri)
+  if (flag_mri)
     {
       while (c == '_')
 	c = *++p;
@@ -257,7 +256,7 @@ atof_generic (address_of_string_pointer,
       char digits_exponent_sign_char;
 
       c = *++p;
-      if (flag_m68k_mri)
+      if (flag_mri)
 	{
 	  while (c == '_')
 	    c = *++p;
@@ -274,7 +273,7 @@ atof_generic (address_of_string_pointer,
 
       for (; (c); c = *++p)
 	{
-	  if (isdigit ((unsigned char) c))
+	  if (isdigit (c))
 	    {
 	      decimal_exponent = decimal_exponent * 10 + c - '0';
 	      /*
@@ -401,7 +400,7 @@ atof_generic (address_of_string_pointer,
       for (p = first_digit, count = number_of_digits_to_use; count; p++, --count)
 	{
 	  c = *p;
-	  if (isdigit ((unsigned char) c))
+	  if (isdigit (c))
 	    {
 	      /*
 	       * Multiply by 10. Assume can never overflow.
@@ -435,7 +434,7 @@ atof_generic (address_of_string_pointer,
 		   * We have a GROSS internal error.
 		   * This should never happen.
 		   */
-		  as_fatal (_("failed sanity check."));
+		  as_fatal ("failed sanity check.");
 		}
 	    }
 	  else

@@ -1,5 +1,5 @@
 # Expect script for LD Bootstrap Tests
-#   Copyright (C) 1993, 1994, 1995, 1996, 1997, 1998 Free Software Foundation
+#   Copyright (C) 1993,1994,1995 Free Software Foundation
 #
 # This file is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -38,16 +38,16 @@ foreach flags {"" "--static" "--traditional-format" "--no-keep-memory"} {
 	set testname "bootstrap"
     }
 
-    # This test can only be run if we have the ld build directory,
-    # since we need the object files.
-    if {$ld != "$objdir/ld-new"} {
-	untested $testname
-	continue
+    # On AIX, you need to specify an import list when using --static.
+    if [istarget "*-*-aix*"] {
+	if {"$flags" == "--static"} {
+	    set flags "--static -bI:/lib/syscalls.exp"
+	}
     }
 
-    # If we only have a shared libbfd, we probably can't run the
-    # --static test.
-    if { $flags == "--static" && ! [string match "*libbfd.a*" $BFDLIB] } then {
+    # This test can only be run if we have the ld build directory,
+    # since we need the object files.
+    if {$ld != "$objdir/ld.new"} {
 	untested $testname
 	continue
     }
@@ -55,21 +55,6 @@ foreach flags {"" "--static" "--traditional-format" "--no-keep-memory"} {
     if ![ld_relocate $ld tmpdir/ld-partial.o "$flags $OFILES"] {
 	fail $testname
 	continue
-    }
-
-    # On AIX, you need to specify an import list when using --static.
-    # You only want the import list when creating the final
-    # executable.
-    if [istarget "*-*-aix*"] {
-	if {"$flags" == "--static"} {
-	    set flags "--static -bI:/lib/syscalls.exp"
-	}
-    }
-
-    # On Irix 5, linking with --static only works if all the files are
-    # compiled using -non_shared.
-    if {"$flags" == "--static"} {
-	setup_xfail "mips*-*-irix5*"
     }
 
     if ![ld_link $ld tmpdir/ld1 "$flags tmpdir/ld-partial.o $BFDLIB $LIBIBERTY"] {
@@ -90,7 +75,7 @@ foreach flags {"" "--static" "--traditional-format" "--no-keep-memory"} {
     send_log "cmp tmpdir/ld2 tmpdir/ld3\n"
     verbose "cmp tmpdir/ld2 tmpdir/ld3"
     catch "exec cmp tmpdir/ld2 tmpdir/ld3" exec_output
-    set exec_output [prune_warnings $exec_output]
+    set exec_output [prune_system_crud $host_triplet $exec_output]
 
     if [string match "" $exec_output] then {
 	pass $testname

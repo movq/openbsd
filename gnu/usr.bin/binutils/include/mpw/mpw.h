@@ -18,19 +18,17 @@
 #include <ctype.h>
 #include <errno.h>
 
-#define HAVE_TIME_T_IN_TIME_H 1
+#define HAVE_TIME_T_IN_TIME_H
 
-#define HAVE_STDLIB_H 1
+#define HAVE_STDLIB_H
 
-#define HAVE_ERRNO_H 1
+#define HAVE_ERRNO_H
 
-#define HAVE_STDDEF_H 1
+#define HAVE_STDDEF_H
 
-#define HAVE_STRING_H 1
+#define HAVE_STRING_H
 
-#define HAVE_STDARG_H 1
-
-#define HAVE_VPRINTF 1
+#define HAVE_STDARG_H
 
 #ifdef USE_MW_HEADERS
 
@@ -41,8 +39,6 @@
 #include <fcntl.h>
 #include <ioctl.h>
 #include <sys/stat.h>
-
-#define HAVE_FCNTL_H 1
 
 #ifndef	O_ACCMODE
 #define O_ACCMODE (O_RDONLY | O_WRONLY | O_RDWR)
@@ -89,11 +85,13 @@ FILE *fdopen(int fildes, const char *mode);
 #include <spin.h>
 
 #ifdef MPW_C
+
 #undef  __PTR_TO_INT
 #define __PTR_TO_INT(P) ((int)(P))
 #undef __INT_TO_PTR
 #define __INT_TO_PTR(P) ((char *)(P))
-#endif /* MPW_C */
+
+#endif
 
 #define NO_FCNTL
 
@@ -103,10 +101,8 @@ FILE *mpw_fopen ();
 int mpw_fseek ();
 int mpw_fread ();
 int mpw_fwrite ();
-int mpw_access ();
-int mpw_open ();
+void mpw_abort ();
 int mpw_creat ();
-void mpw_abort (void);
 
 /* Map these standard functions to improved versions in libiberty. */
 
@@ -114,10 +110,8 @@ void mpw_abort (void);
 #define fseek mpw_fseek
 #define fread mpw_fread
 #define fwrite mpw_fwrite
-#define open mpw_open
-#define access mpw_access
-#define creat mpw_creat
 #define abort mpw_abort
+#define creat mpw_creat
 
 #define POSIX_UTIME
 

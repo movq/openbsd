@@ -1,6 +1,5 @@
 /* BFD back-end for MS-DOS executables.
-   Copyright 1990, 91, 92, 93, 94, 95, 96, 97, 98, 1999
-   Free Software Foundation, Inc.
+   Copyright 1990, 1991, 1992, 1993, 1994 Free Software Foundation, Inc.
    Written by Bryan Ford of the University of Utah.
 
    Contributed by the Center for Software Science at the
@@ -27,6 +26,25 @@
 #include "sysdep.h"
 #include "libbfd.h"
 #include "libaout.h"
+
+#if 0
+typedef struct msdos_data_struct
+  {
+#if 0
+    srec_data_list_type *head;
+    unsigned int type;
+
+    int done_symbol_read;
+    int count;
+    asymbol *symbols;
+    char *strings;
+    int symbol_idx;
+    int string_size;
+    int string_idx;
+#endif
+  }
+tdata_type;
+#endif
 
 #if 0
 struct exe_header
@@ -59,8 +77,8 @@ struct exe_header
 
 static int
 msdos_sizeof_headers (abfd, exec)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     boolean exec ATTRIBUTE_UNUSED;
+     bfd *abfd;
+     boolean exec;
 {
   return 0;
 }
@@ -77,8 +95,6 @@ msdos_write_object_contents (abfd)
   /* Find the total size of the program on disk and in memory.  */
   for (sec = abfd->sections; sec != (asection *) NULL; sec = sec->next)
     {
-      if (bfd_get_section_size_before_reloc (sec) == 0)
-        continue;
       if (bfd_get_section_flags (abfd, sec) & SEC_ALLOC)
         {
 	  bfd_vma sec_vma = bfd_get_section_vma (abfd, sec)
@@ -169,7 +185,6 @@ msdos_set_section_contents (abfd, section, location, offset, count)
 #define msdos_bfd_get_relocated_section_contents \
   bfd_generic_get_relocated_section_contents
 #define msdos_bfd_relax_section bfd_generic_relax_section
-#define msdos_bfd_gc_sections bfd_generic_gc_sections
 #define msdos_bfd_link_hash_table_create _bfd_generic_link_hash_table_create
 #define msdos_bfd_link_add_symbols _bfd_generic_link_add_symbols
 #define msdos_bfd_final_link _bfd_generic_final_link
@@ -182,7 +197,7 @@ msdos_set_section_contents (abfd, section, location, offset, count)
 #define msdos_get_symbol_info _bfd_nosymbols_get_symbol_info
 #define msdos_find_nearest_line _bfd_nosymbols_find_nearest_line
 #define msdos_get_lineno _bfd_nosymbols_get_lineno
-#define msdos_bfd_is_local_label_name _bfd_nosymbols_bfd_is_local_label_name
+#define msdos_bfd_is_local_label _bfd_nosymbols_bfd_is_local_label
 #define msdos_bfd_make_debug_symbol _bfd_nosymbols_bfd_make_debug_symbol
 #define msdos_read_minisymbols _bfd_nosymbols_read_minisymbols
 #define msdos_minisymbol_to_symbol _bfd_nosymbols_minisymbol_to_symbol
@@ -195,8 +210,8 @@ const bfd_target i386msdos_vec =
 {
   "msdos",			/* name */
   bfd_target_msdos_flavour,
-  BFD_ENDIAN_LITTLE,		/* target byte order */
-  BFD_ENDIAN_LITTLE,		/* target headers byte order */
+  false,			/* target byte order */
+  false,			/* target headers byte order */
   (EXEC_P),			/* object flags */
   (SEC_CODE | SEC_DATA | SEC_HAS_CONTENTS
    | SEC_ALLOC | SEC_LOAD),	/* section flags */
@@ -239,8 +254,6 @@ const bfd_target i386msdos_vec =
   BFD_JUMP_TABLE_LINK (msdos),
   BFD_JUMP_TABLE_DYNAMIC (_bfd_nodynamic),
 
-  NULL,
-  
   (PTR) 0
 };
 

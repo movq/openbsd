@@ -1,6 +1,5 @@
 /* BFD back-end for linux flavored i386 a.out binaries.
-   Copyright (C) 1992, 93, 94, 95, 96, 97, 98, 1999
-   Free Software Foundation, Inc.
+   Copyright (C) 1992, 1993, 1994, 1995 Free Software Foundation, Inc.
 
 This file is part of BFD, the Binary File Descriptor library.
 
@@ -20,12 +19,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #define	TARGET_PAGE_SIZE	4096
 #define ZMAGIC_DISK_BLOCK_SIZE 1024
-#define	SEGMENT_SIZE TARGET_PAGE_SIZE
+#define	SEGMENT_SIZE	4096
 #define TEXT_START_ADDR	0x0
 #define N_SHARED_LIB(x) 0
 #define BYTES_IN_WORD 4
-
-#define MACHTYPE_OK(mtype) ((mtype) == M_386 || (mtype) == M_UNKNOWN)
 
 #include "bfd.h"
 #include "sysdep.h"
@@ -47,9 +44,6 @@ extern const bfd_target MY(vec);
 
 static void MY_final_link_callback
   PARAMS ((bfd *, file_ptr *, file_ptr *, file_ptr *));
-static boolean i386linux_bfd_final_link
-  PARAMS ((bfd *, struct bfd_link_info *));
-static boolean i386linux_write_object_contents PARAMS ((bfd *));
 
 static boolean
 i386linux_bfd_final_link (abfd, info)
@@ -227,7 +221,10 @@ linux_link_hash_table_create (abfd)
   ret = ((struct linux_link_hash_table *)
 	 bfd_alloc (abfd, sizeof (struct linux_link_hash_table)));
   if (ret == (struct linux_link_hash_table *) NULL)
-    return (struct bfd_link_hash_table *) NULL;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return (struct bfd_link_hash_table *) NULL;
+    }
   if (! NAME(aout,link_hash_table_init) (&ret->root, abfd,
 					 linux_link_hash_newfunc))
     {
@@ -298,7 +295,7 @@ new_fixup (info, h, value, builtin)
 static boolean
 linux_link_create_dynamic_sections (abfd, info)
      bfd *abfd;
-     struct bfd_link_info *info ATTRIBUTE_UNUSED;
+     struct bfd_link_info *info;
 {
   flagword flags;
   register asection *s;
@@ -444,10 +441,10 @@ linux_tally_symbols (h, data)
       name = h->root.root.root.string + sizeof NEEDS_SHRLIB - 1;
       p = strrchr (name, '_');
       if (p != NULL)
-	alloc = (char *) bfd_malloc (strlen (name) + 1);
+	alloc = (char *) malloc (strlen (name) + 1);
 
       if (p == NULL || alloc == NULL)
-	(*_bfd_error_handler) (_("Output file requires shared library `%s'\n"),
+	(*_bfd_error_handler) ("Output file requires shared library `%s'\n",
 			       name);
       else
 	{
@@ -455,7 +452,7 @@ linux_tally_symbols (h, data)
 	  p = strrchr (alloc, '_');
 	  *p++ = '\0';
 	  (*_bfd_error_handler)
-	    (_("Output file requires shared library `%s.so.%s'\n"),
+	    ("Output file requires shared library `%s.so.%s'\n",
 	     alloc, p);
 	  free (alloc);
 	}
@@ -547,7 +544,7 @@ linux_tally_symbols (h, data)
    are required.  */
 
 boolean
-bfd_i386linux_size_dynamic_sections (output_bfd, info)
+bfd_linux_size_dynamic_sections (output_bfd, info)
      bfd *output_bfd;
      struct bfd_link_info *info;
 {
@@ -590,7 +587,10 @@ bfd_i386linux_size_dynamic_sections (output_bfd, info)
       s->_raw_size = 8 + linux_hash_table (info)->fixup_count * 8;
       s->contents = (bfd_byte *) bfd_alloc (output_bfd, s->_raw_size);
       if (s->contents == NULL)
-	return false;
+	{
+	  bfd_set_error (bfd_error_no_memory);
+	  return false;
+	}
       memset (s->contents, 0, (size_t) s->_raw_size);
     }
 
@@ -643,7 +643,7 @@ linux_finish_dynamic_link (output_bfd, info)
 	  && f->h->root.root.type != bfd_link_hash_defweak)
 	{
 	  (*_bfd_error_handler)
-	    (_("Symbol %s not defined for fixups\n"),
+	    ("Symbol %s not defined for fixups\n",
 	     f->h->root.root.root.string);
 	  continue;
 	}
@@ -693,7 +693,7 @@ linux_finish_dynamic_link (output_bfd, info)
 	      && f->h->root.root.type != bfd_link_hash_defweak)
 	    {
 	      (*_bfd_error_handler)
-		(_("Symbol %s not defined for fixups\n"),
+		("Symbol %s not defined for fixups\n",
 		 f->h->root.root.root.string);
 	      continue;
 	    }
@@ -717,7 +717,7 @@ linux_finish_dynamic_link (output_bfd, info)
 
   if (linux_hash_table (info)->fixup_count != fixups_written)
     {
-      (*_bfd_error_handler) (_("Warning: fixup count mismatch\n"));
+      (*_bfd_error_handler) ("Warning: fixup count mismatch\n");
       while (linux_hash_table (info)->fixup_count > fixups_written)
 	{
 	  bfd_put_32 (output_bfd, 0, fixup_table);

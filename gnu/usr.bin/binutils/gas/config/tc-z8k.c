@@ -1,5 +1,5 @@
 /* tc-z8k.c -- Assemble code for the Zilog Z800n
-   Copyright (C) 1992, 93, 94, 95, 96, 97, 98, 1999 Free Software Foundation.
+   Copyright (C) 1992 Free Software Foundation.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -14,9 +14,8 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with GAS; see the file COPYING.  If not, write to the Free
-   Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+   along with GAS; see the file COPYING.  If not, write to
+   the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 /*
   Written By Steve Chamberlain
@@ -72,7 +71,7 @@ static
 void
 even ()
 {
-  frag_align (1, 0, 0);
+  frag_align (1, 0);
   record_alignment (now_seg, 1);
 }
 
@@ -287,7 +286,7 @@ DEFUN (parse_reg, (src, mode, reg),
           res = whatreg (reg, src + 2);
 	  regno = *reg;
 	  if (regno > 14)
-          	as_warn (_("register rr%d, out of range."),regno);
+          	as_warn ("register rr%d, out of range.",regno);
         }
       else if (src[1] == 'h')
         {
@@ -295,7 +294,7 @@ DEFUN (parse_reg, (src, mode, reg),
           res = whatreg (reg, src + 2);
 	  regno = *reg;
 	  if (regno > 7)
-          	as_warn (_("register rh%d, out of range."),regno);
+          	as_warn ("register rh%d, out of range.",regno);
         }
       else if (src[1] == 'l')
         {
@@ -303,7 +302,7 @@ DEFUN (parse_reg, (src, mode, reg),
           res = whatreg (reg, src + 2);
 	  regno = *reg;
 	  if (regno > 7)
-          	as_warn (_("register rl%d, out of range."),regno);
+          	as_warn ("register rl%d, out of range.",regno);
           *reg += 8;
         }
       else if (src[1] == 'q')
@@ -312,7 +311,7 @@ DEFUN (parse_reg, (src, mode, reg),
           res = whatreg (reg, src + 2);
 	  regno = *reg;
 	  if (regno > 12)
-          	as_warn (_("register rq%d, out of range."),regno);
+          	as_warn ("register rq%d, out of range.",regno);
         }
       else
         {
@@ -320,7 +319,7 @@ DEFUN (parse_reg, (src, mode, reg),
           res = whatreg (reg, src + 1);
 	  regno = *reg;
 	  if (regno > 15)
-          	as_warn (_("register r%d, out of range."),regno);
+          	as_warn ("register r%d, out of range.",regno);
         }
     }
   return res;
@@ -338,7 +337,7 @@ DEFUN (parse_exp, (s, op),
   input_line_pointer = s;
   expression (op);
   if (op->X_op == O_absent)
-    as_bad (_("missing operand"));
+    as_bad ("missing operand");
   new = input_line_pointer;
   input_line_pointer = save;
   return new;
@@ -371,7 +370,7 @@ DEFUN (checkfor, (ptr, what),
     ptr++;
   else
     {
-      as_bad (_("expected %c"), what);
+      as_bad ("expected %c", what);
     }
   return ptr;
 }
@@ -387,7 +386,7 @@ DEFUN (regword, (mode, string),
   ok = CLASS_REG_WORD;
   if (ok != mode)
     {
-      as_bad (_("register is wrong size for a word %s"), string);
+      as_bad ("register is wrong size for a word %s", string);
     }
 }
 
@@ -402,7 +401,7 @@ DEFUN (regaddr, (mode, string),
   ok = segmented_mode ? CLASS_REG_LONG : CLASS_REG_WORD;
   if (ok != mode)
     {
-      as_bad (_("register is wrong size for address %s"), string);
+      as_bad ("register is wrong size for address %s", string);
     }
 }
 
@@ -677,7 +676,7 @@ get_operand (ptr, mode, dst)
 
 		  if (*src != ')')
 		    {
-		      as_bad (_("Missing ) in ra(rb)"));
+		      as_bad ("Missing ) in ra(rb)");
 		    }
 		  else
 		    {
@@ -944,7 +943,7 @@ DEFUN (check_operand, (operand, width, string),
       if ((operand->exp.X_add_number & ~width) != 0 &&
 	  (operand->exp.X_add_number | width) != (~0))
 	{
-	  as_warn (_("operand %s0x%x out of range."), string, operand->exp.X_add_number);
+	  as_warn ("operand %s0x%x out of range.", string, operand->exp.X_add_number);
 	}
     }
 
@@ -1083,12 +1082,12 @@ top:;
 		}
 	      else if (imm_operand->X_add_number != 1)
 		{
-		  as_bad (_("immediate must be 1 or 2"));
+		  as_bad ("immediate must be 1 or 2");
 		}
 	    }
 	  else
 	    {
-	      as_bad (_("immediate 1 or 2 expected"));
+	      as_bad ("immediate 1 or 2 expected");
 	    }
 	  output_ptr++;
 	  break;
@@ -1116,7 +1115,7 @@ top:;
 	case CLASS_REGN0:
 	  if (reg[c & 0xf] == 0)
 	    {
-	      as_bad (_("can't use R0 here"));
+	      as_bad ("can't use R0 here");
 	    }
 	case CLASS_REG:
 	case CLASS_REG_BYTE:
@@ -1220,7 +1219,7 @@ DEFUN (md_assemble, (str),
 
   if (op_end == op_start)
     {
-      as_bad (_("can't find opcode "));
+      as_bad ("can't find opcode ");
     }
   c = *op_end;
 
@@ -1232,7 +1231,7 @@ DEFUN (md_assemble, (str),
 
   if (opcode == NULL)
     {
-      as_bad (_("unknown opcode"));
+      as_bad ("unknown opcode");
       return;
     }
 
@@ -1275,7 +1274,7 @@ DEFUN (md_assemble, (str),
 	  where[0] = 0x0;
 	  where[1] = 0x0;
 
-	  as_bad (_("Can't find opcode to match operands"));
+	  as_bad ("Can't find opcode to match operands");
 	  return;
 	}
 
@@ -1287,7 +1286,7 @@ void
 DEFUN (tc_crawl_symbol_chain, (headers),
        object_headers * headers)
 {
-  printf (_("call to tc_crawl_symbol_chain \n"));
+  printf ("call to tc_crawl_symbol_chain \n");
 }
 
 symbolS *
@@ -1301,7 +1300,7 @@ void
 DEFUN (tc_headers_hook, (headers),
        object_headers * headers)
 {
-  printf (_("call to tc_headers_hook \n"));
+  printf ("call to tc_headers_hook \n");
 }
 
 /* Various routines to kill one day */
@@ -1352,7 +1351,7 @@ md_atof (type, litP, sizeP)
 
     default:
       *sizeP = 0;
-      return _("Bad call to MD_ATOF()");
+      return "Bad call to MD_ATOF()";
     }
   t = atof_ieee (input_line_pointer, type, words);
   if (t)
@@ -1387,7 +1386,7 @@ md_parse_option (c, arg)
 	s_unseg ();
       else
 	{
-	  as_bad (_("invalid architecture -z%s"), arg);
+	  as_bad ("invalid architecture -z%s", arg);
 	  return 0;
 	}
       break;
@@ -1403,17 +1402,40 @@ void
 md_show_usage (stream)
      FILE *stream;
 {
-  fprintf(stream, _("\
+  fprintf(stream, "\
 Z8K options:\n\
 -z8001			generate segmented code\n\
--z8002			generate unsegmented code\n"));
+-z8002			generate unsegmented code\n");
 }
 
+int md_short_jump_size;
+
 void
 tc_aout_fix_to_chars ()
 {
-  printf (_("call to tc_aout_fix_to_chars \n"));
+  printf ("call to tc_aout_fix_to_chars \n");
   abort ();
+}
+
+void
+md_create_short_jump (ptr, from_addr, to_addr, frag, to_symbol)
+     char *ptr;
+     addressT from_addr;
+     addressT to_addr;
+     fragS *frag;
+     symbolS *to_symbol;
+{
+  as_fatal ("failed sanity check.");
+}
+
+void
+md_create_long_jump (ptr, from_addr, to_addr, frag, to_symbol)
+     char *ptr;
+     addressT from_addr, to_addr;
+     fragS *frag;
+     symbolS *to_symbol;
+{
+  as_fatal ("failed sanity check.");
 }
 
 void
@@ -1422,7 +1444,7 @@ md_convert_frag (headers, seg, fragP)
      segT seg;
      fragS *fragP;
 {
-  printf (_("call to md_convert_frag \n"));
+  printf ("call to md_convert_frag \n");
   abort ();
 }
 
@@ -1482,22 +1504,19 @@ md_apply_fix (fixP, val)
       break;
 #endif
 
-    case 0:
-      md_number_to_chars (buf, val, fixP->fx_size);
-      break;
-
     default:
       abort ();
 
     }
 }
 
+int md_long_jump_size;
 int
 md_estimate_size_before_relax (fragP, segment_type)
      register fragS *fragP;
      register segT segment_type;
 {
-  printf (_("call tomd_estimate_size_before_relax \n"));
+  printf ("call tomd_estimate_size_before_relax \n");
   abort ();
 }
 
@@ -1520,7 +1539,7 @@ md_pcrel_from (fixP)
 
 void
 tc_coff_symbol_emit_hook (s)
-     symbolS *s;
+     struct symbol *s;
 {
 }
 
@@ -1540,7 +1559,7 @@ tc_reloc_mangle (fix_ptr, intr, base)
       symbolS *sub = fix_ptr->fx_subsy;
       if (S_GET_SEGMENT(add) != S_GET_SEGMENT(sub))
 	{
-	  as_bad(_("Can't subtract symbols in different sections %s %s"),
+	  as_bad("Can't subtract symbols in different sections %s %s",
 		 S_GET_NAME(add), S_GET_NAME(sub));
 	}
       else {

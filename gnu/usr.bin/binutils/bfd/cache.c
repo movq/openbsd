@@ -1,6 +1,5 @@
 /* BFD library -- caching of file descriptors.
-   Copyright 1990, 91, 92, 93, 94, 95, 1996, 2000
-   Free Software Foundation, Inc.
+   Copyright 1990, 1991, 1992, 1994 Free Software Foundation, Inc.
    Hacked by Steve Chamberlain of Cygnus Support (steve@cygnus.com).
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -236,8 +235,7 @@ boolean
 bfd_cache_close (abfd)
      bfd *abfd;
 {
-  if (abfd->iostream == NULL
-      || (abfd->flags & BFD_IN_MEMORY) != 0)
+  if (abfd->iostream == NULL)
     return true;
 
   return bfd_cache_delete (abfd);
@@ -274,45 +272,20 @@ bfd_open_file (abfd)
     {
     case read_direction:
     case no_direction:
-      abfd->iostream = (PTR) fopen (abfd->filename, FOPEN_RB);
+      abfd->iostream = (char *) fopen (abfd->filename, FOPEN_RB);
       break;
     case both_direction:
     case write_direction:
       if (abfd->opened_once == true)
 	{
-	  abfd->iostream = (PTR) fopen (abfd->filename, FOPEN_RUB);
+	  abfd->iostream = (char *) fopen (abfd->filename, FOPEN_RUB);
 	  if (abfd->iostream == NULL)
-	    abfd->iostream = (PTR) fopen (abfd->filename, FOPEN_WUB);
+	    abfd->iostream = (char *) fopen (abfd->filename, FOPEN_WUB);
 	}
       else
 	{
-	  /* Create the file.
-
-	     Some operating systems won't let us overwrite a running
-	     binary.  For them, we want to unlink the file first.
-
-	     However, gcc 2.95 will create temporary files using
-	     O_EXCL and tight permissions to prevent other users from
-	     substituting other .o files during the compilation.  gcc
-	     will then tell the assembler to use the newly created
-	     file as an output file.  If we unlink the file here, we
-	     open a brief window when another user could still
-	     substitute a file.
-
-	     So we unlink the output file if and only if it has
-	     non-zero size.  */
-#ifndef __MSDOS__
-	  /* Don't do this for MSDOS: it doesn't care about overwriting
-	     a running binary, but if this file is already open by
-	     another BFD, we will be in deep trouble if we delete an
-	     open file.  In fact, objdump does just that if invoked with
-	     the --info option.  */
-	  struct stat s;
-
-	  if (stat (abfd->filename, &s) == 0 && s.st_size != 0)
-	    unlink (abfd->filename);
-#endif
-	  abfd->iostream = (PTR) fopen (abfd->filename, FOPEN_WB);
+	  /*open for creat */
+	  abfd->iostream = (char *) fopen (abfd->filename, FOPEN_WB);
 	  abfd->opened_once = true;
 	}
       break;
@@ -346,9 +319,6 @@ FILE *
 bfd_cache_lookup_worker (abfd)
      bfd *abfd;
 {
-  if ((abfd->flags & BFD_IN_MEMORY) != 0)
-    abort ();
-
   if (abfd->my_archive) 
     abfd = abfd->my_archive;
 

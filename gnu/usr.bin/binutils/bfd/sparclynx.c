@@ -1,6 +1,5 @@
 /* BFD support for Sparc binaries under LynxOS.
-   Copyright (C) 1990, 91, 92, 93, 94, 95, 97, 1998
-   Free Software Foundation, Inc.
+   Copyright (C) 1990, 1991, 1992, 1993 Free Software Foundation, Inc.
 
 This file is part of BFD, the Binary File Descriptor library.
 
@@ -92,19 +91,19 @@ NAME(lynx,set_arch_mach) (abfd, machtype)
       /* Some Sun3s make magic numbers without cpu types in them, so
 	 we'll default to the 68000. */
       arch = bfd_arch_m68k;
-      machine = bfd_mach_m68000;
+      machine = 68000;
       break;
 
     case M_68010:
     case M_HP200:
       arch = bfd_arch_m68k;
-      machine = bfd_mach_m68010;
+      machine = 68010;
       break;
 
     case M_68020:
     case M_HP300:
       arch = bfd_arch_m68k;
-      machine = bfd_mach_m68020;
+      machine = 68020;
       break;
 
     case M_SPARC:
@@ -174,11 +173,11 @@ NAME(aout,sparclynx_write_object_contents) (abfd)
     case bfd_arch_m68k:
       switch (bfd_get_mach (abfd))
 	{
-	case bfd_mach_m68010:
+	case 68010:
 	  N_SET_MACHTYPE (*execp, M_68010);
 	  break;
 	default:
-	case bfd_mach_m68020:
+	case 68020:
 	  N_SET_MACHTYPE (*execp, M_68020);
 	  break;
 	}
@@ -229,7 +228,7 @@ sparclynx_set_sizes (abfd)
 
 static CONST struct aout_backend_data sparclynx_aout_backend =
 {
-  0, 1, 0, 1, 0, sparclynx_set_sizes, 0,
+  0, 1, 1, 0, sparclynx_set_sizes, 0,
   0,				/* add_dynamic_symbols */
   0,				/* add_one_symbol */
   0,				/* link_dynamic_object */

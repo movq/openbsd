@@ -33,9 +33,6 @@ SECTIONS
   .rdata : {
     *(.rdata)
   }
-  .rconst : {
-    *(.rconst)
-  }
   .pdata : {
     ${RELOCATING+ _fpdata = .;}
     *(.pdata)

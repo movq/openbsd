@@ -1,9 +1,6 @@
 /* Internal format of COFF object file data structures, for GNU BFD.
    This file is part of BFD, the Binary File Descriptor library.  */
 
-#ifndef GNU_COFF_INTERNAL_H
-#define GNU_COFF_INTERNAL_H 1
-
 /* First, make "signed char" work, even on old compilers. */
 #ifndef signed
 #ifndef __STDC__
@@ -53,7 +50,6 @@ struct internal_filehdr
   long f_nsyms;			/* number of symtab entries	*/
   unsigned short f_opthdr;	/* sizeof(optional hdr)		*/
   unsigned short f_flags;	/* flags			*/
-  unsigned short f_target_id;	/* (TIc80 specific)		*/
 };
 
 
@@ -89,13 +85,9 @@ typedef struct _IMAGE_DATA_DIRECTORY
 }  IMAGE_DATA_DIRECTORY;
 #define IMAGE_NUMBEROF_DIRECTORY_ENTRIES  16
 
-/* Default image base for NT.  */
+/* default image base for NT */
 #define NT_EXE_IMAGE_BASE 0x400000
 #define NT_DLL_IMAGE_BASE 0x10000000
-
-/* Default image base for BeOS. */
-#define BEOS_EXE_IMAGE_BASE 0x80000000
-#define BEOS_DLL_IMAGE_BASE 0x10000000
 
 /* Extra stuff in a PE aouthdr */
 
@@ -220,14 +212,6 @@ struct internal_aouthdr
 #define C_ALIAS	 	105	/* duplicate tag		*/
 #define C_HIDDEN	106	/* ext symbol in dmert public lib */
 
-#define C_WEAKEXT	127	/* weak symbol -- GNU extension */
-
-/* New storage classes for TIc80 */
-#define C_UEXT		19	/* Tentative external definition */
-#define C_STATLAB	20	/* Static load time label */
-#define C_EXTLAB	21	/* External load time label */
-#define C_SYSTEM	23	/* System Wide variable */
-
 /* New storage classes for WINDOWS_NT   */
 #define C_SECTION       104     /* section name */
 #define C_NT_WEAK	105	/* weak external */
@@ -271,27 +255,11 @@ struct internal_aouthdr
 #define C_BSTAT         (0x8f)
 #define C_ESTAT         (0x90)
 
-/* Storage classes for Thumb symbols */
-#define C_THUMBEXT      (128 + C_EXT)		/* 130 */
-#define C_THUMBSTAT     (128 + C_STAT)		/* 131 */
-#define C_THUMBLABEL    (128 + C_LABEL)		/* 134 */
-#define C_THUMBEXTFUNC  (C_THUMBEXT  + 20)	/* 150 */
-#define C_THUMBSTATFUNC (C_THUMBSTAT + 20)	/* 151 */
-
 /********************** SECTION HEADER **********************/
-
-#define SCNNMLEN (8)
-
 struct internal_scnhdr
 {
-  char s_name[SCNNMLEN];	/* section name			*/
-
-  /* Physical address, aliased s_nlib.
-     In the pei format, this field is the virtual section size
-     (the size of the section after being loaded int memory),
-     NOT the physical address.  */
-  bfd_vma s_paddr;
-
+  char s_name[8];		/* section name			*/
+  bfd_vma s_paddr;		/* physical address, aliased s_nlib */
   bfd_vma s_vaddr;		/* virtual address		*/
   bfd_vma s_size;		/* section size			*/
   bfd_vma s_scnptr;		/* file ptr to raw data for section */
@@ -421,18 +389,13 @@ struct internal_syment
 #define DT_ARY		(3)	/* array */
 
 #define BTYPE(x)	((x) & N_BTMASK)
-#define DTYPE(x)	(((x) & N_TMASK) >> N_BTSHFT)
 
-#define ISPTR(x) \
-  (((unsigned long) (x) & N_TMASK) == ((unsigned long) DT_PTR << N_BTSHFT))
-#define ISFCN(x) \
-  (((unsigned long) (x) & N_TMASK) == ((unsigned long) DT_FCN << N_BTSHFT))
-#define ISARY(x) \
-  (((unsigned long) (x) & N_TMASK) == ((unsigned long) DT_ARY << N_BTSHFT))
-#define ISTAG(x) \
-  ((x) == C_STRTAG || (x) == C_UNTAG || (x) == C_ENTAG)
-#define DECREF(x) \
-  ((((x) >> N_TSHIFT) & ~ N_BTMASK) | ((x) & N_BTMASK))
+#define ISPTR(x)	(((x) & N_TMASK) == (DT_PTR << N_BTSHFT))
+#define ISFCN(x)	(((x) & N_TMASK) == (DT_FCN << N_BTSHFT))
+#define ISARY(x)	(((x) & N_TMASK) == (DT_ARY << N_BTSHFT))
+#define ISTAG(x)	((x)==C_STRTAG||(x)==C_UNTAG||(x)==C_ENTAG)
+#define DECREF(x) ((((x)>>N_TSHIFT)&~N_BTMASK)|((x)&N_BTMASK))
+
 
 union internal_auxent
 {
@@ -491,9 +454,6 @@ union internal_auxent
     long x_scnlen;		/* section length */
     unsigned short x_nreloc;	/* # relocation entries */
     unsigned short x_nlinno;	/* # line numbers */
-    unsigned long x_checksum;	/* section COMDAT checksum for PE */
-    unsigned short x_associated; /* COMDAT associated section index for PE */
-    unsigned char x_comdat;	/* COMDAT selection number for PE */
   }      x_scn;
 
   struct
@@ -590,97 +550,49 @@ struct internal_reloc
   unsigned long r_offset;	/* Used by Alpha ECOFF, SPARC, others */
 };
 
-#define R_DIR16 	 1
-#define R_DIR32 	 6
-#define R_IMAGEBASE	 7
-#define R_RELBYTE	15
-#define R_RELWORD	16
-#define R_RELLONG	17
-#define R_PCRBYTE	18
-#define R_PCRWORD	19
-#define R_PCRLONG	20
-#define R_IPRSHORT	24
-#define R_IPRLONG	26
-#define R_GETSEG	29
-#define R_GETPA 	30
-#define R_TAGWORD	31
-#define R_JUMPTARG	32	/* strange 29k 00xx00xx reloc */
+#define R_RELBYTE	017
+#define R_RELWORD	020
+#define R_PCRBYTE	022
+#define R_PCRWORD	023
+#define R_PCRLONG	024
 
-#define R_PCR16L       128
-#define R_PCR26L       129
-#define R_VRT16        130
-#define R_HVRT16       131
-#define R_LVRT16       132
-#define R_VRT32        133
+#define	R_DIR16		01
+#define R_DIR32		06
+#define	R_PCLONG	020
+#define R_RELBYTE	017
+#define R_RELWORD	020
+#define R_IMAGEBASE     07
 
 
-/* This reloc identifies mov.b instructions with a 16bit absolute
-   address.  The linker tries to turn insns with this reloc into
-   an absolute 8-bit address.  */
-#define R_MOV16B1    	0x41
+#define R_PCR16L 128
+#define R_PCR26L 129
+#define R_VRT16  130
+#define R_HVRT16 131
+#define R_LVRT16 132
+#define R_VRT32  133
+#define R_RELLONG	(0x11)	/* Direct 32-bit relocation */
+#define R_IPRSHORT	(0x18)
+#define R_IPRMED 	(0x19)	/* 24-bit ip-relative relocation */
+#define R_IPRLONG	(0x1a)
+#define R_OPTCALL	(0x1b)	/* 32-bit optimizable call (leafproc/sysproc) */
+#define R_OPTCALLX	(0x1c)	/* 64-bit optimizable call (leafproc/sysproc) */
+#define R_GETSEG	(0x1d)
+#define R_GETPA		(0x1e)
+#define R_TAGWORD	(0x1f)
+#define R_JUMPTARG	0x20	/* strange 29k 00xx00xx reloc */
 
-/* This reloc identifies mov.b instructions which had a 16bit
-   absolute address which have been shortened into a 8-bit
-   absolute address.  */
-#define R_MOV16B2 	0x42
 
-/* This reloc identifies jmp insns with a 16bit target address;
-   the linker tries to turn these insns into bra insns with
-   an 8bit pc-relative target.  */
-#define R_JMP1     	0x43
-
-/* This reloc identifies a bra with an 8-bit pc-relative
-   target that was formerlly a jmp insn with a 16bit target.  */
-#define R_JMP2 		0x44
-
-/* ??? */
+#define R_MOVB1    	0x41	/* Special h8 16bit or 8 bit reloc for mov.b 	*/
+#define R_MOVB2 	0x42	/* Special h8 opcode for 8bit which could be 16 */
+#define R_JMP1     	0x43	/* Special h8 16bit jmp which could be pcrel 	*/
+#define R_JMP2 		0x44	/* a branch which used to be a jmp 		*/
 #define R_RELLONG_NEG  	0x45
 
-/* This reloc identifies jmp insns with a 24bit target address;
-   the linker tries to turn these insns into bra insns with
-   an 8bit pc-relative target.  */
-#define R_JMPL1     	0x46
+#define R_JMPL1     	0x46	/* Special h8 24bit jmp which could be pcrel 	*/
+#define R_JMPL_B8	0x47	/* a 8 bit pcrel which used to be a jmp  */
 
-/* This reloc identifies a bra with an 8-bit pc-relative
-   target that was formerlly a jmp insn with a 24bit target.  */
-#define R_JMPL2		0x47
-
-/* This reloc identifies mov.b instructions with a 24bit absolute
-   address.  The linker tries to turn insns with this reloc into
-   an absolute 8-bit address.  */
-
-#define R_MOV24B1    	0x48
-
-/* This reloc identifies mov.b instructions which had a 24bit
-   absolute address which have been shortened into a 8-bit
-   absolute address.  */
-#define R_MOV24B2 	0x49
-
-/* An h8300 memory indirect jump/call.  Forces the address of the jump/call
-   target into the function vector (in page zero), and the address of the
-   vector entry to be placed in the jump/call instruction.  */
-#define R_MEM_INDIRECT	0x4a
-
-/* This reloc identifies a 16bit pc-relative branch target which was
-   shortened into an 8bit pc-relative branch target.  */
-#define R_PCRWORD_B	0x4b
-
-/* This reloc identifies mov.[wl] instructions with a 32/24 bit
-   absolute address; the linker may turn this into a mov.[wl]
-   insn with a 16bit absolute address.  */
-#define R_MOVL1    	0x4c
-
-/* This reloc identifies mov.[wl] insns which formerlly had
-   a 32/24bit absolute address and now have a 16bit absolute address.  */
-#define R_MOVL2 	0x4d
-
-/* This reloc identifies a bCC:8 which will have it's condition
-   inverted and its target redirected to the target of the branch
-   in the following insn.  */
-#define R_BCC_INV	0x4e
-
-/* This reloc identifies a jmp instruction that has been deleted.  */
-#define R_JMP_DEL	0x4f
+#define R_MOVLB1    	0x48	/* Special h8 24bit or 8 bit reloc for mov.b 	*/
+#define R_MOVLB2 	0x49	/* Special h8 opcode for 8bit which could be 24 */
 
 /* Z8k modes */
 #define R_IMM16   0x01		/* 16 bit abs */
@@ -725,4 +637,3 @@ struct internal_reloc
 
 #define R_W65_DP       10  /* direct page 8 bits only   */
 
-#endif /* GNU_COFF_INTERNAL_H */

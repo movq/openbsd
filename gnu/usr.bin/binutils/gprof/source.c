@@ -3,7 +3,6 @@
  */
 #include "gprof.h"
 #include "libiberty.h"
-#include "filenames.h"
 #include "search_list.h"
 #include "source.h"
 
@@ -26,7 +25,7 @@ DEFUN (source_file_lookup_path, (path), const char *path)
 
   for (sf = first_src_file; sf; sf = sf->next)
     {
-      if (FILENAME_CMP (path, sf->name) == 0)
+      if (strcmp (path, sf->name) == 0)
 	{
 	  break;
 	}
@@ -37,7 +36,7 @@ DEFUN (source_file_lookup_path, (path), const char *path)
 
       sf = (Source_File *) xmalloc (sizeof (*sf));
       memset (sf, 0, sizeof (*sf));
-      sf->name = xstrdup (path);
+      sf->name = strdup (path);
       sf->next = first_src_file;
       first_src_file = sf;
     }
@@ -67,7 +66,7 @@ DEFUN (source_file_lookup_name, (filename), const char *filename)
 	{
 	  fname = sf->name;
 	}
-      if (FILENAME_CMP (filename, fname) == 0)
+      if (strcmp (filename, fname) == 0)
 	{
 	  break;
 	}
@@ -96,7 +95,7 @@ DEFUN (annotate_source, (sf, max_width, annote, arg),
    * open succeeds or reaching end of list:
    */
   strcpy (fname, sf->name);
-  if (IS_ABSOLUTE_PATH (sf->name))
+  if (sf->name[0] == '/')
     {
       sle = 0;			/* don't use search list for absolute paths */
     }
@@ -113,15 +112,6 @@ DEFUN (annotate_source, (sf, max_width, annote, arg),
       if (!sle && !name_only)
 	{
 	  name_only = strrchr (sf->name, '/');
-#ifdef HAVE_DOS_BASED_FILE_SYSTEM
-	  {
-	    char *bslash = strrchr (sf->name, '\\');
-	    if (bslash > name_only)
-	      name_only = bslash;
-	    if (name_only == NULL && sf->name[0] != '\0' && sf->name[1] == ':')
-	      name_only = (char *)sf->name + 1;
-	  }
-#endif
 	  if (name_only)
 	    {
 	      /* try search-list again, but this time with name only: */
@@ -132,11 +122,6 @@ DEFUN (annotate_source, (sf, max_width, annote, arg),
       if (sle)
 	{
 	  strcpy (fname, sle->path);
-#ifdef HAVE_DOS_BASED_FILE_SYSTEM
-	  /* d:foo is not the same thing as d:/foo!  */
-	  if (fname[strlen (fname) - 1] == ':')
-	    strcat (fname, ".");
-#endif
 	  strcat (fname, "/");
 	  if (name_only)
 	    {
@@ -152,7 +137,7 @@ DEFUN (annotate_source, (sf, max_width, annote, arg),
 	{
 	  if (errno == ENOENT)
 	    {
-	      fprintf (stderr, _("%s: could not locate `%s'\n"),
+	      fprintf (stderr, "%s: could not locate `%s'\n",
 		       whoami, sf->name);
 	    }
 	  else
@@ -171,15 +156,6 @@ DEFUN (annotate_source, (sf, max_width, annote, arg),
 
       /* create annotation files in the current working directory: */
       filename = strrchr (sf->name, '/');
-#ifdef HAVE_DOS_BASED_FILE_SYSTEM
-	{
-	  char *bslash = strrchr (sf->name, '\\');
-	  if (bslash > filename)
-	    filename = bslash;
-	  if (filename == NULL && sf->name[0] != '\0' && sf->name[1] == ':')
-	    filename = sf->name + 1;
-	}
-#endif
       if (filename)
 	{
 	  ++filename;
@@ -191,24 +167,6 @@ DEFUN (annotate_source, (sf, max_width, annote, arg),
 
       strcpy (fname, filename);
       strcat (fname, EXT_ANNO);
-#ifdef __MSDOS__
-      {
-	/* foo.cpp-ann can overwrite foo.cpp due to silent truncation of
-	   file names on 8+3 filesystems.  Their `stat' better be good...  */
-	struct stat buf1, buf2;
-
-	if (stat (filename, &buf1) == 0
-	    && stat (fname, &buf2) == 0
-	    && buf1.st_ino == buf2.st_ino)
-	  {
-	    char *dot = strrchr (fname, '.');
-
-	    if (dot)
-	      *dot = '\0';
-	    strcat (fname, ".ann");
-	  }
-      }
-#endif
       ofp = fopen (fname, "w");
       if (!ofp)
 	{
@@ -239,7 +197,7 @@ DEFUN (annotate_source, (sf, max_width, annote, arg),
 	{
 	  fprintf (ofp, "\f\n");
 	}
-      fprintf (ofp, _("*** File %s:\n"), sf->name);
+      fprintf (ofp, "*** File %s:\n", sf->name);
     }
 
   annotation = xmalloc (max_width + 1);

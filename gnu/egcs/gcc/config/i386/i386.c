@@ -182,15 +182,15 @@ enum processor_type ix86_cpu;
 int ix86_arch;
 
 /* Strings to hold which cpu and instruction set architecture  to use.  */
-const char *ix86_cpu_string;		/* for -mcpu=<xxx> */
-const char *ix86_arch_string;		/* for -march=<xxx> */
+char *ix86_cpu_string;		/* for -mcpu=<xxx> */
+char *ix86_arch_string;		/* for -march=<xxx> */
 
 /* Register allocation order */
-const char *i386_reg_alloc_order;
+char *i386_reg_alloc_order;
 static char regs_allocated[FIRST_PSEUDO_REGISTER];
 
 /* # of registers to use to pass arguments. */
-const char *i386_regparm_string;
+char *i386_regparm_string;
 
 /* i386_regparm_string as a number */
 int i386_regparm;
@@ -198,24 +198,24 @@ int i386_regparm;
 /* Alignment to use for loops and jumps:  */
 
 /* Power of two alignment for loops. */
-const char *i386_align_loops_string;
+char *i386_align_loops_string;
 
 /* Power of two alignment for non-loop jumps. */
-const char *i386_align_jumps_string;
+char *i386_align_jumps_string;
 
 /* Power of two alignment for stack boundary in bytes.  */
-const char *i386_preferred_stack_boundary_string;
+char *i386_preferred_stack_boundary_string;
 
 /* Preferred alignment for stack boundary in bits.  */
 int i386_preferred_stack_boundary;
 
 /* Values 1-5: see jump.c */
 int i386_branch_cost;
-const char *i386_branch_cost_string;
+char *i386_branch_cost_string;
 
 /* Power of two alignment for functions. */
 int i386_align_funcs;
-const char *i386_align_funcs_string;
+char *i386_align_funcs_string;
 
 /* Power of two alignment for loops. */
 int i386_align_loops;
@@ -2995,8 +2995,7 @@ put_jump_code (code, reverse, file)
      FILE *file;
 {
   int flags = cc_prev_status.flags;
-  int ieee = (TARGET_IEEE_FP && (flags & CC_IN_80387)
-	      && !(cc_prev_status.flags & CC_FCOMI));
+  int ieee = (TARGET_IEEE_FP && (flags & CC_IN_80387));
   const char *suffix;
 
   if (flags & CC_Z_IN_NOT_C)
@@ -3761,7 +3760,7 @@ notice_update_cc (exp)
           if (stack_regs_mentioned_p (SET_SRC (XVECEXP (exp, 0, 0))))
 	    {
               cc_status.flags |= CC_IN_80387;
-	      if (TARGET_CMOVE && stack_regs_mentioned_p
+	      if (0 && TARGET_CMOVE && stack_regs_mentioned_p
 		  (XEXP (SET_SRC (XVECEXP (exp, 0, 0)), 1)))
 		cc_status.flags |= CC_FCOMI;
 	    }
@@ -4119,8 +4118,7 @@ output_float_compare (insn, operands)
   int cc0_set = 1;
   int i;
 
-  if (TARGET_CMOVE && STACK_REG_P (operands[1])
-      && STACK_REG_P (operands[0]))
+  if (0 && TARGET_CMOVE && STACK_REG_P (operands[1]))
     {
       cc_status.flags |= CC_FCOMI;
       cc_prev_status.flags &= ~CC_TEST_AX;
@@ -4154,8 +4152,7 @@ output_float_compare (insn, operands)
 	    {
 	      output_asm_insn (AS2 (fucomip,%y1,%0), operands);
 	      output_asm_insn (AS1 (fstp, %y0), operands);
-	      if (!TARGET_IEEE_FP)
-		cc0_set = 0; 
+	      cc0_set = 0; 
 	    }
 	  else
 	    output_asm_insn ("fucompp", operands);
@@ -4166,8 +4163,7 @@ output_float_compare (insn, operands)
 	    {
 	      output_asm_insn (AS2 (fcomip, %y1,%0), operands);
 	      output_asm_insn (AS1 (fstp, %y0), operands);
-	      if (!TARGET_IEEE_FP)
-		cc0_set = 0; 
+	      cc0_set = 0; 
 	    }
 	  else
 	    output_asm_insn ("fcompp", operands);
@@ -4192,8 +4188,7 @@ output_float_compare (insn, operands)
       if (cc_status.flags & CC_FCOMI)
 	{
 	  output_asm_insn (strcat (buf, AS2 (%z1,%y1,%0)), operands);
-	  if (!TARGET_IEEE_FP)
-	    cc0_set = 0; 
+	  cc0_set = 0; 
 	}
       else
         output_asm_insn (strcat (buf, AS1 (%z1,%y1)), operands);
@@ -4216,7 +4211,7 @@ output_float_compare (insn, operands)
           && REGNO (operands[i]) != FIRST_STACK_REG 
           && (!stack_top_dies || REGNO (operands[i]) != FIRST_STACK_REG + 1))
         {
-          rtx xexp[2];
+          rtx xexp[i];
           xexp[0] = gen_rtx_REG (DFmode,
 				 REGNO (operands[i]) - (stack_top_dies != 0));
           output_asm_insn (AS1 (fstp, %y0), xexp);
@@ -4241,19 +4236,17 @@ output_fp_cc0_set (insn)
   rtx next;
   enum rtx_code code;
 
-  if (!(cc_status.flags & CC_FCOMI))
-    {
-      xops[0] = gen_rtx_REG (HImode, 0);
-      output_asm_insn (AS1 (fnsts%W0,%0), xops);
-    }
+  xops[0] = gen_rtx_REG (HImode, 0);
+  output_asm_insn (AS1 (fnsts%W0,%0), xops);
 
   if (! TARGET_IEEE_FP)
     {
       if (!(cc_status.flags & CC_REVERSED))
         {
           next = next_cc0_user (insn);
-  
-          if (GET_CODE (PATTERN (next)) == SET
+
+          if (GET_CODE (next) == JUMP_INSN
+              && GET_CODE (PATTERN (next)) == SET
               && SET_DEST (PATTERN (next)) == pc_rtx
               && GET_CODE (SET_SRC (PATTERN (next))) == IF_THEN_ELSE)
 	    code = GET_CODE (XEXP (SET_SRC (PATTERN (next)), 0));
@@ -4278,7 +4271,8 @@ output_fp_cc0_set (insn)
   if (next == NULL_RTX)
     abort ();
 
-  if (GET_CODE (PATTERN (next)) == SET
+  if (GET_CODE (next) == JUMP_INSN
+      && GET_CODE (PATTERN (next)) == SET
       && SET_DEST (PATTERN (next)) == pc_rtx
       && GET_CODE (SET_SRC (PATTERN (next))) == IF_THEN_ELSE)
     code = GET_CODE (XEXP (SET_SRC (PATTERN (next)), 0));
@@ -4301,103 +4295,61 @@ output_fp_cc0_set (insn)
   else
     abort ();
 
-  if (cc_status.flags & CC_FCOMI)
+  xops[0] = gen_rtx_REG (QImode, 0);
+
+  switch (code)
     {
-      /* It is very tricky. We have to do it right. */
+    case GT:
+      xops[1] = GEN_INT (0x45);
+      output_asm_insn (AS2 (and%B0,%1,%h0), xops);
+      /* je label */
+      break;
 
-      xops [0] = gen_rtx_REG (QImode, 0);
+    case LT:
+      xops[1] = GEN_INT (0x45);
+      xops[2] = GEN_INT (0x01);
+      output_asm_insn (AS2 (and%B0,%1,%h0), xops);
+      output_asm_insn (AS2 (cmp%B0,%2,%h0), xops);
+      /* je label */
+      break;
 
-      switch (code)
-	{
-	case GT:
-	case GE:
-	  break;
+    case GE:
+      xops[1] = GEN_INT (0x05);
+      output_asm_insn (AS2 (and%B0,%1,%h0), xops);
+      /* je label */
+      break;
 
-	case LT:
-	  output_asm_insn (AS1 (setb,%b0), xops);
-	  output_asm_insn (AS1 (setp,%h0), xops);
-	  output_asm_insn (AS2 (cmp%B0,%b0,%h0), xops);
-	  break;
+    case LE:
+      xops[1] = GEN_INT (0x45);
+      xops[2] = GEN_INT (0x40);
+      output_asm_insn (AS2 (and%B0,%1,%h0), xops);
+      output_asm_insn (AS1 (dec%B0,%h0), xops);
+      output_asm_insn (AS2 (cmp%B0,%2,%h0), xops);
+      /* jb label */
+      break;
 
-	case LE:
-	  output_asm_insn (AS1 (setbe,%b0), xops);
-	  output_asm_insn (AS1 (setnp,%h0), xops);
-	  output_asm_insn (AS2 (xor%B0,%b0,%h0), xops);
-	  break;
+    case EQ:
+      xops[1] = GEN_INT (0x45);
+      xops[2] = GEN_INT (0x40);
+      output_asm_insn (AS2 (and%B0,%1,%h0), xops);
+      output_asm_insn (AS2 (cmp%B0,%2,%h0), xops);
+      /* je label */
+      break;
 
-	case EQ:
-	case NE:
-	  output_asm_insn (AS1 (setne,%b0), xops);
-	  output_asm_insn (AS1 (setp,%h0), xops);
-	  output_asm_insn (AS2 (or%B0,%b0,%h0), xops);
-	  break;
+    case NE:
+      xops[1] = GEN_INT (0x44);
+      xops[2] = GEN_INT (0x40);
+      output_asm_insn (AS2 (and%B0,%1,%h0), xops);
+      output_asm_insn (AS2 (xor%B0,%2,%h0), xops);
+      /* jne label */
+      break;
 
-	case GTU:
-	case LTU:
-	case GEU:
-	case LEU:
-	default:
-	  abort ();
-	}
-    }
-  else
-    {
-      xops[0] = gen_rtx_REG (QImode, 0);
-
-      switch (code)
-	{
-	case GT:
-	  xops[1] = GEN_INT (0x45);
-	  output_asm_insn (AS2 (and%B0,%1,%h0), xops);
-	  /* je label */
-	  break;
-
-	case LT:
-	  xops[1] = GEN_INT (0x45);
-	  xops[2] = GEN_INT (0x01);
-	  output_asm_insn (AS2 (and%B0,%1,%h0), xops);
-	  output_asm_insn (AS2 (cmp%B0,%2,%h0), xops);
-	  /* je label */
-	  break;
-
-	case GE:
-	  xops[1] = GEN_INT (0x05);
-	  output_asm_insn (AS2 (and%B0,%1,%h0), xops);
-	  /* je label */
-	  break;
-
-	case LE:
-	  xops[1] = GEN_INT (0x45);
-	  xops[2] = GEN_INT (0x40);
-	  output_asm_insn (AS2 (and%B0,%1,%h0), xops);
-	  output_asm_insn (AS1 (dec%B0,%h0), xops);
-	  output_asm_insn (AS2 (cmp%B0,%2,%h0), xops);
-	  /* jb label */
-	  break;
-
-	case EQ:
-	  xops[1] = GEN_INT (0x45);
-	  xops[2] = GEN_INT (0x40);
-	  output_asm_insn (AS2 (and%B0,%1,%h0), xops);
-	  output_asm_insn (AS2 (cmp%B0,%2,%h0), xops);
-	  /* je label */
-	  break;
-
-	case NE:
-	  xops[1] = GEN_INT (0x44);
-	  xops[2] = GEN_INT (0x40);
-	  output_asm_insn (AS2 (and%B0,%1,%h0), xops);
-	  output_asm_insn (AS2 (xor%B0,%2,%h0), xops);
-	  /* jne label */
-	  break;
-
-	case GTU:
-	case LTU:
-	case GEU:
-	case LEU:
-	default:
-	  abort ();
-	}
+    case GTU:
+    case LTU:
+    case GEU:
+    case LEU:
+    default:
+      abort ();
     }
 
   return "";
@@ -5234,9 +5186,6 @@ output_strlen_unroll (operands)
           output_asm_insn (AS1 (je,%l12), xops);
           output_asm_insn (AS1 (inc%L0,%0), xops);
 
-	  /* Not needed with an alignment of 2 */
-	  if (GET_CODE (operands[1]) != CONST_INT || INTVAL (operands[1]) != 2)
-	    {
 	  ASM_OUTPUT_INTERNAL_LABEL (asm_out_file, "L",
 				     CODE_LABEL_NUMBER (xops[7]));
           output_asm_insn (AS2 (cmp%B13,%2,%13), xops);
@@ -5245,8 +5194,6 @@ output_strlen_unroll (operands)
 
 	  ASM_OUTPUT_INTERNAL_LABEL (asm_out_file, "L",
 				     CODE_LABEL_NUMBER (xops[6]));
-	    }
-
           output_asm_insn (AS2 (cmp%B13,%2,%13), xops);
         }
 

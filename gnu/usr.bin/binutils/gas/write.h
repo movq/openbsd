@@ -1,5 +1,6 @@
 /* write.h
-   Copyright (C) 1987, 92, 93, 94, 95, 96, 1997 Free Software Foundation, Inc.
+
+   Copyright (C) 1987, 1992, 1993 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -14,12 +15,8 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with GAS; see the file COPYING.  If not, write to the Free
-   Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
-
-#ifndef __write_h__
-#define __write_h__
+   along with GAS; see the file COPYING.  If not, write to
+   the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #ifndef TC_I960
 #ifdef hpux
@@ -27,19 +24,15 @@
 #endif
 #endif /* TC_I960 */
 
-#ifndef BFD_ASSEMBLER
-
 #ifndef LOCAL_LABEL
 #define LOCAL_LABEL(name) (name [0] == 'L' )
+#endif /* LOCAL_LABEL */
+
+#ifndef FAKE_LABEL_NAME
+#define FAKE_LABEL_NAME "L0\001"
 #endif
 
-#define S_LOCAL_NAME(s) (LOCAL_LABEL (S_GET_NAME (s)))
-
-#endif /* ! BFD_ASSEMBLER */
-
-/* This is the name of a fake symbol which will never appear in the
-   assembler output.  S_IS_LOCAL detects it because of the \001.  */
-#define FAKE_LABEL_NAME "L0\001"
+#define S_LOCAL_NAME(s) (LOCAL_LABEL(S_GET_NAME(s)))
 
 #include "bit_fix.h"
 
@@ -52,7 +45,7 @@ struct fix
   /* These small fields are grouped together for compactness of
      this structure, and efficiency of access on some architectures.  */
 
-  /* pc-relative offset adjust (only used by m68k) */
+  /* pc-relative offset adjust */
   char fx_pcrel_adjust;
 
   /* How many bytes are involved? */
@@ -86,9 +79,6 @@ struct fix
      @@ Can this be determined from BFD?  */
   unsigned fx_no_overflow : 1;
 
-  /* The value is signed when checking for overflow.  */
-  unsigned fx_signed : 1;
-
   /* Which frag does this fix apply to?  */
   fragS *fx_frag;
 
@@ -109,9 +99,7 @@ struct fix
 
   /* If NULL, no bitfix's to do.  */
   /* Only i960-coff and ns32k use this, and i960-coff stores an
-     integer.  This can probably be folded into tc_fix_data, below.
-     @@ Alpha also uses it, but only to disable certain relocation
-     processing.  */
+     integer.  This can probably be folded into tc_fix_data, below.  */
   bit_fixS *fx_bit_fixP;
 
 #ifdef BFD_ASSEMBLER
@@ -138,15 +126,6 @@ struct fix
   char *fx_file;
   unsigned fx_line;
 
-#ifdef USING_CGEN
-  struct {
-    /* CGEN_INSN entry for this instruction.  */
-    const struct cgen_insn *insn;
-    /* Target specific data, usually reloc number.  */
-    int opinfo;
-  } fx_cgen;
-#endif
-
 #ifdef TC_FIX_TYPE
   /* Location where a backend can attach additional data
      needed to perform fixups.  */
@@ -172,37 +151,29 @@ COMMON fixS **seg_fix_rootP, **seg_fix_tailP;	/* -> one of above. */
 extern long string_byte_count;
 extern int section_alignment[];
 
-extern bit_fixS *bit_fix_new
-  PARAMS ((int size, int offset, long base_type, long base_adj, long min,
-	   long max, long add));
-extern void append PARAMS ((char **charPP, char *fromP, unsigned long length));
-extern void record_alignment PARAMS ((segT seg, int align));
-extern void subsegs_finish PARAMS ((void));
-extern void write_object_file PARAMS ((void));
-extern long relax_frag PARAMS ((fragS *, long));
-extern void relax_segment
-  PARAMS ((struct frag * seg_frag_root, segT seg_type));
+bit_fixS *bit_fix_new PARAMS ((int size, int offset, long base_type,
+			       long base_adj, long min, long max, long add));
+void append PARAMS ((char **charPP, char *fromP, unsigned long length));
+void record_alignment PARAMS ((segT seg, int align));
+void write_object_file PARAMS ((void));
+void relax_segment PARAMS ((struct frag * seg_frag_root, segT seg_type));
 
-extern void number_to_chars_littleendian PARAMS ((char *, valueT, int));
-extern void number_to_chars_bigendian    PARAMS ((char *, valueT, int));
+void number_to_chars_littleendian PARAMS ((char *, valueT, int));
+void number_to_chars_bigendian    PARAMS ((char *, valueT, int));
 
 #ifdef BFD_ASSEMBLER
-extern fixS *fix_new
-  PARAMS ((fragS * frag, int where, int size, symbolS * add_symbol,
-	   offsetT offset, int pcrel, bfd_reloc_code_real_type r_type));
-extern fixS *fix_new_exp
-  PARAMS ((fragS * frag, int where, int size, expressionS *exp, int pcrel,
-	   bfd_reloc_code_real_type r_type));
+fixS *fix_new PARAMS ((fragS * frag, int where, int size,
+		       symbolS * add_symbol, offsetT offset, int pcrel,
+		       bfd_reloc_code_real_type r_type));
+fixS *fix_new_exp PARAMS ((fragS * frag, int where, int size,
+			   expressionS *exp, int pcrel,
+			   bfd_reloc_code_real_type r_type));
 #else
-extern fixS *fix_new
-  PARAMS ((fragS * frag, int where, int size, symbolS * add_symbol,
-	   offsetT offset, int pcrel, int r_type));
-extern fixS *fix_new_exp
-  PARAMS ((fragS * frag, int where, int size, expressionS *exp, int pcrel,
-	   int r_type));
+fixS *fix_new PARAMS ((fragS * frag, int where, int size,
+		       symbolS * add_symbol, offsetT offset, int pcrel,
+		       int r_type));
+fixS *fix_new_exp PARAMS ((fragS * frag, int where, int size,
+			   expressionS *exp, int pcrel, int r_type));
 #endif
 
-extern void write_print_statistics PARAMS ((FILE *));
-
-#endif /* __write_h__ */
 /* end of write.h */

@@ -1,5 +1,5 @@
 /* Table of stab names for the BFD library.
-   Copyright (C) 1990, 91, 92, 93, 94, 95, 1996 Free Software Foundation, Inc.
+   Copyright (C) 1990, 91, 92, 93, 94, 1995 Free Software Foundation, Inc.
    Written by Cygnus Support.
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -24,10 +24,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include "libaout.h"
 #include "aout/aout64.h"
 
-/* Ignore duplicate stab codes; just return the string for the first
-   one.  */
+/* Create a table of debugging stab-codes and corresponding names.  */
+
 #define __define_stab(NAME, CODE, STRING) __define_name(CODE, STRING)
-#define __define_stab_duplicate(NAME, CODE, STRING)
 
 /* These are not really stab symbols, but it is
    convenient to have them here for the sake of nm.
@@ -42,16 +41,35 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
   __define_name (N_INDR, "INDR") \
   __define_name (N_WARNING, "WARNING")
 
-const char *
-bfd_get_stab_name (code)
+CONST char *
+aout_stab_name (code)
      int code;
 {
-  switch (code)
-    {
-#define __define_name(val, str) case val: return str;
-#include "aout/stab.def"
-      EXTRA_SYMBOLS
-    }
+#if 0 /* This lookup table is slower than lots of explicit tests, at
+	 least on the i386.  One advantage is that the compiler can
+	 eliminate duplicates from the code, whereas they can't easily
+	 be eliminated from the lookup table.  */
 
-  return (const char *) 0;
+#define __define_name(CODE, STRING) {(int)CODE, STRING},
+  static const struct {
+    int code;
+    char string[7];
+  } aout_stab_names[] = {
+#include "aout/stab.def"
+    EXTRA_SYMBOLS
+  };
+  register int i = sizeof (aout_stab_names) / sizeof (aout_stab_names[0]);
+  while (--i >= 0)
+    if (aout_stab_names[i].code == code)
+      return aout_stab_names[i].string;
+
+#else
+
+#define __define_name(val, str) if (val == code) return str ;
+#include "aout/stab.def"
+  EXTRA_SYMBOLS
+
+#endif
+
+  return 0;
 }

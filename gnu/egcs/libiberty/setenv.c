@@ -21,8 +21,6 @@
 #endif
 
 #include "ansidecl.h"
-#include <sys/types.h> /* For `size_t' */
-#include <stdio.h>     /* For `NULL' */
 
 #include <errno.h>
 #if !defined(errno) && !defined(HAVE_ERRNO_DECL)

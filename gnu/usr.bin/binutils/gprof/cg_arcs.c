@@ -26,9 +26,7 @@
 #include "sym_ids.h"
 
 Sym *cycle_header;
-unsigned int num_cycles;
-Arc **arcs;
-unsigned int numarcs;
+int num_cycles;
 
 /*
  * Return TRUE iff PARENT has an arc to covers the address
@@ -65,12 +63,11 @@ DEFUN (arc_lookup, (parent, child), Sym * parent AND Sym * child)
  */
 void
 DEFUN (arc_add, (parent, child, count),
-       Sym * parent AND Sym * child AND unsigned long count)
+       Sym * parent AND Sym * child AND int count)
 {
-  static unsigned int maxarcs = 0;
-  Arc *arc, **newarcs;
+  Arc *arc;
 
-  DBG (TALLYDEBUG, printf ("[arc_add] %lu arcs from %s to %s\n",
+  DBG (TALLYDEBUG, printf ("[arc_add] %d arcs from %s to %s\n",
 			   count, parent->name, child->name));
   arc = arc_lookup (parent, child);
   if (arc)
@@ -78,47 +75,15 @@ DEFUN (arc_add, (parent, child, count),
       /*
        * A hit: just increment the count.
        */
-      DBG (TALLYDEBUG, printf ("[tally] hit %lu += %lu\n",
+      DBG (TALLYDEBUG, printf ("[tally] hit %d += %d\n",
 			       arc->count, count));
       arc->count += count;
       return;
     }
   arc = (Arc *) xmalloc (sizeof (*arc));
-  memset (arc, 0, sizeof (*arc));
   arc->parent = parent;
   arc->child = child;
   arc->count = count;
-
-  /* If this isn't an arc for a recursive call to parent, then add it
-     to the array of arcs.  */
-  if (parent != child)
-    {
-      /* If we've exhausted space in our current array, get a new one
-	 and copy the contents.   We might want to throttle the doubling
-	 factor one day.  */
-      if (numarcs == maxarcs)
-	{
-	  /* Determine how much space we want to allocate.  */
-	  if (maxarcs == 0)
-	    maxarcs = 1;
-	  maxarcs *= 2;
-	
-	  /* Allocate the new array.  */
-	  newarcs = (Arc **)xmalloc(sizeof (Arc *) * maxarcs);
-
-	  /* Copy the old array's contents into the new array.  */
-	  memcpy (newarcs, arcs, numarcs * sizeof (Arc *));
-
-	  /* Free up the old array.  */
-	  free (arcs);
-
-	  /* And make the new array be the current array.  */
-	  arcs = newarcs;
-	}
-
-      /* Place this arc in the arc array.  */
-      arcs[numarcs++] = arc;
-    }
 
   /* prepend this child to the children of this parent: */
   arc->next_child = parent->cg.children;
@@ -211,7 +176,7 @@ DEFUN (propagate_time, (parent), Sym * parent)
       DBG (PROPDEBUG,
 	   printf ("[prop_time] child \t");
 	   print_name (child);
-	   printf (" with %f %f %lu/%lu\n", child->hist.time,
+	   printf (" with %f %f %d/%d\n", child->hist.time,
 		   child->cg.child_time, arc->count, child->ncalls);
 	   printf ("[prop_time] parent\t");
 	   print_name (parent);
@@ -361,7 +326,7 @@ DEFUN (inherit_flags, (child), Sym * child)
 	   * is static (and all others are, too)) no time propagates
 	   * along this arc.
 	   */
-	  if (child->ncalls != 0)
+	  if (child->ncalls)
 	    {
 	      child->cg.prop.fract += parent->cg.prop.fract
 		* (((double) arc->count) / ((double) child->ncalls));
@@ -391,7 +356,7 @@ DEFUN (inherit_flags, (child), Sym * child)
 	       * arc is static (and all others are, too)) no time
 	       * propagates along this arc.
 	       */
-	      if (head->ncalls != 0)
+	      if (head->ncalls)
 		{
 		  head->cg.prop.fract += parent->cg.prop.fract
 		    * (((double) arc->count) / ((double) head->ncalls));
@@ -575,9 +540,10 @@ Sym **
 DEFUN_VOID (cg_assemble)
 {
   Sym *parent, **time_sorted_syms, **top_sorted_syms;
-  unsigned int index;
+  long index;
   Arc *arc;
-
+  extern void find_call PARAMS ((Sym * parent,
+				 bfd_vma p_lowpc, bfd_vma p_highpc));
   /*
    * initialize various things:
    *      zero out child times.

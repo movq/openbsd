@@ -1,6 +1,5 @@
 /* BFD back-end for MIPS Extended-Coff files.
-   Copyright 1990, 91, 92, 93, 94, 95, 96, 97, 98, 1999
-   Free Software Foundation, Inc.
+   Copyright 1990, 1991, 1992, 1993, 1994 Free Software Foundation, Inc.
    Original version by Per Bothner.
    Full support added by Ian Lance Taylor, ian@cygnus.com.
 
@@ -113,9 +112,6 @@ static boolean mips_relax_pcrel16 PARAMS ((struct bfd_link_info *, bfd *,
 					   asection *,
 					   struct ecoff_link_hash_entry *,
 					   bfd_byte *, bfd_vma));
-static reloc_howto_type *mips_bfd_reloc_type_lookup
-  PARAMS ((bfd *, bfd_reloc_code_real_type));
-
 
 /* ECOFF has COFF sections, but the debugging information is stored in
    a completely different format.  ECOFF targets use some of the
@@ -273,10 +269,10 @@ static reloc_howto_type mips_howto_table[] =
 	 0xffff,		/* dst_mask */
 	 false),		/* pcrel_offset */
 
-  EMPTY_HOWTO (8),
-  EMPTY_HOWTO (9),
-  EMPTY_HOWTO (10),
-  EMPTY_HOWTO (11),
+  { 8 },
+  { 9 },
+  { 10 },
+  { 11 },
 
   /* This reloc is a Cygnus extension used when generating position
      independent code for embedded systems.  It represents a 16 bit PC
@@ -334,13 +330,13 @@ static reloc_howto_type mips_howto_table[] =
 	 0xffff,		/* dst_mask */
 	 true),			/* pcrel_offset */
 
-  EMPTY_HOWTO (15),
-  EMPTY_HOWTO (16),
-  EMPTY_HOWTO (17),
-  EMPTY_HOWTO (18),
-  EMPTY_HOWTO (19),
-  EMPTY_HOWTO (20),
-  EMPTY_HOWTO (21),
+  { 15 },
+  { 16 },
+  { 17 },
+  { 18 },
+  { 19 },
+  { 20 },
+  { 21 },
 
   /* This reloc is a Cygnus extension used when generating position
      independent code for embedded systems.  It represents an entry in
@@ -400,12 +396,12 @@ mips_ecoff_bad_format_hook (abfd, filehdr)
     case MIPS_MAGIC_BIG:
     case MIPS_MAGIC_BIG2:
     case MIPS_MAGIC_BIG3:
-      return bfd_big_endian (abfd);
+      return abfd->xvec->byteorder_big_p;
 
     case MIPS_MAGIC_LITTLE:
     case MIPS_MAGIC_LITTLE2:
     case MIPS_MAGIC_LITTLE3:
-      return bfd_little_endian (abfd);
+      return abfd->xvec->byteorder_big_p == false;
 
     default:
       return false;
@@ -427,7 +423,7 @@ mips_ecoff_swap_reloc_in (abfd, ext_ptr, intern)
   const RELOC *ext = (RELOC *) ext_ptr;
 
   intern->r_vaddr = bfd_h_get_32 (abfd, (bfd_byte *) ext->r_vaddr);
-  if (bfd_header_big_endian (abfd))
+  if (abfd->xvec->header_byteorder_big_p != false)
     {
       intern->r_symndx = (((int) ext->r_bits[0]
 			   << RELOC_BITS0_SYMNDX_SH_LEFT_BIG)
@@ -504,7 +500,7 @@ mips_ecoff_swap_reloc_out (abfd, intern, dst)
     }
 
   bfd_h_put_32 (abfd, intern->r_vaddr, (bfd_byte *) ext->r_vaddr);
-  if (bfd_header_big_endian (abfd))
+  if (abfd->xvec->header_byteorder_big_p != false)
     {
       ext->r_bits[0] = r_symndx >> RELOC_BITS0_SYMNDX_SH_LEFT_BIG;
       ext->r_bits[1] = r_symndx >> RELOC_BITS1_SYMNDX_SH_LEFT_BIG;
@@ -569,7 +565,7 @@ mips_adjust_reloc_in (abfd, intern, rptr)
 
 static void
 mips_adjust_reloc_out (abfd, rel, intern)
-     bfd *abfd ATTRIBUTE_UNUSED;
+     bfd *abfd;
      const arelent *rel;
      struct internal_reloc *intern;
 {
@@ -604,13 +600,13 @@ mips_generic_reloc (abfd,
 		    input_section,
 		    output_bfd,
 		    error_message)
-     bfd *abfd ATTRIBUTE_UNUSED;
+     bfd *abfd;
      arelent *reloc_entry;
      asymbol *symbol;
-     PTR data ATTRIBUTE_UNUSED;
+     PTR data;
      asection *input_section;
      bfd *output_bfd;
-     char **error_message ATTRIBUTE_UNUSED;
+     char **error_message;
 {
   if (output_bfd != (bfd *) NULL
       && (symbol->flags & BSF_SECTION_SYM) == 0
@@ -627,21 +623,10 @@ mips_generic_reloc (abfd,
    REFLO reloc, because there is a carry from the REFLO to the REFHI.
    Here we just save the information we need; we do the actual
    relocation when we see the REFLO.  MIPS ECOFF requires that the
-   REFLO immediately follow the REFHI.  As a GNU extension, we permit
-   an arbitrary number of HI relocs to be associated with a single LO
-   reloc.  This extension permits gcc to output the HI and LO relocs
-   itself.  */
+   REFLO immediately follow the REFHI, so this ought to work.  */
 
-struct mips_hi
-{
-  struct mips_hi *next;
-  bfd_byte *addr;
-  bfd_vma addend;
-};
-
-/* FIXME: This should not be a static variable.  */
-
-static struct mips_hi *mips_refhi_list;
+static bfd_byte *mips_refhi_addr;
+static bfd_vma mips_refhi_addend;
 
 static bfd_reloc_status_type
 mips_refhi_reloc (abfd,
@@ -651,17 +636,16 @@ mips_refhi_reloc (abfd,
 		  input_section,
 		  output_bfd,
 		  error_message)
-     bfd *abfd ATTRIBUTE_UNUSED;
+     bfd *abfd;
      arelent *reloc_entry;
      asymbol *symbol;
      PTR data;
      asection *input_section;
      bfd *output_bfd;
-     char **error_message ATTRIBUTE_UNUSED;
+     char **error_message;
 {
   bfd_reloc_status_type ret;
   bfd_vma relocation;
-  struct mips_hi *n;
 
   /* If we're relocating, and this an external symbol, we don't want
      to change anything.  */
@@ -691,13 +675,8 @@ mips_refhi_reloc (abfd,
     return bfd_reloc_outofrange;
 
   /* Save the information, and let REFLO do the actual relocation.  */
-  n = (struct mips_hi *) bfd_malloc (sizeof *n);
-  if (n == NULL)
-    return bfd_reloc_outofrange;
-  n->addr = (bfd_byte *) data + reloc_entry->address;
-  n->addend = relocation;
-  n->next = mips_refhi_list;
-  mips_refhi_list = n;
+  mips_refhi_addr = (bfd_byte *) data + reloc_entry->address;
+  mips_refhi_addend = relocation;
 
   if (output_bfd != (bfd *) NULL)
     reloc_entry->address += input_section->output_offset;
@@ -725,48 +704,36 @@ mips_reflo_reloc (abfd,
      bfd *output_bfd;
      char **error_message;
 {
-  if (mips_refhi_list != NULL)
+  if (mips_refhi_addr != (bfd_byte *) NULL)
     {
-      struct mips_hi *l;
+      unsigned long insn;
+      unsigned long val;
+      unsigned long vallo;
 
-      l = mips_refhi_list;
-      while (l != NULL)
-	{
-	  unsigned long insn;
-	  unsigned long val;
-	  unsigned long vallo;
-	  struct mips_hi *next;
+      /* Do the REFHI relocation.  Note that we actually don't need to
+	 know anything about the REFLO itself, except where to find
+	 the low 16 bits of the addend needed by the REFHI.  */
+      insn = bfd_get_32 (abfd, mips_refhi_addr);
+      vallo = (bfd_get_32 (abfd, (bfd_byte *) data + reloc_entry->address)
+	       & 0xffff);
+      val = ((insn & 0xffff) << 16) + vallo;
+      val += mips_refhi_addend;
 
-	  /* Do the REFHI relocation.  Note that we actually don't
-	     need to know anything about the REFLO itself, except
-	     where to find the low 16 bits of the addend needed by the
-	     REFHI.  */
-	  insn = bfd_get_32 (abfd, l->addr);
-	  vallo = (bfd_get_32 (abfd, (bfd_byte *) data + reloc_entry->address)
-		   & 0xffff);
-	  val = ((insn & 0xffff) << 16) + vallo;
-	  val += l->addend;
+      /* The low order 16 bits are always treated as a signed value.
+	 Therefore, a negative value in the low order bits requires an
+	 adjustment in the high order bits.  We need to make this
+	 adjustment in two ways: once for the bits we took from the
+	 data, and once for the bits we are putting back in to the
+	 data.  */
+      if ((vallo & 0x8000) != 0)
+	val -= 0x10000;
+      if ((val & 0x8000) != 0)
+	val += 0x10000;
 
-	  /* The low order 16 bits are always treated as a signed
-	     value.  Therefore, a negative value in the low order bits
-	     requires an adjustment in the high order bits.  We need
-	     to make this adjustment in two ways: once for the bits we
-	     took from the data, and once for the bits we are putting
-	     back in to the data.  */
-	  if ((vallo & 0x8000) != 0)
-	    val -= 0x10000;
-	  if ((val & 0x8000) != 0)
-	    val += 0x10000;
+      insn = (insn &~ 0xffff) | ((val >> 16) & 0xffff);
+      bfd_put_32 (abfd, insn, mips_refhi_addr);
 
-	  insn = (insn &~ 0xffff) | ((val >> 16) & 0xffff);
-	  bfd_put_32 (abfd, insn, l->addr);
-
-	  next = l->next;
-	  free (l);
-	  l = next;
-	}
-
-      mips_refhi_list = NULL;
+      mips_refhi_addr = (bfd_byte *) NULL;
     }
 
   /* Now do the REFLO reloc in the usual way.  */
@@ -794,7 +761,6 @@ mips_gprel_reloc (abfd,
      char **error_message;
 {
   boolean relocateable;
-  bfd_vma gp;
   bfd_vma relocation;
   unsigned long val;
   unsigned long insn;
@@ -828,16 +794,15 @@ mips_gprel_reloc (abfd,
      BFD.  If we can't find it, we're stuck.  We cache it in the ECOFF
      target data.  We don't need to adjust the symbol value for an
      external symbol if we are producing relocateable output.  */
-  gp = _bfd_get_gp_value (output_bfd);
-  if (gp == 0
+  if (ecoff_data (output_bfd)->gp == 0
       && (relocateable == false
 	  || (symbol->flags & BSF_SECTION_SYM) != 0))
     {
       if (relocateable != false)
 	{
 	  /* Make up a value.  */
-	  gp = symbol->section->output_section->vma + 0x4000;
-	  _bfd_set_gp_value (output_bfd, gp);
+	  ecoff_data (output_bfd)->gp =
+	    symbol->section->output_section->vma + 0x4000;
 	}
       else
 	{
@@ -859,8 +824,7 @@ mips_gprel_reloc (abfd,
 		  name = bfd_asymbol_name (*sym);
 		  if (*name == '_' && strcmp (name, "_gp") == 0)
 		    {
-		      gp = bfd_asymbol_value (*sym);
-		      _bfd_set_gp_value (output_bfd, gp);
+		      ecoff_data (output_bfd)->gp = bfd_asymbol_value (*sym);
 		      break;
 		    }
 		}
@@ -869,10 +833,9 @@ mips_gprel_reloc (abfd,
 	  if (i >= count)
 	    {
 	      /* Only get the error once.  */
-	      gp = 4;
-	      _bfd_set_gp_value (output_bfd, gp);
+	      ecoff_data (output_bfd)->gp = 4;
 	      *error_message =
-		(char *) _("GP relative relocation when _gp not defined");
+		(char *) "GP relative relocation when _gp not defined";
 	      return bfd_reloc_dangerous;
 	    }
 	}
@@ -901,7 +864,7 @@ mips_gprel_reloc (abfd,
      an external symbol.  */
   if (relocateable == false
       || (symbol->flags & BSF_SECTION_SYM) != 0)
-    val += relocation - gp;
+    val += relocation - ecoff_data (output_bfd)->gp;
 
   insn = (insn &~ 0xffff) | (val & 0xffff);
   bfd_put_32 (abfd, insn, (bfd_byte *) data + reloc_entry->address);
@@ -921,9 +884,8 @@ mips_gprel_reloc (abfd,
    are Cygnus extensions used when generating position independent
    code for embedded systems.  */
 
-/* FIXME: This should not be a static variable.  */
-
-static struct mips_hi *mips_relhi_list;
+static bfd_byte *mips_relhi_addr;
+static bfd_vma mips_relhi_addend;
 
 static bfd_reloc_status_type
 mips_relhi_reloc (abfd,
@@ -933,17 +895,16 @@ mips_relhi_reloc (abfd,
 		  input_section,
 		  output_bfd,
 		  error_message)
-     bfd *abfd ATTRIBUTE_UNUSED;
+     bfd *abfd;
      arelent *reloc_entry;
      asymbol *symbol;
      PTR data;
      asection *input_section;
      bfd *output_bfd;
-     char **error_message ATTRIBUTE_UNUSED;
+     char **error_message;
 {
   bfd_reloc_status_type ret;
   bfd_vma relocation;
-  struct mips_hi *n;
 
   /* If this is a reloc against a section symbol, then it is correct
      in the object file.  The only time we want to change this case is
@@ -982,13 +943,8 @@ mips_relhi_reloc (abfd,
     return bfd_reloc_outofrange;
 
   /* Save the information, and let RELLO do the actual relocation.  */
-  n = (struct mips_hi *) bfd_malloc (sizeof *n);
-  if (n == NULL)
-    return bfd_reloc_outofrange;
-  n->addr = (bfd_byte *) data + reloc_entry->address;
-  n->addend = relocation;
-  n->next = mips_relhi_list;
-  mips_relhi_list = n;
+  mips_relhi_addr = (bfd_byte *) data + reloc_entry->address;
+  mips_relhi_addend = relocation;
 
   if (output_bfd != (bfd *) NULL)
     reloc_entry->address += input_section->output_offset;
@@ -1016,58 +972,46 @@ mips_rello_reloc (abfd,
      bfd *output_bfd;
      char **error_message;
 {
-  if (mips_relhi_list != NULL)
+  if (mips_relhi_addr != (bfd_byte *) NULL)
     {
-      struct mips_hi *l;
+      unsigned long insn;
+      unsigned long val;
+      unsigned long vallo;
 
-      l = mips_relhi_list;
-      while (l != NULL)
-	{
-	  unsigned long insn;
-	  unsigned long val;
-	  unsigned long vallo;
-	  struct mips_hi *next;
+      /* Do the RELHI relocation.  Note that we actually don't need to
+	 know anything about the RELLO itself, except where to find
+	 the low 16 bits of the addend needed by the RELHI.  */
+      insn = bfd_get_32 (abfd, mips_relhi_addr);
+      vallo = (bfd_get_32 (abfd, (bfd_byte *) data + reloc_entry->address)
+	       & 0xffff);
+      val = ((insn & 0xffff) << 16) + vallo;
+      val += mips_relhi_addend;
 
-	  /* Do the RELHI relocation.  Note that we actually don't
-	     need to know anything about the RELLO itself, except
-	     where to find the low 16 bits of the addend needed by the
-	     RELHI.  */
-	  insn = bfd_get_32 (abfd, l->addr);
-	  vallo = (bfd_get_32 (abfd, (bfd_byte *) data + reloc_entry->address)
-		   & 0xffff);
-	  val = ((insn & 0xffff) << 16) + vallo;
-	  val += l->addend;
+      /* If the symbol is defined, make val PC relative.  If the
+	 symbol is not defined we don't want to do this, because we
+	 don't want the value in the object file to incorporate the
+	 address of the reloc.  */
+      if (! bfd_is_und_section (bfd_get_section (symbol))
+	  && ! bfd_is_com_section (bfd_get_section (symbol)))
+	val -= (input_section->output_section->vma
+		+ input_section->output_offset
+		+ reloc_entry->address);
 
-	  /* If the symbol is defined, make val PC relative.  If the
-	     symbol is not defined we don't want to do this, because
-	     we don't want the value in the object file to incorporate
-	     the address of the reloc.  */
-	  if (! bfd_is_und_section (bfd_get_section (symbol))
-	      && ! bfd_is_com_section (bfd_get_section (symbol)))
-	    val -= (input_section->output_section->vma
-		    + input_section->output_offset
-		    + reloc_entry->address);
+      /* The low order 16 bits are always treated as a signed value.
+	 Therefore, a negative value in the low order bits requires an
+	 adjustment in the high order bits.  We need to make this
+	 adjustment in two ways: once for the bits we took from the
+	 data, and once for the bits we are putting back in to the
+	 data.  */
+      if ((vallo & 0x8000) != 0)
+	val -= 0x10000;
+      if ((val & 0x8000) != 0)
+	val += 0x10000;
 
-	  /* The low order 16 bits are always treated as a signed
-	     value.  Therefore, a negative value in the low order bits
-	     requires an adjustment in the high order bits.  We need
-	     to make this adjustment in two ways: once for the bits we
-	     took from the data, and once for the bits we are putting
-	     back in to the data.  */
-	  if ((vallo & 0x8000) != 0)
-	    val -= 0x10000;
-	  if ((val & 0x8000) != 0)
-	    val += 0x10000;
+      insn = (insn &~ 0xffff) | ((val >> 16) & 0xffff);
+      bfd_put_32 (abfd, insn, mips_relhi_addr);
 
-	  insn = (insn &~ 0xffff) | ((val >> 16) & 0xffff);
-	  bfd_put_32 (abfd, insn, l->addr);
-
-	  next = l->next;
-	  free (l);
-	  l = next;
-	}
-
-      mips_relhi_list = NULL;
+      mips_relhi_addr = (bfd_byte *) NULL;
     }
 
   /* If this is a reloc against a section symbol, then it is correct
@@ -1109,13 +1053,13 @@ mips_switch_reloc (abfd,
 		   input_section,
 		   output_bfd,
 		   error_message)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     arelent *reloc_entry ATTRIBUTE_UNUSED;
-     asymbol *symbol ATTRIBUTE_UNUSED;
-     PTR data ATTRIBUTE_UNUSED;
-     asection *input_section ATTRIBUTE_UNUSED;
-     bfd *output_bfd ATTRIBUTE_UNUSED;
-     char **error_message ATTRIBUTE_UNUSED;
+     bfd *abfd;
+     arelent *reloc_entry;
+     asymbol *symbol;
+     PTR data;
+     asection *input_section;
+     bfd *output_bfd;
+     char **error_message;
 {
   return bfd_reloc_ok;
 }
@@ -1124,7 +1068,7 @@ mips_switch_reloc (abfd,
 
 static reloc_howto_type *
 mips_bfd_reloc_type_lookup (abfd, code)
-     bfd *abfd ATTRIBUTE_UNUSED;
+     bfd *abfd;
      bfd_reloc_code_real_type code;
 {
   int mips_type;
@@ -1193,18 +1137,11 @@ mips_relocate_hi (refhi, reflo, input_bfd, input_section, contents, adjust,
   unsigned long val;
   unsigned long vallo;
 
-  if (refhi == NULL)
-    return;
-  
   insn = bfd_get_32 (input_bfd,
 		     contents + adjust + refhi->r_vaddr - input_section->vma);
-  if (reflo == NULL)
-    vallo = 0;
-  else
-    vallo = (bfd_get_32 (input_bfd,
-			 contents + adjust + reflo->r_vaddr - input_section->vma)
-	     & 0xffff);
- 
+  vallo = (bfd_get_32 (input_bfd,
+		       contents + adjust + reflo->r_vaddr - input_section->vma)
+	   & 0xffff);
   val = ((insn & 0xffff) << 16) + vallo;
   val += relocation;
 
@@ -1253,8 +1190,8 @@ mips_relocate_section (output_bfd, info, input_bfd, input_section,
   boolean got_lo;
   struct internal_reloc lo_int_rel;
 
-  BFD_ASSERT (input_bfd->xvec->byteorder
-	      == output_bfd->xvec->byteorder);
+  BFD_ASSERT (input_bfd->xvec->header_byteorder_big_p
+	      == output_bfd->xvec->header_byteorder_big_p);
 
   /* We keep a table mapping the symndx found in an internal reloc to
      the appropriate section.  This is faster than looking up the
@@ -1267,7 +1204,10 @@ mips_relocate_section (output_bfd, info, input_bfd, input_section,
 				      (NUM_RELOC_SECTIONS
 				       * sizeof (asection *))));
       if (!symndx_to_section)
-	return false;
+	{
+	  bfd_set_error (bfd_error_no_memory);
+	  return false;
+	}
 
       symndx_to_section[RELOC_SECTION_NONE] = NULL;
       symndx_to_section[RELOC_SECTION_TEXT] =
@@ -1300,7 +1240,7 @@ mips_relocate_section (output_bfd, info, input_bfd, input_section,
 
   sym_hashes = ecoff_data (input_bfd)->sym_hashes;
 
-  gp = _bfd_get_gp_value (output_bfd);
+  gp = ecoff_data (output_bfd)->gp;
   if (gp == 0)
     gp_undefined = true;
   else
@@ -1320,7 +1260,6 @@ mips_relocate_section (output_bfd, info, input_bfd, input_section,
   for (i = 0; ext_rel < ext_rel_end; ext_rel++, i++)
     {
       struct internal_reloc int_rel;
-      boolean use_lo = false;
       bfd_vma addend;
       reloc_howto_type *howto;
       struct ecoff_link_hash_entry *h = NULL;
@@ -1345,33 +1284,16 @@ mips_relocate_section (output_bfd, info, input_bfd, input_section,
       if (int_rel.r_type == MIPS_R_REFHI
 	  || int_rel.r_type == MIPS_R_RELHI)
 	{
-	  struct external_reloc *lo_ext_rel;
-
-	  /* As a GNU extension, permit an arbitrary number of REFHI
-             or RELHI relocs before the REFLO or RELLO reloc.  This
-             permits gcc to emit the HI and LO relocs itself.  */
-	  for (lo_ext_rel = ext_rel + 1;
-	       lo_ext_rel < ext_rel_end;
-	       lo_ext_rel++)
-	    {
-	      mips_ecoff_swap_reloc_in (input_bfd, (PTR) lo_ext_rel,
-					&lo_int_rel);
-	      if (lo_int_rel.r_type != int_rel.r_type)
-		break;
-	    }
-
-	  if (lo_ext_rel < ext_rel_end
-	      && (lo_int_rel.r_type
-		  == (int_rel.r_type == MIPS_R_REFHI
-		      ? MIPS_R_REFLO
-		      : MIPS_R_RELLO))
-	      && int_rel.r_extern == lo_int_rel.r_extern
-	      && int_rel.r_symndx == lo_int_rel.r_symndx)
-	    {
-	      use_lo = true;
-	      if (lo_ext_rel == ext_rel + 1)
-		got_lo = true;
-	    }
+	  BFD_ASSERT ((ext_rel + 1) < ext_rel_end);
+	  mips_ecoff_swap_reloc_in (input_bfd, (PTR) (ext_rel + 1),
+				    &lo_int_rel);
+	  BFD_ASSERT ((lo_int_rel.r_type
+		       == (int_rel.r_type == MIPS_R_REFHI
+			   ? MIPS_R_REFLO
+			   : MIPS_R_RELLO))
+		      && int_rel.r_extern == lo_int_rel.r_extern
+		      && int_rel.r_symndx == lo_int_rel.r_symndx);
+	  got_lo = true;
 	}
 
       howto = &mips_howto_table[int_rel.r_type];
@@ -1432,13 +1354,12 @@ mips_relocate_section (output_bfd, info, input_bfd, input_section,
 	  if (gp_undefined)
 	    {
 	      if (! ((*info->callbacks->reloc_dangerous)
-		     (info, _("GP relative relocation when GP not defined"),
+		     (info, "GP relative relocation when GP not defined",
 		      input_bfd, input_section,
 		      int_rel.r_vaddr - input_section->vma)))
 		return false;
 	      /* Only give the error once per link.  */
-	      gp = 4;
-	      _bfd_set_gp_value (output_bfd, gp);
+	      ecoff_data (output_bfd)->gp = gp = 4;
 	      gp_undefined = false;
 	    }
 	  if (! int_rel.r_extern)
@@ -1647,8 +1568,8 @@ mips_relocate_section (output_bfd, info, input_bfd, input_section,
 			 being against a section, we must put a
 			 special value into the r_offset field.  This
 			 value is the old addend.  The r_offset for
-			 both the RELHI and RELLO relocs are the same,
-			 and we set both when we see RELHI.  */
+			 both the RELOHI and RELLO relocs are the
+			 same, and we set both when we see RELHI.  */
 		      if (int_rel.r_type == MIPS_R_RELHI)
 			{
 			  long addhi, addlo;
@@ -1663,23 +1584,17 @@ mips_relocate_section (output_bfd, info, input_bfd, input_section,
 			    addhi -= 0x10000;
 			  addhi <<= 16;
 
-			  if (! use_lo)
-			    addlo = 0;
-			  else
-			    {
-			      addlo = bfd_get_32 (input_bfd,
-						  (contents
-						   + adjust
-						   + lo_int_rel.r_vaddr
-						   - input_section->vma));
-			      addlo &= 0xffff;
-			      if (addlo & 0x8000)
-				addlo -= 0x10000;
-
-			      lo_int_rel.r_offset = addhi + addlo;
-			    }
+			  addlo = bfd_get_32 (input_bfd,
+					      (contents
+					       + adjust
+					       + lo_int_rel.r_vaddr
+					       - input_section->vma));
+			  addlo &= 0xffff;
+			  if (addlo & 0x8000)
+			    addlo -= 0x10000;
 
 			  int_rel.r_offset = addhi + addlo;
+			  lo_int_rel.r_offset = int_rel.r_offset;
 			}
 		    }
 
@@ -1743,8 +1658,7 @@ mips_relocate_section (output_bfd, info, input_bfd, input_section,
 					     - input_section->vma));
 	      else
 		{
-		  mips_relocate_hi (&int_rel,
-				    use_lo ? &lo_int_rel : NULL,
+		  mips_relocate_hi (&int_rel, &lo_int_rel,
 				    input_bfd, input_section, contents,
 				    adjust, relocation,
 				    int_rel.r_type == MIPS_R_RELHI);
@@ -1781,7 +1695,7 @@ mips_relocate_section (output_bfd, info, input_bfd, input_section,
 		  if (! ((*info->callbacks->undefined_symbol)
 			 (info, h->root.root.string, input_bfd,
 			  input_section,
-			  int_rel.r_vaddr - input_section->vma, true)))
+			  int_rel.r_vaddr - input_section->vma)))
 		    return false;
 		  relocation = 0;
 		}
@@ -1798,7 +1712,7 @@ mips_relocate_section (output_bfd, info, input_bfd, input_section,
 		 adding in the start address.  */
 	      if (howto->pc_relative)
 		{
-		  if (int_rel.r_type != MIPS_R_RELHI || ! use_lo)
+		  if (int_rel.r_type != MIPS_R_RELHI)
 		    relocation += int_rel.r_vaddr + adjust;
 		  else
 		    relocation += lo_int_rel.r_vaddr + adjust;
@@ -1818,9 +1732,8 @@ mips_relocate_section (output_bfd, info, input_bfd, input_section,
 					  addend);
 	  else
 	    {
-	      mips_relocate_hi (&int_rel,
-				use_lo ? &lo_int_rel : NULL,
-				input_bfd, input_section, contents, adjust,
+	      mips_relocate_hi (&int_rel, &lo_int_rel, input_bfd,
+				input_section, contents, adjust,
 				relocation,
 				int_rel.r_type == MIPS_R_RELHI);
 	      r = bfd_reloc_ok;
@@ -1886,9 +1799,12 @@ mips_read_relocs (abfd, sec)
   if (section_tdata == (struct ecoff_section_tdata *) NULL)
     {
       sec->used_by_bfd =
-	(PTR) bfd_alloc (abfd, sizeof (struct ecoff_section_tdata));
+	(PTR) bfd_alloc_by_size_t (abfd, sizeof (struct ecoff_section_tdata));
       if (sec->used_by_bfd == NULL)
-	return false;
+	{
+	  bfd_set_error (bfd_error_no_memory);
+	  return false;
+	}
 
       section_tdata = ecoff_section_data (abfd, sec);
       section_tdata->external_relocs = NULL;
@@ -1906,7 +1822,10 @@ mips_read_relocs (abfd, sec)
       section_tdata->external_relocs =
 	(PTR) bfd_alloc (abfd, external_relocs_size);
       if (section_tdata->external_relocs == NULL && external_relocs_size != 0)
-	return false;
+	{
+	  bfd_set_error (bfd_error_no_memory);
+	  return false;
+	}
 
       if (bfd_seek (abfd, sec->rel_filepos, SEEK_SET) != 0
 	  || (bfd_read (section_tdata->external_relocs, 1,
@@ -2017,7 +1936,7 @@ mips_relax_section (abfd, sec, info, again)
 	continue;
 
       /* Quickly check that this reloc is external PCREL16.  */
-      if (bfd_header_big_endian (abfd))
+      if (abfd->xvec->header_byteorder_big_p)
 	{
 	  if ((ext_rel->r_bits[3] & RELOC_BITS3_EXTERN_BIG) == 0
 	      || (((ext_rel->r_bits[3] & RELOC_BITS3_TYPE_BIG)
@@ -2086,9 +2005,12 @@ mips_relax_section (abfd, sec, info, again)
 	  if (info->keep_memory)
 	    contents = (bfd_byte *) bfd_alloc (abfd, sec->_raw_size);
 	  else
-	    contents = (bfd_byte *) bfd_malloc ((size_t) sec->_raw_size);
+	    contents = (bfd_byte *) malloc ((size_t) sec->_raw_size);
 	  if (contents == (bfd_byte *) NULL)
-	    goto error_return;
+	    {
+	      bfd_set_error (bfd_error_no_memory);
+	      goto error_return;
+	    }
 	  if (! bfd_get_section_contents (abfd, sec, (PTR) contents,
 					  (file_ptr) 0, sec->_raw_size))
 	    goto error_return;
@@ -2122,9 +2044,12 @@ mips_relax_section (abfd, sec, info, again)
 	  size_t size;
 
 	  size = sec->reloc_count * sizeof (long);
-	  offsets = (long *) bfd_alloc (abfd, size);
+	  offsets = (long *) bfd_alloc_by_size_t (abfd, size);
 	  if (offsets == (long *) NULL)
-	    goto error_return;
+	    {
+	      bfd_set_error (bfd_error_no_memory);
+	      goto error_return;
+	    }
 	  memset (offsets, 0, size);
 	  section_tdata->offsets = offsets;
 	}
@@ -2301,7 +2226,10 @@ mips_relax_section (abfd, sec, info, again)
       adjust = ((struct ecoff_value_adjust *)
 		bfd_alloc (abfd, sizeof (struct ecoff_value_adjust)));
       if (adjust == (struct ecoff_value_adjust *) NULL)
-	goto error_return;
+	{
+	  bfd_set_error (bfd_error_no_memory);
+	  goto error_return;
+	}
 
       adjust->start = int_rel.r_vaddr;
       adjust->end = sec->vma + sec->_raw_size;
@@ -2329,9 +2257,9 @@ mips_relax_section (abfd, sec, info, again)
 
 static boolean
 mips_relax_pcrel16 (info, input_bfd, input_section, h, location, address)
-     struct bfd_link_info *info ATTRIBUTE_UNUSED;
+     struct bfd_link_info *info;
      bfd *input_bfd;
-     asection *input_section ATTRIBUTE_UNUSED;
+     asection *input_section;
      struct ecoff_link_hash_entry *h;
      bfd_byte *location;
      bfd_vma address;
@@ -2402,7 +2330,10 @@ bfd_mips_ecoff_create_embedded_relocs (abfd, info, datasec, relsec, errmsg)
 
   relsec->contents = (bfd_byte *) bfd_alloc (abfd, datasec->reloc_count * 4);
   if (relsec->contents == NULL)
-    return false;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return false;
+    }
 
   p = relsec->contents;
 
@@ -2430,7 +2361,7 @@ bfd_mips_ecoff_create_embedded_relocs (abfd, info, datasec, relsec, errmsg)
       /* We can only relocate REFWORD relocs at run time.  */
       if (int_rel.r_type != MIPS_R_REFWORD)
 	{
-	  *errmsg = _("unsupported reloc type");
+	  *errmsg = "unsupported reloc type";
 	  bfd_set_error (bfd_error_bad_value);
 	  return false;
 	}
@@ -2467,7 +2398,7 @@ bfd_mips_ecoff_create_embedded_relocs (abfd, info, datasec, relsec, errmsg)
 	    default:
 	      /* No other sections should appear in -membedded-pic
                  code.  */
-	      *errmsg = _("reloc against unsupported section");
+	      *errmsg = "reloc against unsupported section";
 	      bfd_set_error (bfd_error_bad_value);
 	      return false;
 	    }
@@ -2475,7 +2406,7 @@ bfd_mips_ecoff_create_embedded_relocs (abfd, info, datasec, relsec, errmsg)
 
       if ((int_rel.r_offset & 3) != 0)
 	{
-	  *errmsg = _("reloc not properly aligned");
+	  *errmsg = "reloc not properly aligned";
 	  bfd_set_error (bfd_error_bad_value);
 	  return false;
 	}
@@ -2505,14 +2436,13 @@ static const struct ecoff_backend_data mips_ecoff_backend_data =
     (unsigned (*) PARAMS ((bfd *,PTR,PTR))) bfd_void, /* reloc_out */
     mips_ecoff_swap_filehdr_out, mips_ecoff_swap_aouthdr_out,
     mips_ecoff_swap_scnhdr_out,
-    FILHSZ, AOUTSZ, SCNHSZ, 0, 0, 0, 0, FILNMLEN, true, false, 4,
+    FILHSZ, AOUTSZ, SCNHSZ, 0, 0, 0, 0, true,
     mips_ecoff_swap_filehdr_in, mips_ecoff_swap_aouthdr_in,
     mips_ecoff_swap_scnhdr_in, NULL,
     mips_ecoff_bad_format_hook, _bfd_ecoff_set_arch_mach_hook,
     _bfd_ecoff_mkobject_hook, _bfd_ecoff_styp_to_sec_flags,
     _bfd_ecoff_set_alignment_hook, _bfd_ecoff_slurp_symbol_table,
-    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-    NULL, NULL
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
   },
   /* Supported architecture.  */
   bfd_arch_mips,
@@ -2579,9 +2509,7 @@ static const struct ecoff_backend_data mips_ecoff_backend_data =
   /* Relocate section contents while linking.  */
   mips_relocate_section,
   /* Do final adjustments to filehdr and aouthdr.  */
-  NULL,
-  /* Read an element from an archive at a given file position.  */
-  _bfd_get_elt_at_filepos
+  NULL
 };
 
 /* Looking up a reloc type is MIPS specific.  */
@@ -2598,17 +2526,12 @@ static const struct ecoff_backend_data mips_ecoff_backend_data =
 /* Relaxing sections is MIPS specific.  */
 #define _bfd_ecoff_bfd_relax_section mips_relax_section
 
-/* GC of sections is not done.  */
-#define _bfd_ecoff_bfd_gc_sections bfd_generic_gc_sections
-
-extern const bfd_target ecoff_big_vec;
-
 const bfd_target ecoff_little_vec =
 {
   "ecoff-littlemips",		/* name */
   bfd_target_ecoff_flavour,
-  BFD_ENDIAN_LITTLE,		/* data byte order is little */
-  BFD_ENDIAN_LITTLE,		/* header byte order is little */
+  false,			/* data byte order is little */
+  false,			/* header byte order is little */
 
   (HAS_RELOC | EXEC_P |		/* object flags */
    HAS_LINENO | HAS_DEBUG |
@@ -2642,8 +2565,6 @@ const bfd_target ecoff_little_vec =
      BFD_JUMP_TABLE_LINK (_bfd_ecoff),
      BFD_JUMP_TABLE_DYNAMIC (_bfd_nodynamic),
 
-  & ecoff_big_vec,
-  
   (PTR) &mips_ecoff_backend_data
 };
 
@@ -2651,8 +2572,8 @@ const bfd_target ecoff_big_vec =
 {
   "ecoff-bigmips",		/* name */
   bfd_target_ecoff_flavour,
-  BFD_ENDIAN_BIG,		/* data byte order is big */
-  BFD_ENDIAN_BIG,		/* header byte order is big */
+  true,				/* data byte order is big */
+  true,				/* header byte order is big */
 
   (HAS_RELOC | EXEC_P |		/* object flags */
    HAS_LINENO | HAS_DEBUG |
@@ -2685,51 +2606,5 @@ const bfd_target ecoff_big_vec =
      BFD_JUMP_TABLE_LINK (_bfd_ecoff),
      BFD_JUMP_TABLE_DYNAMIC (_bfd_nodynamic),
 
-  & ecoff_little_vec,
-  
-  (PTR) &mips_ecoff_backend_data
-};
-
-const bfd_target ecoff_biglittle_vec =
-{
-  "ecoff-biglittlemips",		/* name */
-  bfd_target_ecoff_flavour,
-  BFD_ENDIAN_LITTLE,		/* data byte order is little */
-  BFD_ENDIAN_BIG,		/* header byte order is big */
-
-  (HAS_RELOC | EXEC_P |		/* object flags */
-   HAS_LINENO | HAS_DEBUG |
-   HAS_SYMS | HAS_LOCALS | WP_TEXT | D_PAGED),
-
-  (SEC_HAS_CONTENTS | SEC_ALLOC | SEC_LOAD | SEC_RELOC | SEC_CODE | SEC_DATA),
-  0,				/* leading underscore */
-  ' ',				/* ar_pad_char */
-  15,				/* ar_max_namelen */
-  bfd_getl64, bfd_getl_signed_64, bfd_putl64,
-     bfd_getl32, bfd_getl_signed_32, bfd_putl32,
-     bfd_getl16, bfd_getl_signed_16, bfd_putl16, /* data */
-  bfd_getb64, bfd_getb_signed_64, bfd_putb64,
-     bfd_getb32, bfd_getb_signed_32, bfd_putb32,
-     bfd_getb16, bfd_getb_signed_16, bfd_putb16, /* hdrs */
-
-  {_bfd_dummy_target, coff_object_p, /* bfd_check_format */
-     _bfd_ecoff_archive_p, _bfd_dummy_target},
-  {bfd_false, _bfd_ecoff_mkobject,  /* bfd_set_format */
-     _bfd_generic_mkarchive, bfd_false},
-  {bfd_false, _bfd_ecoff_write_object_contents, /* bfd_write_contents */
-     _bfd_write_archive_contents, bfd_false},
-
-     BFD_JUMP_TABLE_GENERIC (_bfd_ecoff),
-     BFD_JUMP_TABLE_COPY (_bfd_ecoff),
-     BFD_JUMP_TABLE_CORE (_bfd_nocore),
-     BFD_JUMP_TABLE_ARCHIVE (_bfd_ecoff),
-     BFD_JUMP_TABLE_SYMBOLS (_bfd_ecoff),
-     BFD_JUMP_TABLE_RELOCS (_bfd_ecoff),
-     BFD_JUMP_TABLE_WRITE (_bfd_ecoff),
-     BFD_JUMP_TABLE_LINK (_bfd_ecoff),
-     BFD_JUMP_TABLE_DYNAMIC (_bfd_nodynamic),
-
-  NULL,
-  
   (PTR) &mips_ecoff_backend_data
 };

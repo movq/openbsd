@@ -1,6 +1,5 @@
 # Source file used to test the mul macro.
 	
-foo:
 	mul	$4,$5
 	mul	$4,$5,$6
 	mul	$4,$5,0
@@ -23,5 +22,3 @@ foo:
 	dmul	$4,$5,1
 	dmulo	$4,$5,$6
 	dmulou	$4,$5,$6
-
-        .space	8

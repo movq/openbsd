@@ -1,5 +1,5 @@
 /* BFD back-end for HPPA BSD core files.
-   Copyright 1993, 94, 95, 97, 1998 Free Software Foundation, Inc.
+   Copyright 1993, 1994 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -41,12 +41,15 @@
 
 #include "machine/vmparam.h"
 
+#include <stdio.h>
+#include <sys/types.h>
 #include <sys/param.h>
 #include <sys/dir.h>
 #include <signal.h>
 #include <machine/reg.h>
 #include <sys/user.h>		/* After a.out.h  */
 #include <sys/file.h>
+#include <errno.h>
 
 static asection *make_bfd_asection PARAMS ((bfd *, CONST char *,
 					    flagword, bfd_size_type,
@@ -171,7 +174,10 @@ hppabsd_core_core_file_p (abfd)
   coredata = (struct hppabsd_core_struct *)
     bfd_zalloc (abfd, sizeof (struct hppabsd_core_struct));
   if (!coredata)
-    return NULL;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return NULL;
+    }
 
   /* Make the core data and available via the tdata part of the BFD.  */
   abfd->tdata.hppabsd_core_data = coredata;
@@ -232,8 +238,7 @@ hppabsd_core_core_file_matches_executable_p (core_bfd, exec_bfd)
 #define hppabsd_core_get_symtab _bfd_nosymbols_get_symtab
 #define hppabsd_core_print_symbol _bfd_nosymbols_print_symbol
 #define hppabsd_core_get_symbol_info _bfd_nosymbols_get_symbol_info
-#define hppabsd_core_bfd_is_local_label_name \
-  _bfd_nosymbols_bfd_is_local_label_name
+#define hppabsd_core_bfd_is_local_label _bfd_nosymbols_bfd_is_local_label
 #define hppabsd_core_get_lineno _bfd_nosymbols_get_lineno
 #define hppabsd_core_find_nearest_line _bfd_nosymbols_find_nearest_line
 #define hppabsd_core_bfd_make_debug_symbol _bfd_nosymbols_bfd_make_debug_symbol
@@ -257,8 +262,8 @@ const bfd_target hppabsd_core_vec =
   {
     "hppabsd-core",
     bfd_target_unknown_flavour,
-    BFD_ENDIAN_BIG,		/* target byte order */
-    BFD_ENDIAN_BIG,		/* target headers byte order */
+    true,			/* target byte order */
+    true,			/* target headers byte order */
     (HAS_RELOC | EXEC_P |	/* object flags */
      HAS_LINENO | HAS_DEBUG |
      HAS_SYMS | HAS_LOCALS | WP_TEXT | D_PAGED),
@@ -298,8 +303,6 @@ const bfd_target hppabsd_core_vec =
        BFD_JUMP_TABLE_LINK (_bfd_nolink),
        BFD_JUMP_TABLE_DYNAMIC (_bfd_nodynamic),
 
-    NULL,
-    
     (PTR) 0			/* backend_data */
 };
 #endif

@@ -1,6 +1,6 @@
-%{ /* defparse.y - parser for .def files */
+/* defparse.y - parser for .def files */
 
-/*   Copyright (C) 1995, 1997, 1998, 1999 Free Software Foundation, Inc.
+/*   Copyright (C) 1995 Free Software Foundation, Inc.
 
 This file is part of GNU Binutils.
 
@@ -18,10 +18,6 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
-#include "bfd.h"
-#include "bucomm.h"
-#include "dlltool.h"
-%}
 
 %union {
   char *id;
@@ -29,13 +25,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 };
 
 %token NAME, LIBRARY, DESCRIPTION, STACKSIZE, HEAPSIZE, CODE, DATA
-%token SECTIONS, EXPORTS, IMPORTS, VERSIONK, BASE, CONSTANT
-%token READ WRITE EXECUTE SHARED NONSHARED NONAME
-%token SINGLE MULTIPLE INITINSTANCE INITGLOBAL TERMINSTANCE TERMGLOBAL
+%token SECTIONS, EXPORTS, IMPORTS, VERSION, BASE, CONSTANT
+%token READ WRITE EXECUTE SHARED NONAME
 %token <id> ID
 %token <number> NUMBER
-%type  <number> opt_base opt_ordinal opt_NONAME opt_CONSTANT opt_DATA
-%type  <number> attr attr_list opt_number
+%type  <number> opt_base opt_ordinal opt_NONAME opt_CONSTANT attr attr_list opt_number
 %type  <id> opt_name opt_equal_name 
 
 %%
@@ -46,7 +40,7 @@ start: start command
 
 command: 
 		NAME opt_name opt_base { def_name ($2, $3); }
-	|	LIBRARY opt_name opt_base option_list { def_library ($2, $3); }
+	|	LIBRARY opt_name opt_base { def_library ($2, $3); }
 	|	EXPORTS explist 
 	|	DESCRIPTION ID { def_description ($2);}
 	|	STACKSIZE NUMBER opt_number { def_stacksize ($2, $3);}
@@ -55,19 +49,19 @@ command:
 	|	DATA attr_list  { def_data ($2);}
 	|	SECTIONS seclist
 	|	IMPORTS implist
-	|	VERSIONK NUMBER { def_version ($2,0);}
-	|	VERSIONK NUMBER '.' NUMBER { def_version ($2,$4);}
+	|	VERSION NUMBER { def_version ($2,0);}
+	|	VERSION NUMBER '.' NUMBER { def_version ($2,$4);}
 	;
 
 
 explist:
-		/* EMPTY */
-	|	explist expline
+		explist expline
+	|	expline
 	;
 
 expline:
-		ID opt_equal_name opt_ordinal opt_NONAME opt_CONSTANT opt_DATA
-			{ def_exports ($1, $2, $3, $4, $5, $6);}
+		ID opt_equal_name opt_ordinal opt_NONAME opt_CONSTANT
+			{ def_exports ($1, $2, $3, $4, $5);}
 	;
 implist:	
 		implist impline
@@ -75,16 +69,9 @@ implist:
 	;
 
 impline:
-               ID '=' ID '.' ID '.' ID     { def_import ($1,$3,$5,$7, 0); }
-       |       ID '=' ID '.' ID '.' NUMBER { def_import ($1,$3,$5, 0,$7); }
-       |       ID '=' ID '.' ID            { def_import ($1,$3, 0,$5, 0); }
-       |       ID '=' ID '.' NUMBER        { def_import ($1,$3, 0, 0,$5); }
-       |       ID '.' ID '.' ID            { def_import ( 0,$1,$3,$5, 0); }
-       |       ID '.' ID '.' NUMBER        { def_import ( 0,$1,$3, 0,$5); }
-       |       ID '.' ID                   { def_import ( 0,$1, 0,$3, 0); }
-       |       ID '.' NUMBER               { def_import ( 0,$1, 0, 0,$3); }
-;
-
+		ID '=' ID '.' ID { def_import ($1,$3,$5);}
+	|	ID '.' ID	 { def_import (0, $1,$3);}
+	;
 seclist:
 		seclist secline
 	|	secline
@@ -108,37 +95,22 @@ opt_number: ',' NUMBER { $$=$2;}
 	;
 	
 attr:
-		READ { $$ = 1; }
-	|	WRITE { $$ = 2; }
-	|	EXECUTE { $$ = 4; }
-	|	SHARED { $$ = 8; }
-	|	NONSHARED { $$ = 0; }
-	|	SINGLE { $$ = 0; }
-	|	MULTIPLE { $$ = 0; }
+		READ { $$ = 1;}
+	|	WRITE { $$ = 2;}	
+	|	EXECUTE { $$=4;}
+	|	SHARED { $$=8;}
 	;
 
 opt_CONSTANT:
 		CONSTANT {$$=1;}
 	|		 {$$=0;}
 	;
-
 opt_NONAME:
 		NONAME {$$=1;}
 	|		 {$$=0;}
 	;
 
-opt_DATA:
-		DATA { $$ = 1; }
-	|	     { $$ = 0; }
-	;
-
 opt_name: ID		{ $$ =$1; }
-	| ID '.' ID	
-	  { 
-	    char *name = xmalloc (strlen ($1) + 1 + strlen ($3) + 1);
-	    sprintf (name, "%s.%s", $1, $3);
-	    $$ = name;
-	  }
 	|		{ $$=""; }
 	;
 
@@ -156,14 +128,5 @@ opt_base: BASE	'=' NUMBER	{ $$= $3;}
 	|	{ $$=-1;}
 	;
 
-option_list:
-		/* empty */
-	|	option_list opt_comma option
-	;
+	
 
-option:
-		INITINSTANCE
-	|	INITGLOBAL
-	|	TERMINSTANCE
-	|	TERMGLOBAL
-	;

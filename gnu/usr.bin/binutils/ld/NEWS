@@ -1,81 +1,6 @@
 -*- text -*-
 
-Changes in version 2.10:
-
-* Added garbage collection of unused sections, enabled by --gc-sections. 
-  It does require a bit of backend support; currently implemented are
-  ppc-elf, mips-elf, and mn10300-elf.  Others will ignore the option.
-
-* Added SORT to the linker script language to permit sorting sections by file
-  name or section name.
-
-* Added EXTERN to the linker script language as an equivalent to the -u
-  command-line option.
-
-* Added ASSERT to the linker script language.
-
-* Added EXCLUDE_FILE to the linker script language for further control over
-  wildcard file names.
-
-* Added -O option to optimize linker output (as of this writing, this only
-affects ELF shared library generation).
-
-* The -e option now accepts a number as well as a symbol name.
-
-* Added --no-undefined option to disallow undefined symbols when creating a
-  shared library.
-
-* The linker now issues a warning, not an error, for an undefined symbol when
-  using -Bsymbolic; use the new --no-undefined option to get the old
-  behaviour.
-
-* Added --demangle and --no-demangle options.
-
-Changes in version 2.9:
-
-* Added SQUAD to the linker script language.
-
-* New option --no-warn-mismatch.
-
-* The MEMORY command now parses the attributes to determine where sections that
-  are not placed in a specific memory region are placed.
-
-Changes in version 2.8:
-
-* Linker scripts may now contain shell wildcard characters for file and section
-  names.
-
-* The linker now supports symbol versions in ELF.
-
-* The NOCROSSREFS command was added to the linker script language.
-
-* The LOADADDR expression was added to the linker script language.
-
-* MAX and MIN functions were added to the linker script language.
-
-* The OVERLAY construct was added to the linker script language.
-
-* New option --warn-section-align to warn when the address of an output section
-  changes due to alignment of an input section.
-
-* New options --filter/-F and --auxiliary/-f.
-
-Changes in version 2.7:
-
-* New option --cref to print out a cross reference table.
-
-* New option --wrap SYMBOL.
-
-* New option --no-whole-archive, to turn off the effect of --whole-archive.
-
-* Input sections assigned to the output section /DISCARD/ in the linker script
-  are not included in the output file.
-
-* The SunOS and ELF linkers now merge stabs debugging information which uses
-  the N_BINCL and N_EINCL stab types.  This reduces the amount of debugging
-  information generated.
-
-Changes in version 2.6:
+Changes since version 2.5:
 
 * When an ELF section name is representable as a C identifier (this is not true
 of most ELF section names), the linker will automatically define symbols
@@ -108,7 +33,7 @@ enums, so that even if the same type is defined in multiple input files it will
 only be defined once in the output file.  The --traditional-format switch will
 prevent this optimization.
 
-Changes in version 2.5:
+Changes since version 2.4:
 
 * The linker now supports linking against SunOS shared libraries.  It still can
 not link SunOS PIC (Position Independent Code) files, so it can not be used to
@@ -147,7 +72,7 @@ far, this function has been written for the i386, m68k, a29k and SH targets.
 * The -V flag was made a synonym for -v, for SVR4 compatibility.  The old -V
 behaviour is available via --verbose.
 
-Changes in version 2.4:
+Changes since version 2.3:
 
 * New linker code, by Steve Chamberlain and Ian Taylor.  For a.out and ecoff
   formats (so far), this should result in considerable savings in time
@@ -171,7 +96,7 @@ Changes in version 2.4:
   forgot to note it.)  Some of their C library routines don't work when
   statically linked, and the GNU linker doesn't support dynamic linking yet.
 
-Changes in version 2.3:
+Changes since version 2.2:
 
 * Weak symbols are now supported.
 
@@ -180,14 +105,14 @@ Changes in version 2.3:
 
 * Alpha OSF/1 support has been added (non dynamic linking only).
 
-Changes in version 2.2:
+Changes since version 2.1:
 
 * The `bfd' library has been updated to reduce a.out-format string
   table size.  The effect of this is that files linked from many input
   files with duplicate symbols (`-g' debugging records, or identical
   static symbols) should be much smaller.
 
-Changes in version 2.1:
+Changes since version 2.0:
 
 * The ld -ySYMBOL flag (to trace references to SYMBOL) is now implemented.
 

@@ -1,5 +1,5 @@
 %{/* nlmheader.y - parse NLM header specification keywords.
-     Copyright (C) 1993, 94, 95, 97, 1998 Free Software Foundation, Inc.
+     Copyright (C) 1993 Free Software Foundation, Inc.
 
 This file is part of GNU Binutils.
 
@@ -30,6 +30,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include <stdio.h>
 #include <ctype.h>
 #include "bfd.h"
+#include "sysdep.h"
 #include "bucomm.h"
 #include "nlm/common.h"
 #include "nlm/internal.h"
@@ -121,7 +122,7 @@ static char *xstrdup PARAMS ((const char *));
 %token EXPORT FLAG_ON FLAG_OFF FULLMAP HELP IMPORT INPUT MAP MESSAGES
 %token MODULE MULTIPLE OS_DOMAIN OUTPUT PSEUDOPREEMPTION REENTRANT
 %token SCREENNAME SHARELIB STACK START SYNCHRONIZE
-%token THREADNAME TYPE VERBOSE VERSIONK XDCDATA
+%token THREADNAME TYPE VERBOSE VERSION XDCDATA
 
 /* Arguments.  */
 
@@ -160,7 +161,7 @@ command:
 	  }
 	| CODESTART STRING
 	  {
-	    nlmheader_warn (_("CODESTART is not implemented; sorry"), -1);
+	    nlmheader_warn ("CODESTART is not implemented; sorry", -1);
 	    free ($2);
 	  }
 	| COPYRIGHT QUOTED_STRING
@@ -171,7 +172,7 @@ command:
 	    len = strlen ($2);
 	    if (len >= NLM_MAX_COPYRIGHT_MESSAGE_LENGTH)
 	      {
-		nlmheader_warn (_("copyright string is too long"),
+		nlmheader_warn ("copyright string is too long",
 				NLM_MAX_COPYRIGHT_MESSAGE_LENGTH - 1);
 		len = NLM_MAX_COPYRIGHT_MESSAGE_LENGTH - 1;
 	      }
@@ -196,11 +197,11 @@ command:
 	    free ($3);
 	    free ($4);
 	    if (version_hdr->month < 1 || version_hdr->month > 12)
-	      nlmheader_warn (_("illegal month"), -1);
+	      nlmheader_warn ("illegal month", -1);
 	    if (version_hdr->day < 1 || version_hdr->day > 31)
-	      nlmheader_warn (_("illegal day"), -1);
+	      nlmheader_warn ("illegal day", -1);
 	    if (version_hdr->year < 1900 || version_hdr->year > 3000)
-	      nlmheader_warn (_("illegal year"), -1);
+	      nlmheader_warn ("illegal year", -1);
 	  }
 	| DEBUG
 	  {
@@ -213,7 +214,7 @@ command:
 	    len = strlen ($2);
 	    if (len > NLM_MAX_DESCRIPTION_LENGTH)
 	      {
-		nlmheader_warn (_("description string is too long"),
+		nlmheader_warn ("description string is too long",
 				NLM_MAX_DESCRIPTION_LENGTH);
 		len = NLM_MAX_DESCRIPTION_LENGTH;
 	      }
@@ -299,7 +300,7 @@ command:
 	    if (output_file == NULL)
 	      output_file = $2;
 	    else
-	      nlmheader_warn (_("ignoring duplicate OUTPUT statement"), -1);
+	      nlmheader_warn ("ignoring duplicate OUTPUT statement", -1);
 	  }
 	| PSEUDOPREEMPTION
 	  {
@@ -316,7 +317,7 @@ command:
 	    len = strlen ($2);
 	    if (len >= NLM_MAX_SCREEN_NAME_LENGTH)
 	      {
-		nlmheader_warn (_("screen name is too long"),
+		nlmheader_warn ("screen name is too long",
 				NLM_MAX_SCREEN_NAME_LENGTH);
 		len = NLM_MAX_SCREEN_NAME_LENGTH;
 	      }
@@ -349,7 +350,7 @@ command:
 	    len = strlen ($2);
 	    if (len >= NLM_MAX_THREAD_NAME_LENGTH)
 	      {
-		nlmheader_warn (_("thread name is too long"),
+		nlmheader_warn ("thread name is too long",
 				NLM_MAX_THREAD_NAME_LENGTH);
 		len = NLM_MAX_THREAD_NAME_LENGTH;
 	      }
@@ -367,7 +368,7 @@ command:
 	  {
 	    verbose = true;
 	  }
-	| VERSIONK STRING STRING STRING
+	| VERSION STRING STRING STRING
 	  {
 	    long val;
 
@@ -375,13 +376,13 @@ command:
 	    version_hdr->majorVersion = nlmlex_get_number ($2);
 	    val = nlmlex_get_number ($3);
 	    if (val < 0 || val > 99)
-	      nlmheader_warn (_("illegal minor version number (must be between 0 and 99)"),
+	      nlmheader_warn ("illegal minor version number (must be between 0 and 99)",
 			      -1);
 	    else
 	      version_hdr->minorVersion = val;
 	    val = nlmlex_get_number ($4);
 	    if (val < 0)
-	      nlmheader_warn (_("illegal revision number (must be between 0 and 26)"),
+	      nlmheader_warn ("illegal revision number (must be between 0 and 26)",
 			      -1);
 	    else if (val > 26)
 	      version_hdr->revision = 0;
@@ -391,7 +392,7 @@ command:
 	    free ($3);
 	    free ($4);
 	  }
-	| VERSIONK STRING STRING
+	| VERSION STRING STRING
 	  {
 	    long val;
 
@@ -399,7 +400,7 @@ command:
 	    version_hdr->majorVersion = nlmlex_get_number ($2);
 	    val = nlmlex_get_number ($3);
 	    if (val < 0 || val > 99)
-	      nlmheader_warn (_("illegal minor version number (must be between 0 and 99)"),
+	      nlmheader_warn ("illegal minor version number (must be between 0 and 99)",
 			      -1);
 	    else
 	      version_hdr->minorVersion = val;
@@ -623,7 +624,7 @@ struct keyword_tokens_struct keyword_tokens[] =
   { "THREADNAME", THREADNAME },
   { "TYPE", TYPE },
   { "VERBOSE", VERBOSE },
-  { "VERSION", VERSIONK },
+  { "VERSION", VERSION },
   { "XDCDATA", XDCDATA }
 };
 
@@ -768,12 +769,12 @@ tail_recurse:
       if (c != EOF && ! isspace ((unsigned char) c) && c != ',')
 	{
 	  nlmheader_identify ();
-	  fprintf (stderr, _("%s:%d: illegal character in keyword: %c\n"),
+	  fprintf (stderr, "%s:%d: illegal character in keyword: %c\n",
 		   current.name, current.lineno, c);
 	}
       else
 	{
-	  unsigned int i;
+	  int i;
 
 	  for (i = 0; i < KEYWORD_COUNT; i++)
 	    {
@@ -789,7 +790,7 @@ tail_recurse:
 	    }
 	  
 	  nlmheader_identify ();
-	  fprintf (stderr, _("%s:%d: unrecognized keyword: %s\n"),
+	  fprintf (stderr, "%s:%d: unrecognized keyword: %s\n",
 		   current.name, current.lineno, lex_buf);
 	}
 
@@ -826,7 +827,7 @@ tail_recurse:
       if (c == EOF)
 	{
 	  nlmheader_identify ();
-	  fprintf (stderr, _("%s:%d: end of file in quoted string\n"),
+	  fprintf (stderr, "%s:%d: end of file in quoted string\n",
 		   current.name, start_lineno);
 	  ++parse_errors;
 	}
@@ -867,7 +868,7 @@ nlmlex_get_number (s)
 
   ret = strtol (s, &send, 10);
   if (*send != '\0')
-    nlmheader_warn (_("bad number"), -1);
+    nlmheader_warn ("bad number", -1);
   return ret;
 }
 
@@ -883,7 +884,7 @@ nlmheader_identify ()
 
   if (! done)
     {
-      fprintf (stderr, _("%s: problems in NLM command language input:\n"),
+      fprintf (stderr, "%s: problems in NLM command language input:\n",
 	       program_name);
       done = 1;
     }

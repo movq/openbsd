@@ -1,6 +1,5 @@
 /* tc-a29k.c -- Assemble for the AMD 29000.
-   Copyright (C) 1989, 90, 91, 92, 93, 94, 95, 1998
-   Free Software Foundation, Inc.
+   Copyright (C) 1989, 1990, 1991, 1992, 1993 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -15,9 +14,8 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with GAS; see the file COPYING.  If not, write to the Free
-   Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+   along with GAS; see the file COPYING.  If not, write to
+   the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 /* John Gilmore has reorganized this module somewhat, to make it easier
    to convert it to new machines' assemblers as desired.  There was too
@@ -79,6 +77,8 @@ md_pseudo_table[] =
   {NULL, 0, 0},
 };
 
+int md_short_jump_size = 4;
+int md_long_jump_size = 4;
 #if defined(BFD_HEADERS)
 #ifdef RELSZ
 const int md_reloc_size = RELSZ;	/* Coff headers */
@@ -157,7 +157,7 @@ s_use (ignore)
       return;
     }
 
-  as_bad (_("Unknown segment type"));
+  as_bad ("Unknown segment type");
   demand_empty_rest_of_line ();
 }
 
@@ -327,7 +327,7 @@ md_begin ()
     }
 
   if (lose)
-    as_fatal (_("Broken assembler.  No assembly attempted."));
+    as_fatal ("Broken assembler.  No assembly attempted.");
 
   define_some_regs ();
 }
@@ -372,7 +372,7 @@ parse_operand (s, operandp, opt)
   input_line_pointer = s;
   expression (operandp);
   if (operandp->X_op == O_absent && ! opt)
-    as_bad (_("missing operand"));
+    as_bad ("missing operand");
   new = input_line_pointer;
   input_line_pointer = save;
   return new;
@@ -412,12 +412,12 @@ machine_ip (str)
       break;
 
     default:
-      as_bad (_("Unknown opcode: `%s'"), str);
+      as_bad ("Unknown opcode: `%s'", str);
       return;
     }
   if ((insn = (struct machine_opcode *) hash_find (op_hash, str)) == NULL)
     {
-      as_bad (_("Unknown opcode `%s'."), str);
+      as_bad ("Unknown opcode `%s'.", str);
       return;
     }
   argsStart = s;
@@ -449,7 +449,7 @@ machine_ip (str)
 	      the_insn.opcode = opcode;
 	      return;
 	    }
-	  as_bad (_("Too many operands: %s"), s);
+	  as_bad ("Too many operands: %s", s);
 	  break;
 
 	case ',':		/* Must match a comma */
@@ -471,7 +471,7 @@ machine_ip (str)
 		}
 	      else
 		{
-		  as_bad (_("Immediate value of %ld is too large"),
+		  as_bad ("Immediate value of %ld is too large",
 			  (long) operand->X_add_number);
 		  continue;
 		}
@@ -502,7 +502,7 @@ machine_ip (str)
 		}
 	      else
 		{
-		  as_bad (_("Immediate value of %ld is too large"),
+		  as_bad ("Immediate value of %ld is too large",
 			  (long) operand->X_add_number);
 		  continue;
 		}
@@ -541,7 +541,7 @@ machine_ip (str)
 	      opcode |= reg << 16;
 	      continue;
 	    }
-	  as_fatal (_("failed sanity check."));
+	  as_fatal ("failed sanity check.");
 	  break;
 
 	case 'x':		/* 16 bit constant, zero-extended */
@@ -889,7 +889,7 @@ md_apply_fix (fixP, val)
 
     case NO_RELOC:
     default:
-      as_bad (_("bad relocation type: 0x%02x"), fixP->fx_r_type);
+      as_bad ("bad relocation type: 0x%02x", fixP->fx_r_type);
       break;
     }
 }
@@ -913,7 +913,7 @@ tc_coff_fix2rtype (fixP)
     case RELOC_JUMPTARG:
       return (R_IREL);
     default:
-      printf (_("need %o3\n"), fixP->fx_r_type);
+      printf ("need %o3\n", fixP->fx_r_type);
       abort ();
     }				/* switch on type */
 
@@ -924,12 +924,35 @@ tc_coff_fix2rtype (fixP)
 
 /* should never be called for 29k */
 void
+md_create_short_jump (ptr, from_addr, to_addr, frag, to_symbol)
+     char *ptr;
+     addressT from_addr, to_addr;
+     fragS *frag;
+     symbolS *to_symbol;
+{
+  as_fatal ("a29k_create_short_jmp\n");
+}
+
+/* should never be called for 29k */
+void
 md_convert_frag (headers, seg, fragP)
      object_headers *headers;
      segT seg;
      register fragS *fragP;
 {
-  as_fatal (_("a29k_convert_frag\n"));
+  as_fatal ("a29k_convert_frag\n");
+}
+
+/* should never be called for 29k */
+void
+md_create_long_jump (ptr, from_addr, to_addr, frag, to_symbol)
+     char *ptr;
+     addressT from_addr;
+     addressT to_addr;
+     fragS *frag;
+     symbolS *to_symbol;
+{
+  as_fatal ("a29k_create_long_jump\n");
 }
 
 /* should never be called for a29k */
@@ -938,7 +961,7 @@ md_estimate_size_before_relax (fragP, segtype)
      register fragS *fragP;
      segT segtype;
 {
-  as_fatal (_("a29k_estimate_size_before_relax\n"));
+  as_fatal ("a29k_estimate_size_before_relax\n");
   return 0;
 }
 
@@ -1058,48 +1081,6 @@ md_show_usage (stream)
 {
 }
 
-/* This is called when a line is unrecognized.  This is used to handle
-   definitions of a29k style local labels.  */
-
-int
-a29k_unrecognized_line (c)
-     int c;
-{
-  int lab;
-  char *s;
-
-  if (c != '$'
-      || ! isdigit ((unsigned char) input_line_pointer[0]))
-    return 0;
-
-  s = input_line_pointer;
-
-  lab = 0;
-  while (isdigit ((unsigned char) *s))
-    {
-      lab = lab * 10 + *s - '0';
-      ++s;
-    }
-
-  if (*s != ':')
-    {
-      /* Not a label definition.  */
-      return 0;
-    }
-
-  if (dollar_label_defined (lab))
-    {
-      as_bad (_("label \"$%d\" redefined"), lab);
-      return 0;
-    }
-
-  define_dollar_label (lab);
-  colon (dollar_label_name (lab, 0));
-  input_line_pointer = s + 1;
-
-  return 1;
-}
-
 /* Default the values of symbols known that should be "predefined".  We
    don't bother to predefine them unless you actually use one, since there
    are a lot of them.  */
@@ -1162,7 +1143,7 @@ md_operand (expressionP)
       (void) expression (expressionP);
       if (expressionP->X_op != O_constant
 	  || expressionP->X_add_number > 255)
-	as_bad (_("Invalid expression after %%%%\n"));
+	as_bad ("Invalid expression after %%%%\n");
       expressionP->X_op = O_register;
     }
   else if (input_line_pointer[0] == '&')
@@ -1173,34 +1154,9 @@ md_operand (expressionP)
       input_line_pointer++;	/* Skip & */
       (void) expression (expressionP);
       if (expressionP->X_op != O_register)
-	as_bad (_("Invalid register in & expression"));
+	as_bad ("Invalid register in & expression");
       else
 	expressionP->X_op = O_constant;
-    }
-  else if (input_line_pointer[0] == '$'
-	   && isdigit ((unsigned char) input_line_pointer[1]))
-    {
-      long lab;
-      char *name;
-      symbolS *sym;
-
-      /* This is a local label.  */
-      ++input_line_pointer;
-      lab = (long) get_absolute_expression ();
-      if (dollar_label_defined (lab))
-	{
-	  name = dollar_label_name (lab, 0);
-	  sym = symbol_find (name);
-	}
-      else
-	{
-	  name = dollar_label_name (lab, 1);
-	  sym = symbol_find_or_make (name);
-	}
-
-      expressionP->X_op = O_symbol;
-      expressionP->X_add_symbol = sym;
-      expressionP->X_add_number = 0;
     }
   else if (input_line_pointer[0] == '$')
     {
@@ -1237,6 +1193,7 @@ md_operand (expressionP)
 	}
       else 
 	{
+	  /* FIXME: We should handle a29k local labels here.  */
 	  return;
 	}
 

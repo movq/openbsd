@@ -1,6 +1,5 @@
 /* Generic COFF swapping routines, for BFD.
-   Copyright 1990, 91, 92, 93, 94, 95, 96, 97, 98, 1999
-   Free Software Foundation, Inc.
+   Copyright 1990, 1991, 1992, 1993, 1995 Free Software Foundation, Inc.
    Written by Cygnus Support.
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -26,6 +25,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
    Any file which uses this must first include "coff/internal.h" and
    "coff/CPU.h".  The functions will then be correct for that CPU.  */
+
+#ifndef IMAGE_BASE
+#define IMAGE_BASE 0
+#endif
 
 #define PUTWORD bfd_h_put_32
 #define PUTHALF bfd_h_put_16
@@ -165,46 +168,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #ifndef PUT_SCNHDR_LNNOPTR
 #define PUT_SCNHDR_LNNOPTR bfd_h_put_32
 #endif
-#ifndef GET_SCNHDR_NRELOC
-#define GET_SCNHDR_NRELOC bfd_h_get_16
-#endif
-#ifndef PUT_SCNHDR_NRELOC
-#define PUT_SCNHDR_NRELOC bfd_h_put_16
-#endif
-#ifndef GET_SCNHDR_NLNNO
-#define GET_SCNHDR_NLNNO bfd_h_get_16
-#endif
-#ifndef PUT_SCNHDR_NLNNO
-#define PUT_SCNHDR_NLNNO bfd_h_put_16
-#endif
-#ifndef GET_SCNHDR_FLAGS
-#define GET_SCNHDR_FLAGS bfd_h_get_32
-#endif
-#ifndef PUT_SCNHDR_FLAGS
-#define PUT_SCNHDR_FLAGS bfd_h_put_32
-#endif
-
-
-static void coff_swap_aouthdr_in PARAMS ((bfd *, PTR, PTR));
-static unsigned int coff_swap_aouthdr_out PARAMS ((bfd *, PTR, PTR));
-static void coff_swap_scnhdr_in PARAMS ((bfd *, PTR, PTR));
-static unsigned int coff_swap_scnhdr_out PARAMS ((bfd *, PTR, PTR));
-static void coff_swap_filehdr_in PARAMS ((bfd *, PTR, PTR));
-static unsigned int coff_swap_filehdr_out PARAMS ((bfd *, PTR, PTR));
-#ifndef NO_COFF_RELOCS
-static void coff_swap_reloc_in PARAMS ((bfd *, PTR, PTR));
-static unsigned int coff_swap_reloc_out PARAMS ((bfd *, PTR, PTR));
-#endif /* NO_COFF_RELOCS */
-#ifndef NO_COFF_SYMBOLS
-static void coff_swap_sym_in PARAMS ((bfd *, PTR, PTR));
-static unsigned int coff_swap_sym_out PARAMS ((bfd *, PTR, PTR));
-static void coff_swap_aux_in PARAMS ((bfd *, PTR, int, int, int, int, PTR));
-static unsigned int coff_swap_aux_out PARAMS ((bfd *, PTR, int, int, int, int, PTR));
-#endif /* NO_COFF_SYMBOLS */
-#ifndef NO_COFF_LINENOS
-static void coff_swap_lineno_in PARAMS ((bfd *, PTR, PTR));
-static unsigned int coff_swap_lineno_out PARAMS ((bfd *, PTR, PTR));
-#endif /* NO_COFF_LINENOS */
 
 #ifndef NO_COFF_RELOCS
 
@@ -232,6 +195,7 @@ coff_swap_reloc_in (abfd, src, dst)
 					     (bfd_byte *) reloc_src->r_offset);
 #endif
 }
+
 
 static unsigned int
 coff_swap_reloc_out (abfd, src, dst)
@@ -261,7 +225,7 @@ coff_swap_reloc_out (abfd, src, dst)
   SWAP_OUT_RELOC_EXTRA(abfd,reloc_src, reloc_dst);
 #endif
 
-  return bfd_coff_relsz (abfd);
+  return sizeof(struct external_reloc);
 }
 
 #endif /* NO_COFF_RELOCS */
@@ -274,9 +238,6 @@ coff_swap_filehdr_in (abfd, src, dst)
 {
   FILHDR *filehdr_src = (FILHDR *) src;
   struct internal_filehdr *filehdr_dst = (struct internal_filehdr *) dst;
-#ifdef COFF_ADJUST_FILEHDR_IN_PRE
-  COFF_ADJUST_FILEHDR_IN_PRE (abfd, src, dst);
-#endif
   filehdr_dst->f_magic = bfd_h_get_16(abfd, (bfd_byte *) filehdr_src->f_magic);
   filehdr_dst->f_nscns = bfd_h_get_16(abfd, (bfd_byte *)filehdr_src-> f_nscns);
   filehdr_dst->f_timdat = bfd_h_get_32(abfd, (bfd_byte *)filehdr_src-> f_timdat);
@@ -285,13 +246,6 @@ coff_swap_filehdr_in (abfd, src, dst)
   filehdr_dst->f_nsyms = bfd_h_get_32(abfd, (bfd_byte *)filehdr_src-> f_nsyms);
   filehdr_dst->f_opthdr = bfd_h_get_16(abfd, (bfd_byte *)filehdr_src-> f_opthdr);
   filehdr_dst->f_flags = bfd_h_get_16(abfd, (bfd_byte *)filehdr_src-> f_flags);
-#ifdef TIC80_TARGET_ID
-  filehdr_dst->f_target_id = bfd_h_get_16(abfd, (bfd_byte *)filehdr_src-> f_target_id);
-#endif
-
-#ifdef COFF_ADJUST_FILEHDR_IN_POST
-  COFF_ADJUST_FILEHDR_IN_POST (abfd, src, dst);
-#endif
 }
 
 static  unsigned int
@@ -303,9 +257,6 @@ coff_swap_filehdr_out (abfd, in, out)
   struct internal_filehdr *filehdr_in = (struct internal_filehdr *)in;
   FILHDR *filehdr_out = (FILHDR *)out;
 
-#ifdef COFF_ADJUST_FILEHDR_OUT_PRE
-  COFF_ADJUST_FILEHDR_OUT_PRE (abfd, in, out);
-#endif
   bfd_h_put_16(abfd, filehdr_in->f_magic, (bfd_byte *) filehdr_out->f_magic);
   bfd_h_put_16(abfd, filehdr_in->f_nscns, (bfd_byte *) filehdr_out->f_nscns);
   bfd_h_put_32(abfd, filehdr_in->f_timdat, (bfd_byte *) filehdr_out->f_timdat);
@@ -314,14 +265,8 @@ coff_swap_filehdr_out (abfd, in, out)
   bfd_h_put_32(abfd, filehdr_in->f_nsyms, (bfd_byte *) filehdr_out->f_nsyms);
   bfd_h_put_16(abfd, filehdr_in->f_opthdr, (bfd_byte *) filehdr_out->f_opthdr);
   bfd_h_put_16(abfd, filehdr_in->f_flags, (bfd_byte *) filehdr_out->f_flags);
-#ifdef TIC80_TARGET_ID
-  bfd_h_put_16(abfd, filehdr_in->f_target_id, (bfd_byte *) filehdr_out->f_target_id);
-#endif
 
-#ifdef COFF_ADJUST_FILEHDR_OUT_POST
-  COFF_ADJUST_FILEHDR_OUT_POST (abfd, in, out);
-#endif
-  return bfd_coff_filhsz (abfd);
+  return sizeof(FILHDR);
 }
 
 
@@ -357,9 +302,6 @@ coff_swap_sym_in (abfd, ext1, in1)
   }
   in->n_sclass = bfd_h_get_8(abfd, ext->e_sclass);
   in->n_numaux = bfd_h_get_8(abfd, ext->e_numaux);
-#ifdef COFF_ADJUST_SYM_IN_POST
-  COFF_ADJUST_SYM_IN_POST (abfd, ext1, in1);
-#endif
 }
 
 static unsigned int
@@ -393,10 +335,7 @@ coff_swap_sym_out (abfd, inp, extp)
       }
   bfd_h_put_8(abfd,  in->n_sclass , ext->e_sclass);
   bfd_h_put_8(abfd,  in->n_numaux , ext->e_numaux);
-#ifdef COFF_ADJUST_SYM_OUT_POST
-  COFF_ADJUST_SYM_OUT_POST (abfd, inp, extp);
-#endif
-  return SYMESZ;
+  return sizeof(SYMENT);
 }
 
 static void
@@ -412,9 +351,6 @@ coff_swap_aux_in (abfd, ext1, type, class, indx, numaux, in1)
   AUXENT    *ext = (AUXENT *)ext1;
   union internal_auxent *in = (union internal_auxent *)in1;
 
-#ifdef COFF_ADJUST_AUX_IN_PRE
-  COFF_ADJUST_AUX_IN_PRE (abfd, ext1, type, class, indx, numaux, in1);
-#endif
   switch (class) {
     case C_FILE:
       if (ext->x_file.x_fname[0] == 0) {
@@ -425,19 +361,10 @@ coff_swap_aux_in (abfd, ext1, type, class, indx, numaux, in1)
 #if FILNMLEN != E_FILNMLEN
 	    -> Error, we need to cope with truncating or extending FILNMLEN!;
 #else
-	    if (numaux > 1)
-	      {
-		if (indx == 0)
-		  memcpy (in->x_file.x_fname, ext->x_file.x_fname,
-			  numaux * sizeof (AUXENT));
-	      }
-	    else
-	      {
-		memcpy (in->x_file.x_fname, ext->x_file.x_fname, FILNMLEN);
-	      }
+	    memcpy (in->x_file.x_fname, ext->x_file.x_fname, FILNMLEN);
 #endif
 	  }
-      goto end;
+      return;
 
       /* RS/6000 "csect" auxents */
 #ifdef RS6000COFF_C
@@ -456,7 +383,7 @@ coff_swap_aux_in (abfd, ext1, type, class, indx, numaux, in1)
 	  in->x_csect.x_smclas   = bfd_h_get_8  (abfd, ext->x_csect.x_smclas);
 	  in->x_csect.x_stab     = bfd_h_get_32 (abfd, ext->x_csect.x_stab);
 	  in->x_csect.x_snstab   = bfd_h_get_16 (abfd, ext->x_csect.x_snstab);
-	  goto end;
+	  return;
 	}
       break;
 #endif
@@ -470,14 +397,7 @@ coff_swap_aux_in (abfd, ext1, type, class, indx, numaux, in1)
 	  in->x_scn.x_scnlen = GET_SCN_SCNLEN(abfd, ext);
 	  in->x_scn.x_nreloc = GET_SCN_NRELOC(abfd, ext);
 	  in->x_scn.x_nlinno = GET_SCN_NLINNO(abfd, ext);
-
-	  /* PE defines some extra fields; we zero them out for
-             safety.  */
-	  in->x_scn.x_checksum = 0;
-	  in->x_scn.x_associated = 0;
-	  in->x_scn.x_comdat = 0;
-
-	  goto end;
+	  return;
 	}
       break;
     }
@@ -487,7 +407,7 @@ coff_swap_aux_in (abfd, ext1, type, class, indx, numaux, in1)
   in->x_sym.x_tvndx = bfd_h_get_16(abfd, (bfd_byte *) ext->x_sym.x_tvndx);
 #endif
 
-  if (class == C_BLOCK || class == C_FCN || ISFCN (type) || ISTAG (class))
+  if (class == C_BLOCK || ISFCN (type) || ISTAG (class))
     {
       in->x_sym.x_fcnary.x_fcn.x_lnnoptr = GET_FCN_LNNOPTR (abfd, ext);
       in->x_sym.x_fcnary.x_fcn.x_endndx.l = GET_FCN_ENDNDX (abfd, ext);
@@ -514,14 +434,6 @@ coff_swap_aux_in (abfd, ext1, type, class, indx, numaux, in1)
     in->x_sym.x_misc.x_lnsz.x_lnno = GET_LNSZ_LNNO(abfd, ext);
     in->x_sym.x_misc.x_lnsz.x_size = GET_LNSZ_SIZE(abfd, ext);
   }
-
-end: ;
-  /* the semicolon is because MSVC doesn't like labels at
-     end of block. */
-
-#ifdef COFF_ADJUST_AUX_IN_POST
-  COFF_ADJUST_AUX_IN_POST (abfd, ext1, type, class, indx, numaux, in1);
-#endif
 }
 
 static unsigned int
@@ -530,16 +442,13 @@ coff_swap_aux_out (abfd, inp, type, class, indx, numaux, extp)
      PTR 	inp;
      int   type;
      int   class;
-     int   indx ATTRIBUTE_UNUSED;
-     int   numaux ATTRIBUTE_UNUSED;
+     int   indx;
+     int   numaux;
      PTR	extp;
 {
   union internal_auxent *in = (union internal_auxent *)inp;
   AUXENT *ext = (AUXENT *)extp;
 
-#ifdef COFF_ADJUST_AUX_OUT_PRE
-  COFF_ADJUST_AUX_OUT_PRE (abfd, inp, type, class, indx, numaux, extp);
-#endif
   memset((PTR)ext, 0, AUXESZ);
   switch (class) {
   case C_FILE:
@@ -556,7 +465,7 @@ coff_swap_aux_out (abfd, inp, type, class, indx, numaux, extp)
       memcpy (ext->x_file.x_fname, in->x_file.x_fname, FILNMLEN);
 #endif
     }
-    goto end;
+    return sizeof (AUXENT);
 
 #ifdef RS6000COFF_C
   /* RS/6000 "csect" auxents */
@@ -574,7 +483,7 @@ coff_swap_aux_out (abfd, inp, type, class, indx, numaux, extp)
 	PUTBYTE (abfd, in->x_csect.x_smclas,	ext->x_csect.x_smclas);
 	PUTWORD (abfd, in->x_csect.x_stab,	ext->x_csect.x_stab);
 	PUTHALF (abfd, in->x_csect.x_snstab,	ext->x_csect.x_snstab);
-	goto end;
+	return sizeof (AUXENT);
       }
     break;
 #endif
@@ -588,7 +497,7 @@ coff_swap_aux_out (abfd, inp, type, class, indx, numaux, extp)
       PUT_SCN_SCNLEN(abfd, in->x_scn.x_scnlen, ext);
       PUT_SCN_NRELOC(abfd, in->x_scn.x_nreloc, ext);
       PUT_SCN_NLINNO(abfd, in->x_scn.x_nlinno, ext);
-      goto end;
+      return sizeof (AUXENT);
     }
     break;
   }
@@ -598,7 +507,7 @@ coff_swap_aux_out (abfd, inp, type, class, indx, numaux, extp)
   bfd_h_put_16(abfd, in->x_sym.x_tvndx , (bfd_byte *) ext->x_sym.x_tvndx);
 #endif
 
-  if (class == C_BLOCK || class == C_FCN || ISFCN (type) || ISTAG (class))
+  if (class == C_BLOCK || ISFCN (type) || ISTAG (class))
     {
       PUT_FCN_LNNOPTR(abfd,  in->x_sym.x_fcnary.x_fcn.x_lnnoptr, ext);
       PUT_FCN_ENDNDX(abfd,  in->x_sym.x_fcnary.x_fcn.x_endndx.l, ext);
@@ -627,11 +536,7 @@ coff_swap_aux_out (abfd, inp, type, class, indx, numaux, extp)
       PUT_LNSZ_SIZE (abfd, in->x_sym.x_misc.x_lnsz.x_size, ext);
     }
 
-end:
-#ifdef COFF_ADJUST_AUX_OUT_POST
-  COFF_ADJUST_AUX_OUT_POST (abfd, inp, type, class, indx, numaux, extp);
-#endif
-  return AUXESZ;
+  return sizeof(AUXENT);
 }
 
 #endif /* NO_COFF_SYMBOLS */
@@ -663,10 +568,11 @@ coff_swap_lineno_out (abfd, inp, outp)
 	  ext->l_addr.l_symndx);
 
   PUT_LINENO_LNNO (abfd, in->l_lnno, ext);
-  return LINESZ;
+  return sizeof(struct external_lineno);
 }
 
 #endif /* NO_COFF_LINENOS */
+
 
 static void
 coff_swap_aouthdr_in (abfd, aouthdr_ext1, aouthdr_int1)
@@ -799,7 +705,7 @@ coff_swap_aouthdr_out (abfd, in, out)
   bfd_h_put_32(abfd, aouthdr_in->fprmask, (bfd_byte *) aouthdr_out->fprmask);
 #endif
 
-  return AOUTSZ;
+  return sizeof(AOUTHDR);
 }
 
 static void
@@ -811,9 +717,6 @@ coff_swap_scnhdr_in (abfd, ext, in)
   SCNHDR *scnhdr_ext = (SCNHDR *) ext;
   struct internal_scnhdr *scnhdr_int = (struct internal_scnhdr *) in;
 
-#ifdef COFF_ADJUST_SCNHDR_IN_PRE
-  COFF_ADJUST_SCNHDR_IN_PRE (abfd, ext, in);
-#endif
   memcpy(scnhdr_int->s_name, scnhdr_ext->s_name, sizeof(scnhdr_int->s_name));
   scnhdr_int->s_vaddr =
     GET_SCNHDR_VADDR (abfd, (bfd_byte *) scnhdr_ext->s_vaddr);
@@ -828,18 +731,16 @@ coff_swap_scnhdr_in (abfd, ext, in)
     GET_SCNHDR_RELPTR (abfd, (bfd_byte *) scnhdr_ext->s_relptr);
   scnhdr_int->s_lnnoptr =
     GET_SCNHDR_LNNOPTR (abfd, (bfd_byte *) scnhdr_ext->s_lnnoptr);
-  scnhdr_int->s_flags =
-    GET_SCNHDR_FLAGS (abfd, (bfd_byte *) scnhdr_ext->s_flags);
-  scnhdr_int->s_nreloc =
-    GET_SCNHDR_NRELOC (abfd, (bfd_byte *) scnhdr_ext->s_nreloc);
-  scnhdr_int->s_nlnno =
-    GET_SCNHDR_NLNNO (abfd, (bfd_byte *) scnhdr_ext->s_nlnno);
-#ifdef I960
-  scnhdr_int->s_align =
-    GET_SCNHDR_ALIGN (abfd, (bfd_byte *) scnhdr_ext->s_align);
+  scnhdr_int->s_flags = bfd_h_get_32(abfd, (bfd_byte *) scnhdr_ext->s_flags);
+#if defined(M88)
+  scnhdr_int->s_nreloc = bfd_h_get_32(abfd, (bfd_byte *) scnhdr_ext->s_nreloc);
+  scnhdr_int->s_nlnno = bfd_h_get_32(abfd, (bfd_byte *) scnhdr_ext->s_nlnno);
+#else
+  scnhdr_int->s_nreloc = bfd_h_get_16(abfd, (bfd_byte *) scnhdr_ext->s_nreloc);
+  scnhdr_int->s_nlnno = bfd_h_get_16(abfd, (bfd_byte *) scnhdr_ext->s_nlnno);
 #endif
-#ifdef COFF_ADJUST_SCNHDR_IN_POST
-  COFF_ADJUST_SCNHDR_IN_POST (abfd, ext, in);
+#ifdef I960
+  scnhdr_int->s_align = bfd_h_get_32(abfd, (bfd_byte *) scnhdr_ext->s_align);
 #endif
 }
 
@@ -851,11 +752,8 @@ coff_swap_scnhdr_out (abfd, in, out)
 {
   struct internal_scnhdr *scnhdr_int = (struct internal_scnhdr *)in;
   SCNHDR *scnhdr_ext = (SCNHDR *)out;
-  unsigned int ret = bfd_coff_scnhsz (abfd);
+  unsigned int ret = sizeof (SCNHDR);
 
-#ifdef COFF_ADJUST_SCNHDR_OUT_PRE
-  COFF_ADJUST_SCNHDR_OUT_PRE (abfd, in, out);
-#endif
   memcpy(scnhdr_ext->s_name, scnhdr_int->s_name, sizeof(scnhdr_int->s_name));
 
   PUT_SCNHDR_VADDR (abfd, scnhdr_int->s_vaddr,
@@ -873,8 +771,7 @@ coff_swap_scnhdr_out (abfd, in, out)
 		     (bfd_byte *) scnhdr_ext->s_relptr);
   PUT_SCNHDR_LNNOPTR (abfd, scnhdr_int->s_lnnoptr,
 		      (bfd_byte *) scnhdr_ext->s_lnnoptr);
-  PUT_SCNHDR_FLAGS (abfd, scnhdr_int->s_flags,
-		    (bfd_byte *) scnhdr_ext->s_flags);
+  PUTWORD(abfd, scnhdr_int->s_flags, (bfd_byte *) scnhdr_ext->s_flags);
 #if defined(M88)
   PUTWORD(abfd, scnhdr_int->s_nlnno, (bfd_byte *) scnhdr_ext->s_nlnno);
   PUTWORD(abfd, scnhdr_int->s_nreloc, (bfd_byte *) scnhdr_ext->s_nreloc);
@@ -883,38 +780,28 @@ coff_swap_scnhdr_out (abfd, in, out)
     PUTHALF(abfd, scnhdr_int->s_nlnno, (bfd_byte *) scnhdr_ext->s_nlnno);
   else
     {
-      char buf[sizeof (scnhdr_int->s_name) + 1];
-
-      memcpy (buf, scnhdr_int->s_name, sizeof (scnhdr_int->s_name));
-      buf[sizeof (scnhdr_int->s_name)] = '\0';
-      (*_bfd_error_handler)
-	(_("%s: warning: %s: line number overflow: 0x%lx > 0xffff"),
-	 bfd_get_filename (abfd),
-	 buf, scnhdr_int->s_nlnno);
+      (*_bfd_error_handler) ("%s: line number overflow: 0x%lx > 0xffff",
+			     bfd_get_filename (abfd),
+			     scnhdr_int->s_nlnno);
+      bfd_set_error (bfd_error_file_truncated);
       PUTHALF (abfd, 0xffff, (bfd_byte *) scnhdr_ext->s_nlnno);
+      ret = 0;
     }
   if (scnhdr_int->s_nreloc <= 0xffff)
     PUTHALF(abfd, scnhdr_int->s_nreloc, (bfd_byte *) scnhdr_ext->s_nreloc);
   else
     {
-      char buf[sizeof (scnhdr_int->s_name) + 1];
-
-      memcpy (buf, scnhdr_int->s_name, sizeof (scnhdr_int->s_name));
-      buf[sizeof (scnhdr_int->s_name)] = '\0';
-      (*_bfd_error_handler) (_("%s: %s: reloc overflow: 0x%lx > 0xffff"),
+      (*_bfd_error_handler) ("%s: reloc overflow: 0x%lx > 0xffff",
 			     bfd_get_filename (abfd),
-			     buf, scnhdr_int->s_nreloc);
+			     scnhdr_int->s_nreloc);
       bfd_set_error (bfd_error_file_truncated);
       PUTHALF (abfd, 0xffff, (bfd_byte *) scnhdr_ext->s_nreloc);
       ret = 0;
     }
 #endif
 
-#ifdef I960
-  PUT_SCNHDR_ALIGN (abfd, scnhdr_int->s_align, (bfd_byte *) scnhdr_ext->s_align);
-#endif
-#ifdef COFF_ADJUST_SCNHDR_OUT_POST
-  COFF_ADJUST_SCNHDR_OUT_POST (abfd, in, out);
+#if defined(I960)
+  PUTWORD(abfd, scnhdr_int->s_align, (bfd_byte *) scnhdr_ext->s_align);
 #endif
   return ret;
 }

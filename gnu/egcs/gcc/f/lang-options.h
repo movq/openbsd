@@ -31,10 +31,7 @@ DEFINE_LANG_NAME ("Fortran")
 
 /* Use of FTNOPT makes tracking changes between FSF-g77 and egcs-g77
    easier, since FSF-gcc doesn't support doc strings.  */
-/* XXX OpenBSD i386 linker has a bug. Currently, we trim down Fortran
-  options size to avoid triggering that bug.  */
-/* #define FTNOPT(opt,doc) { opt, doc }, */
-#define FTNOPT(opt,doc) { opt, "" },
+#define FTNOPT(opt,doc) { opt, doc },
 
 FTNOPT( "-fversion", "Print g77-specific compiler version info, run internal tests" )
 FTNOPT( "-fnull-version", "" )
@@ -152,10 +149,10 @@ FTNOPT( "-fglobals", "" )
 FTNOPT( "-fno-globals", "Disable fatal diagnostics about inter-procedural problems" )
 FTNOPT( "-ftypeless-boz", "Make prefix-radix non-decimal constants be typeless" )
 FTNOPT( "-fno-typeless-boz", "" )
-FTNOPT( "-fbounds-check", "Generate code to check subscript and substring bounds" )
-FTNOPT( "-fno-bounds-check", "" )
-FTNOPT( "-ffortran-bounds-check", "Fortran-specific form of -fbounds-check")
-FTNOPT( "-fno-fortran-bounds-check", "" )
+FTNOPT( "-fsubscript-check", "Generate code to check array-subscript ranges" )
+FTNOPT( "-fno-subscript-check", "" )
+FTNOPT( "-ff2c-subscript-check", "Generate f2c-like code to check array-subscript ranges")
+FTNOPT( "-fno-f2c-subscript-check", "" )
 FTNOPT( "-Wglobals", "" )
 FTNOPT( "-Wno-globals", "Disable warnings about inter-procedural problems" )
 /*"-Wimplicit",*/

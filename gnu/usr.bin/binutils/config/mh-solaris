@@ -2,5 +2,6 @@
 
 SYSV = -DSYSV
 RANLIB = true
+CFLAGS = -g 
 
 X11_EXTRA_LIBS = -lnsl -lsocket

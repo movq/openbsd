@@ -63,6 +63,8 @@ extern tree global_namespace;
 extern void (*print_error_function) PROTO((char *));
 extern int (*valid_lang_attribute) PROTO ((tree, tree, tree, tree));
 
+/* Stack of places to restore the search obstack back to.  */
+   
 /* Obstack used for remembering local class declarations (like
    enums and static (const) members.  */
 #include "stack.h"
@@ -188,8 +190,6 @@ static tree record_builtin_java_type PROTO((const char *, int));
 static const char *tag_name PROTO((enum tag_types code));
 static void find_class_binding_level PROTO((void));
 static struct binding_level *innermost_nonclass_level PROTO((void));
-static void finish_dtor PROTO((void));
-static void finish_ctor PROTO((int));
 static tree poplevel_class PROTO((void));
 static void warn_about_implicit_typename_lookup PROTO((tree, tree));
 static int walk_namespaces_r PROTO((tree, walk_namespaces_fn, void *));
@@ -336,15 +336,6 @@ tree __bltn_desc_array_type, __user_desc_array_type, __class_desc_array_type;
 tree __ptr_desc_array_type, __attr_dec_array_type, __func_desc_array_type;
 tree __ptmf_desc_array_type, __ptmd_desc_array_type;
 #endif
-
-/* This is the identifier __vlist. */
-tree vlist_identifier;
-
-/* This is the type _Vlist = vtable_entry_type**. */
-tree vlist_type_node;
-
-/* A null pointer of type _Vlist. */
-tree vlist_zero_node;
 
 /* Indicates that there is a type value in some namespace, although
    that is not necessarily in scope at the moment. */
@@ -2429,7 +2420,6 @@ struct saved_scope {
   tree previous_class_type, previous_class_values;
   int processing_specialization;
   int processing_explicit_instantiation;
-  char *class_cache_firstobj;
 };
 static struct saved_scope *current_saved_scope;
 
@@ -2547,7 +2537,6 @@ maybe_push_to_top_level (pseudo)
   s->processing_template_decl = processing_template_decl;
   s->previous_class_type = previous_class_type;
   s->previous_class_values = previous_class_values;
-  s->class_cache_firstobj = class_cache_firstobj;
   s->processing_specialization = processing_specialization;
   s->processing_explicit_instantiation = processing_explicit_instantiation;
 
@@ -2563,7 +2552,6 @@ maybe_push_to_top_level (pseudo)
   shadowed_labels = NULL_TREE;
   minimal_parse_mode = 0;
   previous_class_type = previous_class_values = NULL_TREE;
-  class_cache_firstobj = 0;
   processing_specialization = 0;
   processing_explicit_instantiation = 0;
   current_template_parms = NULL_TREE;
@@ -2635,7 +2623,6 @@ pop_from_top_level ()
   previous_class_values = s->previous_class_values;
   processing_specialization = s->processing_specialization;
   processing_explicit_instantiation = s->processing_explicit_instantiation;
-  class_cache_firstobj = s->class_cache_firstobj;
 
   free (s);
 
@@ -3527,8 +3514,7 @@ duplicate_decls (newdecl, olddecl)
 	  TREE_TYPE (olddecl) = build_exception_variant (newtype,
 							 TYPE_RAISES_EXCEPTIONS (oldtype));
 
-	  if ((pedantic || (! DECL_IN_SYSTEM_HEADER (olddecl)
-	  		    && ! DECL_IN_SYSTEM_HEADER (newdecl)))
+	  if ((pedantic || ! DECL_IN_SYSTEM_HEADER (olddecl))
 	      && DECL_SOURCE_LINE (olddecl) != 0
 	      && flag_exceptions
 	      && ! compexcepttypes (TREE_TYPE (newdecl), TREE_TYPE (olddecl)))
@@ -4165,10 +4151,8 @@ pushdecl (x)
 
 	  /* Warn if shadowing an argument at the top level of the body.  */
 	  else if (oldlocal != NULL_TREE && !DECL_EXTERNAL (x)
-		   && TREE_CODE (oldlocal) == PARM_DECL
-		   /* Don't complain if it's from an enclosing function.  */
-		   && DECL_CONTEXT (oldlocal) == current_function_decl
-		   && TREE_CODE (x) != PARM_DECL)
+	      && TREE_CODE (oldlocal) == PARM_DECL
+	      && TREE_CODE (x) != PARM_DECL)
 	    {
 	      /* Go to where the parms should be and see if we
 		 find them there.  */
@@ -4459,7 +4443,7 @@ push_class_level_binding (name, x)
      IDENTIFIER_CLASS_VALUE.  */
   if (push_class_binding (name, x))
     {
-      push_cache_obstack ();
+      maybe_push_cache_obstack ();
       class_binding_level->class_shadowed
 	= tree_cons (name, IDENTIFIER_CLASS_VALUE (name),
 		     class_binding_level->class_shadowed);
@@ -5828,7 +5812,6 @@ lookup_name_real (name, prefer_type, nonclass, namespaces_only)
 	    {
 	      struct tree_binding b;
 	      val = binding_init (&b);
-	      flags |= LOOKUP_COMPLAIN;
 	      if (!qualified_lookup_using_namespace (name, type, val, flags))
 		return NULL_TREE;
 	      val = select_decl (val, flags);
@@ -6294,7 +6277,6 @@ init_decl_processing ()
 
   this_identifier = get_identifier (THIS_NAME);
   in_charge_identifier = get_identifier (IN_CHARGE_NAME);
-  vlist_identifier = get_identifier (VLIST_NAME);
   ctor_identifier = get_identifier (CTOR_NAME);
   dtor_identifier = get_identifier (DTOR_NAME);
   pfn_identifier = get_identifier (VTABLE_PFN_NAME);
@@ -6522,7 +6504,6 @@ init_decl_processing ()
 #if 0
   record_builtin_type (RID_MAX, NULL_PTR, ptr_type_node);
 #endif
-
   endlink = void_list_node;
   int_endlink = tree_cons (NULL_TREE, integer_type_node, endlink);
   double_endlink = tree_cons (NULL_TREE, double_type_node, endlink);
@@ -6861,16 +6842,6 @@ init_decl_processing ()
   vtbl_ptr_type_node = build_pointer_type (vtable_entry_type);
   layout_type (vtbl_ptr_type_node);
   record_builtin_type (RID_MAX, NULL_PTR, vtbl_ptr_type_node);
-
-  if (flag_vtable_thunks)
-    {
-      /* We need vlists only when using thunks; otherwise leave them
-	 as NULL_TREE. That way, it doesn't get into the way of the
-	 mangling.  */
-      vlist_type_node = build_pointer_type (vtbl_ptr_type_node); 
-      vlist_zero_node = build_int_2 (0, 0);
-      TREE_TYPE (vlist_zero_node) = vlist_type_node; 
-    }
 
   /* Simplify life by making a "sigtable_entry_type".  Give its
      fields names so that the debugger can use them.  */
@@ -7365,13 +7336,6 @@ start_decl (declarator, declspecs, initialized, attributes, prefix_attributes)
       DECL_INITIAL (decl) = error_mark_node;
     }
 
-#ifdef SET_DEFAULT_DECL_ATTRIBUTES
-  SET_DEFAULT_DECL_ATTRIBUTES (decl, attributes);
-#endif
-  
-  /* Set attributes here so if duplicate decl, will have proper attributes.  */
-  cplus_decl_attributes (decl, attributes, prefix_attributes);
-
   if (context && TYPE_SIZE (complete_type (context)) != NULL_TREE)
     {
       push_nested_class (context, 2);
@@ -7428,6 +7392,13 @@ start_decl (declarator, declspecs, initialized, attributes, prefix_attributes)
 	cp_pedwarn ("declaration of `%#D' outside of class is not definition",
 		    decl);
     }
+
+#ifdef SET_DEFAULT_DECL_ATTRIBUTES
+  SET_DEFAULT_DECL_ATTRIBUTES (decl, attributes);
+#endif
+  
+  /* Set attributes here so if duplicate decl, will have proper attributes.  */
+  cplus_decl_attributes (decl, attributes, prefix_attributes);
 
   /* Add this decl to the current binding level, but not if it
      comes from another scope, e.g. a static member variable.
@@ -8157,7 +8128,7 @@ cp_finish_decl (decl, init, asmspec_tree, need_pop, flags)
 	      else if (! DECL_ARTIFICIAL (decl))
 		{
 		  cp_warning_at ("sorry: semantics of inline function static data `%#D' are wrong (you'll wind up with multiple copies)", decl);
-		  cp_warning_at ("  you can work around this by removing the initializer", decl);
+		  cp_warning_at ("  you can work around this by removing the initializer"), decl;
 		}
 	    }
 	}
@@ -8533,8 +8504,6 @@ expand_static_init (decl, init)
 	{
 	  tree cleanup, fcall;
 	  static tree Atexit = 0;
-	  int saved_flag_access_control;
-
 	  if (Atexit == 0)
 	    {
 	      tree atexit_fndecl, PFV, pfvlist;
@@ -8561,31 +8530,13 @@ expand_static_init (decl, init)
 	     so that any access checks will be done relative to the
 	     current scope, rather than the scope of the anonymous
 	     function.  */
-	  build_cleanup (decl);
-
-	  /* Now start the function.  */
-	  cleanup = start_anon_func ();
-
-	  /* Now, recompute the cleanup.  It may contain SAVE_EXPRs
-	     that refer to the original function, rather than the
-	     anonymous one.  That will make the back-end think that
-	     nested functions are in use, which causes confusion.  */
-	  saved_flag_access_control = flag_access_control;
-	  flag_access_control = 0;
 	  fcall = build_cleanup (decl);
-	  flag_access_control = saved_flag_access_control;
-
-	  /* Finish off the function.  */
+	  cleanup = start_anon_func ();
 	  expand_expr_stmt (fcall);
 	  end_anon_func ();
-
-	  /* Call atexit with the cleanup function.  */
 	  mark_addressable (cleanup);
 	  cleanup = build_unary_op (ADDR_EXPR, cleanup, 0);
-	  fcall = build_function_call (Atexit, 
-				       expr_tree_cons (NULL_TREE, 
-						       cleanup, 
-						       NULL_TREE));
+	  fcall = build_function_call (Atexit, expr_tree_cons (NULL_TREE, cleanup, NULL_TREE));
 	  expand_expr_stmt (fcall);
 	}
 
@@ -8607,7 +8558,7 @@ expand_static_init (decl, init)
 
 /* Make TYPE a complete type based on INITIAL_VALUE.
    Return 0 if successful, 1 if INITIAL_VALUE can't be deciphered,
-   2 if there was no information (in which case assume 0 if DO_DEFAULT).  */
+   2 if there was no information (in which case assume 1 if DO_DEFAULT).  */
 
 int
 complete_array_type (type, initial_value, do_default)
@@ -8616,10 +8567,7 @@ complete_array_type (type, initial_value, do_default)
 {
   register tree maxindex = NULL_TREE;
   int value = 0;
-  
-  /* Allocate on the same obstack as TYPE.  */
-  push_obstacks (TYPE_OBSTACK (type), TYPE_OBSTACK (type));
-  
+
   if (initial_value)
     {
       /* Note MAXINDEX  is really the maximum index,
@@ -8667,28 +8615,23 @@ complete_array_type (type, initial_value, do_default)
   if (maxindex)
     {
       tree itype;
-      tree domain;
 
-      domain = build_index_type (maxindex);
-      TYPE_DOMAIN (type) = domain;
-
+      TYPE_DOMAIN (type) = build_index_type (maxindex);
       if (! TREE_TYPE (maxindex))
-	TREE_TYPE (maxindex) = domain;
+	TREE_TYPE (maxindex) = TYPE_DOMAIN (type);
       if (initial_value)
         itype = TREE_TYPE (initial_value);
       else
 	itype = NULL;
       if (itype && !TYPE_DOMAIN (itype))
-	TYPE_DOMAIN (itype) = domain;
+	TYPE_DOMAIN (itype) = TYPE_DOMAIN (type);
       /* The type of the main variant should never be used for arrays
 	 of different sizes.  It should only ever be completed with the
 	 size of the array.  */
       if (! TYPE_DOMAIN (TYPE_MAIN_VARIANT (type)))
-	TYPE_DOMAIN (TYPE_MAIN_VARIANT (type)) = domain;
+	TYPE_DOMAIN (TYPE_MAIN_VARIANT (type)) = TYPE_DOMAIN (type);
     }
 
-  pop_obstacks();
-  
   /* Lay out the type now that we can get the real answer.  */
 
   layout_type (type);
@@ -8767,7 +8710,6 @@ grokfndecl (ctype, type, declarator, orig_declarator, virtualp, flags, quals,
 {
   tree cname, decl;
   int staticp = ctype && TREE_CODE (type) == FUNCTION_TYPE;
-  int has_default_arg = 0;
   tree t;
 
   if (ctype)
@@ -8884,7 +8826,7 @@ grokfndecl (ctype, type, declarator, orig_declarator, virtualp, flags, quals,
     if (TREE_PURPOSE (t)
 	&& TREE_CODE (TREE_PURPOSE (t)) == DEFAULT_ARG)
       {
-	has_default_arg = 1;
+	add_defarg_fn (decl);
 	break;
       }
 
@@ -8905,7 +8847,6 @@ grokfndecl (ctype, type, declarator, orig_declarator, virtualp, flags, quals,
 	      return NULL_TREE;
 	    }
 
-
 	  /* A friend declaration of the form friend void f<>().  Record
 	     the information in the TEMPLATE_ID_EXPR.  */
 	  SET_DECL_IMPLICIT_INSTANTIATION (decl);
@@ -8913,25 +8854,8 @@ grokfndecl (ctype, type, declarator, orig_declarator, virtualp, flags, quals,
 	    = perm_tree_cons (TREE_OPERAND (orig_declarator, 0),
 			      TREE_OPERAND (orig_declarator, 1),
 			      NULL_TREE);
-
-	  if (has_default_arg)
-	    {
-	      cp_error ("default arguments are not allowed in declaration of friend template specialization `%D'",
-			decl);
-	      return NULL_TREE;
-	    }
-
-	  if (inlinep)
-	    {
-	      cp_error ("`inline' is not allowed in declaration of friend template specialization `%D'", 
-			decl);
-	      return NULL_TREE;
-	    }
 	}
     }
-
-  if (has_default_arg)
-    add_defarg_fn (decl);
 
   /* Plain overloading: will not be grok'd by grokclassfn.  */
   if (! ctype && ! processing_template_decl
@@ -8967,11 +8891,8 @@ grokfndecl (ctype, type, declarator, orig_declarator, virtualp, flags, quals,
 					    template_count, 
 					    2 * (funcdef_flag != 0) + 
 					    4 * (friendp != 0));
-
       if (decl == error_mark_node)
 	return NULL_TREE;
-
-      maybe_vlist_ctor_wrapper (decl, funcdef_flag);
 
       if ((! TYPE_FOR_JAVA (ctype) || check_java_method (decl))
 	  && check)
@@ -10379,8 +10300,7 @@ grokdeclarator (declarator, declspecs, decl_context, initialized, attrlist)
 	      continue;
 
 	    /* VC++ spells a zero-sized array with [].  */
-	    if (size == NULL_TREE && decl_context == FIELD && !	staticp
-		&& ! RIDBIT_SETP (RID_TYPEDEF, specbits))
+	    if (size == NULL_TREE && decl_context == FIELD && ! staticp)
 	      size = integer_zero_node;
 
 	    if (size)
@@ -10416,8 +10336,10 @@ grokdeclarator (declarator, declspecs, decl_context, initialized, attrlist)
 			  size = t;
 		      }
 
-		    itype = build_index_type (build_min
-		      (MINUS_EXPR, sizetype, size, integer_one_node));
+		    itype = make_node (INTEGER_TYPE);
+		    TYPE_MIN_VALUE (itype) = size_zero_node;
+		    TYPE_MAX_VALUE (itype) = build_min
+		      (MINUS_EXPR, sizetype, size, integer_one_node);
 		    goto dont_grok_size;
 		  }
 
@@ -11076,17 +10998,18 @@ grokdeclarator (declarator, declspecs, decl_context, initialized, attrlist)
 	  && TREE_CODE (TYPE_NAME (type)) == TYPE_DECL
 	  && ANON_AGGRNAME_P (TYPE_IDENTIFIER (type)))
 	{
-	  tree oldname = TYPE_NAME (type);
-	  tree t;
-
 	  /* FIXME: This is bogus; we should not be doing this for
 	            cv-qualified types.  */
 
+	  /* For anonymous structs that are cv-qualified, need to use
+             TYPE_MAIN_VARIANT so that name will mangle correctly. As
+             type not referenced after this block, don't bother
+             resetting type to original type, ie. TREE_TYPE (decl). */
+	  type = TYPE_MAIN_VARIANT (type);
+
 	  /* Replace the anonymous name with the real name everywhere.  */
 	  lookup_tag_reverse (type, declarator);
-	  for (t = TYPE_MAIN_VARIANT (type); t; t = TYPE_NEXT_VARIANT (t))
-	    if (TYPE_NAME (t) == oldname)
-	      TYPE_NAME (t) = decl;
+	  TYPE_NAME (type) = decl;
 
 	  if (TYPE_LANG_SPECIFIC (type))
 	    TYPE_WAS_ANONYMOUS (type) = 1;
@@ -11410,10 +11333,6 @@ grokdeclarator (declarator, declspecs, decl_context, initialized, attrlist)
 
 		/* Skip the `in_chrg' argument too, if present.  */
 		if (TYPE_USES_VIRTUAL_BASECLASSES (DECL_CONTEXT (decl)))
-		  arg_types = TREE_CHAIN (arg_types);
-
-		/* And the `vlist' argument. */
-		if (TYPE_USES_PVBASES (DECL_CONTEXT (decl)))
 		  arg_types = TREE_CHAIN (arg_types);
 
 		if (arg_types == void_list_node
@@ -12110,9 +12029,6 @@ replace_defarg (arg, init)
   TREE_PURPOSE (arg) = init;
 }
 
-/* Return 1 if D copies its arguments. This is used to test for copy
-   constructors and copy assignment operators.  */
-
 int
 copy_args_p (d)
      tree d;
@@ -12120,12 +12036,7 @@ copy_args_p (d)
   tree t = FUNCTION_ARG_CHAIN (d);
   if (DECL_CONSTRUCTOR_P (d)
       && TYPE_USES_VIRTUAL_BASECLASSES (DECL_CONTEXT (d)))
-    { 
-      t = TREE_CHAIN (t);
-      if (TYPE_USES_PVBASES (DECL_CONTEXT (d)))
-	t = TREE_CHAIN (t);
-    }
-  
+    t = TREE_CHAIN (t);
   if (t && TREE_CODE (TREE_VALUE (t)) == REFERENCE_TYPE
       && (TYPE_MAIN_VARIANT (TREE_TYPE (TREE_VALUE (t)))
 	  == DECL_CLASS_CONTEXT (d))
@@ -12155,8 +12066,7 @@ grok_ctor_properties (ctype, decl)
      added to any ctor so we can tell if the class has been initialized
      yet.  This could screw things up in this function, so we deliberately
      ignore the leading int if we're in that situation.  */
-  if (TYPE_USES_VIRTUAL_BASECLASSES (ctype)
-      && !CLASSTYPE_IS_TEMPLATE (ctype))
+  if (TYPE_USES_VIRTUAL_BASECLASSES (ctype))
     {
       my_friendly_assert (parmtypes
 			  && TREE_VALUE (parmtypes) == integer_type_node,
@@ -12164,17 +12074,6 @@ grok_ctor_properties (ctype, decl)
       parmtypes = TREE_CHAIN (parmtypes);
       parmtype = TREE_VALUE (parmtypes);
     }
-
-  if (TYPE_USES_PVBASES (ctype))
-    {
-      my_friendly_assert (parmtypes
-			  && TREE_VALUE (parmtypes) == vlist_type_node,
-			  980529);
-      parmtypes = TREE_CHAIN (parmtypes);
-      parmtype = TREE_VALUE (parmtypes);
-    }
-
-  maybe_vlist_ctor_wrapper (decl, 0);
 
   /* [class.copy]
 
@@ -12973,16 +12872,6 @@ xref_basetypes (code_type_node, name, ref, binfo)
 	    {
 	      TYPE_USES_VIRTUAL_BASECLASSES (ref) = 1;
 	      TYPE_USES_COMPLEX_INHERITANCE (ref) = 1;
-	      /* The PVBASES flag is never set for templates; we know
-		 only for instantiations whether the virtual bases are
-		 polymorphic. */
-	      if (flag_vtable_thunks >= 2 && !CLASSTYPE_IS_TEMPLATE (ref))
-		{
-		  if (via_virtual && TYPE_VIRTUAL_P (basetype))
-		    TYPE_USES_PVBASES (ref) = 1;
-		  else if (TYPE_USES_PVBASES (basetype))
-		    TYPE_USES_PVBASES (ref) = 1;
-		}
 	    }
 
 	  if (CLASS_TYPE_P (basetype))
@@ -13988,313 +13877,6 @@ store_return_init (return_id, init)
 }
 
 
-/* Emit implicit code for a destructor. This is a subroutine of
-   finish_function.  */
-
-static void
-finish_dtor ()
-{
-  tree binfo = TYPE_BINFO (current_class_type);
-  tree cond = integer_one_node;
-  tree exprstmt;
-  tree in_charge_node = lookup_name (in_charge_identifier, 0);
-  tree virtual_size;
-  int ok_to_optimize_dtor = 0;
-  int empty_dtor = get_last_insn () == last_dtor_insn;
-  rtx insns, last_parm_insn;
- 
-  if (current_function_assigns_this)
-    cond = build (NE_EXPR, boolean_type_node,
-		  current_class_ptr, integer_zero_node);
-  else
-    {
-      int n_baseclasses = CLASSTYPE_N_BASECLASSES (current_class_type);
-
-      /* If this destructor is empty, then we don't need to check
-	 whether `this' is NULL in some cases.  */
-      if ((flag_this_is_variable & 1) == 0)
-	ok_to_optimize_dtor = 1;
-      else if (empty_dtor)
-	ok_to_optimize_dtor
-	  = (n_baseclasses == 0
-	     || (n_baseclasses == 1
-		 && TYPE_HAS_DESTRUCTOR (TYPE_BINFO_BASETYPE (current_class_type, 0))));
-    }
-
-  /* If this has a vlist1 parameter, allocate the corresponding vlist
-     parameter.  */
-  if (DECL_DESTRUCTOR_FOR_PVBASE_P (current_function_decl))
-    {
-      /* _Vlist __vlist; */
-      tree vlist;
-
-      mark_all_temps_used();
-      vlist = pushdecl (build_decl (VAR_DECL, vlist_identifier,
-					 vlist_type_node));
-      TREE_USED (vlist) = 1;
-      DECL_ARTIFICIAL (vlist) = 1;
-      expand_decl (vlist);
-      expand_decl_init (vlist);
-    }
-
-  /* These initializations might go inline.  Protect
-     the binding level of the parms.  */
-  pushlevel (0);
-  expand_start_bindings (0);
-
-  if (current_function_assigns_this)
-    {
-      current_function_assigns_this = 0;
-      current_function_just_assigned_this = 0;
-    }
-
-  /* Generate the code to call destructor on base class.
-     If this destructor belongs to a class with virtual
-     functions, then set the virtual function table
-     pointer to represent the type of our base class.  */
-
-  /* This side-effect makes call to `build_delete' generate the
-     code we have to have at the end of this destructor.
-     `build_delete' will set the flag again.  */
-  TYPE_HAS_DESTRUCTOR (current_class_type) = 0;
-
-  /* These are two cases where we cannot delegate deletion.  */
-  if (TYPE_USES_VIRTUAL_BASECLASSES (current_class_type)
-      || TYPE_GETS_REG_DELETE (current_class_type))
-    exprstmt = build_delete 
-      (current_class_type, current_class_ref, integer_zero_node,
-       LOOKUP_NONVIRTUAL|LOOKUP_DESTRUCTOR|LOOKUP_NORMAL, 0);
-  else
-    exprstmt = build_delete 
-      (current_class_type, current_class_ref, in_charge_node,
-       LOOKUP_NONVIRTUAL|LOOKUP_DESTRUCTOR|LOOKUP_NORMAL, 0);
-
-  /* If we did not assign to this, then `this' is non-zero at
-     the end of a destructor.  As a special optimization, don't
-     emit test if this is an empty destructor.  If it does nothing,
-     it does nothing.  If it calls a base destructor, the base
-     destructor will perform the test.  */
-
-  if (exprstmt != error_mark_node
-      && (TREE_CODE (exprstmt) != NOP_EXPR
-	  || TREE_OPERAND (exprstmt, 0) != integer_zero_node
-	  || TYPE_USES_VIRTUAL_BASECLASSES (current_class_type)))
-    {
-      expand_label (dtor_label);
-      if (cond != integer_one_node)
-	expand_start_cond (cond, 0);
-      if (exprstmt != void_zero_node)
-	/* Don't call `expand_expr_stmt' if we're not going to do
-	   anything, since -Wall will give a diagnostic.  */
-	expand_expr_stmt (exprstmt);
-
-      /* Run destructor on all virtual baseclasses.  */
-      if (TYPE_USES_VIRTUAL_BASECLASSES (current_class_type))
-	{
-	  tree vbases = nreverse 
-	    (copy_list (CLASSTYPE_VBASECLASSES (current_class_type)));
-	  expand_start_cond (build (BIT_AND_EXPR, integer_type_node,
-				    in_charge_node, integer_two_node), 0);
-	  while (vbases)
-	    {
-	      if (TYPE_NEEDS_DESTRUCTOR (BINFO_TYPE (vbases)))
-		{
-		  tree vb = get_vbase
-		    (BINFO_TYPE (vbases),
-		     TYPE_BINFO (current_class_type));
-
-		  expand_expr_stmt
-		    (build_base_dtor_call (current_class_ref, 
-					   vb, integer_zero_node));
-		}
-	      vbases = TREE_CHAIN (vbases);
-	    }
-	  expand_end_cond ();
-	}
-
-      do_pending_stack_adjust ();
-      if (cond != integer_one_node)
-	expand_end_cond ();
-    }
-
-  virtual_size = c_sizeof (current_class_type);
-
-  /* At the end, call delete if that's what's requested.  */
-
-  /* FDIS sez: At the point of definition of a virtual destructor
-     (including an implicit definition), non-placement operator
-     delete shall be looked up in the scope of the destructor's
-     class and if found shall be accessible and unambiguous.
-
-     This is somewhat unclear, but I take it to mean that if the
-     class only defines placement deletes we don't do anything here.
-     So we pass LOOKUP_SPECULATIVELY; delete_sanity will complain
-     for us if they ever try to delete one of these.  */
-
-  if (TYPE_GETS_REG_DELETE (current_class_type)
-      || TYPE_USES_VIRTUAL_BASECLASSES (current_class_type))
-    exprstmt = build_op_delete_call
-      (DELETE_EXPR, current_class_ptr, virtual_size,
-       LOOKUP_NORMAL | LOOKUP_SPECULATIVELY, NULL_TREE);
-  else
-    exprstmt = NULL_TREE;
-
-  if (exprstmt)
-    {
-      cond = build (BIT_AND_EXPR, integer_type_node,
-		    in_charge_node, integer_one_node);
-      expand_start_cond (cond, 0);
-      expand_expr_stmt (exprstmt);
-      expand_end_cond ();
-    }
-
-  /* End of destructor.  */
-  expand_end_bindings (NULL_TREE, getdecls () != NULL_TREE, 0);
-  poplevel (getdecls () != NULL_TREE, 0, 0);
-
-  /* Back to the top of destructor.  */
-  /* Don't execute destructor code if `this' is NULL.  */
-
-  start_sequence ();
-
-  /* If we need thunk-style vlists, initialize them if the caller did
-     not pass them. This requires a new temporary. The generated code
-     looks like
-       if (!(__in_charge & 4))
-         __vlist = __vl.<type> + sizeof(__vl.<type>);
-       else
-         __vlist = __vlist1; 
-  */
-  if (TYPE_USES_PVBASES (current_class_type))
-    {
-      tree vlist = lookup_name (vlist_identifier, 0);
-      tree vlist1 = lookup_name (get_identifier (VLIST1_NAME), 0);
-      cond = build (BIT_AND_EXPR, integer_type_node,
-		    in_charge_node, build_int_2 (4, 0));
-      cond = build1 (TRUTH_NOT_EXPR, boolean_type_node, cond);
-      expand_start_cond (cond, 0);
-      init_vlist (current_class_type);
-      expand_start_else ();
-      expand_expr_stmt (build_modify_expr (vlist, NOP_EXPR, vlist1));
-      expand_end_cond ();
-    }
-	  
-  /* If the dtor is empty, and we know there is not possible way we
-     could use any vtable entries, before they are possibly set by
-     a base class dtor, we don't have to setup the vtables, as we
-     know that any base class dtoring will set up any vtables it
-     needs.  We avoid MI, because one base class dtor can do a
-     virtual dispatch to an overridden function that would need to
-     have a non-related vtable set up, we cannot avoid setting up
-     vtables in that case.  We could change this to see if there is
-     just one vtable.  */
-  if (! empty_dtor || TYPE_USES_COMPLEX_INHERITANCE (current_class_type))
-    {
-      /* Make all virtual function table pointers in non-virtual base
-	 classes point to CURRENT_CLASS_TYPE's virtual function
-	 tables.  */
-      expand_direct_vtbls_init (binfo, binfo, 1, 0, current_class_ptr);
-
-      if (TYPE_USES_VIRTUAL_BASECLASSES (current_class_type))
-	expand_indirect_vtbls_init (binfo, current_class_ref, current_class_ptr);
-    }
-
-  if (! ok_to_optimize_dtor)
-    {
-      cond = build_binary_op (NE_EXPR,
-			      current_class_ptr, integer_zero_node);
-      expand_start_cond (cond, 0);
-    }
-
-  insns = get_insns ();
-  end_sequence ();
-
-  last_parm_insn = get_first_nonparm_insn ();
-  if (last_parm_insn == NULL_RTX)
-    last_parm_insn = get_last_insn ();
-  else
-    last_parm_insn = previous_insn (last_parm_insn);
-
-  emit_insns_after (insns, last_parm_insn);
-
-  if (! ok_to_optimize_dtor)
-    expand_end_cond ();
-}
-
-/* Emit implicit code for a constructor. This is a subroutine of
-   finish_function. CALL_POPLEVEL is the same variable in
-   finish_function.  */
-
-static void
-finish_ctor (call_poplevel)
-     int call_poplevel;
-{
-  register tree fndecl = current_function_decl;
-  tree cond = NULL_TREE, thenclause = NULL_TREE;
-  rtx insns;
-  tree decls;
-
-  /* Allow constructor for a type to get a new instance of the object
-     using `build_new'.  */
-  tree abstract_virtuals = CLASSTYPE_ABSTRACT_VIRTUALS (current_class_type);
-  CLASSTYPE_ABSTRACT_VIRTUALS (current_class_type) = NULL_TREE;
-
-  if (flag_this_is_variable > 0)
-    {
-      cond = build_binary_op (EQ_EXPR, current_class_ptr, integer_zero_node);
-      thenclause = 
-	build_modify_expr (current_class_ptr, NOP_EXPR,
-			   build_new (NULL_TREE, current_class_type, 
-				      void_type_node, 0));
-    }
-
-  CLASSTYPE_ABSTRACT_VIRTUALS (current_class_type) = abstract_virtuals;
-
-  start_sequence ();
-
-  if (flag_this_is_variable > 0)
-    {
-      expand_start_cond (cond, 0);
-      expand_expr_stmt (thenclause);
-      expand_end_cond ();
-    }
-
-  /* Emit insns from `emit_base_init' which sets up virtual
-     function table pointer(s).  */
-  if (base_init_expr)
-    {
-      expand_expr_stmt (base_init_expr);
-      base_init_expr = NULL_TREE;
-    }
-
-  insns = get_insns ();
-  end_sequence ();
-
-  /* This is where the body of the constructor begins.  */
-
-  emit_insns_after (insns, last_parm_cleanup_insn);
-
-  end_protect_partials ();
-
-  /* This is where the body of the constructor ends.  */
-  expand_label (ctor_label);
-  ctor_label = NULL_TREE;
-
-  if (call_poplevel)
-    {
-      decls = getdecls ();
-      expand_end_bindings (decls, decls != NULL_TREE, 0);
-      poplevel (decls != NULL_TREE, 1, 0);
-    }
-
-  /* c_expand_return knows to return 'this' from a constructor.  */
-  c_expand_return (NULL_TREE);
-
-  current_function_assigns_this = 0;
-  current_function_just_assigned_this = 0;
-}
-
-
 /* Finish up a function declaration and compile that function
    all the way to assembler language output.  The free the storage
    for the function definition.
@@ -14323,6 +13905,7 @@ finish_function (lineno, flags, nested)
 {
   register tree fndecl = current_function_decl;
   tree fntype, ctype = NULL_TREE;
+  rtx last_parm_insn, insns;
   /* Label to use if this function is supposed to return a value.  */
   tree no_return_label = NULL_TREE;
   tree decls = NULL_TREE;
@@ -14384,7 +13967,191 @@ finish_function (lineno, flags, nested)
       do_pending_stack_adjust ();
 
       if (dtor_label)
-	finish_dtor ();
+	{
+	  tree binfo = TYPE_BINFO (current_class_type);
+	  tree cond = integer_one_node;
+	  tree exprstmt;
+	  tree in_charge_node = lookup_name (in_charge_identifier, 0);
+	  tree virtual_size;
+	  int ok_to_optimize_dtor = 0;
+	  int empty_dtor = get_last_insn () == last_dtor_insn;
+
+	  if (current_function_assigns_this)
+	    cond = build (NE_EXPR, boolean_type_node,
+			  current_class_ptr, integer_zero_node);
+	  else
+	    {
+	      int n_baseclasses = CLASSTYPE_N_BASECLASSES (current_class_type);
+
+	      /* If this destructor is empty, then we don't need to check
+		 whether `this' is NULL in some cases.  */
+	      if ((flag_this_is_variable & 1) == 0)
+		ok_to_optimize_dtor = 1;
+	      else if (empty_dtor)
+		ok_to_optimize_dtor
+		  = (n_baseclasses == 0
+		     || (n_baseclasses == 1
+			 && TYPE_HAS_DESTRUCTOR (TYPE_BINFO_BASETYPE (current_class_type, 0))));
+	    }
+
+	  /* These initializations might go inline.  Protect
+	     the binding level of the parms.  */
+	  pushlevel (0);
+	  expand_start_bindings (0);
+
+	  if (current_function_assigns_this)
+	    {
+	      current_function_assigns_this = 0;
+	      current_function_just_assigned_this = 0;
+	    }
+
+	  /* Generate the code to call destructor on base class.
+	     If this destructor belongs to a class with virtual
+	     functions, then set the virtual function table
+	     pointer to represent the type of our base class.  */
+
+	  /* This side-effect makes call to `build_delete' generate the
+	     code we have to have at the end of this destructor.
+	     `build_delete' will set the flag again.  */
+	  TYPE_HAS_DESTRUCTOR (current_class_type) = 0;
+
+	  /* These are two cases where we cannot delegate deletion.  */
+	  if (TYPE_USES_VIRTUAL_BASECLASSES (current_class_type)
+	      || TYPE_GETS_REG_DELETE (current_class_type))
+	    exprstmt = build_delete (current_class_type, current_class_ref, integer_zero_node,
+				     LOOKUP_NONVIRTUAL|LOOKUP_DESTRUCTOR|LOOKUP_NORMAL, 0);
+	  else
+	    exprstmt = build_delete (current_class_type, current_class_ref, in_charge_node,
+				     LOOKUP_NONVIRTUAL|LOOKUP_DESTRUCTOR|LOOKUP_NORMAL, 0);
+
+	  /* If we did not assign to this, then `this' is non-zero at
+	     the end of a destructor.  As a special optimization, don't
+	     emit test if this is an empty destructor.  If it does nothing,
+	     it does nothing.  If it calls a base destructor, the base
+	     destructor will perform the test.  */
+
+	  if (exprstmt != error_mark_node
+	      && (TREE_CODE (exprstmt) != NOP_EXPR
+		  || TREE_OPERAND (exprstmt, 0) != integer_zero_node
+		  || TYPE_USES_VIRTUAL_BASECLASSES (current_class_type)))
+	    {
+	      expand_label (dtor_label);
+	      if (cond != integer_one_node)
+		expand_start_cond (cond, 0);
+	      if (exprstmt != void_zero_node)
+		/* Don't call `expand_expr_stmt' if we're not going to do
+		   anything, since -Wall will give a diagnostic.  */
+		expand_expr_stmt (exprstmt);
+
+	      /* Run destructor on all virtual baseclasses.  */
+	      if (TYPE_USES_VIRTUAL_BASECLASSES (current_class_type))
+		{
+		  tree vbases = nreverse (copy_list (CLASSTYPE_VBASECLASSES (current_class_type)));
+		  expand_start_cond (build (BIT_AND_EXPR, integer_type_node,
+					    in_charge_node, integer_two_node), 0);
+		  while (vbases)
+		    {
+		      if (TYPE_NEEDS_DESTRUCTOR (BINFO_TYPE (vbases)))
+			{
+			  tree vb = get_vbase
+			    (BINFO_TYPE (vbases),
+			     TYPE_BINFO (current_class_type));
+			  expand_expr_stmt
+			    (build_scoped_method_call
+			     (current_class_ref, vb, dtor_identifier,
+			      build_expr_list (NULL_TREE, integer_zero_node)));
+			}
+		      vbases = TREE_CHAIN (vbases);
+		    }
+		  expand_end_cond ();
+		}
+
+	      do_pending_stack_adjust ();
+	      if (cond != integer_one_node)
+		expand_end_cond ();
+	    }
+
+	  virtual_size = c_sizeof (current_class_type);
+
+	  /* At the end, call delete if that's what's requested.  */
+
+	  /* FDIS sez: At the point of definition of a virtual destructor
+	       (including an implicit definition), non-placement operator
+	       delete shall be looked up in the scope of the destructor's
+	       class and if found shall be accessible and unambiguous.
+
+	     This is somewhat unclear, but I take it to mean that if the
+	     class only defines placement deletes we don't do anything here.
+	     So we pass LOOKUP_SPECULATIVELY; delete_sanity will complain
+	     for us if they ever try to delete one of these.  */
+
+	  if (TYPE_GETS_REG_DELETE (current_class_type)
+	      || TYPE_USES_VIRTUAL_BASECLASSES (current_class_type))
+	    exprstmt = build_op_delete_call
+	      (DELETE_EXPR, current_class_ptr, virtual_size,
+	       LOOKUP_NORMAL | LOOKUP_SPECULATIVELY, NULL_TREE);
+	  else
+	    exprstmt = NULL_TREE;
+
+	  if (exprstmt)
+	    {
+	      cond = build (BIT_AND_EXPR, integer_type_node,
+			    in_charge_node, integer_one_node);
+	      expand_start_cond (cond, 0);
+	      expand_expr_stmt (exprstmt);
+	      expand_end_cond ();
+	    }
+
+	  /* End of destructor.  */
+	  expand_end_bindings (NULL_TREE, getdecls () != NULL_TREE, 0);
+	  poplevel (getdecls () != NULL_TREE, 0, 0);
+
+	  /* Back to the top of destructor.  */
+	  /* Don't execute destructor code if `this' is NULL.  */
+
+	  start_sequence ();
+
+	  /* If the dtor is empty, and we know there is not possible way we
+	     could use any vtable entries, before they are possibly set by
+	     a base class dtor, we don't have to setup the vtables, as we
+	     know that any base class dtoring will set up any vtables it
+	     needs.  We avoid MI, because one base class dtor can do a
+	     virtual dispatch to an overridden function that would need to
+	     have a non-related vtable set up, we cannot avoid setting up
+	     vtables in that case.  We could change this to see if there is
+	     just one vtable.  */
+	  if (! empty_dtor || TYPE_USES_COMPLEX_INHERITANCE (current_class_type))
+	    {
+	      /* Make all virtual function table pointers in non-virtual base
+		 classes point to CURRENT_CLASS_TYPE's virtual function
+		 tables.  */
+	      expand_direct_vtbls_init (binfo, binfo, 1, 0, current_class_ptr);
+
+	      if (TYPE_USES_VIRTUAL_BASECLASSES (current_class_type))
+		expand_indirect_vtbls_init (binfo, current_class_ref, current_class_ptr);
+	    }
+	  
+	  if (! ok_to_optimize_dtor)
+	    {
+	      cond = build_binary_op (NE_EXPR,
+				      current_class_ptr, integer_zero_node);
+	      expand_start_cond (cond, 0);
+	    }
+
+	  insns = get_insns ();
+	  end_sequence ();
+
+	  last_parm_insn = get_first_nonparm_insn ();
+	  if (last_parm_insn == NULL_RTX)
+	    last_parm_insn = get_last_insn ();
+	  else
+	    last_parm_insn = previous_insn (last_parm_insn);
+
+	  emit_insns_after (insns, last_parm_insn);
+
+	  if (! ok_to_optimize_dtor)
+	    expand_end_cond ();
+	}
       else if (current_function_assigns_this)
 	{
 	  /* Does not need to call emit_base_init, because
@@ -14414,9 +14181,67 @@ finish_function (lineno, flags, nested)
 	  current_function_just_assigned_this = 0;
 	  base_init_expr = NULL_TREE;
 	}
-      else if (DECL_CONSTRUCTOR_P (fndecl)
-	       && !DECL_VLIST_CTOR_WRAPPER_P (fndecl))
-	finish_ctor (call_poplevel);
+      else if (DECL_CONSTRUCTOR_P (fndecl))
+	{
+	  tree cond = NULL_TREE, thenclause = NULL_TREE;
+	  /* Allow constructor for a type to get a new instance of the object
+	     using `build_new'.  */
+	  tree abstract_virtuals = CLASSTYPE_ABSTRACT_VIRTUALS (current_class_type);
+	  CLASSTYPE_ABSTRACT_VIRTUALS (current_class_type) = NULL_TREE;
+
+	  if (flag_this_is_variable > 0)
+	    {
+	      cond = build_binary_op (EQ_EXPR,
+				      current_class_ptr, integer_zero_node);
+	      thenclause = build_modify_expr (current_class_ptr, NOP_EXPR,
+					      build_new (NULL_TREE, current_class_type, void_type_node, 0));
+	    }
+
+	  CLASSTYPE_ABSTRACT_VIRTUALS (current_class_type) = abstract_virtuals;
+
+	  start_sequence ();
+
+	  if (flag_this_is_variable > 0)
+	    {
+	      expand_start_cond (cond, 0);
+	      expand_expr_stmt (thenclause);
+	      expand_end_cond ();
+	    }
+
+	  /* Emit insns from `emit_base_init' which sets up virtual
+	     function table pointer(s).  */
+	  if (base_init_expr)
+	    {
+	      expand_expr_stmt (base_init_expr);
+	      base_init_expr = NULL_TREE;
+	    }
+
+	  insns = get_insns ();
+	  end_sequence ();
+
+	  /* This is where the body of the constructor begins.  */
+
+	  emit_insns_after (insns, last_parm_cleanup_insn);
+
+	  end_protect_partials ();
+
+	  /* This is where the body of the constructor ends.  */
+	  expand_label (ctor_label);
+	  ctor_label = NULL_TREE;
+
+	  if (call_poplevel)
+	    {
+	      decls = getdecls ();
+	      expand_end_bindings (decls, decls != NULL_TREE, 0);
+	      poplevel (decls != NULL_TREE, 1, 0);
+	    }
+
+	  /* c_expand_return knows to return 'this' from a constructor.  */
+	  c_expand_return (NULL_TREE);
+
+	  current_function_assigns_this = 0;
+	  current_function_just_assigned_this = 0;
+	}
       else if (DECL_MAIN_P (fndecl))
 	{
 	  /* Make it so that `main' always returns 0 by default.  */

@@ -1,48 +1,48 @@
 
-/*  A Bison parser, made from nlmheader.y
-    by GNU Bison version 1.28  */
+/*  A Bison parser, made from ./nlmheader.y with Bison version GNU Bison version 1.24
+  */
 
 #define YYBISON 1  /* Identify Bison output.  */
 
-#define	CHECK	257
-#define	CODESTART	258
-#define	COPYRIGHT	259
-#define	CUSTOM	260
-#define	DATE	261
-#define	DEBUG	262
-#define	DESCRIPTION	263
-#define	EXIT	264
-#define	EXPORT	265
-#define	FLAG_ON	266
-#define	FLAG_OFF	267
-#define	FULLMAP	268
-#define	HELP	269
-#define	IMPORT	270
-#define	INPUT	271
-#define	MAP	272
-#define	MESSAGES	273
-#define	MODULE	274
-#define	MULTIPLE	275
-#define	OS_DOMAIN	276
-#define	OUTPUT	277
-#define	PSEUDOPREEMPTION	278
-#define	REENTRANT	279
-#define	SCREENNAME	280
-#define	SHARELIB	281
-#define	STACK	282
-#define	START	283
-#define	SYNCHRONIZE	284
-#define	THREADNAME	285
-#define	TYPE	286
-#define	VERBOSE	287
-#define	VERSIONK	288
-#define	XDCDATA	289
-#define	STRING	290
-#define	QUOTED_STRING	291
+#define	CHECK	258
+#define	CODESTART	259
+#define	COPYRIGHT	260
+#define	CUSTOM	261
+#define	DATE	262
+#define	DEBUG	263
+#define	DESCRIPTION	264
+#define	EXIT	265
+#define	EXPORT	266
+#define	FLAG_ON	267
+#define	FLAG_OFF	268
+#define	FULLMAP	269
+#define	HELP	270
+#define	IMPORT	271
+#define	INPUT	272
+#define	MAP	273
+#define	MESSAGES	274
+#define	MODULE	275
+#define	MULTIPLE	276
+#define	OS_DOMAIN	277
+#define	OUTPUT	278
+#define	PSEUDOPREEMPTION	279
+#define	REENTRANT	280
+#define	SCREENNAME	281
+#define	SHARELIB	282
+#define	STACK	283
+#define	START	284
+#define	SYNCHRONIZE	285
+#define	THREADNAME	286
+#define	TYPE	287
+#define	VERBOSE	288
+#define	VERSION	289
+#define	XDCDATA	290
+#define	STRING	291
+#define	QUOTED_STRING	292
 
-#line 1 "nlmheader.y"
+#line 1 "./nlmheader.y"
 /* nlmheader.y - parse NLM header specification keywords.
-     Copyright (C) 1993, 94, 95, 97, 1998 Free Software Foundation, Inc.
+     Copyright (C) 1993 Free Software Foundation, Inc.
 
 This file is part of GNU Binutils.
 
@@ -73,6 +73,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include <stdio.h>
 #include <ctype.h>
 #include "bfd.h"
+#include "sysdep.h"
 #include "bucomm.h"
 #include "nlm/common.h"
 #include "nlm/internal.h"
@@ -151,12 +152,29 @@ static struct string_list * string_list_append1 PARAMS ((struct string_list *,
 static char *xstrdup PARAMS ((const char *));
 
 
-#line 112 "nlmheader.y"
+#line 113 "./nlmheader.y"
 typedef union
 {
   char *string;
   struct string_list *list;
 } YYSTYPE;
+
+#ifndef YYLTYPE
+typedef
+  struct yyltype
+    {
+      int timestamp;
+      int first_line;
+      int first_column;
+      int last_line;
+      int last_column;
+      char *text;
+   }
+  yyltype;
+
+#define YYLTYPE yyltype
+#endif
+
 #include <stdio.h>
 
 #ifndef __cplusplus
@@ -171,7 +189,7 @@ typedef union
 #define	YYFLAG		-32768
 #define	YYNTBASE	40
 
-#define YYTRANSLATE(x) ((unsigned)(x) <= 291 ? yytranslate[x] : 50)
+#define YYTRANSLATE(x) ((unsigned)(x) <= 292 ? yytranslate[x] : 50)
 
 static const char yytranslate[] = {     0,
      2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
@@ -199,11 +217,11 @@ static const char yytranslate[] = {     0,
      2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
      2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
      2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
-     2,     2,     2,     2,     2,     1,     3,     4,     5,     6,
-     7,     8,     9,    10,    11,    12,    13,    14,    15,    16,
-    17,    18,    19,    20,    21,    22,    23,    24,    25,    26,
-    27,    28,    29,    30,    31,    32,    33,    34,    35,    36,
-    37
+     2,     2,     2,     2,     2,     1,     2,     3,     4,     5,
+     6,     7,     8,     9,    10,    11,    12,    13,    14,    15,
+    16,    17,    18,    19,    20,    21,    22,    23,    24,    25,
+    26,    27,    28,    29,    30,    31,    32,    33,    34,    35,
+    36,    37
 };
 
 #if YYDEBUG != 0
@@ -237,25 +255,22 @@ static const short yyrhs[] = {    41,
 
 #if YYDEBUG != 0
 static const short yyrline[] = { 0,
-   143,   149,   151,   156,   161,   166,   183,   187,   205,   209,
-   225,   229,   234,   237,   242,   247,   252,   257,   261,   266,
-   269,   273,   277,   281,   285,   289,   293,   297,   304,   308,
-   312,   328,   332,   337,   341,   345,   361,   366,   370,   394,
-   410,   418,   423,   433,   438,   442,   446,   454,   465,   481,
-   486
+   144,   150,   152,   157,   162,   167,   184,   188,   206,   210,
+   226,   230,   235,   238,   243,   248,   253,   258,   262,   267,
+   270,   274,   278,   282,   286,   290,   294,   298,   305,   309,
+   313,   329,   333,   338,   342,   346,   362,   367,   371,   395,
+   411,   419,   424,   434,   439,   443,   447,   455,   466,   482,
+   487
 };
-#endif
-
-
-#if YYDEBUG != 0 || defined (YYERROR_VERBOSE)
 
 static const char * const yytname[] = {   "$","error","$undefined.","CHECK",
 "CODESTART","COPYRIGHT","CUSTOM","DATE","DEBUG","DESCRIPTION","EXIT","EXPORT",
 "FLAG_ON","FLAG_OFF","FULLMAP","HELP","IMPORT","INPUT","MAP","MESSAGES","MODULE",
 "MULTIPLE","OS_DOMAIN","OUTPUT","PSEUDOPREEMPTION","REENTRANT","SCREENNAME",
-"SHARELIB","STACK","START","SYNCHRONIZE","THREADNAME","TYPE","VERBOSE","VERSIONK",
+"SHARELIB","STACK","START","SYNCHRONIZE","THREADNAME","TYPE","VERBOSE","VERSION",
 "XDCDATA","STRING","QUOTED_STRING","'('","')'","file","commands","command","@1",
-"@2","symbol_list_opt","symbol_list","symbol_prefix","symbol","string_list", NULL
+"@2","symbol_list_opt","symbol_list","symbol_prefix","symbol","string_list",
+""
 };
 #endif
 
@@ -335,8 +350,7 @@ static const short yycheck[] = {     3,
     -1,    48,    -1,    -1,    68
 };
 /* -*-C-*-  Note some compilers choke on comments on `#line' lines.  */
-#line 3 "/usr/share/misc/bison.simple"
-/* This file comes from bison-1.28.  */
+#line 3 "/usr/unsupported/share/bison.simple"
 
 /* Skeleton output parser for bison,
    Copyright (C) 1984, 1989, 1990 Free Software Foundation, Inc.
@@ -353,66 +367,46 @@ static const short yycheck[] = {     3,
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 59 Temple Place - Suite 330,
-   Boston, MA 02111-1307, USA.  */
+   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.  */
 
 /* As a special exception, when this file is copied by Bison into a
    Bison output file, you may use that output file without restriction.
    This special exception was added by the Free Software Foundation
    in version 1.24 of Bison.  */
 
+#ifndef alloca
+#ifdef __GNUC__
+#define alloca __builtin_alloca
+#else /* not GNU C.  */
+#if (!defined (__STDC__) && defined (sparc)) || defined (__sparc__) || defined (__sparc) || defined (__sgi)
+#include <alloca.h>
+#else /* not sparc */
+#if defined (MSDOS) && !defined (__TURBOC__)
+#include <malloc.h>
+#else /* not MSDOS, or __TURBOC__ */
+#if defined(_AIX)
+#include <malloc.h>
+ #pragma alloca
+#else /* not MSDOS, __TURBOC__, or _AIX */
+#ifdef __hpux
+#ifdef __cplusplus
+extern "C" {
+void *alloca (unsigned int);
+};
+#else /* not __cplusplus */
+void *alloca ();
+#endif /* not __cplusplus */
+#endif /* __hpux */
+#endif /* not _AIX */
+#endif /* not MSDOS, or __TURBOC__ */
+#endif /* not sparc.  */
+#endif /* not GNU C.  */
+#endif /* alloca not defined.  */
+
 /* This is the parser code that is written into each bison parser
   when the %semantic_parser declaration is not specified in the grammar.
   It was written by Richard Stallman by simplifying the hairy parser
   used when %semantic_parser is specified.  */
-
-#ifndef YYSTACK_USE_ALLOCA
-#ifdef alloca
-#define YYSTACK_USE_ALLOCA
-#else /* alloca not defined */
-#ifdef __GNUC__
-#define YYSTACK_USE_ALLOCA
-#define alloca __builtin_alloca
-#else /* not GNU C.  */
-#if (!defined (__STDC__) && defined (sparc)) || defined (__sparc__) || defined (__sparc) || defined (__sgi) || (defined (__sun) && defined (__i386))
-#define YYSTACK_USE_ALLOCA
-#include <alloca.h>
-#else /* not sparc */
-/* We think this test detects Watcom and Microsoft C.  */
-/* This used to test MSDOS, but that is a bad idea
-   since that symbol is in the user namespace.  */
-#if (defined (_MSDOS) || defined (_MSDOS_)) && !defined (__TURBOC__)
-#if 0 /* No need for malloc.h, which pollutes the namespace;
-	 instead, just don't use alloca.  */
-#include <malloc.h>
-#endif
-#else /* not MSDOS, or __TURBOC__ */
-#if defined(_AIX)
-/* I don't know what this was needed for, but it pollutes the namespace.
-   So I turned it off.   rms, 2 May 1997.  */
-/* #include <malloc.h>  */
- #pragma alloca
-#define YYSTACK_USE_ALLOCA
-#else /* not MSDOS, or __TURBOC__, or _AIX */
-#if 0
-#ifdef __hpux /* haible@ilog.fr says this works for HPUX 9.05 and up,
-		 and on HPUX 10.  Eventually we can turn this on.  */
-#define YYSTACK_USE_ALLOCA
-#define alloca __builtin_alloca
-#endif /* __hpux */
-#endif
-#endif /* not _AIX */
-#endif /* not MSDOS, or __TURBOC__ */
-#endif /* not sparc */
-#endif /* not GNU C */
-#endif /* alloca not defined */
-#endif /* YYSTACK_USE_ALLOCA not defined */
-
-#ifdef YYSTACK_USE_ALLOCA
-#define YYSTACK_ALLOC alloca
-#else
-#define YYSTACK_ALLOC malloc
-#endif
 
 /* Note: there must be only one dollar sign in this file.
    It is replaced by the list of actions, each action
@@ -422,8 +416,8 @@ static const short yycheck[] = {     3,
 #define yyclearin	(yychar = YYEMPTY)
 #define YYEMPTY		-2
 #define YYEOF		0
-#define YYACCEPT	goto yyacceptlab
-#define YYABORT 	goto yyabortlab
+#define YYACCEPT	return(0)
+#define YYABORT 	return(1)
 #define YYERROR		goto yyerrlab1
 /* Like YYERROR except do call yyerror.
    This remains here temporarily to ease the
@@ -504,24 +498,24 @@ int yydebug;			/*  nonzero means print parse trace	*/
 #ifndef YYMAXDEPTH
 #define YYMAXDEPTH 10000
 #endif
-
-/* Define __yy_memcpy.  Note that the size argument
-   should be passed with type unsigned int, because that is what the non-GCC
-   definitions require.  With GCC, __builtin_memcpy takes an arg
-   of type size_t, but it can handle unsigned int.  */
 
+/* Prevent warning if -Wstrict-prototypes.  */
+#ifdef __GNUC__
+int yyparse (void);
+#endif
+
 #if __GNUC__ > 1		/* GNU C and GNU C++ define this.  */
-#define __yy_memcpy(TO,FROM,COUNT)	__builtin_memcpy(TO,FROM,COUNT)
+#define __yy_memcpy(FROM,TO,COUNT)	__builtin_memcpy(TO,FROM,COUNT)
 #else				/* not GNU C or C++ */
 #ifndef __cplusplus
 
 /* This is the most reliable way to avoid incompatibilities
    in available built-in functions on various systems.  */
 static void
-__yy_memcpy (to, from, count)
-     char *to;
+__yy_memcpy (from, to, count)
      char *from;
-     unsigned int count;
+     char *to;
+     int count;
 {
   register char *f = from;
   register char *t = to;
@@ -536,10 +530,10 @@ __yy_memcpy (to, from, count)
 /* This is the most reliable way to avoid incompatibilities
    in available built-in functions on various systems.  */
 static void
-__yy_memcpy (char *to, char *from, unsigned int count)
+__yy_memcpy (char *from, char *to, int count)
 {
-  register char *t = to;
   register char *f = from;
+  register char *t = to;
   register int i = count;
 
   while (i-- > 0)
@@ -549,7 +543,7 @@ __yy_memcpy (char *to, char *from, unsigned int count)
 #endif
 #endif
 
-#line 217 "/usr/share/misc/bison.simple"
+#line 192 "/usr/unsupported/share/bison.simple"
 
 /* The user can define YYPARSE_PARAM as the name of an argument to be passed
    into yyparse.  The argument should have type void *.
@@ -558,29 +552,14 @@ __yy_memcpy (char *to, char *from, unsigned int count)
    to the proper pointer type.  */
 
 #ifdef YYPARSE_PARAM
-#ifdef __cplusplus
-#define YYPARSE_PARAM_ARG void *YYPARSE_PARAM
-#define YYPARSE_PARAM_DECL
-#else /* not __cplusplus */
-#define YYPARSE_PARAM_ARG YYPARSE_PARAM
 #define YYPARSE_PARAM_DECL void *YYPARSE_PARAM;
-#endif /* not __cplusplus */
-#else /* not YYPARSE_PARAM */
-#define YYPARSE_PARAM_ARG
-#define YYPARSE_PARAM_DECL
-#endif /* not YYPARSE_PARAM */
-
-/* Prevent warning if -Wstrict-prototypes.  */
-#ifdef __GNUC__
-#ifdef YYPARSE_PARAM
-int yyparse (void *);
 #else
-int yyparse (void);
-#endif
+#define YYPARSE_PARAM
+#define YYPARSE_PARAM_DECL
 #endif
 
 int
-yyparse(YYPARSE_PARAM_ARG)
+yyparse(YYPARSE_PARAM)
      YYPARSE_PARAM_DECL
 {
   register int yystate;
@@ -607,7 +586,6 @@ yyparse(YYPARSE_PARAM_ARG)
 #endif
 
   int yystacksize = YYINITDEPTH;
-  int yyfree_stacks = 0;
 
 #ifdef YYPURE
   int yychar;
@@ -692,32 +670,18 @@ yynewstate:
       if (yystacksize >= YYMAXDEPTH)
 	{
 	  yyerror("parser stack overflow");
-	  if (yyfree_stacks)
-	    {
-	      free (yyss);
-	      free (yyvs);
-#ifdef YYLSP_NEEDED
-	      free (yyls);
-#endif
-	    }
 	  return 2;
 	}
       yystacksize *= 2;
       if (yystacksize > YYMAXDEPTH)
 	yystacksize = YYMAXDEPTH;
-#ifndef YYSTACK_USE_ALLOCA
-      yyfree_stacks = 1;
-#endif
-      yyss = (short *) YYSTACK_ALLOC (yystacksize * sizeof (*yyssp));
-      __yy_memcpy ((char *)yyss, (char *)yyss1,
-		   size * (unsigned int) sizeof (*yyssp));
-      yyvs = (YYSTYPE *) YYSTACK_ALLOC (yystacksize * sizeof (*yyvsp));
-      __yy_memcpy ((char *)yyvs, (char *)yyvs1,
-		   size * (unsigned int) sizeof (*yyvsp));
+      yyss = (short *) alloca (yystacksize * sizeof (*yyssp));
+      __yy_memcpy ((char *)yyss1, (char *)yyss, size * sizeof (*yyssp));
+      yyvs = (YYSTYPE *) alloca (yystacksize * sizeof (*yyvsp));
+      __yy_memcpy ((char *)yyvs1, (char *)yyvs, size * sizeof (*yyvsp));
 #ifdef YYLSP_NEEDED
-      yyls = (YYLTYPE *) YYSTACK_ALLOC (yystacksize * sizeof (*yylsp));
-      __yy_memcpy ((char *)yyls, (char *)yyls1,
-		   size * (unsigned int) sizeof (*yylsp));
+      yyls = (YYLTYPE *) alloca (yystacksize * sizeof (*yylsp));
+      __yy_memcpy ((char *)yyls1, (char *)yyls, size * sizeof (*yylsp));
 #endif
 #endif /* no yyoverflow */
 
@@ -878,20 +842,20 @@ yyreduce:
   switch (yyn) {
 
 case 4:
-#line 158 "nlmheader.y"
+#line 159 "./nlmheader.y"
 {
 	    check_procedure = yyvsp[0].string;
 	  ;
     break;}
 case 5:
-#line 162 "nlmheader.y"
+#line 163 "./nlmheader.y"
 {
-	    nlmheader_warn (_("CODESTART is not implemented; sorry"), -1);
+	    nlmheader_warn ("CODESTART is not implemented; sorry", -1);
 	    free (yyvsp[0].string);
 	  ;
     break;}
 case 6:
-#line 167 "nlmheader.y"
+#line 168 "./nlmheader.y"
 {
 	    int len;
 
@@ -899,7 +863,7 @@ case 6:
 	    len = strlen (yyvsp[0].string);
 	    if (len >= NLM_MAX_COPYRIGHT_MESSAGE_LENGTH)
 	      {
-		nlmheader_warn (_("copyright string is too long"),
+		nlmheader_warn ("copyright string is too long",
 				NLM_MAX_COPYRIGHT_MESSAGE_LENGTH - 1);
 		len = NLM_MAX_COPYRIGHT_MESSAGE_LENGTH - 1;
 	      }
@@ -910,13 +874,13 @@ case 6:
 	  ;
     break;}
 case 7:
-#line 184 "nlmheader.y"
+#line 185 "./nlmheader.y"
 {
 	    custom_file = yyvsp[0].string;
 	  ;
     break;}
 case 8:
-#line 188 "nlmheader.y"
+#line 189 "./nlmheader.y"
 {
 	    /* We don't set the version stamp here, because we use the
 	       version stamp to detect whether the required VERSION
@@ -928,28 +892,28 @@ case 8:
 	    free (yyvsp[-1].string);
 	    free (yyvsp[0].string);
 	    if (version_hdr->month < 1 || version_hdr->month > 12)
-	      nlmheader_warn (_("illegal month"), -1);
+	      nlmheader_warn ("illegal month", -1);
 	    if (version_hdr->day < 1 || version_hdr->day > 31)
-	      nlmheader_warn (_("illegal day"), -1);
+	      nlmheader_warn ("illegal day", -1);
 	    if (version_hdr->year < 1900 || version_hdr->year > 3000)
-	      nlmheader_warn (_("illegal year"), -1);
+	      nlmheader_warn ("illegal year", -1);
 	  ;
     break;}
 case 9:
-#line 206 "nlmheader.y"
+#line 207 "./nlmheader.y"
 {
 	    debug_info = true;
 	  ;
     break;}
 case 10:
-#line 210 "nlmheader.y"
+#line 211 "./nlmheader.y"
 {
 	    int len;
 
 	    len = strlen (yyvsp[0].string);
 	    if (len > NLM_MAX_DESCRIPTION_LENGTH)
 	      {
-		nlmheader_warn (_("description string is too long"),
+		nlmheader_warn ("description string is too long",
 				NLM_MAX_DESCRIPTION_LENGTH);
 		len = NLM_MAX_DESCRIPTION_LENGTH;
 	      }
@@ -960,141 +924,141 @@ case 10:
 	  ;
     break;}
 case 11:
-#line 226 "nlmheader.y"
+#line 227 "./nlmheader.y"
 {
 	    exit_procedure = yyvsp[0].string;
 	  ;
     break;}
 case 12:
-#line 230 "nlmheader.y"
+#line 231 "./nlmheader.y"
 {
 	    symbol_prefix = NULL;
 	  ;
     break;}
 case 13:
-#line 234 "nlmheader.y"
+#line 235 "./nlmheader.y"
 {
 	    export_symbols = string_list_append (export_symbols, yyvsp[0].list);
 	  ;
     break;}
 case 14:
-#line 238 "nlmheader.y"
+#line 239 "./nlmheader.y"
 {
 	    fixed_hdr->flags |= nlmlex_get_number (yyvsp[0].string);
 	    free (yyvsp[0].string);
 	  ;
     break;}
 case 15:
-#line 243 "nlmheader.y"
+#line 244 "./nlmheader.y"
 {
 	    fixed_hdr->flags &=~ nlmlex_get_number (yyvsp[0].string);
 	    free (yyvsp[0].string);
 	  ;
     break;}
 case 16:
-#line 248 "nlmheader.y"
+#line 249 "./nlmheader.y"
 {
 	    map_file = "";
 	    full_map = true;
 	  ;
     break;}
 case 17:
-#line 253 "nlmheader.y"
+#line 254 "./nlmheader.y"
 {
 	    map_file = yyvsp[0].string;
 	    full_map = true;
 	  ;
     break;}
 case 18:
-#line 258 "nlmheader.y"
+#line 259 "./nlmheader.y"
 {
 	    help_file = yyvsp[0].string;
 	  ;
     break;}
 case 19:
-#line 262 "nlmheader.y"
+#line 263 "./nlmheader.y"
 {
 	    symbol_prefix = NULL;
 	  ;
     break;}
 case 20:
-#line 266 "nlmheader.y"
+#line 267 "./nlmheader.y"
 {
 	    import_symbols = string_list_append (import_symbols, yyvsp[0].list);
 	  ;
     break;}
 case 21:
-#line 270 "nlmheader.y"
+#line 271 "./nlmheader.y"
 {
 	    input_files = string_list_append (input_files, yyvsp[0].list);
 	  ;
     break;}
 case 22:
-#line 274 "nlmheader.y"
+#line 275 "./nlmheader.y"
 {
 	    map_file = "";
 	  ;
     break;}
 case 23:
-#line 278 "nlmheader.y"
+#line 279 "./nlmheader.y"
 {
 	    map_file = yyvsp[0].string;
 	  ;
     break;}
 case 24:
-#line 282 "nlmheader.y"
+#line 283 "./nlmheader.y"
 {
 	    message_file = yyvsp[0].string;
 	  ;
     break;}
 case 25:
-#line 286 "nlmheader.y"
+#line 287 "./nlmheader.y"
 {
 	    modules = string_list_append (modules, yyvsp[0].list);
 	  ;
     break;}
 case 26:
-#line 290 "nlmheader.y"
+#line 291 "./nlmheader.y"
 {
 	    fixed_hdr->flags |= 0x2;
 	  ;
     break;}
 case 27:
-#line 294 "nlmheader.y"
+#line 295 "./nlmheader.y"
 {
 	    fixed_hdr->flags |= 0x10;
 	  ;
     break;}
 case 28:
-#line 298 "nlmheader.y"
+#line 299 "./nlmheader.y"
 {
 	    if (output_file == NULL)
 	      output_file = yyvsp[0].string;
 	    else
-	      nlmheader_warn (_("ignoring duplicate OUTPUT statement"), -1);
+	      nlmheader_warn ("ignoring duplicate OUTPUT statement", -1);
 	  ;
     break;}
 case 29:
-#line 305 "nlmheader.y"
+#line 306 "./nlmheader.y"
 {
 	    fixed_hdr->flags |= 0x8;
 	  ;
     break;}
 case 30:
-#line 309 "nlmheader.y"
+#line 310 "./nlmheader.y"
 {
 	    fixed_hdr->flags |= 0x1;
 	  ;
     break;}
 case 31:
-#line 313 "nlmheader.y"
+#line 314 "./nlmheader.y"
 {
 	    int len;
 
 	    len = strlen (yyvsp[0].string);
 	    if (len >= NLM_MAX_SCREEN_NAME_LENGTH)
 	      {
-		nlmheader_warn (_("screen name is too long"),
+		nlmheader_warn ("screen name is too long",
 				NLM_MAX_SCREEN_NAME_LENGTH);
 		len = NLM_MAX_SCREEN_NAME_LENGTH;
 	      }
@@ -1105,39 +1069,39 @@ case 31:
 	  ;
     break;}
 case 32:
-#line 329 "nlmheader.y"
+#line 330 "./nlmheader.y"
 {
 	    sharelib_file = yyvsp[0].string;
 	  ;
     break;}
 case 33:
-#line 333 "nlmheader.y"
+#line 334 "./nlmheader.y"
 {
 	    var_hdr->stackSize = nlmlex_get_number (yyvsp[0].string);
 	    free (yyvsp[0].string);
 	  ;
     break;}
 case 34:
-#line 338 "nlmheader.y"
+#line 339 "./nlmheader.y"
 {
 	    start_procedure = yyvsp[0].string;
 	  ;
     break;}
 case 35:
-#line 342 "nlmheader.y"
+#line 343 "./nlmheader.y"
 {
 	    fixed_hdr->flags |= 0x4;
 	  ;
     break;}
 case 36:
-#line 346 "nlmheader.y"
+#line 347 "./nlmheader.y"
 {
 	    int len;
 
 	    len = strlen (yyvsp[0].string);
 	    if (len >= NLM_MAX_THREAD_NAME_LENGTH)
 	      {
-		nlmheader_warn (_("thread name is too long"),
+		nlmheader_warn ("thread name is too long",
 				NLM_MAX_THREAD_NAME_LENGTH);
 		len = NLM_MAX_THREAD_NAME_LENGTH;
 	      }
@@ -1148,20 +1112,20 @@ case 36:
 	  ;
     break;}
 case 37:
-#line 362 "nlmheader.y"
+#line 363 "./nlmheader.y"
 {
 	    fixed_hdr->moduleType = nlmlex_get_number (yyvsp[0].string);
 	    free (yyvsp[0].string);
 	  ;
     break;}
 case 38:
-#line 367 "nlmheader.y"
+#line 368 "./nlmheader.y"
 {
 	    verbose = true;
 	  ;
     break;}
 case 39:
-#line 371 "nlmheader.y"
+#line 372 "./nlmheader.y"
 {
 	    long val;
 
@@ -1169,13 +1133,13 @@ case 39:
 	    version_hdr->majorVersion = nlmlex_get_number (yyvsp[-2].string);
 	    val = nlmlex_get_number (yyvsp[-1].string);
 	    if (val < 0 || val > 99)
-	      nlmheader_warn (_("illegal minor version number (must be between 0 and 99)"),
+	      nlmheader_warn ("illegal minor version number (must be between 0 and 99)",
 			      -1);
 	    else
 	      version_hdr->minorVersion = val;
 	    val = nlmlex_get_number (yyvsp[0].string);
 	    if (val < 0)
-	      nlmheader_warn (_("illegal revision number (must be between 0 and 26)"),
+	      nlmheader_warn ("illegal revision number (must be between 0 and 26)",
 			      -1);
 	    else if (val > 26)
 	      version_hdr->revision = 0;
@@ -1187,7 +1151,7 @@ case 39:
 	  ;
     break;}
 case 40:
-#line 395 "nlmheader.y"
+#line 396 "./nlmheader.y"
 {
 	    long val;
 
@@ -1195,7 +1159,7 @@ case 40:
 	    version_hdr->majorVersion = nlmlex_get_number (yyvsp[-1].string);
 	    val = nlmlex_get_number (yyvsp[0].string);
 	    if (val < 0 || val > 99)
-	      nlmheader_warn (_("illegal minor version number (must be between 0 and 99)"),
+	      nlmheader_warn ("illegal minor version number (must be between 0 and 99)",
 			      -1);
 	    else
 	      version_hdr->minorVersion = val;
@@ -1205,49 +1169,49 @@ case 40:
 	  ;
     break;}
 case 41:
-#line 411 "nlmheader.y"
+#line 412 "./nlmheader.y"
 {
 	    rpc_file = yyvsp[0].string;
 	  ;
     break;}
 case 42:
-#line 420 "nlmheader.y"
+#line 421 "./nlmheader.y"
 {
 	    yyval.list = NULL;
 	  ;
     break;}
 case 43:
-#line 424 "nlmheader.y"
+#line 425 "./nlmheader.y"
 {
 	    yyval.list = yyvsp[0].list;
 	  ;
     break;}
 case 44:
-#line 435 "nlmheader.y"
+#line 436 "./nlmheader.y"
 {
 	    yyval.list = string_list_cons (yyvsp[0].string, NULL);
 	  ;
     break;}
 case 45:
-#line 439 "nlmheader.y"
+#line 440 "./nlmheader.y"
 {
 	    yyval.list = NULL;
 	  ;
     break;}
 case 46:
-#line 443 "nlmheader.y"
+#line 444 "./nlmheader.y"
 {
 	    yyval.list = string_list_append1 (yyvsp[-1].list, yyvsp[0].string);
 	  ;
     break;}
 case 47:
-#line 447 "nlmheader.y"
+#line 448 "./nlmheader.y"
 {
 	    yyval.list = yyvsp[-1].list;
 	  ;
     break;}
 case 48:
-#line 456 "nlmheader.y"
+#line 457 "./nlmheader.y"
 {
 	    if (symbol_prefix != NULL)
 	      free (symbol_prefix);
@@ -1255,7 +1219,7 @@ case 48:
 	  ;
     break;}
 case 49:
-#line 467 "nlmheader.y"
+#line 468 "./nlmheader.y"
 {
 	    if (symbol_prefix == NULL)
 	      yyval.string = yyvsp[0].string;
@@ -1268,20 +1232,20 @@ case 49:
 	  ;
     break;}
 case 50:
-#line 483 "nlmheader.y"
+#line 484 "./nlmheader.y"
 {
 	    yyval.list = NULL;
 	  ;
     break;}
 case 51:
-#line 487 "nlmheader.y"
+#line 488 "./nlmheader.y"
 {
 	    yyval.list = string_list_cons (yyvsp[-1].string, yyvsp[0].list);
 	  ;
     break;}
 }
    /* the action file gets copied in in place of this dollarsign */
-#line 543 "/usr/share/misc/bison.simple"
+#line 487 "/usr/unsupported/share/bison.simple"
 
   yyvsp -= yylen;
   yyssp -= yylen;
@@ -1476,32 +1440,8 @@ yyerrhandle:
 
   yystate = yyn;
   goto yynewstate;
-
- yyacceptlab:
-  /* YYACCEPT comes here.  */
-  if (yyfree_stacks)
-    {
-      free (yyss);
-      free (yyvs);
-#ifdef YYLSP_NEEDED
-      free (yyls);
-#endif
-    }
-  return 0;
-
- yyabortlab:
-  /* YYABORT comes here.  */
-  if (yyfree_stacks)
-    {
-      free (yyss);
-      free (yyvs);
-#ifdef YYLSP_NEEDED
-      free (yyls);
-#endif
-    }
-  return 1;
 }
-#line 492 "nlmheader.y"
+#line 493 "./nlmheader.y"
 
 
 /* If strerror is just a macro, we want to use the one from libiberty
@@ -1636,7 +1576,7 @@ struct keyword_tokens_struct keyword_tokens[] =
   { "THREADNAME", THREADNAME },
   { "TYPE", TYPE },
   { "VERBOSE", VERBOSE },
-  { "VERSION", VERSIONK },
+  { "VERSION", VERSION },
   { "XDCDATA", XDCDATA }
 };
 
@@ -1781,12 +1721,12 @@ tail_recurse:
       if (c != EOF && ! isspace ((unsigned char) c) && c != ',')
 	{
 	  nlmheader_identify ();
-	  fprintf (stderr, _("%s:%d: illegal character in keyword: %c\n"),
+	  fprintf (stderr, "%s:%d: illegal character in keyword: %c\n",
 		   current.name, current.lineno, c);
 	}
       else
 	{
-	  unsigned int i;
+	  int i;
 
 	  for (i = 0; i < KEYWORD_COUNT; i++)
 	    {
@@ -1802,7 +1742,7 @@ tail_recurse:
 	    }
 	  
 	  nlmheader_identify ();
-	  fprintf (stderr, _("%s:%d: unrecognized keyword: %s\n"),
+	  fprintf (stderr, "%s:%d: unrecognized keyword: %s\n",
 		   current.name, current.lineno, lex_buf);
 	}
 
@@ -1839,7 +1779,7 @@ tail_recurse:
       if (c == EOF)
 	{
 	  nlmheader_identify ();
-	  fprintf (stderr, _("%s:%d: end of file in quoted string\n"),
+	  fprintf (stderr, "%s:%d: end of file in quoted string\n",
 		   current.name, start_lineno);
 	  ++parse_errors;
 	}
@@ -1880,7 +1820,7 @@ nlmlex_get_number (s)
 
   ret = strtol (s, &send, 10);
   if (*send != '\0')
-    nlmheader_warn (_("bad number"), -1);
+    nlmheader_warn ("bad number", -1);
   return ret;
 }
 
@@ -1896,7 +1836,7 @@ nlmheader_identify ()
 
   if (! done)
     {
-      fprintf (stderr, _("%s: problems in NLM command language input:\n"),
+      fprintf (stderr, "%s: problems in NLM command language input:\n",
 	       program_name);
       done = 1;
     }

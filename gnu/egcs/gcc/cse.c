@@ -1,6 +1,5 @@
 /* Common subexpression elimination for GNU compiler.
-   Copyright (C) 1987, 1988, 1989, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000 Free Software Foundation, Inc.
+   Copyright (C) 1987, 88, 89, 92-7, 1998, 1999 Free Software Foundation, Inc.
 
 This file is part of GNU CC.
 
@@ -35,7 +34,7 @@ Boston, MA 02111-1307, USA.  */
 #include "expr.h"
 #include "toplev.h"
 #include "output.h"
-#include "hashtab.h"
+#include "splay-tree.h"
 
 /* The basic idea of common subexpression elimination is to go
    through the code, keeping a record of expressions that would
@@ -43,14 +42,12 @@ Boston, MA 02111-1307, USA.  */
    expressions encountered with the cheapest equivalent expression.
 
    It is too complicated to keep track of the different possibilities
-   when control paths merge in this code; so, at each label, we forget all
-   that is known and start fresh.  This can be described as processing each
-   extended basic block separately.  We have a separate pass to perform
-   global CSE.
-
-   Note CSE can turn a conditional or computed jump into a nop or
-   an unconditional jump.  When this occurs we arrange to run the jump
-   optimizer after CSE to delete the unreachable code.
+   when control paths merge; so, at each label, we forget all that is
+   known and start fresh.  This can be described as processing each
+   basic block separately.  Note, however, that these are not quite
+   the same as the basic blocks found by a later pass and used for
+   data flow analysis and register packing.  We do not need to start fresh
+   after a conditional jump instruction if there is no label there.
 
    We use two data structures to record the equivalent expressions:
    a hash table for most expressions, and several vectors together
@@ -290,12 +287,14 @@ static int *reg_next_eqv;
 static int *reg_prev_eqv;
 
 struct cse_reg_info {
-  /* The number of times the register has been altered in the current
-     basic block.  */
-  int reg_tick;
-
-  /* The next cse_reg_info structure in the free or used list.  */
-  struct cse_reg_info* next;
+  union {
+    /* The number of times the register has been altered in the current
+       basic block.  */
+    int reg_tick;
+    
+    /* The next cse_reg_info structure in the free list.  */
+    struct cse_reg_info* next;
+  } variant;
 
   /* The REG_TICK value at which rtx's containing this register are
      valid in the hash table.  If this does not equal the current
@@ -305,20 +304,13 @@ struct cse_reg_info {
 
   /* The quantity number of the register's current contents.  */
   int reg_qty;
-
-  /* Search key */
-  int regno;
 };
 
 /* A free list of cse_reg_info entries.  */
 static struct cse_reg_info *cse_reg_info_free_list;
 
-/* A used list of cse_reg_info entries.  */
-static struct cse_reg_info *cse_reg_info_used_list;
-static struct cse_reg_info *cse_reg_info_used_list_end;
-
 /* A mapping from registers to cse_reg_info data structures.  */
-static hash_table_t cse_reg_info_tree;
+static splay_tree cse_reg_info_tree;
 
 /* The last lookup we did into the cse_reg_info_tree.  This allows us
    to cache repeated lookups.  */
@@ -514,7 +506,7 @@ struct table_elt
 /* Get the number of times this register has been updated in this
    basic block.  */
 
-#define REG_TICK(N) ((GET_CSE_REG_INFO (N))->reg_tick)
+#define REG_TICK(N) ((GET_CSE_REG_INFO (N))->variant.reg_tick)
 
 /* Get the point at which REG was recorded in the table.  */
 
@@ -698,10 +690,7 @@ static void count_reg_usage	PROTO((rtx, int *, rtx, int));
 extern void dump_class          PROTO((struct table_elt*));
 static void check_fold_consts	PROTO((PTR));
 static struct cse_reg_info* get_cse_reg_info PROTO((int));
-static unsigned int hash_cse_reg_info PROTO((hash_table_entry_t));
-static int cse_reg_info_equal_p	PROTO((hash_table_entry_t,
-				       hash_table_entry_t));
-
+static void free_cse_reg_info   PROTO((splay_tree_value));
 static void flush_hash_table	PROTO((void));
 
 extern int rtx_equal_function_value_matters;
@@ -851,38 +840,32 @@ get_cse_reg_info (regno)
      int regno;
 {
   struct cse_reg_info *cri;
-  struct cse_reg_info **entry;
-  struct cse_reg_info temp;
+  splay_tree_node n;
 
   /* See if we already have this entry.  */
-  temp.regno = regno;
-  entry = (struct cse_reg_info **) find_hash_table_entry (cse_reg_info_tree,
-							  &temp, TRUE);
-
-  if (*entry)
-    cri = *entry;
+  n = splay_tree_lookup (cse_reg_info_tree, 
+			(splay_tree_key) regno);
+  if (n)
+    cri = (struct cse_reg_info *) (n->value);
   else 
     {
       /* Get a new cse_reg_info structure.  */
       if (cse_reg_info_free_list) 
 	{
 	  cri = cse_reg_info_free_list;
-	  cse_reg_info_free_list = cri->next;
+	  cse_reg_info_free_list = cri->variant.next;
 	}
       else
 	cri = (struct cse_reg_info *) xmalloc (sizeof (struct cse_reg_info));
 
       /* Initialize it.  */
-      cri->reg_tick = 0;
+      cri->variant.reg_tick = 0;
       cri->reg_in_table = -1;
       cri->reg_qty = regno;
-      cri->regno = regno;
-      cri->next = cse_reg_info_used_list;
-      cse_reg_info_used_list = cri;
-      if (!cse_reg_info_used_list_end)
-	cse_reg_info_used_list_end = cri;
-      
-      *entry = cri;
+
+      splay_tree_insert (cse_reg_info_tree, 
+			 (splay_tree_key) regno, 
+			 (splay_tree_value) cri);
     }
 
   /* Cache this lookup; we tend to be looking up information about the
@@ -893,20 +876,14 @@ get_cse_reg_info (regno)
   return cri;
 }
 
-static unsigned int
-hash_cse_reg_info (el_ptr)
-     hash_table_entry_t el_ptr;
+static void
+free_cse_reg_info (v)
+     splay_tree_value v;
 {
-  return ((struct cse_reg_info *) el_ptr)->regno;
-}
-
-static int
-cse_reg_info_equal_p (el_ptr1, el_ptr2)
-     hash_table_entry_t el_ptr1;
-     hash_table_entry_t el_ptr2;
-{
-  return (((struct cse_reg_info *) el_ptr1)->regno
-	  == ((struct cse_reg_info *) el_ptr2)->regno);
+  struct cse_reg_info *cri = (struct cse_reg_info *) v;
+  
+  cri->variant.next = cse_reg_info_free_list;
+  cse_reg_info_free_list = cri;
 }
 
 /* Clear the hash table and initialize each register with its own quantity,
@@ -921,20 +898,12 @@ new_basic_block ()
 
   if (cse_reg_info_tree) 
     {
-      empty_hash_table (cse_reg_info_tree);
-      if (cse_reg_info_used_list)
-	{
-	  cse_reg_info_used_list_end->next = cse_reg_info_free_list;
-	  cse_reg_info_free_list = cse_reg_info_used_list;
-	  cse_reg_info_used_list = cse_reg_info_used_list_end = 0;
-	}
+      splay_tree_delete (cse_reg_info_tree);
       cached_cse_reg_info = 0;
     }
-  else
-    {
-      cse_reg_info_tree = create_hash_table (0, hash_cse_reg_info,
-					     cse_reg_info_equal_p);
-    }
+
+  cse_reg_info_tree = splay_tree_new (splay_tree_compare_ints, 0, 
+				      free_cse_reg_info);
 
   CLEAR_HARD_REG_SET (hard_regs_in_table);
 
@@ -5892,15 +5861,7 @@ fold_rtx (x, insn)
 	     hence not save anything) or be incorrect.  */
 	  if (const_arg1 != 0 && GET_CODE (const_arg1) == CONST_INT
 	      && INTVAL (const_arg1) < 0
-	      /* This used to test
-
-	         - INTVAL (const_arg1) >= 0
-
-		 But The Sun V5.0 compilers mis-compiled that test.  So
-		 instead we test for the problematic value in a more direct
-		 manner and hope the Sun compilers get it correct.  */
-	      && INTVAL (const_arg1) !=
-	        ((HOST_WIDE_INT) 1 << (HOST_BITS_PER_WIDE_INT - 1))
+	      && - INTVAL (const_arg1) >= 0
 	      && GET_CODE (folded_arg1) == REG)
 	    {
 	      rtx new_const = GEN_INT (- INTVAL (const_arg1));
@@ -7499,6 +7460,7 @@ cse_insn (insn, libcall_insn)
 	      rtx new = emit_jump_insn_before (gen_jump (XEXP (src, 0)), insn);
 	      JUMP_LABEL (new) = XEXP (src, 0);
 	      LABEL_NUSES (XEXP (src, 0))++;
+	      delete_insn (insn);
 	      insn = new;
 	    }
 	  else
@@ -7509,11 +7471,39 @@ cse_insn (insn, libcall_insn)
 	       Until the right place is found, might as well do this here.  */
 	    INSN_CODE (insn) = -1;
 
-	  /* Now emit a BARRIER after the unconditional jump.  Do not bother
-	     deleting any unreachable code, let jump/flow do that.  */
-	  if (NEXT_INSN (insn) != 0
-	      && GET_CODE (NEXT_INSN (insn)) != BARRIER)
-	    emit_barrier_after (insn);
+	  /* Now that we've converted this jump to an unconditional jump,
+	     there is dead code after it.  Delete the dead code until we
+	     reach a BARRIER, the end of the function, or a label.  Do
+	     not delete NOTEs except for NOTE_INSN_DELETED since later
+	     phases assume these notes are retained.  */
+
+	  p = insn;
+
+	  while (NEXT_INSN (p) != 0
+		 && GET_CODE (NEXT_INSN (p)) != BARRIER
+		 && GET_CODE (NEXT_INSN (p)) != CODE_LABEL)
+	    {
+	      if (GET_CODE (NEXT_INSN (p)) != NOTE
+		  || NOTE_LINE_NUMBER (NEXT_INSN (p)) == NOTE_INSN_DELETED)
+		delete_insn (NEXT_INSN (p));
+	      else
+		p = NEXT_INSN (p);
+	    }
+
+	  /* If we don't have a BARRIER immediately after INSN, put one there.
+	     Much code assumes that there are no NOTEs between a JUMP_INSN and
+	     BARRIER.  */
+
+	  if (NEXT_INSN (insn) == 0
+	      || GET_CODE (NEXT_INSN (insn)) != BARRIER)
+	    emit_barrier_before (NEXT_INSN (insn));
+
+	  /* We might have two BARRIERs separated by notes.  Delete the second
+	     one if so.  */
+
+	  if (p != insn && NEXT_INSN (p) != 0
+	      && GET_CODE (NEXT_INSN (p)) == BARRIER)
+	    delete_insn (NEXT_INSN (p));
 
 	  cse_jumps_altered = 1;
 	  sets[i].rtl = 0;
@@ -7617,12 +7607,7 @@ cse_insn (insn, libcall_insn)
 	    enum machine_mode mode
 	      = GET_MODE (src) == VOIDmode ? GET_MODE (dest) : GET_MODE (src);
 
-	    /* Don't put a hard register source into the table if this is
-	       the last insn of a libcall.  */
-	    if (sets[i].src_elt == 0
-		&& (GET_CODE (src) != REG
-		    || REGNO (src) >= FIRST_PSEUDO_REGISTER
-		    || ! find_reg_note (insn, REG_RETVAL, NULL_RTX)))
+	    if (sets[i].src_elt == 0)
 	      {
 		register struct table_elt *elt;
 
@@ -9005,6 +8990,9 @@ cse_basic_block (from, to, next_branch, around_loop)
 	  rtx prev;
 
 	  insn = NEXT_INSN (to);
+
+	  if (LABEL_NUSES (to) == 0)
+	    insn = delete_insn (to);
 
 	  /* If TO was the last insn in the function, we are done.  */
 	  if (insn == 0)

@@ -1,6 +1,5 @@
 /* output-file.c -  Deal with the output file
-   Copyright (C) 1987, 90, 91, 93, 92, 94, 95, 96, 1998
-   Free Software Foundation, Inc.
+   Copyright (C) 1987, 1990, 1991, 1992 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -45,19 +44,18 @@ output_file_create (name)
 {
   if (name[0] == '-' && name[1] == '\0')
     {
-      as_fatal (_("Can't open a bfd on stdout %s "), name);
+      as_fatal ("Can't open a bfd on stdout %s ", name);
     }
   else if (!(stdoutput = bfd_openw (name, TARGET_FORMAT)))
     {
-      as_perror (_("FATAL: Can't create %s"), name);
+      bfd_perror (name);
+      as_perror ("FATAL: Can't create %s", name);
       exit (EXIT_FAILURE);
     }
   bfd_set_format (stdoutput, bfd_object);
 #ifdef BFD_ASSEMBLER
   bfd_set_arch_mach (stdoutput, TARGET_ARCH, TARGET_MACH);
 #endif
-  if (flag_traditional_format)
-    stdoutput->flags |= BFD_TRADITIONAL_FORMAT;
 }
 
 void
@@ -69,14 +67,14 @@ output_file_close (filename)
   if (bfd_close (stdoutput) == 0)
     {
       bfd_perror (filename);
-      as_perror (_("FATAL: Can't close %s\n"), filename);
+      as_perror ("FATAL: Can't close %s\n", filename);
       exit (EXIT_FAILURE);
     }
 #else
   /* Close the bfd without getting bfd to write out anything by itself */
   if (bfd_close_all_done (stdoutput) == 0)
     {
-      as_perror (_("FATAL: Can't close %s\n"), filename);
+      as_perror ("FATAL: Can't close %s\n", filename);
       exit (EXIT_FAILURE);
     }
 #endif
@@ -86,9 +84,9 @@ output_file_close (filename)
 #ifndef BFD_ASSEMBLER
 void
 output_file_append (where, length, filename)
-     char *where ATTRIBUTE_UNUSED;
-     long length ATTRIBUTE_UNUSED;
-     char *filename ATTRIBUTE_UNUSED;
+     char *where;
+     long length;
+     char *filename;
 {
   abort ();
 }
@@ -116,7 +114,7 @@ output_file_create (name)
 
   if (stdoutput == NULL)
     {
-      as_perror (_("FATAL: Can't create %s"), name);
+      as_perror ("FATAL: Can't create %s", name);
       exit (EXIT_FAILURE);
     }
 }
@@ -127,7 +125,7 @@ output_file_close (filename)
 {
   if (EOF == fclose (stdoutput))
     {
-      as_perror (_("FATAL: Can't close %s"), filename);
+      as_perror ("FATAL: Can't close %s", filename);
       exit (EXIT_FAILURE);
     }
   stdoutput = NULL;		/* Trust nobody! */
@@ -145,8 +143,8 @@ output_file_append (where, length, filename)
       if (ferror (stdoutput))
 	/* if ( EOF == (putc( *where, stdoutput )) ) */
 	{
-	  as_perror (_("Failed to emit an object byte"), filename);
-	  as_fatal (_("Can't continue"));
+	  as_perror ("Failed to emit an object byte", filename);
+	  as_fatal ("Can't continue");
 	}
     }
 }

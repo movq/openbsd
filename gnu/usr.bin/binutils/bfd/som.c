@@ -1,5 +1,5 @@
 /* bfd back-end for HP PA-RISC SOM objects.
-   Copyright (C) 1990, 91, 92, 93, 94, 95, 96, 97, 1998
+   Copyright (C) 1990, 1991, 1992, 1993, 1994, 1995
    Free Software Foundation, Inc.
 
    Contributed by the Center for Software Science at the
@@ -19,22 +19,23 @@
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #include "bfd.h"
 #include "sysdep.h"
 
-#if defined (HOST_HPPAHPUX) || defined (HOST_HPPABSD) || defined (HOST_HPPAOSF) || defined(HOST_HPPAMPEIX)
+#if defined (HOST_HPPAHPUX) || defined (HOST_HPPABSD) || defined (HOST_HPPAOSF)
 
 #include "libbfd.h"
 #include "som.h"
 
+#include <stdio.h>
+#include <sys/types.h>
 #include <sys/param.h>
 #include <signal.h>
 #include <machine/reg.h>
 #include <sys/file.h>
-#include <ctype.h>
+#include <errno.h>
 
 /* Magic not defined in standard HP-UX header files until 8.0 */
 
@@ -46,10 +47,6 @@
 #define CPU_PA_RISC1_1 0x210
 #endif /* CPU_PA_RISC1_1 */
 
-#ifndef CPU_PA_RISC2_0
-#define CPU_PA_RISC2_0 0x214
-#endif /* CPU_PA_RISC2_0 */
-
 #ifndef _PA_RISC1_0_ID
 #define _PA_RISC1_0_ID CPU_PA_RISC1_0
 #endif /* _PA_RISC1_0_ID */
@@ -57,10 +54,6 @@
 #ifndef _PA_RISC1_1_ID
 #define _PA_RISC1_1_ID CPU_PA_RISC1_1
 #endif /* _PA_RISC1_1_ID */
-
-#ifndef _PA_RISC2_0_ID
-#define _PA_RISC2_0_ID CPU_PA_RISC2_0
-#endif /* _PA_RISC2_0_ID */
 
 #ifndef _PA_RISC_MAXID
 #define _PA_RISC_MAXID	0x2FF
@@ -147,8 +140,6 @@ struct som_misc_symbol_info
   unsigned int arg_reloc;
   unsigned int symbol_info;
   unsigned int symbol_value;
-  unsigned int priv_level;
-  unsigned int secondary_def;
 };
 
 /* Forward declarations */
@@ -156,9 +147,8 @@ struct som_misc_symbol_info
 static boolean som_mkobject PARAMS ((bfd *));
 static const bfd_target * som_object_setup PARAMS ((bfd *,
 						    struct header *,
-						    struct som_exec_auxhdr *,
-						    unsigned long));
-static boolean setup_sections PARAMS ((bfd *, struct header *, unsigned long));
+						    struct som_exec_auxhdr *));
+static boolean setup_sections PARAMS ((bfd *, struct header *));
 static const bfd_target * som_object_p PARAMS ((bfd *));
 static boolean som_write_object_contents PARAMS ((bfd *));
 static boolean som_slurp_string_table PARAMS ((bfd *));
@@ -184,7 +174,7 @@ static boolean som_bfd_copy_private_section_data PARAMS ((bfd *, asection *,
 static boolean som_bfd_copy_private_bfd_data PARAMS ((bfd *, bfd *));
 #define som_bfd_merge_private_bfd_data _bfd_generic_bfd_merge_private_bfd_data
 #define som_bfd_set_private_flags _bfd_generic_bfd_set_private_flags
-static boolean som_bfd_is_local_label_name PARAMS ((bfd *, const char *));
+static boolean som_bfd_is_local_label PARAMS ((bfd *, asymbol *));
 static boolean som_set_section_contents PARAMS ((bfd *, sec_ptr, PTR,
 						 file_ptr, bfd_size_type));
 static boolean som_get_section_contents PARAMS ((bfd *, sec_ptr, PTR,
@@ -239,8 +229,7 @@ static boolean som_write_space_strings PARAMS ((bfd *, unsigned long,
 						unsigned int *));
 static boolean som_write_symbol_strings PARAMS ((bfd *, unsigned long,
 						 asymbol **, unsigned int,
-						 unsigned *,
-						 COMPUNIT *));
+						 unsigned *));
 static boolean som_begin_writing PARAMS ((bfd *));
 static reloc_howto_type * som_bfd_reloc_type_lookup
 	PARAMS ((bfd *, bfd_reloc_code_real_type));
@@ -261,8 +250,8 @@ static boolean som_bfd_prep_for_ar_write PARAMS ((bfd *, unsigned int *,
 static unsigned int som_bfd_ar_symbol_hash PARAMS ((asymbol *));
 static boolean som_bfd_ar_write_symbol_stuff PARAMS ((bfd *, unsigned int,
 						      unsigned int,
-						      struct lst_header,
-						      unsigned int));
+						      struct lst_header));
+static CONST char *normalize PARAMS ((CONST char *file));
 static boolean som_is_space PARAMS ((asection *));
 static boolean som_is_subspace PARAMS ((asection *));
 static boolean som_is_container PARAMS ((asection *, asection *));
@@ -441,6 +430,7 @@ static const struct fixup_format som_fixup_formats[256] =
   1,    "Lb4*=Mb1+L*=",	/* 0x2b */
   2,    "Lb4*=Md1+4*=",	/* 0x2c */
   3,    "Ld1+=Me1+=",	/* 0x2d */
+  /* R_RESERVED */
   0,   	"",	        /* 0x2e */
   0,   	"",	        /* 0x2f */
   /* R_PCREL_CALL */
@@ -458,9 +448,8 @@ static const struct fixup_format som_fixup_formats[256] =
   1,    "L4=RD8<b+=Sb=",/* 0x3b */
   0,    "L4=RD8<b+=Sd=",/* 0x3c */
   1,    "L4=RD8<b+=Sd=",/* 0x3d */
-  /* R_SHORT_PCREL_MODE */
+  /* R_RESERVED */
   0,    "",	        /* 0x3e */
-  /* R_LONG_PCREL_MODE */
   0,    "",	        /* 0x3f */
   /* R_ABS_CALL */
   0,    "L4=RD=Sb=",	/* 0x40 */
@@ -635,8 +624,8 @@ static const struct fixup_format som_fixup_formats[256] =
   4,    "Ve=",	        /* 0xcd */
   /* R_TRANSLATED */
   0,    "",	        /* 0xce */
-  /* R_AUX_UNWIND */
-  0,    "Sd=Vf=Ef=",    /* 0xcf */
+  /* R_RESERVED */
+  0,    "",	        /* 0xcf */
   /* R_COMP1 */
   0,    "Ob=",	        /* 0xd0 */
   /* R_COMP2 */
@@ -648,21 +637,14 @@ static const struct fixup_format som_fixup_formats[256] =
   1,    "P",	        /* 0xd4 */
   2,    "P",	        /* 0xd5 */
   3,    "P",	        /* 0xd6 */
-  /* R_SEC_STMT */
-  0,	"",		/* 0xd7 */
-  /* R_N0SEL */
-  0,	"",		/* 0xd8 */
-  /* R_N1SEL */
-  0,	"",		/* 0xd9 */
-  /* R_LINETAB */
-  0,	"Eb=Sd=Ve=",	/* 0xda */
-  /* R_LINETAB_ESC */
-  0,	"Eb=Mb=",	/* 0xdb */
-  /* R_LTP_OVERRIDE */
-  0,	"",		/* 0xdc */
-  /* R_COMMENT */
-  0,    "Ob=Ve=",	/* 0xdd */
   /* R_RESERVED */
+  0,	"",		/* 0xd7 */
+  0,	"",		/* 0xd8 */
+  0,	"",		/* 0xd9 */
+  0,	"",		/* 0xda */
+  0,	"",		/* 0xdb */
+  0,	"",		/* 0xdc */
+  0,	"",		/* 0xdd */
   0,	"",		/* 0xde */
   0,	"",		/* 0xdf */
   0,	"",		/* 0xe0 */
@@ -737,7 +719,7 @@ static const int comp3_opcodes[] =
   -1
 };
 
-/* These apparently are not in older versions of hpux reloc.h (hpux7).  */
+/* These apparently are not in older versions of hpux reloc.h.  */
 #ifndef R_DLT_REL
 #define R_DLT_REL 0x78
 #endif
@@ -749,43 +731,6 @@ static const int comp3_opcodes[] =
 #ifndef R_SEC_STMT
 #define R_SEC_STMT 0xd7
 #endif
-
-/* And these first appeared in hpux10.  */
-#ifndef R_SHORT_PCREL_MODE
-#define NO_PCREL_MODES
-#define R_SHORT_PCREL_MODE 0x3e
-#endif
-
-#ifndef R_LONG_PCREL_MODE
-#define R_LONG_PCREL_MODE 0x3f
-#endif
-
-#ifndef R_N0SEL
-#define R_N0SEL 0xd8
-#endif
-
-#ifndef R_N1SEL
-#define R_N1SEL 0xd9
-#endif
-
-#ifndef R_LINETAB
-#define R_LINETAB 0xda
-#endif
-
-#ifndef R_LINETAB_ESC
-#define R_LINETAB_ESC 0xdb
-#endif
-
-#ifndef R_LTP_OVERRIDE
-#define R_LTP_OVERRIDE 0xdc
-#endif
-
-#ifndef R_COMMENT
-#define R_COMMENT 0xdd
-#endif
-
-#define SOM_HOWTO(TYPE, NAME)	\
-  HOWTO(TYPE, 0, 0, 32, false, 0, 0, hppa_som_reloc, NAME, false, 0, 0, false)
 
 static reloc_howto_type som_hppa_howto_table[] =
 {
@@ -851,8 +796,8 @@ static reloc_howto_type som_hppa_howto_table[] =
   {R_PCREL_CALL, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_PCREL_CALL"},
   {R_PCREL_CALL, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_PCREL_CALL"},
   {R_PCREL_CALL, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_PCREL_CALL"},
-  {R_SHORT_PCREL_MODE, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_SHORT_PCREL_MODE"},
-  {R_LONG_PCREL_MODE, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_LONG_PCREL_MODE"},
+  {R_RESERVED, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_RESERVED"},
+  {R_RESERVED, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_RESERVED"},
   {R_ABS_CALL, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_ABS_CALL"},
   {R_ABS_CALL, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_ABS_CALL"},
   {R_ABS_CALL, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_ABS_CALL"},
@@ -1005,12 +950,12 @@ static reloc_howto_type som_hppa_howto_table[] =
   {R_PREV_FIXUP, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_PREV_FIXUP"},
   {R_PREV_FIXUP, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_PREV_FIXUP"},
   {R_SEC_STMT, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_SEC_STMT"},
-  {R_N0SEL, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_N0SEL"},
-  {R_N1SEL, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_N1SEL"},
-  {R_LINETAB, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_LINETAB"},
-  {R_LINETAB_ESC, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_LINETAB_ESC"},
-  {R_LTP_OVERRIDE, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_LTP_OVERRIDE"},
-  {R_COMMENT, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_COMMENT"},
+  {R_RESERVED, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_RESERVED"},
+  {R_RESERVED, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_RESERVED"},
+  {R_RESERVED, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_RESERVED"},
+  {R_RESERVED, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_RESERVED"},
+  {R_RESERVED, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_RESERVED"},
+  {R_RESERVED, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_RESERVED"},
   {R_RESERVED, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_RESERVED"},
   {R_RESERVED, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_RESERVED"},
   {R_RESERVED, 0, 0, 32, false, 0, 0, hppa_som_reloc, "R_RESERVED"},
@@ -1452,20 +1397,22 @@ hppa_som_reloc (abfd, reloc_entry, symbol_in, data,
    and a field selector, return one or more appropriate SOM relocations.  */
 
 int **
-hppa_som_gen_reloc_type (abfd, base_type, format, field, sym_diff, sym)
+hppa_som_gen_reloc_type (abfd, base_type, format, field, sym_diff)
      bfd *abfd;
      int base_type;
      int format;
      enum hppa_reloc_field_selector_type_alt field;
      int sym_diff;
-     asymbol *sym;
 {
   int *final_type, **final_types;
 
-  final_types = (int **) bfd_alloc (abfd, sizeof (int *) * 6);
-  final_type = (int *) bfd_alloc (abfd, sizeof (int));
+  final_types = (int **) bfd_alloc_by_size_t (abfd, sizeof (int *) * 6);
+  final_type = (int *) bfd_alloc_by_size_t (abfd, sizeof (int));
   if (!final_types || !final_type)
-    return NULL;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return NULL;
+    }
 
   /* The field selector may require additional relocations to be 
      generated.  It's impossible to know at this moment if additional
@@ -1487,9 +1434,12 @@ hppa_som_gen_reloc_type (abfd, base_type, format, field, sym_diff, sym)
       case e_tsel:
       case e_ltsel:
       case e_rtsel:
-	final_types[0] = (int *) bfd_alloc (abfd, sizeof (int));
+	final_types[0] = (int *) bfd_alloc_by_size_t (abfd, sizeof (int));
 	if (!final_types[0])
-	  return NULL;
+	  {
+	    bfd_set_error (bfd_error_no_memory);
+	    return NULL;
+	  }
 	if (field == e_tsel)
 	  *final_types[0] = R_FSEL;
 	else if (field == e_ltsel)
@@ -1503,9 +1453,12 @@ hppa_som_gen_reloc_type (abfd, base_type, format, field, sym_diff, sym)
 
       case e_lssel:
       case e_rssel:
-	final_types[0] = (int *) bfd_alloc (abfd, sizeof (int));
+	final_types[0] = (int *) bfd_alloc_by_size_t (abfd, sizeof (int));
 	if (!final_types[0])
-	  return NULL;
+	  {
+	    bfd_set_error (bfd_error_no_memory);
+	    return NULL;
+	  }
 	*final_types[0] = R_S_MODE;
 	final_types[1] = final_type;
 	final_types[2] = NULL;
@@ -1514,9 +1467,12 @@ hppa_som_gen_reloc_type (abfd, base_type, format, field, sym_diff, sym)
 
       case e_lsel:
       case e_rsel:
-	final_types[0] = (int *) bfd_alloc (abfd, sizeof (int));
+	final_types[0] = (int *) bfd_alloc_by_size_t (abfd, sizeof (int));
 	if (!final_types[0])
-	  return NULL;
+	  {
+	    bfd_set_error (bfd_error_no_memory);
+	    return NULL;
+	  }
 	*final_types[0] = R_N_MODE;
 	final_types[1] = final_type;
 	final_types[2] = NULL;
@@ -1525,9 +1481,12 @@ hppa_som_gen_reloc_type (abfd, base_type, format, field, sym_diff, sym)
 
       case e_ldsel:
       case e_rdsel:
-	final_types[0] = (int *) bfd_alloc (abfd, sizeof (int));
+	final_types[0] = (int *) bfd_alloc_by_size_t (abfd, sizeof (int));
 	if (!final_types[0])
-	  return NULL;
+	  {
+	    bfd_set_error (bfd_error_no_memory);
+	    return NULL;
+	  }
 	*final_types[0] = R_D_MODE;
 	final_types[1] = final_type;
 	final_types[2] = NULL;
@@ -1536,40 +1495,15 @@ hppa_som_gen_reloc_type (abfd, base_type, format, field, sym_diff, sym)
 
       case e_lrsel:
       case e_rrsel:
-	final_types[0] = (int *) bfd_alloc (abfd, sizeof (int));
+	final_types[0] = (int *) bfd_alloc_by_size_t (abfd, sizeof (int));
 	if (!final_types[0])
-	  return NULL;
+	  {
+	    bfd_set_error (bfd_error_no_memory);
+	    return NULL;
+	  }
 	*final_types[0] = R_R_MODE;
 	final_types[1] = final_type;
 	final_types[2] = NULL;
-	*final_type = base_type;
-	break;
-
-      case e_nsel:
-	final_types[0] = (int *) bfd_alloc (abfd, sizeof (int));
-	if (!final_types[0])
-	  return NULL;
-	*final_types[0] = R_N1SEL;
-	final_types[1] = final_type;
-	final_types[2] = NULL;
-	*final_type = base_type;
-	break;
-
-      case e_nlsel:
-      case e_nlrsel:
-	final_types[0] = (int *) bfd_alloc (abfd, sizeof (int));
-	if (!final_types[0])
-	  return NULL;
-	*final_types[0] = R_N0SEL;
-	final_types[1] = (int *) bfd_alloc (abfd, sizeof (int));
-	if (!final_types[1])
-	  return NULL;
-	if (field == e_nlsel)
-	  *final_types[1] = R_N_MODE;
-	else
-	  *final_types[1] = R_R_MODE;
-	final_types[2] = final_type;
-	final_types[3] = NULL;
 	*final_type = base_type;
 	break;
     }
@@ -1580,12 +1514,15 @@ hppa_som_gen_reloc_type (abfd, base_type, format, field, sym_diff, sym)
       /* The difference of two symbols needs *very* special handling.  */
       if (sym_diff)
 	{
-	  final_types[0] = (int *)bfd_alloc (abfd, sizeof (int));
-	  final_types[1] = (int *)bfd_alloc (abfd, sizeof (int));
-	  final_types[2] = (int *)bfd_alloc (abfd, sizeof (int));
-	  final_types[3] = (int *)bfd_alloc (abfd, sizeof (int));
+	  final_types[0] = (int *)bfd_alloc_by_size_t (abfd, sizeof (int));
+	  final_types[1] = (int *)bfd_alloc_by_size_t (abfd, sizeof (int));
+	  final_types[2] = (int *)bfd_alloc_by_size_t (abfd, sizeof (int));
+	  final_types[3] = (int *)bfd_alloc_by_size_t (abfd, sizeof (int));
 	  if (!final_types[0] || !final_types[1] || !final_types[2])
+          {
+            bfd_set_error (bfd_error_no_memory);
             return NULL;
+          }
 	  if (field == e_fsel)
 	    *final_types[0] = R_FSEL;
 	  else if (field == e_rsel)
@@ -1596,10 +1533,7 @@ hppa_som_gen_reloc_type (abfd, base_type, format, field, sym_diff, sym)
 	  *final_types[2] = R_COMP2;
 	  *final_types[3] = R_COMP1;
 	  final_types[4] = final_type;
-	  if (format == 32)
-	    *final_types[4] = R_DATA_EXPR;
-	  else
-	    *final_types[4] = R_CODE_EXPR;
+	  *final_types[4] = R_CODE_EXPR;
 	  final_types[5] = NULL;
 	  break;
 	}
@@ -1622,32 +1556,9 @@ hppa_som_gen_reloc_type (abfd, base_type, format, field, sym_diff, sym)
 	*final_type = R_DLT_REL;
       /* A relocation in the data space is always a full 32bits.  */
       else if (format == 32)
-	{
-	  *final_type = R_DATA_ONE_SYMBOL;
+	*final_type = R_DATA_ONE_SYMBOL;
 
-	  /* If there's no SOM symbol type associated with this BFD
-	     symbol, then set the symbol type to ST_DATA.
-
-	     Only do this if the type is going to default later when
-	     we write the object file.
-
-	     This is done so that the linker never encounters an
-	     R_DATA_ONE_SYMBOL reloc involving an ST_CODE symbol.
-
-	     This allows the compiler to generate exception handling
-	     tables.
-
-	     Note that one day we may need to also emit BEGIN_BRTAB and
-	     END_BRTAB to prevent the linker from optimizing away insns
-	     in exception handling regions.  */
-	  if (som_symbol_data (sym)->som_type == SYMBOL_TYPE_UNKNOWN
-	      && (sym->flags & BSF_SECTION_SYM) == 0
-	      && (sym->flags & BSF_FUNCTION) == 0
-	      && ! bfd_is_com_section (sym->section))
-	    som_symbol_data (sym)->som_type = SYMBOL_TYPE_DATA;
-	}
       break;
-
 
     case R_HPPA_GOTOFF:
       /* More PLABEL special cases.  */
@@ -1661,12 +1572,15 @@ hppa_som_gen_reloc_type (abfd, base_type, format, field, sym_diff, sym)
       /* The difference of two symbols needs *very* special handling.  */
       if (sym_diff)
 	{
-	  final_types[0] = (int *)bfd_alloc (abfd, sizeof (int));
-	  final_types[1] = (int *)bfd_alloc (abfd, sizeof (int));
-	  final_types[2] = (int *)bfd_alloc (abfd, sizeof (int));
-	  final_types[3] = (int *)bfd_alloc (abfd, sizeof (int));
+	  final_types[0] = (int *)bfd_alloc_by_size_t (abfd, sizeof (int));
+	  final_types[1] = (int *)bfd_alloc_by_size_t (abfd, sizeof (int));
+	  final_types[2] = (int *)bfd_alloc_by_size_t (abfd, sizeof (int));
+	  final_types[3] = (int *)bfd_alloc_by_size_t (abfd, sizeof (int));
 	  if (!final_types[0] || !final_types[1] || !final_types[2])
+          {
+            bfd_set_error (bfd_error_no_memory);
             return NULL;
+          }
 	  if (field == e_fsel)
 	    *final_types[0] = R_FSEL;
 	  else if (field == e_rsel)
@@ -1677,10 +1591,7 @@ hppa_som_gen_reloc_type (abfd, base_type, format, field, sym_diff, sym)
 	  *final_types[2] = R_COMP2;
 	  *final_types[3] = R_COMP1;
 	  final_types[4] = final_type;
-	  if (format == 32)
-	    *final_types[4] = R_DATA_EXPR;
-	  else
-	    *final_types[4] = R_CODE_EXPR;
+	  *final_types[4] = R_CODE_EXPR;
 	  final_types[5] = NULL;
 	  break;
 	}
@@ -1689,28 +1600,9 @@ hppa_som_gen_reloc_type (abfd, base_type, format, field, sym_diff, sym)
 
     case R_HPPA_NONE:
     case R_HPPA_ABS_CALL:
+    case R_HPPA_PCREL_CALL:
       /* Right now we can default all these.  */
       break;
-
-    case R_HPPA_PCREL_CALL:
-      {
-#ifndef NO_PCREL_MODES
-	/* If we have short and long pcrel modes, then generate the proper
-	   mode selector, then the pcrel relocation.  Redundant selectors
-	   will be eliminted as the relocs are sized and emitted.  */
-	final_types[0] = (int *) bfd_alloc (abfd, sizeof (int));
-	if (!final_types[0])
-	  return NULL;
-	if (format == 17)
-	  *final_types[0] = R_SHORT_PCREL_MODE;
-	else
-	  *final_types[0] = R_LONG_PCREL_MODE;
-	final_types[1] = final_type;
-	final_types[2] = NULL;
-	*final_type = base_type;
-#endif
-	break;
-      }
     }
   return final_types;
 }
@@ -1737,11 +1629,10 @@ som_bfd_reloc_type_lookup (abfd, code)
    initialization in the BFD.  */
 
 static const bfd_target *
-som_object_setup (abfd, file_hdrp, aux_hdrp, current_offset)
+som_object_setup (abfd, file_hdrp, aux_hdrp)
      bfd *abfd;
      struct header *file_hdrp;
      struct som_exec_auxhdr *aux_hdrp;
-     unsigned long current_offset;
 {
   asection *section;
   int found;
@@ -1751,7 +1642,7 @@ som_object_setup (abfd, file_hdrp, aux_hdrp, current_offset)
     return 0;
 
   /* Set BFD flags based on what information is available in the SOM.  */
-  abfd->flags = BFD_NO_FLAGS;
+  abfd->flags = NO_FLAGS;
   if (file_hdrp->symbol_total)
     abfd->flags |= HAS_LINENO | HAS_DEBUG | HAS_SYMS | HAS_LOCALS;
 
@@ -1786,7 +1677,10 @@ som_object_setup (abfd, file_hdrp, aux_hdrp, current_offset)
   obj_som_exec_data (abfd) = (struct som_exec_data *)
     bfd_zalloc (abfd, sizeof (struct som_exec_data ));
   if (obj_som_exec_data (abfd) == NULL)
-    return NULL;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return NULL;
+    }
 
   /* The braindamaged OSF1 linker switched exec_flags and exec_entry!
 
@@ -1817,7 +1711,7 @@ som_object_setup (abfd, file_hdrp, aux_hdrp, current_offset)
     }
   else
     {
-      bfd_get_start_address (abfd) = aux_hdrp->exec_entry + current_offset;
+      bfd_get_start_address (abfd) = aux_hdrp->exec_entry;
       obj_som_exec_data (abfd)->exec_flags = aux_hdrp->exec_flags;
     }
 
@@ -1831,11 +1725,9 @@ som_object_setup (abfd, file_hdrp, aux_hdrp, current_offset)
   obj_som_symtab (abfd) = (som_symbol_type *) NULL;
   obj_som_sorted_syms (abfd) = NULL;
   obj_som_stringtab_size (abfd) = file_hdrp->symbol_strings_size;
-  obj_som_sym_filepos (abfd) = file_hdrp->symbol_location + current_offset;
-  obj_som_str_filepos (abfd) = (file_hdrp->symbol_strings_location
-				+ current_offset);
-  obj_som_reloc_filepos (abfd) = (file_hdrp->fixup_request_location
-				  + current_offset);
+  obj_som_sym_filepos (abfd) = file_hdrp->symbol_location;
+  obj_som_str_filepos (abfd) = file_hdrp->symbol_strings_location;
+  obj_som_reloc_filepos (abfd) = file_hdrp->fixup_request_location;
   obj_som_exec_data (abfd)->system_id = file_hdrp->system_id;
 
   return abfd->xvec;
@@ -1848,10 +1740,9 @@ som_object_setup (abfd, file_hdrp, aux_hdrp, current_offset)
    associated subspaces.  */
 
 static boolean
-setup_sections (abfd, file_hdr, current_offset)
+setup_sections (abfd, file_hdr)
      bfd *abfd;
      struct header *file_hdr;
-     unsigned long current_offset;
 {
   char *space_strings;
   unsigned int space_index, i;
@@ -1860,12 +1751,14 @@ setup_sections (abfd, file_hdr, current_offset)
 
   /* First, read in space names */
 
-  space_strings = bfd_malloc (file_hdr->space_strings_size);
+  space_strings = malloc (file_hdr->space_strings_size);
   if (!space_strings && file_hdr->space_strings_size != 0)
-    goto error_return;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      goto error_return;
+    }
 
-  if (bfd_seek (abfd, current_offset + file_hdr->space_strings_location, 
-  		SEEK_SET) < 0)
+  if (bfd_seek (abfd, file_hdr->space_strings_location, SEEK_SET) < 0)
     goto error_return;
   if (bfd_read (space_strings, 1, file_hdr->space_strings_size, abfd)
       != file_hdr->space_strings_size)
@@ -1881,10 +1774,8 @@ setup_sections (abfd, file_hdr, current_offset)
       char *newname;
 
       /* Read the space dictionary element */
-      if (bfd_seek (abfd,
-		    (current_offset + file_hdr->space_location
-		     + space_index * sizeof space),
-		    SEEK_SET) < 0)
+      if (bfd_seek (abfd, file_hdr->space_location
+		    + space_index * sizeof space, SEEK_SET) < 0)
 	goto error_return;
       if (bfd_read (&space, 1, sizeof space, abfd) != sizeof space)
 	goto error_return;
@@ -1916,23 +1807,21 @@ setup_sections (abfd, file_hdr, current_offset)
 	continue;
 
       /* Now, read in the first subspace for this space */
-      if (bfd_seek (abfd,
-		    (current_offset + file_hdr->subspace_location
-		     + space.subspace_index * sizeof subspace),
+      if (bfd_seek (abfd, file_hdr->subspace_location
+		    + space.subspace_index * sizeof subspace,
 		    SEEK_SET) < 0)
 	goto error_return;
       if (bfd_read (&subspace, 1, sizeof subspace, abfd) != sizeof subspace)
 	goto error_return;
       /* Seek back to the start of the subspaces for loop below */
-      if (bfd_seek (abfd,
-		    (current_offset + file_hdr->subspace_location
-		     + space.subspace_index * sizeof subspace),
+      if (bfd_seek (abfd, file_hdr->subspace_location
+		    + space.subspace_index * sizeof subspace,
 		    SEEK_SET) < 0)
 	goto error_return;
 
       /* Setup the start address and file loc from the first subspace record */
       space_asect->vma = subspace.subspace_start;
-      space_asect->filepos = subspace.file_loc_init_value + current_offset;
+      space_asect->filepos = subspace.file_loc_init_value;
       space_asect->alignment_power = log2 (subspace.alignment);
       if (space_asect->alignment_power == -1)
 	goto error_return;
@@ -2056,36 +1945,29 @@ setup_sections (abfd, file_hdr, current_offset)
 	  subspace_asect->vma = subspace.subspace_start;
 	  subspace_asect->_cooked_size = subspace.subspace_length;
 	  subspace_asect->_raw_size = subspace.subspace_length;
-	  subspace_asect->filepos = (subspace.file_loc_init_value
-				     + current_offset);
+	  subspace_asect->filepos = subspace.file_loc_init_value;
 	  subspace_asect->alignment_power = log2 (subspace.alignment);
 	  if (subspace_asect->alignment_power == -1)
 	    goto error_return;
 	}
 
-      /* This can happen for a .o which defines symbols in otherwise
-         empty subspaces.  */
+      /* Yow! there is no subspace within the space which actually 
+         has initialized information in it; this should never happen
+         as far as I know.  */
       if (!save_subspace.file_loc_init_value)
-	{
-	  space_asect->_cooked_size = 0;
-	  space_asect->_raw_size = 0;
-	}
-      else
-	{
-	  /* Setup the sizes for the space section based upon the info in the
-	     last subspace of the space.  */
-	  space_asect->_cooked_size = (save_subspace.subspace_start
-				       - space_asect->vma
-				       + save_subspace.subspace_length);
-	  space_asect->_raw_size = (save_subspace.file_loc_init_value
-				    - space_asect->filepos
-				    + save_subspace.initialization_length);
-	}
+	goto error_return;
+
+      /* Setup the sizes for the space section based upon the info in the
+         last subspace of the space.  */
+      space_asect->_cooked_size = save_subspace.subspace_start
+	- space_asect->vma + save_subspace.subspace_length;
+      space_asect->_raw_size = save_subspace.file_loc_init_value
+	- space_asect->filepos + save_subspace.initialization_length;
     }
   /* Now that we've read in all the subspace records, we need to assign
      a target index to each subspace.  */
-  subspace_sections = (asection **) bfd_malloc (total_subspaces
-						* sizeof (asection *));
+  subspace_sections = (asection **) malloc (total_subspaces
+					    * sizeof (asection *));
   if (subspace_sections == NULL)
     goto error_return;
 
@@ -2130,10 +2012,6 @@ som_object_p (abfd)
 {
   struct header file_hdr;
   struct som_exec_auxhdr aux_hdr;
-  unsigned long current_offset = 0;
-  struct lst_header lst_header;
-  struct som_entry som_entry;
-#define ENTRY_SIZE sizeof(struct som_entry)
 
   if (bfd_read ((PTR) & file_hdr, 1, FILE_HDR_SIZE, abfd) != FILE_HDR_SIZE)
     {
@@ -2160,68 +2038,13 @@ som_object_p (abfd)
 #ifdef SHL_MAGIC
     case SHL_MAGIC:
 #endif
+#ifdef EXECLIBMAGIC
+    case EXECLIBMAGIC:
+#endif
 #ifdef SHARED_MAGIC_CNX
     case SHARED_MAGIC_CNX:
 #endif
       break;
-
-#ifdef EXECLIBMAGIC
-    case EXECLIBMAGIC:
-      /* Read the lst header and determine where the SOM directory begins */
-
-      if (bfd_seek (abfd, (file_ptr) 0, SEEK_SET) < 0)
-        {
-          if (bfd_get_error () != bfd_error_system_call)
-	    bfd_set_error (bfd_error_wrong_format);
-          return 0;
-        }
-
-      if (bfd_read ((PTR) & lst_header, 1, SLSTHDR, abfd) != SLSTHDR)
-        {
-          if (bfd_get_error () != bfd_error_system_call)
-	    bfd_set_error (bfd_error_wrong_format);
-          return 0;
-        }
-
-      /* Position to and read the first directory entry */
-
-      if (bfd_seek (abfd, lst_header.dir_loc, SEEK_SET) < 0)
-        {
-          if (bfd_get_error () != bfd_error_system_call)
-	    bfd_set_error (bfd_error_wrong_format);
-          return 0;
-        }
-
-      if (bfd_read ((PTR) & som_entry, 1, ENTRY_SIZE, abfd) != ENTRY_SIZE)
-        {
-          if (bfd_get_error () != bfd_error_system_call)
-	    bfd_set_error (bfd_error_wrong_format);
-          return 0;
-        }
-
-      /* Now position to the first SOM */
-
-      if (bfd_seek (abfd, som_entry.location, SEEK_SET) < 0)
-        {
-          if (bfd_get_error () != bfd_error_system_call)
-	    bfd_set_error (bfd_error_wrong_format);
-          return 0;
-        }
-
-      current_offset = som_entry.location;
-
-      /* And finally, re-read the som header */
-
-      if (bfd_read ((PTR) & file_hdr, 1, FILE_HDR_SIZE, abfd) != FILE_HDR_SIZE)
-        {
-          if (bfd_get_error () != bfd_error_system_call)
-	    bfd_set_error (bfd_error_wrong_format);
-          return 0;
-        }
-
-      break;
-#endif
-
     default:
       bfd_set_error (bfd_error_wrong_format);
       return 0;
@@ -2248,7 +2071,7 @@ som_object_p (abfd)
 	}
     }
 
-  if (!setup_sections (abfd, &file_hdr, current_offset))
+  if (!setup_sections (abfd, &file_hdr))
     {
       /* setup_sections does not bubble up a bfd error code.  */
       bfd_set_error (bfd_error_bad_value);
@@ -2256,7 +2079,7 @@ som_object_p (abfd)
     }
 
   /* This appears to be a valid SOM object.  Do some initialization.  */
-  return som_object_setup (abfd, &file_hdr, &aux_hdr, current_offset);
+  return som_object_setup (abfd, &file_hdr, &aux_hdr);
 }
 
 /* Create a SOM object.  */
@@ -2269,7 +2092,10 @@ som_mkobject (abfd)
   abfd->tdata.som_data = (struct som_data_struct *)
     bfd_zalloc (abfd, sizeof (struct som_data_struct));
   if (abfd->tdata.som_data == NULL)
-    return false;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return false;
+    }
   return true;
 }
 
@@ -2287,7 +2113,11 @@ som_prep_headers (abfd)
   /* Make and attach a file header to the BFD.  */
   file_hdr = (struct header *) bfd_zalloc (abfd, sizeof (struct header));
   if (file_hdr == NULL)
-    return false;
+
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return false;
+    }
   obj_som_file_hdr (abfd) = file_hdr;
 
   if (abfd->flags & (EXEC_P | DYNAMIC))
@@ -2297,7 +2127,10 @@ som_prep_headers (abfd)
       obj_som_exec_hdr (abfd) = (struct som_exec_auxhdr *)
 	bfd_zalloc (abfd, sizeof (struct som_exec_auxhdr));
       if (obj_som_exec_hdr (abfd) == NULL)
-	return false;
+	{
+	  bfd_set_error (bfd_error_no_memory);
+	  return false;
+	}
 
       if (abfd->flags & D_PAGED)
 	file_hdr->a_magic = DEMAND_MAGIC;
@@ -2344,7 +2177,10 @@ som_prep_headers (abfd)
 	    = (struct space_dictionary_record *)
 	      bfd_zalloc (abfd, sizeof (struct space_dictionary_record));
 	  if (som_section_data (section)->space_dict == NULL)
-	    return false;
+	    {
+	      bfd_set_error (bfd_error_no_memory);
+	      return false;
+	    }
 	  /* Set space attributes.  Note most attributes of SOM spaces
 	     are set based on the subspaces it contains.  */
 	  som_section_data (section)->space_dict->loader_fix_index = -1;
@@ -2367,7 +2203,10 @@ som_prep_headers (abfd)
 	    = (struct subspace_dictionary_record *)
 	      bfd_zalloc (abfd, sizeof (struct subspace_dictionary_record));
 	  if (som_section_data (section)->subspace_dict == NULL)
-	    return false;
+	    {
+	      bfd_set_error (bfd_error_no_memory);
+	      return false;
+	    }
 
 	  /* Set subspace attributes.  Basic stuff is done here, additional
 	     attributes are filled in later as more information becomes
@@ -2689,9 +2528,6 @@ som_write_fixups (abfd, current_offset, total_reloc_sizep)
 	   subsection = subsection->next)
 	{
 	  int reloc_offset, current_rounding_mode;
-#ifndef NO_PCREL_MODES
- 	  int current_call_mode;
-#endif
 
 	  /* Find a subspace of this space.  */
 	  if (!som_is_subspace (subsection)
@@ -2726,9 +2562,6 @@ som_write_fixups (abfd, current_offset, total_reloc_sizep)
 	  reloc_offset = 0;
 	  som_initialize_reloc_queue (reloc_queue);
 	  current_rounding_mode = R_N_MODE;
-#ifndef NO_PCREL_MODES
-	  current_call_mode = R_SHORT_PCREL_MODE;
-#endif
 
 	  /* Translate each BFD relocation into one or more SOM 
 	     relocations.  */
@@ -2775,6 +2608,8 @@ som_write_fixups (abfd, current_offset, total_reloc_sizep)
 		 later relocation.  */
 	      switch (bfd_reloc->howto->type)
 		{
+		/* This only needs to handle relocations that may be
+		   made by hppa_som_gen_reloc.  */
 		case R_ENTRY:
 		case R_ALT_ENTRY:
 		case R_EXIT:
@@ -2789,14 +2624,6 @@ som_write_fixups (abfd, current_offset, total_reloc_sizep)
 		case R_COMP2:
 		case R_BEGIN_BRTAB:
 		case R_END_BRTAB:
-		case R_BEGIN_TRY:
-		case R_END_TRY:
-		case R_N0SEL:
-		case R_N1SEL:
-#ifndef NO_PCREL_MODES
-		case R_SHORT_PCREL_MODE:
-		case R_LONG_PCREL_MODE:
-#endif
 		  reloc_offset = bfd_reloc->address;
 		  break;
 
@@ -2921,19 +2748,6 @@ som_write_fixups (abfd, current_offset, total_reloc_sizep)
 		    }
 		  break;
 
-#ifndef NO_PCREL_MODES
-		case R_LONG_PCREL_MODE:
-		case R_SHORT_PCREL_MODE:
-		  if (bfd_reloc->howto->type != current_call_mode)
-		    {
-		      bfd_put_8 (abfd, bfd_reloc->howto->type, p);
-		      subspace_reloc_size += 1;
-		      p += 1;
-		      current_call_mode = bfd_reloc->howto->type;
-		    }
-		  break;
-#endif
-
 		case R_EXIT:
 		case R_ALT_ENTRY:
 		case R_FSEL:
@@ -2941,37 +2755,11 @@ som_write_fixups (abfd, current_offset, total_reloc_sizep)
 		case R_RSEL:
 		case R_BEGIN_BRTAB:
 		case R_END_BRTAB:
-		case R_BEGIN_TRY:
-		case R_N0SEL:
-		case R_N1SEL:
 		  bfd_put_8 (abfd, bfd_reloc->howto->type, p);
 		  subspace_reloc_size += 1;
 		  p += 1;
 		  break;
 
-		case R_END_TRY:
-		  /* The end of a exception handling region.  The reloc's
-		     addend contains the offset of the exception handling
-		     code.  */
-		  if (bfd_reloc->addend == 0)
-		    bfd_put_8 (abfd, bfd_reloc->howto->type, p);
-		  else if (bfd_reloc->addend < 1024)
-		    {
-		      bfd_put_8 (abfd, bfd_reloc->howto->type + 1, p);
-		      bfd_put_8 (abfd, bfd_reloc->addend / 4, p + 1);
-		      p = try_prev_fixup (abfd, &subspace_reloc_size,
-					  p, 2, reloc_queue);
-		    }
-		  else
-		    {
-		      bfd_put_8 (abfd, bfd_reloc->howto->type + 2, p);
-		      bfd_put_8 (abfd, (bfd_reloc->addend / 4) >> 16, p + 1);
-		      bfd_put_16 (abfd, bfd_reloc->addend / 4, p + 2);
-		      p = try_prev_fixup (abfd, &subspace_reloc_size,
-					  p, 4, reloc_queue);
-		    }
-		  break;
-		      
 		case R_COMP1:
 		  /* The only time we generate R_COMP1, R_COMP2 and 
 		     R_CODE_EXPR relocs is for the difference of two
@@ -2995,7 +2783,6 @@ som_write_fixups (abfd, current_offset, total_reloc_sizep)
 		  break;
 
 		case R_CODE_EXPR:
-		case R_DATA_EXPR:
 		  /* The only time we generate R_COMP1, R_COMP2 and 
 		     R_CODE_EXPR relocs is for the difference of two
 		     symbols.  Hence we can cheat here.  */
@@ -3123,14 +2910,12 @@ som_write_space_strings (abfd, current_offset, string_sizep)
 /* Write out the symbol string table.  */
 
 static boolean
-som_write_symbol_strings (abfd, current_offset, syms, num_syms, string_sizep,
-			  compilation_unit)
+som_write_symbol_strings (abfd, current_offset, syms, num_syms, string_sizep)
      bfd *abfd;
      unsigned long current_offset;
      asymbol **syms;
      unsigned int num_syms;
      unsigned int *string_sizep;
-     COMPUNIT *compilation_unit;
 {
   unsigned int i;
   
@@ -3139,21 +2924,6 @@ som_write_symbol_strings (abfd, current_offset, syms, num_syms, string_sizep,
   unsigned char tmp_space[SOM_TMP_BUFSIZE];
   unsigned char *p;
   unsigned int strings_size = 0;
-  unsigned char *comp[4];
-
-  /* This gets a bit gruesome because of the compilation unit.  The
-     strings within the compilation unit are part of the symbol
-     strings, but don't have symbol_dictionary entries.  So, manually
-     write them and update the compliation unit header.  On input, the
-     compilation unit header contains local copies of the strings.
-     Move them aside.  */
-  if (compilation_unit)
-    {
-      comp[0] = compilation_unit->name.n_name;
-      comp[1] = compilation_unit->language_name.n_name;
-      comp[2] = compilation_unit->product_id.n_name;
-      comp[3] = compilation_unit->version_id.n_name;
-    }
 
   memset (tmp_space, 0, SOM_TMP_BUFSIZE);
   p = tmp_space;
@@ -3162,66 +2932,6 @@ som_write_symbol_strings (abfd, current_offset, syms, num_syms, string_sizep,
      them out.  */
   if (bfd_seek (abfd, current_offset, SEEK_SET) < 0)
     return false;
-
-  if (compilation_unit)
-    {
-      for (i = 0; i < 4; i++)
-	{
-	  int length = strlen (comp[i]);
-
-	  /* If there is not enough room for the next entry, then dump
-	     the current buffer contents now.  */
-	  if (p - tmp_space + 5 + length > SOM_TMP_BUFSIZE)
-	    {
-	      if (bfd_write ((PTR) &tmp_space[0], p - tmp_space, 1, abfd)
-		  != p - tmp_space)
-		return false;
-	      /* Reset to beginning of the buffer space.  */
-	      p = tmp_space;
-	    }
-
-	  /* First element in a string table entry is the length of
-	     the string.  This must always be 4 byte aligned.  This is
-	     also an appropriate time to fill in the string index
-	     field in the symbol table entry.  */
-	  bfd_put_32 (abfd, length, p);
-	  strings_size += 4;
-	  p += 4;
-
-	  /* Next comes the string itself + a null terminator.  */
-	  strcpy (p, comp[i]);
-
-	  switch (i)
-	    {
-	    case 0:	
-	      obj_som_compilation_unit (abfd)->name.n_strx = strings_size;
-	      break;
-	    case 1:
-	      obj_som_compilation_unit (abfd)->language_name.n_strx = 
-		strings_size;
-	      break;
-	    case 2:
-	      obj_som_compilation_unit (abfd)->product_id.n_strx = 
-		strings_size;
-	      break;
-	    case 3:
-	      obj_som_compilation_unit (abfd)->version_id.n_strx = 
-		strings_size;
-	      break;
-	    }
-
-	  p += length + 1;
-	  strings_size += length + 1;
-
-	  /* Always align up to the next word boundary.  */
-	  while (strings_size % 4)
-	    {
-	      bfd_put_8 (abfd, 0, p);
-	      strings_size++;
-	      p++;
-	    }
-	}
-    }
 
   for (i = 0; i < num_syms; i++)
     {
@@ -3414,14 +3124,9 @@ som_begin_writing (abfd)
   obj_som_file_hdr (abfd)->space_strings_size = strings_size;
   current_offset += strings_size;
 
-  /* Next is the compilation unit. */
+  /* Next is the compiler records.  We do not use these.  */
   obj_som_file_hdr (abfd)->compiler_location = current_offset;
   obj_som_file_hdr (abfd)->compiler_total = 0;
-  if (obj_som_compilation_unit (abfd)) 
-    {
-      obj_som_file_hdr (abfd)->compiler_total = 1;
-      current_offset += COMPUNITSZ; 
-    }
 
   /* Now compute the file positions for the loadable subspaces, taking
      care to make sure everything stays properly aligned.  */
@@ -3669,8 +3374,7 @@ som_finish_writing (abfd)
 
   /* Scribble out the symbol strings.  */
   if (som_write_symbol_strings (abfd, current_offset, syms,
-				num_syms, &strings_size,
-				obj_som_compilation_unit (abfd))
+				num_syms, &strings_size)
       == false)
     return false;
 
@@ -3851,24 +3555,10 @@ som_finish_writing (abfd)
       section = section->next;
     }
 
-  /* Write the compilation unit record if there is one.  */
-  if (obj_som_compilation_unit (abfd))
-    {
-      location = obj_som_file_hdr (abfd)->compiler_location;
-      if (bfd_seek (abfd, location, SEEK_SET) < 0)
-        return false;
-
-      if (bfd_write ((PTR) obj_som_compilation_unit (abfd),
-		     COMPUNITSZ, 1, abfd) != COMPUNITSZ)
-        return false;
-    }
-
   /* Setting of the system_id has to happen very late now that copying of
      BFD private data happens *after* section contents are set.  */
   if (abfd->flags & (EXEC_P | DYNAMIC))
     obj_som_file_hdr(abfd)->system_id = obj_som_exec_data (abfd)->system_id;
-  else if (bfd_get_mach (abfd) == pa20)
-    obj_som_file_hdr(abfd)->system_id = CPU_PA_RISC2_0;
   else if (bfd_get_mach (abfd) == pa11)
     obj_som_file_hdr(abfd)->system_id = CPU_PA_RISC1_1;
   else
@@ -3890,7 +3580,7 @@ som_finish_writing (abfd)
   /* Now write the exec header.  */
   if (abfd->flags & (EXEC_P | DYNAMIC))
     {
-      long tmp, som_length;
+      long tmp;
       struct som_exec_auxhdr *exec_header;
 
       exec_header = obj_som_exec_hdr (abfd);
@@ -3906,16 +3596,6 @@ som_finish_writing (abfd)
       if (exec_header->exec_bsize < 0)
 	exec_header->exec_bsize = 0;
       exec_header->exec_dsize = tmp;
-
-      /* Now perform some sanity checks.  The idea is to catch bogons now and
-	 inform the user, instead of silently generating a bogus file.  */
-      som_length = obj_som_file_hdr (abfd)->som_length;
-      if (exec_header->exec_tfile + exec_header->exec_tsize > som_length
-	  || exec_header->exec_dfile + exec_header->exec_dsize > som_length)
-	{
-	  bfd_set_error (bfd_error_bad_value);
-	  return false;
-	}
 
       if (bfd_seek (abfd, obj_som_file_hdr (abfd)->aux_header_location,
 		    SEEK_SET) < 0)
@@ -3995,12 +3675,12 @@ som_bfd_derive_misc_symbol_info (abfd, sym, info)
 		   && (sym->flags & BSF_FUNCTION)))
 	{
 	  info->symbol_type = ST_ENTRY;
-	  info->arg_reloc = som_symbol_data (sym)->tc_data.ap.hppa_arg_reloc;
-	  info->priv_level= som_symbol_data (sym)->tc_data.ap.hppa_priv_level;
+	  info->arg_reloc = som_symbol_data (sym)->tc_data.hppa_arg_reloc;
 	}
 
-      /* For unknown symbols set the symbol's type based on the symbol's
-	 section (ST_DATA for DATA sections, ST_CODE for CODE sections).  */
+      /* If the type is unknown at this point, it should be ST_DATA or
+	 ST_CODE (function/ST_ENTRY symbols were handled  as special
+	 cases above). */
       else if (som_symbol_data (sym)->som_type == SYMBOL_TYPE_UNKNOWN)
 	{
 	  if (sym->section->flags & SEC_CODE)
@@ -4008,9 +3688,6 @@ som_bfd_derive_misc_symbol_info (abfd, sym, info)
 	  else
 	    info->symbol_type = ST_DATA;
 	}
-  
-      else if (som_symbol_data (sym)->som_type == SYMBOL_TYPE_UNKNOWN)
-	info->symbol_type = ST_DATA;
 
       /* From now on it's a very simple mapping.  */
       else if (som_symbol_data (sym)->som_type == SYMBOL_TYPE_ABSOLUTE)
@@ -4056,13 +3733,6 @@ som_bfd_derive_misc_symbol_info (abfd, sym, info)
 
   /* Set the symbol's value.  */
   info->symbol_value = sym->value + sym->section->vma;
-
-  /* The secondary_def field is for weak symbols.  */
-  if (sym->flags & BSF_WEAK)
-    info->secondary_def = true;
-  else
-    info->secondary_def = false;
-
 }
 
 /* Build and write, in one big chunk, the entire symbol table for
@@ -4081,9 +3751,12 @@ som_build_and_write_symbol_table (abfd)
   /* Compute total symbol table size and allocate a chunk of memory
      to hold the symbol table as we build it.  */
   symtab_size = num_syms * sizeof (struct symbol_dictionary_record);
-  som_symtab = (struct symbol_dictionary_record *) bfd_malloc (symtab_size);
+  som_symtab = (struct symbol_dictionary_record *) malloc (symtab_size);
   if (som_symtab == NULL && symtab_size != 0)
-    goto error_return;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      goto error_return;
+    }
   memset (som_symtab, 0, symtab_size);
 
   /* Walk over each symbol.  */
@@ -4104,9 +3777,7 @@ som_build_and_write_symbol_table (abfd)
       som_symtab[i].symbol_scope = info.symbol_scope;
       som_symtab[i].arg_reloc = info.arg_reloc;
       som_symtab[i].symbol_info = info.symbol_info;
-      som_symtab[i].xleast = 3;
-      som_symtab[i].symbol_value = info.symbol_value | info.priv_level;
-      som_symtab[i].secondary_def = info.secondary_def;
+      som_symtab[i].symbol_value = info.symbol_value;
     }
 
   /* Everything is ready, seek to the right location and
@@ -4169,10 +3840,13 @@ som_slurp_string_table (abfd)
     }
 
   /* Allocate and read in the string table.  */
-  stringtab = bfd_malloc (obj_som_stringtab_size (abfd));
+  stringtab = malloc (obj_som_stringtab_size (abfd));
+  bzero (stringtab, obj_som_stringtab_size (abfd));
   if (stringtab == NULL)
-    return false;
-  memset (stringtab, 0, obj_som_stringtab_size (abfd));
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return false;
+    }
 
   if (bfd_seek (abfd, obj_som_str_filepos (abfd), SEEK_SET) < 0)
     return false;
@@ -4273,16 +3947,22 @@ som_slurp_symbol_table (abfd)
 
   stringtab = obj_som_stringtab (abfd);
 
-  symbase = ((som_symbol_type *)
-	     bfd_malloc (symbol_count * sizeof (som_symbol_type)));
+  symbase = (som_symbol_type *)
+    malloc (symbol_count * sizeof (som_symbol_type));
+  bzero (symbase, symbol_count * sizeof (som_symbol_type));
   if (symbase == NULL)
-    goto error_return;
-  memset (symbase, 0, symbol_count * sizeof (som_symbol_type));
+    {
+      bfd_set_error (bfd_error_no_memory);
+      goto error_return;
+    }
 
   /* Read in the external SOM representation.  */
-  buf = bfd_malloc (symbol_count * symsize);
+  buf = malloc (symbol_count * symsize);
   if (buf == NULL && symbol_count * symsize != 0)
-    goto error_return;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      goto error_return;
+    }
   if (bfd_seek (abfd, obj_som_sym_filepos (abfd), SEEK_SET) < 0)
     goto error_return;
   if (bfd_read (buf, symbol_count * symsize, 1, abfd) 
@@ -4320,7 +4000,7 @@ som_slurp_symbol_table (abfd)
 	som_symbol_data (sym)->som_type = SYMBOL_TYPE_PLABEL;
       else
 	som_symbol_data (sym)->som_type = SYMBOL_TYPE_UNKNOWN;
-      som_symbol_data (sym)->tc_data.ap.hppa_arg_reloc = bufp->arg_reloc;
+      som_symbol_data (sym)->tc_data.hppa_arg_reloc = bufp->arg_reloc;
 
       /* Some reasonable defaults.  */
       sym->symbol.the_bfd = abfd;
@@ -4334,8 +4014,6 @@ som_slurp_symbol_table (abfd)
 	case ST_ENTRY:
 	case ST_MILLICODE:
 	  sym->symbol.flags |= BSF_FUNCTION;
-	  som_symbol_data (sym)->tc_data.ap.hppa_priv_level =
-	    sym->symbol.value & 0x3;
 	  sym->symbol.value &= ~0x3;
 	  break;
 
@@ -4343,10 +4021,8 @@ som_slurp_symbol_table (abfd)
 	case ST_CODE:
 	case ST_PRI_PROG:
 	case ST_SEC_PROG:
-	  som_symbol_data (sym)->tc_data.ap.hppa_priv_level =
-	    sym->symbol.value & 0x3;
 	  sym->symbol.value &= ~0x3;
-	  /* If the symbol's scope is SS_UNSAT, then these are
+	  /* If the symbol's scope is ST_UNSAT, then these are
 	     undefined function symbols.  */
 	  if (bufp->symbol_scope == SS_UNSAT)
 	    sym->symbol.flags |= BSF_FUNCTION;
@@ -4394,10 +4070,6 @@ som_slurp_symbol_table (abfd)
 	  break;
 	}
 
-      /* Check for a weak symbol.  */
-      if (bufp->secondary_def)
-        sym->symbol.flags |= BSF_WEAK;
-
       /* Mark section symbols and symbols used by the debugger.
 	 Note $START$ is a magic code symbol, NOT a section symbol.  */
       if (sym->symbol.name[0] == '$'
@@ -4417,12 +4089,8 @@ som_slurp_symbol_table (abfd)
       sym++;
     }
 
-  /* We modify the symbol count to record the number of BFD symbols we
-     created.  */
-  bfd_get_symcount (abfd) = sym - symbase;
-
-  /* Save our results and return success.  */
-  obj_som_symtab (abfd) = symbase;
+ /* Save our results and return success.  */
+ obj_som_symtab (abfd) = symbase;
  successful_return:
   if (buf != NULL)
     free (buf);
@@ -4468,7 +4136,10 @@ som_make_empty_symbol (abfd)
   som_symbol_type *new =
   (som_symbol_type *) bfd_zalloc (abfd, sizeof (som_symbol_type));
   if (new == NULL)
-    return 0;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return 0;
+    }
   new->symbol.the_bfd = abfd;
 
   return &new->symbol;
@@ -4506,11 +4177,11 @@ som_print_symbol (ignore_abfd, afile, symbol, how)
 }
 
 static boolean
-som_bfd_is_local_label_name (abfd, name)
+som_bfd_is_local_label (abfd, sym)
      bfd *abfd;
-     const char *name;
+     asymbol *sym;
 {
-  return (name[0] == 'L' && name[1] == '$');
+  return (sym->name[0] == 'L' && sym->name[1] == '$');
 }
 
 /* Count or process variable-length SOM fixup records.
@@ -4828,7 +4499,7 @@ som_set_reloc_info (fixup, end, internal_relocs, section, symbols, just_count)
 		      /* Got to read the damn contents first.  We don't
 		         bother saving the contents (yet).  Add it one
 			 day if the need arises.  */
-		      section->contents = bfd_malloc (section->_raw_size);
+		      section->contents = malloc (section->_raw_size);
 		      if (section->contents == NULL)
 			return -1;
 
@@ -4894,9 +4565,12 @@ som_slurp_reloc_table (abfd, section, symbols, just_count)
      parsed.  We must do so now to know how many relocations exist.  */
   if (section->reloc_count == -1)
     {
-      external_relocs = (char *) bfd_malloc (fixup_stream_size);
+      external_relocs = (char *) malloc (fixup_stream_size);
       if (external_relocs == (char *) NULL)
-	return false;
+	{
+	  bfd_set_error (bfd_error_no_memory);
+	  return false;
+	}
       /* Read in the external forms. */
       if (bfd_seek (abfd,
 		    obj_som_reloc_filepos (abfd) + section->rel_filepos,
@@ -4930,7 +4604,10 @@ som_slurp_reloc_table (abfd, section, symbols, just_count)
   internal_relocs = (arelent *) 
     bfd_zalloc (abfd, (num_relocs * sizeof (arelent)));
   if (internal_relocs == (arelent *) NULL)
-    return false;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return false;
+    }
 
   /* Process and internalize the relocations.  */
   som_set_reloc_info (external_relocs, fixup_stream_size,
@@ -4938,7 +4615,6 @@ som_slurp_reloc_table (abfd, section, symbols, just_count)
 
   /* We're done with the external relocations.  Free them.  */
   free (external_relocs);
-  som_section_data (section)->reloc_stream = NULL;
 
   /* Save our results and return success.  */
   section->relocation = internal_relocs;
@@ -5003,7 +4679,10 @@ som_new_section_hook (abfd, newsect)
   newsect->used_by_bfd =
     (PTR) bfd_zalloc (abfd, sizeof (struct som_section_data_struct));
   if (!newsect->used_by_bfd)
-    return false;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return false;
+    }
   newsect->alignment_power = 3;
 
   /* We allow more than three sections internally */
@@ -5030,8 +4709,7 @@ som_bfd_copy_private_symbol_data (ibfd, isymbol, obfd, osymbol)
 
   /* The only private information we need to copy is the argument relocation
      bits.  */
-  output_symbol->tc_data.ap.hppa_arg_reloc =
-    input_symbol->tc_data.ap.hppa_arg_reloc;
+  output_symbol->tc_data.hppa_arg_reloc = input_symbol->tc_data.hppa_arg_reloc;
 
   return true;
 }
@@ -5055,7 +4733,10 @@ som_bfd_copy_private_section_data (ibfd, isection, obfd, osection)
     = (struct som_copyable_section_data_struct *)
       bfd_zalloc (obfd, sizeof (struct som_copyable_section_data_struct));
   if (som_section_data (osection)->copy_data == NULL)
-    return false;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return false;
+    }
 
   memcpy (som_section_data (osection)->copy_data,
 	  som_section_data (isection)->copy_data,
@@ -5085,7 +4766,10 @@ som_bfd_copy_private_bfd_data (ibfd, obfd)
   obj_som_exec_data (obfd) = (struct som_exec_data *)
     bfd_zalloc (obfd, sizeof (struct som_exec_data));
   if (obj_som_exec_data (obfd) == NULL)
-    return false;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return false;
+    }
 
   /* Now copy the data.  */
   memcpy (obj_som_exec_data (obfd), obj_som_exec_data (ibfd),
@@ -5113,7 +4797,10 @@ bfd_som_set_section_attributes (section, defined, private, sort_key, spnum)
 	  bfd_zalloc (section->owner,
 		      sizeof (struct som_copyable_section_data_struct));
       if (som_section_data (section)->copy_data == NULL)
-	return false;
+	{
+	  bfd_set_error (bfd_error_no_memory);
+	  return false;
+	}
     }
   som_section_data (section)->copy_data->sort_key = sort_key;
   som_section_data (section)->copy_data->is_defined = defined;
@@ -5143,7 +4830,10 @@ bfd_som_set_subsection_attributes (section, container, access,
 	  bfd_zalloc (section->owner,
 		      sizeof (struct som_copyable_section_data_struct));
       if (som_section_data (section)->copy_data == NULL)
-	return false;
+	{
+	  bfd_set_error (bfd_error_no_memory);
+	  return false;
+	}
     }
   som_section_data (section)->copy_data->sort_key = sort_key;
   som_section_data (section)->copy_data->access_control_bits = access;
@@ -5185,7 +4875,10 @@ bfd_som_attach_aux_hdr (abfd, type, string)
 	bfd_zalloc (abfd, sizeof (struct aux_id)
 			      + sizeof (unsigned int) + len + pad);
       if (!obj_som_version_hdr (abfd))
-	return false;
+	{
+	  bfd_set_error (bfd_error_no_memory);
+	  return false;
+	}
       obj_som_version_hdr (abfd)->header_id.type = VERSION_AUX_ID;
       obj_som_version_hdr (abfd)->header_id.length = len + pad;
       obj_som_version_hdr (abfd)->header_id.length += sizeof (int);
@@ -5203,50 +4896,16 @@ bfd_som_attach_aux_hdr (abfd, type, string)
 	bfd_zalloc (abfd, sizeof (struct aux_id)
 			    + sizeof (unsigned int) + len + pad);
       if (!obj_som_copyright_hdr (abfd))
-	return false;
+	{
+	  bfd_set_error (bfd_error_no_memory);
+	  return false;
+	}
       obj_som_copyright_hdr (abfd)->header_id.type = COPYRIGHT_AUX_ID;
       obj_som_copyright_hdr (abfd)->header_id.length = len + pad;
       obj_som_copyright_hdr (abfd)->header_id.length += sizeof (int);
       obj_som_copyright_hdr (abfd)->string_length = len;
       strcpy (obj_som_copyright_hdr (abfd)->copyright, string);
     }
-  return true;
-}
-
-/* Attach an compilation unit header to the BFD backend so that it may be
-   written into the object file.  */
-
-boolean
-bfd_som_attach_compilation_unit (abfd, name, language_name, product_id,
-                                 version_id)
-     bfd *abfd;
-     const char *name;
-     const char *language_name;
-     const char *product_id;
-     const char *version_id;
-{
-  COMPUNIT *n = (COMPUNIT *) bfd_zalloc (abfd, COMPUNITSZ);
-  if (n == NULL)
-    return false;
-
-#define STRDUP(f) \
-  if (f != NULL) \
-    { \
-      n->f.n_name = bfd_alloc (abfd, strlen (f) + 1); \
-      if (n->f.n_name == NULL) \
-	return false; \
-      strcpy (n->f.n_name, f); \
-    }
-
-  STRDUP (name);
-  STRDUP (language_name);
-  STRDUP (product_id);
-  STRDUP (version_id);
-
-#undef STRDUP
-
-  obj_som_compilation_unit (abfd) = n;
-
   return true;
 }
 
@@ -5332,7 +4991,7 @@ som_sizeof_headers (abfd, reloc)
      bfd *abfd;
      boolean reloc;
 {
-  (*_bfd_error_handler) (_("som_sizeof_headers unimplemented"));
+  (*_bfd_error_handler) ("som_sizeof_headers unimplemented");
   fflush (stderr);
   abort ();
   return (0);
@@ -5411,10 +5070,12 @@ som_bfd_count_ar_symbols (abfd, lst_header, count)
   file_ptr lst_filepos = bfd_tell (abfd) - sizeof (struct lst_header);
 
   hash_table = 
-    (unsigned int *) bfd_malloc (lst_header->hash_size
-				 * sizeof (unsigned int));
+    (unsigned int *) malloc (lst_header->hash_size * sizeof (unsigned int));
   if (hash_table == NULL && lst_header->hash_size != 0)
-    goto error_return;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      goto error_return;
+    }
 
   /* Don't forget to initialize the counter!  */
   *count = 0;
@@ -5489,16 +5150,21 @@ som_bfd_fill_in_ar_symbols (abfd, lst_header, syms)
   file_ptr lst_filepos = bfd_tell (abfd) - sizeof (struct lst_header);
 
   hash_table = 
-    (unsigned int *) bfd_malloc (lst_header->hash_size
-				 * sizeof (unsigned int));
+    (unsigned int *) malloc (lst_header->hash_size * sizeof (unsigned int));
   if (hash_table == NULL && lst_header->hash_size != 0)
-    goto error_return;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      goto error_return;
+    }
 
   som_dict =
-    (struct som_entry *) bfd_malloc (lst_header->module_count
-				     * sizeof (struct som_entry));
+    (struct som_entry *) malloc (lst_header->module_count
+				 * sizeof (struct som_entry));
   if (som_dict == NULL && lst_header->module_count != 0)
-    goto error_return;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      goto error_return;
+    }
 
   /* Read in the hash table.  The has table is an array of 32bit file offsets
      which point to the hash chains.  */
@@ -5550,7 +5216,10 @@ som_bfd_fill_in_ar_symbols (abfd, lst_header, syms)
       /* Allocate space for the name and null terminate it too.  */
       set->name = bfd_zalloc (abfd, len + 1);
       if (!set->name)
-	goto error_return;
+	{
+	  bfd_set_error (bfd_error_no_memory);
+	  goto error_return;
+	}
       if (bfd_read (set->name, 1, len, abfd) != len)
 	goto error_return;
 
@@ -5586,7 +5255,10 @@ som_bfd_fill_in_ar_symbols (abfd, lst_header, syms)
 	  /* Allocate space for the name and null terminate it too.  */
 	  set->name = bfd_zalloc (abfd, len + 1);
 	  if (!set->name)
-	    goto error_return;
+	    {
+	      bfd_set_error (bfd_error_no_memory);
+	      goto error_return;
+	    }
 
 	  if (bfd_read (set->name, 1, len, abfd) != len)
 	    goto error_return;
@@ -5697,7 +5369,10 @@ som_slurp_armap (abfd)
 					  (ardata->symdef_count
 					   * sizeof (carsym)));
   if (!ardata->symdefs)
-    return false;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return false;
+    }
 
   /* Now fill in the canonical archive symbols.  */
   if (som_bfd_fill_in_ar_symbols (abfd, &lst_header, &ardata->symdefs)
@@ -5806,15 +5481,27 @@ som_bfd_ar_symbol_hash (symbol)
 	  | (symbol->name[len-2] << 8) | symbol->name[len-1];
 }
 
+static CONST char *
+normalize (file)
+     CONST char *file;
+{
+  CONST char *filename = strrchr (file, '/');
+
+  if (filename != NULL)
+    filename++;
+  else
+    filename = file;
+  return filename;
+}
+
 /* Do the bulk of the work required to write the SOM library
    symbol table.  */
    
 static boolean
-som_bfd_ar_write_symbol_stuff (abfd, nsyms, string_size, lst, elength)
+som_bfd_ar_write_symbol_stuff (abfd, nsyms, string_size, lst)
      bfd *abfd;
      unsigned int nsyms, string_size;
      struct lst_header lst;
-     unsigned elength;
 {
   file_ptr lst_filepos;
   char *strings = NULL, *p;
@@ -5823,23 +5510,33 @@ som_bfd_ar_write_symbol_stuff (abfd, nsyms, string_size, lst, elength)
   unsigned int *hash_table = NULL;
   struct som_entry *som_dict = NULL;
   struct lst_symbol_record **last_hash_entry = NULL;
-  unsigned int curr_som_offset, som_index = 0;
+  unsigned int curr_som_offset, som_index, extended_name_length = 0;
+  unsigned int maxname = abfd->xvec->ar_max_namelen;
 
   hash_table =
-    (unsigned int *) bfd_malloc (lst.hash_size * sizeof (unsigned int));
+    (unsigned int *) malloc (lst.hash_size * sizeof (unsigned int));
   if (hash_table == NULL && lst.hash_size != 0)
-    goto error_return;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      goto error_return;
+    }
   som_dict =
-    (struct som_entry *) bfd_malloc (lst.module_count
-				     * sizeof (struct som_entry));
+    (struct som_entry *) malloc (lst.module_count
+				 * sizeof (struct som_entry));
   if (som_dict == NULL && lst.module_count != 0)
-    goto error_return;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      goto error_return;
+    }
 
   last_hash_entry =
     ((struct lst_symbol_record **)
-     bfd_malloc (lst.hash_size * sizeof (struct lst_symbol_record *)));
+     malloc (lst.hash_size * sizeof (struct lst_symbol_record *)));
   if (last_hash_entry == NULL && lst.hash_size != 0)
-    goto error_return;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      goto error_return;
+    }
 
   /* Lots of fields are file positions relative to the start
      of the lst record.  So save its location.  */
@@ -5859,28 +5556,48 @@ som_bfd_ar_write_symbol_stuff (abfd, nsyms, string_size, lst, elength)
      describes.  We have to compute that information as we iterate
      through the SOMs/symbols.  */
   som_index = 0;
-
-  /* We add in the size of the archive header twice as the location
-     in the SOM dictionary is the actual offset of the SOM, not the
-     archive header before the SOM.  */
   curr_som_offset = 8 + 2 * sizeof (struct ar_hdr) + lst.file_end;
 
+  /* Yow!  We have to know the size of the extended name table
+     too.  */
+  for (curr_bfd = abfd->archive_head;
+       curr_bfd != NULL;
+       curr_bfd = curr_bfd->next)
+    {
+      CONST char *normal = normalize (curr_bfd->filename);
+      unsigned int thislen;
+
+      if (!normal)
+	{
+	  bfd_set_error (bfd_error_no_memory);
+	  return false;
+	}
+      thislen = strlen (normal);
+      if (thislen > maxname)
+	extended_name_length += thislen + 1;
+    }
+
   /* Make room for the archive header and the contents of the
-     extended string table.  Note that elength includes the size
-     of the archive header for the extended name table!  */
-  if (elength)
-    curr_som_offset += elength;
+     extended string table.  */
+  if (extended_name_length)
+    curr_som_offset += extended_name_length + sizeof (struct ar_hdr);
 
   /* Make sure we're properly aligned.  */
   curr_som_offset = (curr_som_offset + 0x1) & ~0x1;
 
   /* FIXME should be done with buffers just like everything else... */
-  lst_syms = bfd_malloc (nsyms * sizeof (struct lst_symbol_record));
+  lst_syms = malloc (nsyms * sizeof (struct lst_symbol_record));
   if (lst_syms == NULL && nsyms != 0)
-    goto error_return;
-  strings = bfd_malloc (string_size);
+    {
+      bfd_set_error (bfd_error_no_memory);
+      goto error_return;
+    }
+  strings = malloc (string_size);
   if (strings == NULL && string_size != 0)
-    goto error_return;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      goto error_return;
+    }
 
   p = strings;
   curr_lst_sym = lst_syms;
@@ -5940,7 +5657,7 @@ som_bfd_ar_write_symbol_stuff (abfd, nsyms, string_size, lst, elength)
 
 	  /* Fill in the lst symbol record.  */
 	  curr_lst_sym->hidden = 0;
-	  curr_lst_sym->secondary_def = info.secondary_def;
+	  curr_lst_sym->secondary_def = 0;
 	  curr_lst_sym->symbol_type = info.symbol_type;
 	  curr_lst_sym->symbol_scope = info.symbol_scope;
 	  curr_lst_sym->check_level = 0;
@@ -5949,12 +5666,12 @@ som_bfd_ar_write_symbol_stuff (abfd, nsyms, string_size, lst, elength)
 	  curr_lst_sym->memory_resident = 0;
 	  curr_lst_sym->is_common = bfd_is_com_section (sym->symbol.section);
 	  curr_lst_sym->dup_common = 0;
-	  curr_lst_sym->xleast = 3;
+	  curr_lst_sym->xleast = 0;
 	  curr_lst_sym->arg_reloc = info.arg_reloc;
 	  curr_lst_sym->name.n_strx = p - strings + 4;
 	  curr_lst_sym->qualifier_name.n_strx = 0;
 	  curr_lst_sym->symbol_info = info.symbol_info;
-	  curr_lst_sym->symbol_value = info.symbol_value | info.priv_level;
+	  curr_lst_sym->symbol_value = info.symbol_value;
 	  curr_lst_sym->symbol_descriptor = 0;
 	  curr_lst_sym->reserved = 0;
 	  curr_lst_sym->som_index = som_index;
@@ -6063,6 +5780,20 @@ som_bfd_ar_write_symbol_stuff (abfd, nsyms, string_size, lst, elength)
     free (strings);
 
   return false;
+}
+
+/* SOM almost uses the SVR4 style extended name support, but not
+   quite.  */
+
+static boolean
+som_construct_extended_name_table (abfd, tabloc, tablen, name)
+     bfd *abfd;
+     char **tabloc;
+     bfd_size_type *tablen;
+     const char **name;
+{
+  *name = "//";
+  return _bfd_construct_extended_name_table (abfd, false, tabloc, tablen);
 }
 
 /* Write out the LST for the archive.
@@ -6186,8 +5917,7 @@ som_write_armap (abfd, elength, map, orl_count, stridx)
     return false;
 
   /* Build and write the armap.  */
-  if (som_bfd_ar_write_symbol_stuff (abfd, nsyms, stringsize, lst, elength)
-      == false)
+  if (som_bfd_ar_write_symbol_stuff (abfd, nsyms, stringsize, lst) == false)
     return false;
   
   /* Done.  */
@@ -6238,12 +5968,9 @@ som_bfd_link_split_section (abfd, sec)
 
 #define som_read_ar_hdr			_bfd_generic_read_ar_hdr
 #define som_openr_next_archived_file	bfd_generic_openr_next_archived_file
-#define som_get_elt_at_index		_bfd_generic_get_elt_at_index
 #define som_generic_stat_arch_elt	bfd_generic_stat_arch_elt
 #define som_truncate_arname		bfd_bsd_truncate_arname
 #define som_slurp_extended_name_table	_bfd_slurp_extended_name_table
-#define som_construct_extended_name_table \
-  _bfd_archive_coff_construct_extended_name_table
 #define som_update_armap_timestamp	bfd_true
 #define som_bfd_print_private_bfd_data  _bfd_generic_bfd_print_private_bfd_data
 
@@ -6261,15 +5988,13 @@ som_bfd_link_split_section (abfd, sec)
 #define som_bfd_link_add_symbols _bfd_generic_link_add_symbols
 #define som_bfd_final_link _bfd_generic_final_link
 
-#define som_bfd_gc_sections		bfd_generic_gc_sections
-
 
 const bfd_target som_vec =
 {
   "som",			/* name */
   bfd_target_som_flavour,
-  BFD_ENDIAN_BIG,		/* target byte order */
-  BFD_ENDIAN_BIG,		/* target headers byte order */
+  true,				/* target byte order */
+  true,				/* target headers byte order */
   (HAS_RELOC | EXEC_P |		/* object flags */
    HAS_LINENO | HAS_DEBUG |
    HAS_SYMS | HAS_LOCALS | WP_TEXT | D_PAGED | DYNAMIC),
@@ -6316,8 +6041,6 @@ const bfd_target som_vec =
   BFD_JUMP_TABLE_LINK (som),
   BFD_JUMP_TABLE_DYNAMIC (_bfd_nodynamic),
 
-  NULL,
-  
   (PTR) 0
 };
 

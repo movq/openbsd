@@ -1,6 +1,5 @@
 /* BFD back-end for oasys objects.
-   Copyright 1990, 91, 92, 93, 94, 95, 96, 97, 98, 1999
-   Free Software Foundation, Inc.
+   Copyright 1990, 1991, 1992, 1993, 1994, 1995 Free Software Foundation, Inc.
    Written by Steve Chamberlain of Cygnus Support, <sac@cygnus.com>.
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -119,7 +118,10 @@ oasys_slurp_symbol_table (abfd)
   data->strings = bfd_alloc (abfd, data->symbol_string_length);
 #endif
   if (!data->symbols || !data->strings)
-    return false;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return false;
+    }
 
   dest_defined = data->symbols + abfd->symcount - 1;
 
@@ -308,7 +310,10 @@ oasys_archive_p (abfd)
     oasys_module_table_type record;
 
     if (!ar || !module)
-      return NULL;
+      {
+	bfd_set_error (bfd_error_no_memory);
+	return NULL;
+      }
 
     abfd->tdata.oasys_ar_data = ar;
     ar->module = module;
@@ -338,7 +343,10 @@ oasys_archive_p (abfd)
 
 	    module[i].name = bfd_alloc (abfd, 33);
 	    if (!module[i].name)
-	      return NULL;
+	      {
+		bfd_set_error (bfd_error_no_memory);
+		return NULL;
+	      }
 
 	    memcpy (module[i].name, record_ext.mod_name, 33);
 	    filepos +=
@@ -364,7 +372,10 @@ oasys_archive_p (abfd)
 
 	    module[i].name = bfd_alloc (abfd, record.module_name_size + 1);
 	    if (!module[i].name)
-	      return NULL;
+	      {
+		bfd_set_error (bfd_error_no_memory);
+		return NULL;
+	      }
 	    if (bfd_read ((PTR) module[i].name, 1, record.module_name_size,
 			  abfd)
 		!= record.module_name_size)
@@ -451,7 +462,10 @@ oasys_object_p (abfd)
 	      }
 	    buffer = bfd_alloc (abfd, 3);
 	    if (!buffer)
-	      goto fail;
+	      {
+		bfd_set_error (bfd_error_no_memory);
+		goto fail;
+	      }
 	    section_number = record.section.relb & RELOCATION_SECT_BITS;
 	    sprintf (buffer, "%u", section_number);
 	    s = bfd_make_section (abfd, buffer);
@@ -515,7 +529,7 @@ fail:
 
 static void
 oasys_get_symbol_info (ignore_abfd, symbol, ret)
-     bfd *ignore_abfd ATTRIBUTE_UNUSED;
+     bfd *ignore_abfd;
      asymbol *symbol;
      symbol_info *ret;
 {
@@ -526,7 +540,7 @@ oasys_get_symbol_info (ignore_abfd, symbol, ret)
 
 static void
 oasys_print_symbol (ignore_abfd, afile, symbol, how)
-     bfd *ignore_abfd ATTRIBUTE_UNUSED;
+     bfd *ignore_abfd;
      PTR afile;
      asymbol *symbol;
      bfd_print_symbol_type how;
@@ -619,7 +633,10 @@ oasys_slurp_section_data (abfd)
 	      {
 		per->data = (bfd_byte *) bfd_zalloc (abfd, section->_raw_size);
 		if (!per->data)
-		  return false;
+		  {
+		    bfd_set_error (bfd_error_no_memory);
+		    return false;
+		  }
 		per->reloc_tail_ptr = (oasys_reloc_type **) & (section->relocation);
 		per->had_vma = false;
 		per->initialized = true;
@@ -686,7 +703,10 @@ oasys_slurp_section_data (abfd)
 				  bfd_alloc (abfd,
 					     sizeof (oasys_reloc_type));
 				  if (!r)
-				    return false;
+				    {
+				      bfd_set_error (bfd_error_no_memory);
+				      return false;
+				    }
 				  *(per->reloc_tail_ptr) = r;
 				  per->reloc_tail_ptr = &r->next;
 				  r->next = (oasys_reloc_type *) NULL;
@@ -730,7 +750,10 @@ oasys_slurp_section_data (abfd)
 				  bfd_alloc (abfd,
 					     sizeof (oasys_reloc_type));
 				  if (!r)
-				    return false;
+				    {
+				      bfd_set_error (bfd_error_no_memory);
+				      return false;
+				    }
 				  *(per->reloc_tail_ptr) = r;
 				  per->reloc_tail_ptr = &r->next;
 				  r->next = (oasys_reloc_type *) NULL;
@@ -796,7 +819,10 @@ oasys_new_section_hook (abfd, newsect)
   newsect->used_by_bfd = (PTR)
     bfd_alloc (abfd, sizeof (oasys_per_section_type));
   if (!newsect->used_by_bfd)
-    return false;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return false;
+    }
   oasys_per_section (newsect)->data = (bfd_byte *) NULL;
   oasys_per_section (newsect)->section = newsect;
   oasys_per_section (newsect)->offset = 0;
@@ -844,10 +870,10 @@ oasys_get_section_contents (abfd, section, location, offset, count)
 
 long
 oasys_canonicalize_reloc (ignore_abfd, section, relptr, symbols)
-     bfd *ignore_abfd ATTRIBUTE_UNUSED;
+     bfd *ignore_abfd;
      sec_ptr section;
      arelent **relptr;
-     asymbol **symbols ATTRIBUTE_UNUSED;
+     asymbol **symbols;
 {
   unsigned int reloc_count = 0;
   oasys_reloc_type *src = (oasys_reloc_type *) (section->relocation);
@@ -1010,10 +1036,10 @@ oasys_write_sections (abfd)
 
   for (s = abfd->sections; s != (asection *) NULL; s = s->next)
     {
-      if (!isdigit ((unsigned char) s->name[0]))
+      if (!isdigit (s->name[0]))
 	{
 	  (*_bfd_error_handler)
-	    (_("%s: can not represent section `%s' in oasys"),
+	    ("%s: can not represent section `%s' in oasys",
 	     bfd_get_filename (abfd), s->name);
 	  bfd_set_error (bfd_error_nonrepresentable_section);
 	  return false;
@@ -1322,7 +1348,10 @@ oasys_set_section_contents (abfd, section, location, offset, count)
 	  oasys_per_section (section)->data =
 	    (bfd_byte *) (bfd_alloc (abfd, section->_cooked_size));
 	  if (!oasys_per_section (section)->data)
-	    return false;
+	    {
+	      bfd_set_error (bfd_error_no_memory);
+	      return false;
+	    }
 	}
       (void) memcpy ((PTR) (oasys_per_section (section)->data + offset),
 		     location,
@@ -1347,7 +1376,10 @@ oasys_make_empty_symbol (abfd)
   oasys_symbol_type *new =
   (oasys_symbol_type *) bfd_zalloc (abfd, sizeof (oasys_symbol_type));
   if (!new)
-    return NULL;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return NULL;
+    }
   new->symbol.the_bfd = abfd;
   return &new->symbol;
 }
@@ -1403,13 +1435,13 @@ oasys_find_nearest_line (abfd,
 			 filename_ptr,
 			 functionname_ptr,
 			 line_ptr)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     asection *section ATTRIBUTE_UNUSED;
-     asymbol **symbols ATTRIBUTE_UNUSED;
-     bfd_vma offset ATTRIBUTE_UNUSED;
-     char **filename_ptr ATTRIBUTE_UNUSED;
-     char **functionname_ptr ATTRIBUTE_UNUSED;
-     unsigned int *line_ptr ATTRIBUTE_UNUSED;
+     bfd *abfd;
+     asection *section;
+     asymbol **symbols;
+     bfd_vma offset;
+     char **filename_ptr;
+     char **functionname_ptr;
+     unsigned int *line_ptr;
 {
   return false;
 
@@ -1436,8 +1468,8 @@ oasys_generic_stat_arch_elt (abfd, buf)
 
 static int
 oasys_sizeof_headers (abfd, exec)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     boolean exec ATTRIBUTE_UNUSED;
+     bfd *abfd;
+     boolean exec;
 {
   return 0;
 }
@@ -1456,10 +1488,9 @@ oasys_sizeof_headers (abfd, exec)
     PARAMS ((bfd *, unsigned int, struct orl *, unsigned int, int))) \
    bfd_true)
 #define oasys_read_ar_hdr bfd_nullvoidptr
-#define oasys_get_elt_at_index _bfd_generic_get_elt_at_index
 #define oasys_update_armap_timestamp bfd_true
 
-#define oasys_bfd_is_local_label_name bfd_generic_is_local_label_name
+#define oasys_bfd_is_local_label bfd_generic_is_local_label
 #define oasys_get_lineno _bfd_nosymbols_get_lineno
 #define oasys_bfd_make_debug_symbol _bfd_nosymbols_bfd_make_debug_symbol
 #define oasys_read_minisymbols _bfd_generic_read_minisymbols
@@ -1475,7 +1506,6 @@ oasys_sizeof_headers (abfd, exec)
 #define oasys_bfd_get_relocated_section_contents \
   bfd_generic_get_relocated_section_contents
 #define oasys_bfd_relax_section bfd_generic_relax_section
-#define oasys_bfd_gc_sections bfd_generic_gc_sections
 #define oasys_bfd_link_hash_table_create _bfd_generic_link_hash_table_create
 #define oasys_bfd_link_add_symbols _bfd_generic_link_add_symbols
 #define oasys_bfd_final_link _bfd_generic_final_link
@@ -1486,8 +1516,8 @@ const bfd_target oasys_vec =
 {
   "oasys",			/* name */
   bfd_target_oasys_flavour,
-  BFD_ENDIAN_BIG,		/* target byte order */
-  BFD_ENDIAN_BIG,		/* target headers byte order */
+  true,				/* target byte order */
+  true,				/* target headers byte order */
   (HAS_RELOC | EXEC_P |		/* object flags */
    HAS_LINENO | HAS_DEBUG |
    HAS_SYMS | HAS_LOCALS | WP_TEXT | D_PAGED),
@@ -1531,7 +1561,5 @@ const bfd_target oasys_vec =
   BFD_JUMP_TABLE_LINK (oasys),
   BFD_JUMP_TABLE_DYNAMIC (_bfd_nodynamic),
 
-  NULL,
-  
   (PTR) 0
 };

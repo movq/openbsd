@@ -406,10 +406,8 @@ if (writecode == 'd')
 return 0;
 }
 
-int
-yyerror(s)
+int yyerror(s)
      char *s;
 {
   fprintf(stderr, "%s\n" , s);
-  return 0;
 }

@@ -1,5 +1,5 @@
 /* Target definitions for 32/64-bit NLM (NetWare Loadable Module)
-   Copyright (C) 1993, 94, 95, 1997 Free Software Foundation, Inc.
+   Copyright (C) 1993, 1994 Free Software Foundation, Inc.
 
 This file is part of BFD, the Binary File Descriptor library.
 
@@ -24,7 +24,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #define nlm_make_empty_symbol nlmNAME(make_empty_symbol)
 #define nlm_print_symbol nlmNAME(print_symbol)
 #define nlm_get_symbol_info nlmNAME(get_symbol_info)
-#define nlm_bfd_is_local_label_name bfd_generic_is_local_label_name
+#define nlm_bfd_is_local_label bfd_generic_is_local_label
 #define nlm_get_lineno _bfd_nosymbols_get_lineno
 #define nlm_find_nearest_line _bfd_nosymbols_find_nearest_line
 #define nlm_bfd_make_debug_symbol _bfd_nosymbols_bfd_make_debug_symbol
@@ -41,7 +41,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #define nlm_bfd_get_relocated_section_contents \
   bfd_generic_get_relocated_section_contents
 #define nlm_bfd_relax_section bfd_generic_relax_section
-#define nlm_bfd_gc_sections bfd_generic_gc_sections
 #define nlm_bfd_link_hash_table_create _bfd_generic_link_hash_table_create
 #define nlm_bfd_link_add_symbols _bfd_generic_link_add_symbols
 #define nlm_bfd_final_link _bfd_generic_final_link
@@ -55,10 +54,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
    There are two such structures here:  one for big-endian machines and
    one for little-endian machines.   */
 
-/* Forward declaration for use when initialising alternative_target field.  */
-#ifdef TARGET_LITTLE_SYM
-extern const bfd_target TARGET_LITTLE_SYM;
-#endif
 
 #ifdef TARGET_BIG_SYM
 const bfd_target TARGET_BIG_SYM =
@@ -69,11 +64,11 @@ const bfd_target TARGET_BIG_SYM =
   /* flavour: general indication about file */
   bfd_target_nlm_flavour,
 
-  /* byteorder: data is big endian */
-  BFD_ENDIAN_BIG,
+  /* byteorder_big_p: data is big endian */
+  true,
 
-  /* header_byteorder: header is also big endian */
-  BFD_ENDIAN_BIG,
+  /* header_byteorder_big_p: header is also big endian */
+  true,
 
   /* object_flags: mask of all file flags */
   (HAS_RELOC | EXEC_P | HAS_LINENO | HAS_DEBUG | HAS_SYMS | HAS_LOCALS
@@ -141,13 +136,6 @@ const bfd_target TARGET_BIG_SYM =
   BFD_JUMP_TABLE_LINK (nlm),
   BFD_JUMP_TABLE_DYNAMIC (_bfd_nodynamic),
 
-  /* Alternative endian target.  */
-#ifdef TARGET_LITTLE_SYM
-  & TARGET_LITTLE_SYM,
-#else
-  NULL,
-#endif
-  
   /* backend_data: */
   (PTR) TARGET_BACKEND_DATA
 };
@@ -162,11 +150,11 @@ const bfd_target TARGET_LITTLE_SYM =
   /* flavour: general indication about file */
   bfd_target_nlm_flavour,
 
-  /* byteorder: data is little endian */
-  BFD_ENDIAN_LITTLE,
+  /* byteorder_big_p: data is big endian */
+  false,		/* Nope -- this one's little endian */
 
-  /* header_byteorder: header is also little endian */
-  BFD_ENDIAN_LITTLE,
+  /* header_byteorder_big_p: header is also big endian */
+  false,		/* Nope -- this one's little endian */
 
   /* object_flags: mask of all file flags */
   (HAS_RELOC | EXEC_P | HAS_LINENO | HAS_DEBUG | HAS_SYMS | HAS_LOCALS
@@ -234,13 +222,6 @@ const bfd_target TARGET_LITTLE_SYM =
   BFD_JUMP_TABLE_LINK (nlm),
   BFD_JUMP_TABLE_DYNAMIC (_bfd_nodynamic),
 
-  /* Alternative endian target.  */
-#ifdef TARGET_BIG_SYM
-  & TARGET_BIG_SYM,
-#else
-  NULL,
-#endif
-  
   /* backend_data: */
   (PTR) TARGET_BACKEND_DATA
 };

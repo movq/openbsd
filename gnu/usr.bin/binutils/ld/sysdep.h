@@ -1,5 +1,5 @@
 /* sysdep.h -- handle host dependencies for the GNU linker
-   Copyright (C) 1995, 96, 1997 Free Software Foundation, Inc.
+   Copyright (C) 1995 Free Software Foundation, Inc.
 
    This file is part of GLD, the Gnu Linker.
 
@@ -37,6 +37,7 @@
 #else
 extern char *strchr ();
 extern char *strrchr ();
+extern char *strstr ();
 #endif
 #endif
 
@@ -54,20 +55,8 @@ extern char *strrchr ();
 #include "fopen-same.h"
 #endif
 
-#ifdef NEED_DECLARATION_STRSTR
-extern char *strstr ();
-#endif
-
 #ifdef NEED_DECLARATION_FREE
 extern void free ();
-#endif
-
-#ifdef NEED_DECLARATION_GETENV
-extern char *getenv ();
-#endif
-
-#ifdef NEED_DECLARATION_ENVIRON
-extern char **environ;
 #endif
 
 #endif /* ! defined (LD_SYSDEP_H) */

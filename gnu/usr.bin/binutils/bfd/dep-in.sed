@@ -1,19 +1,17 @@
 :loop
 /\\$/N
-s/\\\n */ /g
-t loop
+/\\$/b loop
 
-s!\.o:!.lo:!
 s! @BFD_H@!!g
 s!@INCDIR@!$(INCDIR)!g
 s!@SRCDIR@/!!g
-s! hosts/[^ ]*\.h! !g
+s!hosts/[^ ]*\.h ! !g
 s/ sysdep.h//g
-s! \.\./bfd/sysdep.h!!g
 s/ libbfd.h//g
 s/ config.h//g
 s! \$(INCDIR)/fopen-[^ ]*\.h!!g
 s! \$(INCDIR)/ansidecl\.h!!g
+s! \$(INCDIR)/obstack\.h!!g
 
 s/\\\n */ /g
 

@@ -23,7 +23,7 @@
 # Hack up ldmain compile.
 /^"{o}"ldmain.c.o \\Option-f .* config.status$/,/^$/c\
 "{o}"ldmain.c.o \\Option-f  "{s}"ldmain.c\
-	{CC} @DASH_C_FLAG@ -d DEFAULT_EMULATION={dq}{EMUL}{dq} -d SCRIPTDIR={dq}{scriptdir}{dq} {ALL_CFLAGS} "{s}"ldmain.c -o "{o}"ldmain.c.o\
+	{CC} -d DEFAULT_EMULATION='"'{EMUL}'"' -d SCRIPTDIR='"'{scriptdir}'"' {ALL_CFLAGS} "{s}"ldmain.c -o "{o}"ldmain.c.o\
 
 
 # Remove ldemul-list.h build, rely on configure to make one.
@@ -54,35 +54,14 @@
 /ldemul-list.h/s/"{s}"ldemul-list\.h/"{o}"ldemul-list.h/g
 /ldemul-list.h/s/^ldemul-list\.h/"{o}"ldemul-list.h/
 
-# Edit pathnames to emulation files.
 /"{s}"e.*\.c/s/"{s}"e\([-_a-z0-9]*\)\.c/"{o}"e\1.c/g
 /^e.*\.c/s/^e\([-_a-z0-9]*\)\.c/"{o}"e\1.c/
-
-# We can't run genscripts, so don't try.
-/{GENSCRIPTS}/s/{GENSCRIPTS}/null-command/
-
-# Comment out the TDIRS bits.
-/^TDIRS@/s/^/#/
-
-# Point at the BFD library directly.
-/@BFDLIB@/s/@BFDLIB@/::bfd:libbfd.o/
-
-# Don't need this.
-/@HLDFLAGS@/s/@HLDFLAGS@//
 
 #/sed.*free/,/> "{o}"ldlex.c.new/c\
 #	\	Catenate "{o}"lex.yy.c >"{o}"ldlex.c.new
 
 # The resource file is called mac-ld.r.
 /{LD_PROG}.r/s/{LD_PROG}\.r/mac-ld.r/
-
-/^install \\Option-f /,/^$/c\
-install \\Option-f  all install-only\
-\
-install-only \\Option-f\
-	NewFolderRecursive "{bindir}"\
-	Duplicate -y :ld.new "{bindir}"ld\
-
 
 # Remove dependency rebuilding crud.
 /^.dep /,/# .PHONY /d

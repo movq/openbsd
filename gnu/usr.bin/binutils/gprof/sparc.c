@@ -18,17 +18,13 @@
  */
 #include "gprof.h"
 #include "cg_arcs.h"
-#include "corefile.h"
+#include "core.h"
 #include "hist.h"
 #include "symtab.h"
 
-    /*
-     *        opcode of the `callf' instruction
-     */
-#define	CALL	(0xc0000000)
 
 void
-sparc_find_call (parent, p_lowpc, p_highpc)
+find_call (parent, p_lowpc, p_highpc)
      Sym *parent;
      bfd_vma p_lowpc;
      bfd_vma p_highpc;
@@ -52,17 +48,15 @@ sparc_find_call (parent, p_lowpc, p_highpc)
       p_highpc = s_highpc;
     }
   DBG (CALLDEBUG, printf ("[find_call] %s: 0x%lx to 0x%lx\n",
-			  parent->name, (unsigned long) p_lowpc,
-			  (unsigned long) p_highpc));
-  for (instr = (unsigned int *) (((p_lowpc + delta) + 3) &~ 3);
+			  parent->name, p_lowpc, p_highpc));
+  for (instr = (unsigned int *) (p_lowpc + delta);
        instr < (unsigned int *) (p_highpc + delta);
        ++instr)
     {
       if ((*instr & CALL))
 	{
 	  DBG (CALLDEBUG,
-	       printf ("[find_call] 0x%lx: callf",
-		       (unsigned long) instr - delta));
+	       printf ("[find_call] 0x%lx: callf", (bfd_vma) instr - delta));
 	  /*
 	   * Regular pc relative addressing check that this is the
 	   * address of a function.
@@ -73,12 +67,11 @@ sparc_find_call (parent, p_lowpc, p_highpc)
 	      child = sym_lookup (&symtab, dest_pc);
 	      DBG (CALLDEBUG,
 		   printf ("\tdest_pc=0x%lx, (name=%s, addr=0x%lx)\n",
-			   (unsigned long) dest_pc, child->name,
-			   (unsigned long) child->addr));
+			   dest_pc, child->name, child->addr));
 	      if (child->addr == dest_pc)
 		{
 		  /* a hit:  */
-		  arc_add (parent, child, (unsigned long) 0);
+		  arc_add (parent, child, 0);
 		  continue;
 		}
 	    }

@@ -1,6 +1,5 @@
 /* ldlang.h - linker command language support
-   Copyright 1991, 92, 93, 94, 95, 96, 97, 98, 99, 2000
-   Free Software Foundation, Inc.
+   Copyright 1991, 1992, 1993, 1994, 1995 Free Software Foundation, Inc.
    
    This file is part of GLD, the Gnu Linker.
    
@@ -15,9 +14,8 @@
    GNU General Public License for more details.
    
    You should have received a copy of the GNU General Public License
-   along with GLD; see the file COPYING.  If not, write to the Free
-   Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+   along with GLD; see the file COPYING.  If not, write to
+   the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #ifndef LDLANG_H
 #define LDLANG_H
@@ -48,8 +46,7 @@ typedef struct memory_region_struct
   bfd_size_type length;
   bfd_vma current;
   bfd_size_type old_length;
-  flagword flags;
-  flagword not_flags;
+  int flags;
   boolean had_full_message;
 } lang_memory_region_type ;
 
@@ -99,27 +96,6 @@ typedef struct lang_output_statement_struct
   const char *name;
 } lang_output_statement_type;
 
-/* Section types specified in a linker script.  */
-
-enum section_type
-{
-  normal_section,
-  dsect_section,
-  copy_section,
-  noload_section,
-  info_section,
-  overlay_section
-};
-
-/* This structure holds a list of program headers describing segments
-   in which this section should be placed.  */
-
-struct lang_output_section_phdr_list
-{
-  struct lang_output_section_phdr_list *next;
-  const char *name;
-  boolean used;
-};
 
 typedef struct lang_output_section_statement_struct 
 {
@@ -133,19 +109,16 @@ typedef struct lang_output_section_statement_struct
   boolean processed;
     
   asection *bfd_section;
-  flagword flags;		/* Or together of all input sections */
-  enum section_type sectype;
+  int flags;			/* Or together of all input sections */
+  int loadable;			/* set from NOLOAD flag in script */
   struct memory_region_struct *region;
-  struct memory_region_struct *lma_region;
   size_t block_value;
   fill_type fill;
 
   int subsection_alignment;  /* alignment of components */
   int section_alignment;  /* alignment of start of section */
 
-  union etree_union *load_base;
-
-  struct lang_output_section_phdr_list *phdrs;
+  union etree_union *load_base;  
 } lang_output_section_statement_type;
 
 
@@ -250,14 +223,14 @@ typedef struct lang_input_statement_struct
   /* Whether to search for this entry as a dynamic archive.  */
   boolean dynamic;
 
-  /* Whether to include the entire contents of an archive.  */
-  boolean whole_archive;
-
   boolean loaded;
     
   /*    unsigned int globals_in_this_file;*/
   const char *target;
   boolean real;
+  asection *common_section;
+  asection *common_output_section;
+  boolean complained;
 } lang_input_statement_type;
 
 typedef struct
@@ -280,11 +253,7 @@ typedef struct lang_wild_statement_struct
 {
   lang_statement_header_type header;
   const char *section_name;
-  boolean sections_sorted;
   const char *filename;
-  boolean filenames_sorted;
-  boolean keep_sections;
-  struct name_list *exclude_filename_list;
   lang_statement_list_type children;
 } lang_wild_statement_type;
 
@@ -337,39 +306,6 @@ typedef union lang_statement_union
   lang_group_statement_type group_statement;
 } lang_statement_union_type;
 
-/* This structure holds information about a program header, from the
-   PHDRS command in the linker script.  */
-
-struct lang_phdr
-{
-  struct lang_phdr *next;
-  const char *name;
-  unsigned long type;
-  boolean filehdr;
-  boolean phdrs;
-  etree_type *at;
-  etree_type *flags;
-};
-
-/* This structure is used to hold a list of sections which may not
-   cross reference each other.  */
-
-struct lang_nocrossref
-{
-  struct lang_nocrossref *next;
-  const char *name;
-};
-
-/* The list of nocrossref lists.  */
-
-struct lang_nocrossrefs
-{
-  struct lang_nocrossrefs *next;
-  struct lang_nocrossref *list;
-};
-
-extern struct lang_nocrossrefs *nocrossref_list;
-
 extern lang_output_section_statement_type *abs_output_section;
 extern boolean lang_has_input_file;
 extern etree_type *base;
@@ -382,16 +318,13 @@ extern boolean entry_from_cmdline;
 extern void lang_init PARAMS ((void));
 extern struct memory_region_struct *lang_memory_region_lookup
   PARAMS ((const char *const));
-extern struct memory_region_struct *lang_memory_region_default
-  PARAMS ((asection *));
 extern void lang_map PARAMS ((void));
-extern void lang_set_flags PARAMS ((lang_memory_region_type *, const char *,
-				    int));
+extern void lang_set_flags PARAMS ((int *, const char *));
 extern void lang_add_output PARAMS ((const char *, int from_script));
 extern void lang_enter_output_section_statement
   PARAMS ((const char *output_section_statement_name,
 	   etree_type * address_exp,
-	   enum section_type sectype,
+	   int flags,
 	   bfd_vma block_value,
 	   etree_type *align,
 	   etree_type *subalign,
@@ -401,17 +334,15 @@ extern void lang_process PARAMS ((void));
 extern void lang_section_start PARAMS ((const char *, union etree_union *));
 extern void lang_add_entry PARAMS ((const char *, boolean));
 extern void lang_add_target PARAMS ((const char *));
-extern void lang_add_wild
-  PARAMS ((const char *, boolean, const char *, boolean, boolean, name_list *));
+extern void lang_add_wild PARAMS ((const char *const , const char *const));
 extern void lang_add_map PARAMS ((const char *));
 extern void lang_add_fill PARAMS ((int));
-extern lang_assignment_statement_type * lang_add_assignment PARAMS ((union etree_union *));
+extern void lang_add_assignment PARAMS ((union etree_union *));
 extern void lang_add_attribute PARAMS ((enum statement_enum));
 extern void lang_startup PARAMS ((const char *));
 extern void lang_float PARAMS ((enum bfd_boolean));
-extern void lang_leave_output_section_statement
-  PARAMS ((bfd_vma, const char *, struct lang_output_section_phdr_list *,
-           const char *));
+extern void lang_leave_output_section_statement PARAMS ((bfd_vma,
+							 const char *));
 extern void lang_abs_symbol_at_end_of PARAMS ((const char *, const char *));
 extern void lang_abs_symbol_at_beginning_of PARAMS ((const char *,
 						     const char *));
@@ -456,7 +387,6 @@ extern void lang_add_reloc
 extern void lang_for_each_statement
   PARAMS ((void (*func) (lang_statement_union_type *)));
 extern PTR stat_alloc PARAMS ((size_t size));
-extern void dprint_statement PARAMS ((lang_statement_union_type *, int));
 extern bfd_vma lang_size_sections
   PARAMS ((lang_statement_union_type *s,
 	   lang_output_section_statement_type *output_section_statement,
@@ -468,28 +398,5 @@ extern void wild_doit
   PARAMS ((lang_statement_list_type *ptr, asection *section,
 	   lang_output_section_statement_type *output,
 	   lang_input_statement_type *file));
-extern void lang_new_phdr
-  PARAMS ((const char *, etree_type *, boolean, boolean, etree_type *,
-	   etree_type *));
-extern void lang_add_nocrossref PARAMS ((struct lang_nocrossref *));
-extern void lang_enter_overlay PARAMS ((etree_type *, etree_type *, int));
-extern void lang_enter_overlay_section PARAMS ((const char *));
-extern void lang_leave_overlay_section
-  PARAMS ((bfd_vma, struct lang_output_section_phdr_list *));
-extern void lang_leave_overlay
-  PARAMS ((bfd_vma, const char *, struct lang_output_section_phdr_list *,
-           const char *));
-
-extern struct bfd_elf_version_tree *lang_elf_version_info;
-
-extern struct bfd_elf_version_expr *lang_new_vers_regex
-  PARAMS ((struct bfd_elf_version_expr *, const char *, const char *));
-extern struct bfd_elf_version_tree *lang_new_vers_node
-  PARAMS ((struct bfd_elf_version_expr *, struct bfd_elf_version_expr *));
-extern struct bfd_elf_version_deps *lang_add_vers_depend
-  PARAMS ((struct bfd_elf_version_deps *, const char *));
-extern void lang_register_vers_node
-  PARAMS ((const char *, struct bfd_elf_version_tree *,
-	   struct bfd_elf_version_deps *));
 
 #endif

@@ -1,6 +1,5 @@
 /* a.out object file format
-   Copyright (C) 1989, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 2000
-   Free Software Foundation, Inc.
+   Copyright (C) 1989, 1990, 1991, 1992, 1993, 1994, 1995 Free Software Foundation, Inc.
 
 This file is part of GAS, the GNU Assembler.
 
@@ -14,12 +13,9 @@ WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
 the GNU General Public License for more details.
 
-You should have received a copy of the GNU General Public License
-along with GAS; see the file COPYING.  If not, write to the Free
-Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-02111-1307, USA. */
-
-#define OBJ_HEADER "obj-aout.h"
+You should have received a copy of the GNU General Public
+License along with GAS; see the file COPYING.  If not, write
+to the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. */
 
 #include "as.h"
 #ifdef BFD_ASSEMBLER
@@ -67,16 +63,13 @@ const segT N_TYPE_seg[N_TYPE + 2] =
 
 static void obj_aout_line PARAMS ((int));
 static void obj_aout_weak PARAMS ((int));
-static void obj_aout_type PARAMS ((int));
 
-const pseudo_typeS aout_pseudo_table[] =
+const pseudo_typeS obj_pseudo_table[] =
 {
   {"line", obj_aout_line, 0},	/* source code line number */
   {"ln", obj_aout_line, 0},	/* coff line number that we use anyway */
 
   {"weak", obj_aout_weak, 0},	/* mark symbol as weak.  */
-
-  {"type", obj_aout_type, 0},
 
   /* coff debug pseudos (ignored) */
   {"def", s_ignore, 0},
@@ -88,6 +81,7 @@ const pseudo_typeS aout_pseudo_table[] =
   {"scl", s_ignore, 0},
   {"size", s_ignore, 0},
   {"tag", s_ignore, 0},
+  {"type", s_ignore, 0},
   {"val", s_ignore, 0},
   {"version", s_ignore, 0},
 
@@ -96,8 +90,8 @@ const pseudo_typeS aout_pseudo_table[] =
   /* other stuff */
   {"ABORT", s_abort, 0},
 
-  {NULL, NULL, 0}		/* end sentinel */
-};				/* aout_pseudo_table */
+  {NULL}			/* end sentinel */
+};				/* obj_pseudo_table */
 
 
 #ifdef BFD_ASSEMBLER
@@ -111,21 +105,18 @@ obj_aout_frob_symbol (sym, punt)
   asection *sec;
   int desc, type, other;
 
-  flags = symbol_get_bfdsym (sym)->flags;
-  desc = aout_symbol (symbol_get_bfdsym (sym))->desc;
-  type = aout_symbol (symbol_get_bfdsym (sym))->type;
-  other = aout_symbol (symbol_get_bfdsym (sym))->other;
-  sec = S_GET_SEGMENT (sym);
+  flags = sym->bsym->flags;
+  desc = S_GET_DESC (sym);
+  type = S_GET_TYPE (sym);
+  other = S_GET_OTHER (sym);
+  sec = sym->bsym->section;
 
   /* Only frob simple symbols this way right now.  */
   if (! (type & ~ (N_TYPE | N_EXT)))
     {
       if (type == (N_UNDF | N_EXT)
 	  && sec == &bfd_abs_section)
-	{
-	  sec = bfd_und_section_ptr;
-	  S_SET_SEGMENT (sym, sec);
-	}
+	sym->bsym->section = sec = bfd_und_section_ptr;
 
       if ((type & N_TYPE) != N_INDR
 	  && (type & N_TYPE) != N_SETA
@@ -147,7 +138,7 @@ obj_aout_frob_symbol (sym, punt)
 	case N_SETB:
 	  /* Set the debugging flag for constructor symbols so that
 	     BFD leaves them alone.  */
-	  symbol_get_bfdsym (sym)->flags |= BSF_DEBUGGING;
+	  sym->bsym->flags |= BSF_DEBUGGING;
 
 	  /* You can't put a common symbol in a set.  The way a set
 	     element works is that the symbol has a definition and a
@@ -160,42 +151,42 @@ obj_aout_frob_symbol (sym, punt)
 	     on the other hand, we certainly don't want anybody to be
 	     mislead into thinking that their code will work.  */
 	  if (S_IS_COMMON (sym))
-	    as_bad (_("Attempt to put a common symbol into set %s"),
+	    as_bad ("Attempt to put a common symbol into set %s",
 		    S_GET_NAME (sym));
 	  /* Similarly, you can't put an undefined symbol in a set.  */
 	  else if (! S_IS_DEFINED (sym))
-	    as_bad (_("Attempt to put an undefined symbol into set %s"),
+	    as_bad ("Attempt to put an undefined symbol into set %s",
 		    S_GET_NAME (sym));
 
 	  break;
 	case N_INDR:
 	  /* Put indirect symbols in the indirect section.  */
-	  S_SET_SEGMENT (sym, bfd_ind_section_ptr);
-	  symbol_get_bfdsym (sym)->flags |= BSF_INDIRECT;
+	  sym->bsym->section = bfd_ind_section_ptr;
+	  sym->bsym->flags |= BSF_INDIRECT;
 	  if (type & N_EXT)
 	    {
-	      symbol_get_bfdsym (sym)->flags |= BSF_EXPORT;
-	      symbol_get_bfdsym (sym)->flags &=~ BSF_LOCAL;
+	      sym->bsym->flags |= BSF_EXPORT;
+	      sym->bsym->flags &=~ BSF_LOCAL;
 	    }
 	  break;
 	case N_WARNING:
 	  /* Mark warning symbols.  */
-	  symbol_get_bfdsym (sym)->flags |= BSF_WARNING;
+	  sym->bsym->flags |= BSF_WARNING;
 	  break;
 	}
     }
   else
     {
-      symbol_get_bfdsym (sym)->flags |= BSF_DEBUGGING;
+      sym->bsym->flags |= BSF_DEBUGGING;
     }
 
-  aout_symbol (symbol_get_bfdsym (sym))->type = type;
+  S_SET_TYPE (sym, type);
 
   /* Double check weak symbols.  */
-  if (S_IS_WEAK (sym))
+  if (sym->bsym->flags & BSF_WEAK)
     {
       if (S_IS_COMMON (sym))
-	as_bad (_("Symbol `%s' can not be both weak and common"),
+	as_bad ("Symbol `%s' can not be both weak and common",
 		S_GET_NAME (sym));
     }
 }
@@ -221,7 +212,7 @@ obj_aout_frob_file ()
   assert (x == true);
 }
 
-#else /* ! BFD_ASSEMBLER */
+#else
 
 /* Relocation. */
 
@@ -239,26 +230,6 @@ obj_emit_relocations (where, fixP, segment_address_in_file)
   for (; fixP; fixP = fixP->fx_next)
     if (fixP->fx_done == 0)
       {
-	symbolS *sym;
-
-	sym = fixP->fx_addsy;
-	while (sym->sy_value.X_op == O_symbol
-	       && (! S_IS_DEFINED (sym) || S_IS_COMMON (sym)))
-	  sym = sym->sy_value.X_add_symbol;
-	fixP->fx_addsy = sym;
-
-	if (! sym->sy_resolved && ! S_IS_DEFINED (sym))
-	  {
-	    char *file;
-	    unsigned int line;
-
-	    if (expr_symbol_where (sym, &file, &line))
-	      as_bad_where (file, line, _("unresolved relocation"));
-	    else
-	      as_bad (_("bad relocation: symbol `%s' not in symbol table"),
-		      S_GET_NAME (sym));
-	  }
-
 	tc_aout_fix_to_chars (*where, fixP, segment_address_in_file);
 	*where += md_reloc_size;
       }
@@ -297,7 +268,7 @@ obj_header_append (where, headers)
 #endif /* CROSS_COMPILE */
 
 }
-#endif /* ! defined (obj_header_append) */
+#endif
 
 void
 obj_symbol_to_chars (where, symbolP)
@@ -342,7 +313,7 @@ obj_emit_symbols (where, symbol_rootP)
 	    case N_TEXT: S_SET_TYPE (symbolP, N_WEAKT); break;
 	    case N_DATA: S_SET_TYPE (symbolP, N_WEAKD); break;
 	    case N_BSS:  S_SET_TYPE (symbolP, N_WEAKB); break;
-	    default: as_bad (_("%s: bad type for weak symbol"), temp); break;
+	    default: as_bad ("%s: bad type for weak symbol", temp); break;
 	    }
 	}
 
@@ -394,51 +365,9 @@ obj_aout_weak (ignore)
   demand_empty_rest_of_line ();
 }
 
-/* Handle .type.  On {Net,Open}BSD, this is used to set the n_other field,
-   which is then apparently used when doing dynamic linking.  Older
-   versions ogas ignored the .type pseudo-op, so we also ignore it if
-   we can't parse it.  */
-
-static void
-obj_aout_type (ignore)
-     int ignore;
+void
+obj_read_begin_hook ()
 {
-  char *name;
-  int c;
-  symbolS *sym;
-
-  name = input_line_pointer;
-  c = get_symbol_end ();
-  sym = symbol_find (name);
-  *input_line_pointer = c;
-  if (sym != NULL)
-    {
-      SKIP_WHITESPACE ();
-      if (*input_line_pointer == ',')
-	{
-	  ++input_line_pointer;
-	  SKIP_WHITESPACE ();
-	  if (*input_line_pointer == '@')
-	    {
-	      ++input_line_pointer;
-	      if (strncmp (input_line_pointer, "object", 6) == 0)
-#ifdef BFD_ASSEMBLER
-		aout_symbol (symbol_get_bfdsym (sym))->other = 1;
-#else
-		S_SET_OTHER (sym, 1);
-#endif
-	      else if (strncmp (input_line_pointer, "function", 8) == 0)
-#ifdef BFD_ASSEMBLER
-		aout_symbol (symbol_get_bfdsym (sym))->other = 2;
-#else
-		S_SET_OTHER (sym, 2);
-#endif
-	    }
-	}
-    }
-
-  /* Ignore everything else on the line.  */
-  s_ignore (0);
 }
 
 #ifndef BFD_ASSEMBLER
@@ -459,7 +388,7 @@ obj_crawl_symbol_chain (headers)
       if (symbolP->sy_mri_common)
 	{
 	  if (S_IS_EXTERNAL (symbolP))
-	    as_bad (_("%s: global symbols not supported in common sections"),
+	    as_bad ("%s: global symbols not supported in common sections",
 		    S_GET_NAME (symbolP));
 	  *symbolPP = symbol_next (symbolP);
 	  continue;
@@ -470,24 +399,13 @@ obj_crawl_symbol_chain (headers)
 	  S_SET_SEGMENT (symbolP, SEG_TEXT);
 	}			/* if pusing data into text */
 
-      resolve_symbol_value (symbolP, 1);
-
-      /* Skip symbols which were equated to undefined or common
-	 symbols.  */
-      if (symbolP->sy_value.X_op == O_symbol
-	  && (! S_IS_DEFINED (symbolP) || S_IS_COMMON (symbolP)))
-	{
-	  *symbolPP = symbol_next (symbolP);
-	  continue;
-	}
+      resolve_symbol_value (symbolP);
 
       /* OK, here is how we decide which symbols go out into the brave
 	 new symtab.  Symbols that do are:
 
 	 * symbols with no name (stabd's?)
 	 * symbols with debug info in their N_TYPE
-	 * symbols marked "forceout" (to force out local `L' symbols in Net-
-	 			      or OpenBSD PIC code)
 
 	 Symbols that don't are:
 	 * symbols that are registers
@@ -505,15 +423,7 @@ obj_crawl_symbol_chain (headers)
 	      || !S_IS_DEFINED (symbolP)
 	      || S_IS_EXTERNAL (symbolP)
 	      || (S_GET_NAME (symbolP)[0] != '\001'
-		  && (flag_keep_locals || !S_LOCAL_NAME (symbolP))
-#if defined(TE_NetBSD) || defined(TE_OpenBSD)
-	          || (flag_pic && symbolP->sy_forceout)
-#endif
-		  ))
-#if defined(TE_NetBSD) || defined(TE_OpenBSD)
-	  && (!flag_pic || symbolP != GOT_symbol || got_referenced != 0)
-#endif
-	  )
+		  && (flag_keep_locals || !S_LOCAL_NAME (symbolP)))))
 	{
 	  symbolP->sy_number = symbol_number++;
 
@@ -527,20 +437,16 @@ obj_crawl_symbol_chain (headers)
 	    }
 	  else			/* .Stabd case. */
 	    symbolP->sy_name_offset = 0;
-	  symbolPP = &symbolP->sy_next;
+	  symbolPP = &(symbol_next (symbolP));
 	}
       else
 	{
-	  if (S_IS_EXTERNAL (symbolP) || !S_IS_DEFINED (symbolP)
-#if defined(TE_NetBSD) || TE_OpenBSD)
-	      && (!flag_pic || symbolP != GOT_symbol || got_referenced != 0)
-#endif
-	      )
+	  if (S_IS_EXTERNAL (symbolP) || !S_IS_DEFINED (symbolP))
 	    /* This warning should never get triggered any more.
 	       Well, maybe if you're doing twisted things with
 	       register names...  */
 	    {
-	      as_bad (_("Local symbol %s never defined."), decode_local_label_name (S_GET_NAME (symbolP)));
+	      as_bad ("Local symbol %s never defined.", decode_local_label_name (S_GET_NAME (symbolP)));
 	    }			/* oops. */
 
 	  /* Unhook it from the chain */
@@ -628,7 +534,7 @@ DEFUN_VOID (s_sect)
     }
   if (exp >= 1000)
     {
-      as_bad (_("subsegment index too high"));
+      as_bad ("subsegment index too high");
     }
 
   if (strcmp (section_name, ".text") == 0)
@@ -648,59 +554,5 @@ DEFUN_VOID (s_sect)
 }
 
 #endif /* ! BFD_ASSEMBLER */
-
-#ifdef BFD_ASSEMBLER
-
-/* Support for an AOUT emulation.  */
-
-static void aout_pop_insert PARAMS ((void));
-static int obj_aout_s_get_other PARAMS ((symbolS *));
-static int obj_aout_s_get_desc PARAMS ((symbolS *));
-
-static void
-aout_pop_insert ()
-{
-  pop_insert (aout_pseudo_table);
-}
-
-static int
-obj_aout_s_get_other (sym)
-     symbolS *sym;
-{
-  return aout_symbol (symbol_get_bfdsym (sym))->other;
-}
-
-static int
-obj_aout_s_get_desc (sym)
-     symbolS *sym;
-{
-  return aout_symbol (symbol_get_bfdsym (sym))->desc;
-}
-
-
-const struct format_ops aout_format_ops =
-{
-  bfd_target_aout_flavour,
-  1,	/* dfl_leading_underscore */
-  0,	/* emit_section_symbols */
-  obj_aout_frob_symbol,
-  obj_aout_frob_file,
-  0,	/* frob_file_after_relocs */
-  0,	/* s_get_size */
-  0,	/* s_set_size */
-  0,	/* s_get_align */
-  0,	/* s_set_align */
-  obj_aout_s_get_other,
-  obj_aout_s_get_desc,
-  0,	/* copy_symbol_attributes */
-  0,	/* generate_asm_lineno */
-  0,	/* process_stab */
-  0,	/* sec_sym_ok_for_reloc */
-  aout_pop_insert,
-  0,	/* ecoff_set_ext */
-  0,	/* read_begin_hook */
-  0 	/* symbol_new_hook */
-};
-#endif BFD_ASSEMBLER
 
 /* end of obj-aout.c */

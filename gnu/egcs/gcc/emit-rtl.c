@@ -1,6 +1,5 @@
 /* Emit RTL for the GNU C-Compiler expander.
-   Copyright (C) 1987, 1988, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
-   2000, 2001 Free Software Foundation, Inc.
+   Copyright (C) 1987, 88, 92-97, 1998, 1999 Free Software Foundation, Inc.
 
 This file is part of GNU CC.
 
@@ -249,9 +248,6 @@ extern int emit_lineno;
 static rtx make_jump_insn_raw		PROTO((rtx));
 static rtx make_call_insn_raw		PROTO((rtx));
 static rtx find_line_note		PROTO((rtx));
-static void unshare_all_rtl_1		PROTO((rtx));
-static void unshare_all_decls		PROTO((tree));
-static void reset_used_decls		PROTO((tree));
 
 rtx
 gen_rtx_CONST_INT (mode, arg)
@@ -634,15 +630,9 @@ mark_reg_pointer (reg, align)
      rtx reg;
      int align;
 {
-  if (! REGNO_POINTER_FLAG (REGNO (reg)))
-    {
-      REGNO_POINTER_FLAG (REGNO (reg)) = 1;
+  REGNO_POINTER_FLAG (REGNO (reg)) = 1;
 
-      if (align)
-	REGNO_POINTER_ALIGN (REGNO (reg)) = align;
-    }
-  else if (align && align < REGNO_POINTER_ALIGN (REGNO (reg)))
-    /* We can no-longer be sure just how aligned this pointer is */
+  if (align)
     REGNO_POINTER_ALIGN (REGNO (reg)) = align;
 }
 
@@ -906,22 +896,6 @@ gen_lowpart_common (mode, x)
       r = REAL_VALUE_FROM_TARGET_SINGLE (i);
       return CONST_DOUBLE_FROM_REAL_VALUE (r, mode);
     }
-  else if (((HOST_FLOAT_FORMAT == TARGET_FLOAT_FORMAT
-	     && HOST_BITS_PER_WIDE_INT == BITS_PER_WORD)
-	    || flag_pretend_float)
-	   && GET_MODE_CLASS (mode) == MODE_FLOAT
-	   && GET_MODE_SIZE (mode) == UNITS_PER_WORD
-	   && GET_CODE (x) == CONST_INT
-	   && (sizeof (double) * HOST_BITS_PER_CHAR
-	       == HOST_BITS_PER_WIDE_INT))
-    {
-      REAL_VALUE_TYPE r;
-      HOST_WIDE_INT i;
-
-      i = INTVAL (x);
-      r = REAL_VALUE_FROM_TARGET_DOUBLE (&i);
-      return CONST_DOUBLE_FROM_REAL_VALUE (r, mode);
-    }
 #endif
 
   /* Similarly, if this is converting a floating-point value into a
@@ -976,11 +950,6 @@ gen_realpart (mode, x)
 {
   if (GET_CODE (x) == CONCAT && GET_MODE (XEXP (x, 0)) == mode)
     return XEXP (x, 0);
-  else if (WORDS_BIG_ENDIAN
-	   && GET_MODE_BITSIZE (mode) < BITS_PER_WORD
-	   && REG_P (x)
-	   && REGNO (x) < FIRST_PSEUDO_REGISTER)
-    fatal ("Unable to access real part of complex value in a hard register on this target");
   else if (WORDS_BIG_ENDIAN)
     return gen_highpart (mode, x);
   else
@@ -999,11 +968,6 @@ gen_imagpart (mode, x)
     return XEXP (x, 1);
   else if (WORDS_BIG_ENDIAN)
     return gen_lowpart (mode, x);
-  else if (!WORDS_BIG_ENDIAN
-	   && GET_MODE_BITSIZE (mode) < BITS_PER_WORD
-	   && REG_P (x)
-	   && REGNO (x) < FIRST_PSEUDO_REGISTER)
-    fatal ("Unable to access imaginary part of complex value in a hard register on this target");
   else
     return gen_highpart (mode, x);
 }
@@ -1232,33 +1196,10 @@ operand_subword (op, i, validate_address, mode)
   /* If OP is a REG or SUBREG, we can handle it very simply.  */
   if (GET_CODE (op) == REG)
     {
-      /* ??? There is a potential problem with this code.  It does not
-	 properly handle extractions of a subword from a hard register
-	 that is larger than word_mode.  Presumably the check for
-	 HARD_REGNO_MODE_OK catches these most of these cases.  */
-
-      /* If OP is a hard register, but OP + I is not a hard register,
-	 then extracting a subword is impossible.
-
-	 For example, consider if OP is the last hard register and it is
-	 larger than word_mode.  If we wanted word N (for N > 0) because a
-	 part of that hard register was known to contain a useful value,
-	 then OP + I would refer to a pseudo, not the hard register we
-	 actually wanted.  */
+      /* If the register is not valid for MODE, return 0.  If we don't
+	 do this, there is no way to fix up the resulting REG later.  */
       if (REGNO (op) < FIRST_PSEUDO_REGISTER
-	  && REGNO (op) + i >= FIRST_PSEUDO_REGISTER)
-	return 0;
-
-      /* If the register is not valid for MODE, return 0.  Note we
-	 have to check both OP and OP + I since they may refer to
-	 different parts of the register file.
-
-	 Consider if OP refers to the last 96bit FP register and we want
-	 subword 3 because that subword is known to contain a value we
-	 needed.  */
-      if (REGNO (op) < FIRST_PSEUDO_REGISTER
-	  && (! HARD_REGNO_MODE_OK (REGNO (op), word_mode)
-	      || ! HARD_REGNO_MODE_OK (REGNO (op) + i, word_mode)))
+	  && ! HARD_REGNO_MODE_OK (REGNO (op) + i, word_mode))
 	return 0;
       else if (REGNO (op) >= FIRST_PSEUDO_REGISTER
 	       || (REG_FUNCTION_VALUE_P (op)
@@ -1655,8 +1596,7 @@ gen_inline_header_rtx (first_insn, first_parm_insn, first_labelno,
 		       pops_args, stack_slots, forced_labels, function_flags,
 		       outgoing_args_size, original_arg_vector,
 		       original_decl_initial, regno_rtx, regno_flag,
-		       regno_align, parm_reg_stack_loc,
-		       nonlocal_goto_handler_labels)
+		       regno_align, parm_reg_stack_loc)
      rtx first_insn, first_parm_insn;
      int first_labelno, last_labelno, max_parm_regnum, max_regnum, args_size;
      int pops_args;
@@ -1670,7 +1610,6 @@ gen_inline_header_rtx (first_insn, first_parm_insn, first_labelno,
      char *regno_flag;
      char *regno_align;
      rtvec parm_reg_stack_loc;
-     rtx nonlocal_goto_handler_labels;
 {
   rtx header = gen_rtx_INLINE_HEADER (VOIDmode,
 				      cur_insn_uid++, NULL_RTX,
@@ -1682,9 +1621,7 @@ gen_inline_header_rtx (first_insn, first_parm_insn, first_labelno,
 				      original_arg_vector,
 				      original_decl_initial,
 				      regno_rtx, regno_flag, regno_align,
-				      parm_reg_stack_loc,
-				      nonlocal_goto_handler_labels,
-				      nonlocal_goto_handler_labels);
+				      parm_reg_stack_loc);
   return header;
 }
 
@@ -1775,29 +1712,23 @@ restore_emit_status (p)
   free_insn = 0;
 }
 
-/* Go through all the RTL insn bodies and copy any invalid shared 
-   structure.  This routine should only be called once.  */
+/* Go through all the RTL insn bodies and copy any invalid shared structure.
+   It does not work to do this twice, because the mark bits set here
+   are not cleared afterwards.  */
 
 void
-unshare_all_rtl (fndecl, insn)
-     tree fndecl;
-     rtx insn;
+unshare_all_rtl (insn)
+     register rtx insn;
 {
-  tree decl;
+  for (; insn; insn = NEXT_INSN (insn))
+    if (GET_CODE (insn) == INSN || GET_CODE (insn) == JUMP_INSN
+	|| GET_CODE (insn) == CALL_INSN)
+      {
+	PATTERN (insn) = copy_rtx_if_shared (PATTERN (insn));
+	REG_NOTES (insn) = copy_rtx_if_shared (REG_NOTES (insn));
+	LOG_LINKS (insn) = copy_rtx_if_shared (LOG_LINKS (insn));
+      }
 
-  /* Make sure that virtual stack slots are not shared.  */
-  reset_used_decls (DECL_INITIAL (current_function_decl));
-
-  /* Make sure that virtual parameters are not shared.  */
-  for (decl = DECL_ARGUMENTS (fndecl); decl; decl = TREE_CHAIN (decl))
-    DECL_RTL (decl) = copy_rtx_if_shared (DECL_RTL (decl));
-
-  /* Make sure that virtual stack slots are not shared.  */
-  unshare_all_decls (DECL_INITIAL (fndecl));
-
-  /* Unshare just about everything else.  */
-  unshare_all_rtl_1 (insn);
-  
   /* Make sure the addresses of stack slots found outside the insn chain
      (such as, in DECL_RTL of a variable) are not shared
      with the insn chain.
@@ -1805,76 +1736,8 @@ unshare_all_rtl (fndecl, insn)
      This special care is necessary when the stack slot MEM does not
      actually appear in the insn chain.  If it does appear, its address
      is unshared from all else at that point.  */
-  stack_slot_list = copy_rtx_if_shared (stack_slot_list);
-}
 
-/* Go through all the RTL insn bodies and copy any invalid shared 
-   structure, again.  This is a fairly expensive thing to do so it
-   should be done sparingly.  */
-
-void
-unshare_all_rtl_again (insn)
-     rtx insn;
-{
-  rtx p;
-  for (p = insn; p; p = NEXT_INSN (p))
-    if (GET_RTX_CLASS (GET_CODE (p)) == 'i')
-      {
-	reset_used_flags (PATTERN (p));
-	reset_used_flags (REG_NOTES (p));
-	reset_used_flags (LOG_LINKS (p));
-      }
-  unshare_all_rtl_1 (insn);
-}
-
-/* Go through all the RTL insn bodies and copy any invalid shared structure.
-   Assumes the mark bits are cleared at entry.  */
-
-static void
-unshare_all_rtl_1 (insn)
-     rtx insn;
-{
-  for (; insn; insn = NEXT_INSN (insn))
-    if (GET_RTX_CLASS (GET_CODE (insn)) == 'i')
-      {
-	PATTERN (insn) = copy_rtx_if_shared (PATTERN (insn));
-	REG_NOTES (insn) = copy_rtx_if_shared (REG_NOTES (insn));
-	LOG_LINKS (insn) = copy_rtx_if_shared (LOG_LINKS (insn));
-      }
-}
-
-/* Go through all virtual stack slots of a function and copy any
-   shared structure.  */
-static void
-unshare_all_decls (blk)
-     tree blk;
-{
-  tree t;
-
-  /* Copy shared decls.  */
-  for (t = BLOCK_VARS (blk); t; t = TREE_CHAIN (t))
-    DECL_RTL (t)  = copy_rtx_if_shared (DECL_RTL (t));
-
-  /* Now process sub-blocks.  */
-  for (t = BLOCK_SUBBLOCKS (blk); t; t = TREE_CHAIN (t))
-    unshare_all_decls (t);
-}
-
-/* Go through all virtual stack slots of a function and mark them as
-   not shared. */
-static void
-reset_used_decls (blk)
-     tree blk;
-{
-  tree t;
-
-  /* Mark decls.  */
-  for (t = BLOCK_VARS (blk); t; t = TREE_CHAIN (t))
-    reset_used_flags (DECL_RTL (t));
-
-  /* Now process sub-blocks.  */
-  for (t = BLOCK_SUBBLOCKS (blk); t; t = TREE_CHAIN (t))
-    reset_used_decls (t);
+  copy_rtx_if_shared (stack_slot_list);
 }
 
 /* Mark ORIG as in use, and return a copy of it if it was already in use.
@@ -1929,17 +1792,25 @@ copy_rtx_if_shared (orig)
       return x;
 
     case MEM:
-      /* A MEM is allowed to be shared if its address is constant.
-
-	 We used to allow sharing of MEMs which referenced 
-	 virtual_stack_vars_rtx or virtual_incoming_args_rtx, but
-	 that can lose.  instantiate_virtual_regs will not unshare
-	 the MEMs, and combine may change the structure of the address
-	 because it looks safe and profitable in one context, but
-	 in some other context it creates unrecognizable RTL.  */
-      if (CONSTANT_ADDRESS_P (XEXP (x, 0)))
+      /* A MEM is allowed to be shared if its address is constant
+	 or is a constant plus one of the special registers.  */
+      if (CONSTANT_ADDRESS_P (XEXP (x, 0))
+	  || XEXP (x, 0) == virtual_stack_vars_rtx
+	  || XEXP (x, 0) == virtual_incoming_args_rtx)
 	return x;
 
+      if (GET_CODE (XEXP (x, 0)) == PLUS
+	  && (XEXP (XEXP (x, 0), 0) == virtual_stack_vars_rtx
+	      || XEXP (XEXP (x, 0), 0) == virtual_incoming_args_rtx)
+	  && CONSTANT_ADDRESS_P (XEXP (XEXP (x, 0), 1)))
+	{
+	  /* This MEM can appear in more than one place,
+	     but its address better not be shared with anything else.  */
+	  if (! x->used)
+	    XEXP (x, 0) = copy_rtx_if_shared (XEXP (x, 0));
+	  x->used = 1;
+	  return x;
+	}
       break;
 
     default:
@@ -2433,18 +2304,10 @@ try_split (pat, trial, last)
 	 it, in turn, will be split (SFmode on the 29k is an example).  */
       if (GET_CODE (seq) == SEQUENCE)
 	{
-	  int i;
-
-	  /* Avoid infinite loop if any insn of the result matches 
-	     the original pattern.  */
-	  for (i = 0; i < XVECLEN (seq, 0); i++)
-  	    if (GET_CODE (XVECEXP (seq, 0, i)) == INSN 
-		&& rtx_equal_p (PATTERN (XVECEXP (seq, 0, i)), pat))
-  	      return trial;
-
 	  /* If we are splitting a JUMP_INSN, look for the JUMP_INSN in
 	     SEQ and copy our JUMP_LABEL to it.  If JUMP_LABEL is non-zero,
 	     increment the usage count so we don't delete the label.  */
+	  int i;
 
 	  if (GET_CODE (trial) == JUMP_INSN)
 	    for (i = XVECLEN (seq, 0) - 1; i >= 0; i--)

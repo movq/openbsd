@@ -1,5 +1,5 @@
 /* NLM (NetWare Loadable Module) executable support for BFD.
-   Copyright (C) 1993, 94, 95, 98, 1999 Free Software Foundation, Inc.
+   Copyright (C) 1993 Free Software Foundation, Inc.
 
    Written by Fred Fish @ Cygnus Support, using ELF support as the
    template.
@@ -20,6 +20,7 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
+#include <string.h>		/* For strrchr and friends */
 #include "bfd.h"
 #include "sysdep.h"
 #include "libbfd.h"
@@ -113,9 +114,12 @@ nlm_object_p (abfd)
 
   /* Read in the fixed length portion of the NLM header in external format.  */
 
-  x_fxdhdr = (PTR) bfd_malloc ((size_t) nlm_fixed_header_size (abfd));
+  x_fxdhdr = (PTR) malloc ((size_t) nlm_fixed_header_size (abfd));
   if (x_fxdhdr == NULL)
-    goto got_no_match;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      goto got_no_match;
+    }
 
   if (bfd_read ((PTR) x_fxdhdr, nlm_fixed_header_size (abfd), 1, abfd) !=
       nlm_fixed_header_size (abfd))
@@ -132,7 +136,10 @@ nlm_object_p (abfd)
   new_tdata = ((struct nlm_obj_tdata *)
 	       bfd_zalloc (abfd, sizeof (struct nlm_obj_tdata)));
   if (new_tdata == NULL)
-    goto got_no_match;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      goto got_no_match;
+    }
 
   nlm_tdata (abfd) = new_tdata;
 
@@ -578,7 +585,10 @@ nlm_swap_auxiliary_headers_in (abfd)
 	      hdrLength -= 2 * NLM_TARGET_LONG_SIZE + 8;
 	      hdr = bfd_alloc (abfd, hdrLength);
 	      if (hdr == NULL)
-		return false;
+		{
+		  bfd_set_error (bfd_error_no_memory);
+		  return false;
+		}
 	      if (bfd_read (hdr, 1, hdrLength, abfd) != hdrLength)
 		return false;
 	    }
@@ -599,7 +609,10 @@ nlm_swap_auxiliary_headers_in (abfd)
 		return false;
 	      contents = (bfd_byte *) bfd_alloc (abfd, dataLength);
 	      if (contents == NULL)
-		return false;
+		{
+		  bfd_set_error (bfd_error_no_memory);
+		  return false;
+		}
 	      if (bfd_read (contents, 1, dataLength, abfd) != dataLength)
 		return false;
 	      if (bfd_seek (abfd, pos, SEEK_SET) != 0)
@@ -971,7 +984,7 @@ nlm_make_empty_symbol (abfd)
 
 void
 nlm_get_symbol_info (ignore_abfd, symbol, ret)
-     bfd *ignore_abfd ATTRIBUTE_UNUSED;
+     bfd *ignore_abfd;
      asymbol *symbol;
      symbol_info *ret;
 {
@@ -982,7 +995,7 @@ nlm_get_symbol_info (ignore_abfd, symbol, ret)
 
 void
 nlm_print_symbol (abfd, afile, symbol, how)
-     bfd *abfd ATTRIBUTE_UNUSED;
+     bfd *abfd;
      PTR afile;
      asymbol *symbol;
      bfd_print_symbol_type how;
@@ -1066,7 +1079,10 @@ nlm_slurp_symbol_table (abfd)
   sym = ((nlm_symbol_type *)
 	 bfd_zalloc (abfd, totsymcount * sizeof (nlm_symbol_type)));
   if (!sym)
-    return false;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return false;
+    }
   nlm_set_symbols (abfd, sym);
 
   /* We use the bfd's symcount directly as the control count, so that early
@@ -1083,7 +1099,10 @@ nlm_slurp_symbol_table (abfd)
       sym->symbol.the_bfd = abfd;
       sym->symbol.name = bfd_alloc (abfd, symlength + 1);
       if (!sym->symbol.name)
-	return false;
+	{
+	  bfd_set_error (bfd_error_no_memory);
+	  return false;
+	}
       if (bfd_read ((PTR) sym->symbol.name, symlength, 1, abfd)
 	  != symlength)
 	return (false);
@@ -1139,7 +1158,10 @@ nlm_slurp_symbol_table (abfd)
 	  sym->symbol.the_bfd = abfd;
 	  sym->symbol.name = bfd_alloc (abfd, symlength + 1);
 	  if (!sym->symbol.name)
-	    return false;
+	    {
+	      bfd_set_error (bfd_error_no_memory);
+	      return false;
+	    }
 	  if (bfd_read ((PTR) sym->symbol.name, symlength, 1, abfd)
 	      != symlength)
 	    return (false);
@@ -1228,7 +1250,10 @@ nlm_slurp_reloc_fixups (abfd)
   rels = (arelent *) bfd_alloc (abfd, count * sizeof (arelent));
   secs = (asection **) bfd_alloc (abfd, count * sizeof (asection *));
   if ((rels == NULL || secs == NULL) && count != 0)
-    return false;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return false;
+    }
   nlm_relocation_fixups (abfd) = rels;
   nlm_relocation_fixup_secs (abfd) = secs;
 
@@ -1682,9 +1707,12 @@ nlm_write_object_contents (abfd)
   unsigned char *fixed_header = NULL;
 
   fixed_header = ((unsigned char *)
-		  bfd_malloc ((size_t) nlm_fixed_header_size (abfd)));
+		  malloc ((size_t) nlm_fixed_header_size (abfd)));
   if (fixed_header == NULL)
-    goto error_return;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      goto error_return;
+    }
 
   if (abfd->output_has_begun == false
       && nlm_compute_section_file_positions (abfd) == false)
@@ -1775,7 +1803,10 @@ nlm_write_object_contents (abfd)
 					(external_reloc_count
 					 * sizeof (struct reloc_and_sec)));
   if (external_relocs == (struct reloc_and_sec *) NULL)
-    goto error_return;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      goto error_return;
+    }
   i = 0;
   for (sec = abfd->sections; sec != (asection *) NULL; sec = sec->next)
     {

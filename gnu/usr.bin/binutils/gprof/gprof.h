@@ -21,17 +21,8 @@
 #ifndef gprof_h
 #define gprof_h
 
-#include "ansidecl.h"
-
-/* Include the BFD sysdep.h file.  */
+#include <ansidecl.h>
 #include "sysdep.h"
-
-/* Undefine the BFD PACKAGE and VERSION macros before including the
-   gprof config.h file.  */
-#undef PACKAGE
-#undef VERSION
-
-#include "gconfig.h"
 
 #ifndef MIN
 #define MIN(a,b)	((a) < (b) ? (a) : (b))
@@ -43,25 +34,34 @@
 /* AIX defines hz as a macro.  */
 #undef hz
 
+#ifdef MACHINE_H
+#include MACHINE_H
+#else
+#if vax
+#include "vax.h"
+#endif
+#if sun
+#include "sun.h"
+#endif
+#if tahoe
+#include "tahoe.h"
+#endif
+#endif
+
+#ifndef FOPEN_RB
+#define FOPEN_RB "r"
+#endif
+#ifndef FOPEN_WB
+#define FOPEN_WB "w"
+#endif
+
 #ifndef PATH_MAX
 #define PATH_MAX	1024
 #endif
 
-#define	A_OUTNAME	"a.out"		/* default core filename */
+#define	A_OUTNAME	"a.out"	/* default core filename */
 #define	GMONNAME	"gmon.out"	/* default profile filename */
 #define	GMONSUM		"gmon.sum"	/* profile summary filename */
-
-#ifdef HAVE_LOCALE_H
-# include <locale.h>
-#endif
-
-#ifdef ENABLE_NLS
-/* Undefine BFD's `_' macro - it uses dgetext() and we want to use gettext().  */
-#undef  _
-#define _(String) gettext (String)
-#endif
-
-#include "bin-bugs.h"
 
 /*
  * These may already be defined on some systems.  We could probably
@@ -79,8 +79,6 @@
 #define STYLE_EXEC_COUNTS	(1<<3)
 #define STYLE_ANNOTATED_SOURCE	(1<<4)
 #define STYLE_GMON_INFO		(1<<5)
-#define STYLE_FUNCTION_ORDER	(1<<6)
-#define STYLE_FILE_ORDER	(1<<7)
 
 #define	ANYDEBUG	(1<<0)	/*    1 */
 #define	DFNDEBUG	(1<<1)	/*    2 */
@@ -105,7 +103,7 @@
 
 typedef enum
   {
-    FF_AUTO = 0, FF_MAGIC, FF_BSD, FF_BSD44, FF_PROF
+    FF_AUTO = 0, FF_MAGIC, FF_BSD, FF_PROF
   }
 File_Format;
 
@@ -113,7 +111,6 @@ typedef int bool;
 typedef unsigned char UNIT[2];	/* unit of profiling */
 
 extern const char *whoami;	/* command-name, for error messages */
-extern const char *function_mapping_file; /* file mapping functions to files */
 extern const char *a_out_name;	/* core filename */
 extern long hz;			/* ticks per second */
 
@@ -124,7 +121,6 @@ extern int debug_level;		/* debug level */
 extern int output_style;
 extern int output_width;	/* controls column width in index */
 extern bool bsd_style_output;	/* as opposed to FSF style output */
-extern bool demangle;		/* demangle symbol names? */
 extern bool discard_underscores;	/* discard leading underscores? */
 extern bool ignore_direct_calls;	/* don't count direct calls */
 extern bool ignore_static_funcs;	/* suppress static functions */
@@ -132,8 +128,6 @@ extern bool ignore_zeros;	/* ignore unused symbols/files */
 extern bool line_granularity;	/* function or line granularity? */
 extern bool print_descriptions;	/* output profile description */
 extern bool print_path;		/* print path or just filename? */
-extern bool ignore_non_functions;/* Ignore non-function symbols.  */
-
 extern File_Format file_format;	/* requested file format */
 
 extern bool first_output;	/* no output so far? */

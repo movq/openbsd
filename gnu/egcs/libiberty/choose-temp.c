@@ -19,6 +19,9 @@ Boston, MA 02111-1307, USA.  */
 
 /* This file exports two functions: choose_temp_base and make_temp_file.  */
 
+/* This file lives in at least two places: libiberty and gcc.
+   Don't change one without the other.  */
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -30,9 +33,6 @@ Boston, MA 02111-1307, USA.  */
 #endif
 #ifdef HAVE_STDLIB_H
 #include <stdlib.h>
-#endif
-#ifdef HAVE_STRING_H
-#include <string.h>
 #endif
 #ifdef HAVE_SYS_FILE_H
 #include <sys/file.h>   /* May get R_OK, etc. on some systems.  */
@@ -91,7 +91,6 @@ try (dir, base)
   return 0;
 }
 
-#if defined(__MSDOS__) && !defined(__GO32__)
 /* Return a prefix for temporary file names or NULL if unable to find one.
    The current directory is chosen if all else fails so the program is
    exited if a temporary directory can't be found (mktemp fails).
@@ -141,14 +140,12 @@ choose_temp_base ()
     abort ();
   return temp_filename;
 }
-#endif
-
 /* Return a temporary file name (as a string) or NULL if unable to create
    one.  */
 
 char *
 make_temp_file (suffix)
-     const char *suffix;
+     char *suffix;
 {
   char *base = 0;
   char *temp_filename;

@@ -356,7 +356,10 @@ nlm_i386_read_import (abfd, sym)
   sym -> symbol.the_bfd = abfd;
   name = bfd_alloc (abfd, symlength + 1);
   if (name == NULL)
-    return false;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return false;
+    }
   if (bfd_read (name, symlength, 1, abfd) != symlength)
     return false;
   name[symlength] = '\0';
@@ -370,7 +373,10 @@ nlm_i386_read_import (abfd, sym)
   nlm_relocs = ((struct nlm_relent *)
 		bfd_alloc (abfd, rcount * sizeof (struct nlm_relent)));
   if (!nlm_relocs)
-    return false;
+    {
+      bfd_set_error (bfd_error_no_memory);
+      return false;
+    }
   sym -> relocs = nlm_relocs;
   sym -> rcnt = 0;
   while (sym -> rcnt < rcount)

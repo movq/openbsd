@@ -1,5 +1,6 @@
 /* subsegs.h -> subsegs.c
-   Copyright (C) 1987, 92, 93, 94, 95, 96, 1998 Free Software Foundation, Inc.
+
+   Copyright (C) 1987, 1992, 1993, 1994 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -14,9 +15,8 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with GAS; see the file COPYING.  If not, write to the Free
-   Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+   along with GAS; see the file COPYING.  If not, write to
+   the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 /*
  * For every sub-segment the user mentions in the ASsembler program,
@@ -64,17 +64,17 @@ extern frchainS *frchain_root;
 extern frchainS *frchain_now;
 
 
-typedef struct segment_info_struct
+typedef struct
 {
   frchainS *frchainP;
-  unsigned int hadone : 1;
+  int hadone : 1;
 
   /* This field is set if this is a .bss section which does not really
      have any contents.  Once upon a time a .bss section did not have
      any frags, but that is no longer true.  This field prevent the
      SEC_HAS_CONTENTS flag from being set for the section even if
      there are frags.  */
-  unsigned int bss : 1;
+  int bss : 1;
 
   int user_stuff;
 
@@ -85,10 +85,7 @@ typedef struct segment_info_struct
 
 #if defined (MANY_SEGMENTS) && !defined (BFD_ASSEMBLER)
   struct internal_scnhdr scnhdr;
-  enum linkonce_type linkonce;
-  const char *name;
 #endif
-
   symbolS *dot;
 
   struct lineno_list *lineno_list_head;
@@ -114,10 +111,6 @@ typedef struct segment_info_struct
 
 #ifdef NEED_LITERAL_POOL
   unsigned long literal_pool_size;
-#endif
-
-#ifdef TC_SEGMENT_INFO_TYPE
-  TC_SEGMENT_INFO_TYPE tc_segment_info_data;
 #endif
 } segment_info_type;
 
@@ -153,7 +146,5 @@ struct seg_info_trash {
 #endif
 
 #endif /* ! BFD_ASSEMBLER */
-
-extern void subsegs_print_statistics PARAMS ((FILE *));
 
 /* end of subsegs.h */

@@ -1,6 +1,7 @@
 ; Should check to make sure something useful gets put on those .word
 ; statements.
-	.code
+        .space	$TEXT$
+        .subspa	$CODE$
 
 	.align	8
 	.export	icode,data
@@ -8,7 +9,7 @@ icode:
 	.proc
 	.callinfo	frame=0,no_calls
 	.entry
-	bv,n	%r0(%r2)
+	bv,n	0(2)
 	.exit
 	nop
 	.procend

@@ -4,7 +4,6 @@
 
 # Test MRI style constants
 
-0*0 T foo
 0*a A s01
 0*a A s02
 0*a A s03
