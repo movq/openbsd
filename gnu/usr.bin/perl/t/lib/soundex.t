@@ -1,12 +1,12 @@
 #!./perl
 #
-# $Id: soundex.t,v 1.1.1.2 2000/04/06 16:10:45 millert Exp $
+# $Id: soundex.t,v 1.1.1.3 2001/05/24 18:25:26 millert Exp $
 #
 # test module for soundex.pl
 #
 # $Log: soundex.t,v $
-# Revision 1.1.1.2  2000/04/06 16:10:45  millert
-# virgin perl 5.6.0
+# Revision 1.1.1.3  2001/05/24 18:25:26  millert
+# stock perl 5.6.1
 #
 # Revision 1.2  1994/03/24  00:30:27  mike
 # Subtle bug (any excuse :-) spotted by Rich Pinder <rpinder@hsc.usc.edu>
@@ -21,7 +21,7 @@
 
 BEGIN {
     chdir 't' if -d 't';
-    unshift @INC, '../lib';
+    @INC = '../lib';
 }
 
 use Text::Soundex;
