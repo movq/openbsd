@@ -1,4 +1,4 @@
-/* $Id: __stdlib.h,v 1.1 1998/07/21 13:19:36 peter Exp $ */
+/* $Id: __stdlib.h,v 1.1.1.1 1998/07/21 13:19:36 peter Exp $ */
 
 #ifndef  __sys_stdtypes_h
 

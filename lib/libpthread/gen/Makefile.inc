@@ -1,5 +1,5 @@
 #	from: @(#)Makefile.inc	5.21 (Berkeley) 5/24/91
-#	$Id: Makefile.inc,v 1.1 1998/07/21 13:19:02 peter Exp $
+#	$Id: Makefile.inc,v 1.1.1.1 1998/07/21 13:19:02 peter Exp $
 
 # gen sources
 .PATH: ${srcdir}/gen

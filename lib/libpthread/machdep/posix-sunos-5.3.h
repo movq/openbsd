@@ -1,7 +1,7 @@
 /* ==== posix.h ============================================================
  * Copyright (c) 1993 by Chris Provenzano, proven@athena.mit.edu	
  *
- * $Id: posix-sunos-5.3.h,v 1.1 1998/07/21 13:19:16 peter Exp $
+ * $Id: posix-sunos-5.3.h,v 1.1.1.1 1998/07/21 13:19:16 peter Exp $
  *
  * Description : Do the right thing for a sunos 4.1.3 system.
  *

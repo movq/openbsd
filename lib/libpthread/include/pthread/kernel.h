@@ -29,7 +29,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF 
  * SUCH DAMAGE.
  *
- * $Id: kernel.h,v 1.1 1998/07/21 13:19:11 peter Exp $
+ * $Id: kernel.h,v 1.1.1.1 1998/07/21 13:19:11 peter Exp $
  *
  * Description : mutex header.
  *

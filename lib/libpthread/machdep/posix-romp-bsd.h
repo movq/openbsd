@@ -8,7 +8,7 @@
  */
 
 #ifndef lint
-static const char rcsid[] = "$Id: posix-romp-bsd.h,v 1.1 1998/07/21 13:19:15 peter Exp $";
+static const char rcsid[] = "$Id: posix-romp-bsd.h,v 1.1.1.1 1998/07/21 13:19:15 peter Exp $";
 #endif
 
 #ifndef O_NONBLOCK

@@ -1,7 +1,7 @@
 /* ==== machdep.h ============================================================
  * Copyright (c) 1993 Chris Provenzano, proven@athena.mit.edu
  *
- * $Id: engine-i386-freebsd-1.1.h,v 1.1 1998/07/21 13:19:13 peter Exp $
+ * $Id: engine-i386-freebsd-1.1.h,v 1.1.1.1 1998/07/21 13:19:13 peter Exp $
  *
  */
 
