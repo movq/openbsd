@@ -1,4 +1,4 @@
-/*	$OpenBSD: mntopts.h,v 1.1 2003/08/05 08:21:03 hin Exp $	*/
+/*	$OpenBSD: mntopts.h,v 1.1.1.1 2003/08/05 08:21:03 hin Exp $	*/
 /*	$NetBSD: mntopts.h,v 1.3 1995/03/18 14:56:59 cgd Exp $	*/
 
 /*-

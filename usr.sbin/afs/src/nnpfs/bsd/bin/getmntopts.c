@@ -1,4 +1,4 @@
-/*	$OpenBSD: getmntopts.c,v 1.1 2003/08/05 08:21:03 hin Exp $	*/
+/*	$OpenBSD: getmntopts.c,v 1.1.1.1 2003/08/05 08:21:03 hin Exp $	*/
 /*	$NetBSD: getmntopts.c,v 1.3 1995/03/18 14:56:58 cgd Exp $	*/
 /* $arla: getmntopts.c,v 1.4 1998/02/23 05:38:59 art Exp $ */
 
