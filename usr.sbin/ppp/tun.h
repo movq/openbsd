@@ -1,5 +1,5 @@
 /*
- * $Id: tun.h,v 1.1 1997/11/23 20:27:36 brian Exp $
+ * $Id: tun.h,v 1.1.1.1 1997/11/23 20:27:36 brian Exp $
  */
 
 struct tun_data {

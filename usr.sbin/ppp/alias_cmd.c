@@ -1,5 +1,5 @@
 /*
- * $Id: alias_cmd.c,v 1.1 1997/11/23 20:27:32 brian Exp $
+ * $Id: alias_cmd.c,v 1.1.1.1 1997/11/23 20:27:32 brian Exp $
  */
 
 #include <sys/param.h>

@@ -1,5 +1,5 @@
 /*
- * $Id: loadalias.h,v 1.1 1997/11/23 20:27:34 brian Exp $
+ * $Id: loadalias.h,v 1.1.1.1 1997/11/23 20:27:34 brian Exp $
  */
 
 struct aliasHandlers {
