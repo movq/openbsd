@@ -18,7 +18,7 @@ use Carp 'croak';
 # The most recent version and complete docs are available at:
 #   http://stein.cshl.org/WWW/software/CGI/
 
-$CGI::revision = '$Id: CGI.pm,v 1.5 2002/10/27 22:25:25 millert Exp $';
+$CGI::revision = '$Id: CGI.pm,v 1.5.2.1 2003/08/19 18:22:53 brad Exp $';
 $CGI::VERSION='2.81';
 
 # HARD-CODED LOCATION FOR FILE UPLOAD TEMPORARY FILES.
@@ -1533,8 +1533,11 @@ sub startform {
     $enctype = $enctype || &URL_ENCODED;
     unless (defined $action) {
        $action = $self->url(-absolute=>1,-path=>1);
-       $action .= "?$ENV{QUERY_STRING}" if $ENV{QUERY_STRING};
+       if (length($ENV{QUERY_STRING})>0) {
+           $action .= "?$ENV{QUERY_STRING}";
+       }
     }
+    $action =~ s/\"/%22/g;  # fix cross-site scripting bug reported by obscure
     $action = qq(action="$action");
     my($other) = @other ? " @other" : '';
     $self->{'.parametersToAdd'}={};
