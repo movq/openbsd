@@ -1,4 +1,4 @@
-/*	$Id: gstddef.h,v 1.1 1995/10/18 08:39:40 deraadt Exp $ */
+/*	$Id: gstddef.h,v 1.1.1.1 1995/10/18 08:39:40 deraadt Exp $ */
 
 #ifndef _STDDEF_H
 #ifndef _STDDEF_H_

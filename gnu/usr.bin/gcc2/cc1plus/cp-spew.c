@@ -19,7 +19,7 @@ along with GNU CC; see the file COPYING.  If not, write to
 the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.  */
 
 #ifndef lint
-static char rcsid[] = "$Id: cp-spew.c,v 1.1 1995/10/18 08:39:33 deraadt Exp $";
+static char rcsid[] = "$Id: cp-spew.c,v 1.1.1.1 1995/10/18 08:39:33 deraadt Exp $";
 #endif /* not lint */
 
 /* This file is the type analyzer for GNU C++.  To debug it, define SPEW_DEBUG

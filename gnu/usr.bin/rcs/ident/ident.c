@@ -28,8 +28,8 @@ Report problems and direct all questions to:
 
 /*
  * $Log: ident.c,v $
- * Revision 1.1  1995/10/18 08:41:00  deraadt
- * Initial revision
+ * Revision 1.1.1.1  1995/10/18 08:41:00  deraadt
+ * initial import of NetBSD tree
  *
  * Revision 1.3  1995/02/24 02:07:55  mycroft
  * RCS 5.6.7.4
@@ -100,7 +100,7 @@ Report problems and direct all questions to:
 static int match P((FILE*));
 static void scanfile P((FILE*,char const*,int));
 
-mainProg(identId, "ident", "$Id: ident.c,v 1.1 1995/10/18 08:41:00 deraadt Exp $")
+mainProg(identId, "ident", "$Id: ident.c,v 1.1.1.1 1995/10/18 08:41:00 deraadt Exp $")
 /*  Ident searches the named files for all occurrences
  *  of the pattern $keyword: text $.
  */

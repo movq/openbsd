@@ -1,6 +1,6 @@
 /* C code produced by gperf version 2.5 (GNU C++ version
 
-	$Id: cp-hash.h,v 1.1 1995/10/18 08:39:31 deraadt Exp $
+	$Id: cp-hash.h,v 1.1.1.1 1995/10/18 08:39:31 deraadt Exp $
 */
 /* Command-line: gperf -p -j1 -g -o -t -N is_reserved_word -k1,4,$,7 gplus.gperf  */
 /* Command-line: gperf -p -j1 -g -o -t -N is_reserved_word -k1,4,$,7 gplus.gperf  */

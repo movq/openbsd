@@ -1,4 +1,4 @@
-/*	$Id: gstabs.h,v 1.1 1995/10/18 08:39:17 deraadt Exp $ */
+/*	$Id: gstabs.h,v 1.1.1.1 1995/10/18 08:39:17 deraadt Exp $ */
 
 #include "i386/gas.h"
 

@@ -37,7 +37,7 @@ static void cleanup P((void));
 static RILE *workptr;
 static int exitstatus;
 
-mainProg(rcscleanId, "rcsclean", "$Id: rcsclean.c,v 1.1 1995/10/18 08:41:03 deraadt Exp $")
+mainProg(rcscleanId, "rcsclean", "$Id: rcsclean.c,v 1.1.1.1 1995/10/18 08:41:03 deraadt Exp $")
 {
 	static char const usage[] =
 		"\nrcsclean: usage: rcsclean -ksubst -{nqru}[rev] -T -Vn -xsuff -zzone file ...";

@@ -1,4 +1,4 @@
-#	$Id: Makefile.inc,v 1.1 1995/10/18 08:39:15 deraadt Exp $
+#	$Id: Makefile.inc,v 1.1.1.1 1995/10/18 08:39:15 deraadt Exp $
 
 CFLAGS+= -I${.CURDIR}/../../common -I${.CURDIR}/.. -I${.CURDIR} # -DIN_GCC
 .PATH:	${.CURDIR}/../../common ${.CURDIR}/..

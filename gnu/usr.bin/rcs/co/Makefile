@@ -1,4 +1,4 @@
-#	$Id: Makefile,v 1.1 1995/10/18 08:40:59 deraadt Exp $
+#	$Id: Makefile,v 1.1.1.1 1995/10/18 08:40:59 deraadt Exp $
 
 PROG=	co
 CFLAGS+= -I${.CURDIR}/../lib

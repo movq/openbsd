@@ -2,7 +2,7 @@
 /*  A Bison parser, made from objc-parse.y  */
 
 #ifndef lint
-static char rcsid[] = "$Id: objc-parse.c,v 1.1 1995/10/18 08:39:29 deraadt Exp $";
+static char rcsid[] = "$Id: objc-parse.c,v 1.1.1.1 1995/10/18 08:39:29 deraadt Exp $";
 #endif /* not lint */
 
 #define YYBISON 1  /* Identify Bison output.  */

@@ -28,8 +28,8 @@ Report problems and direct all questions to:
 
 /*
  * $Log: rcsdiff.c,v $
- * Revision 1.1  1995/10/18 08:41:03  deraadt
- * Initial revision
+ * Revision 1.1.1.1  1995/10/18 08:41:03  deraadt
+ * initial import of NetBSD tree
  *
  * Revision 1.3  1995/02/24 02:25:35  mycroft
  * RCS 5.6.7.4
@@ -150,7 +150,7 @@ static int exitstatus;
 static RILE *workptr;
 static struct stat workstat;
 
-mainProg(rcsdiffId, "rcsdiff", "$Id: rcsdiff.c,v 1.1 1995/10/18 08:41:03 deraadt Exp $")
+mainProg(rcsdiffId, "rcsdiff", "$Id: rcsdiff.c,v 1.1.1.1 1995/10/18 08:41:03 deraadt Exp $")
 {
     static char const cmdusage[] =
 	    "\nrcsdiff usage: rcsdiff -ksubst -q -rrev1 [-rrev2] -Vn -xsuff -zzone [diff options] file ...";
