@@ -1,4 +1,4 @@
-/*	$OpenBSD: sigsuspend.c,v 1.1 2001/08/15 14:37:13 fgsch Exp $	*/
+/*	$OpenBSD: sigsuspend.c,v 1.1.1.1 2001/08/15 14:37:13 fgsch Exp $	*/
 /*
  * Copyright (c) 1998 Daniel M. Eischen <eischen@vigrid.com>
  * All rights reserved.

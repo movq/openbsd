@@ -1,4 +1,4 @@
-/*	$OpenBSD: sigwait.c,v 1.1 2001/08/15 14:37:16 fgsch Exp $	*/
+/*	$OpenBSD: sigwait.c,v 1.1.1.1 2001/08/15 14:37:16 fgsch Exp $	*/
 /*
  * Copyright (c) 1998 Daniel M. Eischen <eischen@vigrid.com>
  * All rights reserved.

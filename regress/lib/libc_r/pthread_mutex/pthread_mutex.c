@@ -1,4 +1,4 @@
-/*	$OpenBSD: pthread_mutex.c,v 1.1 2001/08/15 14:37:12 fgsch Exp $	*/
+/*	$OpenBSD: pthread_mutex.c,v 1.1.1.1 2001/08/15 14:37:12 fgsch Exp $	*/
 /*
  * Copyright (c) 1993, 1994, 1995, 1996 by Chris Provenzano and contributors, 
  * proven@mit.edu All rights reserved.

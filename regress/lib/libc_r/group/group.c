@@ -1,4 +1,4 @@
-/*	$OpenBSD: group.c,v 1.1 2001/08/15 14:37:11 fgsch Exp $	*/
+/*	$OpenBSD: group.c,v 1.1.1.1 2001/08/15 14:37:11 fgsch Exp $	*/
 /* David Leonard <d@openbsd.org>, 2001. Public Domain. */
 
 /*
