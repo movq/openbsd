@@ -1,4 +1,4 @@
-/*	$OpenBSD: dl_printf.c,v 1.1 2000/06/13 03:33:55 rahnds Exp $	*/
+/*	$OpenBSD: dl_printf.c,v 1.1.1.1 2000/06/13 03:33:55 rahnds Exp $	*/
 
 /*-
  * Copyright (c) 1993

@@ -1,4 +1,4 @@
-/*	$OpenBSD: archdep.h,v 1.1 2000/06/13 03:34:13 rahnds Exp $ */
+/*	$OpenBSD: archdep.h,v 1.1.1.1 2000/06/13 03:34:13 rahnds Exp $ */
 
 /*
  * Copyright (c) 1998 Per Fogelstrom, Opsycon AB

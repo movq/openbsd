@@ -1,4 +1,4 @@
-/*	$OpenBSD: resolve.c,v 1.1 2000/06/13 03:34:07 rahnds Exp $ */
+/*	$OpenBSD: resolve.c,v 1.1.1.1 2000/06/13 03:34:07 rahnds Exp $ */
 
 /*
  * Copyright (c) 1998 Per Fogelstrom, Opsycon AB
