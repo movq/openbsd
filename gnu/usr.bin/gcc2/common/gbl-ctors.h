@@ -23,7 +23,7 @@ You should have received a copy of the GNU General Public License
 along with GNU CC; see the file COPYING.  If not, write to
 the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA. 
 
-	$Id: gbl-ctors.h,v 1.1.1.1 1995/10/18 08:39:40 deraadt Exp $
+	$Id: gbl-ctors.h,v 1.1 1995/10/18 08:39:40 deraadt Exp $
 */
 
 /*	This file contains definitions and declarations of things

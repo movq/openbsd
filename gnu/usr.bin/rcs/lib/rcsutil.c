@@ -31,8 +31,8 @@ Report problems and direct all questions to:
 
 /*
  * $Log: rcsutil.c,v $
- * Revision 1.1.1.1  1995/10/18 08:41:02  deraadt
- * initial import of NetBSD tree
+ * Revision 1.1  1995/10/18 08:41:02  deraadt
+ * Initial revision
  *
  * Revision 1.5  1995/02/24 02:25:16  mycroft
  * RCS 5.6.7.4
@@ -167,7 +167,7 @@ Report problems and direct all questions to:
 
 #include "rcsbase.h"
 
-libId(utilId, "$Id: rcsutil.c,v 1.1.1.1 1995/10/18 08:41:02 deraadt Exp $")
+libId(utilId, "$Id: rcsutil.c,v 1.1 1995/10/18 08:41:02 deraadt Exp $")
 
 #if !has_memcmp
 	int

@@ -1,5 +1,5 @@
 #	from: @(#)Makefile	6.2 (Berkeley) 2/2/91
-#	$Id: Makefile,v 1.1.1.1 1995/10/18 08:39:27 deraadt Exp $
+#	$Id: Makefile,v 1.1 1995/10/18 08:39:27 deraadt Exp $
 
 PROG=		cc1
 

@@ -1,4 +1,4 @@
-#	$Id: dot.profile,v 1.1.1.1 1995/10/18 08:38:00 deraadt Exp $
+#	$Id: dot.profile,v 1.1 1995/10/18 08:38:00 deraadt Exp $
 
 PATH=/sbin:/bin:/instbin
 export PATH

@@ -18,7 +18,7 @@ along with GNU CC; see the file COPYING.  If not, write to
 the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.  */
 
 #ifndef lint
-static char rcsid[] = "$Id: tree.c,v 1.1.1.1 1995/10/18 08:39:46 deraadt Exp $";
+static char rcsid[] = "$Id: tree.c,v 1.1 1995/10/18 08:39:46 deraadt Exp $";
 #endif /* not lint */
 
 /* This file contains the low level primitives for operating on tree nodes,

@@ -24,7 +24,7 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- *	$Id: dbsym.c,v 1.1.1.1 1995/10/18 08:47:31 deraadt Exp $
+ *	$Id: dbsym.c,v 1.1 1995/10/18 08:47:31 deraadt Exp $
  */
 
 /* Copy the symbol table into the space reserved for it. */

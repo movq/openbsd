@@ -34,12 +34,12 @@
  * SUCH DAMAGE.
  *
  *	from: @(#)reboot.s	5.1 (Berkeley) 4/23/90
- *	$Id: reboot.S,v 1.1.1.1 1995/10/18 08:41:26 deraadt Exp $
+ *	$Id: reboot.S,v 1.1 1995/10/18 08:41:26 deraadt Exp $
  */
 
 #if defined(SYSLIBC_SCCS) && !defined(lint)
 	.text
-	.asciz "$Id: reboot.S,v 1.1.1.1 1995/10/18 08:41:26 deraadt Exp $"
+	.asciz "$Id: reboot.S,v 1.1 1995/10/18 08:41:26 deraadt Exp $"
 #endif /* SYSLIBC_SCCS and not lint */
 
 #include "SYS.h"

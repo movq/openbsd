@@ -4,7 +4,7 @@
  * and libc sometimes invokes realloc, which can greatly confuse things
  * in the linking process...
  *
- *	$Id: combined.c,v 1.1.1.1 1995/10/18 08:38:21 deraadt Exp $
+ *	$Id: combined.c,v 1.1 1995/10/18 08:38:21 deraadt Exp $
  */
 
 #include "malloc.c"

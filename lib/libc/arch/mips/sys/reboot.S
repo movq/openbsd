@@ -38,7 +38,7 @@
 
 #if defined(LIBC_SCCS) && !defined(lint)
 	ASMSTR("from: @(#)reboot.s	8.1 (Berkeley) 6/4/93")
-	ASMSTR("$Id: reboot.S,v 1.1.1.1 1995/10/18 08:41:35 deraadt Exp $")
+	ASMSTR("$Id: reboot.S,v 1.1 1995/10/18 08:41:35 deraadt Exp $")
 #endif /* LIBC_SCCS and not lint */
 
 LEAF(reboot)
