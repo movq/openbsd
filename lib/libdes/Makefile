@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.1 1997/06/29 10:24:52 provos Exp $
+#	$OpenBSD: Makefile,v 1.1.1.1 1997/06/29 10:24:52 provos Exp $
 
 LIB=	des
 SRCS=	cbc_cksm.c cbc_enc.c cbc3_enc.c cfb_enc.c cfb64ede.c cfb64enc.c \
