@@ -1,4 +1,4 @@
-/*	$OpenBSD: library.c,v 1.1 2000/06/13 03:34:00 rahnds Exp $ */
+/*	$OpenBSD: library.c,v 1.1.1.1 2000/06/13 03:34:00 rahnds Exp $ */
 
 /*
  * Copyright (c) 1998 Per Fogelstrom, Opsycon AB
