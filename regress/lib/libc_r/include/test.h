@@ -1,4 +1,4 @@
-/*	$OpenBSD: test.h,v 1.1 2001/08/15 14:37:10 fgsch Exp $	*/
+/*	$OpenBSD: test.h,v 1.1.1.1 2001/08/15 14:37:10 fgsch Exp $	*/
 
 #ifndef _h_test_
 #define _h_test_

@@ -1,4 +1,4 @@
-/*	$OpenBSD: fcntl.c,v 1.1 2001/08/15 14:37:11 fgsch Exp $	*/
+/*	$OpenBSD: fcntl.c,v 1.1.1.1 2001/08/15 14:37:11 fgsch Exp $	*/
 /*
  * Copyright (c) 1993, 1994, 1995, 1996 by Chris Provenzano and contributors, 
  * proven@mit.edu All rights reserved.
