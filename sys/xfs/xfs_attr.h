@@ -14,12 +14,7 @@
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
  * 
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *      This product includes software developed by the Kungliga Tekniska
- *      Högskolan and its contributors.
- * 
- * 4. Neither the name of the Institute nor the names of its contributors
+ * 3. Neither the name of the Institute nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  * 
@@ -36,7 +31,7 @@
  * SUCH DAMAGE.
  */
 
-/* $Id: xfs_attr.h,v 1.2.4.2 2001/05/14 22:47:51 niklas Exp $ */
+/* $Id: xfs_attr.h,v 1.2.4.3 2003/03/28 00:41:30 niklas Exp $ */
 
 #ifndef _XFS_ATTR_H
 #define _XFS_ATTR_H
