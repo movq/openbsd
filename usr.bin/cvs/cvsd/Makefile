@@ -1,9 +1,9 @@
-# $Id: Makefile,v 1.8 2004/12/08 18:52:53 xsa Exp $
+# $Id: Makefile,v 1.9 2005/02/22 22:33:01 jfb Exp $
 
 .PATH:	${.CURDIR}/..
 
 PROG=cvsd
-SRCS= cvsd.c buf.c conf.y log.c msg.c rcs.c rcsnum.c session.c sock.c
+SRCS= cvsd.c buf.c conf.y log.c msg.c repo.c sock.c
 
 BINDIR=/usr/sbin
 MAN=cvsd.8 cvsd.conf.5
