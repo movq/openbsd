@@ -1,38 +1,16 @@
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
+ * Copyright (c) 1992, 1993, 1994, 1995, 1996
+ *	Keith Bostic.  All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
- * 4. Neither the name of the University nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
+ * See the LICENSE file for redistribution information.
  */
 
+#include "config.h"
+
 #ifndef lint
-static char sccsid[] = "@(#)vcmd.c	8.41 (Berkeley) 8/17/94";
+static const char sccsid[] = "@(#)v_cmd.c	10.9 (Berkeley) 3/28/96";
 #endif /* not lint */
 
 #include <sys/types.h>
@@ -41,16 +19,10 @@ static char sccsid[] = "@(#)vcmd.c	8.41 (Berkeley) 8/17/94";
 
 #include <bitstring.h>
 #include <limits.h>
-#include <signal.h>
 #include <stdio.h>
-#include <termios.h>
 
-#include "compat.h"
-#include <db.h>
-#include <regex.h>
-
+#include "../common/common.h"
 #include "vi.h"
-#include "vcmd.h"
 
 /*
  * This array maps keystrokes to vi command functions.  It is known
@@ -117,7 +89,7 @@ VIKEYS const vikeys [MAXVIKEY + 1] = {
 	{v_up,		V_CNT|V_MOVE|VM_LMODE|VM_RCM,
 	    "[count]^P",
 	    "^P move up by lines"},
-/* 021  ^Q -- not available, used for hardware flow control. */
+/* 021  ^Q -- same as ^V if not used for hardware flow control. */
 	{NULL},
 /* 022  ^R */
 	{v_redraw,	0,
@@ -148,13 +120,13 @@ VIKEYS const vikeys [MAXVIKEY + 1] = {
 	    "[count]^Y",
 	    "^Y page up by lines"},
 /* 032  ^Z */
-	{v_stop,	0,
+	{v_suspend,	V_SECURE,
 	    "^Z",
 	    "^Z suspend editor"},
 /* 033  ^[ */
 	{NULL,		0,
 	    "^[ <escape>",
-	    "^[ <escape> leave input mode, return to command mode"},
+	    "^[ <escape> exit input mode, cancel partial commands"},
 /* 034  ^\ */
 	{v_exmode,	0,
 	    "^\\",
@@ -174,14 +146,14 @@ VIKEYS const vikeys [MAXVIKEY + 1] = {
 	    "[count]' '",
 	    "   <space> move right by columns"},
 /* 041   ! */
-	{v_filter,	V_CNT|V_DOT|V_MOTION|VC_DEF|VM_RCM_SET,
+	{v_filter,	V_CNT|V_DOT|V_MOTION|V_SECURE|VM_RCM_SET,
 	    "[count]![count]motion command(s)",
 	    " ! filter through command(s) to motion"},
 /* 042   " */
 	{NULL},
 /* 043   # */
-	{v_increment,	V_CHAR|V_CNT|V_DOT|V_KEYNUM|VM_RCM_SET,
-	    "[count]#[#+-]",
+	{v_increment,	V_CHAR|V_CNT|V_DOT|VM_RCM_SET,
+	    "[count]# +|-|#",
 	    " # number increment/decrement"},
 /* 044   $ */
 	{v_dollar,	V_CNT|V_MOVE|VM_RCM_SETLAST,
@@ -196,7 +168,7 @@ VIKEYS const vikeys [MAXVIKEY + 1] = {
 	    "&",
 	    " & repeat substitution"},
 /* 047   ' */
-	{v_fmark,	V_ABS_L|V_CHAR|V_MOVE|VM_LMODE,
+	{v_fmark,	V_ABS_L|V_CHAR|V_MOVE|VM_LMODE|VM_RCM_SET,
 	    "'['a-z]",
 	    " ' move to mark (to first non-blank)"},
 /* 050   ( */
@@ -260,13 +232,13 @@ VIKEYS const vikeys [MAXVIKEY + 1] = {
 	    "[count];",
 	    " ; repeat last F, f, T or t search"},
 /* 074   < */
-	{v_shiftl,	V_CNT|V_DOT|V_MOTION|VC_DEF|VM_RCM_SET,
+	{v_shiftl,	V_CNT|V_DOT|V_MOTION|VM_RCM_SET,
 	    "[count]<[count]motion",
 	    " < shift lines left to motion"},
 /* 075   = */
 	{NULL},
 /* 076   > */
-	{v_shiftr,	V_CNT|V_DOT|V_MOTION|VC_DEF|VM_RCM_SET,
+	{v_shiftr,	V_CNT|V_DOT|V_MOTION|VM_RCM_SET,
 	    "[count]>[count]motion",
 	    " > shift lines right to motion"},
 /* 077   ? */
@@ -274,7 +246,7 @@ VIKEYS const vikeys [MAXVIKEY + 1] = {
 	    "?RE[? offset]",
 	    " ? search backward"},
 /* 100   @ */
-	{v_at,		V_RBUF|VM_RCM_SET,
+	{v_at,		V_CNT|V_RBUF|VM_RCM_SET,
 	    "@buffer",
 	    " @ execute buffer"},
 /* 101   A */
@@ -286,12 +258,12 @@ VIKEYS const vikeys [MAXVIKEY + 1] = {
 	    "[count]B",
 	    " B move back bigword"},
 /* 103   C */
-	{v_Change,	V_CNT|V_DOT|V_OBUF|VM_RCM_SET,
+	{NULL,		0,
 	    "[buffer][count]C",
 	    " C change to end-of-line"},
 /* 104   D */
-	{v_Delete,	V_CNT|V_DOT|V_OBUF|VM_RCM_SET,
-	    "[buffer][count]D",
+	{NULL,		0,
+	    "[buffer]D",
 	    " D delete to end-of-line"},
 /* 105   E */
 	{v_wordE,	V_CNT|V_MOVE|VM_RCM_SET,
@@ -312,7 +284,7 @@ VIKEYS const vikeys [MAXVIKEY + 1] = {
 /* 111   I */
 	{v_iI,		V_CNT|V_DOT|VM_RCM_SET,
 	    "[count]I",
-	    " I insert at line beginning"},
+	    " I insert before first nonblank"},
 /* 112   J */
 	{v_join,	V_CNT|V_DOT|VM_RCM_SET,
 	    "[count]J",
@@ -348,7 +320,7 @@ VIKEYS const vikeys [MAXVIKEY + 1] = {
 	    "[count]R",
 	    " R replace characters"},
 /* 123   S */
-	{v_Subst,	V_CNT|V_DOT|V_OBUF|VM_LMODE|VM_RCM_SET,
+	{NULL,		0,
 	    "[buffer][count]S",
 	    " S substitute for the line(s)"},
 /* 124   T */
@@ -370,7 +342,7 @@ VIKEYS const vikeys [MAXVIKEY + 1] = {
 	    "[buffer][count]X",
 	    " X delete character before cursor"},
 /* 131   Y */
-	{v_yank,	V_CNT|VM_LMODE|V_OBUF,
+	{NULL,		0,
 	    "[buffer][count]Y",
 	    " Y copy line"},
 /* 132   Z */
@@ -417,11 +389,11 @@ VIKEYS const vikeys [MAXVIKEY + 1] = {
 	    "[count]b",
 	    " b move back word"},
 /* 143   c */
-	{v_change,	V_CNT|V_DOT|V_MOTION|V_OBUF|VC_C|VM_RCM_SET,
+	{v_change,	V_CNT|V_DOT|V_MOTION|V_OBUF|VM_RCM_SET,
 	    "[buffer][count]c[count]motion",
 	    " c change to motion"},
 /* 144   d */
-	{v_delete,	V_CNT|V_DOT|V_MOTION|V_OBUF|VC_D|VM_RCM_SET,
+	{v_delete,	V_CNT|V_DOT|V_MOTION|V_OBUF|VM_RCM_SET,
 	    "[buffer][count]d[count]motion",
 	    " d delete to motion"},
 /* 145   e */
@@ -503,7 +475,7 @@ VIKEYS const vikeys [MAXVIKEY + 1] = {
 	    "[buffer][count]x",
 	    " x delete character"},
 /* 171   y */
-	{v_yank,	V_CNT|V_MOTION|V_OBUF|VC_Y|VM_RCM_SET,
+	{v_yank,	V_CNT|V_DOT|V_MOTION|V_OBUF|VM_RCM_SET,
 	    "[buffer][count]y[count]motion",
 	    " y copy text to motion into a cut buffer"},
 /* 172   z */
@@ -511,9 +483,9 @@ VIKEYS const vikeys [MAXVIKEY + 1] = {
 	 * DON'T set the V_CHAR flag, the char isn't required,
 	 * so it's handled specially in getcmd().
 	 */
-	{v_z, 		V_ABS_L|V_CNT|VM_RCM_SET,
+	{v_z, 		V_ABS_L|V_CNT|VM_RCM_SETFNB,
 	    "[line]z[window_size][-|.|+|^|<CR>]",
-	    " z redraw window"},
+	    " z reposition the screen"},
 /* 173   { */
 	{v_paragraphb,	V_ABS|V_CNT|V_MOVE|VM_CUTREQ|VM_RCM_SET,
 	    "[count]{",
