@@ -29,26 +29,86 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- *
- *	@(#)search.h	8.9 (Berkeley) 3/16/94
  */
 
-#define	RE_WSTART	"[[:<:]]"	/* Not-in-word search patterns. */
-#define	RE_WSTOP	"[[:>:]]"
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1992, 1993, 1994\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
 
-#define	SEARCH_DELTA	0x001		/* A delta part of the search.*/
-#define	SEARCH_EOL	0x002		/* Offset past EOL is okay. */
-#define	SEARCH_FILE	0x004		/* Search the entire file. */
-#define	SEARCH_MSG	0x008		/* Display search warning messages. */
-#define	SEARCH_PARSE	0x010		/* Parse the search pattern. */
-#define	SEARCH_SET	0x020		/* Set search direction. */
-#define	SEARCH_TAG	0x040		/* Search pattern is a tag pattern. */
-#define	SEARCH_TERM	0x080		/* Search pattern should terminate. */
+#ifndef lint
+static char sccsid[] = "@(#)dump.c	8.1 (Berkeley) 8/31/94";
+#endif /* not lint */
 
-enum direction	{ NOTSET, FORWARD, BACKWARD };
+#include <ctype.h>
+#include <stdio.h>
 
-/* Search functions. */
-int	b_search __P((SCR *, EXF *, MARK *, MARK *, char *, char **, u_int *));
-int	f_search __P((SCR *, EXF *, MARK *, MARK *, char *, char **, u_int *));
-int	re_conv __P((SCR *, char **, int *));
-void	re_error __P((SCR *, int, regex_t *));
+static void
+parse(fp)
+	FILE *fp;
+{
+	int ch, s1, s2, s3;
+
+#define	TESTD(s) {							\
+	if ((s = getc(fp)) == EOF)					\
+		return;							\
+	if (!isdigit(s))						\
+		continue;						\
+}
+#define	TESTP {								\
+	if ((ch = getc(fp)) == EOF)					\
+		return;							\
+	if (ch != '|')							\
+		continue;						\
+}
+#define	MOVEC(t) {							\
+	do {								\
+		if ((ch = getc(fp)) == EOF)				\
+			return;						\
+	} while (ch != (t));						\
+}
+	for (;;) {
+		MOVEC('"');
+		TESTD(s1);
+		TESTD(s2);
+		TESTD(s3);
+		TESTP;
+		putchar('"');
+		putchar(s1);
+		putchar(s2);
+		putchar(s3);
+		putchar('|');
+		for (;;) {		/* dump to end quote. */
+			if ((ch = getc(fp)) == EOF)
+				return;
+			putchar(ch);
+			if (ch == '"')
+				break;
+			if (ch == '\\') {
+				if ((ch = getc(fp)) == EOF)
+					return;
+				putchar(ch);
+			}
+		}
+		putchar('\n');
+	}
+}
+
+int
+main(argc, argv)
+	int argc;
+	char *argv[];
+{
+	FILE *fp;
+
+	for (; *argv != NULL; ++argv) {
+		if ((fp = fopen(*argv, "r")) == NULL) {
+			perror(*argv);
+			exit (1);
+		}
+		parse(fp);
+		(void)fclose(fp);
+	}
+	exit (0);
+}
