@@ -1,5 +1,5 @@
 /* This file is obj-evax.h
-   Copyright 1996, 2000 Free Software Foundation, Inc.
+   Copyright (C) 1996 Free Software Foundation, Inc.
    Contributed by Klaus Kämpf (kkaempf@progis.de) of
      proGIS Software, Aachen, Germany.
 
@@ -25,10 +25,10 @@
  * object format specific header files.
  */
 
-/* define an obj specific macro off which target cpu back ends may key.  */
+/* define an obj specific macro off which target cpu back ends may key. */
 #define OBJ_EVAX 1
 
-/* include whatever target cpu is appropriate.  */
+/* include whatever target cpu is appropriate. */
 #include "targ-cpu.h"
 
 #ifdef BFD_ASSEMBLER
@@ -60,7 +60,7 @@ typedef void *object_headers;
 
 #define DEFAULT_MAGIC_NUMBER_FOR_OBJECT_FILE (0)	/* your magic number */
 
-#define OBJ_EMIT_LINENO(a,b,c)	/* must be *something*.  This no-op's it out.  */
+#define OBJ_EMIT_LINENO(a,b,c)	/* must be *something*.  This no-op's it out. */
 
 #define obj_symbol_new_hook(s)        {;}
 
@@ -70,6 +70,9 @@ typedef void *object_headers;
 #define S_GET_OTHER(S)	0
 #define S_GET_TYPE(S)	0
 #define S_GET_DESC(S)	0
+
+#undef AXP_REG_GP
+#define AXP_REG_GP AXP_REG_PV
 
 #define PDSC_S_K_KIND_FP_STACK 9
 #define PDSC_S_K_KIND_FP_REGISTER 10
@@ -85,7 +88,22 @@ typedef void *object_headers;
 
 #define LKP_S_K_SIZE 16
 
-#define TC_IMPLICIT_LCOMM_ALIGNMENT(SIZE, P2VAR) (P2VAR) = 3
+struct evaxProc {
+  symbolS *symbol;	/* proc pdesc symbol */
+  int pdsckind;
+  int framereg;		/* register for frame pointer */
+  int framesize;	/* size of frame */
+  int rsa_offset;
+  int ra_save;
+  int fp_save;
+  long imask;
+  long fmask;
+  int type;
+  int prologue;
+};
+
+typedef struct evaxProc evaxProcT;
+typedef struct evaxProc *evaxProcP;
 
 /*
  * Local Variables:
@@ -93,3 +111,5 @@ typedef void *object_headers;
  * fill-column: 131
  * End:
  */
+
+/* end of obj-evax.h */

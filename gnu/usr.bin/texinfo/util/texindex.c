@@ -1,8 +1,8 @@
-/* Process TeX index dribble output into an actual index.
-   $Id: texindex.c,v 1.4 2002/06/10 13:51:04 espie Exp $
+/* Prepare TeX index dribble output into an actual index.
 
-   Copyright (C) 1987, 91, 92, 96, 97, 98, 99, 2000, 01, 02
-   Free Software Foundation, Inc. 
+   Version 1.45
+
+   Copyright (C) 1987, 1991, 1992 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,11 +17,14 @@
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307. */
+
 
-#include "system.h"
-#include <getopt.h>
+#include <stdio.h>
+#include <ctype.h>
+#include <errno.h>
+#include "getopt.h"
 
-static char *program_name = "texindex";
+#define TEXINDEX_VERSION_STRING "GNU Texindex 2.0 for Texinfo release 3.4"
 
 #if defined (emacs)
 #  include "../src/config.h"
@@ -32,12 +35,55 @@ static char *program_name = "texindex";
 #  undef open
 #endif
 
+#if defined (HAVE_STRING_H)
+#  include <string.h>
+#endif /* HAVE_STRING_H */
+
+#if !defined (HAVE_STRCHR)
+char *strrchr ();
+#endif /* !HAVE_STRCHR */
+
+#if defined (STDC_HEADERS)
+#  include <stdlib.h>
+#else /* !STDC_HEADERS */
+char *getenv (), *malloc (), *realloc ();
+#endif /* !STDC_HEADERS */
+
+#if defined (HAVE_UNISTD_H)
+#  include <unistd.h>
+#else /* !HAVE_UNISTD_H */
+off_t lseek ();
+#endif /* !HAVE_UNISTD_H */
+
 #if !defined (HAVE_MEMSET)
 #undef memset
 #define memset(ptr, ignore, count) bzero (ptr, count)
 #endif
 
+
 char *mktemp ();
+
+#if defined (VMS)
+#  include <file.h>
+#  define TI_NO_ERROR ((1 << 28) | 1)
+#  define TI_FATAL_ERROR ((1 << 28) | 4)
+#  define unlink delete
+#else /* !VMS */
+#  if defined (HAVE_SYS_FCNTL_H)
+#    include <sys/types.h>
+#    include <sys/fcntl.h>
+#  endif /* HAVE_SYS_FCNTL_H */
+
+#  if defined (_AIX) || !defined (_POSIX_VERSION)
+#    include <sys/file.h>
+#  else /* !AIX && _POSIX_VERSION */
+#    if !defined (HAVE_SYS_FCNTL_H)
+#      include <fcntl.h>
+#    endif /* !HAVE_FCNTL_H */
+#  endif /* !_AIX && _POSIX_VERSION */
+#  define TI_NO_ERROR 0
+#  define TI_FATAL_ERROR 1
+#endif /* !VMS */
 
 #if !defined (SEEK_SET)
 #  define SEEK_SET 0
@@ -45,31 +91,36 @@ char *mktemp ();
 #  define SEEK_END 2
 #endif /* !SEEK_SET */
 
+#if !defined (errno)
+extern int errno;
+#endif
+char *strerror ();
+
 /* When sorting in core, this structure describes one line
    and the position and length of its first keyfield.  */
 struct lineinfo
 {
-  char *text;           /* The actual text of the line. */
+  char *text;		/* The actual text of the line. */
   union {
-    char *text;         /* The start of the key (for textual comparison). */
-    long number;        /* The numeric value (for numeric comparison). */
+    char *text;		/* The start of the key (for textual comparison). */
+    long number;	/* The numeric value (for numeric comparison). */
   } key;
-  long keylen;          /* Length of KEY field. */
+  long keylen;		/* Length of KEY field. */
 };
 
 /* This structure describes a field to use as a sort key. */
 struct keyfield
 {
-  int startwords;       /* Number of words to skip. */
-  int startchars;       /* Number of additional chars to skip. */
-  int endwords;         /* Number of words to ignore at end. */
-  int endchars;         /* Ditto for characters of last word. */
-  char ignore_blanks;   /* Non-zero means ignore spaces and tabs. */
-  char fold_case;       /* Non-zero means case doesn't matter. */
-  char reverse;         /* Non-zero means compare in reverse order. */
-  char numeric;         /* Non-zeros means field is ASCII numeric. */
-  char positional;      /* Sort according to file position. */
-  char braced;          /* Count balanced-braced groupings as fields. */
+  int startwords;	/* Number of words to skip. */
+  int startchars;	/* Number of additional chars to skip. */
+  int endwords;		/* Number of words to ignore at end. */
+  int endchars;		/* Ditto for characters of last word. */
+  char ignore_blanks;	/* Non-zero means ignore spaces and tabs. */
+  char fold_case;	/* Non-zero means case doesn't matter. */
+  char reverse;		/* Non-zero means compare in reverse order. */
+  char numeric;		/* Non-zeros means field is ASCII numeric. */
+  char positional;	/* Sort according to file position. */
+  char braced;		/* Count balanced-braced groupings as fields. */
 };
 
 /* Vector of keyfields to use. */
@@ -116,7 +167,11 @@ char *text_base;
 /* Nonzero means do not delete tempfiles -- for debugging. */
 int keep_tempfiles;
 
+/* The name this program was run with. */
+char *program_name;
+
 /* Forward declarations of functions in this file. */
+
 void decode_command ();
 void sort_in_core ();
 void sort_offline ();
@@ -137,11 +192,13 @@ void fatal ();
 void error ();
 void *xmalloc (), *xrealloc ();
 char *concat ();
+char *maketempname ();
 void flush_tempfiles ();
+char *tempcopy ();
 
 #define MAX_IN_CORE_SORT 500000
 
-int
+void
 main (argc, argv)
      int argc;
      char **argv;
@@ -151,14 +208,11 @@ main (argc, argv)
   tempcount = 0;
   last_deleted_tempcount = 0;
 
-#ifdef HAVE_SETLOCALE
-  /* Set locale via LC_ALL.  */
-  setlocale (LC_ALL, "");
-#endif
-
-  /* Set the text message domain.  */
-  bindtextdomain (PACKAGE, LOCALEDIR);
-  textdomain (PACKAGE);
+  program_name = strrchr (argv[0], '/');
+  if (program_name != (char *)NULL)
+    program_name++;
+  else
+    program_name = argv[0];
 
   /* Describe the kind of sorting to do. */
   /* The first keyfield uses the first braced field and folds case. */
@@ -181,9 +235,6 @@ main (argc, argv)
 
   decode_command (argc, argv);
 
-  /* XXX mkstemp not appropriate, as we need to have somewhat predictable
-   * names. But race condition was fixed, see maketempname. 
-   */
   tempbase = mktemp (concat ("txiXXXXXX", "", ""));
 
   /* Process input files completely, one by one.  */
@@ -191,46 +242,32 @@ main (argc, argv)
   for (i = 0; i < num_infiles; i++)
     {
       int desc;
-      off_t ptr;
+      long ptr;
       char *outfile;
-      struct stat instat;
 
       desc = open (infiles[i], O_RDONLY, 0);
       if (desc < 0)
-        pfatal_with_name (infiles[i]);
-
-      if (stat (infiles[i], &instat))
-        pfatal_with_name (infiles[i]);
-      if (S_ISDIR (instat.st_mode))
-        {
-#ifdef EISDIR
-          errno = EISDIR;
-#endif
-          pfatal_with_name (infiles[i]);
-        }
-
+	pfatal_with_name (infiles[i]);
       lseek (desc, (off_t) 0, SEEK_END);
-      ptr = (off_t) lseek (desc, (off_t) 0, SEEK_CUR);
+      ptr = (long) lseek (desc, (off_t) 0, SEEK_CUR);
 
       close (desc);
 
       outfile = outfiles[i];
       if (!outfile)
-        {
-          outfile = concat (infiles[i], "s", "");
-        }
+	{
+	  outfile = concat (infiles[i], "s", "");
+	}
 
       if (ptr < MAX_IN_CORE_SORT)
-        /* Sort a small amount of data. */
-        sort_in_core (infiles[i], ptr, outfile);
+	/* Sort a small amount of data. */
+	sort_in_core (infiles[i], ptr, outfile);
       else
-        sort_offline (infiles[i], ptr, outfile);
+	sort_offline (infiles[i], ptr, outfile);
     }
 
   flush_tempfiles (tempcount);
-  xexit (0);
-
-  return 0; /* Avoid bogus warnings.  */
+  exit (TI_NO_ERROR);
 }
 
 typedef struct
@@ -244,16 +281,15 @@ typedef struct
 } TEXINDEX_OPTION;
 
 TEXINDEX_OPTION texindex_options[] = {
-  { "--help", "-h", (int *)NULL, 0, (char *)NULL,
-      N_("display this help and exit") },
   { "--keep", "-k", &keep_tempfiles, 1, (char *)NULL,
-      N_("keep temporary files around after processing") },
+      "Keep temporary files around after processing" },
   { "--no-keep", 0, &keep_tempfiles, 0, (char *)NULL,
-      N_("do not keep temporary files around after processing (default)") },
+      "Do not keep temporary files around after processing (default)" },
   { "--output", "-o", (int *)NULL, 0, "FILE",
-      N_("send output to FILE") },
+      "Send output to FILE" },
   { "--version", (char *)NULL, (int *)NULL, 0, (char *)NULL,
-      N_("display version information and exit") },
+      "Show version information" },
+  { "--help", "-h", (int *)NULL, 0, (char *)NULL, "Produce this listing" },
   { (char *)NULL, (char *)NULL, (int *)NULL, 0, (char *)NULL }
 };
 
@@ -262,37 +298,27 @@ usage (result_value)
      int result_value;
 {
   register int i;
-  FILE *f = result_value ? stderr : stdout;
 
-  fprintf (f, _("Usage: %s [OPTION]... FILE...\n"), program_name);
-  fprintf (f, _("Generate a sorted index for each TeX output FILE.\n"));
-  /* Avoid trigraph nonsense.  */
-  fprintf (f,
-_("Usually FILE... is specified as `foo.%c%c\' for a document `foo.texi'.\n"),
-           '?', '?'); /* avoid trigraph in cat-id-tbl.c */
-  fprintf (f, _("\nOptions:\n"));
+  fprintf (stderr, "Usage: %s [OPTIONS] FILE...\n", program_name);
+  fprintf (stderr, "  Generate a permuted index for the TeX files given.\n");
+  fprintf (stderr, "  Usually FILE... is `foo.??' for the source file `foo.tex'.\n");
+  fprintf (stderr, "  The OPTIONS are:\n");
 
   for (i = 0; texindex_options[i].long_name; i++)
     {
-      putc (' ', f);
+      fprintf (stderr, "    %s %s",
+	       texindex_options[i].long_name,
+	       texindex_options[i].arg_name ?
+	       texindex_options[i].arg_name : "");
 
       if (texindex_options[i].short_name)
-        fprintf (f, "%s, ", texindex_options[i].short_name);
-
-      fprintf (f, "%s %s",
-               texindex_options[i].long_name,
-               texindex_options[i].arg_name
-               ? texindex_options[i].arg_name : "");
-
-      fprintf (f, "\t%s\n", _(texindex_options[i].doc_string));
+	fprintf (stderr, " \n    or %s %s",
+		 texindex_options[i].short_name,
+		 texindex_options[i].arg_name ?
+		 texindex_options[i].arg_name : "");
+      fprintf (stderr, "\t%s\n", texindex_options[i].doc_string);
     }
-  fputs (_("\n\
-Email bug reports to bug-texinfo@gnu.org,\n\
-general questions and discussion to help-texinfo@gnu.org.\n\
-Texinfo home page: http://www.gnu.org/software/texinfo/"), f);
-  fputs ("\n", f);
-
-  xexit (result_value);
+  exit (result_value);
 }
 
 /* Decode the command line arguments to set the parameter variables
@@ -304,20 +330,22 @@ decode_command (argc, argv)
      char **argv;
 {
   int arg_index = 1;
+  int optc;
   char **ip;
   char **op;
 
   /* Store default values into parameter variables. */
 
   tempdir = getenv ("TMPDIR");
+#ifdef VMS
   if (tempdir == NULL)
-    tempdir = getenv ("TEMP");
+    tempdir = "sys$scratch:";
+#else
   if (tempdir == NULL)
-    tempdir = getenv ("TMP");
-  if (tempdir == NULL)
-    tempdir = DEFAULT_TMPDIR;
+    tempdir = "/tmp/";
   else
     tempdir = concat (tempdir, "/", "");
+#endif
 
   keep_tempfiles = 0;
 
@@ -333,48 +361,42 @@ decode_command (argc, argv)
       char *arg = argv[arg_index++];
 
       if (*arg == '-')
-        {
-          if (strcmp (arg, "--version") == 0)
-            {
-              printf ("texindex (GNU %s) %s\n", PACKAGE, VERSION);
-              puts ("");
-              printf (_("Copyright (C) %s Free Software Foundation, Inc.\n\
-There is NO warranty.  You may redistribute this software\n\
-under the terms of the GNU General Public License.\n\
-For more information about these matters, see the files named COPYING.\n"),
-                  "2002");
-              xexit (0);
-            }
-          else if ((strcmp (arg, "--keep") == 0) ||
-                   (strcmp (arg, "-k") == 0))
-            {
-              keep_tempfiles = 1;
-            }
-          else if ((strcmp (arg, "--help") == 0) ||
-                   (strcmp (arg, "-h") == 0))
-            {
-              usage (0);
-            }
-          else if ((strcmp (arg, "--output") == 0) ||
-                   (strcmp (arg, "-o") == 0))
-            {
-              if (argv[arg_index] != (char *)NULL)
-                {
-                  arg_index++;
-                  if (op > outfiles)
-                    *(op - 1) = argv[arg_index];
-                }
-              else
-                usage (1);
-            }
-          else
-            usage (1);
-        }
+	{
+	  if (strcmp (arg, "--version") == 0)
+	    {
+	      fprintf (stderr, "%s\n", TEXINDEX_VERSION_STRING);
+	      exit (0);
+	    }
+	  else if ((strcmp (arg, "--keep") == 0) ||
+		   (strcmp (arg, "-k") == 0))
+	    {
+	      keep_tempfiles = 1;
+	    }
+	  else if ((strcmp (arg, "--help") == 0) ||
+		   (strcmp (arg, "-h") == 0))
+	    {
+	      usage (0);
+	    }
+	  else if ((strcmp (arg, "--output") == 0) ||
+		   (strcmp (arg, "-o") == 0))
+	    {
+	      if (argv[arg_index] != (char *)NULL)
+		{
+		  arg_index++;
+		  if (op > outfiles)
+		    *(op - 1) = argv[arg_index];
+		}
+	      else
+		usage (1);
+	    }
+	  else
+	    usage (1);
+	}
       else
-        {
-          *ip++ = arg;
-          *op++ = (char *)NULL;
-        }
+	{
+	  *ip++ = arg;
+	  *op++ = (char *)NULL;
+	}
     }
 
   /* Record number of keyfields and terminate list of filenames. */
@@ -386,25 +408,13 @@ For more information about these matters, see the files named COPYING.\n"),
 
 /* Return a name for a temporary file. */
 
-static char *
+char *
 maketempname (count)
      int count;
 {
   char tempsuffix[10];
-  char *name;
-  int fd;
-
-  sprintf (tempsuffix, ".%d", count);
-  name =  concat (tempdir, tempbase, tempsuffix);
-
-  fd = open (name, O_CREAT|O_EXCL|O_WRONLY, 0666);
-  if (fd == -1)
-    return NULL;
-  else
-    {
-      close(fd);
-      return name;
-    }
+  sprintf (tempsuffix, "%d", count);
+  return concat (tempdir, tempbase, tempsuffix);
 }
 
 /* Delete all temporary files up to TO_COUNT. */
@@ -419,6 +429,36 @@ flush_tempfiles (to_count)
     unlink (maketempname (++last_deleted_tempcount));
 }
 
+/* Copy the input file open on IDESC into a temporary file
+   and return the temporary file name. */
+
+#define BUFSIZE 1024
+
+char *
+tempcopy (idesc)
+     int idesc;
+{
+  char *outfile = maketempname (++tempcount);
+  int odesc;
+  char buffer[BUFSIZE];
+
+  odesc = open (outfile, O_WRONLY | O_CREAT, 0666);
+
+  if (odesc < 0)
+    pfatal_with_name (outfile);
+
+  while (1)
+    {
+      int nread = read (idesc, buffer, BUFSIZE);
+      write (odesc, buffer, nread);
+      if (!nread)
+	break;
+    }
+
+  close (odesc);
+
+  return outfile;
+}
 
 /* Compare LINE1 and LINE2 according to the specified set of keyfields. */
 
@@ -438,16 +478,16 @@ compare_full (line1, line2)
       char *start1 = find_field (&keyfields[i], *line1, &length1);
       char *start2 = find_field (&keyfields[i], *line2, &length2);
       int tem = compare_field (&keyfields[i], start1, length1, *line1 - text_base,
-                               start2, length2, *line2 - text_base);
+			       start2, length2, *line2 - text_base);
       if (tem)
-        {
-          if (keyfields[i].reverse)
-            return -tem;
-          return tem;
-        }
+	{
+	  if (keyfields[i].reverse)
+	    return -tem;
+	  return tem;
+	}
     }
 
-  return 0;                     /* Lines match exactly. */
+  return 0;			/* Lines match exactly. */
 }
 
 /* Compare LINE1 and LINE2, described by structures
@@ -467,19 +507,19 @@ compare_prepared (line1, line2)
   if (keyfields->positional)
     {
       if (line1->text - text_base > line2->text - text_base)
-        tem = 1;
+	tem = 1;
       else
-        tem = -1;
+	tem = -1;
     }
   else if (keyfields->numeric)
     tem = line1->key.number - line2->key.number;
   else
     tem = compare_field (keyfields, line1->key.text, line1->keylen, 0,
-                         line2->key.text, line2->keylen, 0);
+			 line2->key.text, line2->keylen, 0);
   if (tem)
     {
       if (keyfields->reverse)
-        return -tem;
+	return -tem;
       return tem;
     }
 
@@ -496,16 +536,16 @@ compare_prepared (line1, line2)
       char *start1 = find_field (&keyfields[i], text1, &length1);
       char *start2 = find_field (&keyfields[i], text2, &length2);
       int tem = compare_field (&keyfields[i], start1, length1, text1 - text_base,
-                               start2, length2, text2 - text_base);
+			       start2, length2, text2 - text_base);
       if (tem)
-        {
-          if (keyfields[i].reverse)
-            return -tem;
-          return tem;
-        }
+	{
+	  if (keyfields[i].reverse)
+	    return -tem;
+	  return tem;
+	}
     }
 
-  return 0;                     /* Lines match exactly. */
+  return 0;			/* Lines match exactly. */
 }
 
 /* Like compare_full but more general.
@@ -531,16 +571,16 @@ compare_general (str1, str2, pos1, pos2, use_keyfields)
       char *start1 = find_field (&keyfields[i], str1, &length1);
       char *start2 = find_field (&keyfields[i], str2, &length2);
       int tem = compare_field (&keyfields[i], start1, length1, pos1,
-                               start2, length2, pos2);
+			       start2, length2, pos2);
       if (tem)
-        {
-          if (keyfields[i].reverse)
-            return -tem;
-          return tem;
-        }
+	{
+	  if (keyfields[i].reverse)
+	    return -tem;
+	  return tem;
+	}
     }
 
-  return 0;                     /* Lines match exactly. */
+  return 0;			/* Lines match exactly. */
 }
 
 /* Find the start and length of a field in STR according to KEYFIELD.
@@ -563,23 +603,23 @@ find_field (keyfield, str, lengthptr)
     fun = find_pos;
 
   start = (*fun) (str, keyfield->startwords, keyfield->startchars,
-                  keyfield->ignore_blanks);
+		  keyfield->ignore_blanks);
   if (keyfield->endwords < 0)
     {
       if (keyfield->braced)
-        end = find_braced_end (start);
+	end = find_braced_end (start);
       else
-        {
-          end = start;
-          while (*end && *end != '\n')
-            end++;
-        }
+	{
+	  end = start;
+	  while (*end && *end != '\n')
+	    end++;
+	}
     }
   else
     {
       end = (*fun) (str, keyfield->endwords, keyfield->endchars, 0);
       if (end - str < start - str)
-        end = start;
+	end = start;
     }
   *lengthptr = end - start;
   return start;
@@ -604,11 +644,11 @@ find_pos (str, words, chars, ignore_blanks)
       char c;
       /* Find next bunch of nonblanks and skip them. */
       while ((c = *p) == ' ' || c == '\t')
-        p++;
+	p++;
       while ((c = *p) && c != '\n' && !(c == ' ' || c == '\t'))
-        p++;
+	p++;
       if (!*p || *p == '\n')
-        return p;
+	return p;
     }
 
   while (*p == ' ' || *p == '\t')
@@ -617,7 +657,7 @@ find_pos (str, words, chars, ignore_blanks)
   for (i = 0; i < chars; i++)
     {
       if (!*p || *p == '\n')
-        break;
+	break;
       p++;
     }
   return p;
@@ -641,19 +681,19 @@ find_braced_pos (str, words, chars, ignore_blanks)
     {
       bracelevel = 1;
       while ((c = *p++) != '{' && c != '\n' && c)
-        /* Do nothing. */ ;
+	/* Do nothing. */ ;
       if (c != '{')
-        return p - 1;
+	return p - 1;
       while (bracelevel)
-        {
-          c = *p++;
-          if (c == '{')
-            bracelevel++;
-          if (c == '}')
-            bracelevel--;
-          if (c == 0 || c == '\n')
-            return p - 1;
-        }
+	{
+	  c = *p++;
+	  if (c == '{')
+	    bracelevel++;
+	  if (c == '}')
+	    bracelevel--;
+	  if (c == 0 || c == '\n')
+	    return p - 1;
+	}
     }
 
   while ((c = *p++) != '{' && c != '\n' && c)
@@ -669,7 +709,7 @@ find_braced_pos (str, words, chars, ignore_blanks)
   for (i = 0; i < chars; i++)
     {
       if (!*p || *p == '\n')
-        break;
+	break;
       p++;
     }
   return p;
@@ -691,11 +731,11 @@ find_braced_end (str)
     {
       c = *p++;
       if (c == '{')
-        bracelevel++;
+	bracelevel++;
       if (c == '}')
-        bracelevel--;
+	bracelevel--;
       if (c == 0 || c == '\n')
-        return p - 1;
+	return p - 1;
     }
   return p - 1;
 }
@@ -708,7 +748,7 @@ find_value (start, length)
   while (length != 0L)
     {
       if (isdigit (*start))
-        return atol (start);
+	return atol (start);
       length--;
       start++;
     }
@@ -754,17 +794,17 @@ compare_field (keyfield, start1, length1, pos1, start2, length2, pos2)
   if (keyfields->positional)
     {
       if (pos1 > pos2)
-        return 1;
+	return 1;
       else
-        return -1;
+	return -1;
     }
   if (keyfield->numeric)
     {
       long value = find_value (start1, length1) - find_value (start2, length2);
       if (value > 0)
-        return 1;
+	return 1;
       if (value < 0)
-        return -1;
+	return -1;
       return 0;
     }
   else
@@ -775,46 +815,46 @@ compare_field (keyfield, start1, length1, pos1, start2, length2, pos2)
       char *e2 = start2 + length2;
 
       while (1)
-        {
-          int c1, c2;
+	{
+	  int c1, c2;
 
-          if (p1 == e1)
-            c1 = 0;
-          else
-            c1 = *p1++;
-          if (p2 == e2)
-            c2 = 0;
-          else
-            c2 = *p2++;
+	  if (p1 == e1)
+	    c1 = 0;
+	  else
+	    c1 = *p1++;
+	  if (p2 == e2)
+	    c2 = 0;
+	  else
+	    c2 = *p2++;
 
-          if (char_order[c1] != char_order[c2])
-            return char_order[c1] - char_order[c2];
-          if (!c1)
-            break;
-        }
+	  if (char_order[c1] != char_order[c2])
+	    return char_order[c1] - char_order[c2];
+	  if (!c1)
+	    break;
+	}
 
       /* Strings are equal except possibly for case.  */
       p1 = start1;
       p2 = start2;
       while (1)
-        {
-          int c1, c2;
+	{
+	  int c1, c2;
 
-          if (p1 == e1)
-            c1 = 0;
-          else
-            c1 = *p1++;
-          if (p2 == e2)
-            c2 = 0;
-          else
-            c2 = *p2++;
+	  if (p1 == e1)
+	    c1 = 0;
+	  else
+	    c1 = *p1++;
+	  if (p2 == e2)
+	    c2 = 0;
+	  else
+	    c2 = *p2++;
 
-          if (c1 != c2)
-            /* Reverse sign here so upper case comes out last.  */
-            return c2 - c1;
-          if (!c1)
-            break;
-        }
+	  if (c1 != c2)
+	    /* Reverse sign here so upper case comes out last.  */
+	    return c2 - c1;
+	  if (!c1)
+	    break;
+	}
 
       return 0;
     }
@@ -856,17 +896,17 @@ readline (linebuffer, stream)
     {
       int c = getc (stream);
       if (p == end)
-        {
-          buffer = (char *) xrealloc (buffer, linebuffer->size *= 2);
-          p += buffer - linebuffer->buffer;
-          end += buffer - linebuffer->buffer;
-          linebuffer->buffer = buffer;
-        }
+	{
+	  buffer = (char *) xrealloc (buffer, linebuffer->size *= 2);
+	  p += buffer - linebuffer->buffer;
+	  end += buffer - linebuffer->buffer;
+	  linebuffer->buffer = buffer;
+	}
       if (c < 0 || c == '\n')
-        {
-          *p = 0;
-          break;
-        }
+	{
+	  *p = 0;
+	  break;
+	}
       *p++ = c;
     }
 
@@ -879,7 +919,7 @@ void
 sort_offline (infile, nfiles, total, outfile)
      char *infile;
      int nfiles;
-     off_t total;
+     long total;
      char *outfile;
 {
   /* More than enough. */
@@ -899,7 +939,7 @@ sort_offline (infile, nfiles, total, outfile)
 
   if (lb.buffer[0] != '\\' && lb.buffer[0] != '@')
     {
-      error (_("%s: not a texinfo index file"), infile);
+      error ("%s: not a texinfo index file", infile);
       return;
     }
 
@@ -909,41 +949,38 @@ sort_offline (infile, nfiles, total, outfile)
   for (i = 0; i < ntemps; i++)
     {
       char *outname = maketempname (++tempcount);
-      FILE *ostream;
+      FILE *ostream = fopen (outname, "w");
       long tempsize = 0;
 
-      if (!outname)
-        pfatal_with_name("temporary file");
-      ostream = fopen (outname, "w");
-      if (!outname || !ostream)
-        pfatal_with_name (outname);
+      if (!ostream)
+	pfatal_with_name (outname);
       tempfiles[i] = outname;
 
       /* Copy lines into this temp file as long as it does not make file
-         "too big" or until there are no more lines.  */
+	 "too big" or until there are no more lines.  */
 
       while (tempsize + linelength + 1 <= MAX_IN_CORE_SORT)
-        {
-          tempsize += linelength + 1;
-          fputs (lb.buffer, ostream);
-          putc ('\n', ostream);
+	{
+	  tempsize += linelength + 1;
+	  fputs (lb.buffer, ostream);
+	  putc ('\n', ostream);
 
-          /* Read another line of input data.  */
+	  /* Read another line of input data.  */
 
-          linelength = readline (&lb, istream);
-          if (!linelength && feof (istream))
-            break;
+	  linelength = readline (&lb, istream);
+	  if (!linelength && feof (istream))
+	    break;
 
-          if (lb.buffer[0] != '\\' && lb.buffer[0] != '@')
-            {
-              error (_("%s: not a texinfo index file"), infile);
-              failure = 1;
-              goto fail;
-            }
-        }
+	  if (lb.buffer[0] != '\\' && lb.buffer[0] != '@')
+	    {
+	      error ("%s: not a texinfo index file", infile);
+	      failure = 1;
+	      goto fail;
+	    }
+	}
       fclose (ostream);
       if (feof (istream))
-        break;
+	break;
     }
 
   free (lb.buffer);
@@ -962,7 +999,7 @@ fail:
       char *newtemp = maketempname (++tempcount);
       sort_in_core (&tempfiles[i], MAX_IN_CORE_SORT, newtemp);
       if (!keep_tempfiles)
-        unlink (tempfiles[i]);
+	unlink (tempfiles[i]);
       tempfiles[i] = newtemp;
     }
 
@@ -981,7 +1018,7 @@ fail:
 void
 sort_in_core (infile, total, outfile)
      char *infile;
-     off_t total;
+     long total;
      char *outfile;
 {
   char **nextline;
@@ -997,12 +1034,12 @@ sort_in_core (infile, total, outfile)
   int desc = open (infile, O_RDONLY, 0);
 
   if (desc < 0)
-    fatal (_("failure reopening %s"), infile);
+    fatal ("failure reopening %s", infile);
   for (file_size = 0;;)
     {
       i = read (desc, data + file_size, total - file_size);
       if (i <= 0)
-        break;
+	break;
       file_size += i;
     }
   file_data = data;
@@ -1012,7 +1049,7 @@ sort_in_core (infile, total, outfile)
 
   if (file_size > 0 && data[0] != '\\' && data[0] != '@')
     {
-      error (_("%s: not a texinfo index file"), infile);
+      error ("%s: not a texinfo index file", infile);
       return;
     }
 
@@ -1040,7 +1077,7 @@ sort_in_core (infile, total, outfile)
   nextline = parsefile (infile, nextline, file_data, file_size);
   if (nextline == 0)
     {
-      error (_("%s: not a texinfo index file"), infile);
+      error ("%s: not a texinfo index file", infile);
       return;
     }
 
@@ -1058,18 +1095,17 @@ sort_in_core (infile, total, outfile)
       char **p;
 
       for (lp = lineinfo, p = linearray; p != nextline; lp++, p++)
-        {
-          lp->text = *p;
-          lp->key.text = find_field (keyfields, *p, &lp->keylen);
-          if (keyfields->numeric)
-            lp->key.number = find_value (lp->key.text, lp->keylen);
-        }
+	{
+	  lp->text = *p;
+	  lp->key.text = find_field (keyfields, *p, &lp->keylen);
+	  if (keyfields->numeric)
+	    lp->key.number = find_value (lp->key.text, lp->keylen);
+	}
 
-      qsort (lineinfo, nextline - linearray, sizeof (struct lineinfo),
-             compare_prepared);
+      qsort (lineinfo, nextline - linearray, sizeof (struct lineinfo), compare_prepared);
 
       for (lp = lineinfo, p = linearray; p != nextline; lp++, p++)
-        *p = lp->text;
+	*p = lp->text;
 
       free (lineinfo);
     }
@@ -1082,7 +1118,7 @@ sort_in_core (infile, total, outfile)
     {
       ostream = fopen (outfile, "w");
       if (!ostream)
-        pfatal_with_name (outfile);
+	pfatal_with_name (outfile);
     }
 
   writelines (linearray, nextline - linearray, ostream);
@@ -1116,21 +1152,21 @@ parsefile (filename, nextline, data, size)
   while (p != end)
     {
       if (p[0] != '\\' && p[0] != '@')
-        return 0;
+	return 0;
 
       *line = p;
       while (*p && *p != '\n')
-        p++;
+	p++;
       if (p != end)
-        p++;
+	p++;
 
       line++;
       if (line == linearray + nlines)
-        {
-          char **old = linearray;
-          linearray = (char **) xrealloc (linearray, sizeof (char *) * (nlines *= 4));
-          line += linearray - old;
-        }
+	{
+	  char **old = linearray;
+	  linearray = (char **) xrealloc (linearray, sizeof (char *) * (nlines *= 4));
+	  line += linearray - old;
+	}
     }
 
   return line;
@@ -1222,7 +1258,7 @@ indexify (line, ostream)
     {
       initial = p;
       /* Get length of inner pair of braces starting at `p',
-         including that inner pair of braces.  */
+	 including that inner pair of braces.  */
       initiallength = find_braced_end (p + 1) + 1 - p;
     }
   else
@@ -1233,13 +1269,13 @@ indexify (line, ostream)
       initiallength = 1;
 
       if (initial1[0] >= 'a' && initial1[0] <= 'z')
-        initial1[0] -= 040;
+	initial1[0] -= 040;
     }
 
   pagenumber = find_braced_pos (line, 1, 0, 0);
   pagelength = find_braced_end (pagenumber) - pagenumber;
   if (pagelength == 0)
-    fatal (_("No page number in %s"), line);
+    abort ();
 
   primary = find_braced_pos (line, 2, 0, 0);
   primarylength = find_braced_end (primary) - primary;
@@ -1254,52 +1290,52 @@ indexify (line, ostream)
     {
       /* Close off current secondary entry first, if one is open. */
       if (pending)
-        {
-          fputs ("}\n", ostream);
-          pending = 0;
-        }
+	{
+	  fputs ("}\n", ostream);
+	  pending = 0;
+	}
 
       /* If this primary has a different initial, include an entry for
-         the initial. */
+	 the initial. */
       if (initiallength != lastinitiallength ||
-          strncmp (initial, lastinitial, initiallength))
-        {
-          fprintf (ostream, "\\initial {");
-          fwrite (initial, 1, initiallength, ostream);
-          fputs ("}\n", ostream);
-          if (initial == initial1)
-            {
-              lastinitial = lastinitial1;
-              *lastinitial1 = *initial1;
-            }
-          else
-            {
-              lastinitial = initial;
-            }
-          lastinitiallength = initiallength;
-        }
+	  strncmp (initial, lastinitial, initiallength))
+	{
+	  fprintf (ostream, "\\initial {");
+	  fwrite (initial, 1, initiallength, ostream);
+	  fprintf (ostream, "}\n", initial);
+	  if (initial == initial1)
+	    {
+	      lastinitial = lastinitial1;
+	      *lastinitial1 = *initial1;
+	    }
+	  else
+	    {
+	      lastinitial = initial;
+	    }
+	  lastinitiallength = initiallength;
+	}
 
       /* Make the entry for the primary.  */
       if (nosecondary)
-        fputs ("\\entry {", ostream);
+	fputs ("\\entry {", ostream);
       else
-        fputs ("\\primary {", ostream);
+	fputs ("\\primary {", ostream);
       fwrite (primary, primarylength, 1, ostream);
       if (nosecondary)
-        {
-          fputs ("}{", ostream);
-          pending = 1;
-        }
+	{
+	  fputs ("}{", ostream);
+	  pending = 1;
+	}
       else
-        fputs ("}\n", ostream);
+	fputs ("}\n", ostream);
 
       /* Record name of most recent primary. */
       if (lastprimarylength < primarylength)
-        {
-          lastprimarylength = primarylength + 100;
-          lastprimary = (char *) xrealloc (lastprimary,
-                                           1 + lastprimarylength);
-        }
+	{
+	  lastprimarylength = primarylength + 100;
+	  lastprimary = (char *) xrealloc (lastprimary,
+					   1 + lastprimarylength);
+	}
       strncpy (lastprimary, primary, primarylength);
       lastprimary[primarylength] = 0;
 
@@ -1310,16 +1346,16 @@ indexify (line, ostream)
   /* Should not have an entry with no subtopic following one with a subtopic. */
 
   if (nosecondary && *lastsecondary)
-    error (_("entry %s follows an entry with a secondary name"), line);
+    error ("entry %s follows an entry with a secondary name", line);
 
   /* Start a new secondary entry if necessary. */
   if (!nosecondary && strncmp (secondary, lastsecondary, secondarylength))
     {
       if (pending)
-        {
-          fputs ("}\n", ostream);
-          pending = 0;
-        }
+	{
+	  fputs ("}\n", ostream);
+	  pending = 0;
+	}
 
       /* Write the entry for the secondary.  */
       fputs ("\\secondary {", ostream);
@@ -1329,18 +1365,18 @@ indexify (line, ostream)
 
       /* Record name of most recent secondary. */
       if (lastsecondarylength < secondarylength)
-        {
-          lastsecondarylength = secondarylength + 100;
-          lastsecondary = (char *) xrealloc (lastsecondary,
-                                             1 + lastsecondarylength);
-        }
+	{
+	  lastsecondarylength = secondarylength + 100;
+	  lastsecondary = (char *) xrealloc (lastsecondary,
+					     1 + lastsecondarylength);
+	}
       strncpy (lastsecondary, secondary, secondarylength);
       lastsecondary[secondarylength] = 0;
     }
 
   /* Here to add one more page number to the current entry. */
   if (pending++ != 1)
-    fputs (", ", ostream);      /* Punctuate first, if this is not the first. */
+    fputs (", ", ostream);	/* Punctuate first, if this is not the first. */
   fwrite (pagenumber, pagelength, 1, ostream);
 }
 
@@ -1378,16 +1414,16 @@ writelines (linearray, nlines, ostream)
       if (next_line == linearray
       /* Compare previous line with this one, using only the
          explicitly specd keyfields. */
-          || compare_general (*(next_line - 1), *next_line, 0L, 0L, num_keyfields - 1))
-        {
-          char *p = *next_line;
-          char c;
+	  || compare_general (*(next_line - 1), *next_line, 0L, 0L, num_keyfields - 1))
+	{
+	  char *p = *next_line;
+	  char c;
 
-          while ((c = *p++) && c != '\n')
-            /* Do nothing. */ ;
-          *(p - 1) = 0;
-          indexify (*next_line, ostream);
-        }
+	  while ((c = *p++) && c != '\n')
+	    /* Do nothing. */ ;
+	  *(p - 1) = 0;
+	  indexify (*next_line, ostream);
+	}
     }
 
   finish_index (ostream);
@@ -1426,10 +1462,8 @@ merge_files (infiles, nfiles, outfile)
     {
       int nf = MAX_DIRECT_MERGE;
       if (i + 1 == ntemps)
-        nf = nfiles - i * MAX_DIRECT_MERGE;
+	nf = nfiles - i * MAX_DIRECT_MERGE;
       tempfiles[i] = maketempname (++tempcount);
-      if (!tempfiles[i])
-        pfatal_with_name("temp file");
       value |= merge_direct (&infiles[i * MAX_DIRECT_MERGE], nf, tempfiles[i]);
     }
 
@@ -1483,7 +1517,7 @@ merge_direct (infiles, nfiles, outfile)
   if (nfiles == 0)
     {
       if (outfile)
-        fclose (ostream);
+	fclose (ostream);
       return 0;
     }
 
@@ -1525,7 +1559,7 @@ merge_direct (infiles, nfiles, outfile)
       file_lossage[i] = 0;
       streams[i] = fopen (infiles[i], "r");
       if (!streams[i])
-        pfatal_with_name (infiles[i]);
+	pfatal_with_name (infiles[i]);
 
       readline (thisline[i], streams[i]);
     }
@@ -1543,48 +1577,48 @@ merge_direct (infiles, nfiles, outfile)
       /* Look at the next avail line of each file; choose the least one.  */
 
       for (i = 0; i < nfiles; i++)
-        {
-          if (thisline[i] &&
-              (!best ||
-               0 < compare_general (best->buffer, thisline[i]->buffer,
-                                 (long) bestfile, (long) i, num_keyfields)))
-            {
-              best = thisline[i];
-              bestfile = i;
-            }
-        }
+	{
+	  if (thisline[i] &&
+	      (!best ||
+	       0 < compare_general (best->buffer, thisline[i]->buffer,
+				 (long) bestfile, (long) i, num_keyfields)))
+	    {
+	      best = thisline[i];
+	      bestfile = i;
+	    }
+	}
 
       /* Output that line, unless it matches the previous one and we
-         don't want duplicates. */
+	 don't want duplicates. */
 
       if (!(prev_out &&
-            !compare_general (prev_out->buffer,
-                              best->buffer, 0L, 1L, num_keyfields - 1)))
-        indexify (best->buffer, ostream);
+	    !compare_general (prev_out->buffer,
+			      best->buffer, 0L, 1L, num_keyfields - 1)))
+	indexify (best->buffer, ostream);
       prev_out = best;
 
       /* Now make the line the previous of its file, and fetch a new
-         line from that file.  */
+	 line from that file.  */
 
       exch = prevline[bestfile];
       prevline[bestfile] = thisline[bestfile];
       thisline[bestfile] = exch;
 
       while (1)
-        {
-          /* If the file has no more, mark it empty. */
+	{
+	  /* If the file has no more, mark it empty. */
 
-          if (feof (streams[bestfile]))
-            {
-              thisline[bestfile] = 0;
-              /* Update the number of files still not empty. */
-              nleft--;
-              break;
-            }
-          readline (thisline[bestfile], streams[bestfile]);
-          if (thisline[bestfile]->buffer[0] || !feof (streams[bestfile]))
-            break;
-        }
+	  if (feof (streams[bestfile]))
+	    {
+	      thisline[bestfile] = 0;
+	      /* Update the number of files still not empty. */
+	      nleft--;
+	      break;
+	    }
+	  readline (thisline[bestfile], streams[bestfile]);
+	  if (thisline[bestfile]->buffer[0] || !feof (streams[bestfile]))
+	    break;
+	}
     }
 
   finish_index (ostream);
@@ -1617,7 +1651,7 @@ fatal (format, arg)
      char *format, *arg;
 {
   error (format, arg);
-  xexit (1);
+  exit (TI_FATAL_ERROR);
 }
 
 /* Print error message.  FORMAT is printf control string, ARG is arg for it. */
@@ -1650,8 +1684,8 @@ pfatal_with_name (name)
 
   s = strerror (errno);
   printf ("%s: ", program_name);
-  printf (_("%s; for file `%s'.\n"), s, name);
-  xexit (1);
+  printf ("%s; for file `%s'.\n", s, name);
+  exit (TI_FATAL_ERROR);
 }
 
 /* Return a newly-allocated string whose contents concatenate those of
@@ -1672,6 +1706,21 @@ concat (s1, s2, s3)
   return result;
 }
 
+#if !defined (HAVE_STRERROR)
+extern char *sys_errlist[];
+extern int sys_nerr;
+
+char *
+strerror (num)
+     int num;
+{
+  if (num >= sys_nerr)
+    return ("");
+  else
+    return (sys_errlist[num]);
+}
+#endif /* !HAVE_STRERROR */
+
 #if !defined (HAVE_STRCHR)
 char *
 strrchr (string, character)
@@ -1687,3 +1736,50 @@ strrchr (string, character)
   return ((char *)NULL);
 }
 #endif /* HAVE_STRCHR */
+
+/* Just like malloc, but kills the program in case of fatal error. */
+void *
+xmalloc (nbytes)
+     int nbytes;
+{
+  void *temp = (void *) malloc (nbytes);
+
+  if (nbytes && temp == (void *)NULL)
+    memory_error ("xmalloc", nbytes);
+
+  return (temp);
+}
+
+/* Like realloc (), but barfs if there isn't enough memory. */
+void *
+xrealloc (pointer, nbytes)
+     void *pointer;
+     int nbytes;
+{
+  void *temp;
+
+  if (!pointer)
+    temp = (void *)xmalloc (nbytes);
+  else
+    temp = (void *)realloc (pointer, nbytes);
+
+  if (nbytes && !temp)
+    memory_error ("xrealloc", nbytes);
+
+  return (temp);
+}
+
+memory_error (callers_name, bytes_wanted)
+     char *callers_name;
+     int bytes_wanted;
+{
+  char printable_string[80];
+
+  sprintf (printable_string,
+	   "Virtual memory exhausted in %s ()!  Needed %d bytes.",
+	   callers_name, bytes_wanted);
+
+  error (printable_string);
+  abort ();
+}
+

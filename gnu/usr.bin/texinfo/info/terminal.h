@@ -1,7 +1,9 @@
-/* terminal.h -- The external interface to terminal I/O.
-   $Id: terminal.h,v 1.1.1.4 2002/06/10 13:21:11 espie Exp $
+/* terminal.h -- The external interface to terminal I/O. */
 
-   Copyright (C) 1993, 96, 97, 2001 Free Software Foundation, Inc.
+/* This file is part of GNU Info, a program for reading online documentation
+   stored in Info format.
+
+   Copyright (C) 1993 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,10 +21,15 @@
 
    Written by Brian Fox (bfox@ai.mit.edu). */
 
-#if !defined (TERMINAL_H)
-#define TERMINAL_H
+#if !defined (_TERMINAL_H_)
+#define _TERMINAL_H_
 
-#include "info.h"
+/* We use the following data type to talk about pointers to functions. */
+#if !defined (__FUNCTION_DEF)
+#  define __FUNCTION_DEF
+typedef int Function ();
+typedef void VFunction ();
+#endif /* _FUNCTION_DEF */
 
 /* For almost every function externally visible from terminal.c, there is
    a corresponding "hook" function which can be bound in order to replace
@@ -116,11 +123,4 @@ extern VFunction *terminal_scroll_terminal_hook;
 extern void terminal_ring_bell ();
 extern VFunction *terminal_ring_bell_hook;
 
-/* The key sequences output by special keys, if this terminal has any. */
-extern char *term_ku, *term_kd, *term_kr, *term_kl;
-extern char *term_kP, *term_kN;
-extern char *term_ke, *term_kh;
-extern char *term_kx, *term_ki;
-extern char *term_kD;
-
-#endif /* !TERMINAL_H */
+#endif /* !_TERMINAL_H_ */

@@ -19,13 +19,21 @@ Boston, MA 02111-1307, USA.  */
 
 /*
 
-@deftypefn Extension char* spaces (int @var{count})
+NAME
 
-Returns a pointer to a memory region filled with the specified
-number of spaces and null terminated.  The returned pointer is
-valid until at least the next call.
+	spaces -- return a pointer to a buffer full of spaces
 
-@end deftypefn
+SYNOPSIS
+
+	char *spaces (int count)
+
+DESCRIPTION
+
+	Returns a pointer to a memory region filled with the specified
+	number of spaces and null terminated.  The returned pointer is
+	valid until at least the next call.
+	
+BUGS
 
 */
 

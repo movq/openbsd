@@ -211,7 +211,7 @@ write_res_directory (rd, type, name, language, level)
 
 	case 2:
 	  /* If we're at level 2, the key of this resource is the name
-	     we are going to use in the rc printout.  */
+	     we are going to use in the rc printout. */
 	  name = &re->id;
 	  break;
 
@@ -387,8 +387,6 @@ write_res_header (datasize, type, name, resinfo)
   reshdr.data_size = datasize;
   reshdr.header_size = 24 + get_id_size (type) + get_id_size (name);
 
-  reshdr.header_size = (reshdr.header_size + 3) & ~3;
-
   res_align_file ();
   write_res_data (&reshdr, sizeof (reshdr), 1);
   write_res_id (type);
@@ -457,7 +455,7 @@ write_res_info (info)
 }
 
 /* read a resource identifier */
-void
+void 
 read_res_id (id)
      struct res_id *id;
 {
@@ -515,9 +513,7 @@ read_unistring (len)
 static void
 res_align_file (void)
 {
-  int pos = ftell (fres);
-  int skip = ((pos + 3) & ~3) - pos;
-  if (fseek (fres, skip, SEEK_CUR) != 0)
+  if (fseek (fres, ftell (fres) % 4, SEEK_CUR) != 0)
     fatal ("%s: %s: unable to align file", program_name, filename);
 }
 

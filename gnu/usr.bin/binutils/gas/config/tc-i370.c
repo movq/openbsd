@@ -1,7 +1,6 @@
 /* tc-i370.c -- Assembler for the IBM 360/370/390 instruction set.
    Loosely based on the ppc files by Linas Vepstas <linas@linas.org> 1998, 99
-   Copyright 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002
-   Free Software Foundation, Inc.
+   Copyright (C) 1994, 95, 96, 97, 98, 99, 2000 Free Software Foundation, Inc.
    Written by Ian Lance Taylor, Cygnus Support.
 
    This file is part of GAS, the GNU Assembler.
@@ -19,7 +18,7 @@
    You should have received a copy of the GNU General Public License
    along with GAS; see the file COPYING.  If not, write to the Free
    Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+   02111-1307, USA. */
 
 /* This assembler implements a very hacked version of an elf-like thing
  * that gcc emits (when gcc is suitably hacked).  To make it behave more
@@ -29,8 +28,8 @@
  */
 
 #include <stdio.h>
+#include <ctype.h>
 #include "as.h"
-#include "safe-ctype.h"
 #include "subsegs.h"
 #include "struc-symbol.h"
 
@@ -76,17 +75,18 @@ const char EXP_CHARS[] = "eE";
    as in 0d1.0.  */
 const char FLT_CHARS[] = "dD";
 
+
 void
 md_show_usage (stream)
      FILE *stream;
 {
-  fprintf (stream, "\
+  fprintf(stream, "\
 S/370 options: (these have not yet been tested and may not work) \n\
 -u        		ignored\n\
 -mregnames        	Allow symbolic names for registers\n\
 -mno-regnames        	Do not allow symbolic names for registers\n");
 #ifdef OBJ_ELF
-  fprintf (stream, "\
+  fprintf(stream, "\
 -mrelocatable        	support for GCC's -mrelocatble option\n\
 -mrelocatable-lib       support for GCC's -mrelocatble-lib option\n\
 -V        		print assembler version number\n");
@@ -115,6 +115,7 @@ static void i370_elf_rdata PARAMS ((int));
 static void i370_elf_lcomm PARAMS ((int));
 static void i370_elf_validate_fix PARAMS ((fixS *, segT));
 #endif
+
 
 
 /* The target specific pseudo-ops which we support.  */
@@ -158,11 +159,11 @@ const pseudo_typeS md_pseudo_table[] =
 /* ***************************************************************** */
 
 /* Whether to use user friendly register names.  */
-#define TARGET_REG_NAMES_P TRUE
+#define TARGET_REG_NAMES_P true
 
-static bfd_boolean reg_names_p = TARGET_REG_NAMES_P;
+static boolean reg_names_p = TARGET_REG_NAMES_P;
 
-static bfd_boolean register_name PARAMS ((expressionS *));
+static boolean register_name PARAMS ((expressionS *));
 static void i370_set_cpu PARAMS ((void));
 static i370_insn_t i370_insert_operand
   PARAMS ((i370_insn_t insn, const struct i370_operand *operand, offsetT val));
@@ -185,12 +186,14 @@ struct pd_reg
    1. r<reg_num> which has the value <reg_num>.
    2. r.<reg_num> which has the value <reg_num>.
 
+
    Each floating point register has predefined names of the form:
    1. f<reg_num> which has the value <reg_num>.
    2. f.<reg_num> which has the value <reg_num>.
 
    There are only four floating point registers, and these are
    commonly labelled 0,2,4 and 6.  Thus, there is no f1, f3, etc.
+
 
    There are individual registers as well:
    rbase or r.base has the value  3  (base register)
@@ -202,7 +205,7 @@ struct pd_reg
    dsa or r.dsa    has the value 13  (stack pointer)
    lr              has the value 14  (link reg)
 
-   The table is sorted. Suitable for searching by a binary search.  */
+   The table is sorted. Suitable for searching by a binary search. */
 
 static const struct pd_reg pre_defined_registers[] =
 {
@@ -218,6 +221,7 @@ static const struct pd_reg pre_defined_registers[] =
   { "f2", 2 },
   { "f4", 4 },
   { "f6", 6 },
+
 
   { "dsa",13 },    /* stack pointer */
   { "lr", 14 },    /* Link Register */
@@ -275,7 +279,7 @@ static const struct pd_reg pre_defined_registers[] =
 
 };
 
-#define REG_NAME_CNT        (sizeof (pre_defined_registers) / sizeof (struct pd_reg))
+#define REG_NAME_CNT        (sizeof(pre_defined_registers) / sizeof(struct pd_reg))
 
 /* Given NAME, find the register number associated with that name, return
    the integer value associated with the given name or -1 on failure.  */
@@ -316,14 +320,14 @@ reg_name_search (regs, regcount, name)
  *
  * in:        Input_line_pointer points to 1st char of operand.
  *
- * out:        An expressionS.
+ * out:        A expressionS.
  *      The operand may have been a register: in this case, X_op == O_register,
  *      X_add_number is set to the register number, and truth is returned.
  *        Input_line_pointer->(next non-blank) char after operand, or is in its
  *      original state.
  */
 
-static bfd_boolean
+static boolean
 register_name (expressionP)
      expressionS *expressionP;
 {
@@ -332,47 +336,47 @@ register_name (expressionP)
   char *start;
   char c;
 
-  /* Find the spelling of the operand.  */
+  /* Find the spelling of the operand */
   start = name = input_line_pointer;
-  if (name[0] == '%' && ISALPHA (name[1]))
+  if (name[0] == '%' && isalpha (name[1]))
     name = ++input_line_pointer;
 
   else if (!reg_names_p)
-    return FALSE;
+    return false;
 
   while (' ' == *name)
     name = ++input_line_pointer;
 
-  /* If it's a number, treat it as a number.  If it's alpha, look to
-     see if it's in the register table.  */
-  if (!ISALPHA (name[0]))
+  /* if its a number, treat it as a number */
+  /* if its alpha, look to see if it's in the register table */
+  if (!isalpha (name[0]))
     {
-      reg_number = get_single_number ();
+      reg_number = get_single_number();
+      c = get_symbol_end ();
     }
   else
     {
       c = get_symbol_end ();
       reg_number = reg_name_search (pre_defined_registers, REG_NAME_CNT, name);
-
-      /* Put back the delimiting char.  */
-      *input_line_pointer = c;
     }
 
-  /* If numeric, make sure its not out of bounds.  */
+  /* if numeric, make sure its not out of bounds */
   if ((0 <= reg_number) && (16 >= reg_number))
     {
       expressionP->X_op = O_register;
       expressionP->X_add_number = reg_number;
 
-      /* Make the rest nice.  */
+      /* make the rest nice */
       expressionP->X_add_symbol = NULL;
       expressionP->X_op_symbol = NULL;
-      return TRUE;
+      *input_line_pointer = c;   /* put back the delimiting char */
+      return true;
     }
 
-  /* Reset the line as if we had not done anything.  */
-  input_line_pointer = start;
-  return FALSE;
+    /* reset the line as if we had not done anything */
+    *input_line_pointer = c;   /* put back the delimiting char */
+    input_line_pointer = start; /* reset input_line pointer */
+    return false;
 }
 
 /* Local variables.  */
@@ -430,15 +434,15 @@ const int md_long_jump_size = 4;
 #endif
 
 #ifdef OBJ_ELF
-const char *md_shortopts = "l:um:K:VQ:";
+CONST char *md_shortopts = "l:um:K:VQ:";
 #else
-const char *md_shortopts = "um:";
+CONST char *md_shortopts = "um:";
 #endif
 struct option md_longopts[] =
 {
   {NULL, no_argument, NULL, 0}
 };
-size_t md_longopts_size = sizeof (md_longopts);
+size_t md_longopts_size = sizeof(md_longopts);
 
 int
 md_parse_option (c, arg)
@@ -479,10 +483,10 @@ md_parse_option (c, arg)
 	i370_cpu = I370_OPCODE_370;
 
       else if (strcmp (arg, "regnames") == 0)
-	reg_names_p = TRUE;
+	reg_names_p = true;
 
       else if (strcmp (arg, "no-regnames") == 0)
-	reg_names_p = FALSE;
+	reg_names_p = false;
 
 #ifdef OBJ_ELF
       /* -mrelocatable/-mrelocatable-lib -- warn about initializations that require relocation */
@@ -529,7 +533,7 @@ md_parse_option (c, arg)
 
 /* Set i370_cpu if it is not already set.
    Currently defaults to the reasonable superset;
-   but can be made more fine grained if desred.  */
+   but can be made more fine grained if desred. */
 
 static void
 i370_set_cpu ()
@@ -537,7 +541,7 @@ i370_set_cpu ()
   const char *default_os  = TARGET_OS;
   const char *default_cpu = TARGET_CPU;
 
-  /* override with the superset for the moment.  */
+  /* override with the superset for the moment. */
   i370_cpu = I370_OPCODE_ESA390_SUPERSET;
   if (i370_cpu == 0)
     {
@@ -553,7 +557,7 @@ i370_set_cpu ()
 }
 
 /* Figure out the BFD architecture to use.  */
-/* hack alert -- specify the different 370 architectures  */
+// hack alert -- specify the different 370 architectures
 
 enum bfd_architecture
 i370_arch ()
@@ -572,12 +576,12 @@ md_begin ()
   const struct i370_opcode *op_end;
   const struct i370_macro *macro;
   const struct i370_macro *macro_end;
-  bfd_boolean dup_insn = FALSE;
+  boolean dup_insn = false;
 
   i370_set_cpu ();
 
 #ifdef OBJ_ELF
-  /* Set the ELF flags if desired.  */
+  /* Set the ELF flags if desired. */
   if (i370_flags)
     bfd_set_private_flags (stdoutput, i370_flags);
 #endif
@@ -598,7 +602,7 @@ md_begin ()
            if (retval != (const char *) NULL)
              {
                as_bad ("Internal assembler error for instruction %s", op->name);
-               dup_insn = TRUE;
+               dup_insn = true;
              }
          }
      }
@@ -617,7 +621,7 @@ md_begin ()
           if (retval != (const char *) NULL)
             {
               as_bad ("Internal assembler error for macro %s", macro->name);
-              dup_insn = TRUE;
+              dup_insn = true;
             }
         }
     }
@@ -657,13 +661,14 @@ i370_insert_operand (insn, operand, val)
 
 #ifdef OBJ_ELF
 /* Parse @got, etc. and return the desired relocation.
-   Currently, i370 does not support (don't really need to support) any
-   of these fancier markups ... for example, no one is going to
-   write 'L 6,=V(bogus)@got' it just doesn't make sense (at least to me).
-   So basically, we could get away with this routine returning
-   BFD_RELOC_UNUSED in all circumstances.  However, I'll leave
-   in for now in case someone ambitious finds a good use for this stuff ...
-   this routine was pretty much just copied from the powerpc code ...  */
+ * Currently, i370 does not support (don't really need to support) any
+ * of these fancier markups ... for example, no one is going to
+ * write 'L 6,=V(bogus)@got' it just doesn't make sense (at least to me).
+ * So basically, we could get away with this routine returning
+ * BFD_RELOC_UNUSED in all circumstances.  However, I'll leave
+ * in for now in case someone ambitious finds a good use for this stuff ...
+ * this routine was pretty much just copied from the powerpc code ...
+ */
 static bfd_reloc_code_real_type
 i370_elf_suffix (str_p, exp_p)
      char **str_p;
@@ -683,18 +688,15 @@ i370_elf_suffix (str_p, exp_p)
   int len;
   struct map_bfd *ptr;
 
-#define MAP(str,reloc) { str, sizeof (str)-1, reloc }
+#define MAP(str,reloc) { str, sizeof(str)-1, reloc }
 
   static struct map_bfd mapping[] =
   {
-#if 0
-    MAP ("l",		BFD_RELOC_LO16),
-    MAP ("h",		BFD_RELOC_HI16),
-    MAP ("ha",		BFD_RELOC_HI16_S),
-#endif
-    /* warnings with -mrelocatable.  */
-    MAP ("fixup",	BFD_RELOC_CTOR),
-    { (char *)0, 0,	BFD_RELOC_UNUSED }
+    //     MAP ("l",        	BFD_RELOC_LO16),
+    //     MAP ("h",        	BFD_RELOC_HI16),
+    //     MAP ("ha",        	BFD_RELOC_HI16_S),
+    MAP ("fixup",        BFD_RELOC_CTOR),          /* warnings with -mrelocatable */
+    { (char *)0,        0,	BFD_RELOC_UNUSED }
   };
 
   if (*str++ != '@')
@@ -702,10 +704,10 @@ i370_elf_suffix (str_p, exp_p)
 
   for (ch = *str, str2 = ident;
        (str2 < ident + sizeof (ident) - 1
-        && (ISALNUM (ch) || ch == '@'));
+        && (isalnum (ch) || ch == '@'));
        ch = *++str)
     {
-      *str2++ = TOLOWER (ch);
+      *str2++ = (islower (ch)) ? ch : tolower (ch);
     }
 
   *str2 = '\0';
@@ -749,8 +751,8 @@ i370_elf_suffix (str_p, exp_p)
   return BFD_RELOC_UNUSED;
 }
 
-/* Like normal .long/.short/.word, except support @got, etc.  */
-/* clobbers input_line_pointer, checks end-of-line.  */
+/* Like normal .long/.short/.word, except support @got, etc. */
+/* clobbers input_line_pointer, checks end-of-line. */
 static void
 i370_elf_cons (nbytes)
      register int nbytes;        /* 1=.byte, 2=.word, 4=.long */
@@ -790,7 +792,7 @@ i370_elf_cons (nbytes)
     }
   while (*input_line_pointer++ == ',');
 
-  input_line_pointer--;        	/* Put terminator back into stream.  */
+  input_line_pointer--;        	/* Put terminator back into stream. */
   demand_empty_rest_of_line ();
 }
 
@@ -920,7 +922,7 @@ unsigned char ebcasc[256] =
 /* ebcdic translation tables needed for 3270 support */
 static void
 i370_ebcdic (unused)
-     int unused ATTRIBUTE_UNUSED;
+     int unused;
 {
   char *p, *end;
   char delim = 0;
@@ -943,7 +945,7 @@ i370_ebcdic (unused)
       p = frag_more (nbytes);
       while (end > input_line_pointer)
 	{
-	  *p = ascebc [(unsigned char) (*input_line_pointer)];
+	  *p = ascebc [(unsigned char)(*input_line_pointer)];
 	  ++p; ++input_line_pointer;
 	}
       *p = '\0';
@@ -955,7 +957,7 @@ i370_ebcdic (unused)
 /* stub out a couple of routines */
 static void
 i370_rmode (unused)
-     int unused ATTRIBUTE_UNUSED;
+     int unused;
 {
   as_tsktsk ("rmode ignored");
 }
@@ -976,7 +978,7 @@ i370_dsect (sect)
 
 static void
 i370_csect (unused)
-     int unused ATTRIBUTE_UNUSED;
+     int unused;
 {
   as_tsktsk ("csect not supported");
 }
@@ -989,8 +991,8 @@ i370_csect (unused)
  * DC   F'1'             # in sysv4, .long   1
  */
 static void
-i370_dc (unused)
-     int unused ATTRIBUTE_UNUSED;
+i370_dc(unused)
+     int unused;
 {
   char * p, tmp[50];
   int nbytes=0;
@@ -1069,7 +1071,7 @@ i370_dc (unused)
 /* provide minimal support for DS Define Storage */
 static void
 i370_ds (unused)
-     int unused ATTRIBUTE_UNUSED;
+     int unused;
 {
   /* DS 0H or DS 0F or DS 0D */
   if ('0' == *input_line_pointer)
@@ -1117,8 +1119,8 @@ i370_elf_rdata (sect)
 
 /* Pseudo op to make file scope bss items */
 static void
-i370_elf_lcomm (unused)
-     int unused ATTRIBUTE_UNUSED;
+i370_elf_lcomm(unused)
+     int unused;
 {
   register char *name;
   register char c;
@@ -1271,10 +1273,11 @@ i370_elf_validate_fix (fixp, seg)
 }
 #endif /* OBJ_ELF */
 
+
 
 #define LITERAL_POOL_SUPPORT
 #ifdef LITERAL_POOL_SUPPORT
-/* Provide support for literal pools within the text section.  */
+/* Provide support for literal pools within the text section. */
 /* Loosely based on similar code from tc-arm.c  */
 /*
  * We will use four symbols to locate four parts of the literal pool.
@@ -1326,13 +1329,13 @@ add_to_lit_pool (expressionS *exx, char *name, int sz)
 
   /* start a new pool, if necessary */
   if (8 == sz && NULL == longlong_poolP)
-    longlong_poolP = symbol_make_empty ();
+    longlong_poolP = symbol_make_empty();
   else if (4 == sz && NULL == word_poolP)
-    word_poolP = symbol_make_empty ();
+    word_poolP = symbol_make_empty();
   else if (2 == sz && NULL == short_poolP)
-    short_poolP = symbol_make_empty ();
+    short_poolP = symbol_make_empty();
   else if (1 == sz && NULL == byte_poolP)
-    byte_poolP = symbol_make_empty ();
+    byte_poolP = symbol_make_empty();
 
   /* Check if this literal value is already in the pool: */
   /* hack alert -- we should probably be checking expressions
@@ -1361,7 +1364,7 @@ add_to_lit_pool (expressionS *exx, char *name, int sz)
     {
       if (next_literal_pool_place > MAX_LITERAL_POOL_SIZE)
         {
-          as_bad ("Literal Pool Overflow");
+          as_bad("Literal Pool Overflow");
         }
 
       literals[next_literal_pool_place].exp = *exx;
@@ -1416,13 +1419,10 @@ add_to_lit_pool (expressionS *exx, char *name, int sz)
 
 /* Can't use symbol_new here, so have to create a symbol and then at
    a later date assign it a value. Thats what these functions do */
-static void symbol_locate
-  PARAMS ((symbolS *, const char *, segT, valueT, fragS *));
-
 static void
 symbol_locate (symbolP, name, segment, valu, frag)
      symbolS *symbolP;
-     const char *name;		/* It is copied, the caller can modify */
+     CONST char *name;		/* It is copied, the caller can modify */
      segT segment;		/* Segment identifier (SEG_<something>) */
      valueT valu;		/* Symbol value */
      fragS *frag;		/* Associated fragment */
@@ -1438,7 +1438,7 @@ symbol_locate (symbolP, name, segment, valu, frag)
 
   S_SET_SEGMENT (symbolP, segment);
   S_SET_VALUE (symbolP, valu);
-  symbol_clear_list_pointers (symbolP);
+  symbol_clear_list_pointers(symbolP);
 
   symbol_set_frag (symbolP, frag);
 
@@ -1480,7 +1480,7 @@ symbol_locate (symbolP, name, segment, valu, frag)
  * register operands. For example, "BL .L33" branch low
  * to .L33 RX form insn frequently terminates for-loops,
  */
-static bfd_boolean
+static boolean
 i370_addr_offset (expressionS *exx)
 {
   char *dot, *lab;
@@ -1492,11 +1492,11 @@ i370_addr_offset (expressionS *exx)
   lab = input_line_pointer;
   while (*lab && (',' != *lab) && ('(' != *lab))
     {
-      if (ISDIGIT (*lab))
+      if (isdigit(*lab))
 	{
 	  all_digits = 1;
 	}
-      else if (ISALPHA (*lab))
+      else if (isalpha(*lab))
 	{
 	  if (!all_digits)
 	    {
@@ -1520,7 +1520,7 @@ i370_addr_offset (expressionS *exx)
   dot = strchr (input_line_pointer, '*');
 
   if (!dot && !islabel)
-    return FALSE;
+    return false;
 
   /* replace * with . and let expr munch on it.  */
   if (dot)
@@ -1528,7 +1528,7 @@ i370_addr_offset (expressionS *exx)
   expression (exx);
 
   /* OK, now we have to subtract the "using" location  */
-  /* normally branches appear in the text section only...  */
+  /* normally branches appear in the text section only... */
   if (0 == strncmp (now_seg->name, ".text", 5) || 0 > i370_using_other_regno)
     {
       i370_make_relative (exx, &i370_using_text_baseaddr);
@@ -1542,7 +1542,7 @@ i370_addr_offset (expressionS *exx)
   if (dot)
     *dot = '*';
 
-  return TRUE;
+  return true;
 }
 
 /* handle address constants of various sorts */
@@ -1553,7 +1553,7 @@ i370_addr_offset (expressionS *exx)
  *    =F'1234'        32-bit const int
  *    =H'1234'        16-bit const int
  */
-static bfd_boolean
+static boolean
 i370_addr_cons (expressionS *exp)
 {
   char *name;
@@ -1565,13 +1565,13 @@ i370_addr_cons (expressionS *exp)
   name = input_line_pointer;
   sym_name = input_line_pointer;
   /* Find the spelling of the operand */
-  if (name[0] == '=' && ISALPHA (name[1]))
+  if (name[0] == '=' && isalpha (name[1]))
     {
       name = ++input_line_pointer;
     }
   else
     {
-      return FALSE;
+      return false;
     }
   switch (name[0])
     {
@@ -1655,7 +1655,7 @@ i370_addr_cons (expressionS *exp)
 	      save = input_line_pointer;
 	      while (*save)
 		{
-		  if (ISXDIGIT (*save))
+		  if (isxdigit(*save))
 		    hex_len++;
 		  save++;
 		}
@@ -1689,17 +1689,17 @@ i370_addr_cons (expressionS *exp)
       if ((exp->X_op != O_constant) && (exp->X_op != O_big))
 	{
 	  as_bad ("expression not a constant");
-	  return FALSE;
+	  return false;
 	}
       add_to_lit_pool (exp, 0x0, cons_len);
       break;
 
     default:
       as_bad ("Unknown/unsupported address literal type");
-      return FALSE;
+      return false;
     }
 
-  return TRUE;
+  return true;
 }
 
 
@@ -1709,7 +1709,7 @@ i370_addr_cons (expressionS *exp)
 
 static void
 i370_ltorg (ignore)
-     int ignore ATTRIBUTE_UNUSED;
+     int ignore;
 {
   int litsize;
   int lit_count = 0;
@@ -1755,6 +1755,7 @@ i370_ltorg (ignore)
   else as_bad ("bad alignment of %d bytes in literal pool", biggest_literal_size);
   if (0 == biggest_align) biggest_align = 1;
 
+
   /* Align pool for short, word, double word accesses */
   frag_align (biggest_align, 0, 0);
   record_alignment (now_seg, biggest_align);
@@ -1762,7 +1763,7 @@ i370_ltorg (ignore)
   /* Note that the gas listing will print only the first five
    * entries in the pool .... wonder how to make it print more ...
    */
-  /* output largest literals first, then the smaller ones.  */
+  /* output largest literals first, then the smaller ones. */
   for (litsize=8; litsize; litsize /=2)
     {
       symbolS *current_poolP = NULL;
@@ -1800,7 +1801,7 @@ i370_ltorg (ignore)
 	       */
 	      if (literals[lit_count].sym_name)
 		{
-		  symbolS * symP = symbol_make_empty ();
+		  symbolS * symP = symbol_make_empty();
 		  symbol_locate (symP, literals[lit_count].sym_name, now_seg,
 				 (valueT) frag_now_fix (), frag_now);
 		  symbol_table_insert (symP);
@@ -1833,20 +1834,20 @@ i370_ltorg (ignore)
  */
 static void
 i370_using (ignore)
-     int ignore ATTRIBUTE_UNUSED;
+     int ignore;
 {
   expressionS ex, baseaddr;
   int iregno;
   char *star;
 
   /* if "*" appears in a using, it means "."  */
-  /* replace it with "." so that expr doesn't get confused.  */
+  /* replace it with "." so that expr doesn't get confused. */
   star = strchr (input_line_pointer, '*');
   if (star)
     *star = '.';
 
   /* the first arg to using will usually be ".", but it can
-   * be a more complex exprsssion too ...  */
+   * be a more complex exprsssion too ... */
   expression (&baseaddr);
   if (star)
     *star = '*';
@@ -1879,7 +1880,7 @@ i370_using (ignore)
 
 static void
 i370_drop (ignore)
-     int ignore ATTRIBUTE_UNUSED;
+     int ignore;
 {
   expressionS ex;
   int iregno;
@@ -1982,7 +1983,7 @@ md_assemble (str)
 #endif
 
   /* Get the opcode.  */
-  for (s = str; *s != '\0' && ! ISSPACE (*s); s++)
+  for (s = str; *s != '\0' && ! isspace (*s); s++)
     ;
   if (*s != '\0')
     *s++ = '\0';
@@ -2007,7 +2008,7 @@ md_assemble (str)
   insn = opcode->opcode;
 
   str = s;
-  while (ISSPACE (*str))
+  while (isspace (*str))
     ++str;
 
   /* I370 operands are either expressions or address constants.
@@ -2170,7 +2171,7 @@ md_assemble (str)
       hold = input_line_pointer;
       input_line_pointer = str;
 
-      /* register names are only allowed where there are registers ...  */
+      /* register names are only allowed where there are registers ... */
       if ((operand->flags & I370_OPERAND_GPR) != 0)
         {
           /* quickie hack to get past things like (,r13) */
@@ -2186,9 +2187,9 @@ md_assemble (str)
             }
         }
 
-      /* Check for an address constant expression.  */
+      /* check for a address constant expression */
       /* We will put PSW-relative addresses in the text section,
-       * and adress literals in the .data (or other) section.  */
+       * and adress literals in the .data (or other) section. */
       else if (i370_addr_cons (&ex))
 	use_other=1;
       else if (i370_addr_offset (&ex))
@@ -2223,7 +2224,7 @@ md_assemble (str)
           /* Allow @HA, @L, @H on constants.
            * Well actually, no we don't; there really don't make sense
            * (at least not to me) for the i370.  However, this code is
-           * left here for any dubious future expansion reasons ...  */
+           * left here for any dubious future expansion reasons ... */
           char *orig_str = str;
 
           if ((reloc = i370_elf_suffix (&str, &ex)) != BFD_RELOC_UNUSED)
@@ -2292,7 +2293,7 @@ md_assemble (str)
 	++str;
     }
 
-  while (ISSPACE (*str))
+  while (isspace (*str))
     ++str;
 
   if (*str != '\0')
@@ -2324,7 +2325,7 @@ md_assemble (str)
      BFD_RELOC_UNUSED plus the operand index.  This lets us easily
      handle fixups for any operand type, although that is admittedly
      not a very exciting feature.  We pick a BFD reloc type in
-     md_apply_fix3.  */
+     md_apply_fix.  */
   for (i = 0; i < fc; i++)
     {
       const struct i370_operand *operand;
@@ -2342,7 +2343,7 @@ md_assemble (str)
 	  size = bfd_get_reloc_size (reloc_howto);
 
 	  if (size < 1 || size > 4)
-	    abort ();
+	    abort();
 
 	  printf (" gwana doo fixup %d \n", i);
 	  fixP = fix_new_exp (frag_now, f - frag_now->fr_literal, size,
@@ -2454,7 +2455,7 @@ i370_macro (str, macro)
   md_assemble (complete);
 }
 
-#if 0
+#ifdef OBJ_ELF
 /* For ELF, add support for SHF_EXCLUDE and SHT_ORDERED */
 
 int
@@ -2465,7 +2466,7 @@ i370_section_letter (letter, ptr_msg)
   if (letter == 'e')
     return SHF_EXCLUDE;
 
-  *ptr_msg = "Bad .section directive: want a,e,w,x,M,S in string";
+  *ptr_msg = "Bad .section directive: want a,w,x,e in string";
   return 0;
 }
 
@@ -2515,7 +2516,7 @@ i370_section_flags (flags, attr, type)
 
 static void
 i370_byte (ignore)
-     int ignore ATTRIBUTE_UNUSED;
+     int ignore;
 {
   if (*input_line_pointer != '\"')
     {
@@ -2559,7 +2560,7 @@ i370_byte (ignore)
 
 static void
 i370_tc (ignore)
-     int ignore ATTRIBUTE_UNUSED;
+     int ignore;
 {
 
   /* Skip the TOC symbol name.  */
@@ -2584,8 +2585,8 @@ i370_tc (ignore)
 }
 
 /* Turn a string in input_line_pointer into a floating point constant
-   of type TYPE, and store the appropriate bytes in *LITP.  The number
-   of LITTLENUMS emitted is stored in *SIZEP.  An error message is
+   of type type, and store the appropriate bytes in *litp.  The number
+   of LITTLENUMS emitted is stored in *sizep .  An error message is
    returned, or NULL on OK.  */
 
 char *
@@ -2619,7 +2620,7 @@ md_atof (type, litp, sizep)
     }
 
   /* 360/370/390 have two float formats: an old, funky 360 single-precision
-   * format, and the ieee format.  Support only the ieee format.  */
+   * format, and the ieee format.  Support only the ieee format. */
   t = atof_ieee (input_line_pointer, type, words);
   if (t)
     input_line_pointer = t;
@@ -2663,8 +2664,8 @@ md_section_align (seg, addr)
 
 int
 md_estimate_size_before_relax (fragp, seg)
-     fragS *fragp ATTRIBUTE_UNUSED;
-     asection *seg ATTRIBUTE_UNUSED;
+     fragS *fragp;
+     asection *seg;
 {
   abort ();
   return 0;
@@ -2674,18 +2675,19 @@ md_estimate_size_before_relax (fragp, seg)
 
 void
 md_convert_frag (abfd, sec, fragp)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     asection *sec ATTRIBUTE_UNUSED;
-     fragS *fragp ATTRIBUTE_UNUSED;
+     bfd *abfd;
+     asection *sec;
+     fragS *fragp;
 {
   abort ();
 }
 
 /* We have no need to default values of symbols.  */
 
+/*ARGSUSED*/
 symbolS *
 md_undefined_symbol (name)
-     char *name ATTRIBUTE_UNUSED;
+     char *name;
 {
   return 0;
 }
@@ -2698,10 +2700,11 @@ md_undefined_symbol (name)
 long
 md_pcrel_from_section (fixp, sec)
      fixS *fixp;
-     segT sec ATTRIBUTE_UNUSED;
+     segT sec;
 {
   return fixp->fx_frag->fr_address + fixp->fx_where;
 }
+
 
 /* Apply a fixup to the object code.  This is called for all the
    fixups we generated by the call to fix_new_exp, above.  In the call
@@ -2716,82 +2719,117 @@ md_pcrel_from_section (fixp, sec)
    going on here ...
 */
 
-void
-md_apply_fix3 (fixP, valP, seg)
-     fixS *fixP;
-     valueT * valP;
+int
+md_apply_fix3 (fixp, valuep, seg)
+     fixS *fixp;
+     valueT *valuep;
      segT seg;
 {
-  valueT value = * valP;
+  valueT value;
 
-  if (fixP->fx_addsy != NULL)
+  value = *valuep;
+  if (fixp->fx_addsy != NULL)
     {
+      /* Notes:
+         Branches to labels will come in here with fixp->fx_pcrel set to 1
+         and fixp->fx_subsy not null, and holding the value of the base
+         (i.e. the value of the .using). These we want to ignore.
+
+         'Strong' and 'weak' symbols will come in here with
+         fixp->fx_pcrel==0, fixp->fx_addsy defined, and
+         *valuep holding the value of the symbol.
+
+         'Strong' symbols will have S_GET_VALUE(fx_addsy) equal to zero,
+         whereas 'weak' symbols will have S_GET_VALUE(fx_addsy) set to the
+         symbol value (usually).
+
+         We want to subtract S_GET_VALUE(fx_addsy) if it set, and
+         for all practical purposes, do a fixup with value zero.  This
+         is because the linker/loader, at a later time, will do this
+         fixup with the correct value. If we fixup now with a value,
+         it will get double-fixed, leading to garbage.
+
+         Note that subsy will also be set for strong/weak symbols
+         when the user program was compiled with -g.  In that case,
+         subsy will hold the base address (i.e. the .using address).
+      */
+
+      if (fixp->fx_addsy->sy_used_in_reloc
+          && S_GET_SEGMENT (fixp->fx_addsy) != absolute_section
+          && S_GET_SEGMENT (fixp->fx_addsy) != undefined_section
+          && ! bfd_is_com_section (S_GET_SEGMENT (fixp->fx_addsy)))
+        value -= S_GET_VALUE (fixp->fx_addsy);
+
 #ifdef DEBUG
       printf ("\nmd_apply_fix3: symbol %s at 0x%x (%s:%d) val=0x%x addend=0x%x\n",
-	      S_GET_NAME (fixP->fx_addsy),
-	      fixP->fx_frag->fr_address + fixP->fx_where,
-	      fixP->fx_file, fixP->fx_line,
-	      S_GET_VALUE (fixP->fx_addsy), value);
+	      S_GET_NAME (fixp->fx_addsy),
+	      fixp->fx_frag->fr_address + fixp->fx_where,
+	      fixp->fx_file, fixp->fx_line,
+	      S_GET_VALUE (fixp->fx_addsy), value);
 #endif
     }
   else
-    fixP->fx_done = 1;
+    {
+      fixp->fx_done = 1;
+      return 1;
+    }
 
   /* Apply fixups to operands.  Note that there should be no relocations
      for any operands, since no instruction ever takes an operand
      that requires reloc.  */
-  if ((int) fixP->fx_r_type >= (int) BFD_RELOC_UNUSED)
+  if ((int) fixp->fx_r_type >= (int) BFD_RELOC_UNUSED)
     {
       int opindex;
       const struct i370_operand *operand;
       char *where;
       i370_insn_t insn;
 
-      opindex = (int) fixP->fx_r_type - (int) BFD_RELOC_UNUSED;
+      opindex = (int) fixp->fx_r_type - (int) BFD_RELOC_UNUSED;
 
       operand = &i370_operands[opindex];
 
 #ifdef DEBUG
       printf ("\nmd_apply_fix3: fixup operand %s at 0x%x in %s:%d addend=0x%x\n",
 	      operand->name,
-	      fixP->fx_frag->fr_address + fixP->fx_where,
-	      fixP->fx_file, fixP->fx_line,
+	      fixp->fx_frag->fr_address + fixp->fx_where,
+	      fixp->fx_file, fixp->fx_line,
 	      value);
 #endif
       /* Fetch the instruction, insert the fully resolved operand
          value, and stuff the instruction back again.
-         fisxp->fx_size is the length of the instruction.  */
-      where = fixP->fx_frag->fr_literal + fixP->fx_where;
+         fisxp->fx_size is the length of the instruction. */
+      where = fixp->fx_frag->fr_literal + fixp->fx_where;
       insn.i[0] = bfd_getb32 ((unsigned char *) where);
-
-      if (6 <= fixP->fx_size)
-	/* Deal with 48-bit insn's.  */
-	insn.i[1] = bfd_getb32 (((unsigned char *) where)+4);
-
+      if (6 <= fixp->fx_size)
+	{    /* deal with 48-bit insn's */
+	  insn.i[1] = bfd_getb32 (((unsigned char *) where)+4);
+	}
       insn = i370_insert_operand (insn, operand, (offsetT) value);
       bfd_putb32 ((bfd_vma) insn.i[0], (unsigned char *) where);
+      if (6 <= fixp->fx_size)
+	{   /* deal with 48-bit insn's */
+	  bfd_putb32 ((bfd_vma) insn.i[1], (((unsigned char *) where)+4));
+	}
 
-      if (6 <= fixP->fx_size)
-	/* Deal with 48-bit insn's.  */
-	bfd_putb32 ((bfd_vma) insn.i[1], (((unsigned char *) where)+4));
-
-      /* We are done, right? right !!  */
-      fixP->fx_done = 1;
-      if (fixP->fx_done)
-	/* Nothing else to do here.  */
-	return;
+      /* we are done, right? right !! */
+      fixp->fx_done = 1;
+      if (fixp->fx_done)
+        {
+          /* Nothing else to do here.  */
+          return 1;
+        }
 
       /* Determine a BFD reloc value based on the operand information.
 	 We are only prepared to turn a few of the operands into
 	 relocs.  In fact, we support *zero* operand relocations ...
 	 Why?  Because we are not expecting the compiler to generate
 	 any operands that need relocation.  Due to the 12-bit naturew of
-	 i370 addressing, this would be unusual.  */
+	 i370 addressing, this would be unusual. */
 #if 0
       if ((operand->flags & I370_OPERAND_RELATIVE) != 0
           && operand->bits == 12
           && operand->shift == 0)
-        fixP->fx_r_type = BFD_RELOC_I370_D12;
+        fixp->fx_r_type = BFD_RELOC_I370_D12;
       else
 #endif
         {
@@ -2800,60 +2838,61 @@ md_apply_fix3 (fixP, valP, seg)
 
           /* Use expr_symbol_where to see if this is an expression
              symbol.  */
-          if (expr_symbol_where (fixP->fx_addsy, &sfile, &sline))
-            as_bad_where (fixP->fx_file, fixP->fx_line,
+          if (expr_symbol_where (fixp->fx_addsy, &sfile, &sline))
+            as_bad_where (fixp->fx_file, fixp->fx_line,
         		  "unresolved expression that must be resolved");
           else
-            as_bad_where (fixP->fx_file, fixP->fx_line,
+            as_bad_where (fixp->fx_file, fixp->fx_line,
         		  "unsupported relocation type");
-          fixP->fx_done = 1;
-          return;
+          fixp->fx_done = 1;
+          return 1;
         }
     }
   else
     {
       /* We branch to here if the fixup is not to a symbol that
-         appears in an instruction operand, but is rather some
-         declared storage.  */
+       * appears in an instruction operand, but is rather some
+       * declared storage.
+       */
 #ifdef OBJ_ELF
-      i370_elf_validate_fix (fixP, seg);
+      i370_elf_validate_fix (fixp, seg);
 #endif
 #ifdef DEBUG
       printf ("md_apply_fix3: reloc case %d in segment  %s %s:%d\n",
-	      fixP->fx_r_type, segment_name (seg), fixP->fx_file, fixP->fx_line);
+	      fixp->fx_r_type, segment_name (seg), fixp->fx_file, fixp->fx_line);
       printf ("\tcurrent fixup value is 0x%x \n", value);
 #endif
-      switch (fixP->fx_r_type)
+      switch (fixp->fx_r_type)
         {
         case BFD_RELOC_32:
         case BFD_RELOC_CTOR:
-          if (fixP->fx_pcrel)
-            fixP->fx_r_type = BFD_RELOC_32_PCREL;
-	  /* Fall through.  */
+          if (fixp->fx_pcrel)
+            fixp->fx_r_type = BFD_RELOC_32_PCREL;
+	  /* fall through */
 
         case BFD_RELOC_RVA:
         case BFD_RELOC_32_PCREL:
         case BFD_RELOC_32_BASEREL:
 #ifdef DEBUG
           printf ("\t32 bit relocation at 0x%x\n",
-		  fixP->fx_frag->fr_address + fixP->fx_where);
+		  fixp->fx_frag->fr_address + fixp->fx_where);
 #endif
-          md_number_to_chars (fixP->fx_frag->fr_literal + fixP->fx_where,
+          md_number_to_chars (fixp->fx_frag->fr_literal + fixp->fx_where,
         		      value, 4);
           break;
 
         case BFD_RELOC_LO16:
         case BFD_RELOC_16:
-          if (fixP->fx_pcrel)
-            as_bad_where (fixP->fx_file, fixP->fx_line,
+          if (fixp->fx_pcrel)
+            as_bad_where (fixp->fx_file, fixp->fx_line,
         		  "cannot emit PC relative %s relocation%s%s",
-        		  bfd_get_reloc_code_name (fixP->fx_r_type),
-        		  fixP->fx_addsy != NULL ? " against " : "",
-        		  (fixP->fx_addsy != NULL
-        		   ? S_GET_NAME (fixP->fx_addsy)
+        		  bfd_get_reloc_code_name (fixp->fx_r_type),
+        		  fixp->fx_addsy != NULL ? " against " : "",
+        		  (fixp->fx_addsy != NULL
+        		   ? S_GET_NAME (fixp->fx_addsy)
         		   : ""));
 
-          md_number_to_chars (fixP->fx_frag->fr_literal + fixP->fx_where,
+          md_number_to_chars (fixp->fx_frag->fr_literal + fixp->fx_where,
         		      value, 2);
           break;
 
@@ -2861,42 +2900,44 @@ md_apply_fix3 (fixP, valP, seg)
              lis %r3,(L1-L2)@ha
              where L1 and L2 are defined later.  */
         case BFD_RELOC_HI16:
-          if (fixP->fx_pcrel)
+          if (fixp->fx_pcrel)
             abort ();
-          md_number_to_chars (fixP->fx_frag->fr_literal + fixP->fx_where,
+          md_number_to_chars (fixp->fx_frag->fr_literal + fixp->fx_where,
         		      value >> 16, 2);
           break;
         case BFD_RELOC_HI16_S:
-          if (fixP->fx_pcrel)
+          if (fixp->fx_pcrel)
             abort ();
-          md_number_to_chars (fixP->fx_frag->fr_literal + fixP->fx_where,
+          md_number_to_chars (fixp->fx_frag->fr_literal + fixp->fx_where,
         		      (value + 0x8000) >> 16, 2);
           break;
 
         case BFD_RELOC_8:
-          if (fixP->fx_pcrel)
+          if (fixp->fx_pcrel)
             abort ();
 
-          md_number_to_chars (fixP->fx_frag->fr_literal + fixP->fx_where,
+          md_number_to_chars (fixp->fx_frag->fr_literal + fixp->fx_where,
         		      value, 1);
           break;
 
         default:
-          fprintf (stderr,
-        	  "Gas failure, reloc value %d\n", fixP->fx_r_type);
-          fflush (stderr);
+          fprintf(stderr,
+        	  "Gas failure, reloc value %d\n", fixp->fx_r_type);
+          fflush(stderr);
           abort ();
         }
     }
 
-  fixP->fx_addnumber = value;
+  fixp->fx_addnumber = value;
+
+  return 1;
 }
 
 /* Generate a reloc for a fixup.  */
 
 arelent *
 tc_gen_reloc (seg, fixp)
-     asection *seg ATTRIBUTE_UNUSED;
+     asection *seg;
      fixS *fixp;
 {
   arelent *reloc;

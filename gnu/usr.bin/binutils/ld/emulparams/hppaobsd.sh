@@ -1,17 +1,17 @@
-. ${srcdir}/emulparams/hppaelf.sh
- 
-#override hppaelf.sh
 SCRIPT_NAME=elf
 ELFSIZE=32
 OUTPUT_FORMAT="elf32-hppa"
-
-# other necessary defines, similar but not the same as linux.
-MAXPAGESIZE=0x1000
-ENTRY="__start"
-MACHINE=hppa1.1    # We use 1.1 specific features.
-OTHER_READONLY_SECTIONS=".PARISC.unwind ${RELOCATING-0} : { *(.PARISC.unwind) }"
+TEXT_START_ADDR=0x10000
+TARGET_PAGE_SIZE=0x10000
+MAXPAGESIZE=0x10000
+ARCH=hppa
+MACHINE=hppa1.1		# We use 1.1 specific features.
+NOP=0x08000240
+START="_start"
+OTHER_READONLY_SECTIONS="
+  .PARISC.unwind ${RELOCATING-0} : { *(.PARISC.unwind) }"
 DATA_START_SYMBOLS='PROVIDE ($global$ = .);'
-DATA_NONEXEC_PLT=
+DATA_PLT=
 GENERATE_SHLIB_SCRIPT=yes
-
-. ${srcdir}/emulparams/elf_obsd.sh
+TEMPLATE_NAME=elf32
+EXTRA_EM_FILE=hppaelf

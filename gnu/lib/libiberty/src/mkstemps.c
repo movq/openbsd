@@ -20,7 +20,6 @@
 #include "config.h"
 #endif
 
-#include <sys/types.h>
 #ifdef HAVE_STDLIB_H
 #include <stdlib.h>
 #endif
@@ -40,7 +39,7 @@
 
 /* We need to provide a type for gcc_uint64_t.  */
 #ifdef __GNUC__
-__extension__ typedef unsigned long long gcc_uint64_t;
+typedef unsigned long long gcc_uint64_t;
 #else
 typedef unsigned long gcc_uint64_t;
 #endif
@@ -49,27 +48,18 @@ typedef unsigned long gcc_uint64_t;
 #define TMP_MAX 16384
 #endif
 
-/*
+/* Generate a unique temporary file name from TEMPLATE.
 
-@deftypefn Replacement int mkstemps (char *@var{template}, int @var{suffix_len})
+   TEMPLATE has the form:
 
-Generate a unique temporary file name from @var{template}.
-@var{template} has the form:
+   <path>/ccXXXXXX<suffix>
 
-@example
-   @var{path}/ccXXXXXX@var{suffix}
-@end example
+   SUFFIX_LEN tells us how long <suffix> is (it can be zero length).
 
-@var{suffix_len} tells us how long @var{suffix} is (it can be zero
-length).  The last six characters of @var{template} before @var{suffix}
-must be @samp{XXXXXX}; they are replaced with a string that makes the
-filename unique.  Returns a file descriptor open on the file for
-reading and writing.
+   The last six characters of TEMPLATE before <suffix> must be "XXXXXX";
+   they are replaced with a string that makes the filename unique.
 
-@end deftypefn
-
-*/
-
+   Returns a file descriptor open on the file for reading and writing.  */
 int
 mkstemps (template, suffix_len)
      char *template;
@@ -121,11 +111,7 @@ mkstemps (template, suffix_len)
       v /= 62;
       XXXXXX[5] = letters[v % 62];
 
-#ifdef VMS
-      fd = open (template, O_RDWR|O_CREAT|O_EXCL, 0600, "fop=tmd");
-#else
       fd = open (template, O_RDWR|O_CREAT|O_EXCL, 0600);
-#endif
       if (fd >= 0)
 	/* The file does not exist.  */
 	return fd;

@@ -42,7 +42,6 @@ Software Foundation, 59 Temple Place - Suite 330, Boston, MA
 #include "toplev.h"
 #include "except.h"
 #include "tree.h"
-#include "protector.h"
 
 /* This file contains the reload pass of the compiler, which is
    run after register allocation has been done.  It checks that
@@ -926,7 +925,7 @@ reload (first, global)
       if (cfun->stack_alignment_needed)
         assign_stack_local (BLKmode, 0, cfun->stack_alignment_needed);
 
-      starting_frame_size = get_frame_size () - get_frame_free_size ();
+      starting_frame_size = get_frame_size ();
 
       set_initial_elim_offsets ();
       set_initial_label_offsets ();
@@ -990,7 +989,7 @@ reload (first, global)
 	setup_save_areas ();
 
       /* If we allocated another stack slot, redo elimination bookkeeping.  */
-      if (starting_frame_size != get_frame_size () - get_frame_free_size ())
+      if (starting_frame_size != get_frame_size ())
 	continue;
 
       if (caller_save_needed)
@@ -1009,7 +1008,7 @@ reload (first, global)
 
       /* If we allocated any new memory locations, make another pass
 	 since it might have changed elimination offsets.  */
-      if (starting_frame_size != get_frame_size () - get_frame_free_size ())
+      if (starting_frame_size != get_frame_size ())
 	something_changed = 1;
 
       {
@@ -1101,11 +1100,11 @@ reload (first, global)
   if (insns_need_reload != 0 || something_needs_elimination
       || something_needs_operands_changed)
     {
-      HOST_WIDE_INT old_frame_size = get_frame_size () - get_frame_free_size ();
+      HOST_WIDE_INT old_frame_size = get_frame_size ();
 
       reload_as_needed (global);
 
-      if (old_frame_size != get_frame_size () - get_frame_free_size ())
+      if (old_frame_size != get_frame_size ())
 	abort ();
 
       if (num_eliminable)
@@ -1993,7 +1992,7 @@ alter_reg (i, from_reg)
       if (from_reg == -1)
 	{
 	  /* No known place to spill from => no slot to reuse.  */
-	  x = assign_stack_local_for_pseudo_reg (GET_MODE (regno_reg_rtx[i]), total_size,
+	  x = assign_stack_local (GET_MODE (regno_reg_rtx[i]), total_size,
 				  inherent_size == total_size ? 0 : -1);
 	  if (BYTES_BIG_ENDIAN)
 	    /* Cancel the  big-endian correction done in assign_stack_local.

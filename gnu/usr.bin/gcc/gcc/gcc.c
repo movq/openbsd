@@ -6678,9 +6678,9 @@ used_arg (p, len)
 	 them.  */
       for (i = 0; i < n_mdswitches; i++)
 	{
-	  const char *r, *eq;
+	  const char *r;
 
-	  for (q = multilib_options, eq = q + strlen(q); q < eq; q++)
+	  for (q = multilib_options; *q != '\0'; q++)
 	    {
 	      while (*q == ' ')
 		q++;

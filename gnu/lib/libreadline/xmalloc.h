@@ -29,8 +29,6 @@
 #  include <readline/rlstdc.h>
 #endif
 
-#include <stdio.h>
-
 #ifndef PTR_T
 
 #ifdef __STDC__
@@ -41,16 +39,8 @@
 
 #endif /* !PTR_T */
 
-extern PTR_T xmalloc PARAMS((size_t));
-extern PTR_T xrealloc PARAMS((void *, size_t));
-extern void xfree PARAMS((void *));
-
-static void
-memory_error_and_abort (fname)
-     char *fname;
-{
-  fprintf (stderr, "%s: out of virtual memory\n", fname);
-  exit (2);
-}
+extern char *xmalloc __P((int));
+extern char *xrealloc __P((void *, int));
+extern void xfree __P((void *));
 
 #endif /* _XMALLOC_H_ */

@@ -1,5 +1,5 @@
 /* resrc.c -- read and write Windows rc files.
-   Copyright 1997, 1998, 1999, 2000, 2001, 2002, 2003 Free Software Foundation, Inc.
+   Copyright 1997, 1998, 1999 Free Software Foundation, Inc.
    Written by Ian Lance Taylor, Cygnus Support.
 
    This file is part of GNU Binutils.
@@ -25,10 +25,10 @@
 #include "bfd.h"
 #include "bucomm.h"
 #include "libiberty.h"
-#include "safe-ctype.h"
 #include "windres.h"
 
 #include <assert.h>
+#include <ctype.h>
 #include <errno.h>
 #include <sys/stat.h>
 #ifdef HAVE_UNISTD_H
@@ -70,7 +70,7 @@
 #ifndef STDOUT_FILENO
 #define STDOUT_FILENO 1
 #endif
-
+ 
 #if defined (_WIN32) && ! defined (__CYGWIN__)
 #define popen _popen
 #define pclose _pclose
@@ -78,7 +78,7 @@
 
 /* The default preprocessor.  */
 
-#define DEFAULT_PREPROCESSOR "gcc -E -xc -DRC_INVOKED"
+#define DEFAULT_PREPROCESSOR "gcc -E -xc-header -DRC_INVOKED"
 
 /* We read the directory entries in a cursor or icon file into
    instances of this structure.  */
@@ -131,7 +131,7 @@ static FILE *cpp_pipe;
 
 static char *cpp_temp_file;
 
-/* Input stream is either a file or a pipe.  */
+/* Input stream is either a file or a pipe. */
 
 static enum {ISTREAM_PIPE, ISTREAM_FILE} istream_type;
 
@@ -173,7 +173,7 @@ static void get_data
   PARAMS ((FILE *, unsigned char *, unsigned long, const char *));
 static void define_fontdirs PARAMS ((void));
 
-/* Run `cmd' and redirect the output to `redir'.  */
+/* Run `cmd' and redirect the output to `redir'. */
 
 static int
 run_cmd (cmd, redir)
@@ -185,12 +185,7 @@ run_cmd (cmd, redir)
   int i;
   const char **argv;
   char *errmsg_fmt, *errmsg_arg;
-#if defined(__MSDOS__) && !defined(__GO32__)
   char *temp_base = choose_temp_base ();
-#else
-  char *temp_base = NULL;
-#endif
-
   int in_quote;
   char sep;
   int redir_handle = -1;
@@ -198,38 +193,38 @@ run_cmd (cmd, redir)
 
   /* Count the args.  */
   i = 0;
-
+  
   for (s = cmd; *s; s++)
     if (*s == ' ')
       i++;
-
+  
   i++;
   argv = alloca (sizeof (char *) * (i + 3));
   i = 0;
   s = cmd;
-
+  
   while (1)
     {
       while (*s == ' ' && *s != 0)
 	s++;
-
+      
       if (*s == 0)
 	break;
-
+      
       in_quote = (*s == '\'' || *s == '"');
       sep = (in_quote) ? *s++ : ' ';
       argv[i++] = s;
-
+      
       while (*s != sep && *s != 0)
 	s++;
-
+      
       if (*s == 0)
 	break;
-
+      
       *s++ = 0;
-
+      
       if (in_quote)
-	s++;
+        s++;
     }
   argv[i++] = NULL;
 
@@ -242,8 +237,8 @@ run_cmd (cmd, redir)
   /* Open temporary output file.  */
   redir_handle = open (redir, O_WRONLY | O_TRUNC | O_CREAT, 0666);
   if (redir_handle == -1)
-    fatal (_("can't open temporary file `%s': %s"), redir,
-	   strerror (errno));
+    fatal (_("can't open temporary file `%s': %s"), redir, 
+           strerror (errno));
 
   /* Duplicate the stdout file handle so it can be restored later.  */
   stdout_save = dup (STDOUT_FILENO);
@@ -270,7 +265,7 @@ run_cmd (cmd, redir)
 
   retcode = 0;
   pid = pwait (pid, &wait_status, 0);
-
+  
   if (pid == -1)
     {
       fatal (_("wait: %s"), strerror (errno));
@@ -285,14 +280,14 @@ run_cmd (cmd, redir)
     {
       if (WEXITSTATUS (wait_status) != 0)
 	{
-	  fatal (_("%s exited with status %d"), cmd,
+	  fatal (_("%s exited with status %d"), cmd, 
 	         WEXITSTATUS (wait_status));
 	  retcode = 1;
 	}
     }
   else
     retcode = 1;
-
+  
   return retcode;
 }
 
@@ -302,18 +297,23 @@ open_input_stream (cmd)
 {
   if (istream_type == ISTREAM_FILE)
     {
-      cpp_temp_file = make_temp_file (".irc");
+      char *fileprefix;
+
+      fileprefix = choose_temp_base ();
+      cpp_temp_file = (char *) xmalloc (strlen (fileprefix) + 5);
+      sprintf (cpp_temp_file, "%s.irc", fileprefix);
+      free (fileprefix);
 
       if (run_cmd (cmd, cpp_temp_file))
 	fatal (_("can't execute `%s': %s"), cmd, strerror (errno));
 
       cpp_pipe = fopen (cpp_temp_file, FOPEN_RT);;
       if (cpp_pipe == NULL)
-	fatal (_("can't open temporary file `%s': %s"),
+        fatal (_("can't open temporary file `%s': %s"), 
 	       cpp_temp_file, strerror (errno));
-
+      
       if (verbose)
-	fprintf (stderr,
+	fprintf (stderr, 
 	         _("Using temporary file `%s' to read preprocessor output\n"),
 		 cpp_temp_file);
     }
@@ -321,7 +321,7 @@ open_input_stream (cmd)
     {
       cpp_pipe = popen (cmd, FOPEN_RT);
       if (cpp_pipe == NULL)
-	fatal (_("can't popen `%s': %s"), cmd, strerror (errno));
+        fatal (_("can't popen `%s': %s"), cmd, strerror (errno));
       if (verbose)
 	fprintf (stderr, _("Using popen to read preprocessor output\n"));
     }
@@ -472,7 +472,7 @@ read_rc_file (filename, preprocessor, preprocargs, language, use_temp_file)
 	}
 
     }
-
+  
   free (cmd);
 
   rc_filename = xstrdup (filename);
@@ -481,10 +481,9 @@ read_rc_file (filename, preprocessor, preprocargs, language, use_temp_file)
     rcparse_set_language (language);
   yyin = cpp_pipe;
   yyparse ();
-  rcparse_discard_strings ();
 
   close_input_stream ();
-
+  
   if (fontdirs != NULL)
     define_fontdirs ();
 
@@ -499,6 +498,9 @@ read_rc_file (filename, preprocessor, preprocargs, language, use_temp_file)
 static void
 close_input_stream ()
 {
+  if (cpp_pipe != NULL)
+    pclose (cpp_pipe);
+  
   if (istream_type == ISTREAM_FILE)
     {
       if (cpp_pipe != NULL)
@@ -507,7 +509,7 @@ close_input_stream ()
       if (cpp_temp_file != NULL)
 	{
 	  int errno_save = errno;
-
+	  
 	  unlink (cpp_temp_file);
 	  errno = errno_save;
 	  free (cpp_temp_file);
@@ -519,7 +521,7 @@ close_input_stream ()
 	pclose (cpp_pipe);
     }
 
-  /* Since this is also run via xatexit, safeguard.  */
+  /* Since this is also run via xatexit, safeguard. */
   cpp_pipe = NULL;
   cpp_temp_file = NULL;
 }
@@ -818,8 +820,8 @@ define_dialog (id, resinfo, dialog)
    merely allocates and fills in a structure.  */
 
 struct dialog_control *
-define_control (iid, id, x, y, width, height, class, style, exstyle)
-     struct res_id iid;
+define_control (text, id, x, y, width, height, class, style, exstyle)
+     const char *text;
      unsigned long id;
      unsigned long x;
      unsigned long y;
@@ -842,39 +844,15 @@ define_control (iid, id, x, y, width, height, class, style, exstyle)
   n->height = height;
   n->class.named = 0;
   n->class.u.id = class;
-  n->text = iid;
+  if (text != NULL)
+    res_string_to_id (&n->text, text);
+  else
+    {
+      n->text.named = 0;
+      n->text.u.id = 0;
+    }
   n->data = NULL;
   n->help = 0;
-
-  return n;
-}
-
-struct dialog_control *
-define_icon_control (iid, id, x, y, style, exstyle, help, data, ex)
-     struct res_id iid;
-     unsigned long id;
-     unsigned long x;
-     unsigned long y;
-     unsigned long style;
-     unsigned long exstyle;
-     unsigned long help;
-     struct rcdata_item *data;
-     struct dialog_ex *ex;
-{
-  struct dialog_control *n;
-  struct res_id tid;
-
-  if (style == 0)
-    style = SS_ICON | WS_CHILD | WS_VISIBLE;
-  res_string_to_id (&tid, "");
-  n = define_control (tid, id, x, y, 0, 0, CTL_STATIC, style, exstyle);
-  n->text = iid;
-  if (help && !ex)
-    rcparse_warning (_("help ID requires DIALOGEX"));
-  if (data && !ex)
-    rcparse_warning (_("control data requires DIALOGEX"));
-  n->help = help;
-  n->data = data;
 
   return n;
 }
@@ -1582,7 +1560,7 @@ write_rc_directory (e, rd, type, name, language, level)
 
 	case 2:
 	  /* If we're at level 2, the key of this resource is the name
-	     we are going to use in the rc printout.  */
+	     we are going to use in the rc printout. */
 	  name = &re->id;
 	  break;
 
@@ -1594,8 +1572,7 @@ write_rc_directory (e, rd, type, name, language, level)
 	      && (re->id.u.id & 0xffff) == re->id.u.id)
 	    {
 	      fprintf (e, "LANGUAGE %lu, %lu\n",
-		       re->id.u.id & ((1 << SUBLANG_SHIFT) - 1),
-		       (re->id.u.id >> SUBLANG_SHIFT) & 0xff);
+		       re->id.u.id & 0xff, (re->id.u.id >> 8) & 0xff);
 	      *language = re->id.u.id;
 	    }
 	  break;
@@ -1700,7 +1677,7 @@ write_rc_subdir (e, re, type, name, language, level)
       fprintf (e, "// Level %d: ", level);
       res_id_print (e, re->id, 1);
       fprintf (e, "\n");
-    }
+    }		
 
   write_rc_directory (e, re->u.dir, type, name, language, level + 1);
 }
@@ -1892,8 +1869,8 @@ write_rc_resource (e, type, name, res, language)
       if (res->res_info.language != 0 && res->res_info.language != *language)
 	fprintf (e, "%sLANGUAGE %d, %d\n",
 		 modifiers ? "// " : "",
-		 res->res_info.language & ((1<<SUBLANG_SHIFT)-1),
-		 (res->res_info.language >> SUBLANG_SHIFT) & 0xff);
+		 res->res_info.language & 0xff,
+		 (res->res_info.language >> 8) & 0xff);
       if (res->res_info.characteristics != 0)
 	fprintf (e, "%sCHARACTERISTICS %lu\n",
 		 modifiers ? "// " : "",
@@ -1979,7 +1956,7 @@ write_rc_accelerators (e, accelerators)
       fprintf (e, "  ");
 
       if ((acc->key & 0x7f) == acc->key
-	  && ISPRINT (acc->key)
+	  && isprint ((unsigned char) acc->key)
 	  && (acc->flags & ACC_VIRTKEY) == 0)
 	{
 	  fprintf (e, "\"%c\"", acc->key);
@@ -2055,26 +2032,23 @@ write_rc_dialog (e, dialog)
 {
   const struct dialog_control *control;
 
-  fprintf (e, "STYLE 0x%lx\n", dialog->style);
-
+  if (dialog->style != 0)
+    fprintf (e, "STYLE 0x%lx\n", dialog->style);
   if (dialog->exstyle != 0)
     fprintf (e, "EXSTYLE 0x%lx\n", dialog->exstyle);
-
   if ((dialog->class.named && dialog->class.u.n.length > 0)
       || dialog->class.u.id != 0)
     {
       fprintf (e, "CLASS ");
-      res_id_print (e, dialog->class, 1);
+      res_id_print (e, dialog->class, 0);
       fprintf (e, "\n");
     }
-
   if (dialog->caption != NULL)
     {
       fprintf (e, "CAPTION \"");
       unicode_print (e, dialog->caption, -1);
       fprintf (e, "\"\n");
     }
-
   if ((dialog->menu.named && dialog->menu.u.n.length > 0)
       || dialog->menu.u.id != 0)
     {
@@ -2082,18 +2056,14 @@ write_rc_dialog (e, dialog)
       res_id_print (e, dialog->menu, 0);
       fprintf (e, "\n");
     }
-
   if (dialog->font != NULL)
     {
       fprintf (e, "FONT %d, \"", dialog->pointsize);
       unicode_print (e, dialog->font, -1);
       fprintf (e, "\"");
       if (dialog->ex != NULL
-	  && (dialog->ex->weight != 0
-	      || dialog->ex->italic != 0
-	      || dialog->ex->charset != 1))
-	fprintf (e, ", %d, %d, %d",
-		 dialog->ex->weight, dialog->ex->italic, dialog->ex->charset);
+	  && (dialog->ex->weight != 0 || dialog->ex->italic != 0))
+	fprintf (e, ", %d, %d", dialog->ex->weight, dialog->ex->italic);
       fprintf (e, "\n");
     }
 
@@ -2168,7 +2138,7 @@ write_rc_dialog_control (e, control)
     fprintf (e, "%s", ci->name);
   else
     fprintf (e, "CONTROL");
-
+  
   if (control->text.named || control->text.u.id != 0)
     {
       fprintf (e, " ");
@@ -2393,7 +2363,7 @@ write_rc_rcdata (e, rcdata, ind)
 	    s = ri->u.string.s;
 	    for (i = 0; i < ri->u.string.length; i++)
 	      {
-		if (ISPRINT (*s))
+		if (isprint ((unsigned char) *s))
 		  putc (*s, e);
 		else
 		  fprintf (e, "\\%03o", *s);
@@ -2431,7 +2401,7 @@ write_rc_rcdata (e, rcdata, ind)
 		if (i + 4 < ri->u.buffer.length || ri->next != NULL)
 		  fprintf (e, ",");
 		for (j = 0; j < 4; ++j)
-		  if (! ISPRINT (ri->u.buffer.data[i + j])
+		  if (! isprint (ri->u.buffer.data[i + j])
 		      && ri->u.buffer.data[i + j] != 0)
 		    break;
 		if (j >= 4)
@@ -2439,7 +2409,7 @@ write_rc_rcdata (e, rcdata, ind)
 		    fprintf (e, "\t// ");
 		    for (j = 0; j < 4; ++j)
 		      {
-			if (! ISPRINT (ri->u.buffer.data[i + j]))
+			if (! isprint (ri->u.buffer.data[i + j]))
 			  fprintf (e, "\\%03o", ri->u.buffer.data[i + j]);
 			else
 			  {
@@ -2465,7 +2435,7 @@ write_rc_rcdata (e, rcdata, ind)
 		if (i + 2 < ri->u.buffer.length || ri->next != NULL)
 		  fprintf (e, ",");
 		for (j = 0; j < 2; ++j)
-		  if (! ISPRINT (ri->u.buffer.data[i + j])
+		  if (! isprint (ri->u.buffer.data[i + j])
 		      && ri->u.buffer.data[i + j] != 0)
 		    break;
 		if (j >= 2)
@@ -2473,7 +2443,7 @@ write_rc_rcdata (e, rcdata, ind)
 		    fprintf (e, "\t// ");
 		    for (j = 0; j < 2; ++j)
 		      {
-			if (! ISPRINT (ri->u.buffer.data[i + j]))
+			if (! isprint (ri->u.buffer.data[i + j]))
 			  fprintf (e, "\\%03o", ri->u.buffer.data[i + j]);
 			else
 			  {
@@ -2493,7 +2463,7 @@ write_rc_rcdata (e, rcdata, ind)
 		if (! first)
 		  indent (e, ind + 2);
 		if ((ri->u.buffer.data[i] & 0x7f) == ri->u.buffer.data[i]
-		    && ISPRINT (ri->u.buffer.data[i]))
+		    && isprint (ri->u.buffer.data[i]))
 		  fprintf (e, "\"%c\"", ri->u.buffer.data[i]);
 		else
 		  fprintf (e, "\"\\%03o\"", ri->u.buffer.data[i]);

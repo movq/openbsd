@@ -22,11 +22,14 @@
 #if !defined (_HISTLIB_H_)
 #define _HISTLIB_H_
 
-#if defined (HAVE_STRING_H)
-#  include <string.h>
-#else
-#  include <strings.h>
-#endif /* !HAVE_STRING_H */
+/* Function pointers can be declared as (Function *)foo. */
+#if !defined (_FUNCTION_DEF)
+#  define _FUNCTION_DEF
+typedef int Function ();
+typedef void VFunction ();
+typedef char *CPFunction ();
+typedef char **CPPFunction ();
+#endif /* _FUNCTION_DEF */
 
 #if !defined (STREQ)
 #define STREQ(a, b)	(((a)[0] == (b)[0]) && (strcmp ((a), (b)) == 0))
@@ -34,21 +37,12 @@
 				    : ((a)[0] == (b)[0]) && (strncmp ((a), (b), (n)) == 0))
 #endif
 
-#if !defined (savestring)
-#include <stdio.h>
-static char *
-xstrdup(const char *s) 
-{
-	char * cp;
-	cp = strdup(s);
-	if (cp == NULL) {
-		fprintf (stderr, "xstrdup: out of virtual memory\n"); 
-		exit (2);
-	}
-	return(cp);
-}
-#define savestring(x) xstrdup(x)
-#endif /* !savestring */
+#ifndef savestring
+#  ifndef strcpy
+extern char *strcpy ();
+#  endif
+#define savestring(x) strcpy (xmalloc (1 + strlen (x)), (x))
+#endif
 
 #ifndef whitespace
 #define whitespace(c) (((c) == ' ') || ((c) == '\t'))

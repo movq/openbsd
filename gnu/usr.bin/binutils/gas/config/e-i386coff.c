@@ -1,8 +1,6 @@
 #include "as.h"
 #include "emul.h"
 
-static const char *i386coff_bfd_name PARAMS ((void));
-
 static const char *
 i386coff_bfd_name ()
 {

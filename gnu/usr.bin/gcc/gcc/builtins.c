@@ -3906,11 +3906,9 @@ expand_builtin (exp, target, subtarget, mode, ignore)
       break;
 
     case BUILT_IN_STRCPY:
-#ifndef NO_UNSAFE_BUILTINS
       target = expand_builtin_strcpy (exp, target, mode);
       if (target)
 	return target;
-#endif
       break;
 
     case BUILT_IN_STRNCPY:
@@ -3920,11 +3918,9 @@ expand_builtin (exp, target, subtarget, mode, ignore)
       break;
 
     case BUILT_IN_STRCAT:
-#ifndef NO_UNSAFE_BUILTINS
       target = expand_builtin_strcat (arglist, target, mode);
       if (target)
 	return target;
-#endif
       break;
 
     case BUILT_IN_STRNCAT:

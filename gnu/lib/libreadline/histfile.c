@@ -48,26 +48,12 @@
 #  include <unistd.h>
 #endif
 
-#if defined (__EMX__) || defined (__CYGWIN__)
-#  undef HAVE_MMAP
-#endif
+#if defined (HAVE_STRING_H)
+#  include <string.h>
+#else
+#  include <strings.h>
+#endif /* !HAVE_STRING_H */
 
-#ifdef HAVE_MMAP
-#  include <sys/mman.h>
-
-#  ifdef MAP_FILE
-#    define MAP_RFLAGS	(MAP_FILE|MAP_PRIVATE)
-#    define MAP_WFLAGS	(MAP_FILE|MAP_SHARED)
-#  else
-#    define MAP_RFLAGS	MAP_PRIVATE
-#    define MAP_WFLAGS	MAP_SHARED
-#  endif
-
-#  ifndef MAP_FAILED
-#    define MAP_FAILED	((void *)-1)
-#  endif
-
-#endif /* HAVE_MMAP */
 
 /* If we're compiling for __EMX__ (OS/2) or __CYGWIN__ (cygwin32 environment
    on win 95/98/nt), we want to open files with O_BINARY mode so that there
@@ -98,33 +84,35 @@ extern int errno;
    filename to read_history (), or write_history (). */
 static char *
 history_filename (filename)
-     const char *filename;
+     char *filename;
 {
-  char *return_val;
-  const char *home;
+  char *return_val, *home;
   int home_len;
-  char dot;
 
   return_val = filename ? savestring (filename) : (char *)NULL;
 
   if (return_val)
     return (return_val);
   
-  home = sh_get_env_value ("HOME");
+  home = get_env_value ("HOME");
 
-  if (home == 0 || *home == '\0') {
-    errno = ENOENT;
-    return (NULL);
-  }
-  home_len = strlen (home);
+  if (home == 0)
+    {
+      home = ".";
+      home_len = 1;
+    }
+  else
+    home_len = strlen (home);
 
+  return_val = xmalloc (2 + home_len + 8); /* strlen(".history") == 8 */
+  strcpy (return_val, home);
+  return_val[home_len] = '/';
 #if defined (__MSDOS__)
-  dot = '_';
+  strcpy (return_val + home_len + 1, "_history");
 #else
-  dot = '.';
+  strcpy (return_val + home_len + 1, ".history");
 #endif
-  if (asprintf(&return_val, "%s/%c%s", home, dot, "history") == -1)
-	  memory_error_and_abort("asprintf");
+
   return (return_val);
 }
 
@@ -133,7 +121,7 @@ history_filename (filename)
    successful, or errno if not. */
 int
 read_history (filename)
-     const char *filename;
+     char *filename;
 {
   return (read_history_range (filename, 0, -1));
 }
@@ -145,20 +133,18 @@ read_history (filename)
    ~/.history.  Returns 0 if successful, or errno if not. */
 int
 read_history_range (filename, from, to)
-     const char *filename;
+     char *filename;
      int from, to;
 {
-  register char *line_start, *line_end;
-  char *input, *buffer, *bufend;
+  register int line_start, line_end;
+  char *input, *buffer;
   int file, current_line, chars_read;
   struct stat finfo;
   size_t file_size;
 
   buffer = (char *)NULL;
-  if ((input = history_filename (filename)))
-    file = open (input, O_RDONLY|O_BINARY, 0666);
-  else
-    file = -1;
+  input = history_filename (filename);
+  file = open (input, O_RDONLY|O_BINARY, 0666);
 
   if ((file < 0) || (fstat (file, &finfo) == -1))
     goto error_and_exit;
@@ -170,39 +156,23 @@ read_history_range (filename, from, to)
     {
 #if defined (EFBIG)
       errno = EFBIG;
-#elif defined (EOVERFLOW)
-      errno = EOVERFLOW;
 #endif
       goto error_and_exit;
     }
 
-#ifdef HAVE_MMAP
-  /* We map read/write and private so we can change newlines to NULs without
-     affecting the underlying object. */
-  buffer = (char *)mmap (0, file_size, PROT_READ|PROT_WRITE, MAP_RFLAGS, file, 0);
-  if ((void *)buffer == MAP_FAILED)
-    goto error_and_exit;
-  chars_read = file_size;
-#else
-  buffer = (char *)malloc (file_size + 1);
-  if (buffer == 0)
-    goto error_and_exit;
+  buffer = xmalloc (file_size + 1);
 
   chars_read = read (file, buffer, file_size);
-#endif
   if (chars_read < 0)
     {
   error_and_exit:
-      chars_read = errno;
       if (file >= 0)
 	close (file);
 
       FREE (input);
-#ifndef HAVE_MMAP
       FREE (buffer);
-#endif
 
-      return (chars_read);
+      return (errno);
     }
 
   close (file);
@@ -212,25 +182,29 @@ read_history_range (filename, from, to)
     to = chars_read;
 
   /* Start at beginning of file, work to end. */
-  bufend = buffer + chars_read;
-  current_line = 0;
+  line_start = line_end = current_line = 0;
 
   /* Skip lines until we are at FROM. */
-  for (line_start = line_end = buffer; line_end < bufend && current_line < from; line_end++)
-    if (*line_end == '\n')
-      {
-	current_line++;
-	line_start = line_end + 1;
-      }
+  while (line_start < chars_read && current_line < from)
+    {
+      for (line_end = line_start; line_end < chars_read; line_end++)
+	if (buffer[line_end] == '\n')
+	  {
+	    current_line++;
+	    line_start = line_end + 1;
+	    if (current_line == from)
+	      break;
+	  }
+    }
 
   /* If there are lines left to gobble, then gobble them now. */
-  for (line_end = line_start; line_end < bufend; line_end++)
-    if (*line_end == '\n')
+  for (line_end = line_start; line_end < chars_read; line_end++)
+    if (buffer[line_end] == '\n')
       {
-	*line_end = '\0';
+	buffer[line_end] = '\0';
 
-	if (*line_start)
-	  add_history (line_start);
+	if (buffer[line_start])
+	  add_history (buffer + line_start);
 
 	current_line++;
 
@@ -241,54 +215,34 @@ read_history_range (filename, from, to)
       }
 
   FREE (input);
-#ifndef HAVE_MMAP
   FREE (buffer);
-#else
-  munmap (buffer, file_size);
-#endif
 
   return (0);
 }
 
 /* Truncate the history file FNAME, leaving only LINES trailing lines.
-   If FNAME is NULL, then use ~/.history.  Returns 0 on success, errno
-   on failure. */
+   If FNAME is NULL, then use ~/.history. */
 int
 history_truncate_file (fname, lines)
-     const char *fname;
+     char *fname;
      int lines;
 {
-  char *buffer, *filename, *bp;
-  int file, chars_read, rv;
+  register int i;
+  int file, chars_read;
+  char *buffer, *filename;
   struct stat finfo;
   size_t file_size;
 
   buffer = (char *)NULL;
-  if ((filename = history_filename (fname)))
-    file = open (filename, O_RDONLY|O_BINARY, 0666);
-  else
-    file = -1;
-  rv = 0;
+  filename = history_filename (fname);
+  file = open (filename, O_RDONLY|O_BINARY, 0666);
+
+  if (file == -1 || fstat (file, &finfo) == -1)
+    goto truncate_exit;
 
   /* Don't try to truncate non-regular files. */
-  if (file == -1 || fstat (file, &finfo) == -1)
-    {
-      rv = errno;
-      if (file != -1)
-	close (file);
-      goto truncate_exit;
-    }
-
-  if (S_ISREG (finfo.st_mode) == 0)
-    {
-      close (file);
-#ifdef EFTYPE
-      rv = EFTYPE;
-#else
-      rv = EINVAL;
-#endif
-      goto truncate_exit;
-    }
+  if (S_ISREG(finfo.st_mode) == 0)
+    goto truncate_exit;
 
   file_size = (size_t)finfo.st_size;
 
@@ -297,36 +251,23 @@ history_truncate_file (fname, lines)
     {
       close (file);
 #if defined (EFBIG)
-      rv = errno = EFBIG;
-#elif defined (EOVERFLOW)
-      rv = errno = EOVERFLOW;
-#else
-      rv = errno = EINVAL;
+      errno = EFBIG;
 #endif
       goto truncate_exit;
     }
 
-  buffer = (char *)malloc (file_size + 1);
-  if (buffer == 0)
-    {
-      close (file);
-      goto truncate_exit;
-    }
-
+  buffer = xmalloc (file_size + 1);
   chars_read = read (file, buffer, file_size);
   close (file);
 
   if (chars_read <= 0)
-    {
-      rv = (chars_read < 0) ? errno : 0;
-      goto truncate_exit;
-    }
+    goto truncate_exit;
 
   /* Count backwards from the end of buffer until we have passed
      LINES lines. */
-  for (bp = buffer + chars_read - 1; lines && bp > buffer; bp--)
+  for (i = chars_read - 1; lines && i; i--)
     {
-      if (*bp == '\n')
+      if (buffer[i] == '\n')
 	lines--;
     }
 
@@ -335,22 +276,22 @@ history_truncate_file (fname, lines)
      anything.  It's the first line if we don't find a newline between
      the current value of i and 0.  Otherwise, write from the start of
      this line until the end of the buffer. */
-  for ( ; bp > buffer; bp--)
-    if (*bp == '\n')
+  for ( ; i; i--)
+    if (buffer[i] == '\n')
       {
-	bp++;
+	i++;
 	break;
       }
 
   /* Write only if there are more lines in the file than we want to
      truncate to. */
-  if (bp > buffer && ((file = open (filename, O_WRONLY|O_TRUNC|O_BINARY, 0600)) != -1))
+  if (i && ((file = open (filename, O_WRONLY|O_TRUNC|O_BINARY, 0600)) != -1))
     {
-      write (file, bp, chars_read - (bp - buffer));
+      write (file, buffer + i, chars_read - i);
 
 #if defined (__BEOS__)
       /* BeOS ignores O_TRUNC. */
-      ftruncate (file, chars_read - (bp - buffer));
+      ftruncate (file, chars_read - i);
 #endif
 
       close (file);
@@ -361,7 +302,7 @@ history_truncate_file (fname, lines)
   FREE (buffer);
 
   free (filename);
-  return rv;
+  return 0;
 }
 
 /* Workhorse function for writing history.  Writes NELEMENT entries
@@ -369,31 +310,21 @@ history_truncate_file (fname, lines)
    wish to replace FILENAME with the entries. */
 static int
 history_do_write (filename, nelements, overwrite)
-     const char *filename;
+     char *filename;
      int nelements, overwrite;
 {
   register int i;
   char *output;
-  int file, mode, rv;
-  size_t cursize;
+  int file, mode;
 
-#ifdef HAVE_MMAP
-  mode = overwrite ? O_RDWR|O_CREAT|O_TRUNC|O_BINARY : O_RDWR|O_APPEND|O_BINARY;
-#else
   mode = overwrite ? O_WRONLY|O_CREAT|O_TRUNC|O_BINARY : O_WRONLY|O_APPEND|O_BINARY;
-#endif
   output = history_filename (filename);
-  rv = 0;
 
-  if (!output || (file = open (output, mode, 0600)) == -1)
+  if ((file = open (output, mode, 0600)) == -1)
     {
       FREE (output);
       return (errno);
     }
-
-#ifdef HAVE_MMAP
-  cursize = overwrite ? 0 : lseek (file, 0, SEEK_END);
-#endif
 
   if (nelements > history_length)
     nelements = history_length;
@@ -402,60 +333,34 @@ history_do_write (filename, nelements, overwrite)
      Suggested by Peter Ho (peter@robosts.oxford.ac.uk). */
   {
     HIST_ENTRY **the_history;	/* local */
+    register int j;
     int buffer_size;
     char *buffer;
 
     the_history = history_list ();
     /* Calculate the total number of bytes to write. */
-    for (buffer_size = 1, i = history_length - nelements; i < history_length; i++)
+    for (buffer_size = 0, i = history_length - nelements; i < history_length; i++)
       buffer_size += 1 + strlen (the_history[i]->line);
 
     /* Allocate the buffer, and fill it. */
-#ifdef HAVE_MMAP
-    if (ftruncate (file, buffer_size+cursize) == -1)
-      goto mmap_error;
-    buffer = (char *)mmap (0, buffer_size, PROT_READ|PROT_WRITE, MAP_WFLAGS, file, cursize);
-    if ((void *)buffer == MAP_FAILED)
-      {
-mmap_error:
-	rv = errno;
-	FREE (output);
-	close (file);
-	return rv;
-      }
-#else    
-    buffer = (char *)malloc (buffer_size);
-    if (buffer == 0)
-      {
-      	rv = errno;
-	FREE (output);
-	close (file);
-	return rv;
-      }
-#endif
-    buffer[0] = '\0';
+    buffer = xmalloc (buffer_size);
 
-    for (i = history_length - nelements; i < history_length; i++)
+    for (j = 0, i = history_length - nelements; i < history_length; i++)
       {
-	strlcat (buffer, the_history[i]->line, buffer_size);
-	strlcat (buffer, "\n", buffer_size);
+	strcpy (buffer + j, the_history[i]->line);
+	j += strlen (the_history[i]->line);
+	buffer[j++] = '\n';
       }
 
-#ifdef HAVE_MMAP
-    if (msync (buffer, buffer_size, 0) != 0 || munmap (buffer, buffer_size) != 0)
-      rv = errno;
-#else
-    if (write (file, buffer, buffer_size - 1) < 0)
-      rv = errno;
+    write (file, buffer, buffer_size);
     free (buffer);
-#endif
   }
 
   close (file);
 
   FREE (output);
 
-  return (rv);
+  return (0);
 }
 
 /* Append NELEMENT entries to FILENAME.  The entries appended are from
@@ -463,7 +368,7 @@ mmap_error:
 int
 append_history (nelements, filename)
      int nelements;
-     const char *filename;
+     char *filename;
 {
   return (history_do_write (filename, nelements, HISTORY_APPEND));
 }
@@ -473,7 +378,7 @@ append_history (nelements, filename)
    are as in read_history ().*/
 int
 write_history (filename)
-     const char *filename;
+     char *filename;
 {
   return (history_do_write (filename, history_length, HISTORY_OVERWRITE));
 }

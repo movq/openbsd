@@ -1,5 +1,5 @@
 /* xstrdup.c -- copy a string with out of memory checking
-   Copyright (C) 1990, 1996, 1998 Free Software Foundation, Inc.
+   Copyright (C) 1990, 1996 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,28 +19,24 @@
 # include <config.h>
 #endif
 
-#ifndef PARAMS
-# if defined PROTOTYPES || (defined __STDC__ && __STDC__)
-#  define PARAMS(Args) Args
-# else
-#  define PARAMS(Args) ()
-# endif
-#endif
-
-#if STDC_HEADERS || HAVE_STRING_H
+#if defined(STDC_HEADERS) || defined(HAVE_STRING_H)
 # include <string.h>
 #else
 # include <strings.h>
 #endif
 
-#include <sys/types.h>
-
-char *xmalloc PARAMS ((size_t n));
+#if defined (__STDC__) && __STDC__
+char *xmalloc (size_t);
+char *xstrdup (char *string);
+#else
+char *xmalloc ();
+#endif
 
 /* Return a newly allocated copy of STRING.  */
 
 char *
-xstrdup (const char *string)
+xstrdup (string)
+     char *string;
 {
   return strcpy (xmalloc (strlen (string) + 1), string);
 }

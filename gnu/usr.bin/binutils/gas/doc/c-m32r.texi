@@ -1,5 +1,4 @@
-@c Copyright 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 2000
-@c Free Software Foundation, Inc.
+@c Copyright (C) 1991, 92-98, 1999 Free Software Foundation, Inc.
 @c This is part of the GAS manual.
 @c For copying conditions, see the file as.texinfo.
 @ifset GENERIC
@@ -24,7 +23,7 @@
 @cindex options, M32R
 @cindex M32R options
 
-The Renease M32R version of @code{@value{AS}} has a few machine
+The Mitsubishi M32R version of @code{@value{AS}} has a few machine
 dependent options:
 
 @table @code
@@ -33,7 +32,7 @@ dependent options:
 @cindex architecture options, M32RX
 @cindex M32R architecture options
 @code{@value{AS}} can assemble code for several different members of the
-Renesas M32R family.  Normally the default is to assemble code for
+Mitsubishi M32R family.  Normally the default is to assemble code for
 the M32R microprocessor.  This option may be used to change the default
 to the M32RX microprocessor, which adds some more instructions to the
 basic M32R instruction set, and some additional parameters to some of

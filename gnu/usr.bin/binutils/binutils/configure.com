@@ -3,10 +3,15 @@ $! This file configures binutils for use with openVMS/Alpha
 $! We do not use the configure script, since we do not have /bin/sh
 $! to execute it.
 $!
-$! Written by Klaus K"ampf (kkaempf@rmi.de)
+$! Written by Klaus K"ampf (kkaempf@progis.de)
 $!
 $arch_indx = 1 + ((f$getsyi("CPU").ge.128).and.1)      ! vax==1, alpha==2
 $arch = f$element(arch_indx,"|","|VAX|Alpha|")
+$if arch .eqs. "VAX"
+$then
+$ write sys$output "Target VAX not supported."
+$ exit 2
+$endif
 $!
 $!
 $! Generate config.h
@@ -27,7 +32,7 @@ $ create []config.h
 /* Do we need to use the b modifier when opening binary files?  */
 /* #undef USE_BINARY_FOPEN */
 /* Define if you have the sbrk function.  */
-/* #undef HAVE_SBRK 1 */
+#define HAVE_SBRK 1
 /* Define if you have the utimes function.  */
 #define HAVE_UTIMES 1
 /* Define if you have the <fcntl.h> header file.  */
@@ -45,32 +50,29 @@ $ create []config.h
 $ write sys$output "Generated `config.h'"
 $!
 $!
-$! Edit VERSION in makefile.vms-in
+$! Edit VERSION in makefile.vms
 $!
 $ edit/tpu/nojournal/nosection/nodisplay/command=sys$input -
-        []makefile.vms-in /output=[]makefile.vms
+        []makefile.vms /output=[]makefile.vms
 $DECK
 !
-! Get VERSION from configure.in
+! Get VERSION from Makefile.in
 !
-   mfile := CREATE_BUFFER("mfile", "CONFIGURE.IN");
+   mfile := CREATE_BUFFER("mfile", "Makefile.in");
    rang := CREATE_RANGE(BEGINNING_OF(mfile), END_OF(mfile));
-   match_pos := SEARCH_QUIETLY('AM_INIT_AUTOMAKE(binutils, ', FORWARD, EXACT, rang);
+   v_pos := SEARCH_QUIETLY('VERSION=', FORWARD, EXACT, rang);
+   POSITION(BEGINNING_OF(v_pos));
+   vers := CURRENT_LINE;
    IF match_pos <> 0 THEN;
-     POSITION(BEGINNING_OF(match_pos));
-     ERASE(match_pos);
-     vers := CURRENT_LINE-")";
-   ELSE;
-     vers := "unknown";
+      file := CREATE_BUFFER("file", GET_INFO(COMMAND_LINE, "file_name"));
+      rang := CREATE_RANGE(BEGINNING_OF(file), END_OF(file));
+      match_pos := SEARCH_QUIETLY('VERSION=', FORWARD, EXACT, rang);
+      POSITION(BEGINNING_OF(match_pos));
+      ERASE_LINE;
+      COPY_TEXT(vers);
+      SPLIT_LINE;
    ENDIF;
-
-   file := CREATE_BUFFER("file", GET_INFO(COMMAND_LINE, "file_name"));
-   rang := CREATE_RANGE(BEGINNING_OF(file), END_OF(file));
-   match_pos := SEARCH_QUIETLY('@VERSION@', FORWARD, EXACT, rang);
-   POSITION(BEGINNING_OF(match_pos));
-   ERASE(match_pos);
-   COPY_TEXT(vers);
    WRITE_FILE(file, GET_INFO(COMMAND_LINE, "output_file"));
    QUIT
 $  EOD
-$ write sys$output "Created `makefile.vms'"
+$ write sys$output "Patched `makefile.vms'"

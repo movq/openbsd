@@ -1,95 +1,52 @@
-Copyright (C) 1992, 93, 94, 95, 96, 97, 98, 99, 2000, 01, 02
-Free Software Foundation, Inc.
+Texinfo, Version 3
+==================
 
-Permission is granted to copy, distribute and/or modify this document
-under the terms of the GNU Free Documentation License, Version 1.1 or
-any later version published by the Free Software Foundation; with no
-Invariant Sections, with no Front-Cover Texts, and with no Back-Cover Texts.  
+This is the README file for version 3 of the Texinfo distribution.
+Files within this distribution have their own version and edition
+numbers.  When you refer to a file, please mention its own number.
 
+PLEASE REPORT BUGS TO: bug-texinfo@prep.ai.mit.edu
 
-This is the README file for the GNU Texinfo distribution.
-The primary distribution point is ftp://ftp.gnu.org/gnu/texinfo/
-and the primary home page is http://www.gnu.org/software/texinfo/,
-secondary home page at http://texinfo.org/.
+23 March 1993
 
-Mailing lists:
-- bug-texinfo@gnu.org for bug reports or enhancement suggestions,
-  archived at ftp://ftp-mailing-list-archives.gnu.org/bug-texinfo/.
-- help-texinfo@gnu.org for authoring questions and general discussion.
-  archived at ftp://ftp-mailing-list-archives.gnu.org/help-texinfo/.
-- texinfo-pretest@texinfo.org for pretests of new releases,
-  archived at ftp://ftp.texinfo.org/texinfo/texinfo-pretest-archive/.
-There are as yet no corresponding newsgroups.
+Texinfo is a documentation system that uses a single source file to
+produce both on-line information and printed output.  This means that
+instead of writing two different documents, one for the on-line help
+or other on-line information and the other for a typeset manual or
+other printed work, you need write only one document.  When the work
+is revised, you need revise only one document.  You can read the
+on-line information, known as an "Info file", with an Info
+documentation-reading program.  By convention, Texinfo source file
+names end with a `.texi' or `.texinfo' extension.  Texinfo is
+described in the Texinfo Manual.
 
-For bug reports, please include enough information for the maintainers
-to reproduce the problem.  Generally speaking, that means:
-- the contents of any input files necessary to reproduce the bug (crucial!).
-- a description of the problem and any samples of the erroneous output.
-- the version number of Texinfo and the program(s) involved (use --version).
-- hardware, operating system, and compiler versions (uname -a).
-- any unusual options you gave to configure (see config.status).
-- anything else that you think would be helpful.
+You can write and format Texinfo files into Info files within GNU
+Emacs, and read them using the Emacs Info reader.  If you do not have
+Emacs, you can format Texinfo files into Info files using `makeinfo'
+and read them using `info'.  Use TeX, which is not included in this
+package, to typeset Texinfo files for printing.
 
-Patches are most welcome; if possible, please make them with diff -c and
-include ChangeLog entries.
+For instructions on installing info, makeinfo, texi2dvi, and texindex,
+please read the file `INSTALL'.  The Emacs Lisp files are not
+installed by default; to install them, use `make install' in the
+`emacs' subdirectory.
 
-When sending email, please do not encode or split the messages in any
-way if at all possible; it's easier to deal with one large message than
-many small ones.  GNU shar is a convenient way of packaging multiple
-and/or binary files for email.
+This distribution includes (but is not limited to) the following files:
 
-
-For generic installation instructions on compiling and installing this
-Automake-based distribution, please read the file `INSTALL'.
-Installation notes specific to Texinfo:
-
-* The Info tree uses a file `dir' as its root node; the `dir-example'
-  file in this distribution is included as a possible starting point.
-  Use it, modify it, or ignore it just as you like.
-
-* You can create a file texinfo.cnf to be read by TeX when
-  processing Texinfo manuals.  For example, you might like to use
-  @afourpaper by default.  See the `Preparing for TeX' node in
-  texinfo.txi for more details.  You don't have to create the file if
-  you have nothing to put in it.
-
-* If your info files are not in $prefix/info, you may wish to add a line
-#define DEFAULT_INFOPATH "/mydir1:/mydir2:..."
-  to config.h after running configure.
-
-* For instructions on compiling this distribution with DJGPP tools
-  for MS-DOS and MS-Windows, see the file djgpp/README.
-
-
-If you would like to contribute to the GNU project by implementing
-additional documentation output formats for Texinfo, that would be
-great.  But please do not write a separate translator texi2foo for your
-favorite format foo!  That is the hard way to do the job, and makes
-extra work in subsequent maintenance, since the Texinfo language is
-continually being enhanced and updated.  Instead, the best approach is
-modify Makeinfo to generate the new format, as it does now for Info,
-HTML, XML, and DocBook.
-
-If you want to convert from DocBook to Texinfo, please see 
-http://docbook2X.sourceforge.net/.
-
-
-This distribution includes the following files, among others:
     README                      This file.
 
-    NEWS                        Summary of new features by release.
+    INTRODUCTION                This file tells you how to create
+                                readable files from the Texinfo source
+                                files in this distribution.
 
-    INTRODUCTION                Brief introduction to the system, and
-                                how to create readable files from the
-                                Texinfo source files in this distribution.
+Texinfo source files:
 
-Texinfo source files (in ./doc):
-    texinfo.txi                 Describes the Texinfo language and many
-                                of the associated tools.  It tells how
-                                to use Texinfo to write documentation,
-                                how to use Texinfo mode in GNU Emacs,
-                                TeX, makeinfo, and the Emacs Lisp
-                                Texinfo formatting commands.
+    texinfo.texi                This manual describes Texinfo.  It
+                                tells how to use Texinfo to write
+                                documentation, how to use Texinfo mode
+                                in GNU Emacs, how to use TeX,
+                                makeinfo, and the Emacs Lisp Texinfo
+                                formatting commands.
 
     info.texi                   This manual tells you how to use 
                                 Info.  This document comes as part of
@@ -102,54 +59,96 @@ Texinfo source files (in ./doc):
 
     info-stnd.texi              This manual tells you how to use
                                 the standalone GNU Info reader that is
-                                included in this distribution as C
-                                source (./info).
+                                included in this distribution as a C
+                                source file, `info.c'.
+
+    makeinfo.texi               This manual tells you how to use
+                                makeinfo.  The same information is
+                                contained in a chapter of the Texinfo
+                                manual; it has been extracted here for
+                                your convenience.
+
 
 Printing related files:
-    doc/texinfo.tex             This TeX definitions file tells
+
+    texinfo.tex                 This TeX definitions file tells
                                 the TeX program how to typeset a
                                 Texinfo file into a DVI file ready for
                                 printing.
 
-    util/texindex.c             This file contains the source for
+    texindex.c                  This file contains the source for
                                 the `texindex' program that generates
                                 sorted indices used by TeX when
                                 typesetting a file for printing.
 
-    util/texi2dvi               This is a shell script for
+    texi2dvi                    This is a shell script for
                                 producing an indexed DVI file using
-                                TeX and texindex. 
+                                TeX and texindex.
 
 
-Source files for standalone C programs (./lib, ./makeinfo, ./info):
+GNU Emacs related files:
 
-    makeinfo/makeinfo.c         This file contains the source for
+    texinfmt.el                 This Emacs Lisp file provides the
+                                functions that GNU Emacs uses to
+                                format a Texinfo file into an Info
+                                file.
+
+    texinfo.el                  This file provides Texinfo mode
+                                for GNU Emacs.
+
+    texnfo-upd.el               These files provides commands to
+    texnfo-tex.el               help you write Texinfo files
+    makeinfo.el                 using GNU Emacs Texinfo mode.
+
+    detexinfo.el                This extra utility file contains functions 
+                                to remove Texinfo commands from a
+                                Texinfo source file.
+
+    info.el                     These are the standard GNU Emacs
+    informat.el                 Info reading and support files,
+                                included here for your convenience.
+ 
+
+Source files for standalone C programs:
+
+    makeinfo.c                  This file contains the source for
                                 the `makeinfo' program that you can
                                 use to create an Info file from a
                                 Texinfo file.
 
-    info/info.c                 This file contains the source for
+    info.c                      This file contains the source for
                                 the `info' program that you can use to
                                 view Info files on an ASCII terminal.
 
-Installation files:
+    getopt.c                    Various support files
+    getopt1.c
+    getopt.h
+
+
+C Installation files:
+
     configure                   This file creates creates a Makefile 
                                 which in turn creates an `info' or
                                 `makeinfo' executable, or a C sources
                                 distribution.
 
     configure.in                This is a template for creating 
-                                `configure' using Autoconf.
+                                `configure' using m4 macros.
 
     Makefile.in                 This is a template for `configure' 
-                                to use to make a Makefile.  Created by
-                                Automake.
-                               
-    Makefile.am                 This is a template for Automake
-                                to use to make a Makefile.in.
+                                to use to make a Makefile.
                                
 
 Other files:
+
+    NEWS                        This contains a summary of new
+                                features since the first edition 
+                                of Texinfo.
+
+    info.1                      This is a `man' page that briefly 
+                                describes the standalone `info'
+                                program.
+
     fixfonts                    This is a shell script to install the 
                                 `lcircle10' TeX fonts as an alias for
                                 the `circle10' fonts.  In some older
@@ -159,3 +158,4 @@ Other files:
     tex3patch                   This handles a bug for version
                                 3.0 of TeX that does not occur in
                                 more recent versions.
+

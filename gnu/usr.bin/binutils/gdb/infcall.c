@@ -206,7 +206,7 @@ find_function_addr (struct value *function, struct type **retval_type)
     error ("Invalid data type for function to be called.");
 
   *retval_type = value_type;
-  return funaddr + FUNCTION_START_OFFSET;
+  return funaddr;
 }
 
 /* Call breakpoint_auto_delete on the current contents of the bpstat

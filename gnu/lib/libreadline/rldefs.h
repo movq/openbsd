@@ -30,8 +30,6 @@
 #  include "config.h"
 #endif
 
-#include "rlstdc.h"
-
 #if defined (_POSIX_VERSION) && !defined (TERMIOS_MISSING)
 #  define TERMIOS_TTY_DRIVER
 #else
@@ -73,27 +71,13 @@ extern char *strchr (), *strrchr ();
 #define _rl_stricmp strcasecmp
 #define _rl_strnicmp strncasecmp
 #else
-extern int _rl_stricmp PARAMS((char *, char *));
-extern int _rl_strnicmp PARAMS((char *, char *, int));
-#endif
-
-#if defined (HAVE_STRPBRK)
-#  define _rl_strpbrk(a,b)	strpbrk((a),(b))
-#else
-extern char *_rl_strpbrk PARAMS((const char *, const char *));
+extern int _rl_stricmp (), _rl_strnicmp ();
 #endif
 
 #if !defined (emacs_mode)
 #  define no_mode -1
 #  define vi_mode 0
 #  define emacs_mode 1
-#endif
-
-#if !defined (RL_IM_INSERT)
-#  define RL_IM_INSERT		1
-#  define RL_IM_OVERWRITE	0
-#
-#  define RL_IM_DEFAULT		RL_IM_INSERT
 #endif
 
 /* If you cast map[key].function to type (Keymap) on a Cray,
@@ -103,27 +87,16 @@ extern char *_rl_strpbrk PARAMS((const char *, const char *));
    This is not what is wanted. */
 #if defined (CRAY)
 #  define FUNCTION_TO_KEYMAP(map, key)	(Keymap)((int)map[key].function)
-#  define KEYMAP_TO_FUNCTION(data)	(rl_command_func_t *)((int)(data))
+#  define KEYMAP_TO_FUNCTION(data)	(Function *)((int)(data))
 #else
 #  define FUNCTION_TO_KEYMAP(map, key)	(Keymap)(map[key].function)
-#  define KEYMAP_TO_FUNCTION(data)	(rl_command_func_t *)(data)
+#  define KEYMAP_TO_FUNCTION(data)	(Function *)(data)
 #endif
 
-#if !defined (savestring)
-#include <stdio.h>
-static char *
-xstrdup(const char *s) 
-{
-	char * cp;
-	cp = strdup(s);
-	if (cp == NULL) {
-		fprintf (stderr, "xstrdup: out of virtual memory\n"); 
-		exit (2);
-	}
-	return(cp);
-}
-#define savestring(x) xstrdup(x)
-#endif /* !savestring */
+#ifndef savestring
+extern char *xmalloc ();
+#define savestring(x) strcpy (xmalloc (1 + strlen (x)), (x))
+#endif
 
 /* Possible values for _rl_bell_preference. */
 #define NO_BELL 0
@@ -140,10 +113,9 @@ xstrdup(const char *s)
 /* Possible values for the found_quote flags word used by the completion
    functions.  It says what kind of (shell-like) quoting we found anywhere
    in the line. */
-#define RL_QF_SINGLE_QUOTE	0x01
-#define RL_QF_DOUBLE_QUOTE	0x02
-#define RL_QF_BACKSLASH		0x04
-#define RL_QF_OTHER_QUOTE	0x08
+#define RL_QF_SINGLE_QUOTE	0x1
+#define RL_QF_DOUBLE_QUOTE	0x2
+#define RL_QF_BACKSLASH		0x4
 
 /* Default readline line buffer length. */
 #define DEFAULT_BUFFER_SIZE 256
@@ -156,10 +128,6 @@ xstrdup(const char *s)
 
 #if !defined (FREE)
 #  define FREE(x)	if (x) free (x)
-#endif
-
-#if !defined (SWAP)
-#  define SWAP(s, e)  do { int t; t = s; s = e; e = t; } while (0)
 #endif
 
 /* CONFIGURATION SECTION */

@@ -1,8 +1,8 @@
-. ${srcdir}/emulparams/elf32ppc.sh
+TEMPLATE_NAME=elf32
+GENERATE_SHLIB_SCRIPT=yes
+SCRIPT_NAME=elfppc
+OUTPUT_FORMAT="elf32-powerpc"
 TEXT_START_ADDR=0x10000000
-unset EXECUTABLE_SYMBOLS
-unset OTHER_BSS_END_SYMBOLS
-test -z "${RELOCATING}" || OTHER_SECTIONS="/DISCARD/	: { *(.fixup) }"
-OTHER_READWRITE_SECTIONS="
-  .got1         ${RELOCATING-0} : { *(.got1) }
-  .got2         ${RELOCATING-0} : { *(.got2) }"
+MAXPAGESIZE=0x10000
+ARCH=powerpc
+MACHINE=

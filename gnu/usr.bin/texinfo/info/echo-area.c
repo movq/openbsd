@@ -1,7 +1,7 @@
-/* echo-area.c -- how to read a line in the echo area.
-   $Id: echo-area.c,v 1.4 2002/06/10 13:51:03 espie Exp $
+/* echo-area.c -- How to read a line in the echo area.
+   $Id: echo-area.c,v 1.1 1997/08/01 22:00:07 kstailey Exp $
 
-   Copyright (C) 1993, 97, 98, 99, 2001 Free Software Foundation, Inc.
+   Copyright (C) 1993, 97 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -868,10 +868,7 @@ info_read_completing_internal (window, prompt, completions, force)
           /* If no match, go back and try again. */
           if (i == completions_found_index)
             {
-              if (!completions_found_index)
-                inform_in_echo_area (_("No completions"));
-              else
-                inform_in_echo_area (_("Not complete"));
+              inform_in_echo_area (_("Not complete"));
               continue;
             }
         }
@@ -941,10 +938,11 @@ DECLARE_INFO_COMMAND (ea_possible_completions, _("List possible completions"))
       int limit, count, max_label = 0;
 
       initialize_message_buffer ();
-      printf_to_message_buffer (completions_found_index == 1
-                                ? _("One completion:\n")
-                                : _("%d completions:\n"),
-				completions_found_index);
+      printf_to_message_buffer
+        (_("There %s %d "), completions_found_index == 1 ? _("is") : _("are"),
+         completions_found_index);
+      printf_to_message_buffer
+        (_("completion%s:\n"), completions_found_index == 1 ? "" : "s");
 
       /* Find the maximum length of a label. */
       for (i = 0; i < completions_found_index; i++)
@@ -1261,26 +1259,7 @@ build_completions ()
 
     maybe_free (LCD_reference.label);
     LCD_reference.label = (char *)xmalloc (1 + shortest);
-    /* Since both the sorting done inside remove_completion_duplicates
-       and all the comparisons above are case-insensitive, it's
-       possible that the completion we are going to return is
-       identical to what the user typed but for the letter-case.  This
-       is confusing, since the user could type FOOBAR<TAB> and get her
-       string change letter-case for no good reason.  So try to find a
-       possible completion whose letter-case is identical, and if so,
-       use that.  */
-    if (completions_found_index > 1)
-      {
-	int req_len = strlen (request);
-
-        for (i = 0; i < completions_found_index; i++)
-          if (strncmp (request, completions_found[i]->label, req_len) == 0)
-            break;
-        /* If none of the candidates match exactly, use the first one.  */
-        if (i >= completions_found_index)
-          i = 0;
-      }
-    strncpy (LCD_reference.label, completions_found[i]->label, shortest);
+    strncpy (LCD_reference.label, completions_found[0]->label, shortest);
     LCD_reference.label[shortest] = '\0';
     LCD_completion = &LCD_reference;
   }
@@ -1485,7 +1464,7 @@ echo_area_stack_contains_completions_p ()
 static void
 pause_or_input ()
 {
-#ifdef FD_SET
+#if defined (FD_SET)
   struct timeval timer;
   fd_set readfds;
   int ready;
@@ -1493,14 +1472,14 @@ pause_or_input ()
   FD_ZERO (&readfds);
   FD_SET (fileno (stdin), &readfds);
   timer.tv_sec = 2;
-  timer.tv_usec = 0;
+  timer.tv_usec = 750;
   ready = select (fileno (stdin) + 1, &readfds, (fd_set *) NULL,
                   (fd_set *) NULL, &timer);
 #endif /* FD_SET */
 }
 
 /* Print MESSAGE right after the end of the current line, and wait
-   for input or a couple of seconds, whichever comes first.  Then flush the
+   for input or 2.75 seconds, whichever comes first.  Then flush the
    informational message that was printed. */
 void
 inform_in_echo_area (message)
@@ -1510,9 +1489,8 @@ inform_in_echo_area (message)
   char *text;
 
   text = xstrdup (message);
-  for (i = 0; text[i] && text[i] != '\n'; i++)
-    ;
-  text[i] = 0;
+  for (i = 0; text[i] && text[i] != '\n'; i++);
+  text[i] = '\0';
 
   echo_area_initialize_node ();
   sprintf (&input_line[input_line_end], "%s[%s]\n",

@@ -1,5 +1,5 @@
 /* BFD library support routines for the AVR architecture.
-   Copyright 1999, 2000, 2002 Free Software Foundation, Inc.
+   Copyright (C) 1999, 2000 Free Software Foundation, Inc.
    Contributed by Denis Chertykov <denisc@overta.ru>
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -22,8 +22,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include "sysdep.h"
 #include "libbfd.h"
 
+
 static const bfd_arch_info_type *compatible
   PARAMS ((const bfd_arch_info_type *, const bfd_arch_info_type *));
+
 
 #define N(addr_bits, machine, print, default, next)		\
 {								\
@@ -43,24 +45,21 @@ static const bfd_arch_info_type *compatible
 
 static const bfd_arch_info_type arch_info_struct[] =
 {
-  /* AT90S1200, ATtiny1x, ATtiny28 */
-  N (16, bfd_mach_avr1, "avr:1", FALSE, & arch_info_struct[1]),
+  /* AT90S1200 */
+  N (16, bfd_mach_avr1, "avr:1", false, & arch_info_struct[1]),
 
-  /* AT90S2xxx, AT90S4xxx, AT90S8xxx, ATtiny22 */
-  N (16, bfd_mach_avr2, "avr:2", FALSE, & arch_info_struct[2]),
+  /* AT90S2xxx, AT90S4xxx, AT90S81xx, ATtiny22 */
+  N (16, bfd_mach_avr2, "avr:2", false, & arch_info_struct[2]),
 
   /* ATmega103, ATmega603 */
-  N (22, bfd_mach_avr3, "avr:3", FALSE, & arch_info_struct[3]),
+  N (22, bfd_mach_avr3, "avr:3", false, & arch_info_struct[3]),
 
-  /* ATmega83, ATmega85 */
-  N (16, bfd_mach_avr4, "avr:4", FALSE, & arch_info_struct[4]),
-
-  /* ATmega161, ATmega163, ATmega32, AT94K */
-  N (22, bfd_mach_avr5, "avr:5", FALSE, NULL)
+  /* ATmega161 */
+  N (16, bfd_mach_avr4, "avr:4", false, NULL)
 };
 
 const bfd_arch_info_type bfd_avr_arch =
-  N (16, bfd_mach_avr2, "avr", TRUE, & arch_info_struct[0]);
+  N (16, bfd_mach_avr2, "avr", true, & arch_info_struct[0]);
 
 /* This routine is provided two arch_infos and works out which AVR
    machine which would be compatible with both and returns a pointer
@@ -75,18 +74,15 @@ compatible (a,b)
   if (a->arch != b->arch)
     return NULL;
 
-  /* Special case for ATmega[16]03 (avr:3) and ATmega83 (avr:4).  */
-  if ((a->mach == bfd_mach_avr3 && b->mach == bfd_mach_avr4)
-      || (a->mach == bfd_mach_avr4 && b->mach == bfd_mach_avr3))
+  /* Special case for ATmega[16]03 (avr:3) and ATmega161 (avr:4).  */
+  if ((a->mach == 3 && b->mach == 4)
+      || (a->mach == 4 && b->mach == 3))
     return NULL;
 
   /* So far all newer AVR architecture cores are supersets of previous
      cores.  */
   if (a->mach <= b->mach)
     return b;
-
-  if (a->mach >= b->mach)
-    return a;
 
   /* Never reached!  */
   return NULL;

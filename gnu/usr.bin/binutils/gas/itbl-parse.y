@@ -1,5 +1,5 @@
 /* itbl-parse.y
-   Copyright 1997 Free Software Foundation, Inc.
+   Copyright (C) 1997  Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -321,7 +321,6 @@ entry:
 	    insn=itbl_add_insn ($1, $3, $4, sbit, ebit, $6);
 	  }
 	fieldspecs NL
-	  {}
 	| NL
 	| error NL
 	;

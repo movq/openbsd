@@ -1,6 +1,5 @@
 /* BFD back-end definitions used by all FreeBSD targets.
-   Copyright 1990, 1991, 1992, 1996, 1997, 2000, 2001, 2002
-   Free Software Foundation, Inc.
+   Copyright (C) 1990, 1991, 1992, 1996 Free Software Foundation, Inc.
 
 This file is part of BFD, the Binary File Descriptor library.
 
@@ -26,11 +25,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
 #define TEXT_START_ADDR		0
 
 #define N_GETMAGIC_NET(exec) \
-	((exec).a_info & 0xffff)
+	(ntohl ((exec).a_info) & 0xffff)
 #define N_GETMID_NET(exec) \
-	(((exec).a_info >> 16) & 0x3ff)
+	((ntohl ((exec).a_info) >> 16) & 0x3ff)
 #define N_GETFLAG_NET(ex) \
-	(((exec).a_info >> 26) & 0x3f)
+	((ntohl ((exec).a_info) >> 26) & 0x3f)
 
 #define N_MACHTYPE(exec) \
 	((enum machine_type) \
@@ -56,12 +55,12 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
 #include "libbfd.h"
 #include "libaout.h"
 
-/* On FreeBSD, the magic number is always in i386 (little-endian)
-   format.  I think.  */
-#define SWAP_MAGIC(ext) bfd_getl32 (ext)
+/* On FreeBSD, the magic number is always in correct endian format */
+#define NO_SWAP_MAGIC
+
 
 #define MY_write_object_contents MY(write_object_contents)
-static bfd_boolean MY(write_object_contents) PARAMS ((bfd *abfd));
+static boolean MY(write_object_contents) PARAMS ((bfd *abfd));
 
 #include "aout-target.h"
 
@@ -69,14 +68,18 @@ static bfd_boolean MY(write_object_contents) PARAMS ((bfd *abfd));
    Section contents have already been written.  We write the
    file header, symbols, and relocation.  */
 
-static bfd_boolean
+static boolean
 MY(write_object_contents) (abfd)
      bfd *abfd;
 {
   struct external_exec exec_bytes;
   struct internal_exec *execp = exec_hdr (abfd);
 
+#if CHOOSE_RELOC_SIZE
+  CHOOSE_RELOC_SIZE(abfd);
+#else
   obj_reloc_entry_size (abfd) = RELOC_STD_SIZE;
+#endif
 
   /* Magic number, maestro, please!  */
   switch (bfd_get_arch(abfd)) {
@@ -102,5 +105,5 @@ MY(write_object_contents) (abfd)
 
   WRITE_HEADERS(abfd, execp);
 
-  return TRUE;
+  return true;
 }
