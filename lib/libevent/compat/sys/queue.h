@@ -1,4 +1,4 @@
-/*	$OpenBSD: queue.h,v 1.1 2002/06/15 18:01:47 provos Exp $	*/
+/*	$OpenBSD: queue.h,v 1.1.1.1 2002/06/15 18:01:47 provos Exp $	*/
 /*	$NetBSD: queue.h,v 1.11 1996/05/16 05:17:14 mycroft Exp $	*/
 
 /*
