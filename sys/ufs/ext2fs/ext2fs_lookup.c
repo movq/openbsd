@@ -1,4 +1,4 @@
-/*	$OpenBSD: ext2fs_lookup.c,v 1.1 1997/05/30 05:18:51 downsj Exp $	*/
+/*	$OpenBSD: ext2fs_lookup.c,v 1.1.1.1 1997/05/30 05:18:51 downsj Exp $	*/
 
 /* Modified for EXT2FS on NetBSD by Manuel Bouyer, April 1997 */
 
