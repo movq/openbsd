@@ -1,5 +1,5 @@
 /* cmds.h -- declarations for cmds.c.
-   $Id: cmds.h,v 1.1 2000/02/09 01:25:09 espie Exp $
+   $Id: cmds.h,v 1.1.1.1 2000/02/09 01:25:09 espie Exp $
 
    Copyright (C) 1998, 99 Free Software Foundation, Inc.
 

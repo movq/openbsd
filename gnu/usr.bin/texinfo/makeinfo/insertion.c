@@ -1,5 +1,5 @@
 /* insertion.c -- insertions for Texinfo.
-   $Id: insertion.c,v 1.1 2000/02/09 01:25:19 espie Exp $
+   $Id: insertion.c,v 1.1.1.1 2000/02/09 01:25:19 espie Exp $
 
    Copyright (C) 1998, 99 Free Software Foundation, Inc.
 

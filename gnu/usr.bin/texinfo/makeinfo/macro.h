@@ -1,5 +1,5 @@
 /* macro.h -- declarations for macro.c.
-   $Id: macro.h,v 1.1 2000/02/09 01:25:23 espie Exp $
+   $Id: macro.h,v 1.1.1.1 2000/02/09 01:25:23 espie Exp $
 
    Copyright (C) 1998, 99 Free Software Foundation, Inc.
 

@@ -1,7 +1,7 @@
 /* config.in.  Generated automatically from configure.in by autoheader.  */
 /* acconfig.h
    This file is in the public domain.
-   $Id: config.in,v 1.1 2000/02/09 01:23:57 espie Exp $
+   $Id: config.in,v 1.1.1.1 2000/02/09 01:23:57 espie Exp $
 
    Descriptive text for the C preprocessor macros that
    the distributed Autoconf macros can define.

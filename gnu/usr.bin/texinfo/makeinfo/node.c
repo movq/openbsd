@@ -1,5 +1,5 @@
 /* node.c -- nodes for Texinfo.
-   $Id: node.c,v 1.1 2000/02/09 01:25:30 espie Exp $
+   $Id: node.c,v 1.1.1.1 2000/02/09 01:25:30 espie Exp $
 
    Copyright (C) 1998, 99 Free Software Foundation, Inc.
 

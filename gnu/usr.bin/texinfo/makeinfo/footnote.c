@@ -1,5 +1,5 @@
 /* footnote.c -- footnotes for Texinfo.
-   $Id: footnote.c,v 1.1 2000/02/09 01:25:11 espie Exp $
+   $Id: footnote.c,v 1.1.1.1 2000/02/09 01:25:11 espie Exp $
 
    Copyright (C) 1998, 99 Free Software Foundation, Inc.
 
