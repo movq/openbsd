@@ -38,7 +38,7 @@
 
 #include <xfs/xfs_locl.h>
 
-RCSID("$Id: xfs_vfsops-bsd.c,v 1.3.2.2 2001/05/14 22:47:53 niklas Exp $");
+RCSID("$Id: xfs_vfsops-bsd.c,v 1.3.2.3 2001/10/31 03:32:14 nate Exp $");
 
 /*
  * XFS vfs operations.
@@ -477,6 +477,7 @@ xfs_fhopen (struct proc *proc,
 #ifdef __APPLE__
     *fdflags(proc, index) &= ~UF_RESERVED;
 #endif
+    FILE_SET_MATURE(fp);
     return 0;
 out:
     XFSDEB(XDEBVFOPS, ("xfs_fhopen: error = %d\n", error));
