@@ -1,18 +1,18 @@
+# Generated automatically from Makefile.in by configure.
 # $KTH: Makefile.in,v 1.36.4.1 2001/01/03 16:37:36 assar Exp $
 
-srcdir		= @srcdir@
-prefix		= @prefix@
-VPATH		= @srcdir@
+srcdir		= .
+prefix		= /usr/athena
 
 SHELL		= /bin/sh
-INSTALL = @INSTALL@
-INSTALL_PROGRAM = @INSTALL_PROGRAM@
-INSTALL_DATA = @INSTALL_DATA@
-MKINSTALLDIRS = @top_srcdir@/mkinstalldirs
+INSTALL = /usr/bin/install -c
+INSTALL_PROGRAM = ${INSTALL}
+INSTALL_DATA = ${INSTALL} -m 644
+MKINSTALLDIRS = ./mkinstalldirs
 TRAVELKIT = appl/kauth/kauth kuser/klist appl/telnet/telnet/telnet \
 	    appl/ftp/ftp/ftp appl/kx/kx appl/kx/rxtelnet
 
-@SET_MAKE@
+
 
 SUBDIRS		= include lib kuser server slave admin kadmin appl man doc
 
