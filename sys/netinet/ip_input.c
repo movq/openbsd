@@ -1,4 +1,4 @@
-/*	$OpenBSD: ip_input.c,v 1.56 2000/05/15 11:07:33 itojun Exp $	*/
+/*	$OpenBSD: ip_input.c,v 1.55 2000/05/10 03:22:39 jason Exp $	*/
 /*	$NetBSD: ip_input.c,v 1.30 1996/03/16 23:53:58 christos Exp $	*/
 
 /*
@@ -866,12 +866,8 @@ ip_dooptions(m)
 		if (opt == IPOPT_NOP)
 			optlen = 1;
 		else {
-			if (cnt < IPOPT_OLEN + sizeof(*cp)) {
-				code = &cp[IPOPT_OLEN] - (u_char *)ip;
-				goto bad;
-			}
 			optlen = cp[IPOPT_OLEN];
-			if (optlen < IPOPT_OLEN + sizeof(*cp) || optlen > cnt) {
+			if (optlen <= 0 || optlen > cnt) {
 				code = &cp[IPOPT_OLEN] - (u_char *)ip;
 				goto bad;
 			}
@@ -959,10 +955,6 @@ ip_dooptions(m)
 			break;
 
 		case IPOPT_RR:
-			if (optlen < IPOPT_OFFSET + sizeof(*cp)) {
-				code = &cp[IPOPT_OLEN] - (u_char *)ip;
-				goto bad;
-			}
 			if ((off = cp[IPOPT_OFFSET]) < IPOPT_MINOFF) {
 				code = &cp[IPOPT_OFFSET] - (u_char *)ip;
 				goto bad;

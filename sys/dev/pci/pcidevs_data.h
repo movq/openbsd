@@ -2,7 +2,7 @@
  * THIS FILE AUTOMATICALLY GENERATED.  DO NOT EDIT.
  *
  * generated from:
- *		OpenBSD: pcidevs,v 1.258 2000/05/15 21:51:00 deraadt Exp 
+ *		OpenBSD: pcidevs,v 1.257 2000/05/04 17:05:01 deraadt Exp 
  */
 
 /*	$NetBSD: pcidevs,v 1.30 1997/06/24 06:20:24 thorpej Exp $ 	*/
@@ -1950,7 +1950,7 @@ struct pci_knowndev pci_knowndevs[] = {
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82437FX,
 	    0,
 	    "Intel",
-	    "82437FX (Triton)",
+	    "82437FX (Triton) PCI/Cache/DRAM",
 	},
 	{
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82371FB_ISA,
@@ -1980,25 +1980,25 @@ struct pci_knowndev pci_knowndevs[] = {
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82441FX,
 	    0,
 	    "Intel",
-	    "82441FX",
+	    "82441FX PCI/Memory (PMC)",
 	},
 	{
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82380AB,
 	    0,
 	    "Intel",
-	    "82380AB Mobile PCI-ISA",
+	    "82380AB Mobile PCI-to-ISA (MISA)",
 	},
 	{
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82380FB,
 	    0,
 	    "Intel",
-	    "82380FB Mobile PCI-PCI",
+	    "82380FB Mobile PCI-to-PCI (MPCI2)",
 	},
 	{
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82439HX,
 	    0,
 	    "Intel",
-	    "82439HX (Triton II)",
+	    "82439HX (Triton II) TXC Host",
 	},
 	{
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82801AA_LPC,
@@ -2106,7 +2106,7 @@ struct pci_knowndev pci_knowndevs[] = {
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82437VX,
 	    0,
 	    "Intel",
-	    "82437VX",
+	    "82437VX System (TVX)",
 	},
 	{
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82439TX,
@@ -2142,19 +2142,13 @@ struct pci_knowndev pci_knowndevs[] = {
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82810_MCH,
 	    0,
 	    "Intel",
-	    "82810",
+	    "82810 Memory Hub",
 	},
 	{
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82810_GC,
 	    0,
 	    "Intel",
 	    "82810 Graphics",
-	},
-	{
-	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82810_DC100_MCH,
-	    0,
-	    "Intel",
-	    "82810-DC100",
 	},
 	{
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82810_DC100_GC,
@@ -2166,73 +2160,67 @@ struct pci_knowndev pci_knowndevs[] = {
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82810E_MCH,
 	    0,
 	    "Intel",
-	    "82810E",
+	    "82810E Memory Controller Hub",
 	},
 	{
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82810E_GC,
 	    0,
 	    "Intel",
-	    "82810E Graphics",
+	    "82810E Graphics Controller",
 	},
 	{
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82443LX,
 	    0,
 	    "Intel",
-	    "82443LX PCI-AGP",
+	    "82443LX PCI-AGP (PAC)",
 	},
 	{
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82443LX_AGP,
 	    0,
 	    "Intel",
-	    "82443LX AGP",
+	    "82443LX AGP (PAC)",
 	},
 	{
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82443BX,
 	    0,
 	    "Intel",
-	    "82443BX PCI-AGP",
+	    "82443BX PCI-AGP (PAC)",
 	},
 	{
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82443BX_AGP,
 	    0,
 	    "Intel",
-	    "82443BX AGP",
+	    "82443BX AGP (PAC)",
 	},
 	{
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82443BX_NOAGP,
 	    0,
 	    "Intel",
-	    "82443BX",
+	    "82443BX Host-PCI (no AGP)",
 	},
 	{
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82440BX,
 	    0,
 	    "Intel",
-	    "82440BX PCI-AGP",
+	    "82440BX PCI-AGP (PAC)",
 	},
 	{
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82440BX_AGP,
 	    0,
 	    "Intel",
-	    "82440BX AGP",
-	},
-	{
-	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82443GX,
-	    0,
-	    "Intel",
-	    "82443GX",
+	    "82440BX AGP (PAC)",
 	},
 	{
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_PCI450_PB,
 	    0,
 	    "Intel",
-	    "82450KX/GX (Orion)",
+	    "450 PCIset (Orion) Host-PCI",
 	},
 	{
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_PCI450_MC,
 	    0,
 	    "Intel",
-	    "82450KX/GX (Orion) Memory",
+	    "450 PCIset (Orion) Memory",
 	},
 	{
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82840_HB,
@@ -3091,6 +3079,18 @@ struct pci_knowndev pci_knowndevs[] = {
 	    0,
 	    "Reliance Computer",
 	    "CMIC_HE Host",
+	},
+	{
+	    PCI_VENDOR_RCC, PCI_PRODUCT_RCC_ROSB4_IDE,
+	    0,
+	    "Reliance Computer",
+	    "ROSB4 IDE",
+	},
+	{
+	    PCI_VENDOR_RCC, PCI_PRODUCT_RCC_ROSB4_USB,
+	    0,
+	    "Reliance Computer",
+	    "ROSB4 USB",
 	},
 	{
 	    PCI_VENDOR_PLX, PCI_PRODUCT_PLX_1076,
