@@ -49,7 +49,7 @@
 #include <xfs/xfs_syscalls.h>
 #include <xfs/xfs_vnodeops.h>
 
-RCSID("$Id: xfs_vnodeops-common.c,v 1.2.4.2 2001/05/14 22:47:54 niklas Exp $");
+RCSID("$Id: xfs_vnodeops-common.c,v 1.2.4.3 2002/03/28 15:02:48 niklas Exp $");
 
 int
 xfs_open_valid(struct vnode *vp, struct ucred *cred, struct proc *p,
@@ -319,7 +319,7 @@ xfs_read_common(struct vnode *vp, struct uio *uio, int ioflag,
 
 	if (uio->uio_iovcnt && uio->uio_iov[0].iov_len > 0)
 	    XFSDEB(XDEBVNOPS, ("xfs_read: byte: %d\n",
-			       ((char*)uio->uio_iov[0].iov_base)[0]));
+			       ((char *)uio->uio_iov[0].iov_base)[0]));
     }
 
     XFSDEB(XDEBVNOPS, ("xfs_read offset: %lu resid: %d\n",
