@@ -1,4 +1,4 @@
-#	$OpenBSD: mkisofs.spec,v 1.1 1997/09/15 06:01:53 downsj Exp $
+#	$OpenBSD: mkisofs.spec,v 1.1.1.1 1997/09/15 06:01:53 downsj Exp $
 # $From: mkisofs.spec,v 1.3 1997/04/10 02:46:57 eric Rel $
 Summary: Creates a ISO9660 filesystem image
 Name: mkisofs

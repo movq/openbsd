@@ -1,4 +1,4 @@
-/*	$OpenBSD: write.c,v 1.1 1997/09/15 06:01:53 downsj Exp $	*/
+/*	$OpenBSD: write.c,v 1.1.1.1 1997/09/15 06:01:53 downsj Exp $	*/
 /*
  * Program write.c - dump memory  structures to  file for iso9660 filesystem.
 

@@ -1,4 +1,4 @@
-/*	$OpenBSD: mkisofs.c,v 1.1 1997/09/15 06:01:53 downsj Exp $	*/
+/*	$OpenBSD: mkisofs.c,v 1.1.1.1 1997/09/15 06:01:53 downsj Exp $	*/
 /*
  * Program mkisofs.c - generate iso9660 filesystem  based upon directory
  * tree on hard disk.
