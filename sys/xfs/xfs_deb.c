@@ -1,4 +1,3 @@
-/* $OpenBSD: xfs_deb.c,v 1.2.4.1 2000/03/24 09:09:54 niklas Exp $ */
 /*
  * Copyright (c) 1995, 1996, 1997, 1998 Kungliga Tekniska Högskolan
  * (Royal Institute of Technology, Stockholm, Sweden).
@@ -40,6 +39,7 @@
 #include <xfs/xfs_deb.h>
 #include <xfs/xfs_debug.h>
 
+/* $Id: xfs_deb.c,v 1.2.4.2 2001/05/14 22:47:51 niklas Exp $ */
 
 /* X is on */
 #define X(y) y
