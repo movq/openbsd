@@ -1,4 +1,4 @@
-/* $OpenBSD: mmaptest.c,v 1.1 2002/08/21 12:53:35 espie Exp $ */
+/* $OpenBSD: mmaptest.c,v 1.1.1.1 2002/08/21 12:53:35 espie Exp $ */
 /*
  * Copyright (c) 2002 Marc Espie.
  *
