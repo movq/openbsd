@@ -5,10 +5,11 @@
 # based on original version by Alan R. Martello <al@ee.pitt.edu>
 # And by A.Macpherson@bnr.co.uk for multi-homed hosts
 #
-# $Header: /home/mike/src/cvs/openbsd/src/gnu/usr.bin/perl/lib/Attic/ftp.pl,v 1.1 1996/08/19 10:12:34 downsj Exp $
+# $Header: /home/mike/src/cvs/openbsd/src/gnu/usr.bin/perl/lib/Attic/ftp.pl,v 1.1.1.1 1996/08/19 10:12:34 downsj Exp $
 # $Log: ftp.pl,v $
-# Revision 1.1  1996/08/19 10:12:34  downsj
-# Initial revision
+# Revision 1.1.1.1  1996/08/19 10:12:34  downsj
+# Import of Perl 5.003 into the tree.  Makefile.bsd-wrapper and
+# config.sh.OpenBSD are the only local changes.
 #
 # Revision 1.17  1993/04/21  10:06:54  lmjm
 # Send all status reports to STDERR not to STDOUT (to allow use by ftpcat).

@@ -1,6 +1,6 @@
 #!./perl
 
-# $RCSfile: gdbm.t,v $$Revision: 1.1 $$Date: 1996/08/19 10:13:15 $
+# $RCSfile: gdbm.t,v $$Revision: 1.1.1.1 $$Date: 1996/08/19 10:13:15 $
 
 BEGIN {
     @INC = '../lib';

@@ -40,7 +40,7 @@ All caveats from open2() continue to apply.  See L<open2> for details.
 # derived mostly from &open2 by tom christiansen, <tchrist@convex.com>
 # fixed for 5.001 by Ulrich Kunitz <kunitz@mai-koeln.com>
 #
-# $Id: Open3.pm,v 1.1 1996/08/19 10:12:45 downsj Exp $
+# $Id: Open3.pm,v 1.1.1.1 1996/08/19 10:12:45 downsj Exp $
 #
 # usage: $pid = open3('wtr', 'rdr', 'err' 'some cmd and args', 'optarg', ...);
 #
