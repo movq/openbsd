@@ -1,4 +1,4 @@
-/* $Header: /cvsroot/src/lib/libpthread/machdep/hpux-9.03/Attic/time.h,v 1.1 1998/07/21 13:19:26 peter Exp $ */
+/* $Header: /cvsroot/src/lib/libpthread/machdep/hpux-9.03/Attic/time.h,v 1.1.1.1 1998/07/21 13:19:26 peter Exp $ */
 
 #ifndef _SYS_TIME_INCLUDED
 #define _SYS_TIME_INCLUDED

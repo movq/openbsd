@@ -2,7 +2,7 @@
  * Copyright (c) 1994 Chris Provenzano (proven@athena.mit.edu) and
  * Ken Raeburn (raeburn@mit.edu).
  *
- * $Id: engine-alpha-osf1.h,v 1.1 1998/07/21 13:19:13 peter Exp $
+ * $Id: engine-alpha-osf1.h,v 1.1.1.1 1998/07/21 13:19:13 peter Exp $
  *
  */
 

@@ -1,7 +1,7 @@
 /* ==== machdep.h ============================================================
  * Copyright (c) 1994 Chris Provenzano, proven@athena.mit.edu
  *
- * $Id: engine-ip22-irix-5.2.h,v 1.1 1998/07/21 13:19:14 peter Exp $
+ * $Id: engine-ip22-irix-5.2.h,v 1.1.1.1 1998/07/21 13:19:14 peter Exp $
  *
  */
 

@@ -29,7 +29,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF 
  * SUCH DAMAGE.
  *
- * $Id: util.h,v 1.1 1998/07/21 13:19:12 peter Exp $
+ * $Id: util.h,v 1.1.1.1 1998/07/21 13:19:12 peter Exp $
  *
  * Description : Header file for generic utility functions.
  *

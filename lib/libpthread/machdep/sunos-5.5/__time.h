@@ -29,7 +29,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF 
  * SUCH DAMAGE.
  *
- * $Id: __time.h,v 1.1 1998/07/21 13:19:40 peter Exp $
+ * $Id: __time.h,v 1.1.1.1 1998/07/21 13:19:40 peter Exp $
  *
  * Description : System specific time header.
  *

@@ -1,4 +1,4 @@
-/* $Id: __time.h,v 1.1 1998/07/21 13:19:25 peter Exp $ */
+/* $Id: __time.h,v 1.1.1.1 1998/07/21 13:19:25 peter Exp $ */
 
 #ifndef __sys_stdtypes_h
 
