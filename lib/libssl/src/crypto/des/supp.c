@@ -87,7 +87,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $Id: supp.c,v 1.1 1998/10/05 20:12:45 ryker Exp $
+ * $Id: supp.c,v 1.1.1.1 1998/10/05 20:12:45 ryker Exp $
  */
 
 #include <stdio.h>
