@@ -1,5 +1,5 @@
-/* $OpenBSD: wscons_rinit.c,v 1.7 2000/05/16 23:49:11 mickey Exp $ */
-/* $NetBSD: wscons_rinit.c,v 1.2 1998/05/14 20:49:56 drochner Exp $ */
+/*	$OpenBSD: wscons_rinit.c,v 1.6 1997/11/06 12:26:59 niklas Exp $ */
+/*	$NetBSD: wscons_rinit.c,v 1.3 1996/11/13 21:13:42 cgd Exp $ */
 
 /*
  * Copyright (c) 1991, 1993
@@ -51,7 +51,6 @@
 
 #include <dev/rcons/raster.h>
 #include <dev/wscons/wscons_raster.h>
-
 #include <dev/wscons/wscons_rfont.h>
 
 void	rcons_initfont __P((struct rcons *, struct raster_font *));
@@ -104,7 +103,7 @@ rcons_init(rc, mrow, mcol)
 	struct raster *rp = rc->rc_sp;
 	int i;
 
-	rcons_initfont(rc, &gallant19);
+	rcons_initfont(rc, &CONSOLE_FONT);
 
 	i = rp->height / rc->rc_font->height;
 	rc->rc_maxrow = min(i, mrow);
@@ -128,6 +127,7 @@ rcons_init(rc, mrow, mcol)
 			rc->rc_raswidth = i;
 	}
 
+	rc->rc_ras_blank = RAS_CLEAR;
 	rc->rc_bits = 0;
 
 	/* If cursor position given, assume it's there and drawn. */

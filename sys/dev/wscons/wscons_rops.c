@@ -1,5 +1,5 @@
-/* $OpenBSD: wscons_rops.c,v 1.6 2000/05/16 23:49:11 mickey Exp $ */
-/* $NetBSD: wscons_rops.c,v 1.5 1999/02/12 11:25:23 drochner Exp $ */
+/*	$OpenBSD: wscons_rops.c,v 1.5 1997/11/06 12:27:00 niklas Exp $ */
+/*	$NetBSD: wscons_rops.c,v 1.1 1996/04/12 02:00:55 cgd Exp $ */
 
 /*
  * Copyright (c) 1991, 1993
@@ -50,7 +50,6 @@
 
 #include <dev/rcons/raster.h>
 #include <dev/wscons/wscons_raster.h>
-#include <dev/wscons/wsdisplayvar.h>
 
 /*
  * Paint (or unpaint) the cursor.
@@ -61,8 +60,8 @@ rcons_cursor(id, on, row, col)
 	void *id;
 	int on, row, col;
 {
-	struct rcons *rc = id;
-	int x, y;
+	register struct rcons *rc = id;
+	register int x, y;
 
 	/* turn the cursor off */
 	if (!on) {
@@ -95,47 +94,30 @@ rcons_cursor(id, on, row, col)
 	rc->rc_bits ^= RC_CURSOR;
 }
 
-int
-rcons_mapchar(id, uni, index)
-	void *id;
-	int uni;
-	unsigned int *index;
-{
-
-	if (uni < 128) {
-		*index = uni;
-		return (5);
-	}
-	*index = ' ';
-	return (0);
-}
-
 /*
  * Actually write a string to the frame buffer.
  */
 void
-rcons_putchar(id, row, col, uc, attr)
+rcons_putstr(id, row, col, str, n)
 	void *id;
-	int row, col;
-	u_int uc;
-	long attr;
+	int row, col, n;
+	char *str;
 {
 	struct rcons *rc = id;
-	int x, y, op;
-	u_char help;
+	register int x, y, op;
 
 	x = col * rc->rc_font->width + rc->rc_xorigin;
 	y = row * rc->rc_font->height + rc->rc_font_ascent + rc->rc_yorigin;
 
 	op = RAS_SRC;
-	if ((attr != 0) ^ ((rc->rc_bits & RC_INVERT) != 0))
+	if (((rc->rc_bits & RC_STANDOUT) != 0) ^
+	    ((rc->rc_bits & RC_INVERT) != 0))
 		op = RAS_NOT(op);
-	help = uc & 0xff;
-	raster_textn(rc->rc_sp, x, y, op, rc->rc_font, &help, 1);
+	raster_textn(rc->rc_sp, x, y, op, rc->rc_font, str, n);
 }
 
 /*
- * Possibly change to white-on-black or black-on-white modes.
+ * Possibly change entire display to white-on-black or black-on-white modes.
  */
 void
 rcons_invert(id, inverted)
@@ -150,6 +132,7 @@ rcons_invert(id, inverted)
 		    RAS_INVERT, (struct raster *) 0, 0, 0);
 
 		/* Swap things around */
+		rc->rc_ras_blank = RAS_NOT(rc->rc_ras_blank);
 		rc->rc_bits ^= RC_INVERT;
 	}
 }
@@ -179,23 +162,19 @@ rcons_copycols(id, row, srccol, dstcol, ncols)
  * Clear columns (characters) in a row (line).
  */
 void
-rcons_erasecols(id, row, startcol, ncols, fillattr)
+rcons_erasecols(id, row, startcol, ncols)
 	void *id;
 	int row, startcol, ncols;
-	long fillattr;
 {
 	struct rcons *rc = id;
-	int y, startx, nx, op;
+	int y, startx, nx;
 
 	y = rc->rc_yorigin + rc->rc_font->height * row;
 	startx = rc->rc_xorigin + rc->rc_font->width * startcol;
 	nx = rc->rc_font->width * ncols;
 
-	op = RAS_CLEAR;
-	if ((fillattr != 0) ^ ((rc->rc_bits & RC_INVERT) != 0))
-		op = RAS_NOT(op);
 	raster_op(rc->rc_sp, startx, y,
-	    nx, rc->rc_font->height, op,
+	    nx, rc->rc_font->height, rc->rc_ras_blank,
 	    (struct raster *) 0, 0, 0);
 }
 
@@ -223,37 +202,25 @@ rcons_copyrows(id, srcrow, dstrow, nrows)
  * Erase rows (lines).
  */
 void
-rcons_eraserows(id, startrow, nrows, fillattr)
+rcons_eraserows(id, startrow, nrows)
 	void *id;
 	int startrow, nrows;
-	long fillattr;
 {
 	struct rcons *rc = id;
-	int starty, ny, op;
+	int starty, ny;
 
 	starty = rc->rc_yorigin + rc->rc_font->height * startrow;
 	ny = rc->rc_font->height * nrows;
 
-	op = RAS_CLEAR;
-	if ((fillattr != 0) ^ ((rc->rc_bits & RC_INVERT) != 0))
-		op = RAS_NOT(op);
 	raster_op(rc->rc_sp, rc->rc_xorigin, starty,
-	    rc->rc_raswidth, ny, op,
+	    rc->rc_raswidth, ny, rc->rc_ras_blank,
 	    (struct raster *) 0, 0, 0);
 }
 
-int
-rcons_alloc_attr(id, fg, bg, flags, attrp)
+void
+rcons_setattr(id, val)
 	void *id;
-	int fg, bg, flags;
-	long *attrp;
+	int val;
 {
-	if (flags & (WSATTR_HILIT | WSATTR_BLINK |
-		     WSATTR_UNDERLINE | WSATTR_WSCOLORS))
-		return (EINVAL);
-	if (flags & WSATTR_REVERSE)
-		*attrp = 1;
-	else
-		*attrp = 0;
-	return (0);
+	/* XXX */
 }
