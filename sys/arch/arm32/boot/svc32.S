@@ -43,7 +43,7 @@
  *
  * Based on kate/library/svc32.s
  *
- *    $Id: svc32.S,v 1.1 1996/04/24 11:08:32 deraadt Exp $
+ *    $Id: svc32.S,v 1.1.1.1 1996/04/24 11:08:32 deraadt Exp $
  */
 
 #include "regs.h"

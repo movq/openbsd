@@ -47,7 +47,7 @@
  *
  * Based of kate/display/setstack.s
  *
- *    $Id: setstack.S,v 1.1 1996/04/24 11:08:28 deraadt Exp $
+ *    $Id: setstack.S,v 1.1.1.1 1996/04/24 11:08:28 deraadt Exp $
  */
 
 #include <machine/cpu.h>

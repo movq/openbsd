@@ -38,7 +38,7 @@
  * Created      : 08/04/95
  * Last updated : 12/05/95
  *
- *    $Id: bcopy_page.S,v 1.1 1996/04/24 11:08:23 deraadt Exp $
+ *    $Id: bcopy_page.S,v 1.1.1.1 1996/04/24 11:08:23 deraadt Exp $
  */
 
 #include <machine/param.h>

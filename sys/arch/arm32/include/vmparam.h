@@ -32,7 +32,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- *	$Id: vmparam.h,v 1.1 1996/04/24 11:08:46 deraadt Exp $
+ *	$Id: vmparam.h,v 1.1.1.1 1996/04/24 11:08:46 deraadt Exp $
  */
 
 #ifndef	_ARM32_VMPARAM_H_

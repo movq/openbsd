@@ -43,7 +43,7 @@
  * Created      : 16/05/95
  * Last updated : 16/05/95
  *
- *    $Id: memcpy.S,v 1.1 1996/04/24 11:08:32 deraadt Exp $
+ *    $Id: memcpy.S,v 1.1.1.1 1996/04/24 11:08:32 deraadt Exp $
  */
 
 sp	.req	r13

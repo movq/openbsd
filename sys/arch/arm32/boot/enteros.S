@@ -43,7 +43,7 @@
  *
  * Based on kate/library/enteros.s
  *
- *    $Id: enteros.S,v 1.1 1996/04/24 11:08:31 deraadt Exp $
+ *    $Id: enteros.S,v 1.1.1.1 1996/04/24 11:08:31 deraadt Exp $
  */
 
 #include "regs.h"

@@ -45,7 +45,7 @@
  *
  * Based on kate/display/14norm.h
  *
- *    $Id: font_normal.h,v 1.1 1996/04/24 11:08:38 deraadt Exp $
+ *    $Id: font_normal.h,v 1.1.1.1 1996/04/24 11:08:38 deraadt Exp $
  */
  
 unsigned char font_terminal_14normal_data[] = {

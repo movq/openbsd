@@ -45,7 +45,7 @@
  *
  * Based on arm/readcoproc15.S & arm/writecoproc15.S
  *
- *    $Id: coproc15.S,v 1.1 1996/04/24 11:08:24 deraadt Exp $
+ *    $Id: coproc15.S,v 1.1.1.1 1996/04/24 11:08:24 deraadt Exp $
  */
 
 lr	.req	r14

@@ -44,7 +44,7 @@
  *
  * Based on kate/boot/boot.c
  *
- *    $Id: bsdbooter.c,v 1.1 1996/04/24 11:08:31 deraadt Exp $
+ *    $Id: bsdbooter.c,v 1.1.1.1 1996/04/24 11:08:31 deraadt Exp $
  */
 
 /* Include standard header files */

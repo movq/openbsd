@@ -40,7 +40,7 @@
  *
  * Created      : 01/03/96
  *
- *    $Id: spl.S,v 1.1 1996/04/24 11:08:28 deraadt Exp $
+ *    $Id: spl.S,v 1.1.1.1 1996/04/24 11:08:28 deraadt Exp $
  */
 
 #include "assym.h"

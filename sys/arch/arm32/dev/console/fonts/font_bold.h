@@ -45,7 +45,7 @@
  *
  * Based on kate/display/14bold.h
  *
- *    $Id: font_bold.h,v 1.1 1996/04/24 11:08:37 deraadt Exp $
+ *    $Id: font_bold.h,v 1.1.1.1 1996/04/24 11:08:37 deraadt Exp $
  */
  
 unsigned char font_terminal_14bold_data[] = {

@@ -43,7 +43,7 @@
  * Created      : 16/05/95
  * Last updated : 16/05/95
  *
- *    $Id: bcopyinout.S,v 1.1 1996/04/24 11:08:24 deraadt Exp $
+ *    $Id: bcopyinout.S,v 1.1.1.1 1996/04/24 11:08:24 deraadt Exp $
  */
 
 #include "assym.h"

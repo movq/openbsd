@@ -1,7 +1,7 @@
 /*
   Title:      Swi numbers for RiscOs
   Copyright (C) 1989, Acorn Computers Ltd., Cambridge, England
-  $Revision: 1.1 $ SWI_LIST 1.00 02-May-89 (Program generated)
+  $Revision: 1.1.1.1 $ SWI_LIST 1.00 02-May-89 (Program generated)
 */
 
 #ifndef __swis_h

@@ -47,7 +47,7 @@
  *
  * Based of kate/display/setcpsr.s
  *
- *    $Id: setcpsr.S,v 1.1 1996/04/24 11:08:28 deraadt Exp $
+ *    $Id: setcpsr.S,v 1.1.1.1 1996/04/24 11:08:28 deraadt Exp $
  */
 
 fp      .req    r11
