@@ -1,5 +1,5 @@
 /* xml.h -- xml output declarations.
-   $Id: xml.h,v 1.1 2002/06/10 13:21:23 espie Exp $
+   $Id: xml.h,v 1.1.1.1 2002/06/10 13:21:23 espie Exp $
 
    Copyright (C) 2001, 02 Free Software Foundation, Inc.
 
