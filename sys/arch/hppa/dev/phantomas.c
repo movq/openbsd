@@ -1,4 +1,4 @@
-/*	$OpenBSD: phantomas.c,v 1.3 2004/09/15 20:11:28 mickey Exp $	*/
+/*	$OpenBSD: phantomas.c,v 1.2 2004/04/07 18:24:19 mickey Exp $	*/
 
 /*
  * Copyright (c) 2002 Michael Shalayeff
@@ -72,6 +72,7 @@ phantomasattach(struct device *parent, struct device *self, void *aux)
 	printf("\n");
 
 	nca = *ca;
+	nca.ca_name = "phantomas";
 	nca.ca_hpamask = HPPA_IOSPACE;
-	pdc_scanbus(self, &nca, MAXMODBUS, 0);
+	pdc_scanbus(self, &nca, MAXMODBUS);
 }

@@ -1,4 +1,4 @@
-/*	$OpenBSD: tree.h,v 1.5 2004/09/16 18:35:43 deraadt Exp $	*/
+/*	$OpenBSD: tree.h,v 1.4 2004/04/15 21:47:13 hshoexer Exp $	*/
 
 /* Definitions for address trees... */
 
@@ -85,7 +85,7 @@ struct dns_host_entry {
 struct tree_cache {
 	unsigned char	*value;
 	int		 len;
-	unsigned int	 buf_size;
+	int		 buf_size;
 	time_t		 timeout;
 	struct tree	*tree;
 	int		 flags;

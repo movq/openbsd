@@ -1,4 +1,4 @@
-/*	$OpenBSD: kvm_alpha.c,v 1.13 2004/09/15 19:31:31 miod Exp $	*/
+/*	$OpenBSD: kvm_alpha.c,v 1.12 2004/07/01 02:04:10 mickey Exp $	*/
 /*	$NetBSD: kvm_alpha.c,v 1.5 1996/10/01 21:12:05 cgd Exp $	*/
 
 /*
@@ -37,7 +37,6 @@
 #include <sys/kcore.h>
 #include <machine/kcore.h>
 #include <unistd.h>
-#include <stdlib.h>
 #include <nlist.h>
 #include <kvm.h>
 
