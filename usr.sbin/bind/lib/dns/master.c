@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1999-2003  Internet Software Consortium.
+ * Copyright (C) 1999-2002  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -15,7 +15,7 @@
  * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $ISC: master.c,v 1.122.2.8 2003/07/22 04:03:41 marka Exp $ */
+/* $ISC: master.c,v 1.122.2.5 2002/03/20 19:15:13 marka Exp $ */
 
 #include <config.h>
 
@@ -24,7 +24,6 @@
 #include <isc/magic.h>
 #include <isc/mem.h>
 #include <isc/print.h>
-#include <isc/serial.h>
 #include <isc/stdtime.h>
 #include <isc/string.h>
 #include <isc/task.h>
@@ -531,7 +530,7 @@ genname(char *name, int it, char *buffer, size_t length) {
 				isc_textregion_consume(&r, 1);
 				continue;
 			}
-			strlcpy(fmt, "%d", sizeof(fmt));
+			strcpy(fmt, "%d");
 			/* Get format specifier. */
 			if (*name == '{' ) {
 				n = sscanf(name, "{%d,%u,%1[doxX]}",
@@ -691,10 +690,7 @@ generate(dns_loadctx_t *lctx, char *range, char *lhs, char *gtype, char *rhs,
 		if (result != ISC_R_SUCCESS)
 			goto error_cleanup;
 
-		if ((lctx->options & DNS_MASTER_ZONE) != 0 &&
-		    (lctx->options & DNS_MASTER_SLAVE) == 0 &&
-		    !dns_name_issubdomain(owner, lctx->top))
-		{
+		if (!dns_name_issubdomain(owner, lctx->top)) {
 			char namebuf[DNS_NAME_FORMATSIZE];
 			dns_name_format(owner, namebuf, sizeof(namebuf));
 			/*
@@ -1222,10 +1218,7 @@ load(dns_loadctx_t *lctx) {
 							target_size);
 				}
 			}
-			if ((lctx->options & DNS_MASTER_ZONE) != 0 &&
-			    (lctx->options & DNS_MASTER_SLAVE) == 0 &&
-			    !dns_name_issubdomain(new_name, lctx->top))
-			{
+			if (!dns_name_issubdomain(new_name, lctx->top)) {
 				char namebuf[DNS_NAME_FORMATSIZE];
 				dns_name_format(new_name, namebuf,
 						sizeof(namebuf));
@@ -1481,7 +1474,7 @@ load(dns_loadctx_t *lctx) {
 		if (type == dns_rdatatype_sig && lctx->warn_sigexpired) {
 			dns_rdata_sig_t sig;
 			(void)dns_rdata_tostruct(&rdata[rdcount], &sig, NULL);
-			if (isc_serial_lt(sig.timeexpire, now)) {
+			if (now > sig.timeexpire) {
 				(*callbacks->warn)(callbacks,
 						   "%s: %s:%lu: "
 						   "signature has expired",

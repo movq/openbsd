@@ -58,21 +58,21 @@ main(int argc, char **argv) {
 
 	s = "abc";
 	isc_sha1_init(&sha1);
-	strlcpy(buffer, s, sizeof(buffer));
+	strcpy(buffer, s);
 	isc_sha1_update(&sha1, buffer, strlen(s));
 	isc_sha1_final(&sha1, digest);
 	print_digest(buffer, "sha1", digest, 5);
 
 	s = "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
 	isc_sha1_init(&sha1);
-	strlcpy(buffer, s, sizeof(buffer));
+	strcpy(buffer, s);
 	isc_sha1_update(&sha1, buffer, strlen(s));
 	isc_sha1_final(&sha1, digest);
 	print_digest(buffer, "sha1", digest, 5);
 
 	s = "abc";
 	isc_md5_init(&md5);
-	strlcpy(buffer, s, sizeof(buffer));
+	strcpy(buffer, s);
 	isc_md5_update(&md5, buffer, strlen(s));
 	isc_md5_final(&md5, digest);
 	print_digest(buffer, "md5", digest, 4);
@@ -83,15 +83,15 @@ main(int argc, char **argv) {
 	s = "Hi There";
 	memset(key, 0x0b, 16);
 	isc_hmacmd5_init(&hmacmd5, key, 16);
-	strlcpy(buffer, s, sizeof(buffer));
+	strcpy(buffer, s);
 	isc_hmacmd5_update(&hmacmd5, buffer, strlen(s));
 	isc_hmacmd5_sign(&hmacmd5, digest);
 	print_digest(buffer, "hmacmd5", digest, 4);
 
 	s = "what do ya want for nothing?";
-	strlcpy(key, "Jefe", sizeof(key));
+	strcpy(key, "Jefe");
 	isc_hmacmd5_init(&hmacmd5, key, 4);
-	strlcpy(buffer, s, sizeof(buffer));
+	strcpy(buffer, s);
 	isc_hmacmd5_update(&hmacmd5, buffer, strlen(s));
 	isc_hmacmd5_sign(&hmacmd5, digest);
 	print_digest(buffer, "hmacmd5", digest, 4);
@@ -103,7 +103,7 @@ main(int argc, char **argv) {
 	    "\335\335\335\335\335\335\335\335\335\335";
 	memset(key, 0xaa, 16);
 	isc_hmacmd5_init(&hmacmd5, key, 16);
-	strlcpy(buffer, s, sizeof(buffer));
+	strcpy(buffer, s);
 	isc_hmacmd5_update(&hmacmd5, buffer, strlen(s));
 	isc_hmacmd5_sign(&hmacmd5, digest);
 	print_digest(buffer, "hmacmd5", digest, 4);

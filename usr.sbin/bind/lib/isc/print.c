@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1999-2001, 2003  Internet Software Consortium.
+ * Copyright (C) 1999-2001  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -15,12 +15,12 @@
  * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $ISC: print.c,v 1.22.2.3 2003/07/22 04:03:47 marka Exp $ */
+/* $ISC: print.c,v 1.22 2001/05/16 00:52:55 gson Exp $ */
 
 #include <config.h>
 
 #include <ctype.h>
-#include <stdio.h>		/* for snprintf */
+#include <stdio.h>		/* for sprintf */
 #include <stdlib.h>
 
 #define	ISC__PRINT_SOURCE	/* Used to get the isc_print_* prototypes. */
@@ -166,6 +166,7 @@ isc_print_vsnprintf(char *str, size_t size, const char *format, va_list ap) {
 				*str++ = *format;
 				size--;
 			}
+			format++;
 			count++;
 			break;
 		case 'q':
@@ -233,8 +234,8 @@ isc_print_vsnprintf(char *str, size_t size, const char *format, va_list ap) {
 						head = "";
 					tmpui = tmpi;
 				}
-				snprintf(buf, sizeof(buf),
-					 "%" ISC_PRINT_QUADFORMAT "u", tmpui);
+				sprintf(buf, "%" ISC_PRINT_QUADFORMAT "u",
+					tmpui);
 				goto printint;
 			case 'o':
 				if (q)
@@ -243,10 +244,10 @@ isc_print_vsnprintf(char *str, size_t size, const char *format, va_list ap) {
 					tmpui = va_arg(ap, long int);
 				else
 					tmpui = va_arg(ap, int);
-				snprintf(buf, sizeof(buf),
-					 alt ? "%#" ISC_PRINT_QUADFORMAT "o"
+				sprintf(buf,
+					alt ? "%#" ISC_PRINT_QUADFORMAT "o"
 					    : "%" ISC_PRINT_QUADFORMAT "o",
-					 tmpui);
+					tmpui);
 				goto printint;
 			case 'u':
 				if (q)
@@ -255,8 +256,8 @@ isc_print_vsnprintf(char *str, size_t size, const char *format, va_list ap) {
 					tmpui = va_arg(ap, unsigned long int);
 				else
 					tmpui = va_arg(ap, unsigned int);
-				snprintf(buf, sizeof(buf),
-					 "%" ISC_PRINT_QUADFORMAT "u", tmpui);
+				sprintf(buf, "%" ISC_PRINT_QUADFORMAT "u",
+					tmpui);
 				goto printint;
 			case 'x':
 				if (q)
@@ -270,8 +271,8 @@ isc_print_vsnprintf(char *str, size_t size, const char *format, va_list ap) {
 					if (precision > 2)
 						precision -= 2;
 				}
-				snprintf(buf, sizeof(buf),
-					 "%" ISC_PRINT_QUADFORMAT "x", tmpui);
+				sprintf(buf, "%" ISC_PRINT_QUADFORMAT "x",
+					tmpui);
 				goto printint;
 			case 'X':
 				if (q)
@@ -285,8 +286,8 @@ isc_print_vsnprintf(char *str, size_t size, const char *format, va_list ap) {
 					if (precision > 2)
 						precision -= 2;
 				}
-				snprintf(buf, sizeof(buf),
-					 "%" ISC_PRINT_QUADFORMAT "X", tmpui);
+				sprintf(buf, "%" ISC_PRINT_QUADFORMAT "X",
+					tmpui);
 				goto printint;
 			printint:
 				if (precision != 0 || width != 0) {
@@ -349,7 +350,7 @@ isc_print_vsnprintf(char *str, size_t size, const char *format, va_list ap) {
 
 				n = precision;
 				tp = cp;
-				while (n != 0 && *tp != '\0')
+				while (n != 0 && *tp != '0')
 					n--, tp++;
 				length = precision - n;
 			} else {
@@ -412,7 +413,7 @@ isc_print_vsnprintf(char *str, size_t size, const char *format, va_list ap) {
 			break;
 		case 'p':
 			v = va_arg(ap, void *);
-			snprintf(buf, sizeof(buf), "%p", v);
+			sprintf(buf, "%p", v);
 			length = strlen(buf);
 			if (precision > length)
 				zeropad = precision - length;
@@ -488,10 +489,9 @@ isc_print_vsnprintf(char *str, size_t size, const char *format, va_list ap) {
 			 */
 			if (precision > 512)
 				precision = 512;
-			snprintf(fmt, sizeof(fmt),
-				 "%%%s%s.%lu%s%c", alt ? "#" : "",
-				 plus ? "+" : space ? " " : "",
-				 precision, l ? "L" : "", *format);
+			sprintf(fmt, "%%%s%s.%lu%s%c", alt ? "#" : "",
+				plus ? "+" : space ? " " : "",
+				precision, l ? "L" : "", *format);
 			switch (*format) {
 			case 'e':
 			case 'E':
@@ -501,12 +501,12 @@ isc_print_vsnprintf(char *str, size_t size, const char *format, va_list ap) {
 #ifdef HAVE_LONG_DOUBLE
 				if (l) {
 					ldbl = va_arg(ap, long double);
-					snprintf(buf, sizeof(buf), fmt, ldbl);
+					sprintf(buf, fmt, ldbl);
 				} else
 #endif
 				{
 					dbl = va_arg(ap, double);
-					snprintf(buf, sizeof(buf), fmt, dbl);
+					sprintf(buf, fmt, dbl);
 				}
 				length = strlen(buf);
 				if (width > 0) {

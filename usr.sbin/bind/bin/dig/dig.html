@@ -20,7 +20,7 @@
 >dig</TITLE
 ><META
 NAME="GENERATOR"
-CONTENT="Modular DocBook HTML Stylesheet Version 1.73
+CONTENT="Modular DocBook HTML Stylesheet Version 1.61
 "></HEAD
 ><BODY
 CLASS="REFENTRY"
@@ -186,21 +186,11 @@ CLASS="FILENAME"
 ><P
 >When no command line arguments or options are given, will perform an
 NS query for "." (the root).</P
-><P
->It is possible to set per user defaults for <B
-CLASS="COMMAND"
->dig</B
-> via
-<TT
-CLASS="FILENAME"
->${HOME}/.digrc</TT
->.  This file is read and any options in it
-are applied before the command line arguements.</P
 ></DIV
 ><DIV
 CLASS="REFSECT1"
 ><A
-NAME="AEN68"
+NAME="AEN65"
 ></A
 ><H2
 >SIMPLE USAGE</H2
@@ -297,7 +287,7 @@ CLASS="COMMAND"
 ><DIV
 CLASS="REFSECT1"
 ><A
-NAME="AEN97"
+NAME="AEN94"
 ></A
 ><H2
 >OPTIONS</H2
@@ -511,7 +501,7 @@ CLASS="FILENAME"
 ><DIV
 CLASS="REFSECT1"
 ><A
-NAME="AEN147"
+NAME="AEN144"
 ></A
 ><H2
 >QUERY OPTIONS</H2
@@ -647,7 +637,7 @@ CLASS="OPTION"
 ></DT
 ><DD
 ><P
->This option does nothing.  It is provided for compatibility with old
+>This option does nothing.  It is provided for compatibilty with old
 versions of <B
 CLASS="COMMAND"
 >dig</B
@@ -679,7 +669,7 @@ requests the server to not perform DNSSEC validation of responses.</P
 ><DT
 ><TT
 CLASS="OPTION"
->+[no]recurse</TT
+>+[no]recursive</TT
 ></DT
 ><DD
 ><P
@@ -998,7 +988,7 @@ CLASS="OPTION"
 ><DD
 ><P
 >Requests DNSSEC records be sent by setting the DNSSEC OK bit (DO)
-in the OPT record in the additional section of the query.</P
+in the the OPT record in the additional section of the query.</P
 ></DD
 ></DL
 ></DIV
@@ -1007,7 +997,7 @@ in the OPT record in the additional section of the query.</P
 ><DIV
 CLASS="REFSECT1"
 ><A
-NAME="AEN338"
+NAME="AEN335"
 ></A
 ><H2
 >MULTIPLE QUERIES</H2
@@ -1091,7 +1081,7 @@ CLASS="LITERAL"
 ><DIV
 CLASS="REFSECT1"
 ><A
-NAME="AEN356"
+NAME="AEN353"
 ></A
 ><H2
 >FILES</H2
@@ -1100,16 +1090,11 @@ NAME="AEN356"
 CLASS="FILENAME"
 >/etc/resolv.conf</TT
 ></P
-><P
-><TT
-CLASS="FILENAME"
->${HOME}/.digrc</TT
-></P
 ></DIV
 ><DIV
 CLASS="REFSECT1"
 ><A
-NAME="AEN362"
+NAME="AEN357"
 ></A
 ><H2
 >SEE ALSO</H2
@@ -1143,7 +1128,7 @@ CLASS="CITETITLE"
 ><DIV
 CLASS="REFSECT1"
 ><A
-NAME="AEN375"
+NAME="AEN370"
 ></A
 ><H2
 >BUGS </H2

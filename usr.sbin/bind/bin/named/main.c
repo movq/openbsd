@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1999-2003  Internet Software Consortium.
+ * Copyright (C) 1999-2002  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -15,7 +15,7 @@
  * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $ISC: main.c,v 1.119.2.5 2003/10/09 07:32:33 marka Exp $ */
+/* $ISC: main.c,v 1.119.2.2 2002/08/05 06:57:01 marka Exp $ */
 
 #include <config.h>
 
@@ -28,7 +28,6 @@
 #include <isc/dir.h>
 #include <isc/entropy.h>
 #include <isc/file.h>
-#include <isc/hash.h>
 #include <isc/os.h>
 #include <isc/platform.h>
 #include <isc/resource.h>
@@ -39,7 +38,6 @@
 #include <isccc/result.h>
 
 #include <dns/dispatch.h>
-#include <dns/name.h>
 #include <dns/result.h>
 #include <dns/view.h>
 
@@ -230,7 +228,7 @@ usage(void) {
 	fprintf(stderr,
 		"usage: named [-c conffile] [-d debuglevel] "
 		"[-f|-g] [-n number_of_cpus]\n"
-		"             [-p port] [-s] [-t chrootdir] [-u username] [-i pidfile]\n");
+		"             [-p port] [-s] [-t chrootdir] [-u username]\n");
 }
 
 static void
@@ -271,7 +269,7 @@ save_command_line(int argc, char *argv[]) {
 	INSIST(sizeof(saved_command_line) >= sizeof(truncated));
 
 	if (dst == eob)
-		strlcpy(eob - sizeof(truncated), truncated, sizeof(truncated));
+		strcpy(eob - sizeof(truncated), truncated);
 	else
 		*dst = '\0';
 }
@@ -327,8 +325,9 @@ parse_command_line(int argc, char *argv[]) {
 			ns_g_foreground = ISC_TRUE;
 			ns_g_logstderr = ISC_TRUE;
 			break;
+		/* XXXBEW -i should be removed */
 		case 'i':
-			ns_g_pidfile = isc_commandline_argument;
+			lwresd_g_defaultpidfile = isc_commandline_argument;
 			break;
 		case 'l':
 			ns_g_lwresdonly = ISC_TRUE;
@@ -434,14 +433,6 @@ create_managers(void) {
 		return (ISC_R_UNEXPECTED);
 	}
 
-	result = isc_hash_create(ns_g_mctx, ns_g_entropy, DNS_NAME_MAXWIRE);
-	if (result != ISC_R_SUCCESS) {
-		UNEXPECTED_ERROR(__FILE__, __LINE__,
-				 "isc_hash_create() failed: %s",
-				 isc_result_totext(result));
-		return (ISC_R_UNEXPECTED);
-	}
-
 	return (ISC_R_SUCCESS);
 }
 
@@ -450,33 +441,17 @@ destroy_managers(void) {
 	ns_lwresd_shutdown();
 
 	isc_entropy_detach(&ns_g_entropy);
-	if (ns_g_fallbackentropy != NULL) {
-		isc_entropy_detach(&ns_g_fallbackentropy);
-	}
 	/*
 	 * isc_taskmgr_destroy() will block until all tasks have exited,
 	 */
 	isc_taskmgr_destroy(&ns_g_taskmgr);
 	isc_timermgr_destroy(&ns_g_timermgr);
 	isc_socketmgr_destroy(&ns_g_socketmgr);
-
-	/*
-	 * isc_hash_destroy() cannot be called as long as a resolver may be
-	 * running.  Calling this after isc_taskmgr_destroy() ensures the
-	 * call is safe.
-	 */
-	isc_hash_destroy();
 }
 
 static void
 setup(void) {
 	isc_result_t result;
-
-        /*
-	 * Write pidfile before chroot if specified on the command line
-	 */
-	if (ns_g_pidfile != NULL)
-		ns_os_preopenpidfile(ns_g_pidfile);
 
 	/*
 	 * Get the user and group information before changing the root
@@ -484,32 +459,6 @@ setup(void) {
 	 * of the user and group databases in the chroot'ed environment.
 	 */
 	ns_os_inituserinfo(ns_g_username);
-
-	/*
-	 * Initialize time conversion information and /dev/null
-	 */
-	ns_os_tzset();
-	ns_os_opendevnull();
-
-	/*
-	 * Initialize system's random device as fallback entropy source
-	 * if running chroot'ed.
-	 */
-	result = isc_entropy_create(ns_g_mctx, &ns_g_fallbackentropy);
-	if (result != ISC_R_SUCCESS)
-		ns_main_earlyfatal("isc_entropy_create() failed: %s",
-				   isc_result_totext(result));
-#ifdef PATH_RANDOMDEV
-	if (ns_g_chrootdir != NULL) {
-		result = isc_entropy_createfilesource(ns_g_fallbackentropy,
-						      PATH_RANDOMDEV);
-		if (result != ISC_R_SUCCESS)
-			ns_main_earlywarning("could not open pre-chroot "
-					     "entropy source %s: %s",
-					     PATH_RANDOMDEV,
-					     isc_result_totext(result));
-	}
-#endif
 
 	ns_os_chroot(ns_g_chrootdir);
 
@@ -662,8 +611,6 @@ main(int argc, char *argv[]) {
 	isc_mem_destroy(&ns_g_mctx);
 
 	isc_app_finish();
-
-	ns_os_closedevnull();
 
 	ns_os_shutdown();
 
