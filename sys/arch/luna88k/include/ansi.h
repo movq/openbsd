@@ -1,4 +1,4 @@
-/*	$OpenBSD: ansi.h,v 1.1 2004/04/21 15:23:56 aoyama Exp $	*/
+/*	$OpenBSD: ansi.h,v 1.1.1.1 2004/04/21 15:23:56 aoyama Exp $	*/
 /*-
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.

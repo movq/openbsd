@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_le.c,v 1.1 2004/04/21 15:23:52 aoyama Exp $	*/
+/*	$OpenBSD: if_le.c,v 1.1.1.1 2004/04/21 15:23:52 aoyama Exp $	*/
 /*	$NetBSD: if_le.c,v 1.33 1996/11/20 18:56:52 gwr Exp $	*/
 
 /*-

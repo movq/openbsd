@@ -1,4 +1,4 @@
-/*	$OpenBSD: board.h,v 1.1 2004/04/21 15:23:56 aoyama Exp $	*/
+/*	$OpenBSD: board.h,v 1.1.1.1 2004/04/21 15:23:56 aoyama Exp $	*/
 /*
  * Mach Operating System
  * Copyright (c) 1993-1991 Carnegie Mellon University

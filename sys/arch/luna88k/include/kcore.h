@@ -1,4 +1,4 @@
-/*	$OpenBSD: kcore.h,v 1.1 2004/04/21 15:23:57 aoyama Exp $	*/
+/*	$OpenBSD: kcore.h,v 1.1.1.1 2004/04/21 15:23:57 aoyama Exp $	*/
 
 /*
  * Copyright (c) 2001 Miodrag Vallat.

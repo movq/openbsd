@@ -1,4 +1,4 @@
-/*	$OpenBSD: pmap_table.c,v 1.1 2004/04/21 15:24:13 aoyama Exp $	*/
+/*	$OpenBSD: pmap_table.c,v 1.1.1.1 2004/04/21 15:24:13 aoyama Exp $	*/
 
 /* 
  * Mach Operating System

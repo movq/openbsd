@@ -1,4 +1,4 @@
-/*	$OpenBSD: exec.h,v 1.1 2004/04/21 15:23:57 aoyama Exp $ */
+/*	$OpenBSD: exec.h,v 1.1.1.1 2004/04/21 15:23:57 aoyama Exp $ */
 #ifndef __MACHINE_EXEC_H__
 #define __MACHINE_EXEC_H__
 

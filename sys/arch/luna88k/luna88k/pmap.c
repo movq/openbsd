@@ -1,4 +1,4 @@
-/*	$OpenBSD: pmap.c,v 1.1 2004/04/21 15:24:13 aoyama Exp $	*/
+/*	$OpenBSD: pmap.c,v 1.1.1.1 2004/04/21 15:24:13 aoyama Exp $	*/
 /*
  * Copyright (c) 2001, 2002, 2003 Miodrag Vallat
  * Copyright (c) 1998-2001 Steve Murphree, Jr.

@@ -1,4 +1,4 @@
-/*	$OpenBSD: va-m88k.h,v 1.1 2004/04/21 15:23:58 aoyama Exp $	*/
+/*	$OpenBSD: va-m88k.h,v 1.1.1.1 2004/04/21 15:23:58 aoyama Exp $	*/
 
 /* This file has local changes by MOTOROLA
 Thu Sep  9 09:06:29 CDT 1993 Dale Rahn (drahn@pacific)

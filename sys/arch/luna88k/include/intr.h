@@ -1,4 +1,4 @@
-/*	$OpenBSD: intr.h,v 1.1 2004/04/21 15:23:57 aoyama Exp $	*/
+/*	$OpenBSD: intr.h,v 1.1.1.1 2004/04/21 15:23:57 aoyama Exp $	*/
 /*
  * Copyright (C) 2000 Steve Murphree, Jr.
  * All rights reserved.

@@ -1,4 +1,4 @@
-/*	$OpenBSD: vm_machdep.c,v 1.1 2004/04/21 15:24:15 aoyama Exp $	*/
+/*	$OpenBSD: vm_machdep.c,v 1.1.1.1 2004/04/21 15:24:15 aoyama Exp $	*/
 
 /*
  * Copyright (c) 1998 Steve Murphree, Jr.
