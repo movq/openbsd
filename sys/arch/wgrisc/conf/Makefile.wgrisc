@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile.wgrisc,v 1.1 1997/02/06 16:02:45 pefo Exp $
+#	$OpenBSD: Makefile.wgrisc,v 1.1.1.1 1997/02/06 16:02:45 pefo Exp $
 
 #	@(#)Makefile.wgrisc	8.2 (Berkeley) 2/16/94
 #

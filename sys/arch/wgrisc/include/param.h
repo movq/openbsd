@@ -1,4 +1,4 @@
-/*      $OpenBSD: param.h,v 1.1 1997/02/06 16:02:43 pefo Exp $ */
+/*      $OpenBSD: param.h,v 1.1.1.1 1997/02/06 16:02:43 pefo Exp $ */
 
 /*
  * Copyright (c) 1988 University of Utah.

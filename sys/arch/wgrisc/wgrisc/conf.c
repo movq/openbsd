@@ -1,4 +1,4 @@
-/*	$OpenBSD: conf.c,v 1.1 1997/02/06 16:02:45 pefo Exp $ */
+/*	$OpenBSD: conf.c,v 1.1.1.1 1997/02/06 16:02:45 pefo Exp $ */
 
 /*
  * Copyright (c) 1992, 1993
@@ -36,7 +36,7 @@
  * SUCH DAMAGE.
  *
  *	from: @(#)conf.c	8.2 (Berkeley) 11/14/93
- *      $Id: conf.c,v 1.1 1997/02/06 16:02:45 pefo Exp $
+ *      $Id: conf.c,v 1.1.1.1 1997/02/06 16:02:45 pefo Exp $
  */
 
 #include <sys/param.h>

@@ -1,5 +1,5 @@
 
-/*	$OpenBSD: locore.S,v 1.1 1997/02/06 16:02:45 pefo Exp $	*/
+/*	$OpenBSD: locore.S,v 1.1.1.1 1997/02/06 16:02:45 pefo Exp $	*/
 /*
  * Copyright (c) 1992, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -51,7 +51,7 @@
  *	v 1.1 89/07/10 14:27:41 nelson Exp  SPRITE (DECWRL)
  *
  *	from: @(#)locore.s	8.5 (Berkeley) 1/4/94
- *	$Id: locore.S,v 1.1 1997/02/06 16:02:45 pefo Exp $
+ *	$Id: locore.S,v 1.1.1.1 1997/02/06 16:02:45 pefo Exp $
  */
 
 /*

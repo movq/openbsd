@@ -1,4 +1,4 @@
-/*	$OpenBSD: riscbus.h,v 1.1 1997/02/06 16:02:44 pefo Exp $ */
+/*	$OpenBSD: riscbus.h,v 1.1.1.1 1997/02/06 16:02:44 pefo Exp $ */
 
 /*
  * Copyright (c) 1996 Per Fogelstrom
