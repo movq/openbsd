@@ -331,8 +331,7 @@ kerberos4_is(Authenticator *ap, unsigned char *data, int cnt)
 			 "%s%u",
 			 TKT_ROOT,
 			 (unsigned)pw->pw_uid);
-		if(setenv("KRBTKFILE", ts, 1) != 0)
-		    errx(1, "cannot set KRBTKFILE");
+		setenv("KRBTKFILE", ts, 1);
 
 		if (pw->pw_uid == 0)
 		    syslog(LOG_INFO|LOG_AUTH,

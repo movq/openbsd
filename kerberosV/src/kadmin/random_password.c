@@ -33,7 +33,7 @@
 
 #include "kadmin_locl.h"
 
-RCSID("$KTH: random_password.c,v 1.4 2001/02/15 04:20:53 assar Exp $");
+RCSID("$KTH: random_password.c,v 1.3 1999/12/02 17:04:58 joda Exp $");
 
 /* This file defines some a function that generates a random password,
    that can be used when creating a large amount of principals (such
@@ -57,9 +57,9 @@ random_password(char *pw, size_t len)
 {
 #ifdef OTP_STYLE
     {
-	OtpKey newkey;
+	des_cblock newkey;
 
-	krb5_generate_random_block(&newkey, sizeof(newkey));
+	des_new_random_key(&newkey);
 	otp_print_stddict (newkey, pw, len);
 	strlwr(pw);
     }
@@ -80,11 +80,11 @@ random_password(char *pw, size_t len)
 #ifndef OTP_STYLE
 /* return a random value in range 0-127 */
 static int
-RND(unsigned char *key, int keylen, int *left)
+RND(des_cblock *key, int *left)
 {
     if(*left == 0){
-	krb5_generate_random_block(key, keylen);
-	*left = keylen;
+	des_new_random_key(key);
+	*left = 8;
     }
     (*left)--;
     return ((unsigned char*)key)[*left];
@@ -120,7 +120,7 @@ generate_password(char **pw, int num_classes, ...)
     } *classes;
     va_list ap;
     int len, i;
-    unsigned char rbuf[8]; /* random buffer */
+    des_cblock rbuf; /* random buffer */
     int rleft = 0;
 
     classes = malloc(num_classes * sizeof(*classes));
@@ -138,12 +138,11 @@ generate_password(char **pw, int num_classes, ...)
 	return;
     for(i = 0; i < len; i++) {
 	int j;
-	int x = RND(rbuf, sizeof(rbuf), &rleft) % (len - i);
+	int x = RND(&rbuf, &rleft) % (len - i);
 	int t = 0;
 	for(j = 0; j < num_classes; j++) {
 	    if(x < t + classes[j].freq) {
-		(*pw)[i] = classes[j].str[RND(rbuf, sizeof(rbuf), &rleft)
-					 % classes[j].len];
+		(*pw)[i] = classes[j].str[RND(&rbuf, &rleft) % classes[j].len];
 		classes[j].freq--;
 		break;
 	    }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997 - 2001 Kungliga Tekniska Högskolan
+ * Copyright (c) 1997, 1998, 1999 Kungliga Tekniska Högskolan
  * (Royal Institute of Technology, Stockholm, Sweden). 
  * All rights reserved. 
  *
@@ -33,7 +33,7 @@
 
 #include <krb5_locl.h>
 
-RCSID("$KTH: generate_subkey.c,v 1.8 2001/05/14 06:14:46 assar Exp $");
+RCSID("$KTH: generate_subkey.c,v 1.7 1999/12/02 17:05:09 joda Exp $");
 
 krb5_error_code
 krb5_generate_subkey(krb5_context context,
@@ -43,10 +43,8 @@ krb5_generate_subkey(krb5_context context,
     krb5_error_code ret;
 
     ALLOC(*subkey, 1);
-    if (*subkey == NULL) {
-	krb5_set_error_string(context, "malloc: out of memory");
+    if (*subkey == NULL)
 	return ENOMEM;
-    }
     ret = krb5_generate_random_keyblock(context, key->keytype, *subkey);
     if(ret)
 	free(*subkey);

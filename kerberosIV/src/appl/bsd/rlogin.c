@@ -36,7 +36,7 @@
  */
 #include "bsd_locl.h"
 
-RCSID("$KTH: rlogin.c,v 1.67.2.2 2000/10/10 12:54:26 assar Exp $");
+RCSID("$KTH: rlogin.c,v 1.67 1999/11/13 06:13:02 assar Exp $");
 
 CREDENTIALS cred;
 Key_schedule schedule;
@@ -241,8 +241,6 @@ reader(void)
 		rcvcnt = 0;
 
 		FD_ZERO (&readfds);
-		if (rem >= FD_SETSIZE)
-		    errx (1, "fd too large");
 		FD_SET (rem, &readfds);
 		FD_ZERO (&exceptfds);
 		if (kludgep)
@@ -643,7 +641,7 @@ main(int argc, char **argv)
 	get_window_size(0, &winsize);
 
 	if (use_kerberos) {
-	        paranoid_setuid(getuid());
+	        setuid(getuid());
 		rem = KSUCCESS;
 		errno = 0;
 		if (dest_realm == NULL)
@@ -705,7 +703,7 @@ main(int argc, char **argv)
 #endif /* IP_TOS */
 #endif /* HAVE_SETSOCKOPT */
 
-	paranoid_setuid(uid);
+	setuid(uid);
 	doit();
 	return 0;
 }

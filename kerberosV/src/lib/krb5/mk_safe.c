@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997 - 2001 Kungliga Tekniska Högskolan
+ * Copyright (c) 1997 - 2000 Kungliga Tekniska Högskolan
  * (Royal Institute of Technology, Stockholm, Sweden). 
  * All rights reserved. 
  *
@@ -33,7 +33,7 @@
 
 #include <krb5_locl.h>
 
-RCSID("$KTH: mk_safe.c,v 1.26 2001/05/14 06:14:50 assar Exp $");
+RCSID("$KTH: mk_safe.c,v 1.24 2000/08/18 06:48:40 assar Exp $");
 
 krb5_error_code
 krb5_mk_safe(krb5_context context,
@@ -48,7 +48,6 @@ krb5_mk_safe(krb5_context context,
   KerberosTime sec2;
   int usec2;
   u_char *buf = NULL;
-  void *tmp;
   size_t buf_size;
   size_t len;
   u_int32_t tmp_seq;
@@ -79,10 +78,8 @@ krb5_mk_safe(krb5_context context,
 
   buf_size = length_KRB_SAFE(&s);
   buf = malloc(buf_size + 128); /* add some for checksum */
-  if(buf == NULL) {
-      krb5_set_error_string (context, "malloc: out of memory");
+  if(buf == NULL)
       return ENOMEM;
-  }
   ret = encode_KRB_SAFE (buf + buf_size - 1, buf_size, &s, &len);
   if (ret) {
       free (buf);
@@ -96,7 +93,6 @@ krb5_mk_safe(krb5_context context,
   ret = krb5_create_checksum(context, 
 			     crypto,
 			     KRB5_KU_KRB_SAFE_CKSUM,
-			     0,
 			     buf + buf_size - len,
 			     len,
 			     &s.cksum);
@@ -107,13 +103,9 @@ krb5_mk_safe(krb5_context context,
   }
 
   buf_size = length_KRB_SAFE(&s);
-  tmp = realloc(buf, buf_size);
-  if(tmp == NULL) {
-      free(buf);
-      krb5_set_error_string (context, "malloc: out of memory");
+  buf = realloc(buf, buf_size);
+  if(buf == NULL)
       return ENOMEM;
-  }
-  buf = tmp;
   
   ret = encode_KRB_SAFE (buf + buf_size - 1, buf_size, &s, &len);
   free_Checksum (&s.cksum);
@@ -122,7 +114,6 @@ krb5_mk_safe(krb5_context context,
   outbuf->data   = malloc (len);
   if (outbuf->data == NULL) {
       free (buf);
-      krb5_set_error_string (context, "malloc: out of memory");
       return ENOMEM;
   }
   memcpy (outbuf->data, buf + buf_size - len, len);

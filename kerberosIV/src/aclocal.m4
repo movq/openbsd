@@ -251,7 +251,7 @@ esac
 ])
 
 dnl
-dnl $KTH: shared-libs.m4,v 1.4.14.3 2000/12/07 18:03:00 bg Exp $
+dnl $KTH: shared-libs.m4,v 1.4 1999/07/13 17:47:09 assar Exp $
 dnl
 dnl Shared library stuff has to be different everywhere
 dnl
@@ -317,7 +317,7 @@ case "${host}" in
 	install_symlink_command2='$(LN_S) -f $(LIB2) $(DESTDIR)$(libdir)/$(LIBNAME2).so.'"${SHLIB_SONAME}"';$(LN_S) -f $(LIB2) $(DESTDIR)$(libdir)/$(LIBNAME2).so'
 	;;
 changequote(,)dnl
-*-*-freebsd[345]* | *-*-freebsdelf[345]*)
+*-*-freebsd[34]*)
 changequote([,])dnl
 	REAL_SHLIBEXT=so.$SHLIB_VERSION
 	REAL_LD_FLAGS='-Wl,-R$(libdir)'
@@ -336,14 +336,9 @@ changequote([,])dnl
 	LDSHARED='ld -shared -expect_unresolved \*'
 	;;
 *-*-solaris2*)
-	LDSHARED='$(CC) -shared -Wl,-h$(LIBNAME).so.'"${SHLIB_SONAME}"
-	REAL_SHLIBEXT=so.$SHLIB_VERSION
-	build_symlink_command='$(LN_S) [$][@] $(LIBNAME).so'
-	install_symlink_command='$(LN_S) $(LIB) $(DESTDIR)$(libdir)/$(LIBNAME).so.'"${SHLIB_SONAME}"';$(LN_S) $(LIB) $(DESTDIR)$(libdir)/$(LIBNAME).so'
-	install_symlink_command2='$(LN_S) $(LIB2) $(DESTDIR)$(libdir)/$(LIBNAME2).so.'"${SHLIB_SONAME}"';$(LN_S) $(LIB2) $(DESTDIR)$(libdir)/$(LIBNAME2).so'
 	REAL_LD_FLAGS='-Wl,-R$(libdir)'
 	if test -z "$GCC"; then
-		LDSHARED='$(CC) -G -h$(LIBNAME).so.'"${SHLIB_SONAME}"
+		LDSHARED='$(CC) -G'
 		REAL_PICFLAGS="-Kpic"
 	fi
 	;;
@@ -800,7 +795,7 @@ else
   $1_FALSE=
 fi])
 
-dnl $KTH: krb-find-db.m4,v 1.5.16.1 2000/08/16 04:11:57 assar Exp $
+dnl $KTH: krb-find-db.m4,v 1.5 1999/05/08 02:24:04 assar Exp $
 dnl
 dnl find a suitable database library
 dnl
@@ -830,8 +825,6 @@ for i in $1; do
 #include <fcntl.h>
 #if defined(HAVE_NDBM_H)
 #include <ndbm.h>
-#elif defined(HAVE_GDBM_NDBM_H)
-#include <gdbm/ndbm.h>
 #elif defined(HAVE_DBM_H)
 #include <dbm.h>
 #elif defined(HAVE_RPCSVC_DBM_H)
@@ -986,7 +979,7 @@ undefine([foo])
 fi
 ])
 
-dnl $KTH: broken-glob.m4,v 1.2.16.1 2001/03/26 11:45:53 assar Exp $
+dnl $KTH: broken-glob.m4,v 1.2 1999/03/01 09:52:15 joda Exp $
 dnl
 dnl check for glob(3)
 dnl
@@ -996,13 +989,12 @@ ac_cv_func_glob_working=yes
 AC_TRY_LINK([
 #include <stdio.h>
 #include <glob.h>],[
-glob(NULL, GLOB_BRACE|GLOB_NOCHECK|GLOB_QUOTE|GLOB_TILDE|GLOB_LIMIT,
-NULL, NULL);
+glob(NULL, GLOB_BRACE|GLOB_NOCHECK|GLOB_QUOTE|GLOB_TILDE, NULL, NULL);
 ],:,ac_cv_func_glob_working=no,:))
 
 if test "$ac_cv_func_glob_working" = yes; then
 	AC_DEFINE(HAVE_GLOB, 1, [define if you have a glob() that groks 
-	GLOB_BRACE, GLOB_NOCHECK, GLOB_QUOTE, GLOB_TILDE, and GLOB_LIMIT])
+	GLOB_BRACE, GLOB_NOCHECK, GLOB_QUOTE, and GLOB_TILDE])
 fi
 if test "$ac_cv_func_glob_working" = yes; then
 AC_NEED_PROTO([#include <stdio.h>

@@ -33,7 +33,7 @@
 
 #include "krb5_locl.h"
 
-RCSID("$KTH: mcache.c,v 1.13 2001/05/14 06:14:49 assar Exp $");
+RCSID("$KTH: mcache.c,v 1.12 2000/11/15 02:12:51 assar Exp $");
 
 typedef struct krb5_mcache {
     char *name;
@@ -65,7 +65,6 @@ static krb5_mcache *
 mcc_alloc(const char *name)
 {
     krb5_mcache *m;
-
     ALLOC(m, 1);
     if(m == NULL)
 	return NULL;
@@ -102,10 +101,8 @@ mcc_resolve(krb5_context context, krb5_ccache *id, const char *res)
     }
 
     m = mcc_alloc(res);
-    if (m == NULL) {
-	krb5_set_error_string (context, "malloc: out of memory");
+    if (m == NULL)
 	return KRB5_CC_NOMEM;
-    }
     
     (*id)->data.data = m;
     (*id)->data.length = sizeof(*m);
@@ -121,10 +118,8 @@ mcc_gen_new(krb5_context context, krb5_ccache *id)
 
     m = mcc_alloc(NULL);
 
-    if (m == NULL) {
-	krb5_set_error_string (context, "malloc: out of memory");
+    if (m == NULL)
 	return KRB5_CC_NOMEM;
-    }
 
     (*id)->data.data = m;
     (*id)->data.length = sizeof(*m);
@@ -208,10 +203,8 @@ mcc_store_cred(krb5_context context,
 	return ENOENT;
 
     l = malloc (sizeof(*l));
-    if (l == NULL) {
-	krb5_set_error_string (context, "malloc: out of memory");
+    if (l == NULL)
 	return KRB5_CC_NOMEM;
-    }
     l->next = m->creds;
     m->creds = l;
     memset (&l->cred, 0, sizeof(l->cred));

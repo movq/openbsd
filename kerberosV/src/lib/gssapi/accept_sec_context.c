@@ -33,7 +33,7 @@
 
 #include "gssapi_locl.h"
 
-RCSID("$KTH: accept_sec_context.c,v 1.24 2001/05/11 09:16:45 assar Exp $");
+RCSID("$KTH: accept_sec_context.c,v 1.21 2001/01/09 18:47:11 assar Exp $");
 
 static krb5_keytab gss_keytab;
 
@@ -76,7 +76,6 @@ gss_accept_sec_context
   krb5_ticket *ticket = NULL;
   krb5_keytab keytab = NULL;
   krb5_data fwd_data;
-  OM_uint32 minor;
 
   gssapi_krb5_init ();
 
@@ -99,15 +98,10 @@ gss_accept_sec_context
   (*context_handle)->more_flags = 0;
   (*context_handle)->ticket = NULL;
 
-  if (src_name != NULL)
-      *src_name = NULL;
-
   kret = krb5_auth_con_init (gssapi_krb5_context,
 			     &(*context_handle)->auth_context);
   if (kret) {
     ret = GSS_S_FAILURE;
-    *minor_status = kret;
-    gssapi_krb5_set_error_string ();
     goto failure;
   }
 
@@ -137,7 +131,6 @@ gss_accept_sec_context
                                &acceptor_addr); 
      if (kret) {
         *minor_status = kret;
-	gssapi_krb5_set_error_string ();
         ret = GSS_S_BAD_BINDINGS;
         goto failure;
      }
@@ -149,7 +142,6 @@ gss_accept_sec_context
      if (kret) {
         krb5_free_address (gssapi_krb5_context, &acceptor_addr);
         *minor_status = kret;
-	gssapi_krb5_set_error_string ();
         ret = GSS_S_BAD_BINDINGS;
         goto failure;
      }
@@ -170,7 +162,6 @@ gss_accept_sec_context
      
      if (kret) {
         *minor_status = kret;
-	gssapi_krb5_set_error_string ();
         ret = GSS_S_BAD_BINDINGS;
         goto failure;
      }
@@ -216,8 +207,6 @@ gss_accept_sec_context
 		      &ticket);
   if (kret) {
     ret = GSS_S_FAILURE;
-    *minor_status = kret;
-    gssapi_krb5_set_error_string ();
     goto failure;
   }
 
@@ -226,8 +215,6 @@ gss_accept_sec_context
 			      &(*context_handle)->source);
   if (kret) {
     ret = GSS_S_FAILURE;
-    *minor_status = kret;
-    gssapi_krb5_set_error_string ();
     goto failure;
   }
 
@@ -236,19 +223,15 @@ gss_accept_sec_context
 			      &(*context_handle)->target);
   if (kret) {
     ret = GSS_S_FAILURE;
-    *minor_status = kret;
-    gssapi_krb5_set_error_string ();
     goto failure;
   }
 
-  if (src_name != NULL) {
+  if (src_name) {
     kret = krb5_copy_principal (gssapi_krb5_context,
 				ticket->client,
 				src_name);
     if (kret) {
       ret = GSS_S_FAILURE;
-      *minor_status = kret;
-      gssapi_krb5_set_error_string ();
       goto failure;
     }
   }
@@ -261,8 +244,6 @@ gss_accept_sec_context
 					&authenticator);
       if(kret) {
 	  ret = GSS_S_FAILURE;
-	  *minor_status = kret;
-	  gssapi_krb5_set_error_string ();
 	  goto failure;
       }
 
@@ -273,8 +254,6 @@ gss_accept_sec_context
       krb5_free_authenticator(gssapi_krb5_context, &authenticator);
       if (kret) {
 	  ret = GSS_S_FAILURE;
-	  *minor_status = kret;
-	  gssapi_krb5_set_error_string ();
 	  goto failure;
       }
   }
@@ -343,8 +322,6 @@ end_fwd:
 			&outbuf);
     if (kret) {
       ret = GSS_S_FAILURE;
-      *minor_status = kret;
-      gssapi_krb5_set_error_string ();
       goto failure;
     }
     ret = gssapi_krb5_encapsulate (&outbuf,
@@ -382,10 +359,6 @@ failure:
     krb5_free_principal (gssapi_krb5_context,
 			 (*context_handle)->target);
   free (*context_handle);
-  if (src_name != NULL) {
-      gss_release_name (&minor, src_name);
-      *src_name = NULL;
-  }
   *context_handle = GSS_C_NO_CONTEXT;
   *minor_status = kret;
   return GSS_S_FAILURE;

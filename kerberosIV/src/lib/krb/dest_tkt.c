@@ -21,11 +21,7 @@ or implied warranty.
 
 #include "krb_locl.h"
 
-RCSID("$KTH: dest_tkt.c,v 1.11.14.2 2000/10/18 20:26:42 assar Exp $");
-
-#ifndef O_BINARY
-#define O_BINARY 0
-#endif
+RCSID("$KTH: dest_tkt.c,v 1.11 1997/05/19 03:03:40 assar Exp $");
 
 /*
  * dest_tkt() is used to destroy the ticket store upon logout.
@@ -39,70 +35,48 @@ RCSID("$KTH: dest_tkt.c,v 1.11.14.2 2000/10/18 20:26:42 assar Exp $");
 int
 dest_tkt(void)
 {
-    const char *filename = TKT_FILE;
-    int i, fd;
-    struct stat sb1, sb2;
+    char *file = TKT_FILE;
+    int i,fd;
+    struct stat statb;
     char buf[BUFSIZ];
-    int error = 0;
 
-    if (lstat (filename, &sb1) < 0) {
-	error = errno;
+    errno = 0;
+    if (
+#ifdef HAVE_LSTAT
+    lstat
+#else
+    stat
+#endif
+    (file, &statb) < 0)      
 	goto out;
-    }
 
-    fd = open (filename, O_RDWR | O_BINARY);
-    if (fd < 0) {
-	error = errno;
+    if (!(statb.st_mode & S_IFREG)
+#ifdef notdef
+	|| statb.st_mode & 077
+#endif
+	)
 	goto out;
-    }
 
-    if (unlink (filename) < 0) {
-	error = errno;
-	close(fd);
+    if ((fd = open(file, O_RDWR, 0)) < 0)
 	goto out;
-    }
 
-    if (fstat (fd, &sb2) < 0) {
-	error = errno;
-	close(fd);
-	goto out;
-    }
+    memset(buf, 0, BUFSIZ);
 
-    if (sb1.st_dev != sb2.st_dev || sb1.st_ino != sb2.st_ino) {
-	close (fd);
-	error = EPERM;
-	goto out;
-    }
-
-    if (sb2.st_nlink != 0) {
-	close (fd);
-	error = EPERM;
-	goto out;
-    }
-
-    for (i = 0; i < sb2.st_size; i += sizeof(buf)) {
-	int ret;
-	
-	ret = write(fd, buf, sizeof(buf));
-	if (ret != sizeof(buf)) {
-	    if (ret < 0)
-		error = errno;
-	    else
-		error = EINVAL;
+    for (i = 0; i < statb.st_size; i += sizeof(buf))
+	if (write(fd, buf, sizeof(buf)) != sizeof(buf)) {
 	    fsync(fd);
 	    close(fd);
 	    goto out;
 	}
-    }
+	
 
     fsync(fd);
     close(fd);
     
+    unlink(file);
+
 out:
-    if (error == ENOENT)
-	return RET_TKFIL;
-    else if (error != 0)
-	return KFAILURE;
-    else
-	return(KSUCCESS);
+    if (errno == ENOENT) return RET_TKFIL;
+    else if (errno != 0) return KFAILURE;
+    return(KSUCCESS);
 }

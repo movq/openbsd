@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997 - 2001 Kungliga Tekniska Högskolan
+ * Copyright (c) 1997 - 2000 Kungliga Tekniska Högskolan
  * (Royal Institute of Technology, Stockholm, Sweden). 
  * All rights reserved. 
  *
@@ -33,7 +33,7 @@
 
 #include "krb5_locl.h"
 
-RCSID("$KTH: get_addrs.c,v 1.41 2001/05/14 06:14:46 assar Exp $");
+RCSID("$KTH: get_addrs.c,v 1.40 2000/12/10 20:07:05 assar Exp $");
 
 #ifdef __osf__
 /* hate */
@@ -46,39 +46,30 @@ struct mbuf;
 #include <ifaddrs.h>
 
 static krb5_error_code
-gethostname_fallback (krb5_context context, krb5_addresses *res)
+gethostname_fallback (krb5_addresses *res)
 {
-    krb5_error_code ret;
+    krb5_error_code err;
     char hostname[MAXHOSTNAMELEN];
     struct hostent *hostent;
 
-    if (gethostname (hostname, sizeof(hostname))) {
-	ret = errno;
-	krb5_set_error_string (context, "gethostname: %s", strerror(ret));
-	return ret;
-    }
+    if (gethostname (hostname, sizeof(hostname)))
+	return errno;
     hostent = roken_gethostbyname (hostname);
-    if (hostent == NULL) {
-	ret = errno;
-	krb5_set_error_string (context, "gethostbyname %s: %s",
-			       hostname, strerror(ret));
-	return ret;
-    }
+    if (hostent == NULL)
+	return errno;
     res->len = 1;
     res->val = malloc (sizeof(*res->val));
-    if (res->val == NULL) {
-	krb5_set_error_string(context, "malloc: out of memory");
+    if (res->val == NULL)
 	return ENOMEM;
-    }
     res->val[0].addr_type = hostent->h_addrtype;
     res->val[0].address.data = NULL;
     res->val[0].address.length = 0;
-    ret = krb5_data_copy (&res->val[0].address,
+    err = krb5_data_copy (&res->val[0].address,
 			  hostent->h_addr,
 			  hostent->h_length);
-    if (ret) {
+    if (err) {
 	free (res->val);
-	return ret;
+	return err;
     }
     return 0;
 }
@@ -105,11 +96,8 @@ find_all_addresses (krb5_context context, krb5_addresses *res, int flags)
 
     res->val = NULL;
 
-    if (getifaddrs(&ifa0) == -1) {
-	ret = errno;
-	krb5_set_error_string(context, "getifaddrs: %s", strerror(ret));
-	return (ret);
-    }
+    if (getifaddrs(&ifa0) == -1)
+	return (errno);
 
     memset(&sa_zero, 0, sizeof(sa_zero));
 
@@ -119,7 +107,6 @@ find_all_addresses (krb5_context context, krb5_addresses *res, int flags)
 
     if (num == 0) {
 	freeifaddrs(ifa0);
-	krb5_set_error_string(context, "no addresses found");
 	return (ENXIO);
     }
 
@@ -127,7 +114,6 @@ find_all_addresses (krb5_context context, krb5_addresses *res, int flags)
     res->val = calloc(num, sizeof(*res->val));
     if (res->val == NULL) {
 	freeifaddrs(ifa0);
-	krb5_set_error_string (context, "malloc: out of memory");
 	return (ENOMEM);
     }
 
@@ -146,7 +132,7 @@ find_all_addresses (krb5_context context, krb5_addresses *res, int flags)
 		continue;
 	}
 
-	ret = krb5_sockaddr2address(context, ifa->ifa_addr, &res->val[idx]);
+	ret = krb5_sockaddr2address(ifa->ifa_addr, &res->val[idx]);
 	if (ret) {
 	    /*
 	     * The most likely error here is going to be "Program
@@ -173,8 +159,7 @@ find_all_addresses (krb5_context context, krb5_addresses *res, int flags)
 		continue;
 
 	    if ((ifa->ifa_flags & IFF_LOOPBACK) != 0) {
-		ret = krb5_sockaddr2address(context,
-					    ifa->ifa_addr, &res->val[idx]);
+		ret = krb5_sockaddr2address(ifa->ifa_addr, &res->val[idx]);
 		if (ret) {
 		    /*
 		     * See comment above.
@@ -202,7 +187,7 @@ get_addrs_int (krb5_context context, krb5_addresses *res, int flags)
     if (flags & SCAN_INTERFACES) {
 	ret = find_all_addresses (context, res, flags);
 	if(ret || res->len == 0)
-	    ret = gethostname_fallback (context, res);
+	    ret = gethostname_fallback (res);
     } else
 	ret = 0;
 

@@ -33,10 +33,11 @@
 
 #include "kdc_locl.h"
 
-RCSID("$KTH: kaserver.c,v 1.16 2001/02/05 10:49:43 assar Exp $");
+RCSID("$KTH: kaserver.c,v 1.15 2001/01/28 21:51:05 assar Exp $");
 
 #ifdef KASERVER
 
+#include "kerberos4.h"
 #include <rx.h>
 
 #define KA_AUTHENTICATION_SERVICE 731
@@ -405,10 +406,10 @@ do_authenticate (struct rx_header *hdr,
     snprintf (client_name, sizeof(client_name), "%s.%s@%s",
 	      name, instance, v4_realm);
 
-    ret = db_fetch4 (name, instance, v4_realm, &client_entry);
-    if (ret) {
-	kdc_log(0, "Client not found in database: %s: %s",
-		client_name, krb5_get_err_text(context, ret));
+    client_entry = db_fetch4 (name, instance, v4_realm);
+    if (client_entry == NULL) {
+	kdc_log(0, "Client not found in database: %s",
+		client_name);
 	make_error_reply (hdr, KANOENT, reply);
 	goto out;
     }
@@ -416,10 +417,9 @@ do_authenticate (struct rx_header *hdr,
     snprintf (server_name, sizeof(server_name), "%s.%s@%s",
 	      "krbtgt", v4_realm, v4_realm);
 
-    ret = db_fetch4 ("krbtgt", v4_realm, v4_realm, &server_entry);
-    if (ret) {
-	kdc_log(0, "Server not found in database: %s: %s",
-		server_name, krb5_get_err_text(context, ret));
+    server_entry = db_fetch4 ("krbtgt", v4_realm, v4_realm);
+    if (server_entry == NULL) {
+	kdc_log(0, "Server not found in database: %s", server_name);
 	make_error_reply (hdr, KANOENT, reply);
 	goto out;
     }
@@ -599,10 +599,9 @@ do_getticket (struct rx_header *hdr,
     snprintf (server_name, sizeof(server_name),
 	      "%s.%s@%s", name, instance, v4_realm);
 
-    ret = db_fetch4 (name, instance, v4_realm, &server_entry);
-    if (ret) {
-	kdc_log(0, "Server not found in database: %s: %s",
-		server_name, krb5_get_err_text(context, ret));
+    server_entry = db_fetch4 (name, instance, v4_realm);
+    if (server_entry == NULL) {
+	kdc_log(0, "Server not found in database: %s", server_name);
 	make_error_reply (hdr, KANOENT, reply);
 	goto out;
     }
@@ -615,10 +614,10 @@ do_getticket (struct rx_header *hdr,
 	goto out;
     }
 
-    ret = db_fetch4 ("krbtgt", v4_realm, v4_realm, &krbtgt_entry);
-    if (ret) {
-	kdc_log(0, "Server not found in database: %s.%s@%s: %s",
-		"krbtgt", v4_realm, v4_realm, krb5_get_err_text(context, ret));
+    krbtgt_entry = db_fetch4 ("krbtgt", v4_realm, v4_realm);
+    if (krbtgt_entry == NULL) {
+	kdc_log(0, "Server not found in database: %s.%s@%s",
+		"krbtgt", v4_realm, v4_realm);
 	make_error_reply (hdr, KANOENT, reply);
 	goto out;
     }

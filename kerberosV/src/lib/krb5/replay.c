@@ -34,7 +34,7 @@
 #include "krb5_locl.h"
 #include <vis.h>
 
-RCSID("$KTH: replay.c,v 1.8 2001/05/14 06:14:51 assar Exp $");
+RCSID("$KTH: replay.c,v 1.7 2001/01/29 02:09:00 assar Exp $");
 
 struct krb5_rcache_data {
     char *name;
@@ -46,10 +46,8 @@ krb5_rc_resolve(krb5_context context,
 		const char *name)
 {
     id->name = strdup(name);
-    if(id->name == NULL) {
-	krb5_set_error_string (context, "malloc: out of memory");
+    if(id->name == NULL)
 	return KRB5_RC_MALLOC;
-    }
     return 0;
 }
 
@@ -58,16 +56,11 @@ krb5_rc_resolve_type(krb5_context context,
 		     krb5_rcache *id,
 		     const char *type)
 {
-    if(strcmp(type, "FILE")) {
-	krb5_set_error_string (context, "replay cache type %s not supported",
-			       type);
+    if(strcmp(type, "FILE"))
 	return KRB5_RC_TYPE_NOTFOUND;
-    }
     *id = calloc(1, sizeof(**id));
-    if(*id == NULL) {
-	krb5_set_error_string (context, "malloc: out of memory");
+    if(*id == NULL)
 	return KRB5_RC_MALLOC;
-    }
     return 0;
 }
 
@@ -77,11 +70,8 @@ krb5_rc_resolve_full(krb5_context context,
 		     const char *string_name)
 {
     krb5_error_code ret;
-    if(strncmp(string_name, "FILE:", 5)) {
-	krb5_set_error_string (context, "replay cache type %s not supported",
-			       string_name);
+    if(strncmp(string_name, "FILE:", 5))
 	return KRB5_RC_TYPE_NOTFOUND;
-    }
     ret = krb5_rc_resolve_type(context, id, "FILE");
     if(ret)
 	return ret;
@@ -120,14 +110,8 @@ krb5_rc_initialize(krb5_context context,
 {
     FILE *f = fopen(id->name, "w");
     struct rc_entry tmp;
-    int ret;
-
-    if(f == NULL) {
-	ret = errno;
-	krb5_set_error_string (context, "open(%s): %s", id->name,
-			       strerror(ret));
-	return ret;
-    }
+    if(f == NULL)
+	return errno;
     tmp.stamp = auth_lifespan;
     fwrite(&tmp, 1, sizeof(tmp), f);
     fclose(f);
@@ -145,14 +129,8 @@ krb5_error_code
 krb5_rc_destroy(krb5_context context,
 		krb5_rcache id)
 {
-    int ret;
-
-    if(remove(id->name) < 0) {
-	ret = errno;
-	krb5_set_error_string (context, "remove(%s): %s", id->name,
-			       strerror(ret));
-	return ret;
-    }
+    if(remove(id->name) < 0)
+	return errno;
     return krb5_rc_close(context, id);
 }
 
@@ -189,17 +167,11 @@ krb5_rc_store(krb5_context context,
     struct rc_entry ent, tmp;
     time_t t;
     FILE *f;
-    int ret;
-
     ent.stamp = time(NULL);
     checksum_authenticator(rep, ent.data);
     f = fopen(id->name, "r");
-    if(f == NULL) {
-	ret = errno;
-	krb5_set_error_string (context, "open(%s): %s", id->name,
-			       strerror(ret));
-	return ret;
-    }
+    if(f == NULL)
+	return errno;
     fread(&tmp, sizeof(ent), 1, f);
     t = ent.stamp - tmp.stamp;
     while(fread(&tmp, sizeof(ent), 1, f)){
@@ -207,23 +179,17 @@ krb5_rc_store(krb5_context context,
 	    continue;
 	if(memcmp(tmp.data, ent.data, sizeof(ent.data)) == 0){
 	    fclose(f);
-	    krb5_clear_error_string (context);
 	    return KRB5_RC_REPLAY;
 	}
     }
     if(ferror(f)){
-	ret = errno;
 	fclose(f);
-	krb5_set_error_string (context, "%s: %s", id->name, strerror(ret));
-	return ret;
+	return errno;
     }
     fclose(f);
     f = fopen(id->name, "a");
-    if(f == NULL) {
-	krb5_set_error_string (context, "open(%s): %s", id->name,
-			       strerror(errno));
+    if(f == NULL)
 	return KRB5_RC_IO_UNKNOWN;
-    }
     fwrite(&ent, 1, sizeof(ent), f);
     fclose(f);
     return 0;
@@ -250,7 +216,6 @@ krb5_rc_get_lifespan(krb5_context context,
 	*auth_lifespan = ent.stamp;
 	return 0;
     }
-    krb5_clear_error_string (context);
     return KRB5_RC_IO_UNKNOWN;
 }
 
@@ -278,11 +243,8 @@ krb5_get_server_rcache(krb5_context context,
 
     char *tmp = malloc(4 * piece->length + 1);
     char *name;
-
-    if(tmp == NULL) {
-	krb5_set_error_string (context, "malloc: out of memory");
+    if(tmp == NULL)
 	return ENOMEM;
-    }
     strvisx(tmp, piece->data, piece->length, VIS_WHITE | VIS_OCTAL);
 #ifdef HAVE_GETEUID
     asprintf(&name, "FILE:rc_%s_%u", tmp, geteuid());
@@ -290,10 +252,8 @@ krb5_get_server_rcache(krb5_context context,
     asprintf(&name, "FILE:rc_%s", tmp);
 #endif
     free(tmp);
-    if(name == NULL) {
-	krb5_set_error_string (context, "malloc: out of memory");
+    if(name == NULL)
 	return ENOMEM;
-    }
 
     ret = krb5_rc_resolve_full(context, &rcache, name);
     free(name);

@@ -41,7 +41,7 @@
 .Nd
 Internet File Transfer Protocol server
 .Sh SYNOPSIS
-.Nm
+.Nm ftpd
 .Op Fl a Ar authmode
 .Op Fl dilv
 .Op Fl g Ar umask
@@ -49,8 +49,6 @@ Internet File Transfer Protocol server
 .Op Fl T Ar maxtimeout
 .Op Fl t Ar timeout
 .Op Fl u Ar default umask
-.Op Fl B | Fl -builtin-ls
-.Op Fl -good-chars= Ns Ar string
 .Sh DESCRIPTION
 .Nm Ftpd
 is the
@@ -83,7 +81,7 @@ but only OTP is allowed.
 .It Ar ftp
 Allow anonymous login.
 .El
-.Pp
+
 The following combination modes exists for backwards compatibility:
 .Bl -tag -width plain
 .It Ar none
@@ -131,15 +129,6 @@ seconds (the default is 15 minutes).
 Set the initial umask to something else than the default 027.
 .It Fl v
 Verbose mode.
-.It Xo
-.Fl B Ns ,
-.Fl -builtin-ls
-.Xc
-use built-in ls to list files
-.It Xo
-.Fl -good-chars= Ns Ar string
-.Xc
-allowed anonymous upload filename chars
 .El
 .Pp
 The file
@@ -330,7 +319,7 @@ that the
 .Dq ftp
 subtree be constructed with care, consider following these guidelines
 for anonymous ftp.
-.Pp
+
 In general all files should be owned by
 .Dq root ,
 and have non-write permissions (644 or 755 depending on the kind of
@@ -388,7 +377,7 @@ and
 .Xr group 5
 files here, ls will be able to produce owner names rather than
 numbers. Remember to remove any passwords from these files.  
-.Pp
+
 The file
 .Pa motd ,
 if present, will be printed after a successful login.
@@ -399,7 +388,7 @@ here.
 .It Pa ~ftp/pub
 Traditional place to put whatever you want to make public.
 .El
-.Pp
+
 If you want guests to be able to upload files, create a
 .Pa ~ftp/incoming
 directory owned by 
@@ -470,7 +459,6 @@ FTP PROTOCOL SPECIFICATION
 OTP Specification
 .It Cm RFC 2228
 FTP Security Extensions.
-.El
 .Sh BUGS
 The server must run as the super-user
 to create sockets with privileged port numbers.  It maintains

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997 - 2001 Kungliga Tekniska Högskolan
+ * Copyright (c) 1997 - 2000 Kungliga Tekniska Högskolan
  * (Royal Institute of Technology, Stockholm, Sweden). 
  * All rights reserved. 
  *
@@ -33,7 +33,7 @@
 
 #include "ktutil_locl.h"
 
-RCSID("$KTH: copy.c,v 1.7 2001/05/11 00:54:01 assar Exp $");
+RCSID("$KTH: copy.c,v 1.5 2000/12/16 00:45:29 joda Exp $");
 
 
 static krb5_boolean
@@ -57,24 +57,21 @@ kt_copy_int (const char *from, const char *to)
     ret = krb5_kt_resolve (context, from, &src_keytab);
     if (ret) {
 	krb5_warn (context, ret, "resolving src keytab `%s'", from);
-	return 1;
+	return 0;
     }
 
     ret = krb5_kt_resolve (context, to, &dst_keytab);
     if (ret) {
 	krb5_kt_close (context, src_keytab);
 	krb5_warn (context, ret, "resolving dst keytab `%s'", to);
-	return 1;
+	return 0;
     }
 
     ret = krb5_kt_start_seq_get (context, src_keytab, &cursor);
     if (ret) {
 	krb5_warn (context, ret, "krb5_kt_start_seq_get %s", keytab_string);
-	goto out;
+	goto fail;
     }
-
-    if (verbose_flag)
-	fprintf(stderr, "copying %s to %s\n", from, to);
 
     while((ret = krb5_kt_next_entry(context, src_keytab,
 				    &entry, &cursor)) == 0) {
@@ -124,7 +121,7 @@ kt_copy_int (const char *from, const char *to)
     }
     krb5_kt_end_seq_get (context, src_keytab, &cursor);
 
-  out:
+  fail:
     krb5_kt_close (context, src_keytab);
     krb5_kt_close (context, dst_keytab);
     return 0;
@@ -149,12 +146,12 @@ kt_copy (int argc, char **argv)
     if(getarg(args, num_args, argc, argv, &optind)) {
 	arg_printusage(args, num_args, "ktutil copy",
 		       "keytab-src keytab-dest");
-	return 1;
+	return 0;
     }
     if (help_flag) {
 	arg_printusage(args, num_args, "ktutil copy",
 		       "keytab-src keytab-dest");
-	return 1;
+	return 0;
     }
 
     argv += optind;
@@ -163,7 +160,7 @@ kt_copy (int argc, char **argv)
     if (argc != 2) {
 	arg_printusage(args, num_args, "ktutil copy",
 		       "keytab-src keytab-dest");
-	return 1;
+	return 0;
     }
 
     return kt_copy_int(argv[0], argv[1]);
@@ -223,7 +220,7 @@ conv(int srvconv, int argc, char **argv)
 	if(keytab_string != NULL)
 	    return kt_copy_int(kt4, keytab_string);
 	else {
-	    krb5_kt_default_modify_name(context, kt5, sizeof(kt5));
+	    krb5_kt_default_name(context, kt5, sizeof(kt5));
 	    return kt_copy_int(kt4, kt5);
 	}
     } else {

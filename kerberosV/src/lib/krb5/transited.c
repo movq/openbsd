@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997 - 2001 Kungliga Tekniska Högskolan
+ * Copyright (c) 1997 - 2000 Kungliga Tekniska Högskolan
  * (Royal Institute of Technology, Stockholm, Sweden). 
  * All rights reserved. 
  *
@@ -33,7 +33,7 @@
 
 #include "krb5_locl.h"
 
-RCSID("$KTH: transited.c,v 1.8 2001/05/14 06:14:52 assar Exp $");
+RCSID("$KTH: transited.c,v 1.7 2000/02/07 13:30:41 joda Exp $");
 
 /* this is an attempt at one of the most horrible `compression'
    schemes that has ever been invented; it's so amazingly brain-dead
@@ -61,8 +61,7 @@ free_realms(struct tr_realm *r)
 }
 
 static int
-make_path(krb5_context context, struct tr_realm *r,
-	  const char *from, const char *to)
+make_path(struct tr_realm *r, const char *from, const char *to)
 {
     const char *p;
     struct tr_realm *path = r->next;
@@ -79,10 +78,8 @@ make_path(krb5_context context, struct tr_realm *r,
 	p = from;
 	while(1){
 	    p = strchr(p, '.');
-	    if(p == NULL) {
-		krb5_clear_error_string (context);
+	    if(p == NULL)
 		return KRB5KDC_ERR_POLICY;
-	    }
 	    p++;
 	    if(strcmp(p, to) == 0)
 		break;
@@ -92,7 +89,6 @@ make_path(krb5_context context, struct tr_realm *r,
 	    path->realm = strdup(p);
 	    if(path->realm == NULL){
 		r->next = path; /* XXX */
-		krb5_set_error_string (context, "malloc: out of memory");
 		return ENOMEM;;
 	    }
 	}
@@ -110,25 +106,21 @@ make_path(krb5_context context, struct tr_realm *r,
 	    path->realm = malloc(p - from + 1);
 	    if(path->realm == NULL){
 		r->next = path; /* XXX */
-		krb5_set_error_string (context, "malloc: out of memory");
 		return ENOMEM;
 	    }
 	    memcpy(path->realm, from, p - from);
 	    path->realm[p - from] = '\0';
 	    p--;
 	}
-    } else {
-	krb5_clear_error_string (context);
+    }else
 	return KRB5KDC_ERR_POLICY;
-    }
     r->next = path;
     
     return 0;
 }
 
 static int
-make_paths(krb5_context context,
-	   struct tr_realm *realms, const char *client_realm, 
+make_paths(struct tr_realm *realms, const char *client_realm, 
 	   const char *server_realm)
 {
     struct tr_realm *r;
@@ -146,7 +138,7 @@ make_paths(krb5_context context,
 		next_realm = r->next->realm;
 	    else
 		next_realm = server_realm;
-	    ret = make_path(context, r, prev_realm, next_realm);
+	    ret = make_path(r, prev_realm, next_realm);
 	    if(ret){
 		free_realms(realms);
 		return ret;
@@ -158,8 +150,7 @@ make_paths(krb5_context context,
 }
 
 static int
-expand_realms(krb5_context context,
-	      struct tr_realm *realms, const char *client_realm)
+expand_realms(struct tr_realm *realms, const char *client_realm)
 {
     struct tr_realm *r;
     const char *prev_realm = NULL;
@@ -171,7 +162,6 @@ expand_realms(krb5_context context,
 	    tmp = realloc(r->realm, strlen(r->realm) + strlen(prev_realm) + 1);
 	    if(tmp == NULL){
 		free_realms(realms);
-		krb5_set_error_string (context, "malloc: out of memory");
 		return ENOMEM;
 	    }
 	    r->realm = tmp;
@@ -183,7 +173,6 @@ expand_realms(krb5_context context,
 	    tmp = malloc(strlen(r->realm) + strlen(prev_realm) + 1);
 	    if(tmp == NULL){
 		free_realms(realms);
-		krb5_set_error_string (context, "malloc: out of memory");
 		return ENOMEM;
 	    }
 	    strcpy(tmp, prev_realm);
@@ -247,8 +236,7 @@ append_realm(struct tr_realm *head, struct tr_realm *r)
 }
 
 static int
-decode_realms(krb5_context context,
-	      const char *tr, int length, struct tr_realm **realms)
+decode_realms(const char *tr, int length, struct tr_realm **realms)
 {
     struct tr_realm *r = NULL;
 
@@ -273,7 +261,6 @@ decode_realms(krb5_context context,
 	    r = make_realm(tmp);
 	    if(r == NULL){
 		free_realms(*realms);
-		krb5_set_error_string (context, "malloc: out of memory");
 		return ENOMEM;
 	    }
 	    *realms = append_realm(*realms, r);
@@ -286,7 +273,6 @@ decode_realms(krb5_context context,
     r = make_realm(tmp);
     if(r == NULL){
 	free_realms(*realms);
-	krb5_set_error_string (context, "malloc: out of memory");
 	return ENOMEM;
     }
     *realms = append_realm(*realms, r);
@@ -296,8 +282,7 @@ decode_realms(krb5_context context,
 
 
 krb5_error_code
-krb5_domain_x500_decode(krb5_context context,
-			krb5_data tr, char ***realms, int *num_realms, 
+krb5_domain_x500_decode(krb5_data tr, char ***realms, int *num_realms, 
 			const char *client_realm, const char *server_realm)
 {
     struct tr_realm *r = NULL;
@@ -305,16 +290,16 @@ krb5_domain_x500_decode(krb5_context context,
     int ret;
     
     /* split string in components */
-    ret = decode_realms(context, tr.data, tr.length, &r);
+    ret = decode_realms(tr.data, tr.length, &r);
     if(ret)
 	return ret;
     
     /* apply prefix rule */
-    ret = expand_realms(context, r, client_realm);
+    ret = expand_realms(r, client_realm);
     if(ret)
 	return ret;
     
-    ret = make_paths(context, r, client_realm, server_realm);
+    ret = make_paths(r, client_realm, server_realm);
     if(ret)
 	return ret;
     
@@ -339,7 +324,6 @@ krb5_domain_x500_decode(krb5_context context,
 	    R = realloc(*realms, (*num_realms + 1) * sizeof(**realms));
 	    if(R == NULL) {
 		free(*realms);
-		krb5_set_error_string (context, "malloc: out of memory");
 		return ENOMEM;
 	    }
 	    R[*num_realms] = r->realm;
@@ -398,8 +382,6 @@ krb5_check_transited_realms(krb5_context context,
 	char **p;
 	for(p = bad_realms; *p; p++)
 	    if(strcmp(*p, realms[i]) == 0) {
-		krb5_set_error_string (context, "no transit through realm %s",
-				       *p);
 		ret = KRB5KRB_AP_ERR_ILL_CR_TKT;
 		if(bad_realm)
 		    *bad_realm = i;

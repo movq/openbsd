@@ -33,7 +33,7 @@
 
 #include "telnetd.h"
 
-RCSID("$KTH: sys_term.c,v 1.100 2001/04/24 23:11:43 assar Exp $");
+RCSID("$KTH: sys_term.c,v 1.97 2000/12/08 23:32:06 assar Exp $");
 
 #if defined(_CRAY) || (defined(__hpux) && !defined(HAVE_UTMPX_H))
 # define PARENT_DOES_UTMP
@@ -1110,8 +1110,7 @@ make_id (char *tty)
 
 /* ARGSUSED */
 void
-startslave(const char *host, const char *utmp_host,
-	   int autologin, char *autoname)
+startslave(char *host, int autologin, char *autoname)
 {
     int i;
 
@@ -1159,7 +1158,7 @@ startslave(const char *host, const char *utmp_host,
 	wtmp.ut_type = LOGIN_PROCESS;
 	wtmp.ut_pid = pid;
 	strncpy(wtmp.ut_user,  "LOGIN", sizeof(wtmp.ut_user));
-	strncpy(wtmp.ut_host,  utmp_host, sizeof(wtmp.ut_host));
+	strncpy(wtmp.ut_host,  host, sizeof(wtmp.ut_host));
 	strncpy(wtmp.ut_line,  clean_ttyname(line), sizeof(wtmp.ut_line));
 #ifdef HAVE_STRUCT_UTMP_UT_ID
 	strncpy(wtmp.ut_id, wtmp.ut_line + 3, sizeof(wtmp.ut_id));
@@ -1193,6 +1192,7 @@ extern char **environ;
 void
 init_env(void)
 {
+    extern char *getenv(const char *);
     char **envp;
 
     envp = envinit;
@@ -1259,10 +1259,10 @@ scrub_env(void)
 struct arg_val {
     int size;
     int argc;
-    const char **argv;
+    char **argv;
 };
 
-static void addarg(struct arg_val*, const char*);
+static void addarg(struct arg_val*, char*);
 
 /*
  * start_login(host)
@@ -1272,11 +1272,10 @@ static void addarg(struct arg_val*, const char*);
  */
 
 void
-start_login(const char *host, int autologin, char *name)
+start_login(char *host, int autologin, char *name)
 {
     struct arg_val argv;
     char *user;
-    int save_errno;
 
 #ifdef HAVE_UTMPX_H
     int pid = getpid();
@@ -1317,7 +1316,7 @@ start_login(const char *host, int autologin, char *name)
     /* init argv structure */ 
     argv.size=0;
     argv.argc=0;
-    argv.argv=malloc(0); /*so we can call realloc later */
+    argv.argv=(char**)malloc(0); /*so we can call realloc later */
     addarg(&argv, "login");
     addarg(&argv, "-h");
     addarg(&argv, host);
@@ -1372,14 +1371,14 @@ start_login(const char *host, int autologin, char *name)
     sleep(1);
 
     execv(new_login, argv.argv);
-    save_errno = errno;
+
     syslog(LOG_ERR, "%s: %m\n", new_login);
-    fatalperror_errno(net, new_login, save_errno);
+    fatalperror(net, new_login);
     /*NOTREACHED*/
 }
 
 static void
-addarg(struct arg_val *argv, const char *val)
+addarg(struct arg_val *argv, char *val)
 {
     if(argv->size <= argv->argc+1) {
 	argv->argv = realloc(argv->argv, sizeof(char*) * (argv->size + 10));

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997 - 2001 Kungliga Tekniska Högskolan
+ * Copyright (c) 1997 - 2000 Kungliga Tekniska Högskolan
  * (Royal Institute of Technology, Stockholm, Sweden). 
  * All rights reserved. 
  *
@@ -33,7 +33,7 @@
 
 #include <krb5_locl.h>
 
-RCSID("$KTH: build_auth.c,v 1.35 2001/05/14 06:14:44 assar Exp $");
+RCSID("$KTH: build_auth.c,v 1.34 2000/11/15 06:58:51 assar Exp $");
 
 krb5_error_code
 krb5_build_authenticator (krb5_context context,
@@ -53,10 +53,8 @@ krb5_build_authenticator (krb5_context context,
   krb5_crypto crypto;
 
   auth = malloc(sizeof(*auth));
-  if (auth == NULL) {
-      krb5_set_error_string(context, "malloc: out of memory");
+  if (auth == NULL)
       return ENOMEM;
-  }
 
   memset (auth, 0, sizeof(*auth));
   auth->authenticator_vno = 5;
@@ -102,7 +100,6 @@ krb5_build_authenticator (krb5_context context,
   buf_size = 1024;
   buf = malloc (buf_size);
   if (buf == NULL) {
-      krb5_set_error_string(context, "malloc: out of memory");
       ret = ENOMEM;
       goto fail;
   }
@@ -119,7 +116,6 @@ krb5_build_authenticator (krb5_context context,
 	      buf_size *= 2;
 	      tmp = realloc (buf, buf_size);
 	      if (tmp == NULL) {
-		  krb5_set_error_string(context, "malloc: out of memory");
 		  ret = ENOMEM;
 		  goto fail;
 	      }

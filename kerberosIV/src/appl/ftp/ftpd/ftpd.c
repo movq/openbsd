@@ -38,7 +38,7 @@
 #endif
 #include "getarg.h"
 
-RCSID("$KTH: ftpd.c,v 1.131.2.8 2001/03/26 11:43:25 assar Exp $");
+RCSID("$KTH: ftpd.c,v 1.131 1999/11/30 19:18:38 assar Exp $");
 
 static char version[] = "Version 6.00";
 
@@ -195,13 +195,14 @@ parse_auth_level(char *str)
  * Print usage and die.
  */
 
+static int debug_flag;
 static int interactive_flag;
 static char *guest_umask_string;
 static char *port_string;
 static char *umask_string;
 static char *auth_string;
 
-int use_builtin_ls = -1;
+int use_builtin_ls;
 
 static int help_flag;
 static int version_flag;
@@ -215,8 +216,8 @@ struct getargs args[] = {
     { NULL, 't', arg_integer, &ftpd_timeout, "initial timeout" },
     { NULL, 'T', arg_integer, &maxtimeout, "max timeout" },
     { NULL, 'u', arg_string, &umask_string, "umask for user logins" },
-    { NULL, 'd', arg_flag, &debug, "enable debugging" },
-    { NULL, 'v', arg_flag, &debug, "enable debugging" },
+    { NULL, 'd', arg_flag, &debug_flag, "enable debugging" },
+    { NULL, 'v', arg_flag, &debug_flag, "enable debugging" },
     { "builtin-ls", 'B', arg_flag, &use_builtin_ls, "use built-in ls to list files" },
     { "version", 0, arg_flag, &version_flag },
     { "help", 'h', arg_flag, &help_flag }
@@ -229,24 +230,6 @@ usage (int code)
 {
     arg_printusage(args, num_args, NULL, "");
     exit (code);
-}
-
-/* output contents of a file */
-static int
-show_file(const char *file, int code)
-{
-    FILE *f;
-    char buf[128];
-
-    f = fopen(file, "r");
-    if(f == NULL)
-	return -1;
-    while(fgets(buf, sizeof(buf), f)){
-	buf[strcspn(buf, "\r\n")] = '\0';
-	lreply(code, "%s", buf);
-    }
-    fclose(f);
-    return 0;
 }
 
 int
@@ -394,12 +377,27 @@ main(int argc, char **argv)
     tmpline[0] = '\0';
 
     /* If logins are disabled, print out the message. */
-    if(show_file(_PATH_NOLOGIN, 530) == 0) {
+    if ((fd = fopen(_PATH_NOLOGIN,"r")) != NULL) {
+	while (fgets(line, sizeof(line), fd) != NULL) {
+	    if ((cp = strchr(line, '\n')) != NULL)
+		*cp = '\0';
+	    lreply(530, "%s", line);
+	}
+	fflush(stdout);
+	fclose(fd);
 	reply(530, "System not available.");
 	exit(0);
     }
-    show_file(_PATH_FTPWELCOME, 220);
-    /* reply(220,) must follow */
+    if ((fd = fopen(_PATH_FTPWELCOME, "r")) != NULL) {
+	while (fgets(line, sizeof(line), fd) != NULL) {
+	    if ((cp = strchr(line, '\n')) != NULL)
+		*cp = '\0';
+	    lreply(220, "%s", line);
+	}
+	fflush(stdout);
+	fclose(fd);
+	/* reply(220,) must follow */
+    }
     gethostname(hostname, sizeof(hostname));
 	
     reply(220, "%s FTP server (%s"
@@ -706,6 +704,24 @@ checkaccess(char *name)
 #undef	ALLOWED
 #undef	NOT_ALLOWED
 
+/* output contents of /etc/issue.net, or /etc/issue */
+static void
+show_issue(int code)
+{
+    FILE *f;
+    char buf[128];
+
+    f = fopen("/etc/issue.net", "r");
+    if(f == NULL)
+	f = fopen("/etc/issue", "r");
+    if(f){
+	while(fgets(buf, sizeof(buf), f)){
+	    buf[strcspn(buf, "\r\n")] = '\0';
+	    lreply(code, "%s", buf);
+	}
+	fclose(f);
+    }
+}
 
 int do_login(int code, char *passwd)
 {
@@ -749,33 +765,28 @@ int do_login(int code, char *passwd)
 	reply(550, "Can't set uid.");
 	return -1;
     }
-
-    if(use_builtin_ls == -1) {
-	struct stat st;
-	/* if /bin/ls exist and is a regular file, use it, otherwise
-           use built-in ls */
-	if(stat("/bin/ls", &st) == 0 &&
-	   S_ISREG(st.st_mode))
-	    use_builtin_ls = 0;
-	else
-	    use_builtin_ls = 1;
-    }
-
     /*
      * Display a login message, if it exists.
      * N.B. reply(code,) must follow the message.
      */
-    show_file(_PATH_FTPLOGINMESG, code);
-    if(show_file(_PATH_ISSUE_NET, code) != 0)
-	show_file(_PATH_ISSUE, code);
+    if ((fd = fopen(_PATH_FTPLOGINMESG, "r")) != NULL) {
+	char *cp, line[LINE_MAX];
+
+	while (fgets(line, sizeof(line), fd) != NULL) {
+	    if ((cp = strchr(line, '\n')) != NULL)
+		*cp = '\0';
+	    lreply(code, "%s", line);
+	}
+    }
     if (guest) {
+	show_issue(code);
 	reply(code, "Guest login ok, access restrictions apply.");
 #ifdef HAVE_SETPROCTITLE
 	snprintf (proctitle, sizeof(proctitle),
 		  "%s: anonymous/%s",
 		  remotehost,
 		  passwd);
-	setproctitle("%s", proctitle);
+	setproctitle(proctitle);
 #endif /* HAVE_SETPROCTITLE */
 	if (logging) {
 	    char data_addr[256];
@@ -792,10 +803,11 @@ int do_login(int code, char *passwd)
 		   passwd);
 	}
     } else {
+	show_issue(code);
 	reply(code, "User %s logged in.", pw->pw_name);
 #ifdef HAVE_SETPROCTITLE
 	snprintf(proctitle, sizeof(proctitle), "%s: %s", remotehost, pw->pw_name);
-	setproctitle("%s", proctitle);
+	setproctitle(proctitle);
 #endif /* HAVE_SETPROCTITLE */
 	if (logging) {
 	    char data_addr[256];
@@ -840,8 +852,8 @@ pass(char *passwd)
 
 	/* some clients insists on sending a password */
 	if (logged_in && askpasswd == 0){
-	    reply(230, "Password not necessary");
-	    return;
+	     reply(230, "Dumpucko!");
+	     return;
 	}
 
 	if (logged_in || askpasswd == 0) {
@@ -945,8 +957,8 @@ retrieve(const char *cmd, char *name)
 			{".tar", "/bin/gtar cPf - %s", NULL},
 			{".tar.gz", "/bin/gtar zcPf - %s", NULL},
 			{".tar.Z", "/bin/gtar ZcPf - %s", NULL},
-			{".gz", "/bin/gzip -c -- %s", "/bin/gzip -c -d -- %s"},
-			{".Z", "/bin/compress -c -- %s", "/bin/uncompress -c -- %s"},
+			{".gz", "/bin/gzip -c %s", "/bin/gzip -c -d %s"},
+			{".Z", "/bin/compress -c %s", "/bin/uncompress -c -d %s"},
 			{NULL, NULL}
 		    };
 		    struct cmds *p;
@@ -1199,7 +1211,7 @@ dataconn(const char *name, off_t size, const char *mode)
 	    *sizebuf = '\0';
 	if (pdata >= 0) {
 		struct sockaddr_storage from_ss;
-		struct sockaddr *from = (struct sockaddr *)&from_ss;
+		struct sockaddr *from = (struct sockaddr *)&from;
 		int s;
 		int fromlen = sizeof(from_ss);
 
@@ -1489,7 +1501,7 @@ statfilecmd(char *filename)
 	int c;
 	char line[LINE_MAX];
 
-	snprintf(line, sizeof(line), "/bin/ls -la -- %s", filename);
+	snprintf(line, sizeof(line), "/bin/ls -la %s", filename);
 	fin = ftpd_popen(line, "r", 1, 0);
 	lreply(211, "status of %s:", filename);
 	while ((c = getc(fin)) != EOF) {
@@ -1770,7 +1782,7 @@ dolog(struct sockaddr *sa)
 	inaddr2str (sin->sin_addr, remotehost, sizeof(remotehost));
 #ifdef HAVE_SETPROCTITLE
 	snprintf(proctitle, sizeof(proctitle), "%s: connected", remotehost);
-	setproctitle("%s", proctitle);
+	setproctitle(proctitle);
 #endif /* HAVE_SETPROCTITLE */
 
 	if (logging) {
@@ -1879,9 +1891,6 @@ pasv(void)
 		      "You cannot do PASV with something that's not IPv4");
 		return;
 	}
-
-	if(pdata != -1)
-	    close(pdata);
 
 	pdata = socket(ctrl_addr->sa_family, SOCK_STREAM, 0);
 	if (pdata < 0) {
@@ -2106,7 +2115,7 @@ send_file_list(char *whichf)
   char buf[MaxPathLen];
 
   if (strpbrk(whichf, "~{[*?") != NULL) {
-    int flags = GLOB_BRACE|GLOB_NOCHECK|GLOB_QUOTE|GLOB_TILDE|GLOB_LIMIT;
+    int flags = GLOB_BRACE|GLOB_NOCHECK|GLOB_QUOTE|GLOB_TILDE;
 
     memset(&gl, 0, sizeof(gl));
     freeglob = 1;
@@ -2137,8 +2146,8 @@ send_file_list(char *whichf)
        */
       if (dirname[0] == '-' && *dirlist == NULL &&
 	  transflag == 0) {
-	  list_file(dirname);
-	  goto out;
+	retrieve("/bin/ls %s", dirname);
+	goto out;
       }
       perror_reply(550, whichf);
       if (dout != NULL) {
@@ -2232,7 +2241,7 @@ find(char *pattern)
     FILE *f;
 
     snprintf(line, sizeof(line),
-	     "/bin/locate -d %s -- %s",
+	     "/bin/locate -d %s %s",
 	     ftp_rooted("/etc/locatedb"),
 	     pattern);
     f = ftpd_popen(line, "r", 1, 1);

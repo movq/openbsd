@@ -1,4 +1,4 @@
-# $KTH: Makefile.am,v 1.25 2001/05/18 16:11:39 joda Exp $
+# $KTH: Makefile.am,v 1.23 2000/12/11 00:44:50 assar Exp $
 
 include $(top_srcdir)/Makefile.am.common
 
@@ -46,7 +46,7 @@ foodir = $(libdir)
 foo_DATA = $(AFS_EXTRA_LIBS)
 # EXTRA_DATA = afslib.so
 
-CLEANFILES= $(AFS_EXTRA_LIBS) $(ROKEN_SRCS)
+CLEANFILES= $(AFS_EXTRA_LIBS)
 
 include_HEADERS = kafs.h
 
@@ -54,20 +54,7 @@ if KRB5
 afskrb5_c = afskrb5.c
 endif
 
-if do_roken_rename
-ROKEN_SRCS = resolve.c
-endif
-
-libkafs_la_SOURCES =				\
-	afssys.c				\
-	afskrb.c				\
-	$(afskrb5_c)				\
-	common.c				\
-	$(AIX_SRC)				\
-	kafs_locl.h				\
-	afssysdefs.h				\
-	$(ROKEN_SRCS)
-
+libkafs_la_SOURCES = afssys.c afskrb.c $(afskrb5_c) common.c $(AIX_SRC) kafs_locl.h afssysdefs.h
 #afslib_so_SOURCES = afslib.c
 
 EXTRA_libkafs_la_SOURCES = afskrb5.c dlfcn.c afslib.c dlfcn.h
@@ -82,6 +69,3 @@ afslib.so: afslib.o
 	ld -o $@ -bM:SRE -bI:$(srcdir)/afsl.exp -bE:$(srcdir)/afslib.exp $(AFS_EXTRA_LD) afslib.o -lc
 
 $(OBJECTS): ../../include/config.h
-
-resolve.c:
-	$(LN_S) $(srcdir)/../roken/resolve.c .

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000 - 2001 Kungliga Tekniska Högskolan
+ * Copyright (c) 2000 Kungliga Tekniska Högskolan
  * (Royal Institute of Technology, Stockholm, Sweden). 
  * All rights reserved. 
  *
@@ -33,16 +33,10 @@
 
 #include <krb5_locl.h>
 
-RCSID("$KTH: eai_to_heim_errno.c,v 1.3 2001/05/14 22:48:33 assar Exp $");
-
-/*
- * convert the getaddrinfo error code in `eai_errno' into a
- * krb5_error_code. `system_error' should have the value of the errno
- * after the failed call.
- */
+RCSID("$KTH: eai_to_heim_errno.c,v 1.1 2000/07/08 13:03:36 joda Exp $");
 
 krb5_error_code
-krb5_eai_to_heim_errno(int eai_errno, int system_error)
+krb5_eai_to_heim_errno(int eai_errno)
 {
     switch(eai_errno) {
     case EAI_NOERROR:
@@ -68,26 +62,7 @@ krb5_eai_to_heim_errno(int eai_errno, int system_error)
     case EAI_SOCKTYPE:
 	return HEIM_EAI_SOCKTYPE;
     case EAI_SYSTEM:
-	return system_error;
-    default:
-	return HEIM_EAI_UNKNOWN; /* XXX */
-    }
-}
-
-krb5_error_code
-krb5_h_errno_to_heim_errno(int eai_errno)
-{
-    switch(eai_errno) {
-    case 0:
-	return 0;
-    case HOST_NOT_FOUND:
-	return HEIM_EAI_NONAME;
-    case TRY_AGAIN:
-	return HEIM_EAI_AGAIN;
-    case NO_RECOVERY:
-	return HEIM_EAI_FAIL;
-    case NO_DATA:
-	return HEIM_EAI_NONAME;
+	return errno;
     default:
 	return HEIM_EAI_UNKNOWN; /* XXX */
     }

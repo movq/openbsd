@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1995 - 2000 Kungliga Tekniska Högskolan
+ * Copyright (c) 1995, 1996, 1997 Kungliga Tekniska Högskolan
  * (Royal Institute of Technology, Stockholm, Sweden).
  * All rights reserved.
  * 
@@ -33,31 +33,14 @@
 
 #include "kip.h"
 
-RCSID("$KTH: kip.c,v 1.18.2.1 2000/06/23 02:55:01 assar Exp $");
+RCSID("$KTH: kip.c,v 1.18 1999/12/02 16:58:31 joda Exp $");
 
-static char *cmd_str		= NULL;
-static char *arg_str		= NULL;
-static char *port_str		= NULL;
-static int version_flag		= 0;
-static int help_flag		= 0;
-
-struct getargs args[] = {
-    { "port",		'p',	arg_string,	&port_str,	"Use this port",
-      "port" },
-    { "cmd",		'c',	arg_string,	&cmd_str,
-      "command to run when starting", "cmd"},
-    { "arg",		'a',	arg_string,	&arg_str,
-      "argument to above command", "arg"},
-    { "version",	0, 	arg_flag,		&version_flag },
-    { "help",		0, 	arg_flag,		&help_flag }
-};
-
-
-static RETSIGTYPE
-disconnecthandler (int sig)
+static void
+usage(void)
 {
-     disconnect = 1;
-     SIGRETURN(0);
+     fprintf (stderr, "Usage: %s host\n",
+	      __progname);
+     exit (1);
 }
 
 /*
@@ -65,8 +48,7 @@ disconnecthandler (int sig)
  */
 
 static int
-connect_host (char *host, int port,
-	      des_cblock *key, des_key_schedule schedule)
+connect_host (char *host, des_cblock *key, des_key_schedule schedule)
 {
      CREDENTIALS cred;
      KTEXT_ST text;
@@ -88,7 +70,7 @@ connect_host (char *host, int port,
 
      memset (&thataddr, 0, sizeof(thataddr));
      thataddr.sin_family = AF_INET;
-     thataddr.sin_port   = port;
+     thataddr.sin_port   = k_getportbyname ("kip", "tcp", htons(KIPPORT));
 
      for(p = hostent->h_addr_list; *p; ++p) {
 	 memcpy (&thataddr.sin_addr, *p, sizeof(thataddr.sin_addr));
@@ -157,50 +139,19 @@ connect_host (char *host, int port,
  */
 
 static int
-doit (char *host, int port)
+doit (char *host)
 {
-     char tun_if_name[64];
      des_key_schedule schedule;
      des_cblock iv;
-     int other, this, ret;
+     int other, this;
 
-     other = connect_host (host, port, &iv, schedule);
+     other = connect_host (host, &iv, schedule);
      if (other < 0)
 	  return 1;
-     this = tunnel_open (tun_if_name, sizeof(tun_if_name));
+     this = tunnel_open ();
      if (this < 0)
 	  return 1;
-
-     if (cmd_str) {
-	 char buf[1024];
-	 ret = kip_exec (cmd_str, buf, sizeof(buf),
-			 "kip-control", "up", tun_if_name, host, arg_str,
-			 NULL);
-	 if (ret)
-	     errx (1, "%s (up) failed: %s", cmd_str, buf);
-     }
-
-     ret = copy_packets (this, other, TUNMTU, &iv, schedule);
-
-     if (cmd_str) {
-	 char buf[1024];
-	 ret = kip_exec (cmd_str, buf, sizeof(buf),
-			 "kip-control", "down", tun_if_name, host, arg_str,
-			 NULL);
-	 if (ret)
-	     errx (1, "%s (down) failed: %s", cmd_str, buf);
-     }
-     return 0;
-}
-
-static void
-usage(int ret)
-{
-    arg_printusage (args,
-		    sizeof(args) / sizeof(args[0]),
-		    NULL,
-		    "hostname");
-    exit (ret);
+     return copy_packets (this, other, TUNMTU, &iv, schedule);
 }
 
 /*
@@ -211,51 +162,9 @@ usage(int ret)
 int
 main(int argc, char **argv)
 {
-    int port;
-    int optind = 0;
-    char *hostname;
-
     set_progname (argv[0]);
-    if (getarg (args, sizeof(args) / sizeof(args[0]), argc, argv,
-		&optind))
-	usage (1);
 
-    if (help_flag)
-	usage (0);
-
-    if (version_flag) {
-	print_version (NULL);
-	return 0;
-    }
-
-    argv += optind;
-    argc -= optind;
-
-    if (argc != 1)
-	usage (1);
-    
-    hostname = argv[0];
-
-    if(port_str) {
-	struct servent *s = roken_getservbyname (port_str, "tcp");
-
-	if (s)
-	    port = s->s_port;
-	else {
-	    char *ptr;
-
-	    port = strtol (port_str, &ptr, 10);
-	    if (port == 0 && ptr == port_str)
-		errx (1, "bad port `%s'", port_str);
-	    port = htons(port);
-	}
-    } else {
-	port = k_getportbyname ("kip", "tcp", htons(KIPPORT));
-    }
-
-    signal (SIGCHLD, childhandler);
-    signal (SIGHUP,  disconnecthandler);
-    signal (SIGTERM, disconnecthandler);
-
-    return doit (hostname, port);
+    if (argc != 2)
+	usage ();
+    return doit (argv[1]);
 }

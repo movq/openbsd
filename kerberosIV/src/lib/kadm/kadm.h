@@ -18,7 +18,7 @@
  * Doug Church, December 28, 1989, MIT Project Athena
  */
 
-#include <kerberosIV/krb_db.h>
+#include <krb_db.h>
 
 /* The global structures for the client and server */
 typedef struct {
