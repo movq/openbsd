@@ -15,7 +15,7 @@
     along with this program; if not, write to the Free Software
     Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
-    $Header: /home/mike/src/cvs/openbsd/src/gnu/usr.bin/cvs/windows-NT/ndir.c,v 1.1 1995/12/19 09:21:44 deraadt Exp $
+    $Header: /home/mike/src/cvs/openbsd/src/gnu/usr.bin/cvs/windows-NT/ndir.c,v 1.1.1.1 1995/12/19 09:21:44 deraadt Exp $
  */
 
 /* Everything non trivial in this code is from: @(#)msd_dir.c 1.4

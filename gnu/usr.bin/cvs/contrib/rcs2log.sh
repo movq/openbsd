@@ -12,7 +12,7 @@
 
 # Author: Paul Eggert <eggert@twinsun.com>
 
-# $Id: rcs2log.sh,v 1.1 1995/12/19 09:21:40 deraadt Exp $
+# $Id: rcs2log.sh,v 1.1.1.1 1995/12/19 09:21:40 deraadt Exp $
 
 # Copyright 1992, 1993, 1994, 1995 Free Software Foundation, Inc.
 

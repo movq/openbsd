@@ -648,22 +648,22 @@ RCS Keywords
 `$Date: 1995/12/19 09:21:38 $'
      The date and time (UTC) the revision was checked in.
 
-`$Header: /home/mike/src/cvs/openbsd/src/gnu/usr.bin/cvs/doc/cvs.info-2,v 1.1 1995/12/19 09:21:38 deraadt Exp $'
+`$Header: /home/mike/src/cvs/openbsd/src/gnu/usr.bin/cvs/doc/cvs.info-2,v 1.1.1.1 1995/12/19 09:21:38 deraadt Exp $'
      A standard header containing the full pathname of the RCS file,
      the revision number, the date (UTC), the author, the state, and
      the locker (if locked).  Files will normally never be locked when
      you use CVS.
 
-`$Id: cvs.info-2,v 1.1 1995/12/19 09:21:38 deraadt Exp $'
-     Same as `$Header: /home/mike/src/cvs/openbsd/src/gnu/usr.bin/cvs/doc/cvs.info-2,v 1.1 1995/12/19 09:21:38 deraadt Exp $', except that the RCS filename is without a path.
+`$Id: cvs.info-2,v 1.1.1.1 1995/12/19 09:21:38 deraadt Exp $'
+     Same as `$Header: /home/mike/src/cvs/openbsd/src/gnu/usr.bin/cvs/doc/cvs.info-2,v 1.1.1.1 1995/12/19 09:21:38 deraadt Exp $', except that the RCS filename is without a path.
 
 `$Locker:  $'
      The login name of the user who locked the revision (empty if not
      locked, and thus almost always useless when you are using CVS).
 
 `$Log: cvs.info-2,v $
-`Revision 1.1  1995/12/19 09:21:38  deraadt
-`Initial revision
+`Revision 1.1.1.1  1995/12/19 09:21:38  deraadt
+`raw import of cvs-1.6
 `'
      The log message supplied during commit, preceded by a header
      containing the RCS filename, the revision number, the author, and
@@ -678,7 +678,7 @@ RCS Keywords
 `$RCSfile: cvs.info-2,v $'
      The name of the RCS file without a path.
 
-`$Revision: 1.1 $'
+`$Revision: 1.1.1.1 $'
      The revision number assigned to the revision.
 
 `$Source: /home/mike/src/cvs/openbsd/src/gnu/usr.bin/cvs/doc/cvs.info-2,v $'
@@ -695,14 +695,14 @@ Using keywords
 ==============
 
    To include a keyword string you simply include the relevant text
-string, such as `$Id: cvs.info-2,v 1.1 1995/12/19 09:21:38 deraadt Exp $', inside the file, and commit the file.  CVS will
+string, such as `$Id: cvs.info-2,v 1.1.1.1 1995/12/19 09:21:38 deraadt Exp $', inside the file, and commit the file.  CVS will
 automatically expand the string as part of the commit operation.
 
-   It is common to embed `$Id: cvs.info-2,v 1.1 1995/12/19 09:21:38 deraadt Exp $' string in the C source code.  This
+   It is common to embed `$Id: cvs.info-2,v 1.1.1.1 1995/12/19 09:21:38 deraadt Exp $' string in the C source code.  This
 example shows the first few lines of a typical file, after keyword
 substitution has been performed:
 
-     static char *rcsid="$Id: cvs.info-2,v 1.1 1995/12/19 09:21:38 deraadt Exp $";
+     static char *rcsid="$Id: cvs.info-2,v 1.1.1.1 1995/12/19 09:21:38 deraadt Exp $";
      /* The following lines will prevent `gcc' version 2.X
         from issuing an "unused variable" warning. */
      #if __GNUC__ == 2
@@ -722,11 +722,11 @@ binary files.
 
      $ ident samp.c
      samp.c:
-          $Id: cvs.info-2,v 1.1 1995/12/19 09:21:38 deraadt Exp $
+          $Id: cvs.info-2,v 1.1.1.1 1995/12/19 09:21:38 deraadt Exp $
      $ gcc samp.c
      $ ident a.out
      a.out:
-          $Id: cvs.info-2,v 1.1 1995/12/19 09:21:38 deraadt Exp $
+          $Id: cvs.info-2,v 1.1.1.1 1995/12/19 09:21:38 deraadt Exp $
 
    SCCS is another popular revision control system.  It has a command,
 `what', which is very similar to `ident' and used for the same purpose.
@@ -735,7 +735,7 @@ character sequence `@(#)' it is easy to include keywords that are
 detected by either command.  Simply prefix the RCS keyword with the
 magic SCCS phrase, like this:
 
-     static char *id="@(#) $Id: cvs.info-2,v 1.1 1995/12/19 09:21:38 deraadt Exp $";
+     static char *id="@(#) $Id: cvs.info-2,v 1.1.1.1 1995/12/19 09:21:38 deraadt Exp $";
 
 
 File: cvs.info,  Node: Avoiding substitution,  Next: Substitution modes,  Prev: Using keywords,  Up: Keyword substitution
@@ -784,15 +784,15 @@ option (*note Common options::.).  The `-k' option is available with the
 `-kk'
      Generate only keyword names in keyword strings; omit their values.
      For example, for the `Revision' keyword, generate the string
-     `$Revision: 1.1 $' instead of `$Revision: 1.1 $'.  This option is useful
+     `$Revision: 1.1.1.1 $' instead of `$Revision: 1.1.1.1 $'.  This option is useful
      to ignore differences due to keyword substitution when comparing
      different revisions of a file.
 
 `-ko'
      Generate the old keyword string, present in the working file just
      before it was checked in.  For example, for the `Revision'
-     keyword, generate the string `$Revision: 1.1 $' instead of
-     `$Revision: 1.1 $' if that is how the string appeared when the
+     keyword, generate the string `$Revision: 1.1.1.1 $' instead of
+     `$Revision: 1.1.1.1 $' if that is how the string appeared when the
      file was checked in.  This can be useful for binary file formats
      that cannot tolerate any changes to substrings that happen to take
      the form of keyword strings.
@@ -800,9 +800,9 @@ option (*note Common options::.).  The `-k' option is available with the
 `-kv'
      Generate only keyword values for keyword strings.  For example,
      for the `Revision' keyword, generate the string `5.7' instead of
-     `$Revision: 1.1 $'.  This can help generate files in programming
+     `$Revision: 1.1.1.1 $'.  This can help generate files in programming
      languages where it is hard to strip keyword delimiters like
-     `$Revision: 1.1 $' from a string.  However, further keyword
+     `$Revision: 1.1.1.1 $' from a string.  However, further keyword
      substitution cannot be performed once the keyword names are
      removed, so this option should be used with care.
 
@@ -812,14 +812,14 @@ option (*note Common options::.).  The `-k' option is available with the
 File: cvs.info,  Node: Log keyword,  Prev: Substitution modes,  Up: Keyword substitution
 
 Problems with the $Log: cvs.info-2,v $
-Problems with the Revision 1.1  1995/12/19 09:21:38  deraadt
-Problems with the Initial revision
+Problems with the Revision 1.1.1.1  1995/12/19 09:21:38  deraadt
+Problems with the raw import of cvs-1.6
 Problems with the keyword.
 ================================
 
    The `$Log: cvs.info-2,v $
-   The `Revision 1.1  1995/12/19 09:21:38  deraadt
-   The `Initial revision
+   The `Revision 1.1.1.1  1995/12/19 09:21:38  deraadt
+   The `raw import of cvs-1.6
    The `' keyword is somewhat controversial.  As long as you are
 working on your development system the information is easily accessible
 even if you do not use the `$Log$' keyword--just do a `cvs log'.  Once
