@@ -1,5 +1,5 @@
 # This -*- perl -*- script makes the Makefile
-# $Id: Makefile.PL,v 1.1.1.1 1999/04/29 22:38:48 millert Exp $
+# $Id: Makefile.PL,v 1.1.1.2 2001/05/24 18:22:52 millert Exp $
 
 require 5.002;
 use ExtUtils::MakeMaker;
@@ -31,7 +31,7 @@ WriteMakefile(
  
 	'clean'   	=> {FILES => join(" ",
 					map { "$_ */$_ */*/$_" }
-					qw(*% *.html *.b[ac]k *.old *.orig))
+					qw(*% *.html *.b[ac]k *.old))
 			   },
 	'macro'		=> { INSTALLDIRS => 'perl' },
 );
