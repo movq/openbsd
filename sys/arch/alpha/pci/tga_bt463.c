@@ -1,21 +1,21 @@
-/*	$NetBSD: wsconsvar.h,v 1.1 1995/11/23 02:38:39 cgd Exp $	*/
+/*	$NetBSD: tga_bt463.c,v 1.2 1996/04/12 06:09:13 cgd Exp $	*/
 
 /*
- * Copyright (c) 1995 Carnegie-Mellon University.
+ * Copyright (c) 1995, 1996 Carnegie-Mellon University.
  * All rights reserved.
  *
  * Author: Chris G. Demetriou
- * 
+ *
  * Permission to use, copy, modify and distribute this software and
  * its documentation is hereby granted, provided that both the copyright
  * notice and this permission notice appear in all copies of the
  * software, derivative works or modified versions, and any portions
  * thereof, and that both notices appear in supporting documentation.
- * 
- * CARNEGIE MELLON ALLOWS FREE USE OF THIS SOFTWARE IN ITS "AS IS" 
- * CONDITION.  CARNEGIE MELLON DISCLAIMS ANY LIABILITY OF ANY KIND 
+ *
+ * CARNEGIE MELLON ALLOWS FREE USE OF THIS SOFTWARE IN ITS "AS IS"
+ * CONDITION.  CARNEGIE MELLON DISCLAIMS ANY LIABILITY OF ANY KIND
  * FOR ANY DAMAGES WHATSOEVER RESULTING FROM THE USE OF THIS SOFTWARE.
- * 
+ *
  * Carnegie Mellon requests users of this software to return to
  *
  *  Software Distribution Coordinator  or  Software.Distribution@CS.CMU.EDU
@@ -27,14 +27,25 @@
  * rights to redistribute these changes.
  */
 
-struct device;
-struct ansicons;
-struct ansicons_functions;
+#include <sys/param.h>
+#include <sys/device.h>
 
-int	wscattach_output __P((struct device *, int, struct ansicons *,
-	    struct ansicons_functions *, void *, int, int, int, int));
-void	wscattach_input __P((struct device *, void *, int (*)(void *),
-	    void (*)(void *, int)));
-void	wscons_kbdinput __P((char *));
-void	wsc_console __P((struct ansicons *, struct ansicons_functions *,
-	    void *, int, int, int, int));
+#include <dev/pci/pcivar.h>
+#include <machine/tgareg.h>
+#include <alpha/pci/tgavar.h>
+#include <alpha/pci/bt485reg.h>
+
+#include <machine/fbio.h>
+
+const struct tga_ramdac_conf tga_ramdac_bt463 = {
+	"Bt463",
+#if 0
+	NULL,				/* XXX SET CMAP */
+	NULL,				/* XXX GET CMAP */
+	tga_builtin_set_cursor,
+	tga_builtin_get_cursor,
+	tga_builtin_set_curpos,
+	tga_builtin_get_curpos,
+	tga_builtin_get_curmax,
+#endif
+};
