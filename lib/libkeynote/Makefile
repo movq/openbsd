@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.1 1999/05/23 22:11:04 angelos Exp $
+#	$OpenBSD: Makefile,v 1.1.1.1 1999/05/23 22:11:04 angelos Exp $
 
 LIB=	keynote
 MAN=	man/keynote.3 man/keynote.4
