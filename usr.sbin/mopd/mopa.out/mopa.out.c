@@ -47,7 +47,7 @@
  */
 
 #ifndef LINT
-static char rcsid[] = "$Id: mopa.out.c,v 1.1 1996/09/21 13:49:17 maja Exp $";
+static char rcsid[] = "$Id: mopa.out.c,v 1.1.1.1 1996/09/21 13:49:17 maja Exp $";
 #endif
 
 #include "os.h"
