@@ -7,7 +7,7 @@ require Exporter;
 
 $VERSION = '1.01';
 
-# $Id: Soundex.pm,v 1.1.1.5 2002/10/27 22:15:01 millert Exp $
+# $Id: Soundex.pm,v 1.1.1.6 2004/08/09 17:47:25 millert Exp $
 #
 # Implementation of soundex algorithm as described by Knuth in volume
 # 3 of The Art of Computer Programming, with ideas stolen from Ian
@@ -25,8 +25,11 @@ $VERSION = '1.01';
 # Lukasiewicz, Lissajous -> L222
 #
 # $Log: Soundex.pm,v $
-# Revision 1.1.1.5  2002/10/27 22:15:01  millert
-# stock perl 5.8.0 from CPAN
+# Revision 1.1.1.6  2004/08/09 17:47:25  millert
+# Import of stock perl 5.8.5
+#
+# Revision 1.7  2003/12/03 03:02:41  millert
+# Resolve conflicts for perl 5.8.2, remove old files, and add OpenBSD-specific scaffolding
 #
 # Revision 1.2  1994/03/24  00:30:27  mike
 # Subtle bug (any excuse :-) spotted by Rich Pinder <rpinder@hsc.usc.edu>

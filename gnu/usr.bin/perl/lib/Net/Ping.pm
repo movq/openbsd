@@ -1739,6 +1739,6 @@ Copyright (c) 2001, Colin McMillen.  All rights reserved.
 This program is free software; you may redistribute it and/or
 modify it under the same terms as Perl itself.
 
-$Id: Ping.pm,v 1.1.1.6 2003/12/03 02:44:05 millert Exp $
+$Id: Ping.pm,v 1.1.1.7 2004/08/09 17:47:04 millert Exp $
 
 =cut
