@@ -1,4 +1,4 @@
-/*	$OpenBSD: tbrconfig.c,v 1.1 2001/06/27 18:23:36 kjc Exp $	*/
+/*	$OpenBSD: tbrconfig.c,v 1.1.1.1 2001/06/27 18:23:36 kjc Exp $	*/
 /*	$KAME: tbrconfig.c,v 1.3 2001/05/08 04:36:39 itojun Exp $	*/
 /*
  * Copyright (C) 2000

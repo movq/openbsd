@@ -1,4 +1,4 @@
-/*	$OpenBSD: qdisc_hfsc.c,v 1.1 2001/06/27 18:23:21 kjc Exp $	*/
+/*	$OpenBSD: qdisc_hfsc.c,v 1.1.1.1 2001/06/27 18:23:21 kjc Exp $	*/
 /*	$KAME: qdisc_hfsc.c,v 1.3 2000/10/18 09:15:17 kjc Exp $	*/
 /*
  * Copyright (C) 1999-2000

@@ -1,4 +1,4 @@
-/*	$OpenBSD: qop.c,v 1.1 2001/06/27 18:23:26 kjc Exp $	*/
+/*	$OpenBSD: qop.c,v 1.1.1.1 2001/06/27 18:23:26 kjc Exp $	*/
 /*	$KAME: qop.c,v 1.6 2000/10/18 09:15:18 kjc Exp $	*/
 /*
  * Copyright (C) 1999-2000
