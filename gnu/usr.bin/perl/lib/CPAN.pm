@@ -2,11 +2,11 @@
 package CPAN;
 $VERSION = '1.76_01';
 $VERSION = eval $VERSION;
-# $Id: CPAN.pm,v 1.1.1.5 2003/12/03 02:43:58 millert Exp $
+# $Id: CPAN.pm,v 1.1.1.6 2004/08/09 17:46:38 millert Exp $
 
 # only used during development:
 $Revision = "";
-# $Revision = "[".substr(q$Revision: 1.1.1.5 $, 10)."]";
+# $Revision = "[".substr(q$Revision: 1.1.1.6 $, 10)."]";
 
 use Carp ();
 use Config ();
