@@ -14,7 +14,11 @@
 
 /* Don't depend on this! */
 #ifndef MKEYFILE
-#define MKEYFILE	"/etc/kerberosIV/master_key"
+#if 0
+#define MKEYFILE	"/var/kerberos/master-key"
+#else
+#define MKEYFILE	"/.k"
+#endif
 #endif
 #ifndef K_LOGFIL
 #define K_LOGFIL	"/var/log/kpropd.log"

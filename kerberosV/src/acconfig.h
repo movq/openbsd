@@ -98,7 +98,3 @@ static /**/const char *const rcsid[] = { (const char *)rcsid, "\100(#)" msg }
 #  define WORDS_BIGENDIAN 1
 #  endif
 #endif
-
-#ifdef ROKEN_RENAME
-#include "roken_rename.h"
-#endif

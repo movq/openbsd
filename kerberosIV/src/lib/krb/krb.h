@@ -14,8 +14,7 @@
 #define signed
 #endif
 
-#include <sys/types.h>
-#include <inttypes.h>
+#include <ktypes.h>
 #include <time.h>
 
 #ifndef __KRB_H__
@@ -105,7 +104,7 @@ extern const char *krb_err_txt[MAX_KRB_ERRORS];
 #define KRB_RLM_FILES	{ KRB_RLM_TRANS, "/etc/kerberosIV/krb.realms", 0}
 #endif
 #ifndef KRB_EQUIV
-#define KRB_EQUIV	"/etc/kerberosIV/krb.equiv"
+#define KRB_EQUIV	"/etc/krb.equiv"
 #endif
 #define KRB_MASTER	"kerberos"
 #ifndef KRB_REALM

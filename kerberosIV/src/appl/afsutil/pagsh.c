@@ -76,8 +76,7 @@ main(int argc, char **argv)
   } while(f < 0);
   close(f);
   unlink(tf);
-  if(setenv("KRBTKFILE", tf, 1) != 0)
-      errx(1, "cannot set KRBTKFILE");
+  setenv("KRBTKFILE", tf, 1);
 
   i = 0;
 

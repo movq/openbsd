@@ -33,7 +33,7 @@
 
 #include "telnetd.h"
 
-RCSID("$KTH: telnetd.c,v 1.58.2.1 2000/10/10 13:12:08 assar Exp $");
+RCSID("$KTH: telnetd.c,v 1.58 1999/11/13 06:31:04 assar Exp $");
 
 #ifdef _SC_CRAY_SECURE_SYS
 #include <sys/sysv.h>
@@ -776,8 +776,7 @@ Please contact your net administrator");
      */
     *user_name = 0;
     level = getterminaltype(user_name, sizeof(user_name));
-    if(setenv("TERM", terminaltype ? terminaltype : "network", 1) != 0)
-	errx(1, "cannot set TERM");
+    setenv("TERM", terminaltype ? terminaltype : "network", 1);
 
 #ifdef _SC_CRAY_SECURE_SYS
     if (secflag) {
@@ -1008,11 +1007,6 @@ my_telnet(int f, int p, char *host, int level, char *autoname)
 	FD_ZERO(&ibits);
 	FD_ZERO(&obits);
 	FD_ZERO(&xbits);
-
-	if (f >= FD_SETSIZE
-	    || p >= FD_SETSIZE)
-	    fatal(net, "fd too large");
-
 	/*
 	 * Never look for input if there's still
 	 * stuff in the corresponding output buffer

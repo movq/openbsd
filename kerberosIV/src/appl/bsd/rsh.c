@@ -33,7 +33,7 @@
 
 #include "bsd_locl.h"
 
-RCSID("$KTH: rsh.c,v 1.43.2.2 2000/10/10 12:53:50 assar Exp $");
+RCSID("$KTH: rsh.c,v 1.43 1999/11/13 06:13:34 assar Exp $");
 
 CREDENTIALS cred;
 Key_schedule schedule;
@@ -107,10 +107,7 @@ talk(int nflag, sigset_t omask, int pid, int rem)
 	goto done;
     bp = buf;
 
-    rewrite:   
-    FD_ZERO(&rembits);
-    if (rem >= FD_SETSIZE)
-	errx(1, "fd too large");
+    rewrite:	FD_ZERO(&rembits);
     FD_SET(rem, &rembits);
     if (select(rem + 1, 0, &rembits, 0, 0) < 0) {
 	if (errno != EINTR) 
@@ -143,8 +140,6 @@ talk(int nflag, sigset_t omask, int pid, int rem)
     if (sigprocmask(SIG_SETMASK, &omask, 0) != 0)
 	warn("sigprocmask");
     FD_ZERO(&readfrom);
-    if (rem >= FD_SETSIZE || rfd2 >= FD_SETSIZE)
-	errx(1, "fd too large");
     FD_SET(rem, &readfrom);
     FD_SET(rfd2, &readfrom);
     do {
@@ -258,7 +253,7 @@ main(int argc, char **argv)
     /* if no further arguments, must have been called as rlogin. */
     if (!argv[optind]) {
 	*argv = "rlogin";
-	paranoid_setuid (getuid ());
+	setuid(getuid());
 	execv(_PATH_RLOGIN, argv);
 	err(1, "can't exec %s", _PATH_RLOGIN);
     }
@@ -287,7 +282,7 @@ main(int argc, char **argv)
 	sv_port = get_shell_port(use_kerberos, doencrypt);
 
     if (use_kerberos) {
-	paranoid_setuid(getuid());
+	setuid(getuid());
 	rem = KSUCCESS;
 	errno = 0;
 	if (dest_realm == NULL)
@@ -347,7 +342,7 @@ main(int argc, char **argv)
     }
 #endif
 
-    paranoid_setuid(uid);
+    setuid(uid);
     {
 	sigset_t sigmsk;
 	sigemptyset(&sigmsk);
@@ -363,7 +358,6 @@ main(int argc, char **argv)
 	signal(SIGQUIT, sendsig);
     if (signal(SIGTERM, SIG_IGN) != SIG_IGN)
 	signal(SIGTERM, sendsig);
-    signal(SIGPIPE, SIG_IGN);
 
     if (!nfork) {
 	pid = fork();

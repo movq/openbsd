@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999 - 2000 Kungliga Tekniska Högskolan
+ * Copyright (c) 1999 Kungliga Tekniska Högskolan
  * (Royal Institute of Technology, Stockholm, Sweden). 
  * All rights reserved. 
  *
@@ -30,36 +30,9 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
-#ifndef TEST
 #include "ftpd_locl.h"
 
-RCSID("$KTH: ls.c,v 1.13.2.3 2001/02/18 00:40:44 assar Exp $");
-
-#else
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <time.h>
-#include <dirent.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <pwd.h>
-#include <grp.h>
-#include <errno.h>
-
-#define sec_fprintf2 fprintf
-#define sec_fflush fflush
-void
-builtin_ls(FILE *out, const char *file);
-int
-main(int argc, char **argv)
-{
-    int i;
-    for(i = 1; i < argc; i++)
-	builtin_ls(stdout, argv[i]);
-    return 0;
-}
-#endif
+RCSID("$KTH: ls.c,v 1.13 1999/11/20 20:49:41 assar Exp $");
 
 struct fileinfo {
     struct stat st;
@@ -77,36 +50,17 @@ struct fileinfo {
     char *link;
 };
 
-static void
-free_fileinfo(struct fileinfo *f)
-{
-    free(f->user);
-    free(f->group);
-    free(f->size);
-    free(f->major);
-    free(f->minor);
-    free(f->date);
-    free(f->filename);
-    free(f->link);
-}
-
-#define LS_DIRS		(1 << 0)
-#define LS_IGNORE_DOT	(1 << 1)
-#define LS_SORT_MODE	(3 << 2)
+#define LS_DIRS		 1
+#define LS_IGNORE_DOT	 2
+#define LS_SORT_MODE	 12
 #define SORT_MODE(f) ((f) & LS_SORT_MODE)
-#define LS_SORT_NAME	(1 << 2)
-#define LS_SORT_MTIME	(2 << 2)
-#define LS_SORT_SIZE	(3 << 2)
-#define LS_SORT_REVERSE	(1 << 4)
+#define LS_SORT_NAME	 4
+#define LS_SORT_MTIME	 8
+#define LS_SORT_SIZE	12
+#define LS_SORT_REVERSE	16
 
-#define LS_SIZE		(1 << 5)
-#define LS_INODE	(1 << 6)
-#define LS_TYPE		(1 << 7)
-#define LS_DISP_MODE	(3 << 8)
-#define DISP_MODE(f) ((f) & LS_DISP_MODE)
-#define LS_DISP_LONG	(1 << 8)
-#define LS_DISP_COLUMN	(2 << 8)
-#define LS_DISP_CROSS	(3 << 8)
+#define LS_SIZE		32
+#define LS_INODE	64
 
 #ifndef S_ISTXT
 #define S_ISTXT S_ISVTX
@@ -124,7 +78,6 @@ static void
 make_fileinfo(const char *filename, struct fileinfo *file, int flags)
 {
     char buf[128];
-    int file_type = 0;
     struct stat *st = &file->st;
 
     file->inode = st->st_ino;
@@ -134,36 +87,23 @@ make_fileinfo(const char *filename, struct fileinfo *file, int flags)
     file->bsize = st->st_blocks * 512 / 1024;
 #endif
 
-    if(S_ISDIR(st->st_mode)) {
+    if(S_ISDIR(st->st_mode))
 	file->mode[0] = 'd';
-	file_type = '/';
-    }
     else if(S_ISCHR(st->st_mode))
 	file->mode[0] = 'c';
     else if(S_ISBLK(st->st_mode))
 	file->mode[0] = 'b';
-    else if(S_ISREG(st->st_mode)) {
+    else if(S_ISREG(st->st_mode))
 	file->mode[0] = '-';
-	if(st->st_mode & (S_IXUSR | S_IXGRP | S_IXOTH))
-	    file_type = '*';
-    }
-    else if(S_ISFIFO(st->st_mode)) {
+    else if(S_ISFIFO(st->st_mode))
 	file->mode[0] = 'p';
-	file_type = '|';
-    }
-    else if(S_ISLNK(st->st_mode)) {
+    else if(S_ISLNK(st->st_mode))
 	file->mode[0] = 'l';
-	file_type = '@';
-    }
-    else if(S_ISSOCK(st->st_mode)) {
+    else if(S_ISSOCK(st->st_mode))
 	file->mode[0] = 's';
-	file_type = '=';
-    }
 #ifdef S_ISWHT
-    else if(S_ISWHT(st->st_mode)) {
+    else if(S_ISWHT(st->st_mode))
 	file->mode[0] = 'w';
-	file_type = '%';
-    }
 #endif
     else 
 	file->mode[0] = '?';
@@ -224,10 +164,9 @@ make_fileinfo(const char *filename, struct fileinfo *file, int flags)
 
     {
 	time_t t = time(NULL);
-	time_t mtime = st->st_mtime;
-	struct tm *tm = localtime(&mtime);
-	if((t - mtime > 6*30*24*60*60) ||
-	   (mtime - t > 6*30*24*60*60))
+	struct tm *tm = localtime(&st->st_mtime);
+	if((t - st->st_mtime > 6*30*24*60*60) ||
+	   (st->st_mtime - t > 6*30*24*60*60))
 	    strftime(buf, sizeof(buf), "%b %e  %Y", tm);
 	else
 	    strftime(buf, sizeof(buf), "%b %e %H:%M", tm);
@@ -239,10 +178,7 @@ make_fileinfo(const char *filename, struct fileinfo *file, int flags)
 	    p++;
 	else
 	    p = filename;
-	if((flags & LS_TYPE) && file_type != 0)
-	    asprintf(&file->filename, "%s%c", p, file_type);
-	else
-	    file->filename = strdup(p);
+	file->filename = strdup(p);
     }
     if(S_ISLNK(st->st_mode)) {
 	int n;
@@ -318,7 +254,7 @@ compare_mtime(struct fileinfo *a, struct fileinfo *b)
 	return 1;
     if(b->filename == NULL)
 	return -1;
-    return b->st.st_mtime - a->st.st_mtime;
+    return a->st.st_mtime - b->st.st_mtime;
 }
 
 static int
@@ -328,7 +264,7 @@ compare_size(struct fileinfo *a, struct fileinfo *b)
 	return 1;
     if(b->filename == NULL)
 	return -1;
-    return b->st.st_size - a->st.st_size;
+    return a->st.st_size - b->st.st_size;
 }
 
 static void
@@ -350,22 +286,16 @@ log10(int num)
  * have to fetch them.
  */
 
-#ifdef KRB4
-static int do_the_afs_dance = 1;
-#endif
-
 static int
 lstat_file (const char *file, struct stat *sb)
 {
 #ifdef KRB4
-    if (do_the_afs_dance &&
-	k_hasafs() 
+    if (k_hasafs() 
 	&& strcmp(file, ".")
-	&& strcmp(file, "..")
-	&& strcmp(file, "/"))
+	&& strcmp(file, "..")) 
     {
 	struct ViceIoctl    a_params;
-	char               *dir, *last;
+	char               *last;
 	char               *path_bkp;
 	static ino_t	   ino_counter = 0, ino_last = 0;
 	int		   ret;
@@ -385,28 +315,16 @@ lstat_file (const char *file, struct stat *sb)
 	
 	last = strrchr (path_bkp, '/');
 	if (last != NULL) {
-	    if(last[1] == '\0')
-		/* if path ended in /, replace with `.' */
-		a_params.in = ".";
-	    else
-		a_params.in = last + 1;
-	    while(last > path_bkp && *--last == '/');
-	    if(*last != '/' || last != path_bkp) {
-		*++last = '\0';
-		dir = path_bkp;
-	    } else
-		/* we got to the start, so this must be the root dir */
-		dir = "/";
-	} else {
-	    /* file is relative to cdir */
-	    dir = ".";
-	    a_params.in = path_bkp;
-	}
+	    *last = '\0';
+	    a_params.in = last + 1;
+	} else
+	    a_params.in = (char *)file;
 	
 	a_params.in_size  = strlen (a_params.in) + 1;
 	a_params.out_size = maxsize;
 	
-	ret = k_pioctl (dir, VIOC_AFS_STAT_MT_PT, &a_params, 0);
+	ret = k_pioctl (last ? path_bkp : "." ,
+			VIOC_AFS_STAT_MT_PT, &a_params, 0);
 	free (a_params.out);
 	if (ret < 0) {
 	    free (path_bkp);
@@ -423,7 +341,7 @@ lstat_file (const char *file, struct stat *sb)
 	 * use . as a prototype
 	 */
 
-	ret = lstat (dir, sb);
+	ret = lstat (path_bkp, sb);
 	free (path_bkp);
 	if (ret < 0)
 	    return ret;
@@ -444,7 +362,7 @@ lstat_file (const char *file, struct stat *sb)
 }
 
 static void
-list_files(FILE *out, const char **files, int n_files, int flags)
+list_files(FILE *out, char **files, int n_files, int flags)
 {
     struct fileinfo *fi;
     int i;
@@ -482,7 +400,7 @@ list_files(FILE *out, const char **files, int n_files, int flags)
 	      (int (*)(const void*, const void*))compare_size);
 	break;
     }
-    if(DISP_MODE(flags) == LS_DISP_LONG) {
+    {
 	int max_inode = 0;
 	int max_bsize = 0;
 	int max_n_link = 0;
@@ -550,58 +468,7 @@ list_files(FILE *out, const char **files, int n_files, int flags)
 			   max_major,
 			   max_minor,
 			   max_date);
-    } else if(DISP_MODE(flags) == LS_DISP_COLUMN || 
-	      DISP_MODE(flags) == LS_DISP_CROSS) {
-	int max_len = 0;
-	int num_files = n_files;
-	int columns;
-	int j;
-	for(i = 0; i < n_files; i++) {
-	    if(fi[i].filename == NULL) {
-		num_files--;
-		continue;
-	    }
-	    if(strlen(fi[i].filename) > max_len)
-		max_len = strlen(fi[i].filename);
-	}
-	columns = 80 / (max_len + 1); /* get space between columns */
-	max_len = 80 / columns;
-	if(DISP_MODE(flags) == LS_DISP_CROSS) {
-	    for(i = 0, j = 0; i < n_files; i++) {
-		if(fi[i].filename == NULL)
-		    continue;
-		sec_fprintf2(out, "%-*s", max_len, fi[i].filename);
-		j++;
-		if(j == columns) {
-		    sec_fprintf2(out, "\r\n");
-		    j = 0;
-		}
-	    }
-	    if(j > 0)
-		    sec_fprintf2(out, "\r\n");
-	} else {
-	    int skip = (num_files + columns - 1) / columns;
-	    j = 0;
-	    for(i = 0; i < skip; i++) {
-		for(j = i; j < n_files;) {
-		    while(j < n_files && fi[j].filename == NULL)
-			j++;
-		    sec_fprintf2(out, "%-*s", max_len, fi[j].filename);
-		    j += skip;
-		}
-		sec_fprintf2(out, "\r\n");
-	    }
-	}
-    } else {
-	for(i = 0; i < n_files; i++) {
-	    if(fi[i].filename == NULL)
-		continue;
-	    sec_fprintf2(out, "%s\r\n", fi[i].filename);
-	}
     }
-    for(i = 0; i < n_files; i++)
-	free_fileinfo(&fi[i]);
-    free(fi);
 }
 
 static void
@@ -655,27 +522,23 @@ list_dir(FILE *out, const char *directory, int flags)
 	++n_files;
     }
     closedir(d);
-    list_files(out, (const char**)files, n_files, flags | LS_DIRS);
+    list_files(out, files, n_files, flags | LS_DIRS);
 }
 
 void
 builtin_ls(FILE *out, const char *file)
 {
-    int flags = LS_SORT_NAME | LS_IGNORE_DOT | LS_DISP_LONG;
+    int flags = LS_SORT_NAME;
 
     if(*file == '-') {
 	const char *p;
 	for(p = file + 1; *p; p++) {
 	    switch(*p) {
-	    case '1':
-		flags = (flags & ~LS_DISP_MODE);
-		break;
 	    case 'a':
 	    case 'A':
 		flags &= ~LS_IGNORE_DOT;
 		break;
 	    case 'C':
-		flags = (flags & ~LS_DISP_MODE) | LS_DISP_COLUMN;
 		break;
 	    case 'd':
 		flags |= LS_DIRS;
@@ -683,14 +546,10 @@ builtin_ls(FILE *out, const char *file)
 	    case 'f':
 		flags = (flags & ~LS_SORT_MODE);
 		break;
-	    case 'F':
-		flags |= LS_TYPE;
-		break;
 	    case 'i':
-		flags |= LS_INODE;
+		flags |= flags | LS_INODE;
 		break;
 	    case 'l':
-		flags = (flags & ~LS_DISP_MODE) | LS_DISP_LONG;
 		break;
 	    case 't':
 		flags = (flags & ~LS_SORT_MODE) | LS_SORT_MTIME;
@@ -703,9 +562,6 @@ builtin_ls(FILE *out, const char *file)
 		break;
 	    case 'r':
 		flags |= LS_SORT_REVERSE;
-		break;
-	    case 'x':
-		flags = (flags & ~LS_DISP_MODE) | LS_DISP_CROSS;
 		break;
 	    }
 	}

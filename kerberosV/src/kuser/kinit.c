@@ -32,7 +32,7 @@
  */
 
 #include "kuser_locl.h"
-RCSID("$KTH: kinit.c,v 1.75 2001/05/07 21:08:15 assar Exp $");
+RCSID("$KTH: kinit.c,v 1.69 2001/01/05 16:32:55 joda Exp $");
 
 #ifdef KRB4
 /* for when the KDC tells us it's a v4 one, we try to talk that */
@@ -248,7 +248,7 @@ usage (int ret)
     arg_printusage (args,
 		    sizeof(args)/sizeof(*args),
 		    NULL,
-		    "[principal [command]]");
+		    "[principal]");
     exit (ret);
 }
 
@@ -290,12 +290,9 @@ renew_validate(krb5_context context,
     flags.i = 0;
     flags.b.renewable         = flags.b.renew = renew;
     flags.b.validate          = validate;
-    if (forwardable_flag != -1)
-	flags.b.forwardable       = forwardable_flag;
-    if (proxiable_flag != -1)
-	flags.b.proxiable         = proxiable_flag;
-    if (anonymous_flag != -1)
-	flags.b.request_anonymous = anonymous_flag;
+    flags.b.forwardable       = forwardable_flag;
+    flags.b.proxiable         = proxiable_flag;
+    flags.b.request_anonymous = anonymous_flag;
     if(life)
 	in.times.endtime = time(NULL) + life;
 
@@ -342,7 +339,7 @@ main (int argc, char **argv)
     krb5_addresses no_addrs;
     char passwd[256];
 
-    setprogname (argv[0]);
+    set_progname (argv[0]);
     memset(&cred, 0, sizeof(cred));
     
     ret = krb5_init_context (&context);
@@ -379,6 +376,9 @@ main (int argc, char **argv)
     argc -= optind;
     argv += optind;
 
+    if (argc > 1)
+	usage (1);
+
     if (argv[0]) {
 	ret = krb5_parse_name (context, argv[0], &principal);
 	if (ret)
@@ -394,26 +394,8 @@ main (int argc, char **argv)
 
     if(cred_cache) 
 	ret = krb5_cc_resolve(context, cred_cache, &ccache);
-    else {
-	if(argc > 1) {
-	    char s[1024];
-	    ret = krb5_cc_gen_new(context, &krb5_fcc_ops, &ccache);
-	    if(ret)
-		krb5_err(context, 1, ret, "creating cred cache");
-	    snprintf(s, sizeof(s), "%s:%s",
-		     krb5_cc_get_type(context, ccache),
-		     krb5_cc_get_name(context, ccache));
-	    setenv("KRB5CCNAME", s, 1);
-#ifdef KRB4
-	    snprintf(s, sizeof(s), "%s_XXXXXX", TKT_ROOT);
-	    close(mkstemp(s));
-	    setenv("KRBTKFILE", s, 1);
-	    if (k_hasafs ())
-		k_setpag();
-#endif
-	} else
-	    ret = krb5_cc_default (context, &ccache);
-    }
+    else
+	ret = krb5_cc_default (context, &ccache);
     if (ret)
 	krb5_err (context, 1, ret, "resolving credentials cache");
 
@@ -455,7 +437,7 @@ main (int argc, char **argv)
 	    errx (1, "unparsable time: %s", renew_life);
 
 	krb5_get_init_creds_opt_set_renew_life (&opt, tmp);
-    } else if (renewable_flag == 1)
+    } else if (renewable_flag)
 	krb5_get_init_creds_opt_set_renew_life (&opt, 1 << 30);
 
     if(ticket_life != 0)
@@ -588,18 +570,9 @@ main (int argc, char **argv)
     }
     if(do_afslog && k_hasafs())
 	krb5_afslog(context, ccache, NULL, NULL);
+#endif
     krb5_free_creds_contents (context, &cred);
-#endif
-    if(argc > 1) {
-	simple_execvp(argv[1], argv+1);
-	krb5_cc_destroy(context, ccache);
-#ifdef KRB4
-	dest_tkt();
-	if(k_hasafs())
-	    k_unlog();
-#endif
-    } else 
-	krb5_cc_close (context, ccache);
+    krb5_cc_close (context, ccache);
     krb5_free_context (context);
     return 0;
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997 - 2001 Kungliga Tekniska Högskolan
+ * Copyright (c) 1997 - 2000 Kungliga Tekniska Högskolan
  * (Royal Institute of Technology, Stockholm, Sweden). 
  * All rights reserved. 
  *
@@ -33,7 +33,7 @@
 
 #include "krb5_locl.h"
 
-RCSID("$KTH: keytab_keyfile.c,v 1.11 2001/05/14 06:14:49 assar Exp $");
+RCSID("$KTH: keytab_keyfile.c,v 1.9 2000/07/02 16:14:16 assar Exp $");
 
 /* afs keyfile operations --------------------------------------- */
 
@@ -63,23 +63,16 @@ struct akf_data {
  */
 
 static int
-get_cell_and_realm (krb5_context context,
-		    struct akf_data *d)
+get_cell_and_realm (struct akf_data *d)
 {
     FILE *f;
     char buf[BUFSIZ], *cp;
-    int ret;
 
     f = fopen (AFS_SERVERTHISCELL, "r");
-    if (f == NULL) {
-	ret = errno;
-	krb5_set_error_string (context, "open %s: %s", AFS_SERVERTHISCELL,
-			       strerror(ret));
-	return ret;
-    }
+    if (f == NULL)
+	return errno;
     if (fgets (buf, sizeof(buf), f) == NULL) {
 	fclose (f);
-	krb5_set_error_string (context, "no cell in %s", AFS_SERVERTHISCELL);
 	return EINVAL;
     }
     if (buf[strlen(buf) - 1] == '\n')
@@ -87,17 +80,13 @@ get_cell_and_realm (krb5_context context,
     fclose(f);
 
     d->cell = strdup (buf);
-    if (d->cell == NULL) {
-	krb5_set_error_string (context, "malloc: out of memory");
-	return ENOMEM;
-    }
+    if (d->cell == NULL)
+	return errno;
 
     f = fopen (AFS_SERVERMAGICKRBCONF, "r");
     if (f != NULL) {
 	if (fgets (buf, sizeof(buf), f) == NULL) {
 	    fclose (f);
-	    krb5_set_error_string (context, "no realm in %s",
-				   AFS_SERVERMAGICKRBCONF);
 	    return EINVAL;
 	}
 	if (buf[strlen(buf)-1] == '\n')
@@ -111,8 +100,7 @@ get_cell_and_realm (krb5_context context,
     d->realm = strdup (buf);
     if (d->realm == NULL) {
 	free (d->cell);
-	krb5_set_error_string (context, "malloc: out of memory");
-	return ENOMEM;
+	return errno;
     }
     return 0;
 }
@@ -127,13 +115,11 @@ akf_resolve(krb5_context context, const char *name, krb5_keytab id)
     int ret;
     struct akf_data *d = malloc(sizeof (struct akf_data));
 
-    if (d == NULL) {
-	krb5_set_error_string (context, "malloc: out of memory");
-	return ENOMEM;
-    }
+    if (d == NULL)
+	return errno;
     
     d->num_entries = 0;
-    ret = get_cell_and_realm (context, d);
+    ret = get_cell_and_realm (d);
     if (ret) {
 	free (d);
 	return ret;
@@ -143,7 +129,6 @@ akf_resolve(krb5_context context, const char *name, krb5_keytab id)
 	free (d->cell);
 	free (d->realm);
 	free (d);
-	krb5_set_error_string (context, "malloc: out of memory");
 	return ENOMEM;
     }
     id->data = d;
@@ -195,21 +180,14 @@ akf_start_seq_get(krb5_context context,
     struct akf_data *d = id->data;
 
     c->fd = open (d->filename, O_RDONLY|O_BINARY, 0600);
-    if (c->fd < 0) {
-	ret = errno;
-	krb5_set_error_string(context, "open(%s): %s", d->filename,
-			      strerror(ret));
-	return ret;
-    }
+    if (c->fd < 0)
+	return errno;
 
     c->sp = krb5_storage_from_fd(c->fd);
     ret = krb5_ret_int32(c->sp, &d->num_entries);
     if(ret) {
 	krb5_storage_free(c->sp);
 	close(c->fd);
-	krb5_clear_error_string (context);
-	if(ret == KRB5_CC_END)
-	    return KRB5_KT_NOTFOUND;
 	return ret;
     }
 
@@ -250,7 +228,6 @@ akf_next_entry(krb5_context context,
     entry->keyblock.keyvalue.data   = malloc (8);
     if (entry->keyblock.keyvalue.data == NULL) {
 	krb5_free_principal (context, entry->principal);
-	krb5_set_error_string (context, "malloc: out of memory");
 	ret = ENOMEM;
 	goto out;
     }
@@ -291,12 +268,8 @@ akf_add_entry(krb5_context context,
     if (fd < 0) {
 	fd = open (d->filename,
 		   O_RDWR | O_BINARY | O_CREAT, 0600);
-	if (fd < 0) {
-	    ret = errno;
-	    krb5_set_error_string(context, "open(%s): %s", d->filename,
-				  strerror(ret));
-	    return ret;
-	}
+	if (fd < 0)
+	    return errno;
 	created = 1;
     }
 
@@ -309,18 +282,15 @@ akf_add_entry(krb5_context context,
 	sp = krb5_storage_from_fd(fd);
 	if(sp == NULL) {
 	    close(fd);
-	    krb5_set_error_string (context, "malloc: out of memory");
 	    return ENOMEM;
 	}
 	if (created)
 	    len = 0;
 	else {
 	    if((*sp->seek)(sp, 0, SEEK_SET) < 0) {
-		ret = errno;
 		krb5_storage_free(sp);
 		close(fd);
-		krb5_set_error_string (context, "seek: %s", strerror(ret));
-		return ret;
+		return errno;
 	    }
 	    
 	    ret = krb5_ret_int32(sp, &len);
@@ -333,11 +303,9 @@ akf_add_entry(krb5_context context,
 	len++;
 	
 	if((*sp->seek)(sp, 0, SEEK_SET) < 0) {
-	    ret = errno;
 	    krb5_storage_free(sp);
 	    close(fd);
-	    krb5_set_error_string (context, "seek: %s", strerror(ret));
-	    return ret;
+	    return errno;
 	}
 	
 	ret = krb5_store_int32(sp, len);
@@ -349,11 +317,9 @@ akf_add_entry(krb5_context context,
 		
 
 	if((*sp->seek)(sp, (len - 1) * (8 + 4), SEEK_CUR) < 0) {
-	    ret = errno;
 	    krb5_storage_free(sp);
 	    close(fd);
-	    krb5_set_error_string (context, "seek: %s", strerror(ret));
-	    return ret;
+	    return errno;
 	}
 	
 	ret = krb5_store_int32(sp, entry->vno);

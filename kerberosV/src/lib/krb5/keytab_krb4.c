@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997 - 2001 Kungliga Tekniska Högskolan
+ * Copyright (c) 1997, 1998, 1999 Kungliga Tekniska Högskolan
  * (Royal Institute of Technology, Stockholm, Sweden). 
  * All rights reserved. 
  *
@@ -33,7 +33,7 @@
 
 #include "krb5_locl.h"
 
-RCSID("$KTH: keytab_krb4.c,v 1.8 2001/05/16 22:23:31 assar Exp $");
+RCSID("$KTH: keytab_krb4.c,v 1.6 2000/12/15 17:10:40 joda Exp $");
 
 struct krb4_kt_data {
     char *filename;
@@ -45,14 +45,11 @@ krb4_kt_resolve(krb5_context context, const char *name, krb5_keytab id)
     struct krb4_kt_data *d;
 
     d = malloc (sizeof(*d));
-    if (d == NULL) {
-	krb5_set_error_string (context, "malloc: out of memory");
+    if (d == NULL)
 	return ENOMEM;
-    }
     d->filename = strdup (name);
     if (d->filename == NULL) {
 	free(d);
-	krb5_set_error_string (context, "malloc: out of memory");
 	return ENOMEM;
     }
     id->data = d;
@@ -95,23 +92,17 @@ krb4_kt_start_seq_get_int (krb5_context context,
 {
     struct krb4_kt_data *d = id->data;
     struct krb4_cursor_extra_data *ed;
-    int ret;
 
     ed = malloc (sizeof(*ed));
-    if (ed == NULL) {
-	krb5_set_error_string (context, "malloc: out of memory");
+    if (ed == NULL)
 	return ENOMEM;
-    }
     ed->entry.principal = NULL;
     ed->num = -1;
     c->data = ed;
     c->fd = open (d->filename, flags);
     if (c->fd < 0) {
-	ret = errno;
 	free (ed);
-	krb5_set_error_string(context, "open(%s): %s", d->filename,
-			      strerror(ret));
-	return ret;
+	return errno;
     }
     c->sp = krb5_storage_from_fd(c->fd);
     return 0;
@@ -247,12 +238,8 @@ krb4_kt_add_entry (krb5_context context,
     if (fd < 0) {
 	fd = open (d->filename,
 		   O_WRONLY | O_APPEND | O_BINARY | O_CREAT, 0600);
-	if (fd < 0) {
-	    ret = errno;
-	    krb5_set_error_string(context, "open(%s): %s", d->filename,
-				  strerror(ret));
-	    return ret;
-	}
+	if (fd < 0)
+	    return errno;
     }
     ret = krb5_524_conv_principal (context, entry->principal,
 				   service, instance, realm);
@@ -275,19 +262,6 @@ krb4_kt_add_entry (krb5_context context,
 
 const krb5_kt_ops krb4_fkt_ops = {
     "krb4",
-    krb4_kt_resolve,
-    krb4_kt_get_name,
-    krb4_kt_close,
-    NULL,			/* get */
-    krb4_kt_start_seq_get,
-    krb4_kt_next_entry,
-    krb4_kt_end_seq_get,
-    krb4_kt_add_entry,		/* add_entry */
-    NULL			/* remove_entry */
-};
-
-const krb5_kt_ops krb5_srvtab_fkt_ops = {
-    "SRVTAB",
     krb4_kt_resolve,
     krb4_kt_get_name,
     krb4_kt_close,

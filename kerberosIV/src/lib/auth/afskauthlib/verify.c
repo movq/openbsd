@@ -277,12 +277,10 @@ afs_gettktstring (void)
 	}
     }
 #ifdef KRB5
-    if(setenv("KRB5CCNAME",krb5ccname,1) != 0)
-	errx(1, "cannot set KRB5CCNAME");
+    setenv("KRB5CCNAME",krb5ccname,1);
 #endif
 #ifdef KRB4
-    if(setenv("KRBTKFILE",krbtkfile,1) != 0)
-	errx(1, "cannot set KRBTKFILE");
+    setenv("KRBTKFILE",krbtkfile,1);
     return krbtkfile;
 #else
     return "";

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999 - 2001 Kungliga Tekniska Högskolan
+ * Copyright (c) 1999 Kungliga Tekniska Högskolan
  * (Royal Institute of Technology, Stockholm, Sweden). 
  * All rights reserved. 
  *
@@ -33,7 +33,7 @@
 
 #include "krb5_locl.h"
 #include <getarg.h>
-RCSID("$KTH: verify_krb5_conf.c,v 1.5 2001/05/14 06:14:52 assar Exp $");
+RCSID("$KTH: verify_krb5_conf.c,v 1.3 1999/12/02 17:05:13 joda Exp $");
 
 /* verify krb5.conf */
 
@@ -60,17 +60,14 @@ usage (int ret)
 int
 main(int argc, char **argv)
 {
-    krb5_context context;
     const char *config_file = NULL;
     krb5_error_code ret;
     krb5_config_section *tmp_cf;
+    unsigned lineno;
+    char *error_message;
     int optind = 0;
 
-    setprogname (argv[0]);
-
-    ret = krb5_init_context(&context);
-    if (ret)
-	errx (1, "krb5_init_context failed");
+    set_progname (argv[0]);
 
     if(getarg(args, sizeof(args) / sizeof(args[0]), argc, argv, &optind))
 	usage(1);
@@ -96,9 +93,10 @@ main(int argc, char **argv)
 	usage (1);
     }
     
-    ret = krb5_config_parse_file (context, config_file, &tmp_cf);
+    ret = krb5_config_parse_file_debug (config_file, &tmp_cf, &lineno,
+					&error_message);
     if (ret == 0)
 	return 0;
-    krb5_warn (context, ret, "krb5_config_parse_file");
+    fprintf (stderr, "%s:%u: %s\n", config_file, lineno, error_message);
     return 1;
 }

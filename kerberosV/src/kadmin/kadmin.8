@@ -1,41 +1,32 @@
-.\" $KTH: kadmin.8,v 1.5 2001/06/08 21:27:57 joda Exp $
+.\" $KTH: kadmin.8,v 1.2 2000/09/19 12:29:48 assar Exp $
 .\"
 .Dd September 10, 2000
 .Dt KADMIN 8
 .Os HEIMDAL
 .Sh NAME
 .Nm kadmin
-.Nd Kerberos administration utility
+.Nd
+Kerberos administration utility
 .Sh SYNOPSIS
 .Nm
 .Oo Fl p Ar string \*(Ba Xo
-.Fl -principal= Ns Ar string
+.Fl -principal= Ns Ar string Oc
 .Xc
-.Oc
-.Oo Fl K Ar string \*(Ba Xo
-.Fl -keytab= Ns Ar string
-.Xc
-.Oc
 .Oo Fl c Ar file \*(Ba Xo
-.Fl -config-file= Ns Ar file
+.Fl -config-file= Ns Ar file Oc
 .Xc
-.Oc
 .Oo Fl k Ar file \*(Ba Xo
-.Fl -key-file= Ns Ar file
+.Fl -key-file= Ns Ar file Oc
 .Xc
-.Oc
 .Oo Fl r Ar realm \*(Ba Xo
-.Fl -realm= Ns Ar realm
+.Fl -realm= Ns Ar realm Oc
 .Xc
-.Oc
 .Oo Fl a Ar host \*(Ba Xo
-.Fl -admin-server= Ns Ar host
+.Fl -admin-server= Ns Ar host Oc
 .Xc
-.Oc
 .Oo Fl s Ar port number \*(Ba Xo
-.Fl -server-port= Ns Ar port number
+.Fl -server-port= Ns Ar port number Oc
 .Xc
-.Oc
 .Op Fl l | Fl -local
 .Op Fl h | Fl -help
 .Op Fl v | Fl -version
@@ -56,11 +47,6 @@ Supported options:
 .Fl -principal= Ns Ar string
 .Xc
 principal to authenticate as
-.It Xo
-.Fl K Ar string Ns ,
-.Fl -keytab= Ns Ar string
-.Xc
-keytab for authentication pricipal
 .It Xo
 .Fl c Ar file Ns ,
 .Fl -config-file= Ns Ar file
@@ -105,9 +91,8 @@ will prompt for commands to process. Commands include:
 .Op Fl r | Fl -random-key
 .Op Fl -random-password
 .Oo Fl p Ar string \*(Ba Xo
-.Fl -password= Ns Ar string
+.Fl -password= Ns Ar string Oc
 .Xc
-.Oc
 .Op Fl -key= Ns Ar string
 .Op Fl -max-ticket-life= Ns Ar lifetime
 .Op Fl -max-renewable-life= Ns Ar lifetime
@@ -116,7 +101,7 @@ will prompt for commands to process. Commands include:
 .Op Fl -pw-expiration-time= Ns Ar time
 .Ar principal...
 .Pp
-.Bd -ragged -offset indent
+.Bd -filled -offset indent
 creates a new principal
 .Ed
 .Pp
@@ -124,39 +109,37 @@ creates a new principal
 .Op Fl r | Fl -random-key
 .Op Fl -random-password
 .Oo Fl p Ar string \*(Ba Xo
-.Fl -password= Ns Ar string
+.Fl -password= Ns Ar string Oc
 .Xc
-.Oc
 .Op Fl -key= Ns Ar string
 .Ar principal...
 .Pp
-.Bd -ragged -offset indent
+.Bd -filled -offset indent
 changes the password of an existing principal
 .Ed
 .Pp
 .Nm delete
 .Ar principal...
 .Pp
-.Bd -ragged -offset indent
+.Bd -filled -offset indent
 removes a principal
 .Ed
 .Pp
 .Nm del_enctype
 .Ar principal enctypes...
 .Pp
-.Bd -ragged -offset indent
+.Bd -filled -offset indent
 removes some enctypes from a principal, this can be useful the service
 belonging to the principal is known to not handle certain enctypes
 .Ed
 .Pp
 .Nm ext_keytab
 .Oo Fl k Ar string \*(Ba Xo
-.Fl -keytab= Ns Ar string
+.Fl -keytab= Ns Ar string Oc
 .Xc
-.Oc
 .Ar principal...
 .Pp
-.Bd -ragged -offset indent
+.Bd -filled -offset indent
 creates a keytab with the keys of the specified principals
 .Ed
 .Pp
@@ -166,7 +149,7 @@ creates a keytab with the keys of the specified principals
 .Op Fl t | Fl -terse
 .Ar expression...
 .Pp
-.Bd -ragged -offset indent
+.Bd -filled -offset indent
 lists the principals that match the expressions (which are shell glob
 like), long format gives more information, and terse just prints the
 names
@@ -175,15 +158,14 @@ names
 .Nm rename
 .Ar from to
 .Pp
-.Bd -ragged -offset indent
+.Bd -filled -offset indent
 renames a principal
 .Ed
 .Pp
 .Nm modify
 .Oo Fl a Ar attributes \*(Ba Xo
-.Fl -attributes= Ns Ar attributes
+.Fl -attributes= Ns Ar attributes Oc
 .Xc
-.Oc
 .Op Fl -max-ticket-life= Ns Ar lifetime
 .Op Fl -max-renewable-life= Ns Ar lifetime
 .Op Fl -expiration-time= Ns Ar time
@@ -191,25 +173,26 @@ renames a principal
 .Op Fl -kvno= Ns Ar number
 .Ar principal
 .Pp
-.Bd -ragged -offset indent
+.Bd -filled -offset indent
 modifies certain attributes of a principal
 .Ed
 .Pp
 .Nm privileges
 .Pp
-.Bd -ragged -offset indent
+.Bd -filled -offset indent
 lists the operations you are allowd to perform
 .Ed
 .Pp
 .Ed
-.Pp
+
 When running in local mode, the following commands can also be used.
+
 .Bd -ragged -offset indent
 .Nm dump
 .Op Fl d | Fl -decrypt
 .Op Ar dump-file
 .Pp
-.Bd -ragged -offset indent
+.Bd -filled -offset indent
 writes the database in
 .Dq human readable
 form to the specified file, or standard out
@@ -220,7 +203,7 @@ form to the specified file, or standard out
 .Op Fl -realm-max-renewable-life= Ns Ar string
 .Ar realm
 .Pp
-.Bd -ragged -offset indent
+.Bd -filled -offset indent
 initialises the Kerberos database with entries for a new realm, it's
 possible to have more than one realm served by one server
 .Ed
@@ -228,20 +211,21 @@ possible to have more than one realm served by one server
 .Nm load
 .Ar file
 .Pp
-.Bd -ragged -offset indent
+.Bd -filled -offset indent
 reads a previously dumped database, and re-creates that database from scratch
 .Ed
 .Pp
 .Nm merge
 .Ar file
 .Pp
-.Bd -ragged -offset indent
+.Bd -filled -offset indent
 similar to 
 .Nm list
 but just modifies the database with the entries in the dump file
 .Ed
 .Pp
 .Ed
+
 .\".Sh ENVIRONMENT
 .\".Sh FILES
 .\".Sh EXAMPLES

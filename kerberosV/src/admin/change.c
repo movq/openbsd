@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997 - 2001 Kungliga Tekniska Högskolan
+ * Copyright (c) 1997 - 2000 Kungliga Tekniska Högskolan
  * (Royal Institute of Technology, Stockholm, Sweden). 
  * All rights reserved. 
  *
@@ -33,11 +33,10 @@
 
 #include "ktutil_locl.h"
 
-RCSID("$KTH: change.c,v 1.3 2001/05/10 15:40:07 assar Exp $");
+RCSID("$KTH: change.c,v 1.2 2000/06/03 12:24:03 assar Exp $");
 
 static void
-change_entry (krb5_context context, krb5_keytab keytab,
-	      krb5_keytab_entry *entry,
+change_entry (krb5_context context, krb5_keytab_entry *entry,
 	      const char *realm, const char *admin_server, int server_port)
 {
     krb5_error_code ret;
@@ -50,7 +49,7 @@ change_entry (krb5_context context, krb5_keytab keytab,
 
     ret = krb5_unparse_name (context, entry->principal, &client_name);
     if (ret) {
-	krb5_warn (context, ret, "krb5_unparse_name");
+	krb5_warn (context, ret, "kadm5_c_init_with_skey_ctx");
 	return;
     }
 
@@ -114,7 +113,6 @@ int
 kt_change (int argc, char **argv)
 {
     krb5_error_code ret;
-    krb5_keytab keytab;
     krb5_kt_cursor cursor;
     krb5_keytab_entry entry;
     char *realm = NULL;
@@ -147,39 +145,21 @@ kt_change (int argc, char **argv)
        || help_flag) {
 	arg_printusage(args, sizeof(args) / sizeof(args[0]), 
 		       "ktutil change", "principal...");
-	return 1;
+	return 0;
     }
     
-    if (keytab_string == NULL) {
-	ret = krb5_kt_default_modify_name (context, keytab_buf,
-					   sizeof(keytab_buf));
-	if (ret) {
-	    krb5_warn(context, ret, "krb5_kt_default_modify_name");
-	    return 1;
-	}
-	keytab_string = keytab_buf;
-    }
-    ret = krb5_kt_resolve(context, keytab_string, &keytab);
-    if (ret) {
-	krb5_warn(context, ret, "resolving keytab %s", keytab_string);
-	return 1;
-    }
-
-    if (verbose_flag)
-	fprintf (stderr, "Using keytab %s\n", keytab_string);
-	
     j = 0;
     max = 10;
     princs = malloc (max * sizeof(*princs));
     if (princs == NULL) {
 	krb5_warnx (context, "malloc: out of memory");
-	goto out;
+	return 1;
     }
 
     ret = krb5_kt_start_seq_get(context, keytab, &cursor);
     if(ret){
 	krb5_warn(context, ret, "krb5_kt_start_seq_get %s", keytab_string);
-	goto out;
+	return 1;
     }
 
     while((ret = krb5_kt_next_entry(context, keytab, &entry, &cursor)) == 0) {
@@ -194,8 +174,7 @@ kt_change (int argc, char **argv)
 	    continue;
 
 	if (optind == argc) {
-	    change_entry (context, keytab, &entry, realm, admin_server,
-			  server_port);
+	    change_entry (context, &entry, realm, admin_server, server_port);
 	    done = 1;
 	} else {
 	    for (i = optind; i < argc; ++i) {
@@ -207,7 +186,7 @@ kt_change (int argc, char **argv)
 		    continue;
 		}
 		if (krb5_principal_compare (context, princ, entry.principal)) {
-		    change_entry (context, keytab, &entry,
+		    change_entry (context, &entry,
 				  realm, admin_server, server_port);
 		    done = 1;
 		}
@@ -241,7 +220,5 @@ kt_change (int argc, char **argv)
 	krb5_free_principal (context, princs[j]);
     free (princs);
     ret = krb5_kt_end_seq_get(context, keytab, &cursor);
- out:
-    krb5_kt_close(context, keytab);
     return 0;
 }

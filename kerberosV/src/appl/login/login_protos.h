@@ -64,12 +64,6 @@ read_string __P((
 	int echo));
 
 void
-shrink_hostname __P((
-	const char *hostname,
-	char *dst,
-	size_t dst_sz));
-
-void
 stty_default __P((void));
 
 void

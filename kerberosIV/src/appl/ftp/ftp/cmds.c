@@ -36,7 +36,7 @@
  */
 
 #include "ftp_locl.h"
-RCSID("$KTH: cmds.c,v 1.36.2.2 2000/06/23 02:43:49 assar Exp $");
+RCSID("$KTH: cmds.c,v 1.36 1999/09/16 20:37:28 assar Exp $");
 
 typedef void (*sighand)(int);
 
@@ -647,7 +647,6 @@ getit(int argc, char **argv, int restartit, char *mode)
 			int cmdret;
 			int yy, mo, day, hour, min, sec;
 			struct tm *tm;
-			time_t mtime = stbuf.st_mtime;
 
 			overbose = verbose;
 			if (debug == 0)
@@ -666,7 +665,7 @@ getit(int argc, char **argv, int restartit, char *mode)
 				return (0);
 			}
 
-			tm = gmtime(&mtime);
+			tm = gmtime(&stbuf.st_mtime);
 			tm->tm_mon++;
 			tm->tm_year += 1900;
 

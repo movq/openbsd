@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1995 - 2001 Kungliga Tekniska Högskolan 
+ * Copyright (c) 1995, 1996, 1997 Kungliga Tekniska Högskolan 
  * (Royal Institute of Technology, Stockholm, Sweden).  
  * All rights reserved.
  * 
@@ -33,7 +33,7 @@
 
 #ifdef HAVE_CONFIG_H
 #include <config.h>
-RCSID("$KTH: warnerr.c,v 1.13 2001/05/16 23:54:19 assar Exp $");
+RCSID("$KTH: warnerr.c,v 1.9 2000/07/25 09:54:05 joda Exp $");
 #endif
 
 #include "roken.h"
@@ -43,17 +43,14 @@ RCSID("$KTH: warnerr.c,v 1.13 2001/05/16 23:54:19 assar Exp $");
 const char *__progname;
 #endif
 
-#ifndef HAVE_GETPROGNAME
 const char *
-getprogname(void)
+get_progname(void)
 {
     return __progname;
 }
-#endif
 
-#ifndef HAVE_SETPROGNAME
 void
-setprogname(const char *argv0)
+set_progname(char *argv0)
 {
 #ifndef HAVE___PROGNAME
     char *p;
@@ -67,28 +64,13 @@ setprogname(const char *argv0)
     __progname = p;
 #endif
 }
-#endif /* HAVE_SETPROGNAME */
-
-void
-set_progname(char *argv0)
-{
-    setprogname ((const char *)argv0);
-}
-
-const char *
-get_progname (void)
-{
-    return getprogname ();
-}
 
 void
 warnerr(int doerrno, const char *fmt, va_list ap)
 {
     int sverrno = errno;
-    const char *progname = getprogname();
-
-    if(progname != NULL){
-	fprintf(stderr, "%s", progname);
+    if(__progname != NULL){
+	fprintf(stderr, "%s", __progname);
 	if(fmt != NULL || doerrno)
 	    fprintf(stderr, ": ");
     }
