@@ -1,7 +1,8 @@
-#	$Id: HP-UX.10.x,v 1.1.1.2 2001/01/15 20:51:57 millert Exp $
+#	$Sendmail: HP-UX.10.x,v 8.17 2001/05/30 00:03:35 ca Exp $
 define(`confCC', `cc -Aa')
 define(`confMAPDEF', `-DNDBM -DNIS -DMAP_REGEX')
-define(`confENVDEF', `-D_HPUX_SOURCE -DV4FS -D_PATH_SENDMAIL=\"/usr/sbin/sendmail\"')
+define(`confENVDEF', `-D_HPUX_SOURCE -DV4FS')
+define(`confSM_OS_HEADER', `sm_os_hp')
 define(`confOPTIMIZE', `+O3')
 define(`confLIBS', `-lndbm')
 define(`confSHELL', `/usr/bin/sh')

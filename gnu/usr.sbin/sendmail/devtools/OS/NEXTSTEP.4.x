@@ -1,4 +1,4 @@
-#	$Id: NEXTSTEP.4.x,v 1.1.1.2 2001/01/15 20:51:59 millert Exp $
+#	$Sendmail: NEXTSTEP.4.x,v 8.6 2000/03/11 21:21:00 gshapiro Exp $
 PUSHDIVERT(1)
 # NEXTSTEP 3.1 and 3.2 only support m68k and i386
 #ARCH=  -arch m68k -arch i386 -arch hppa -arch sparc

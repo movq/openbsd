@@ -1,4 +1,4 @@
-#	$Id: NEWS-OS.6.x,v 1.1.1.2 2001/01/15 20:51:59 millert Exp $
+#	$Sendmail: NEWS-OS.6.x,v 8.13 1999/08/08 06:42:07 gshapiro Exp $
 define(`confCC', `/bin/cc')
 define(`confBEFORE', `sysexits.h ndbm.o')
 define(`confMAPDEF', `-DNDBM -DNIS')

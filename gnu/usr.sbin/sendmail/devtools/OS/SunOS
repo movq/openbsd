@@ -1,5 +1,6 @@
-#	$Id: SunOS,v 1.1.1.2 2001/01/15 20:52:02 millert Exp $
+#	$Sendmail: SunOS,v 8.11 2000/12/17 16:17:51 ca Exp $
 define(`confMAPDEF', `-DNDBM -DNIS')
+define(`confSM_OS_HEADER', `sm_os_sunos')
 define(`confLDOPTS', `-Bstatic')
 define(`confMBINDIR', `/usr/lib')
 define(`confSBINDIR', `/usr/etc')

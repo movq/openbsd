@@ -1,4 +1,4 @@
-#	$Id: dgux,v 1.1.1.2 2001/01/15 20:52:04 millert Exp $
+#	$Sendmail: dgux,v 8.8 2000/04/06 08:02:58 gshapiro Exp $
 define(`confMAPDEF', `-DNDBM -DNIS')
 define(`confLIBS', `-ldbm')
 define(`confMBINDIR', `/usr/bin')

@@ -1,6 +1,6 @@
 divert(-1)
 #
-# Copyright (c) 1998, 1999 Sendmail, Inc. and its suppliers.
+# Copyright (c) 1998, 1999, 2001 Sendmail, Inc. and its suppliers.
 #	All rights reserved.
 # Copyright (c) 1983 Eric P. Allman.  All rights reserved.
 # Copyright (c) 1988, 1993
@@ -13,13 +13,13 @@ divert(-1)
 #
 
 divert(0)
-VERSIONID(`$Id: mailertable.m4,v 1.1.1.2 2001/01/15 20:52:29 millert Exp $')
+VERSIONID(`$Sendmail: mailertable.m4,v 8.23 2001/03/16 00:51:26 gshapiro Exp $')
 divert(-1)
 
 define(`_MAILER_TABLE_', `')
 
 LOCAL_CONFIG
 # Mailer table (overriding domains)
-Kmailertable ifelse(defn(`_ARG_'), `',
-		    DATABASE_MAP_TYPE MAIL_SETTINGS_DIR`mailertable',
+Kmailertable ifelse(defn(`_ARG_'), `', DATABASE_MAP_TYPE MAIL_SETTINGS_DIR`mailertable',
+		    defn(`_ARG_'), `LDAP', `ldap -1 -v sendmailMTAMapValue -k (&(objectClass=sendmailMTAMapObject)(|(sendmailMTACluster=${sendmailMTACluster})(sendmailMTAHost=$j))(sendmailMTAMapName=mailer)(sendmailMTAKey=%0))',
 		    `_ARG_')

@@ -26,7 +26,7 @@ divert(-1)
 #
 
 divert(0)dnl
-VERSIONID(`$Id: tcpproto.mc,v 1.1.1.2 2001/01/15 20:52:26 millert Exp $')
+VERSIONID(`$Sendmail: tcpproto.mc,v 8.14 2000/08/03 15:26:50 ca Exp $')
 OSTYPE(`unknown')
 FEATURE(`nouucp', `reject')
 MAILER(`local')

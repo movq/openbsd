@@ -1,8 +1,9 @@
-#       $Id: Makefile,v 1.1.1.2 2001/01/15 20:51:51 millert Exp $
+#       $Sendmail: Makefile.dist,v 8.15 2001/08/23 20:44:39 ca Exp $
 
 SHELL= /bin/sh
-SUBDIRS= libsmutil libsmdb sendmail mail.local mailstats makemap \
-	 praliases rmail smrsh vacation
+SUBDIRS= libsm libsmutil libsmdb sendmail editmap mail.local \
+	 mailstats makemap praliases rmail smrsh vacation
+# libmilter: requires pthread
 BUILD=   ./Build
 OPTIONS= $(CONFIG) $(FLAGS)
 
@@ -21,6 +22,13 @@ clean: FRC
 	done
 
 install: FRC
+	@for x in $(SUBDIRS); \
+	do \
+		(cd $$x; echo Making $@ in:; pwd; \
+		$(SHELL) $(BUILD) $(OPTIONS) $@); \
+	done
+
+install-docs: FRC
 	@for x in $(SUBDIRS); \
 	do \
 		(cd $$x; echo Making $@ in:; pwd; \

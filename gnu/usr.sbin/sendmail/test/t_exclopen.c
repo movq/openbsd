@@ -36,7 +36,7 @@
 #include <unistd.h>
 
 #ifndef lint
-static char id[] = "@(#)$Id: t_exclopen.c,v 1.1.1.2 2001/01/15 20:52:20 millert Exp $";
+static char id[] = "@(#)$Sendmail: t_exclopen.c,v 8.5 1999/08/28 00:25:28 gshapiro Exp $";
 #endif /* ! lint */
 
 static char Attacker[128];

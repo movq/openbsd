@@ -1,6 +1,6 @@
 divert(-1)
 #
-# Copyright (c) 1998, 1999 Sendmail, Inc. and its suppliers.
+# Copyright (c) 1998-2000 Sendmail, Inc. and its suppliers.
 #	All rights reserved.
 # Copyright (c) 1983 Eric P. Allman.  All rights reserved.
 # Copyright (c) 1988, 1993
@@ -13,7 +13,13 @@ divert(-1)
 #
 
 divert(0)
-VERSIONID(`$Id: allmasquerade.m4,v 1.1.1.2 2001/01/15 20:52:27 millert Exp $')
+VERSIONID(`$Sendmail: allmasquerade.m4,v 8.13 2000/09/12 22:00:53 ca Exp $')
 divert(-1)
 
+ifdef(`_MAILER_local_',
+	`errprint(`*** MAILER(`local') must appear after FEATURE(`allmasquerade')')
+')dnl
+ifdef(`_MAILER_uucp_',
+	`errprint(`*** MAILER(`uucp') must appear after FEATURE(`allmasquerade')')
+')dnl
 define(`_ALL_MASQUERADE_', 1)
