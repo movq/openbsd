@@ -31,13 +31,13 @@
  */
 
 /*
- * $Header: /home/mike/src/cvs/openbsd/src/sbin/ipsec/photurisd/Attic/errlog.c,v 1.1 1997/07/18 22:48:49 provos Exp $
+ * $Header: /home/mike/src/cvs/openbsd/src/sbin/ipsec/photurisd/Attic/errlog.c,v 1.1.1.1 1997/07/18 22:48:49 provos Exp $
  *
  * $Author: provos $
  *
  * $Log: errlog.c,v $
- * Revision 1.1  1997/07/18 22:48:49  provos
- * Initial revision
+ * Revision 1.1.1.1  1997/07/18 22:48:49  provos
+ * initial import of the photuris keymanagement daemon
  *
  * Revision 1.1  1997/05/22 17:34:16  provos
  * Initial revision
@@ -45,7 +45,7 @@
  */
 
 #ifndef lint
-static char rcsid[] = "$Id: errlog.c,v 1.1 1997/07/18 22:48:49 provos Exp $";
+static char rcsid[] = "$Id: errlog.c,v 1.1.1.1 1997/07/18 22:48:49 provos Exp $";
 #endif
 
 #define _ERRLOG_C_

@@ -33,7 +33,7 @@
  */
 
 #ifndef lint
-static char rcsid[] = "$Id: config.c,v 1.1 1997/07/18 22:48:49 provos Exp $";
+static char rcsid[] = "$Id: config.c,v 1.1.1.1 1997/07/18 22:48:49 provos Exp $";
 #endif
 
 #define _CONFIG_C_
