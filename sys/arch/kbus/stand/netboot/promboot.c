@@ -1,4 +1,4 @@
-/*	$Id: promboot.c,v 1.1.1.1 1997/10/14 07:25:32 gingold Exp $ */
+/*	$OpenBSD: promboot.c,v 1.1.1.1.12.1 2000/03/24 09:07:56 niklas Exp $ */
 
 /*
  * Copyright (c) 1995 Theo de Raadt

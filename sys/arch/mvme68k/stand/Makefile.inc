@@ -1,3 +1,3 @@
-#	$Id: Makefile.inc,v 1.2 1995/11/07 08:50:33 deraadt Exp $
+#	$OpenBSD: Makefile.inc,v 1.2.16.1 2000/03/24 09:08:09 niklas Exp $
 
 MDEC_DIR?=/usr/mdec
