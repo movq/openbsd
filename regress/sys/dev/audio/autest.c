@@ -1,4 +1,4 @@
-/*	$OpenBSD: autest.c,v 1.1 2003/02/01 17:58:18 jason Exp $	*/
+/*	$OpenBSD: autest.c,v 1.1.1.1 2003/02/01 17:58:18 jason Exp $	*/
 
 /*
  * Copyright (c) 2002 Jason L. Wright (jason@thought.net)
