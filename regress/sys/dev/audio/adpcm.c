@@ -1,4 +1,4 @@
-/*	$OpenBSD: adpcm.c,v 1.1 2003/02/01 17:58:18 jason Exp $	*/
+/*	$OpenBSD: adpcm.c,v 1.1.1.1 2003/02/01 17:58:18 jason Exp $	*/
 
 /***********************************************************
 Copyright 1992 by Stichting Mathematisch Centrum, Amsterdam, The

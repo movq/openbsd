@@ -1,4 +1,4 @@
-/*	$OpenBSD: law.c,v 1.1 2003/02/01 17:58:18 jason Exp $	*/
+/*	$OpenBSD: law.c,v 1.1.1.1 2003/02/01 17:58:18 jason Exp $	*/
 
 /*
  * This source code is a product of Sun Microsystems, Inc. and is provided

@@ -1,4 +1,4 @@
-/*	$OpenBSD: adpcm.h,v 1.1 2003/02/01 17:58:18 jason Exp $	*/
+/*	$OpenBSD: adpcm.h,v 1.1.1.1 2003/02/01 17:58:18 jason Exp $	*/
 
 /*
 ** adpcm.h - include file for adpcm coder.
