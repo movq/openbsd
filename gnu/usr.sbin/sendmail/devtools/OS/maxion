@@ -1,4 +1,4 @@
-#	$Sendmail: maxion,v 8.8 1999/04/24 05:38:02 gshapiro Exp $
+#	$Id: maxion,v 1.1.1.2 2001/01/15 20:52:04 millert Exp $
 define(`confCC', `/usr/ucb/cc')
 define(`confMAPDEF', `-DNDBM -DNIS')
 define(`confLIBDIRS', `-L/usr/ucblib')

@@ -1,6 +1,6 @@
 #! /bin/sh
 #
-# $Sendmail: find_in_path.sh,v 8.2 1999/09/23 20:42:22 gshapiro Exp $
+# $Id: find_in_path.sh,v 1.1.1.2 2001/01/15 20:51:52 millert Exp $
 #
 EX_OK=0
 EX_NOT_FOUND=1

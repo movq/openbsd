@@ -23,21 +23,21 @@
 ######################################################################
 ######################################################################
 
-#####  $Id: generic-nextstep3.3.cf,v 1.1 2001/01/15 20:52:26 millert Exp $  #####
-#####  $Id: generic-nextstep3.3.cf,v 1.1 2001/01/15 20:52:26 millert Exp $  #####
-#####  $Id: generic-nextstep3.3.cf,v 1.1 2001/01/15 20:52:26 millert Exp $  #####
+#####  $Id: generic-nextstep3.3.cf,v 1.1.1.1 2001/01/15 20:52:26 millert Exp $  #####
+#####  $Id: generic-nextstep3.3.cf,v 1.1.1.1 2001/01/15 20:52:26 millert Exp $  #####
+#####  $Id: generic-nextstep3.3.cf,v 1.1.1.1 2001/01/15 20:52:26 millert Exp $  #####
 
-#####  $Id: generic-nextstep3.3.cf,v 1.1 2001/01/15 20:52:26 millert Exp $  #####
+#####  $Id: generic-nextstep3.3.cf,v 1.1.1.1 2001/01/15 20:52:26 millert Exp $  #####
 
-#####  $Id: generic-nextstep3.3.cf,v 1.1 2001/01/15 20:52:26 millert Exp $  #####
+#####  $Id: generic-nextstep3.3.cf,v 1.1.1.1 2001/01/15 20:52:26 millert Exp $  #####
 
-#####  $Id: generic-nextstep3.3.cf,v 1.1 2001/01/15 20:52:26 millert Exp $  #####
+#####  $Id: generic-nextstep3.3.cf,v 1.1.1.1 2001/01/15 20:52:26 millert Exp $  #####
 
-#####  $Id: generic-nextstep3.3.cf,v 1.1 2001/01/15 20:52:26 millert Exp $  #####
+#####  $Id: generic-nextstep3.3.cf,v 1.1.1.1 2001/01/15 20:52:26 millert Exp $  #####
 
 
 
-#####  $Id: generic-nextstep3.3.cf,v 1.1 2001/01/15 20:52:26 millert Exp $  #####
+#####  $Id: generic-nextstep3.3.cf,v 1.1.1.1 2001/01/15 20:52:26 millert Exp $  #####
 
 
 # level 9 config file format
@@ -1105,7 +1105,7 @@ R$* $| $*		$@ NO		not authenticated
 ###   Local and Program Mailer specification   ###
 ##################################################
 
-#####  $Id: generic-nextstep3.3.cf,v 1.1 2001/01/15 20:52:26 millert Exp $  #####
+#####  $Id: generic-nextstep3.3.cf,v 1.1.1.1 2001/01/15 20:52:26 millert Exp $  #####
 
 #
 #  Envelope sender rewriting
@@ -1154,7 +1154,7 @@ Mprog,		P=/bin/sh, F=lsDFMoqeuP, S=EnvFromL/HdrFromL, R=EnvToL/HdrToL, D=$z:/,
 ###   SMTP Mailer specification   ###
 #####################################
 
-#####  $Id: generic-nextstep3.3.cf,v 1.1 2001/01/15 20:52:26 millert Exp $  #####
+#####  $Id: generic-nextstep3.3.cf,v 1.1.1.1 2001/01/15 20:52:26 millert Exp $  #####
 
 #
 #  common sender and masquerading recipient rewriting

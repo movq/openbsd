@@ -1,10 +1,8 @@
-#	$Sendmail: NCR.MP-RAS.3.x,v 8.16 1999/10/25 16:32:02 ca Exp $
+#	$Id: NCR.MP-RAS.3.x,v 1.1.1.2 2001/01/15 20:51:59 millert Exp $
 define(`confMAPDEF', `-DNDBM -DMAP_REGEX')
 define(`confENVDEF', `-DNCR_MP_RAS3')
 define(`confOPTIMIZE', `-O2')
-APPENDDEF(`confINCDIRS', `-I/usr/include -I/usr/ucbinclude')
-define(`confLIBDIRS', `-L/usr/ucblib')
-define(`confLIBS', `-lsocket -lnsl -lelf -lc -lucb')
+define(`confLIBS', `-lsocket -lnsl -lelf -lc89')
 define(`confMBINDIR', `/usr/ucblib')
 define(`confSBINDIR', `/usr/ucbetc')
 define(`confUBINDIR', `/usr/ucb')

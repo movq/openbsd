@@ -1,4 +1,4 @@
-#	$Sendmail: 386BSD,v 8.2 1999/02/07 03:21:07 gshapiro Exp $
+#	$Id: 386BSD,v 1.1.1.2 2001/01/15 20:51:54 millert Exp $
 define(`confENVDEF', ` -DMIME')
 define(`confLIBS', `-lutil')
 define(`confLINKS', `/usr/sbin/sendmail /usr/bin/newaliases \

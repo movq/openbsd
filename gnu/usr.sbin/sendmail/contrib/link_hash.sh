@@ -3,7 +3,7 @@
 ## Copyright (c) 2000 Sendmail, Inc. and its suppliers.
 ##       All rights reserved.
 ##
-## $Id: link_hash.sh,v 1.1 2001/01/15 20:52:40 millert Exp $
+## $Id: link_hash.sh,v 1.1.1.1 2001/01/15 20:52:40 millert Exp $
 ##
 #
 # ln a certificate to its hash

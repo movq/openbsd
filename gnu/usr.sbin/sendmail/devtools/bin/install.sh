@@ -8,7 +8,7 @@
 # the sendmail distribution.
 #
 #
-#	$Sendmail: install.sh,v 8.13 1999/02/22 21:34:38 gshapiro Exp $
+#	$Id: install.sh,v 1.1.1.2 2001/01/15 20:51:52 millert Exp $
 
 # Set default program
 program=mv
