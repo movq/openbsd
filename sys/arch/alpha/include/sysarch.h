@@ -1,4 +1,4 @@
-/*	$NetBSD: dec_axppci_33.h,v 1.1.4.2 1996/06/13 18:35:18 cgd Exp $	*/
+/*	$NetBSD: sysarch.h,v 1.1 1996/04/12 01:42:45 cgd Exp $	*/
 
 /*
  * Copyright (c) 1995, 1996 Carnegie-Mellon University.
@@ -27,6 +27,16 @@
  * rights to redistribute these changes.
  */
 
-char	*dec_axppci_33_modelname __P((void));
-void	dec_axppci_33_consinit __P((void));
-void	dec_axppci_33_device_register __P((struct device *, void *));
+#ifndef _ALPHA_SYSARCH_H_
+#define	_ALPHA_SYSARCH_H_
+
+static inline u_int64_t
+alpha_rpcc()
+{
+	u_int64_t rv;
+
+	__asm ("rpcc %0" : "=r" (rv));
+	return (rv);
+}
+
+#endif /* _ALPHA_SYSARCH_H_ */
