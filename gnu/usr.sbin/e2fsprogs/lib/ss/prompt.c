@@ -1,7 +1,7 @@
 /*
  * prompt.c: Routines for retrieving and setting a prompt.
  *
- * $Header: /cvsroot/src/gnu/usr.sbin/e2fsprogs/lib/ss/Attic/prompt.c,v 1.1 1997/06/14 07:18:45 downsj Exp $
+ * $Header: /cvsroot/src/gnu/usr.sbin/e2fsprogs/lib/ss/Attic/prompt.c,v 1.1.1.1 1997/06/14 07:18:45 downsj Exp $
  * $Locker:  $
  *
  * Copyright 1987, 1988 by MIT Student Information Processing Board

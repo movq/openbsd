@@ -1,5 +1,5 @@
 /*
- * $Header: /cvsroot/src/gnu/usr.sbin/e2fsprogs/lib/et/Attic/error_message.c,v 1.1 1997/06/14 07:18:44 downsj Exp $
+ * $Header: /cvsroot/src/gnu/usr.sbin/e2fsprogs/lib/et/Attic/error_message.c,v 1.1.1.1 1997/06/14 07:18:44 downsj Exp $
  * $Source: /cvsroot/src/gnu/usr.sbin/e2fsprogs/lib/et/Attic/error_message.c,v $
  * $Locker:  $
  *
