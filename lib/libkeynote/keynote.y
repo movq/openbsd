@@ -1,4 +1,4 @@
-/* $OpenBSD: keynote.y,v 1.1 1999/05/23 22:11:05 angelos Exp $ */
+/* $OpenBSD: keynote.y,v 1.1.1.1 1999/05/23 22:11:05 angelos Exp $ */
 
 /*
  * The author of this code is Angelos D. Keromytis (angelos@dsl.cis.upenn.edu)

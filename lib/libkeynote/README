@@ -1,4 +1,4 @@
-# $OpenBSD: README,v 1.1 1999/05/23 22:11:03 angelos Exp $
+# $OpenBSD: README,v 1.1.1.1 1999/05/23 22:11:03 angelos Exp $
 
 This is release 2-beta2 of the KeyNote trust management library reference
 implementation.

@@ -1,4 +1,4 @@
-/* $OpenBSD: base64.c,v 1.1 1999/05/23 22:11:06 angelos Exp $ */
+/* $OpenBSD: base64.c,v 1.1.1.1 1999/05/23 22:11:06 angelos Exp $ */
 
 /*
  * Copyright (c) 1996 by Internet Software Consortium.

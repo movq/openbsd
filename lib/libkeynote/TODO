@@ -1,4 +1,4 @@
-# $OpenBSD: TODO,v 1.1 1999/05/23 22:11:03 angelos Exp $
+# $OpenBSD: TODO,v 1.1.1.1 1999/05/23 22:11:03 angelos Exp $
 
 Short term TODOs:
 	- More interesting/comprehensive testsuite
