@@ -1,4 +1,4 @@
-/*	$OpenBSD: lex.l,v 1.6 2002/06/05 17:34:56 mickey Exp $	*/
+/*	$OpenBSD: lex.l,v 1.7 2002/07/19 14:38:58 itojun Exp $	*/
 
 /*
  * Copyright 2002 Niels Provos <provos@citi.umich.edu>
@@ -48,6 +48,7 @@
 #include "y.tab.h"
 
 int yyerror(char *fmt, ...);
+int yylex(void);
 
 char *mystring;
 int myoff;
