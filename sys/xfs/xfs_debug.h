@@ -1,3 +1,4 @@
+/* $OpenBSD: xfs_debug.h,v 1.1.4.1 2000/03/24 09:09:54 niklas Exp $ */
 /*
  * Copyright (c) 1998 Kungliga Tekniska Högskolan
  * (Royal Institute of Technology, Stockholm, Sweden).
@@ -36,7 +37,6 @@
  * SUCH DAMAGE.
  */
 
-/* $Id: xfs_debug.h,v 1.1 1999/04/30 01:59:00 art Exp $ */
 
 #ifndef __XFS_DEBUG_H
 #define __XFS_DEBUG_H

@@ -1,4 +1,4 @@
-/*	$Id: clock.c,v 1.1.1.1 1997/03/03 19:30:41 rahnds Exp $ */
+/*	$OpenBSD: clock.c,v 1.1.1.1.14.1 2000/03/24 09:08:21 niklas Exp $ */
 
 /*
  * Copyright (c) 1992, 1993

@@ -1,3 +1,4 @@
+/* $OpenBSD: xfs_vfsops-bsd.h,v 1.2.2.1 2000/03/24 09:09:55 niklas Exp $ */
 /*
  * Copyright (c) 1995, 1996, 1997, 1998 Kungliga Tekniska Högskolan
  * (Royal Institute of Technology, Stockholm, Sweden).
@@ -36,7 +37,6 @@
  * SUCH DAMAGE.
  */
 
-/* $Id: xfs_vfsops-bsd.h,v 1.2 2000/02/07 04:57:19 assar Exp $ */
 
 #ifndef _xfs_vfsops_bsd_h
 #define _xfs_vfsops_bsd_h
