@@ -1,10 +1,8 @@
-/*	$OpenBSD: espvar.h,v 1.5 1997/08/08 08:25:02 downsj Exp $	*/
-/*	$NetBSD: espvar.h,v 1.19 1997/02/27 01:16:21 thorpej Exp $	*/
+/*	$OpenBSD: lebuffervar.h,v 1.1 1997/08/08 08:25:18 downsj Exp $	*/
+/*	$NetBSD: lebuffervar.h,v 1.2 1997/03/10 22:56:54 pk Exp $ */
 
 /*
- * Copyright (c) 1997 Jason R. Thorpe.
- * All rights reserved.
- *
+ * Copyright (c) 1996 Paul Kranenburg.  All rights reserved.
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
@@ -15,8 +13,7 @@
  *    documentation and/or other materials provided with the distribution.
  * 3. All advertising materials mentioning features or use of this software
  *    must display the following acknowledgement:
- *	This product includes software developed for the NetBSD Project
- *	by Jason R. Thorpe.
+ *	This product includes software developed by Paul Kranenburg.
  * 4. The name of the author may not be used to endorse or promote products
  *    derived from this software without specific prior written permission.
  *
@@ -32,20 +29,13 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-struct esp_softc {
-	struct ncr53c9x_softc sc_ncr53c9x;	/* glue to MI code */
-
-	struct sbusdev sc_sd;			/* sbus device */
-	struct intrhand sc_ih;			/* intr handler */
-
-	volatile u_char *sc_reg;		/* the registers */
-	struct dma_softc *sc_dma;		/* pointer to my dma */
-
-	/* openprom stuff */
-	int sc_node;				/* PROM node ID */
-	int sc_pri;				/* SBUS priority */
+struct lebuf_softc {
+	struct device sc_dev;		/* us as a device */
+	struct sbusdev sc_sd;		/* sbus device */
+	u_int	sc_rev;			/* revision */
+	int	sc_node;		/* PROM node ID */
+	int	sc_burst;		/* DVMA burst size in effect */
+	caddr_t	sc_buffer;		/* VA of the buffer we provide */
+	int	sc_bufsiz;		/* Size of buffer */
+	int	attached;		/* 1: in use by `le' device */
 };
-
-#define SAME_ESP(sc, bp, ca) \
-	((bp->val[0] == ca->ca_slot && bp->val[1] == ca->ca_offset) || \
-	 (bp->val[0] == -1 && bp->val[1] == sc->sc_dev.dv_unit))
