@@ -1,4 +1,4 @@
-/*	$OpenBSD: rdisc.c,v 1.1 1996/09/05 13:58:56 mickey Exp $	*/
+/*	$OpenBSD: rdisc.c,v 1.1.1.1 1996/09/05 13:58:56 mickey Exp $	*/
 
 /*
  * Copyright (c) 1995
