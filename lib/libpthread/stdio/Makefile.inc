@@ -1,5 +1,5 @@
 #	from: @(#)Makefile.inc	5.7 (Berkeley) 6/27/91
-#	$Id: Makefile.inc,v 1.1.1.1 1995/10/18 08:43:05 deraadt Exp $
+#	$Id: Makefile.inc,v 1.1 1995/10/18 08:43:05 deraadt Exp $
 
 # Thread safe stdio sources
 .PATH: ${.CURDIR}/stdio

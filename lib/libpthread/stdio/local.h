@@ -34,7 +34,7 @@
  * SUCH DAMAGE.
  *
  *	from: @(#)local.h	5.3 (Berkeley) 5/6/93
- *	$Id: local.h,v 1.1.1.1 1995/10/18 08:43:07 deraadt Exp $
+ *	$Id: local.h,v 1.1 1995/10/18 08:43:07 deraadt Exp $
  */
 
 /*
