@@ -14,10 +14,10 @@
 # based on original version by Alan R. Martello <al@ee.pitt.edu>
 # And by A.Macpherson@bnr.co.uk for multi-homed hosts
 #
-# $Header: /home/mike/src/cvs/openbsd/src/gnu/usr.bin/perl/lib/Attic/ftp.pl,v 1.1.1.4 2001/05/24 18:23:21 millert Exp $
+# $Header: /home/mike/src/cvs/openbsd/src/gnu/usr.bin/perl/lib/Attic/ftp.pl,v 1.1.1.5 2002/10/27 22:14:58 millert Exp $
 # $Log: ftp.pl,v $
-# Revision 1.1.1.4  2001/05/24 18:23:21  millert
-# stock perl 5.6.1
+# Revision 1.1.1.5  2002/10/27 22:14:58  millert
+# stock perl 5.8.0 from CPAN
 #
 # Revision 1.17  1993/04/21  10:06:54  lmjm
 # Send all status reports to STDERR not to STDOUT (to allow use by ftpcat).
@@ -333,7 +333,7 @@ sub ftp'cwd
 # &ftp'dir( remote LIST options )
 # Start a list goin with the given options.
 # Presuming that the remote deamon uses the ls command to generate the
-# data to send back then then you can send it some extra options (eg: -lRa)
+# data to send back then you can send it some extra options (eg: -lRa)
 # return 1 if sucessful and 0 on a failure
 sub ftp'dir_open
 {
