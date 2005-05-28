@@ -1,4 +1,4 @@
-/* $OpenBSD: x509.c,v 1.1 2005/05/28 01:57:30 marius Exp $ */
+/* $OpenBSD: x509.c,v 1.1.1.1 2005/05/28 01:57:30 marius Exp $ */
 
 /*
  * x509.c
@@ -30,7 +30,7 @@
  *   OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  *   ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- * $Id: x509.c,v 1.1 2005/05/28 01:57:30 marius Exp $
+ * $Id: x509.c,v 1.1.1.1 2005/05/28 01:57:30 marius Exp $
  */
 
 #include <sys/types.h>

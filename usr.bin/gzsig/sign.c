@@ -1,4 +1,4 @@
-/* $OpenBSD: sign.c,v 1.1 2005/05/28 01:57:30 marius Exp $ */
+/* $OpenBSD: sign.c,v 1.1.1.1 2005/05/28 01:57:30 marius Exp $ */
 
 /*
  * sign.c
@@ -30,7 +30,7 @@
  *   OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  *   ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- * $Id: sign.c,v 1.1 2005/05/28 01:57:30 marius Exp $
+ * $Id: sign.c,v 1.1.1.1 2005/05/28 01:57:30 marius Exp $
  */
 
 #include <sys/param.h>
