@@ -1,6 +1,6 @@
 #!/bin/sh
 # 
-# $OpenBSD: gzsig.sh,v 1.1 2005/05/28 01:58:12 marius Exp $
+# $OpenBSD: gzsig.sh,v 1.1.1.1 2005/05/28 01:58:12 marius Exp $
 
 set -e
 
