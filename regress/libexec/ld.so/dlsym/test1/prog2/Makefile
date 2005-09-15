@@ -1,4 +1,4 @@
-# $OpenBSD: Makefile,v 1.1 2005/09/15 15:37:15 kurt Exp $
+# $OpenBSD: Makefile,v 1.1.1.1 2005/09/15 15:37:15 kurt Exp $
 
 .include <bsd.obj.mk>
 
