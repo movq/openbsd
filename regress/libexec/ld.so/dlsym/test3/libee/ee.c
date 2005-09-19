@@ -1,4 +1,4 @@
-/*	$OpenBSD: ee.c,v 1.1 2005/09/19 03:34:18 kurt Exp $	*/
+/*	$OpenBSD: ee.c,v 1.1.1.1 2005/09/19 03:34:18 kurt Exp $	*/
 
 /*
  * Copyright (c) 2005 Kurt Miller <kurt@openbsd.org>
