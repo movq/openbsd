@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.1 2005/09/19 03:23:51 kurt Exp $
+#	$OpenBSD: Makefile,v 1.1.1.1 2005/09/19 03:23:51 kurt Exp $
 
 PROG=		prog5
 SRCS=		main.c
