@@ -1,7 +1,7 @@
 /*
  * Public Domain 2003 Dale Rahn
  *
- * $OpenBSD: main.c,v 1.1 2005/09/22 22:31:27 drahn Exp $
+ * $OpenBSD: main.c,v 1.1.1.1 2005/09/22 22:31:27 drahn Exp $
  */
 #include <stdio.h>
 #include <dlfcn.h>
