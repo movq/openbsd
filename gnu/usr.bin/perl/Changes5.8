@@ -4761,7 +4761,7 @@ ____________________________________________________________________________
 	   ! lib/Test/Harness/t/test-harness.t
 ____________________________________________________________________________
 [ 16953] By: ams                                   on 2002/06/01  03:20:52
-        Log: Remove $Id: Changes5.8,v 1.2 2003/12/03 03:02:15 millert Exp $ lines.
+        Log: Remove $Id: Changes5.8,v 1.3 2006/03/28 19:22:50 millert Exp $ lines.
      Branch: perl
 	   ! ext/Storable/Makefile.PL ext/Storable/Storable.pm
 	   ! ext/Storable/Storable.xs ext/Storable/t/blessed.t
@@ -7227,7 +7227,7 @@ ____________________________________________________________________________
 	   ! pod/perldelta.pod
 ____________________________________________________________________________
 [ 16615] By: jhi                                   on 2002/05/15  20:31:02
-        Log: Fix some of the EBCDIC vs Storable failures, from Nick Clark.
+        Log: Fix some of the EBCDIC vs Storable failures, from Nicholas Clark.
      Branch: perl
 	   ! ext/Storable/t/downgrade.t ext/Storable/t/make_downgrade.pl
 ____________________________________________________________________________
@@ -12728,7 +12728,7 @@ ____________________________________________________________________________
 	   ! pod/perlunicode.pod
 ____________________________________________________________________________
 [ 15890] By: rgs                                   on 2002/04/13  14:51:27
-        Log: Phrasing fixes by Nick Clark
+        Log: Phrasing fixes by Nicholas Clark
      Branch: perl
 	   ! pod/perlunicode.pod
 ____________________________________________________________________________
@@ -13726,7 +13726,7 @@ ____________________________________________________________________________
 	   ! hv.c
 ____________________________________________________________________________
 [ 15758] By: jhi                                   on 2002/04/06  16:07:03
-        Log: Make hv_notallowed a static as suggested by Nick Clark;
+        Log: Make hv_notallowed a static as suggested by Nicholas Clark;
              and synchronize the nomenclature to talk about restricted
              (not fixed) hashes.
      Branch: perl
@@ -17956,7 +17956,7 @@ ____________________________________________________________________________
              Mark JP.t's data files as binary
              
              [ 15011]
-             Avoid $Id: Changes5.8,v 1.2 2003/12/03 03:02:15 millert Exp $ cleverness and just have a $VERSION.
+             Avoid $Id: Changes5.8,v 1.3 2006/03/28 19:22:50 millert Exp $ cleverness and just have a $VERSION.
      Branch: perl
 	  !> ext/Encode/t/table.euc ext/Encode/t/table.ref
 ____________________________________________________________________________
@@ -18072,7 +18072,7 @@ ____________________________________________________________________________
 	   ! perl.c
 ____________________________________________________________________________
 [ 15224] By: jhi                                   on 2002/03/14  14:24:44
-        Log: Extra paranoia from Nick Clark.
+        Log: Extra paranoia from Nicholas Clark.
      Branch: perl
 	   ! ext/Safe/safe2.t
 ____________________________________________________________________________
@@ -19721,7 +19721,7 @@ ____________________________________________________________________________
 	  !> ext/Encode/compile
 ____________________________________________________________________________
 [ 15011] By: nick                                  on 2002/03/04  17:29:54
-        Log: Avoid $Id: Changes5.8,v 1.2 2003/12/03 03:02:15 millert Exp $ cleverness and just have a $VERSION.
+        Log: Avoid $Id: Changes5.8,v 1.3 2006/03/28 19:22:50 millert Exp $ cleverness and just have a $VERSION.
      Branch: perlio
 	   ! ext/Encode/compile
 ____________________________________________________________________________
@@ -22469,7 +22469,7 @@ ____________________________________________________________________________
         Log: Integrate perlio:
              
              [ 14618]
-             Nick Clark's tweaks to Encode compile process
+             Nicholas Clark's tweaks to Encode compile process
              1. Use decimal constants to unit string arrays rather than
              very long string litterals (latter having possible "\0"
              on end issues, and needing ANSI C line splicing).
@@ -22494,7 +22494,7 @@ ____________________________________________________________________________
 	  !> t/lib/warnings/pp_hot t/op/arith.t toke.c util.c
 ____________________________________________________________________________
 [ 14618] By: nick                                  on 2002/02/10  10:48:15
-        Log: Nick Clark's tweaks to Encode compile process
+        Log: Nicholas Clark's tweaks to Encode compile process
              1. Use decimal constants to unit string arrays rather than
              very long string litterals (latter having possible "\0"
              on end issues, and needing ANSI C line splicing).
@@ -27846,7 +27846,7 @@ ____________________________________________________________________________
         Log: Integrate perlio:
              
              [ 13926]
-             Nick Clark's embed.pl fix for my_socketpair
+             Nicholas Clark's embed.pl fix for my_socketpair
              
              [ 13923]
              Quick fix (after couple of clever fixes failed) for
@@ -27855,7 +27855,7 @@ ____________________________________________________________________________
 	  !> embed.h embed.pl global.sym pod/perlapi.pod pp_sys.c proto.h
 ____________________________________________________________________________
 [ 13926] By: nick                                  on 2001/12/29  15:23:21
-        Log: Nick Clark's embed.pl fix for my_socketpair
+        Log: Nicholas Clark's embed.pl fix for my_socketpair
      Branch: perlio
 	   ! embed.h embed.pl global.sym pod/perlapi.pod proto.h
 ____________________________________________________________________________
@@ -29693,7 +29693,7 @@ ____________________________________________________________________________
 	   ! MANIFEST pod/perlmodlib.pod pod/perltoc.pod
 ____________________________________________________________________________
 [ 13675] By: jhi                                   on 2001/12/13  16:16:12
-        Log: Subject: [PATCH ExtUtils::Install] Old RCS $Date: 2003/12/03 03:02:15 $ tag
+        Log: Subject: [PATCH ExtUtils::Install] Old RCS $Date: 2006/03/28 19:22:50 $ tag
              From: Michael G Schwern <schwern@pobox.com>
              Date: Tue, 11 Dec 2001 23:17:32 -0500
              Message-ID: <20011212041732.GS17250@blackrider>
@@ -31066,7 +31066,7 @@ ____________________________________________________________________________
 [ 13480] By: jhi                                   on 2001/12/05  19:53:05
         Log: $apply->('club', $glibc_maintainers);
              
-             (Nick Clark just reported that <langinfo.h> YESSTR
+             (Nicholas Clark just reported that <langinfo.h> YESSTR
              is an empty string in Linux 2.4.16-rmk glibc 2.2.4-5)
      Branch: perl
 	   ! ext/I18N/Langinfo/Langinfo.t
@@ -35881,7 +35881,7 @@ ____________________________________________________________________________
 [ 12818] By: jhi                                   on 2001/11/02  21:03:58
         Log: Locate _PATH_LOG if it's a socket even if not #defined
              (helps Tru64)  From Paul David Fardy <pdf@morgan.ucs.mun.ca>,
-             via Nick Clark.
+             via Nicholas Clark.
      Branch: perl
 	   ! ext/Sys/Syslog/Makefile.PL ext/Sys/Syslog/syslog.t
 ____________________________________________________________________________
@@ -55660,7 +55660,7 @@ ____________________________________________________________________________
 	   ! installman utils.lst
 ____________________________________________________________________________
 [ 10150] By: jhi                                   on 2001/05/17  20:32:48
-        Log: Add better debug to glob/basic #8 as suggested by Nick Clark
+        Log: Add better debug to glob/basic #8 as suggested by Nicholas Clark
              in 20001222.001.
      Branch: perl
 	   ! t/lib/glob-basic.t
@@ -62161,7 +62161,7 @@ ____________________________________________________________________________
              - die on read/write cases so we can decide what it means later.
              
              [  9293]
-             perlio tweaks (reported by Nick Clark)
+             perlio tweaks (reported by Nicholas Clark)
              Line buffer ttys, PerlIOBuf_tell() on unseekable off-by one,
              error check in Pendinf_read().
      Branch: perl
@@ -62218,7 +62218,7 @@ ____________________________________________________________________________
 	   ! doio.c embed.pl iperlsys.h util.c
 ____________________________________________________________________________
 [  9293] By: nick                                  on 2001/03/22  09:02:45
-        Log: perlio tweaks (reported by Nick Clark)
+        Log: perlio tweaks (reported by Nicholas Clark)
              Line buffer ttys, PerlIOBuf_tell() on unseekable off-by one,
              error check in Pendinf_read().
      Branch: perlio
@@ -63002,7 +63002,7 @@ ____________________________________________________________________________
 ____________________________________________________________________________
 [  9194] By: jhi                                   on 2001/03/18  05:29:59
         Log: Sarathy's clear_pmop patch with Radu Greab's fix,
-             Hiroto's, Nick Clark's, and Vadim Konovalov's tests.
+             Hiroto's, Nicholas Clark's, and Vadim Konovalov's tests.
      Branch: perl
 	   ! op.c op.h t/op/misc.t t/op/pat.t
 ____________________________________________________________________________
@@ -65988,7 +65988,7 @@ ____________________________________________________________________________
         Log: Integrate perlio:
              
              [  8830]
-             Apply the spirit of patch from Nick Clark:
+             Apply the spirit of patch from Nicholas Clark:
              Subject: [PATCH] Re: extensions that provide layers
              From: Nicholas Clark <nick@ccl4.org>
              Date: Mon, 12 Feb 2001 16:43:51 +0000
@@ -66004,7 +66004,7 @@ ____________________________________________________________________________
 	  !> sv.c utf8.c
 ____________________________________________________________________________
 [  8830] By: nick                                  on 2001/02/18  19:10:34
-        Log: Apply the spirit of patch from Nick Clark:
+        Log: Apply the spirit of patch from Nicholas Clark:
              Subject: [PATCH] Re: extensions that provide layers
              From: Nicholas Clark <nick@ccl4.org>
              Date: Mon, 12 Feb 2001 16:43:51 +0000
@@ -72703,7 +72703,7 @@ ____________________________________________________________________________
              Subject: [PATCH 5.7.0] Epoc update
              
              Introduce NO_ENVIRON_ARRAY (and USE_ENVIRON_ARRAY) defines
-             as suggested by Olaf Flebbe and Nick Clark.
+             as suggested by Olaf Flebbe and Nicholas Clark.
              
              Subject: [ID 20000915.007] Not OK: perl v5.7.0 +DEVEL7092 on os2-64int-ld 2.30 '(UNINSTALLED)'
              
@@ -83161,7 +83161,7 @@ ____________________________________________________________________________
 ____________________________________________________________________________
 [  7126] By: jhi                                   on 2000/10/03  00:57:08
         Log: Introduce NO_ENVIRON_ARRAY (and USE_ENVIRON_ARRAY) defines
-             as suggested by Olaf Flebbe and Nick Clark.
+             as suggested by Olaf Flebbe and Nicholas Clark.
      Branch: perl
 	   ! epoc/epocish.h perl.h sv.c unixish.h util.c vms/vmsish.h
 ____________________________________________________________________________
