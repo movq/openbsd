@@ -1,4 +1,4 @@
-/*	$OpenBSD: pmap_table.c,v 1.1 2006/05/07 19:38:21 miod Exp $	*/
+/*	$OpenBSD: pmap_table.c,v 1.1.1.1 2006/05/07 19:38:21 miod Exp $	*/
 
 /*
  * Mach Operating System
