@@ -1,4 +1,4 @@
-/*	$OpenBSD: m8820x.c,v 1.1 2006/05/08 16:34:47 miod Exp $	*/
+/*	$OpenBSD: m8820x.c,v 1.1.1.1 2006/05/08 16:34:47 miod Exp $	*/
 /*
  * Copyright (c) 2004, 2006, Miodrag Vallat.
  *
