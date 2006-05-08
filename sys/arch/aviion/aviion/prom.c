@@ -1,4 +1,4 @@
-/*	$OpenBSD: prom.c,v 1.1 2006/05/08 16:34:56 miod Exp $	*/
+/*	$OpenBSD: prom.c,v 1.1.1.1 2006/05/08 16:34:56 miod Exp $	*/
 
 /*
  * Copyright (c) 2006, Miodrag Vallat.
