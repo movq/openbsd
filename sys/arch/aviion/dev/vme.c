@@ -1,4 +1,4 @@
-/*	$OpenBSD: vme.c,v 1.1 2006/05/09 18:14:15 miod Exp $	*/
+/*	$OpenBSD: vme.c,v 1.1.1.1 2006/05/09 18:14:15 miod Exp $	*/
 /*
  * Copyright (c) 2006, Miodrag Vallat.
  *

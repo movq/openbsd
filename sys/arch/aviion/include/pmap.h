@@ -1,4 +1,4 @@
-/* $OpenBSD: pmap.h,v 1.1 2006/05/09 18:32:33 miod Exp $ */
+/* $OpenBSD: pmap.h,v 1.1.1.1 2006/05/09 18:32:33 miod Exp $ */
 /* public domain */
 
 #ifndef	_AVIION_PMAP_H_

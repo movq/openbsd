@@ -1,4 +1,4 @@
-#	$OpenBSD: files.aviion,v 1.1 2006/05/09 18:14:33 miod Exp $
+#	$OpenBSD: files.aviion,v 1.1.1.1 2006/05/09 18:14:33 miod Exp $
 #
 maxpartitions 16
 
