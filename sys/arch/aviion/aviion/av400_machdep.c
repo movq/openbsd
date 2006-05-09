@@ -1,4 +1,4 @@
-/*	$OpenBSD: av400_machdep.c,v 1.1 2006/05/09 18:25:34 miod Exp $	*/
+/*	$OpenBSD: av400_machdep.c,v 1.1.1.1 2006/05/09 18:25:34 miod Exp $	*/
 /*
  * Copyright (c) 2006, Miodrag Vallat.
  *

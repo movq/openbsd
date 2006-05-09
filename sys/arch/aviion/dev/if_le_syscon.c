@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_le_syscon.c,v 1.1 2006/05/09 18:13:40 miod Exp $	*/
+/*	$OpenBSD: if_le_syscon.c,v 1.1.1.1 2006/05/09 18:13:40 miod Exp $	*/
 
 /*-
  * Copyright (c) 1996 The NetBSD Foundation, Inc.

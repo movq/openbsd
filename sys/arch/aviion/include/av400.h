@@ -1,4 +1,4 @@
-/*	$OpenBSD: av400.h,v 1.1 2006/05/09 18:23:59 miod Exp $	*/
+/*	$OpenBSD: av400.h,v 1.1.1.1 2006/05/09 18:23:59 miod Exp $	*/
 /*
  * Copyright (c) 1999 Steve Murphree, Jr.
  * All rights reserved.

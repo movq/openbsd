@@ -1,4 +1,4 @@
-/*	$OpenBSD: a2coff.c,v 1.1 2006/05/09 18:22:59 miod Exp $	*/
+/*	$OpenBSD: a2coff.c,v 1.1.1.1 2006/05/09 18:22:59 miod Exp $	*/
 /*
  * Copyright (c) 2006, Miodrag Vallat
  *
