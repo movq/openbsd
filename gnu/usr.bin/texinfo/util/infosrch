@@ -1,5 +1,5 @@
 #!/usr/local/bin/perl -w
-# $Id: infosrch,v 1.1 2006/07/17 16:03:50 espie Exp $
+# $Id: infosrch,v 1.1.1.1 2006/07/17 16:03:50 espie Exp $
 # infosrch does a regex search on an info manual.
 # By Harry Putnam <reader@newsguy.com>.
 

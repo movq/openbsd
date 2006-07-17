@@ -1,5 +1,5 @@
 /* xref.h -- declarations for the cross references.
-   $Id: xref.h,v 1.1 2006/07/17 16:03:49 espie Exp $
+   $Id: xref.h,v 1.1.1.1 2006/07/17 16:03:49 espie Exp $
 
    Copyright (C) 2004 Free Software Foundation, Inc.
 

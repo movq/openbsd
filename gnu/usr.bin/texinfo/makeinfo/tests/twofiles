@@ -1,5 +1,5 @@
 #!/bin/sh
-# $Id: twofiles,v 1.1 2006/07/17 16:03:49 espie Exp $
+# $Id: twofiles,v 1.1.1.1 2006/07/17 16:03:49 espie Exp $
 # Test that an existing and nonexisting file doesn't cause a
 # segmentation fault.
 # From: Arkadiusz Miskiewicz <misiek@pld.ORG.PL>, 15 Feb 2003 13:22:49 +0100.

@@ -1,5 +1,5 @@
 #!/bin/sh
-# $Id: texi2pdf,v 1.1 2006/07/17 16:03:51 espie Exp $
+# $Id: texi2pdf,v 1.1.1.1 2006/07/17 16:03:51 espie Exp $
 # Written by Thomas Esser.  Public domain.
 # Execute texi2dvi --pdf.
 
