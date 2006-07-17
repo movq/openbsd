@@ -1,6 +1,6 @@
 \input texinfo
 @setfilename include-value.info
-@c $Id: include-value.txi,v 1.1 2006/07/17 16:03:49 espie Exp $
+@c $Id: include-value.txi,v 1.1.1.1 2006/07/17 16:03:49 espie Exp $
 
 @set testvar incl-incl.txi
 

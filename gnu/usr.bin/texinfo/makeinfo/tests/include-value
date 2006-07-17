@@ -1,5 +1,5 @@
 #!/bin/sh
-# $Id: include-value,v 1.1 2006/07/17 16:03:49 espie Exp $
+# $Id: include-value,v 1.1.1.1 2006/07/17 16:03:49 espie Exp $
 # Test @value expansion in @include and @verbatiminclude names.
 
 unset TEXINFO_OUTPUT

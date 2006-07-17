@@ -1,5 +1,5 @@
 /* multi.h -- declarations for multi.c.
-   $Id: multi.h,v 1.1 2006/07/17 16:03:48 espie Exp $
+   $Id: multi.h,v 1.1.1.1 2006/07/17 16:03:48 espie Exp $
 
    Copyright (C) 2004 Free Software Foundation, Inc.
 

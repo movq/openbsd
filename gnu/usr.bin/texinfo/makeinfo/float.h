@@ -1,5 +1,5 @@
 /* float.h -- declarations for the float environment.
-   $Id: float.h,v 1.1 2006/07/17 16:03:46 espie Exp $
+   $Id: float.h,v 1.1.1.1 2006/07/17 16:03:46 espie Exp $
 
    Copyright (C) 2003, 2004 Free Software Foundation, Inc.
 
