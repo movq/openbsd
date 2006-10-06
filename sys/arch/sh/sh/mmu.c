@@ -1,4 +1,4 @@
-/*	$OpenBSD: mmu.c,v 1.1 2006/10/06 21:02:55 miod Exp $	*/
+/*	$OpenBSD: mmu.c,v 1.1.1.1 2006/10/06 21:02:55 miod Exp $	*/
 /*	$NetBSD: mmu.c,v 1.15 2006/02/12 02:30:55 uwe Exp $	*/
 
 /*-

@@ -1,4 +1,4 @@
-/*	$OpenBSD: mem.c,v 1.1 2006/10/06 21:02:55 miod Exp $	*/
+/*	$OpenBSD: mem.c,v 1.1.1.1 2006/10/06 21:02:55 miod Exp $	*/
 /*	$NetBSD: mem.c,v 1.21 2006/07/23 22:06:07 ad Exp $	*/
 
 /*

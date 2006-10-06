@@ -1,4 +1,4 @@
-/*	$OpenBSD: shpcic.c,v 1.1 2006/10/06 21:02:55 miod Exp $	*/
+/*	$OpenBSD: shpcic.c,v 1.1.1.1 2006/10/06 21:02:55 miod Exp $	*/
 /*	$NetBSD: shpcic.c,v 1.10 2005/12/24 20:07:32 perry Exp $	*/
 
 /*

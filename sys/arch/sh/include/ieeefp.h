@@ -1,4 +1,4 @@
-/*	$OpenBSD: ieeefp.h,v 1.1 2006/10/06 21:02:55 miod Exp $	*/
+/*	$OpenBSD: ieeefp.h,v 1.1.1.1 2006/10/06 21:02:55 miod Exp $	*/
 /*	$NetBSD: ieeefp.h,v 1.3 2002/04/28 17:10:34 uch Exp $ */
 
 /*
