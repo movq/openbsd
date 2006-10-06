@@ -1,4 +1,4 @@
-/*	$OpenBSD: interrupt.c,v 1.1 2006/10/06 21:02:55 miod Exp $	*/
+/*	$OpenBSD: interrupt.c,v 1.1.1.1 2006/10/06 21:02:55 miod Exp $	*/
 /*	$NetBSD: interrupt.c,v 1.18 2006/01/25 00:02:57 uwe Exp $	*/
 
 /*-

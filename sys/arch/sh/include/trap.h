@@ -1,4 +1,4 @@
-/*	$OpenBSD: trap.h,v 1.1 2006/10/06 21:02:55 miod Exp $	*/
+/*	$OpenBSD: trap.h,v 1.1.1.1 2006/10/06 21:02:55 miod Exp $	*/
 /*	$NetBSD: exception.h,v 1.9 2006/07/22 21:58:29 uwe Exp $	*/
 
 /*-
