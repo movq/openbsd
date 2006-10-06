@@ -1,4 +1,4 @@
-#	$OpenBSD: files.landisk,v 1.1 2006/10/06 21:16:15 miod Exp $
+#	$OpenBSD: files.landisk,v 1.1.1.1 2006/10/06 21:16:15 miod Exp $
 #	$NetBSD: files.landisk,v 1.2 2006/09/07 01:55:02 uwe Exp $
 
 # maxpartitions must be first item in files.${MACHINE}
