@@ -1,4 +1,4 @@
-/*	$OpenBSD: sigreturn.S,v 1.1 2006/10/10 22:07:10 miod Exp $	*/
+/*	$OpenBSD: sigreturn.S,v 1.1.1.1 2006/10/10 22:07:10 miod Exp $	*/
 /*	$NetBSD: sigreturn.S,v 1.2 2003/08/07 16:42:05 agc Exp $	*/
 
 /*-

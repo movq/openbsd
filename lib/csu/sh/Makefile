@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.1 2006/10/10 22:07:10 miod Exp $
+#	$OpenBSD: Makefile,v 1.1.1.1 2006/10/10 22:07:10 miod Exp $
 #	from: @(#)Makefile	8.1 (Berkeley) 6/1/93
 
 CFLAGS+=	-DLIBC_SCCS
