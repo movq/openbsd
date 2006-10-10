@@ -1,4 +1,4 @@
-/*	$OpenBSD: fpsetsticky.c,v 1.1 2006/10/10 22:07:10 miod Exp $	*/
+/*	$OpenBSD: fpsetsticky.c,v 1.1.1.1 2006/10/10 22:07:10 miod Exp $	*/
 /*
  * Copyright (c) 2006 Miodrag Vallat.
  *

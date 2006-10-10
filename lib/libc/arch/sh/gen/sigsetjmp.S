@@ -1,4 +1,4 @@
-/*	$OpenBSD: sigsetjmp.S,v 1.1 2006/10/10 22:07:10 miod Exp $	*/
+/*	$OpenBSD: sigsetjmp.S,v 1.1.1.1 2006/10/10 22:07:10 miod Exp $	*/
 /*	$NetBSD: sigsetjmp.S,v 1.9 2006/01/05 19:21:37 uwe Exp $	*/
 
 /*-

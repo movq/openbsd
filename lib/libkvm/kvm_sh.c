@@ -1,4 +1,4 @@
-/*	$OpenBSD: kvm_sh.c,v 1.1 2006/10/10 22:07:10 miod Exp $	*/
+/*	$OpenBSD: kvm_sh.c,v 1.1.1.1 2006/10/10 22:07:10 miod Exp $	*/
 
 /*
  * Copyright (c) 2002, Miodrag Vallat.

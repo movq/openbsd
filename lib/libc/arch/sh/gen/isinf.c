@@ -1,4 +1,4 @@
-/*	$OpenBSD: isinf.c,v 1.1 2006/10/10 22:07:10 miod Exp $	*/
+/*	$OpenBSD: isinf.c,v 1.1.1.1 2006/10/10 22:07:10 miod Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
