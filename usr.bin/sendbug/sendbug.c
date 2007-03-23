@@ -1,4 +1,4 @@
-/*	$OpenBSD: sendbug.c,v 1.1 2007/03/23 01:47:11 ray Exp $	*/
+/*	$OpenBSD: sendbug.c,v 1.1.1.1 2007/03/23 01:47:11 ray Exp $	*/
 
 /*
  * Written by Ray Lai <ray@cyth.net>.
