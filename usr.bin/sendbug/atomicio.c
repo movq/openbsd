@@ -1,4 +1,4 @@
-/* $OpenBSD: atomicio.c,v 1.1 2007/03/23 01:47:11 ray Exp $ */
+/* $OpenBSD: atomicio.c,v 1.1.1.1 2007/03/23 01:47:11 ray Exp $ */
 /*
  * Copyright (c) 2006 Damien Miller. All rights reserved.
  * Copyright (c) 2005 Anil Madhavapeddy. All rights reserved.
