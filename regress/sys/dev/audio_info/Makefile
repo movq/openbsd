@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.1 2007/07/06 00:42:12 jakemsr Exp $
+#	$OpenBSD: Makefile,v 1.1.1.1 2007/07/06 00:42:12 jakemsr Exp $
 
 PROG=	audiotest_gsinfo
 CFLAGS+=-Wall -Wstrict-prototypes -Wmissing-prototypes
