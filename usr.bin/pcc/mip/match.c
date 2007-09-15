@@ -1,4 +1,4 @@
-/*      $Id: match.c,v 1.1 2007/09/15 18:12:36 otto Exp $   */
+/*      $Id: match.c,v 1.1.1.1 2007/09/15 18:12:36 otto Exp $   */
 /*
  * Copyright (c) 2003 Anders Magnusson (ragge@ludd.luth.se).
  * All rights reserved.
