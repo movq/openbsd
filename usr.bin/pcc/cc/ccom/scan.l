@@ -1,5 +1,5 @@
 %{
-/*	$Id: scan.l,v 1.1 2007/09/15 18:12:34 otto Exp $	*/
+/*	$Id: scan.l,v 1.1.1.1 2007/09/15 18:12:34 otto Exp $	*/
 
 /*
  * Copyright (c) 2002 Anders Magnusson. All rights reserved.
