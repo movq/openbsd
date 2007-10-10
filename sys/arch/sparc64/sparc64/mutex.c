@@ -1,5 +1,4 @@
-/*	$OpenBSD: mutex.h,v 1.1 2007/02/03 20:08:50 miod Exp $	*/
-
+/*	$OpenBSD: mutex.c,v 1.1 2007/02/03 20:08:50 miod Exp $	*/
 /*
  * Copyright (c) 2004 Artur Grabowski <art@openbsd.org>
  * All rights reserved. 
@@ -25,37 +24,47 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#ifndef _MACHINE_MUTEX_H_
-#define _MACHINE_MUTEX_H_
+#include <sys/param.h>
+#include <sys/mutex.h>
+#include <sys/systm.h>
+
+#include <machine/psl.h>
+#include <machine/intr.h>
+
+#ifdef MULTIPROCESSOR
+#error This code needs more work
+#endif
 
 /*
- * Simple non-mp implementation.
+ * Single processor systems don't need any mutexes, but they need the spl
+ * raising semantics of the mutexes.
  */
-struct mutex {
-	int mtx_lock;
-	int mtx_wantipl;
-	int mtx_oldipl;
-};
+void
+mtx_init(struct mutex *mtx, int wantipl)
+{
+	mtx->mtx_oldipl = 0;
+	mtx->mtx_wantipl = wantipl;
+	mtx->mtx_lock = 0;
+}
 
-void mtx_init(struct mutex *, int);
+void
+mtx_enter(struct mutex *mtx)
+{
+	if (mtx->mtx_wantipl != IPL_NONE) {
+		mtx->mtx_oldipl = sparc_rdpr(pil);
+		if (mtx->mtx_oldipl < mtx->mtx_wantipl)
+			sparc_wrpr(pil, mtx->mtx_wantipl, 0);
+	}
 
-#define MUTEX_INITIALIZER(ipl) { 0, ipl, 0 }
+	MUTEX_ASSERT_UNLOCKED(mtx);
+	mtx->mtx_lock = 1;
+}
 
-#ifdef DIAGNOSTIC
-#define MUTEX_ASSERT_LOCKED(mtx) do {					\
-	if ((mtx)->mtx_lock == 0)					\
-		panic("mutex %p not held in %s", (mtx), __func__);	\
-} while (0)
-
-#define MUTEX_ASSERT_UNLOCKED(mtx) do {					\
-	if ((mtx)->mtx_lock != 0)					\
-		panic("mutex %p held in %s", (mtx), __func__);		\
-} while (0)
-#else
-#define MUTEX_ASSERT_LOCKED(mtx) do { } while (0)
-#define MUTEX_ASSERT_UNLOCKED(mtx) do { } while (0)
-#endif
-
-#define MUTEX_OLDIPL(mtx)	(mtx)->mtx_oldipl
-
-#endif
+void
+mtx_leave(struct mutex *mtx)
+{
+	MUTEX_ASSERT_LOCKED(mtx);
+	mtx->mtx_lock = 0;
+	if (mtx->mtx_wantipl != IPL_NONE)
+		splx(mtx->mtx_oldipl);
+}

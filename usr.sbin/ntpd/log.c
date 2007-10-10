@@ -1,4 +1,4 @@
-/*	$OpenBSD: log.c,v 1.8 2007/08/22 21:04:30 ckuethe Exp $ */
+/*	$OpenBSD: log.c,v 1.7 2005/03/31 12:14:01 henning Exp $ */
 
 /*
  * Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
@@ -27,7 +27,6 @@
 #include "ntpd.h"
 
 int	 debug;
-extern int debugsyslog;
 
 void	 logit(int, const char *, ...);
 
@@ -123,7 +122,7 @@ log_debug(const char *emsg, ...)
 {
 	va_list	 ap;
 
-	if (debug || debugsyslog) {
+	if (debug) {
 		va_start(ap, emsg);
 		vlog(LOG_DEBUG, emsg, ap);
 		va_end(ap);
