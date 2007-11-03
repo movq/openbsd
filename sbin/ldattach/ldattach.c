@@ -1,4 +1,4 @@
-/*	$OpenBSD: ldattach.c,v 1.1 2007/11/03 15:22:54 mbalmer Exp $	*/
+/*	$OpenBSD: ldattach.c,v 1.1.1.1 2007/11/03 15:22:54 mbalmer Exp $	*/
 
 /*
  * Copyright (c) 2007 Marc Balmer <mbalmer@openbsd.org>
