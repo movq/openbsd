@@ -1,4 +1,4 @@
-.\"	$OpenBSD: pkg_add.1,v 1.72 2008/03/09 15:36:45 jmc Exp $
+.\"	$OpenBSD: pkg_add.1,v 1.69 2008/01/26 16:38:52 landry Exp $
 .\"
 .\" Documentation and design originally from FreeBSD. All the code has
 .\" been rewritten since. We keep the documentation's notice:
@@ -15,7 +15,7 @@
 .\" Jordan K. Hubbard
 .\"
 .\"
-.Dd $Mdocdate: March 9 2008 $
+.Dd $Mdocdate: January 26 2008 $
 .Dt PKG_ADD 1
 .Os
 .Sh NAME
@@ -283,10 +283,7 @@ symbolic links are resolved, and package installation stops at
 .Cm @endfake
 marker.
 .It Fl q
-Replace package quickly; do not bother with checksums before removing normal 
-files.
-If used twice,
-it will not bother with checksums for configuration files either.
+Replace package quickly; do not bother checking MD5s before removing files.
 .It Fl r
 Replace existing packages.
 .Nm
