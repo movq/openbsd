@@ -1,7 +1,5 @@
 #!./perl
 
-# $RCSfile: cpp.t,v $$Revision: 1.1.1.7 $$Date: 2005/01/15 21:18:14 $
-
 BEGIN {
     chdir 't' if -d 't';
     @INC = '../lib';
