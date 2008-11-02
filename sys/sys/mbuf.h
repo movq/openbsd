@@ -1,4 +1,4 @@
-/*	$OpenBSD: mbuf.h,v 1.102 2008/08/14 19:39:40 claudio Exp $	*/
+/*	$OpenBSD: mbuf.h,v 1.100 2008/07/25 08:53:39 henning Exp $	*/
 /*	$NetBSD: mbuf.h,v 1.19 1996/02/09 18:25:14 christos Exp $	*/
 
 /*
@@ -48,7 +48,7 @@
 #define	MHLEN		(MLEN - sizeof(struct pkthdr))	/* data len w/pkthdr */
 
 /* smallest amount to put in cluster */
-#define	MINCLSIZE	(MHLEN + MLEN + 1)
+#define	MINCLSIZE	(MHLEN + 1)
 #define	M_MAXCOMPRESS	(MHLEN / 2)	/* max amount to copy for compression */
 
 /* Packet tags structure */
@@ -238,6 +238,13 @@ struct mbuf {
 #endif
 
 #define	MCLISREFERENCED(m)	((m)->m_ext.ext_nextref != (m))
+
+#define	_MCLDEREFERENCE(m)	do {					\
+		(m)->m_ext.ext_nextref->m_ext.ext_prevref =		\
+			(m)->m_ext.ext_prevref;				\
+		(m)->m_ext.ext_prevref->m_ext.ext_nextref =		\
+			(m)->m_ext.ext_nextref;				\
+	} while (/* CONSTCOND */ 0)
 
 #define	_MCLADDREFERENCE(o, n)	do {					\
 		(n)->m_flags |= ((o)->m_flags & (M_EXT|M_CLUSTER));	\

@@ -1,4 +1,4 @@
-/*	$OpenBSD: s_nan.c,v 1.3 2008/08/08 00:41:17 martynas Exp $	*/
+/*	$OpenBSD: s_nan.c,v 1.1 2008/07/24 09:40:16 martynas Exp $	*/
 /*-
  * Copyright (c) 2007 David Schultz
  * All rights reserved.

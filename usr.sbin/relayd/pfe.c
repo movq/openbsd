@@ -1,4 +1,4 @@
-/*	$OpenBSD: pfe.c,v 1.51 2008/08/08 08:51:21 thib Exp $	*/
+/*	$OpenBSD: pfe.c,v 1.50 2008/07/19 11:38:54 reyk Exp $	*/
 
 /*
  * Copyright (c) 2006 Pierre-Yves Ritschard <pyr@openbsd.org>
@@ -946,7 +946,7 @@ pfe_statistics(int fd, short events, void *arg)
 	u_long			 cnt;
 
 	timerclear(&tv);
-	if (gettimeofday(&tv_now, NULL) == -1)
+	if (gettimeofday(&tv_now, NULL))
 		fatal("pfe_statistics: gettimeofday");
 
 	TAILQ_FOREACH(rdr, env->sc_rdrs, entry) {

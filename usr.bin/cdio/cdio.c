@@ -1,4 +1,4 @@
-/*	$OpenBSD: cdio.c,v 1.66 2008/08/13 12:21:19 av Exp $	*/
+/*	$OpenBSD: cdio.c,v 1.64 2008/07/23 21:33:32 av Exp $	*/
 
 /*  Copyright (c) 1995 Serge V. Vakulenko
  * All rights reserved.
@@ -165,6 +165,7 @@ int		setvol(int, int);
 int		read_toc_entrys(int);
 int		play_msf(int, int, int, int, int, int);
 int		play_track(int, int, int, int);
+int		get_vol(int *, int *);
 int		status(int *, int *, int *, int *);
 int		is_wave(int);
 __dead void	tao(int argc, char **argv);
@@ -517,8 +518,7 @@ run(int cmd, char *arg)
 			warnx("Can't determine media type");
 			return (0);
 		}
-		if ((mediacap & MEDIACAP_CDRW_WRITE) == 0 &&
-		    get_media_type() != MEDIATYPE_CDRW) {
+		if ((mediacap & MEDIACAP_CDRW_WRITE) == 0) {
 			warnx("The media doesn't support blanking");
 			return (0);
 		}
