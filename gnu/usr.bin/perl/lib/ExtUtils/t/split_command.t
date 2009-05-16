@@ -54,7 +54,7 @@ is( $mm->split_command($echo), 0,  'no args means no commands' );
 sub _run {
     my @cmds = @_;
 
-    s{\$\(ABSPERLRUN\)}{$perl} foreach @cmds;
+    s{\$\(PERLRUN\)}{$perl} foreach @cmds;
     if( $Is_VMS ) {
         s{-\n}{} foreach @cmds
     }

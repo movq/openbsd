@@ -3,7 +3,7 @@
 # check that simple requiring BigRat works
 
 use strict;
-use Test::More;
+use Test;
 
 BEGIN
   {
@@ -35,7 +35,7 @@ my ($x);
 
 require Math::BigRat; $x = Math::BigRat->new(1); ++$x;
 
-is ($x, 2, '$x got successfully modified');
+ok ($x||'undef',2);
 
 # all tests done
 

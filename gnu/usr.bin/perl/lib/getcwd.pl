@@ -1,14 +1,5 @@
 # By Brandon S. Allbery
 #
-# This library is no longer being maintained, and is included for backward
-# compatibility with Perl 4 programs which may require it.
-#
-# In particular, this should not be used as an example of modern Perl
-# programming techniques.
-#
-# Suggested alternative: Cwd
-#
-#
 # Usage: $cwd = &getcwd;
 
 sub getcwd
@@ -53,9 +44,9 @@ sub getcwd
 		}
 		unless (@tst = lstat("$dotdots/$dir"))
 		{
-		    # warn "lstat($dotdots/$dir): $!";
-		    # closedir(getcwd'PARENT);				#');
-		    # return '';
+		    warn "lstat($dotdots/$dir): $!";
+		    closedir(getcwd'PARENT);				#');
+		    return '';
 		}
 	    }
 	    while ($dir eq '.' || $dir eq '..' || $tst[$[] != $pst[$[] ||
@@ -63,7 +54,7 @@ sub getcwd
 	}
 	$cwd = "$dir/$cwd";
 	closedir(getcwd'PARENT);					#');
-    } while ($dir ne '');
+    } while ($dir);
     chop($cwd);
     $cwd;
 }

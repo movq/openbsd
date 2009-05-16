@@ -13,8 +13,7 @@ use OS2::REXX;
 #
 # DLL
 #
-load OS2::REXX "rxu"
-  or print "1..0 # skipped: cannot find RXU.DLL\n" and exit;
+load OS2::REXX "ydbautil" or die "1..0\n# load\n";
 
 print "1..19\n";
 

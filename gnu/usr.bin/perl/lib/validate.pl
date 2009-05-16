@@ -1,3 +1,5 @@
+;# $RCSfile: validate.pl,v $$Revision: 4.1 $$Date: 92/08/07 18:24:19 $
+
 ;# The validate routine takes a single multiline string consisting of
 ;# lines containing a filename plus a file test to try on it.  (The
 ;# file test may also be a 'cd', causing subsequent relative filenames
@@ -89,11 +91,11 @@ sub valmess {
 	    $mess =~ s/ does not / should not / ||
 	    $mess =~ s/ not / /;
 	}
-	print STDERR $mess,"\n";
+	print stderr $mess,"\n";
     }
     else {
 	$this =~ s/\$file/'$file'/g;
-	print STDERR "Can't do $this.\n";
+	print stderr "Can't do $this.\n";
     }
     if ($disposition eq 'die') { exit 1; }
     ++$warnings;

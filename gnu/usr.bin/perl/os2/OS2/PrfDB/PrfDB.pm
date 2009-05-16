@@ -1,22 +1,21 @@
 package OS2::PrfDB;
 
 use strict;
+use vars qw($VERSION @ISA @EXPORT);
 
 require Exporter;
-use XSLoader;
-use Tie::Hash;
+require DynaLoader;
 
-our $debug;
-our @ISA = qw(Exporter Tie::Hash);
+@ISA = qw(Exporter DynaLoader);
 # Items to export into callers namespace by default. Note: do not export
 # names by default without a very good reason. Use EXPORT_OK instead.
 # Do not simply export all your public functions/methods/constants.
-our @EXPORT = qw(
-		 AnyIni UserIni SystemIni
-		);
-our $VERSION = '0.04';
+@EXPORT = qw(
+	     AnyIni UserIni SystemIni
+	    );
+$VERSION = '0.02';
 
-XSLoader::load 'OS2::PrfDB', $VERSION;
+bootstrap OS2::PrfDB $VERSION;
 
 # Preloaded methods go here.
 
@@ -32,6 +31,10 @@ sub UserIni {
 sub SystemIni {
   new_from_int OS2::PrfDB::Hini OS2::Prf::System(2),'System settings database',1;
 }
+
+use vars qw{$debug @ISA};
+use Tie::Hash;
+push @ISA, qw{Tie::Hash};
 
 # Internal structure 0 => HINI, 1 => array of entries, 2 => iterator.
 
@@ -124,10 +127,9 @@ sub DESTROY {
 }
 
 package OS2::PrfDB::Sub;
+use vars qw{$debug @ISA};
 use Tie::Hash;
-
-our $debug;
-our @ISA = qw{Tie::Hash};
+@ISA = qw{Tie::Hash};
 
 # Internal structure 0 => HINI, 1 => array of entries, 2 => iterator,
 # 3 => appname.
@@ -213,7 +215,7 @@ OS2::PrfDB - Perl extension for access to OS/2 setting database.
 
 =head1 DESCRIPTION
 
-The extension provides both high-level and low-level access to .ini
+The extention provides both high-level and low-level access to .ini
 files. 
 
 =head2 High level access

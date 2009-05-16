@@ -1,5 +1,5 @@
 # Pod::PlainText -- Convert POD data to formatted ASCII text.
-# $Id: PlainText.pm,v 1.5 2008/09/29 17:36:13 millert Exp $
+# $Id: PlainText.pm,v 1.1 2003/12/03 02:44:08 millert Exp $
 #
 # Copyright 1999-2000 by Russ Allbery <rra@stanford.edu>
 #
@@ -29,7 +29,7 @@ use vars qw(@ISA %ESCAPES $VERSION);
 # by Pod::Usage.
 @ISA = qw(Pod::Select);
 
-$VERSION = '2.02';
+($VERSION = (split (' ', q$Revision: 1.1 $ ))[1]) =~ s/\.(\d)$/.0$1/;
 
 
 ############################################################################
@@ -303,23 +303,6 @@ sub cmd_head2 {
     }
 }
 
-# third level heading - not strictly perlpodspec compliant
-sub cmd_head3 {
-    my $self = shift;
-    local $_ = shift;
-    s/\s+$//;
-    $_ = $self->interpolate ($_, shift);
-    if ($$self{alt}) {
-        $self->output ("\n= $_ =\n");
-    } else {
-        $self->output (' ' x ($$self{indent}) . $_ . "\n");
-    }
-}
-
-# fourth level heading - not strictly perlpodspec compliant
-# just like head3
-*cmd_head4 = \&cmd_head3;
-
 # Start a list.
 sub cmd_over {
     my $self = shift;
@@ -413,10 +396,7 @@ sub seq_l {
     # something looking like L<manpage(section)>.  The latter is an
     # enhancement over the original Pod::Text.
     my ($manpage, $section) = ('', $_);
-    if (/^(?:https?|ftp|news):/) {
-        # a URL
-        return $_;
-    } elsif (/^"\s*(.*?)\s*"$/) {
+    if (/^"\s*(.*?)\s*"$/) {
         $section = '"' . $1 . '"';
     } elsif (m/^[-:.\w]+(?:\(\S+\))?$/) {
         ($manpage, $section) = ($_, '');
@@ -424,8 +404,8 @@ sub seq_l {
         ($manpage, $section) = split (/\s*\/\s*/, $_, 2);
     }
 
-    my $text = '';
     # Now build the actual output text.
+    my $text = '';
     if (!length $section) {
         $text = "the $manpage manpage" if length $manpage;
     } elsif ($section =~ /^[:\w]+(?:\(\))?/) {
@@ -575,11 +555,6 @@ sub pod2text {
     }
 }
 
-sub begin_pod {
-    my $self = shift;
-    $$self{EXCLUDE} = 0;
-    $$self{VERBATIM} = 0;
-}
 
 ############################################################################
 # Module return value and documentation
@@ -716,8 +691,6 @@ L<Pod::Parser|Pod::Parser>, L<Pod::Text::Termcap|Pod::Text::Termcap>,
 pod2text(1)
 
 =head1 AUTHOR
-
-Please report bugs using L<http://rt.cpan.org>.
 
 Russ Allbery E<lt>rra@stanford.eduE<gt>, based I<very> heavily on the
 original Pod::Text by Tom Christiansen E<lt>tchrist@mox.perl.comE<gt> and

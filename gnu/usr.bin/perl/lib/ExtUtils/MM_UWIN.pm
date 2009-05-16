@@ -2,7 +2,7 @@ package ExtUtils::MM_UWIN;
 
 use strict;
 use vars qw($VERSION @ISA);
-$VERSION = 6.42;
+$VERSION = 0.01;
 
 require ExtUtils::MM_Unix;
 @ISA = qw(ExtUtils::MM_Unix);
@@ -28,17 +28,6 @@ Unless otherwise stated it works just like ExtUtils::MM_Unix
 
 =over 4
 
-=item os_flavor
-
-In addition to being Unix, we're U/WIN.
-
-=cut
-
-sub os_flavor {
-    return('Unix', 'U/WIN');
-}
-
-
 =item B<replace_manpage_separator>
 
 =cut
@@ -59,7 +48,5 @@ Michael G Schwern <schwern@pobox.com> with code from ExtUtils::MM_Unix
 =head1 SEE ALSO
 
 L<ExtUtils::MM_Win32>, L<ExtUtils::MakeMaker>
-
-=cut
 
 1;

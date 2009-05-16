@@ -1,7 +1,7 @@
+#!./perl
 BEGIN {
-   use File::Basename;
-   my $THISDIR = dirname $0;
-   unshift @INC, $THISDIR;
+   chdir 't' if -d 't';
+   unshift @INC, './pod', '../lib';
    require "testp2pt.pl";
    import TestPodIncPlainText;
 }
@@ -39,8 +39,5 @@ Now, if I use << or >> as my delimiters, then I have to use whitespace.
 So things like C<<$self->method()>> and C<<$self->{FIELDNAME}>> wont end
 up doing what you might expect since the first > will still terminate
 the first < seen.
-
-Lets make sure these work for empty ones too, like C<<  >> and C<< >> >>
-(just to be obnoxious)
 
 =cut

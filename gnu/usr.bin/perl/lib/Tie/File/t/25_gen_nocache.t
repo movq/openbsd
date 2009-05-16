@@ -3,6 +3,7 @@
 # Regular read-write tests with caching disabled
 # (Same as 01_gen.t)
 #
+
 my $file = "tf$$.txt";
 
 print "1..68\n";

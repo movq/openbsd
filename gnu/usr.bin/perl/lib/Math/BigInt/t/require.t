@@ -1,7 +1,5 @@
 #!/usr/bin/perl -w
 
-# check that simple requiring BigInt works
-
 use strict;
 use Test;
 

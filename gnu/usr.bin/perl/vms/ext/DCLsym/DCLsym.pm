@@ -7,7 +7,7 @@ use strict;
 
 # Package globals
 @ISA = ( 'DynaLoader' );
-$VERSION = '1.03';
+$VERSION = '1.01';
 my(%Locsyms) = ( ':ID' => 'LOCAL' );
 my(%Gblsyms) = ( ':ID' => 'GLOBAL');
 my $DoCache = 1;
@@ -106,7 +106,7 @@ sub FIRSTKEY {
     open(P,'Show Symbol * |');
     while (<P>) {
       ($name,$eqs,$val) = /^\s+(\S+) (=+) (.+)/
-        or carp "VMS::DCLsym: unparseable line $_";
+        or carp "VMS::CLISym: unparseable line $_";
       $name =~ s#\*##;
       $val =~ s/"(.*)"$/$1/ or $val =~ s/^(\S+).*/$1/;
       if ($eqs eq '==') { $Gblsyms{$name} = $val; }
@@ -157,7 +157,7 @@ VMS::DCLsym - Perl extension to manipulate DCL symbols
   tie %cgisyms, VMS::DCLsym, 'GLOBAL';
 
 
-  $handle = new VMS::DCLsym;
+  $handle = new VMS::DCLsyms;
   $value = $handle->getsym($name);
   $handle->setsym($name,$value,'GLOBAL') or die "Can't create symbol: $!\n";
   $handle->delsym($name,'LOCAL') or die "Can't delete symbol: $!\n";
@@ -201,7 +201,7 @@ can also call methods directly to manipulate individual symbols.  In some
 cases, this allows you finer control than using a tied hash aggregate.  The
 following methods are supported:
 
-=over 4
+=over
 
 =item new
 
@@ -215,7 +215,7 @@ C<tie> described above.
 If called in a scalar context, C<getsym> returns the value of the symbol whose
 name is given as the argument to the call, or C<undef> if no such symbol
 exists.  Symbols in the local symbol table are always used in preference to
-symbols in the global symbol table.  If called in a list context, C<getsym>
+symbols in the global symbol table.  If called in an array context, C<getsym>
 returns a two-element list, whose first element is the value of the symbol, and
 whose second element is the string 'GLOBAL' or 'LOCAL', indicating the table
 from which the symbol's value was read.
@@ -254,11 +254,9 @@ This method is a stopgap until we can incorporate code into this extension to
 traverse the process' symbol table directly, so it may disappear in a future
 version of this package.
 
-=back
-
 =head1 AUTHOR
 
-Charles Bailey  bailey@newman.upenn.edu
+Charles Bailey  bailey@genetics.upenn.edu
 
 =head1 VERSION
 

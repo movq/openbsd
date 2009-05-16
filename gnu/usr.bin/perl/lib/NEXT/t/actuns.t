@@ -1,5 +1,3 @@
-use Test::More tests => 6;
-
 BEGIN {
     if ($ENV{PERL_CORE}) {
         chdir('t') if -d 't';
@@ -7,25 +5,27 @@ BEGIN {
     }
 }
 
-BEGIN { use_ok('NEXT') };
-my $order = 0;
+BEGIN { print "1..5\n"; }
+use NEXT;
+
+my $count=1;
 
 package A;
 @ISA = qw/B C D/;
 
-sub test { ::ok(++$order==1,"test A"); $_[0]->NEXT::UNSEEN::ACTUAL::test;}
+sub test { print "ok ", $count++, "\n"; $_[0]->NEXT::UNSEEN::ACTUAL::test;}
 
 package B;
-@ISA = qw/D C/;
-sub test { ::ok(++$order==2,"test B"); $_[0]->NEXT::ACTUAL::UNSEEN::test;}
+@ISA = qw/C D/;
+sub test { print "ok ", $count++, "\n"; $_[0]->NEXT::ACTUAL::UNSEEN::test;}
 
 package C;
 @ISA = qw/D/;
-sub test { ::ok(++$order==4,"test C"); $_[0]->NEXT::UNSEEN::ACTUAL::test;}
+sub test { print "ok ", $count++, "\n"; $_[0]->NEXT::UNSEEN::ACTUAL::test;}
 
 package D;
 
-sub test { ::ok(++$order==3,"test D"); $_[0]->NEXT::ACTUAL::UNSEEN::test;}
+sub test { print "ok ", $count++, "\n"; $_[0]->NEXT::ACTUAL::UNSEEN::test;}
 
 package main;
 
@@ -33,6 +33,5 @@ my $foo = {};
 
 bless($foo,"A");
 
-eval{ $foo->test }
-	? fail("Didn't die on missing ancestor") 
-	: pass("Correctly dies after C");
+eval { $foo->test } and print "not ";
+print "ok 5\n";

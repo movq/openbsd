@@ -1,6 +1,3 @@
-#!/usr/bin/perl -w
-# $Id$
-
 # Can't use Test.pm, that's a 5.005 thing.
 package My::Test;
 
@@ -26,9 +23,18 @@ if( $^O eq 'MacOS' ) {
     exit 0;
 }
 
-require Test::Builder;
-my $TB = Test::Builder->create();
-$TB->level(0);
+my $test_num = 1;
+# Utility testing functions.
+sub ok ($;$) {
+    my($test, $name) = @_;
+    my $ok = '';
+    $ok .= "not " unless $test;
+    $ok .= "ok $test_num";
+    $ok .= " - $name" if defined $name;
+    $ok .= "\n";
+    print $ok;
+    $test_num++;
+}
 
 
 package main;
@@ -43,19 +49,15 @@ my %Tests = (
              'one_fail.plx'             => [1,      4],
              'two_fail.plx'             => [2,      4],
              'five_fail.plx'            => [5,      4],
-             'extras.plx'               => [2,      4],
-             'too_few.plx'              => [255,    4],
-             'too_few_fail.plx'         => [2,      4],
+             'extras.plx'               => [3,      4],
+             'too_few.plx'              => [4,      4],
              'death.plx'                => [255,    4],
              'last_minute_death.plx'    => [255,    4],
-             'pre_plan_death.plx'       => ['not zero',    'not zero'],
              'death_in_eval.plx'        => [0,      0],
              'require.plx'              => [0,      0],
-             'death_with_handler.plx'   => [255,    4],
-             'exit.plx'                 => [1,      4],
             );
 
-$TB->plan( tests => scalar keys(%Tests) );
+print "1..".keys(%Tests)."\n";
 
 eval { require POSIX; &POSIX::WEXITSTATUS(0) };
 if( $@ ) {
@@ -65,12 +67,12 @@ else {
     *exitstatus = sub { POSIX::WEXITSTATUS($_[0]) }
 }
 
-my $Perl = File::Spec->rel2abs($^X);
-
 chdir 't';
 my $lib = File::Spec->catdir(qw(lib Test Simple sample_tests));
 while( my($test_name, $exit_codes) = each %Tests ) {
     my($exit_code) = $exit_codes->[$IsVMS ? 1 : 0];
+
+    my $Perl = $^X;
 
     if( $^O eq 'VMS' ) {
         # VMS can't use its own $^X in a system call until almost 5.8
@@ -85,14 +87,6 @@ while( my($test_name, $exit_codes) = each %Tests ) {
     my $wait_stat = system(qq{$Perl -"I../blib/lib" -"I../lib" -"I../t/lib" $file});
     my $actual_exit = exitstatus($wait_stat);
 
-    if( $exit_code eq 'not zero' ) {
-        $TB->isnt_num( $actual_exit, 0,
-                      "$test_name exited with $actual_exit ".
-                      "(expected $exit_code)");
-    }
-    else {
-        $TB->is_num( $actual_exit, $exit_code, 
-                      "$test_name exited with $actual_exit ".
-                      "(expected $exit_code)");
-    }
+    My::Test::ok( $actual_exit == $exit_code, 
+                  "$test_name exited with $actual_exit (expected $exit_code)");
 }

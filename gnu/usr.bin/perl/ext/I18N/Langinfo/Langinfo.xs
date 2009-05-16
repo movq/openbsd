@@ -3,7 +3,6 @@
 #include "XSUB.h"
 
 #ifdef I_LANGINFO
-#   define __USE_GNU 1 /* Enables YESSTR, otherwise only __YESSTR. */
 #   include <langinfo.h>
 #endif
 

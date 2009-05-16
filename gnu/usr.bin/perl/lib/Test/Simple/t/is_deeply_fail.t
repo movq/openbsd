@@ -1,5 +1,4 @@
 #!/usr/bin/perl -w
-# $Id: is_deeply_fail.t,v 1.2 2009/05/16 21:42:57 simon Exp $
 
 BEGIN {
     if( $ENV{PERL_CORE} ) {
@@ -65,7 +64,7 @@ ok !is_deeply('foo', 'bar', 'plain strings');
 is( $out, "not ok 1 - plain strings\n",     'plain strings' );
 is( $err, <<ERR,                            '    right diagnostic' );
 #   Failed test 'plain strings'
-#   at $0 line 68.
+#   in $0 at line 68.
 #          got: 'foo'
 #     expected: 'bar'
 ERR
@@ -76,7 +75,7 @@ ok !is_deeply({}, [], 'different types');
 is( $out, "not ok 2 - different types\n",   'different types' );
 like( $err, <<ERR,                          '   right diagnostic' );
 #   Failed test 'different types'
-#   at $Filename line 78.
+#   in $Filename at line 78.
 #     Structures begin differing at:
 #          \\\$got = HASH\\(0x[0-9a-f]+\\)
 #     \\\$expected = ARRAY\\(0x[0-9a-f]+\\)
@@ -88,7 +87,7 @@ is( $out, "not ok 3 - hashes with different values\n",
                                         'hashes with different values' );
 is( $err, <<ERR,                        '   right diagnostic' );
 #   Failed test 'hashes with different values'
-#   at $0 line 88.
+#   in $0 at line 88.
 #     Structures begin differing at:
 #          \$got->{this} = '42'
 #     \$expected->{this} = '43'
@@ -100,7 +99,7 @@ is( $out, "not ok 4 - hashes with different keys\n",
                                         'hashes with different keys' );
 is( $err, <<ERR,                        '    right diagnostic' );
 #   Failed test 'hashes with different keys'
-#   at $0 line 99.
+#   in $0 at line 99.
 #     Structures begin differing at:
 #          \$got->{this} = Does not exist
 #     \$expected->{this} = '42'
@@ -112,7 +111,7 @@ is( $out, "not ok 5 - arrays of different length\n",
                                         'arrays of different length' );
 is( $err, <<ERR,                        '    right diagnostic' );
 #   Failed test 'arrays of different length'
-#   at $0 line 110.
+#   in $0 at line 110.
 #     Structures begin differing at:
 #          \$got->[9] = Does not exist
 #     \$expected->[9] = '10'
@@ -123,7 +122,7 @@ ok !is_deeply([undef, undef], [undef], 'arrays of undefs' );
 is( $out, "not ok 6 - arrays of undefs\n",  'arrays of undefs' );
 is( $err, <<ERR,                            '    right diagnostic' );
 #   Failed test 'arrays of undefs'
-#   at $0 line 121.
+#   in $0 at line 121.
 #     Structures begin differing at:
 #          \$got->[1] = undef
 #     \$expected->[1] = Does not exist
@@ -134,7 +133,7 @@ ok !is_deeply({ foo => undef }, {},    'hashes of undefs' );
 is( $out, "not ok 7 - hashes of undefs\n",  'hashes of undefs' );
 is( $err, <<ERR,                            '    right diagnostic' );
 #   Failed test 'hashes of undefs'
-#   at $0 line 131.
+#   in $0 at line 131.
 #     Structures begin differing at:
 #          \$got->{foo} = undef
 #     \$expected->{foo} = Does not exist
@@ -145,7 +144,7 @@ ok !is_deeply(\42, \23,   'scalar refs');
 is( $out, "not ok 8 - scalar refs\n",   'scalar refs' );
 is( $err, <<ERR,                        '    right diagnostic' );
 #   Failed test 'scalar refs'
-#   at $0 line 141.
+#   in $0 at line 141.
 #     Structures begin differing at:
 #     \${     \$got} = '42'
 #     \${\$expected} = '23'
@@ -157,7 +156,7 @@ is( $out, "not ok 9 - mixed scalar and array refs\n",
                                         'mixed scalar and array refs' );
 like( $err, <<ERR,                      '    right diagnostic' );
 #   Failed test 'mixed scalar and array refs'
-#   at $Filename line 151.
+#   in $Filename at line 151.
 #     Structures begin differing at:
 #          \\\$got = ARRAY\\(0x[0-9a-f]+\\)
 #     \\\$expected = SCALAR\\(0x[0-9a-f]+\\)
@@ -177,7 +176,7 @@ ok !is_deeply($a1, $b1, 'deep scalar refs');
 is( $out, "not ok 10 - deep scalar refs\n",     'deep scalar refs' );
 is( $err, <<ERR,                              '    right diagnostic' );
 #   Failed test 'deep scalar refs'
-#   at $0 line 173.
+#   in $0 at line 173.
 #     Structures begin differing at:
 #     \${\${     \$got}} = '42'
 #     \${\${\$expected}} = '23'
@@ -204,7 +203,7 @@ ok( @Test::More::Data_Stack == 0, '@Data_Stack not holding onto things' );
 is( $out, "not ok 11 - deep structures\n",  'deep structures' );
 is( $err, <<ERR,                            '    right diagnostic' );
 #   Failed test 'deep structures'
-#   at $0 line 198.
+#   in $0 at line 198.
 #     Structures begin differing at:
 #          \$got->{that}{foo} = Does not exist
 #     \$expected->{that}{foo} = '42'
@@ -253,7 +252,7 @@ $$err = $$out = '';
 ok !is_deeply( [\'a', 'b'], [\'a', 'c'] );
 is( $out, "not ok 20\n",  'scalar refs in an array' );
 is( $err, <<ERR,        '    right diagnostic' );
-#   Failed test at $0 line 274.
+#   Failed test in $0 at line 274.
 #     Structures begin differing at:
 #          \$got->[1] = 'b'
 #     \$expected->[1] = 'c'
@@ -265,7 +264,7 @@ my $ref = \23;
 ok !is_deeply( 23, $ref );
 is( $out, "not ok 21\n", 'scalar vs ref' );
 is( $err, <<ERR,        '  right diagnostic');
-#   Failed test at $0 line 286.
+#   Failed test in $0 at line 286.
 #     Structures begin differing at:
 #          \$got = '23'
 #     \$expected = $ref
@@ -275,7 +274,7 @@ ERR
 ok !is_deeply( $ref, 23 );
 is( $out, "not ok 22\n", 'ref vs scalar' );
 is( $err, <<ERR,        '  right diagnostic');
-#   Failed test at $0 line 296.
+#   Failed test in $0 at line 296.
 #     Structures begin differing at:
 #          \$got = $ref
 #     \$expected = '23'
@@ -285,7 +284,7 @@ ERR
 ok !is_deeply( undef, [] );
 is( $out, "not ok 23\n", 'is_deeply and undef [RT 9441]' );
 like( $err, <<ERR,	 '  right diagnostic' );
-#   Failed test at $Filename line 306\\.
+#   Failed test in $Filename at line 306\\.
 #     Structures begin differing at:
 #          \\\$got = undef
 #     \\\$expected = ARRAY\\(0x[0-9a-f]+\\)
@@ -301,7 +300,7 @@ ERR
     ok !is_deeply( $array, $hash );
     is( $out, "not ok 24\n", 'is_deeply and different reference types' );
     is( $err, <<ERR, 	     '  right diagnostic' );
-#   Failed test at $0 line 321.
+#   Failed test in $0 at line 321.
 #     Structures begin differing at:
 #          \$got = $array
 #     \$expected = $hash
@@ -311,15 +310,14 @@ ERR
     ok !is_deeply( [$array], [$hash] );
     is( $out, "not ok 25\n", 'nested different ref types' );
     is( $err, <<ERR,	     '  right diagnostic' );
-#   Failed test at $0 line 332.
+#   Failed test in $0 at line 332.
 #     Structures begin differing at:
 #          \$got->[0] = $array
 #     \$expected->[0] = $hash
 ERR
 
 
-    # Overloaded object tests
-    {
+    if( eval { require overload } ) {
 	my $foo = bless [], "Foo";
 	my $bar = bless {}, "Bar";
 
@@ -332,12 +330,15 @@ ERR
 	ok !is_deeply( [$foo], [$bar] );
 	is( $out, "not ok 26\n", 'string overloaded refs respected in diag' );
 	is( $err, <<ERR,	     '  right diagnostic' );
-#   Failed test at $0 line 353.
+#   Failed test in $0 at line 353.
 #     Structures begin differing at:
 #          \$got->[0] = $foo
 #     \$expected->[0] = 'wibble'
 ERR
 
+    }
+    else {
+	$TB->skip("Needs overload.pm") for 1..3;
     }
 }
 
@@ -348,7 +349,7 @@ ERR
     ok !is_deeply( sub {"foo"}, sub {"bar"} ), 'function refs';
     is( $out, "not ok 27\n" );
     like( $err, <<ERR,	     '  right diagnostic' );
-#   Failed test at $Filename line 349.
+#   Failed test in $Filename at line 349.
 #     Structures begin differing at:
 #          \\\$got = CODE\\(0x[0-9a-f]+\\)
 #     \\\$expected = CODE\\(0x[0-9a-f]+\\)
@@ -363,7 +364,7 @@ ERR
     ok !is_deeply( $glob1, $glob2 ), 'typeglobs';
     is( $out, "not ok 28\n" );
     like( $err, <<ERR,	     '  right diagnostic' );
-#   Failed test at $Filename line 357.
+#   Failed test in $0 at line 357.
 #     Structures begin differing at:
 #          \\\$got = GLOB\\(0x[0-9a-f]+\\)
 #     \\\$expected = GLOB\\(0x[0-9a-f]+\\)

@@ -1,26 +1,19 @@
 package Fatal;
 
-use 5.006_001;
 use Carp;
 use strict;
-our($AUTOLOAD, $Debug, $VERSION);
+use vars qw( $AUTOLOAD $Debug $VERSION);
 
-$VERSION = 1.05;
+$VERSION = 1.02;
 
 $Debug = 0 unless defined $Debug;
 
 sub import {
     my $self = shift(@_);
     my($sym, $pkg);
-    my $void = 0;
     $pkg = (caller)[0];
     foreach $sym (@_) {
-	if ($sym eq ":void") {
-	    $void = 1;
-	}
-	else {
-	    &_make_fatal($sym, $pkg, $void);
-	}
+	&_make_fatal($sym, $pkg);
     }
 };
 
@@ -38,7 +31,7 @@ sub fill_protos {
     $n++;
     push(@out1,[$n,@out]) if $seen_semi;
     push(@out, $1 . "{\$_[$n]}"), next if $proto =~ s/^\s*\\([\@%\$\&])//;
-    push(@out, "\$_[$n]"), next if $proto =~ s/^\s*([_*\$&])//;
+    push(@out, "\$_[$n]"), next if $proto =~ s/^\s*([*\$&])//;
     push(@out, "\@_[$n..\$#_]"), last if $proto =~ s/^\s*(;\s*)?\@//;
     $seen_semi = 1, $n--, next if $proto =~ s/^\s*;//; # XXXX ????
     die "Unknown prototype letters: \"$proto\"";
@@ -48,11 +41,11 @@ sub fill_protos {
 }
 
 sub write_invocation {
-  my ($core, $call, $name, $void, @argvs) = @_;
+  my ($core, $call, $name, @argvs) = @_;
   if (@argvs == 1) {		# No optional arguments
     my @argv = @{$argvs[0]};
     shift @argv;
-    return "\t" . one_invocation($core, $call, $name, $void, @argv) . ";\n";
+    return "\t" . one_invocation($core, $call, $name, @argv) . ";\n";
   } else {
     my $else = "\t";
     my (@out, @argv, $n);
@@ -62,7 +55,7 @@ sub write_invocation {
       push @out, "$ {else}if (\@_ == $n) {\n";
       $else = "\t} els";
       push @out, 
-          "\t\treturn " . one_invocation($core, $call, $name, $void, @argv) . ";\n";
+          "\t\treturn " . one_invocation($core, $call, $name, @argv) . ";\n";
     }
     push @out, <<EOC;
 	}
@@ -73,34 +66,27 @@ EOC
 }
 
 sub one_invocation {
-  my ($core, $call, $name, $void, @argv) = @_;
+  my ($core, $call, $name, @argv) = @_;
   local $" = ', ';
-  if ($void) { 
-    return qq/(defined wantarray)?$call(@argv):
-              $call(@argv) || croak "Can't $name(\@_)/ . 
-           ($core ? ': $!' : ', \$! is \"$!\"') . '"'
-  } else {
-    return qq{$call(@argv) || croak "Can't $name(\@_)} . 
-           ($core ? ': $!' : ', \$! is \"$!\"') . '"';
-  }
+  return qq{$call(@argv) || croak "Can't $name(\@_)} . 
+    ($core ? ': $!' : ', \$! is \"$!\"') . '"';
 }
 
 sub _make_fatal {
-    my($sub, $pkg, $void) = @_;
+    my($sub, $pkg) = @_;
     my($name, $code, $sref, $real_proto, $proto, $core, $call);
     my $ini = $sub;
 
     $sub = "${pkg}::$sub" unless $sub =~ /::/;
     $name = $sub;
     $name =~ s/.*::// or $name =~ s/^&//;
-    print "# _make_fatal: sub=$sub pkg=$pkg name=$name void=$void\n" if $Debug;
+    print "# _make_fatal: sub=$sub pkg=$pkg name=$name\n" if $Debug;
     croak "Bad subroutine name for Fatal: $name" unless $name =~ /^\w+$/;
     if (defined(&$sub)) {	# user subroutine
 	$sref = \&$sub;
 	$proto = prototype $sref;
 	$call = '&$sref';
-    } elsif ($sub eq $ini && $sub !~ /^CORE::GLOBAL::/) {
-	# Stray user subroutine
+    } elsif ($sub eq $ini) {	# Stray user subroutine
 	die "$sub is not a Perl subroutine" 
     } else {			# CORE subroutine
         $proto = eval { prototype "CORE::$name" };
@@ -122,14 +108,14 @@ sub$real_proto {
 	local(\$", \$!) = (', ', 0);
 EOS
     my @protos = fill_protos($proto);
-    $code .= write_invocation($core, $call, $name, $void, @protos);
+    $code .= write_invocation($core, $call, $name, @protos);
     $code .= "}\n";
     print $code if $Debug;
     {
       no strict 'refs'; # to avoid: Can't use string (...) as a symbol ref ...
       $code = eval("package $pkg; use Carp; $code");
       die if $@;
-      no warnings;   # to avoid: Subroutine foo redefined ...
+      local($^W) = 0;   # to avoid: Subroutine foo redefined ...
       *{$sub} = $code;
     }
 }
@@ -152,10 +138,11 @@ Fatal - replace functions with equivalents which succeed or die
 =head1 DESCRIPTION
 
 C<Fatal> provides a way to conveniently replace functions which normally
-return a false value when they fail with equivalents which raise exceptions
+return a false value when they fail with equivalents which halt execution
 if they are not successful.  This lets you use these functions without
-having to test their return values explicitly on each call.  Exceptions
-can be caught using C<eval{}>.  See L<perlfunc> and L<perlvar> for details.
+having to test their return values explicitly on each call.   Errors are
+reported via C<die>, so you can trap them using C<$SIG{__DIE__}> if you
+wish to take some action before the program exits.
 
 The do-or-die equivalents are set up simply by calling Fatal's
 C<import> routine, passing it the names of the functions to be
@@ -163,31 +150,10 @@ replaced.  You may wrap both user-defined functions and overridable
 CORE operators (except C<exec>, C<system> which cannot be expressed
 via prototypes) in this way.
 
-If the symbol C<:void> appears in the import list, then functions
-named later in that import list raise an exception only when
-these are called in void context--that is, when their return
-values are ignored.  For example
-
-	use Fatal qw/:void open close/;
-
-	# properly checked, so no exception raised on error
-	if(open(FH, "< /bogotic") {
-		warn "bogo file, dude: $!";
-	}
-
-	# not checked, so error raises an exception
-	close FH;
-
-=head1 BUGS
-
-You should not fatalize functions that are called in list context, because this
-module tests whether a function has failed by testing the boolean truth of its
-return value in scalar context.
-
 =head1 AUTHOR
 
-Lionel Cons (CERN).
+Lionel.Cons@cern.ch
 
-Prototype updates by Ilya Zakharevich <ilya@math.ohio-state.edu>.
+prototype updates by Ilya Zakharevich ilya@math.ohio-state.edu
 
 =cut

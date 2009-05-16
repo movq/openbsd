@@ -99,8 +99,6 @@ foreach (@tests) {
   foreach ($args{Name}, $args{Require}, $args{Extra}) {
     chomp $_ if defined $_;
   }
-  $args{Get} ||= '';
-
   my @extra_args = !defined $args{Extra} ? () : split /,/, $args{Extra};
   my ($output, $body);
   if ($args{File}) {
@@ -122,7 +120,7 @@ foreach (@tests) {
   }
 
   # test n+1
-  is($output, $args{Get}, "Output from autosplit()ing $args{Name}");
+  cmp_ok ($output, 'eq', $args{Get}, "Output from autosplit()ing $args{Name}");
 
   if ($args{Files}) {
     $args{Files} =~ s!/!:!gs if $^O eq 'MacOS';
@@ -301,7 +299,7 @@ Split prior to checking whether obsolete files get deleted
 use AutoLoader 'AUTOLOAD';
 1;
 __END__
-sub obsolete {our $hidden_a; return $hidden_a++;}
+sub obsolete {my $a if 0; return $a++;}
 sub gonner {warn "This gonner function should never get called"}
 ## Get
 AutoSplitting *INC**PATHSEP**MOD*.pm (*DIR**PATHSEP**MOD**ENDPATHSEP*)

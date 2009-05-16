@@ -1,4 +1,3 @@
 use ExtUtils::MakeMaker;
 
-WriteMakefile( 'VERSION_FROM' => 'DCLsym.pm',
-               'MAN3PODS'     => {});
+WriteMakefile( 'VERSION_FROM' => 'DCLsym.pm' );

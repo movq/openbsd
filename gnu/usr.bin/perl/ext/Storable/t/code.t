@@ -38,7 +38,7 @@ BEGIN {
     }
 }
 
-BEGIN { plan tests => 59 }
+BEGIN { plan tests => 49 }
 
 use Storable qw(retrieve store nstore freeze nfreeze thaw dclone);
 use Safe;
@@ -118,7 +118,7 @@ ok($thawed->(), "JAPH");
 ######################################################################
 
 eval { $freezed = freeze $obj[4] };
-ok($@, qr/The result of B::Deparse::coderef2text was empty/);
+ok($@ =~ /The result of B::Deparse::coderef2text was empty/);
 
 ######################################################################
 # Test dclone
@@ -162,7 +162,7 @@ ok(prototype($thawed->[4]), prototype($obj[0]->[4]));
 	$freezed = freeze $obj[$i];
 	$@ = "";
 	eval { $thawed  = thaw $freezed };
-	ok($@, qr/Can\'t eval/);
+	ok($@ =~ /Can\'t eval/);
     }
 }
 
@@ -172,7 +172,7 @@ ok(prototype($thawed->[4]), prototype($obj[0]->[4]));
     for my $i (0 .. 1) {
 	$@ = "";
 	eval { $freezed = freeze $obj[$i] };
-	ok($@, qr/Can\'t store CODE items/);
+	ok($@ =~ /Can\'t store CODE items/);
     }
 }
 
@@ -184,7 +184,7 @@ ok(prototype($thawed->[4]), prototype($obj[0]->[4]));
 	$@ = "";
 	eval { $thawed  = thaw $freezed };
 	ok($@, "");
-	ok($$thawed, qr/^sub/);
+	ok($$thawed =~ /^sub/);
     }
 }
 
@@ -218,8 +218,7 @@ ok(prototype($thawed->[4]), prototype($obj[0]->[4]));
 
     $freezed = freeze $obj[0]->[6];
     eval { $thawed = thaw $freezed };
-    # The "Code sub ..." error message only appears if Log::Agent is installed
-    ok($@, qr/(trapped|Code sub)/);
+    ok($@ =~ /trapped/);
 
     if (0) {
 	# Disable or fix this test if the internal representation of Storable
@@ -235,14 +234,14 @@ ok(prototype($thawed->[4]), prototype($obj[0]->[4]));
 	substr($freezed, -1, 0, $bad_code);
 	$@ = "";
 	eval { $thawed = thaw $freezed };
-	ok($@, qr/(trapped|Code sub)/);
+	ok($@ =~ /trapped/);
     }
 }
 
 {
     my $safe = new Safe;
     # because of opcodes used in "use strict":
-    $safe->permit(qw(:default require caller));
+    $safe->permit(qw(:default require));
     local $Storable::Eval = sub { $safe->reval(shift) };
 
     $freezed = freeze $obj[0]->[1];
@@ -283,30 +282,3 @@ ok(prototype($thawed->[4]), prototype($obj[0]->[4]));
     }
 }
 
-{
-    # Check internal "seen" code
-    my $short_sub = sub { "short sub" }; # for SX_SCALAR
-    # for SX_LSCALAR
-    my $long_sub_code = 'sub { "' . "x"x255 . '" }';
-    my $long_sub = eval $long_sub_code; die $@ if $@;
-    my $sclr = \1;
-
-    local $Storable::Deparse = 1;
-    local $Storable::Eval    = 1;
-
-    for my $sub ($short_sub, $long_sub) {
-	my $res;
-
-	$res = thaw freeze [$sub, $sub];
-	ok(int($res->[0]), int($res->[1]));
-
-	$res = thaw freeze [$sclr, $sub, $sub, $sclr];
-	ok(int($res->[0]), int($res->[3]));
-	ok(int($res->[1]), int($res->[2]));
-
-	$res = thaw freeze [$sub, $sub, $sclr, $sclr];
-	ok(int($res->[0]), int($res->[1]));
-	ok(int($res->[2]), int($res->[3]));
-    }
-
-}

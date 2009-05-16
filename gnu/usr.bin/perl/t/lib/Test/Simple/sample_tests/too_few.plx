@@ -1,5 +1,4 @@
 require Test::Simple;
-# $Id$
 
 push @INC, 't/lib';
 require Test::Simple::Catch;
@@ -9,4 +8,4 @@ Test::Simple->import(tests => 5);
 
 
 ok(1);
-ok(1);
+ok(0);

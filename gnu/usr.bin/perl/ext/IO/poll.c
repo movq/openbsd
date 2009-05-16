@@ -12,8 +12,6 @@
 
 #include "EXTERN.h"
 #include "perl.h"
-#include "XSUB.h"
-
 #include "poll.h"
 #ifdef I_SYS_TIME
 # include <sys/time.h>
@@ -22,7 +20,7 @@
 # include <time.h>
 #endif
 #include <sys/types.h>
-#if defined(HAS_SOCKET) && !defined(VMS) && !defined(ultrix) /* VMS handles sockets via vmsish.h, ULTRIX dies of socket struct redefinitions */
+#if defined(HAS_SOCKET) && !defined(VMS) /* VMS handles sockets via vmsish.h */
 #  include <sys/socket.h>
 #endif
 #include <sys/stat.h>
@@ -60,7 +58,7 @@ again:
     FD_ZERO(&wfd);
     FD_ZERO(&efd);
 
-    for(i = 0 ; i < (int)nfds ; i++) {
+    for(i = 0 ; i < nfds ; i++) {
 	int events = fds[i].events;
 	int fd = fds[i].fd;
 
@@ -107,7 +105,7 @@ again:
 
     count = 0;
 
-    for(i = 0 ; i < (int)nfds ; i++) {
+    for(i = 0 ; i < nfds ; i++) {
 	int revents = (fds[i].events & POLL_EVENTS_MASK);
 	int fd = fds[i].fd;
 
@@ -135,12 +133,3 @@ again:
 }
 
 #endif /* EMULATE_POLL_WITH_SELECT */
-
-/* gcc for SunOS 4 produces code from an empty (code/symbolwise)
- * source code file that makes the SunOS 4.x /usr/bin/ld fail with
- * ld: poll.o: premature EOF
- * To avoid this, have at least something in here.  */
-#if defined(__sun) && !defined(__SVR4) && defined(__GNUC__)
-static int dummy;
-#endif
-

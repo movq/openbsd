@@ -1,30 +1,27 @@
-#!/usr/bin/perl -w
+#!./perl -w
 
-# Here we make sure File::Spec can properly deal with executables.
-# VMS has some trouble with these.
+# Herein we apply abs2rel, rel2abs and canonpath against various real
+# world files and make sure it all actually works.
 
-use File::Spec;
-use lib File::Spec->catdir('t', 'lib');
-
-use Test::More (-x $^X
-		? (tests => 5)
-		: (skip_all => "Can't find an executable file")
-	       );
-
+BEGIN {
+    chdir 't';
+    @INC = '../lib';
+}
 BEGIN {                                # Set up a tiny script file
-    local *F;
     open(F, ">rel2abs2rel$$.pl")
       or die "Can't open rel2abs2rel$$.pl file for script -- $!\n";
     print F qq(print "ok\\n"\n);
     close(F);
 }
 END {
-    1 while unlink("rel2abs2rel$$.pl");
-    1 while unlink("rel2abs2rel$$.tmp");
+    unlink("rel2abs2rel$$.pl");
+    unlink("rel2abs2rel$$.tmp");
 }
 
 use Config;
 
+use Test::More tests => 5;
+use File::Spec;
 
 # Change 'perl' to './perl' so the shell doesn't go looking through PATH.
 sub safe_rel {
@@ -46,8 +43,6 @@ sub sayok{
     system($perl, "rel2abs2rel$$.pl");
     open(STDOUT, '>&STDOUTDUP');
     close(STDOUTDUP);
-
-    local *F;
     open(F, "rel2abs2rel$$.tmp");
     local $/ = undef;
     my $output = <F>;
@@ -55,19 +50,19 @@ sub sayok{
     return $output;
 }
 
-print "# Checking manipulations of \$^X=$^X\n";
-
+# Here we make sure File::Spec can properly deal with executables.
+# VMS has some trouble with these.
 my $perl = safe_rel($^X);
-is( sayok($perl), "ok\n",   "`$perl rel2abs2rel$$.pl` works" );
+is( sayok($perl), "ok\n",   '`` works' );
 
 $perl = File::Spec->rel2abs($^X);
-is( sayok($perl), "ok\n",   "`$perl rel2abs2rel$$.pl` works" );
+is( sayok($perl), "ok\n",   '`` works' );
 
 $perl = File::Spec->canonpath($perl);
-is( sayok($perl), "ok\n",   "canonpath(rel2abs($^X)) = $perl" );
+is( sayok($perl), "ok\n",   'rel2abs($^X)' );
 
 $perl = safe_rel(File::Spec->abs2rel($perl));
-is( sayok($perl), "ok\n",   "safe_rel(abs2rel(canonpath(rel2abs($^X)))) = $perl" );
+is( sayok($perl), "ok\n",   'canonpath on abs executable' );
 
 $perl = safe_rel(File::Spec->canonpath($^X));
-is( sayok($perl), "ok\n",   "safe_rel(canonpath($^X)) = $perl" );
+is(sayok($perl), "ok\n",   'canonpath on rel executable' );

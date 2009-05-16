@@ -35,7 +35,7 @@ $ENV{'PERL5_CPANPLUS_IS_VERSION'} = __PACKAGE__->VERSION;
 
 =head1 NAME
 
-CPANPLUS::Backend - programmer's interface to CPANPLUS
+CPANPLUS::Backend
 
 =head1 SYNOPSIS
 

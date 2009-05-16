@@ -19,7 +19,7 @@ local $Params::Check::VERBOSE = 1;
 
 =head1 NAME
 
-CPANPLUS::Internals::Extract - extracts compressed files for CPANPLUS
+CPANPLUS::Internals::Extract
 
 =head1 SYNOPSIS
 

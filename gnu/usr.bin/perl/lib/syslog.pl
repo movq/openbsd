@@ -29,17 +29,15 @@
 
 package syslog;
 
-use warnings::register;
-
 $host = 'localhost' unless $host;	# set $syslog'host to change
 
-if ($] >= 5 && warnings::enabled()) {
-    warnings::warn("You should 'use Sys::Syslog' instead; continuing");
+if ($] >= 5) {
+    warn "You should 'use Sys::Syslog' instead; continuing" # if $^W
 } 
 
 require 'syslog.ph';
 
- eval 'use Socket; 1' 			||
+ eval 'use Socket' 			||
      eval { require "socket.ph" } 	||
      require "sys/socket.ph";
 
@@ -142,10 +140,10 @@ sub main'syslog {
 
 sub xlate {
     local($name) = @_;
-    $name = uc $name;
+    $name =~ y/a-z/A-Z/;
     $name = "LOG_$name" unless $name =~ /^LOG_/;
     $name = "syslog'$name";
-    defined &$name ? &$name : -1;
+    eval(&$name) || -1;
 }
 
 sub connect {

@@ -1,13 +1,4 @@
 ;#
-#
-# This library is no longer being maintained, and is included for backward
-# compatibility with Perl 4 programs which may require it.
-#
-# In particular, this should not be used as an example of modern Perl
-# programming techniques.
-#
-# Suggested alternative: Term::Complete
-#
 ;#      @(#)complete.pl,v1.1            (me@anywhere.EBay.Sun.COM) 09/23/91
 ;#
 ;# Author: Wayne Thompson
@@ -44,7 +35,7 @@ CONFIG: {
 sub Complete {
     package Complete;
 
-    local($prompt, @cmp_list, $return, @match, $l, $test, $cmp, $r);
+    local($[,$return) = 0;
     if ($_[1] =~ /^StB\0/) {
         ($prompt, *_) = @_;
     }
@@ -84,8 +75,7 @@ sub Complete {
                 # (^U) kill
                 $_ eq $kill && do {
                     if ($r) {
-                        undef $r;
-			undef $return;
+                        undef($r, $return);
                         print("\r\n");
                         redo LOOP;
                     }

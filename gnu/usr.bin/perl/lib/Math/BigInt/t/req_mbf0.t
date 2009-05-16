@@ -3,7 +3,7 @@
 # check that simple requiring BigFloat and then bzero() works
 
 use strict;
-use Test::More;
+use Test;
 
 BEGIN
   {
@@ -31,9 +31,7 @@ BEGIN
   plan tests => 1;
   } 
 
-require Math::BigFloat;
-my $x = Math::BigFloat->bzero(); $x++;
-is ($x,1, '$x is 1');
+require Math::BigFloat; my $x = Math::BigFloat->bzero(); ok ($x,0);
 
 # all tests done
 

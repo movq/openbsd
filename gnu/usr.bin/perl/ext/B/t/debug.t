@@ -1,21 +1,12 @@
 #!./perl
 
 BEGIN {
-    if ($ENV{PERL_CORE}){
-	chdir('t') if -d 't';
-	if ($^O eq 'MacOS') {
-	    @INC = qw(: ::lib ::macos:lib);
-	} else {
-	    @INC = '.';
-	    push @INC, '../lib';
-	}
+    chdir 't' if -d 't';
+    if ($^O eq 'MacOS') {
+	@INC = qw(: ::lib ::macos:lib);
     } else {
-	unshift @INC, 't';
-    }
-    require Config;
-    if (($Config::Config{'extensions'} !~ /\bB\b/) ){
-        print "1..0 # Skip -- Perl configured without B module\n";
-        exit 0;
+	@INC = '.';
+	push @INC, '../lib';
     }
 }
 
@@ -23,7 +14,13 @@ $|  = 1;
 use warnings;
 use strict;
 use Config;
-use Test::More tests=>3;
+
+print "1..3\n";
+
+my $test = 1;
+
+sub ok { print "ok $test\n"; $test++ }
+
 
 my $a;
 my $Is_VMS = $^O eq 'VMS';
@@ -33,11 +30,15 @@ my $path = join " ", map { qq["-I$_"] } @INC;
 my $redir = $Is_MacOS ? "" : "2>&1";
 
 $a = `$^X $path "-MO=Debug" -e 1 $redir`;
-like($a, qr/\bLISTOP\b.*\bOP\b.*\bCOP\b.*\bOP\b/s);
+print "not " unless $a =~
+/\bLISTOP\b.*\bOP\b.*\bCOP\b.*\bOP\b/s;
+ok;
 
 
 $a = `$^X $path "-MO=Terse" -e 1 $redir`;
-like($a, qr/\bLISTOP\b.*leave.*\n    OP\b.*enter.*\n    COP\b.*nextstate.*\n    OP\b.*null/s);
+print "not " unless $a =~
+/\bLISTOP\b.*leave.*\n    OP\b.*enter.*\n    COP\b.*nextstate.*\n    OP\b.*null/s;
+ok;
 
 $a = `$^X $path "-MO=Terse" -ane "s/foo/bar/" $redir`;
 $a =~ s/\(0x[^)]+\)//g;
@@ -53,16 +54,17 @@ if ($is_thread) {
     $b=<<EOF;
 leave enter nextstate label leaveloop enterloop null and defined null
 threadsv readline gv lineseq nextstate aassign null pushmark split pushre
-threadsv const null pushmark rvav gv nextstate subst const unstack
+threadsv const null pushmark rvav gv nextstate subst const unstack nextstate
 EOF
 } else {
     $b=<<EOF;
 leave enter nextstate label leaveloop enterloop null and defined null
 null gvsv readline gv lineseq nextstate aassign null pushmark split pushre
-null gvsv const null pushmark rvav gv nextstate subst const unstack
+null gvsv const null pushmark rvav gv nextstate subst const unstack nextstate
 EOF
 }
 $b=~s/\n/ /g;$b=~s/\s+/ /g;
 $b =~ s/\s+$//;
-is($a, $b);
+print "# [$a]\n# vs\n# [$b]\nnot " if $a ne $b;
+ok;
 

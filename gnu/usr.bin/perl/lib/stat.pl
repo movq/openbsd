@@ -1,3 +1,5 @@
+;# $RCSfile: stat.pl,v $$Revision: 4.1 $$Date: 92/08/07 18:24:13 $
+
 ;# Usage:
 ;#	require 'stat.pl';
 ;#	@ary = stat(foo);

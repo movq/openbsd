@@ -72,7 +72,7 @@ __END__
 
 Digest::base - Digest base class
 
-=head1 SYNOPSIS
+=head1 SYNPOSIS
 
   package Digest::Foo;
   use base 'Digest::base';

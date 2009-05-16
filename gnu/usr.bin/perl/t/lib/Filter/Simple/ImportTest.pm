@@ -1,4 +1,4 @@
-package Filter::Simple::ImportTest;
+package ImportTest;
 
 use base 'Exporter';
 @EXPORT = qw(say);

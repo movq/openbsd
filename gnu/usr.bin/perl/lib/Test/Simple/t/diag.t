@@ -1,90 +1,61 @@
 #!perl -w
-# $Id$
 
 BEGIN {
     if( $ENV{PERL_CORE} ) {
         chdir 't';
-        @INC = ('../lib', 'lib');
-    }
-    else {
-        unshift @INC, 't/lib';
+        @INC = '../lib';
     }
 }
-
-
-# Turn on threads here, if available, since this test tends to find
-# lots of threading bugs.
-use Config;
-BEGIN {
-    if( $] >= 5.008001 && $Config{useithreads} ) {
-        require threads;
-        'threads'->import;
-    }
-}
-
 
 use strict;
 
 use Test::More tests => 7;
 
-my $test = Test::Builder->create;
+my $Test = Test::More->builder;
 
 # now make a filehandle where we can send data
-use TieOut;
-my $output = tie *FAKEOUT, 'TieOut';
+my $output;
+tie *FAKEOUT, 'FakeOut', \$output;
 
-
-# Test diag() goes to todo_output() in a todo test.
+# force diagnostic output to a filehandle, glad I added this to
+# Test::Builder :)
+my @lines;
+my $ret;
 {
-    $test->todo_start();
-    $test->todo_output(\*FAKEOUT);
+    local $TODO = 1;
+    $Test->todo_output(\*FAKEOUT);
 
-    $test->diag("a single line");
-    is( $output->read, <<'DIAG',   'diag() with todo_output set' );
-# a single line
-DIAG
+    diag("a single line");
 
-    my $ret = $test->diag("multiple\n", "lines");
-    is( $output->read, <<'DIAG',   '  multi line' );
-# multiple
-# lines
-DIAG
-    ok( !$ret, 'diag returns false' );
+    push @lines, $output;
+    $output = '';
 
-    $test->todo_end();
+    $ret = diag("multiple\n", "lines");
+    push @lines, split(/\n/, $output);
 }
 
-$test->reset_outputs();
+is( @lines, 3,              'diag() should send messages to its filehandle' );
+like( $lines[0], '/^#\s+/', '    should add comment mark to all lines' );
+is( $lines[0], "# a single line\n",   '    should send exact message' );
+is( $output, "# multiple\n# lines\n", '    should append multi messages');
+ok( !$ret, 'diag returns false' );
 
-
-# Test diagnostic formatting
-$test->failure_output(\*FAKEOUT);
 {
-    $test->diag("# foo");
-    is( $output->read, "# # foo\n", "diag() adds # even if there's one already" );
+    $Test->failure_output(\*FAKEOUT);
+    $output = '';
+    $ret = diag("# foo");
+}
+$Test->failure_output(\*STDERR);
+is( $output, "# # foo\n",   "diag() adds a # even if there's one already" );
+ok( !$ret,  'diag returns false' );
 
-    $test->diag("foo\n\nbar");
-    is( $output->read, <<'DIAG', "  blank lines get escaped" );
-# foo
-# 
-# bar
-DIAG
+package FakeOut;
 
-
-    $test->diag("foo\n\nbar\n\n");
-    is( $output->read, <<'DIAG', "  even at the end" );
-# foo
-# 
-# bar
-# 
-DIAG
+sub TIEHANDLE {
+	bless( $_[1], $_[0] );
 }
 
-
-# [rt.cpan.org 8392]
-{
-    $test->diag(qw(one two));
+sub PRINT {
+	my $self = shift;
+	$$self .= join('', @_);
 }
-is( $output->read, <<'DIAG' );
-# onetwo
-DIAG

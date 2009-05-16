@@ -1,12 +1,18 @@
-#!/usr/local/bin/perl -w
+#!/usr/bin/perl -w
 # Test for File::Temp - POSIX functions
 
+BEGIN {
+	chdir 't' if -d 't';
+	@INC = '../lib';
+	require Test; import Test;
+	plan(tests => 7);
+}
+
 use strict;
-use Test;
-BEGIN { plan tests => 7}
 
 use File::Temp qw/ :POSIX unlink0 /;
 use FileHandle;
+
 ok(1);
 
 # TMPNAM - scalar

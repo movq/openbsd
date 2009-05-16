@@ -12,11 +12,11 @@ use OS2::REXX;
 
 $path = $ENV{LIBPATH} || $ENV{PATH} or die;
 foreach $dir (split(';', $path)) {
-  next unless -f "$dir/RXU.DLL";
-  $found = "$dir/RXU.DLL";
+  next unless -f "$dir/YDBAUTIL.DLL";
+  $found = "$dir/YDBAUTIL.DLL";
   last;
 }
-$found or print "1..0 # skipped: cannot find RXU.DLL\n" and exit;
+$found or die "1..0\n#Cannot find YDBAUTIL.DLL\n";
 
 print "1..5\n";
 

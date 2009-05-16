@@ -1,4 +1,4 @@
-# $Id: Mod_EUCJP.pm,v 1.4 2008/09/29 17:36:04 millert Exp $
+# $Id: Mod_EUCJP.pm,v 1.1 2003/12/03 02:43:44 millert Exp $
 # This file is in euc-jp
 package Mod_EUCJP;
 use encoding "euc-jp";

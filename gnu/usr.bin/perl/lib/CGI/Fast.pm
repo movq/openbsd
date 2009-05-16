@@ -13,7 +13,10 @@ package CGI::Fast;
 # wish, but if you redistribute a modified version, please attach a note
 # listing the modifications you have made.
 
-$CGI::Fast::VERSION='1.07';
+# The most recent version and complete docs are available at:
+#   http://www.genome.wi.mit.edu/ftp/pub/software/WWW/cgi_docs.html
+#   ftp://ftp-genome.wi.mit.edu/pub/software/WWW/
+$CGI::Fast::VERSION='1.00a';
 
 use CGI;
 use FCGI;
@@ -28,34 +31,12 @@ sub save_request {
     # no-op
 }
 
-# If ENV{FCGI_SOCKET_PATH} is specified, we maintain a FCGI Request handle
-# in this package variable.
-use vars qw($Ext_Request);
-BEGIN {
-   # If ENV{FCGI_SOCKET_PATH} is given, explicitly open the socket,
-   # and keep the request handle around from which to call Accept().
-   if ($ENV{FCGI_SOCKET_PATH}) {
-	my $path    = $ENV{FCGI_SOCKET_PATH};
-	my $backlog = $ENV{FCGI_LISTEN_QUEUE} || 100;
-	my $socket  = FCGI::OpenSocket( $path, $backlog );
-	$Ext_Request = FCGI::Request( \*STDIN, \*STDOUT, \*STDERR, 
-					\%ENV, $socket, 1 );
-   }
-}
-
 # New is slightly different in that it calls FCGI's
 # accept() method.
 sub new {
-     my ($self, $initializer, @param) = @_;
-     unless (defined $initializer) {
-	if ($Ext_Request) {
-          return undef unless $Ext_Request->Accept() >= 0;
-	} else {
-         return undef unless FCGI::accept() >= 0;
-     }
-     }
-     CGI->_reset_globals;
-     return $CGI::Q = $self->SUPER::new($initializer, @param);
+    return undef unless FCGI::accept() >= 0;
+    my($self,@param) = @_;
+    return $CGI::Q = $self->SUPER::new(@param);
 }
 
 1;
@@ -92,7 +73,22 @@ will see large performance improvements.
 =head1 OTHER PIECES OF THE PUZZLE
 
 In order to use CGI::Fast you'll need a FastCGI-enabled Web
-server. See http://www.fastcgi.com/ for details.
+server.  Open Market's server is FastCGI-savvy.  There are also
+freely redistributable FastCGI modules for NCSA httpd 1.5 and Apache.
+FastCGI-enabling modules for Microsoft Internet Information Server and
+Netscape Communications Server have been announced.
+
+In addition, you'll need a version of the Perl interpreter that has
+been linked with the FastCGI I/O library.  Precompiled binaries are
+available for several platforms, including DEC Alpha, HP-UX and 
+SPARC/Solaris, or you can rebuild Perl from source with patches
+provided in the FastCGI developer's kit.  The FastCGI Perl interpreter
+can be used in place of your normal Perl without ill consequences.
+
+You can find FastCGI modules for Apache and NCSA httpd, precompiled
+Perl interpreters, and the FastCGI developer's kit all at URL:
+
+  http://www.fastcgi.com/
 
 =head1 WRITING FASTCGI PERL SCRIPTS
 
@@ -141,7 +137,7 @@ the Apache server, the following line must be added to srm.conf:
 FastCGI scripts must end in the extension .fcgi.  For each script you
 install, you must add something like the following to srm.conf:
 
-    FastCgiServer /usr/etc/httpd/fcgi-bin/file_upload.fcgi -processes 2
+   AppClass /usr/etc/httpd/fcgi-bin/file_upload.fcgi -processes 2
 
 This instructs Apache to launch two copies of file_upload.fcgi at 
 startup time.
@@ -152,55 +148,19 @@ Any script that works correctly as a FastCGI script will also work
 correctly when installed as a vanilla CGI script.  However it will
 not see any performance benefit.
 
-=head1 EXTERNAL FASTCGI SERVER INVOCATION
-
-FastCGI supports a TCP/IP transport mechanism which allows FastCGI scripts to run
-external to the webserver, perhaps on a remote machine.  To configure the
-webserver to connect to an external FastCGI server, you would add the following
-to your srm.conf:
-
-    FastCgiExternalServer /usr/etc/httpd/fcgi-bin/file_upload.fcgi -host sputnik:8888
-
-Two environment variables affect how the C<CGI::Fast> object is created,
-allowing C<CGI::Fast> to be used as an external FastCGI server.  (See C<FCGI>
-documentation for C<FCGI::OpenSocket> for more information.)
-
-=over
-
-=item FCGI_SOCKET_PATH
-
-The address (TCP/IP) or path (UNIX Domain) of the socket the external FastCGI
-script to which bind can listen for incoming connections from the web server.
-
-=item FCGI_LISTEN_QUEUE
-
-Maximum length of the queue of pending connections.  
-
-=back
-
-For example:
-
-    #!/usr/local/bin/perl    # must be a FastCGI version of perl!
-    use CGI::Fast;
-    &do_some_initialization();
-    $ENV{FCGI_SOCKET_PATH} = "sputnik:8888";
-    $ENV{FCGI_LISTEN_QUEUE} = 100;
-    while ($q = new CGI::Fast) {
-	&process_request($q);
-    }
-
 =head1 CAVEATS
 
 I haven't tested this very much.
 
 =head1 AUTHOR INFORMATION
 
-Copyright 1996-1998, Lincoln D. Stein.  All rights reserved.  
+be used and modified freely, but I do request that this copyright
+notice remain attached to the file.  You may modify this module as you
+wish, but if you redistribute a modified version, please attach a note
+listing the modifications you have made.
 
-This library is free software; you can redistribute it and/or modify
-it under the same terms as Perl itself.
-
-Address bug reports and comments to: lstein@cshl.org
+Address bug reports and comments to:
+lstein@genome.wi.mit.edu
 
 =head1 BUGS
 
@@ -209,5 +169,5 @@ This section intentionally left blank.
 =head1 SEE ALSO
 
 L<CGI::Carp>, L<CGI>
-
+ 
 =cut

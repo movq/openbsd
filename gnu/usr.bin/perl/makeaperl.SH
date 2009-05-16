@@ -1,4 +1,4 @@
-case $PERL_CONFIG_SH in
+case $CONFIG in
 '')
 	if test -f config.sh; then TOP=.;
 	elif test -f ../config.sh; then TOP=..;
@@ -17,11 +17,10 @@ case "$0" in
 */*) cd `expr X$0 : 'X\(.*\)/'` ;;
 esac
 echo "Extracting makeaperl (with variable substitutions)"
-rm -f makeaperl
 $spitshell >makeaperl <<!GROK!THIS!
 $startperl
-    eval 'exec $perlpath -S \$0 \${1+"\$@"}'
-	if \$running_under_some_shell;
+    eval 'exec perl -S \$0 "\$@"'
+	if 0;
 !GROK!THIS!
 
 $spitshell >>makeaperl <<'!NO!SUBS!'

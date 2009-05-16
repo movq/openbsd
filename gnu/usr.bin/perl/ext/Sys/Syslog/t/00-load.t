@@ -1,8 +1,9 @@
-#!perl -wT
-use strict;
+#!perl -T
+
 use Test::More tests => 1;
 
-use_ok( 'Sys::Syslog' );
+BEGIN {
+	use_ok( 'Sys::Syslog' );
+}
 
-diag( "Testing Sys::Syslog $Sys::Syslog::VERSION, Perl $], $^X" )
-    unless $ENV{PERL_CORE};
+#diag( "Testing Sys::Syslog $Sys::Syslog::VERSION, Perl $], $^X" );

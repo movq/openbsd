@@ -15,8 +15,9 @@ use Cwd;
 # This is so that make depend always knows where to find PL derivatives.
 $origdir = cwd;
 chdir(dirname($0));
-$file = basename($0, '.PL');
-$file .= '.com' if $^O eq 'VMS';
+($file = basename($0)) =~ s/\.PL$//;
+$file =~ s/\.pl$// if ($^O eq 'os2' or $^O eq 'dos');  # "case-forgiving"
+$file =~ s/\.pl$/.com/ if ($^O eq 'VMS');              # "case-forgiving"
 
 open OUT,">$file" or die "Can't create $file: $!";
 
@@ -38,7 +39,7 @@ print OUT <<'!NO!SUBS!';
 #############################################################################
 # pod2usage -- command to print usage messages from embedded pod docs
 #
-# Copyright (c) 1996-2000 by Bradford Appleton. All rights reserved.
+# Copyright (c) 1996-1999 by Bradford Appleton. All rights reserved.
 # This file is part of "PodParser". PodParser is free software;
 # you can redistribute it and/or modify it under the same terms
 # as Perl itself.
@@ -114,7 +115,7 @@ usage mesage format (defaults to standard input).
 
 B<pod2usage> will read the given input file looking for pod
 documentation and will print the corresponding usage message.
-If no input file is specified than standard input is read.
+If no input file is specifed than standard input is read.
 
 B<pod2usage> invokes the B<pod2usage()> function in the B<Pod::Usage>
 module. Please see L<Pod::Usage/pod2usage()>.
@@ -124,8 +125,6 @@ module. Please see L<Pod::Usage/pod2usage()>.
 L<Pod::Usage>, L<pod2text(1)>
 
 =head1 AUTHOR
-
-Please report bugs using L<http://rt.cpan.org>.
 
 Brad Appleton E<lt>bradapp@enteract.comE<gt>
 

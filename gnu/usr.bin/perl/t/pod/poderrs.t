@@ -1,7 +1,7 @@
+#!./perl
 BEGIN {
-   use File::Basename;
-   my $THISDIR = dirname $0;
-   unshift @INC, $THISDIR;
+   chdir 't' if -d 't';
+   unshift @INC, './pod', '../lib';
    require "testpchk.pl";
    import TestPodChecker;
 }
@@ -17,7 +17,6 @@ exit( ($passed == 1) ? 0 : -1 )  unless $ENV{HARNESS_ACTIVE};
 
 __END__
 
-=head2 This should cause a warning
 
 =head1 NAME
 
@@ -60,7 +59,7 @@ The above blank line contains tabs and spaces only
 
 =over 4
 
-=item aaps
+=item oops
 
 =head2 end without begin
 
@@ -76,20 +75,6 @@ The above blank line contains tabs and spaces only
 
 =end
 
-second one results in end w/o begin
-
-=head2 begin w/o formatter
-
-=begin
-
-=end
-
-=head2 for w/o formatter
-
-=for
-
-something...
-
 =head2 Nested sequences of the same type
 
 C<code I<italic C<code again!>>>
@@ -99,9 +84,6 @@ C<code I<italic C<code again!>>>
 E<alea iacta est>
 E<C<auml>>
 E<abcI<bla>>
-E<0x100>
-E<07777>
-E<300>
 
 =head2 Unresolved internal links
 
@@ -114,15 +96,12 @@ L</OoPs>
 L<abc
 def>
 L<>
-L<   aha>
-L<oho   >
 L<"Warnings"> this one is ok
-L</unescaped> ok too, this POD has an X of the same name
 
 =head2 Warnings
 
 L<passwd(5)>
-L<some text with / in it|perlvar/$|> should give warnings as hell
+L<   some text|page/"section"   >
 
 =over 4
 
@@ -130,80 +109,17 @@ L<some text with / in it|perlvar/$|> should give warnings as hell
 
 =back 200
 
-the 200 is evil
-
 =begin html
 
 What?
 
 =end xml
 
-X<unescaped>see these unescaped < and > in the text?
-
-=head2 Misc
-
-Z<ddd> should be empty
-
-X<> should not be empty
-
-=over four
-
-This paragrapgh is misplaced - it ought to be an item.
-
-=item four should be numeric!
-
-=item
-
-=item blah
-
-=item previous is all empty!!!
-
-=back
-
-All empty over/back:
-
 =over 4
 
 =back
 
-item w/o name
+see these unescaped < and > in the text?
 
 =cut
-
-=pod bla
-
-bla is evil
-
-=cut blub
-
-blub is evil
-
-=head2 reoccurence
-
-=over 4
-
-=item Misc
-
-we already have a head Misc
-
-=back
-
-=head2 some heading
-
-=head2 another one
-
-previous section is empty!
-
-=head1 LINK TESTS
-
-Due to bug reported by Rafael Garcia-Suarez "rgarciasuarez@free.fr":
-
-The following hyperlinks :
-L<"I/O Operators">
-L<perlop/"I/O Operators">
-trigger a podchecker warning (using bleadperl) :
-    node 'I/O Operators' contains non-escaped | or /
-
-=cut
-
 

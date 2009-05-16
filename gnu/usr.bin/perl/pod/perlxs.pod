@@ -6,75 +6,24 @@ perlxs - XS language reference manual
 
 =head2 Introduction
 
-XS is an interface description file format used to create an extension
-interface between Perl and C code (or a C library) which one wishes
-to use with Perl.  The XS interface is combined with the library to
-create a new library which can then be either dynamically loaded
-or statically linked into perl.  The XS interface description is
-written in the XS language and is the core component of the Perl
-extension interface.
+XS is a language used to create an extension interface
+between Perl and some C library which one wishes to use with
+Perl.  The XS interface is combined with the library to
+create a new library which can be linked to Perl.  An B<XSUB>
+is a function in the XS language and is the core component
+of the Perl application interface.
 
-An B<XSUB> forms the basic unit of the XS interface.  After compilation
-by the B<xsubpp> compiler, each XSUB amounts to a C function definition
-which will provide the glue between Perl calling conventions and C
-calling conventions.
-
-The glue code pulls the arguments from the Perl stack, converts these
-Perl values to the formats expected by a C function, call this C function,
-transfers the return values of the C function back to Perl.
-Return values here may be a conventional C return value or any C
-function arguments that may serve as output parameters.  These return
-values may be passed back to Perl either by putting them on the
-Perl stack, or by modifying the arguments supplied from the Perl side.
-
-The above is a somewhat simplified view of what really happens.  Since
-Perl allows more flexible calling conventions than C, XSUBs may do much
-more in practice, such as checking input parameters for validity,
-throwing exceptions (or returning undef/empty list) if the return value
-from the C function indicates failure, calling different C functions
-based on numbers and types of the arguments, providing an object-oriented
-interface, etc.
-
-Of course, one could write such glue code directly in C.  However, this
-would be a tedious task, especially if one needs to write glue for
-multiple C functions, and/or one is not familiar enough with the Perl
-stack discipline and other such arcana.  XS comes to the rescue here:
-instead of writing this glue C code in long-hand, one can write
-a more concise short-hand I<description> of what should be done by
-the glue, and let the XS compiler B<xsubpp> handle the rest.
-
-The XS language allows one to describe the mapping between how the C
-routine is used, and how the corresponding Perl routine is used.  It
-also allows creation of Perl routines which are directly translated to
-C code and which are not related to a pre-existing C function.  In cases
-when the C interface coincides with the Perl interface, the XSUB
-declaration is almost identical to a declaration of a C function (in K&R
-style).  In such circumstances, there is another tool called C<h2xs>
-that is able to translate an entire C header file into a corresponding
-XS file that will provide glue to the functions/macros described in
-the header file.
-
-The XS compiler is called B<xsubpp>.  This compiler creates
-the constructs necessary to let an XSUB manipulate Perl values, and
-creates the glue necessary to let Perl call the XSUB.  The compiler
+The XS compiler is called B<xsubpp>.  This compiler will embed
+the constructs necessary to let an XSUB, which is really a C
+function in disguise, manipulate Perl values and creates the
+glue necessary to let Perl access the XSUB.  The compiler
 uses B<typemaps> to determine how to map C function parameters
-and output values to Perl values and back.  The default typemap
-(which comes with Perl) handles many common C types.  A supplementary
-typemap may also be needed to handle any special structures and types
-for the library being linked.
-
-A file in XS format starts with a C language section which goes until the
-first C<MODULE =Z<>> directive.  Other XS directives and XSUB definitions
-may follow this line.  The "language" used in this part of the file
-is usually referred to as the XS language.  B<xsubpp> recognizes and
-skips POD (see L<perlpod>) in both the C and XS language sections, which
-allows the XS file to contain embedded documentation. 
+and variables to Perl values.  The default typemap handles
+many common C types.  A supplement typemap must be created
+to handle special structures and types for the library being
+linked.
 
 See L<perlxstut> for a tutorial on the whole extension creation process.
-
-Note: For some extensions, Dave Beazley's SWIG system may provide a
-significantly more convenient mechanism for creating the extension
-glue code.  See http://www.swig.org/ for more information.
 
 =head2 On The Road
 
@@ -122,7 +71,7 @@ expanded later in this document.
      rpcb_gettime(host,timep)
           char *host
           time_t &timep
-        OUTPUT:
+          OUTPUT:
           timep
 
 Any extension to Perl, including those containing XSUBs,
@@ -156,10 +105,6 @@ function.
 
 =head2 The Anatomy of an XSUB
 
-The simplest XSUBs consist of 3 parts: a description of the return
-value, the name of the XSUB routine and the names of its arguments,
-and a description of types or formats of the arguments.
-
 The following XSUB allows a Perl program to access a C library function
 called sin().  The XSUB will imitate the C function which takes a single
 argument and returns a single value.
@@ -168,40 +113,14 @@ argument and returns a single value.
      sin(x)
        double x
 
-Optionally, one can merge the description of types and the list of
-argument names, rewriting this as
-
-     double
-     sin(double x)
-
-This makes this XSUB look similar to an ANSI C declaration.  An optional
-semicolon is allowed after the argument list, as in
-
-     double
-     sin(double x);
-
-Parameters with C pointer types can have different semantic: C functions
-with similar declarations
-
-     bool string_looks_as_a_number(char *s);
-     bool make_char_uppercase(char *c);
-
-are used in absolutely incompatible manner.  Parameters to these functions
-could be described B<xsubpp> like this:
-
-     char *  s
-     char    &c
-
-Both these XS declarations correspond to the C<char*> C type, but they have
-different semantics, see L<"The & Unary Operator">.
-
-It is convenient to think that the indirection operator
-C<*> should be considered as a part of the type and the address operator C<&>
-should be considered part of the variable.  See L<"The Typemap">
-for more info about handling qualifiers and unary operators in C types.
+When using C pointers the indirection operator C<*> should be considered
+part of the type and the address operator C<&> should be considered part of
+the variable, as is demonstrated in the rpcb_gettime() function above.  See
+the section on typemaps for more about handling qualifiers and unary
+operators in C types.
 
 The function name and the return type must be placed on
-separate lines and should be flush left-adjusted.
+separate lines.
 
   INCORRECT                        CORRECT
 
@@ -209,9 +128,9 @@ separate lines and should be flush left-adjusted.
     double x                       sin(x)
 				     double x
 
-The rest of the function description may be indented or left-adjusted. The
-following example shows a function with its body left-adjusted.  Most
-examples in this document will indent the body for better readability.
+The function body may be indented or left-adjusted.  The following example
+shows a function with its body left-adjusted.  Most examples in this
+document will indent the body.
 
   CORRECT
 
@@ -219,23 +138,13 @@ examples in this document will indent the body for better readability.
   sin(x)
   double x
 
-More complicated XSUBs may contain many other sections.  Each section of
-an XSUB starts with the corresponding keyword, such as INIT: or CLEANUP:.
-However, the first two lines of an XSUB always contain the same data:
-descriptions of the return type and the names of the function and its
-parameters.  Whatever immediately follows these is considered to be
-an INPUT: section unless explicitly marked with another keyword.
-(See L<The INPUT: Keyword>.)
-
-An XSUB section continues until another section-start keyword is found.
-
 =head2 The Argument Stack
 
-The Perl argument stack is used to store the values which are
+The argument stack is used to store the values which are
 sent as parameters to the XSUB and to store the XSUB's
-return value(s).  In reality all Perl functions (including non-XSUB
-ones) keep their values on this stack all the same time, each limited
-to its own range of positions on the stack.  In this document the
+return value.  In reality all Perl functions keep their
+values on this stack at the same time, each limited to its
+own range of positions on the stack.  In this document the
 first position on that stack which belongs to the active
 function will be referred to as position 0 for that function.
 
@@ -249,100 +158,29 @@ typemaps.  In more complex cases the programmer must supply the code.
 
 =head2 The RETVAL Variable
 
-The RETVAL variable is a special C variable that is declared automatically
-for you.  The C type of RETVAL matches the return type of the C library
-function.  The B<xsubpp> compiler will declare this variable in each XSUB
-with non-C<void> return type.  By default the generated C function
-will use RETVAL to hold the return value of the C library function being
-called.  In simple cases the value of RETVAL will be placed in ST(0) of
-the argument stack where it can be received by Perl as the return value
-of the XSUB.
+The RETVAL variable is a magic variable which always matches
+the return type of the C library function.  The B<xsubpp> compiler will
+supply this variable in each XSUB and by default will use it to hold the
+return value of the C library function being called.  In simple cases the
+value of RETVAL will be placed in ST(0) of the argument stack where it can
+be received by Perl as the return value of the XSUB.
 
 If the XSUB has a return type of C<void> then the compiler will
-not declare a RETVAL variable for that function.  When using
-a PPCODE: section no manipulation of the RETVAL variable is required, the
-section may use direct stack manipulation to place output values on the stack.
-
-If PPCODE: directive is not used, C<void> return value should be used
-only for subroutines which do not return a value, I<even if> CODE:
-directive is used which sets ST(0) explicitly.
-
-Older versions of this document recommended to use C<void> return
-value in such cases. It was discovered that this could lead to
-segfaults in cases when XSUB was I<truly> C<void>. This practice is
-now deprecated, and may be not supported at some future version. Use
-the return value C<SV *> in such cases. (Currently C<xsubpp> contains
-some heuristic code which tries to disambiguate between "truly-void"
-and "old-practice-declared-as-void" functions. Hence your code is at
-mercy of this heuristics unless you use C<SV *> as return value.)
-
-=head2 Returning SVs, AVs and HVs through RETVAL
-
-When you're using RETVAL to return an C<SV *>, there's some magic
-going on behind the scenes that should be mentioned. When you're
-manipulating the argument stack using the ST(x) macro, for example,
-you usually have to pay special attention to reference counts. (For
-more about reference counts, see L<perlguts>.) To make your life
-easier, the typemap file automatically makes C<RETVAL> mortal when
-you're returning an C<SV *>. Thus, the following two XSUBs are more
-or less equivalent:
-
-  void
-  alpha()
-      PPCODE:
-          ST(0) = newSVpv("Hello World",0);
-          sv_2mortal(ST(0));
-          XSRETURN(1);
-  
-  SV *
-  beta()
-      CODE:
-          RETVAL = newSVpv("Hello World",0);
-      OUTPUT:
-          RETVAL
-
-This is quite useful as it usually improves readability. While
-this works fine for an C<SV *>, it's unfortunately not as easy
-to have C<AV *> or C<HV *> as a return value. You I<should> be
-able to write:
-
-  AV *
-  array()
-      CODE:
-          RETVAL = newAV();
-          /* do something with RETVAL */
-      OUTPUT:
-          RETVAL
-
-But due to an unfixable bug (fixing it would break lots of existing
-CPAN modules) in the typemap file, the reference count of the C<AV *>
-is not properly decremented. Thus, the above XSUB would leak memory
-whenever it is being called. The same problem exists for C<HV *>.
-
-When you're returning an C<AV *> or a C<HV *>, you have make sure
-their reference count is decremented by making the AV or HV mortal:
-
-  AV *
-  array()
-      CODE:
-          RETVAL = newAV();
-          sv_2mortal((SV*)RETVAL);
-          /* do something with RETVAL */
-      OUTPUT:
-          RETVAL
-
-And also remember that you don't have to do this for an C<SV *>.
+not supply a RETVAL variable for that function.  When using
+the PPCODE: directive the RETVAL variable may not be needed.
 
 =head2 The MODULE Keyword
 
-The MODULE keyword is used to start the XS code and to specify the package
-of the functions which are being defined.  All text preceding the first
-MODULE keyword is considered C code and is passed through to the output with
-POD stripped, but otherwise untouched.  Every XS module will have a
-bootstrap function which is used to hook the XSUBs into Perl.  The package
-name of this bootstrap function will match the value of the last MODULE
-statement in the XS source files.  The value of MODULE should always remain
-constant within the same XS file, though this is not required.
+The MODULE keyword is used to start the XS code and to
+specify the package of the functions which are being
+defined.  All text preceding the first MODULE keyword is
+considered C code and is passed through to the output
+untouched.  Every XS module will have a bootstrap function
+which is used to hook the XSUBs into Perl.  The package name
+of this bootstrap function will match the value of the last
+MODULE statement in the XS source files.  The value of
+MODULE should always remain constant within the same XS
+file, though this is not required.
 
 The following example will start the XS code and will place
 all functions in a package named RPC.
@@ -366,10 +204,6 @@ keyword and must follow immediately after it when used.
      MODULE = RPC  PACKAGE = RPC
 
      [ XS code in package RPC ]
-
-The same package name can be used more than once, allowing for
-non-contiguous code. This is useful if you have a stronger ordering
-principle than package names.
 
 Although this keyword is optional and in some cases provides redundant
 information it should always be used.  This keyword will ensure that the
@@ -395,9 +229,8 @@ keyword.
 The OUTPUT: keyword indicates that certain function parameters should be
 updated (new values made visible to Perl) when the XSUB terminates or that
 certain values should be returned to the calling Perl function.  For
-simple functions which have no CODE: or PPCODE: section,
-such as the sin() function above, the RETVAL variable is
-automatically designated as an output value.  For more complex functions
+simple functions, such as the sin() function above, the RETVAL variable is
+automatically designated as an output value.  In more complex functions
 the B<xsubpp> compiler will need help to determine which variables are output
 variables.
 
@@ -416,7 +249,7 @@ be seen by Perl.
      rpcb_gettime(host,timep)
           char *host
           time_t &timep
-        OUTPUT:
+          OUTPUT:
           timep
 
 The OUTPUT: keyword will also allow an output parameter to
@@ -427,66 +260,30 @@ typemap.
      rpcb_gettime(host,timep)
           char *host
           time_t &timep
-        OUTPUT:
+          OUTPUT:
           timep sv_setnv(ST(1), (double)timep);
-
-B<xsubpp> emits an automatic C<SvSETMAGIC()> for all parameters in the
-OUTPUT section of the XSUB, except RETVAL.  This is the usually desired
-behavior, as it takes care of properly invoking 'set' magic on output
-parameters (needed for hash or array element parameters that must be
-created if they didn't exist).  If for some reason, this behavior is
-not desired, the OUTPUT section may contain a C<SETMAGIC: DISABLE> line
-to disable it for the remainder of the parameters in the OUTPUT section.
-Likewise,  C<SETMAGIC: ENABLE> can be used to reenable it for the
-remainder of the OUTPUT section.  See L<perlguts> for more details
-about 'set' magic.
-
-=head2 The NO_OUTPUT Keyword
-
-The NO_OUTPUT can be placed as the first token of the XSUB.  This keyword
-indicates that while the C subroutine we provide an interface to has
-a non-C<void> return type, the return value of this C subroutine should not
-be returned from the generated Perl subroutine.
-
-With this keyword present L<The RETVAL Variable> is created, and in the
-generated call to the subroutine this variable is assigned to, but the value
-of this variable is not going to be used in the auto-generated code.
-
-This keyword makes sense only if C<RETVAL> is going to be accessed by the
-user-supplied code.  It is especially useful to make a function interface
-more Perl-like, especially when the C return value is just an error condition
-indicator.  For example,
-
-  NO_OUTPUT int
-  delete_file(char *name)
-    POSTCALL:
-      if (RETVAL != 0)
-	  croak("Error %d while deleting file '%s'", RETVAL, name);
-
-Here the generated XS function returns nothing on success, and will die()
-with a meaningful error message on error.
 
 =head2 The CODE: Keyword
 
 This keyword is used in more complicated XSUBs which require
 special handling for the C function.  The RETVAL variable is
-still declared, but it will not be returned unless it is specified
-in the OUTPUT: section.
+available but will not be returned unless it is specified
+under the OUTPUT: keyword.
 
 The following XSUB is for a C function which requires special handling of
 its parameters.  The Perl usage is given first.
 
      $status = rpcb_gettime( "localhost", $timep );
 
-The XSUB follows.
+The XSUB follows. 
 
      bool_t
      rpcb_gettime(host,timep)
           char *host
           time_t timep
-        CODE:
+          CODE:
                RETVAL = rpcb_gettime( host, &timep );
-        OUTPUT:
+          OUTPUT:
           timep
           RETVAL
 
@@ -500,28 +297,15 @@ above, this keyword does not affect the way the compiler handles RETVAL.
     rpcb_gettime(host,timep)
           char *host
           time_t &timep
-	INIT:
+	  INIT:
 	  printf("# Host is %s\n", host );
-        OUTPUT:
+          OUTPUT:
           timep
-
-Another use for the INIT: section is to check for preconditions before
-making a call to the C function:
-
-    long long
-    lldiv(a,b)
-	long long a
-	long long b
-      INIT:
-	if (a == 0 && b == 0)
-	    XSRETURN_UNDEF;
-	if (b == 0)
-	    croak("lldiv: cannot divide by 0");
 
 =head2 The NO_INIT Keyword
 
 The NO_INIT keyword is used to indicate that a function
-parameter is being used only as an output value.  The B<xsubpp>
+parameter is being used as only an output value.  The B<xsubpp>
 compiler will normally generate code to read the values of
 all function parameters from the argument stack and assign
 them to C variables upon entry to the function.  NO_INIT
@@ -530,41 +314,35 @@ output rather than for input and that they will be handled
 before the function terminates.
 
 The following example shows a variation of the rpcb_gettime() function.
-This function uses the timep variable only as an output variable and does
+This function uses the timep variable as only an output variable and does
 not care about its initial contents.
 
      bool_t
      rpcb_gettime(host,timep)
           char *host
           time_t &timep = NO_INIT
-        OUTPUT:
+          OUTPUT:
           timep
 
 =head2 Initializing Function Parameters
 
-C function parameters are normally initialized with their values from
-the argument stack (which in turn contains the parameters that were
-passed to the XSUB from Perl).  The typemaps contain the
-code segments which are used to translate the Perl values to
+Function parameters are normally initialized with their
+values from the argument stack.  The typemaps contain the
+code segments which are used to transfer the Perl values to
 the C parameters.  The programmer, however, is allowed to
-override the typemaps and supply alternate (or additional)
-initialization code.  Initialization code starts with the first
-C<=>, C<;> or C<+> on a line in the INPUT: section.  The only
-exception happens if this C<;> terminates the line, then this C<;>
-is quietly ignored.
+override the typemaps and supply alternate initialization
+code.
 
 The following code demonstrates how to supply initialization code for
-function parameters.  The initialization code is eval'ed within double
-quotes by the compiler before it is added to the output so anything
-which should be interpreted literally [mainly C<$>, C<@>, or C<\\>]
-must be protected with backslashes.  The variables $var, $arg,
-and $type can be used as in typemaps.
+function parameters.  The initialization code is eval'd by the compiler
+before it is added to the output so anything which should be interpreted
+literally, such as double quotes, must be protected with backslashes.
 
      bool_t
      rpcb_gettime(host,timep)
-          char *host = (char *)SvPV($arg,PL_na);
+          char *host = (char *)SvPV(ST(0),na);
           time_t &timep = 0;
-        OUTPUT:
+          OUTPUT:
           timep
 
 This should not be used to supply default values for parameters.  One
@@ -572,47 +350,18 @@ would normally use this when a function parameter must be processed by
 another library function before it can be used.  Default parameters are
 covered in the next section.
 
-If the initialization begins with C<=>, then it is output in
-the declaration for the input variable, replacing the initialization
-supplied by the typemap.  If the initialization
-begins with C<;> or C<+>, then it is performed after
-all of the input variables have been declared.  In the C<;>
-case the initialization normally supplied by the typemap is not performed.
-For the C<+> case, the declaration for the variable will include the
-initialization from the typemap.  A global
-variable, C<%v>, is available for the truly rare case where
-information from one initialization is needed in another
-initialization.
-
-Here's a truly obscure example:
-
-     bool_t
-     rpcb_gettime(host,timep)
-          time_t &timep; /* \$v{timep}=@{[$v{timep}=$arg]} */
-          char *host + SvOK($v{timep}) ? SvPV($arg,PL_na) : NULL;
-        OUTPUT:
-          timep
-
-The construct C<\$v{timep}=@{[$v{timep}=$arg]}> used in the above
-example has a two-fold purpose: first, when this line is processed by
-B<xsubpp>, the Perl snippet C<$v{timep}=$arg> is evaluated.  Second,
-the text of the evaluated snippet is output into the generated C file
-(inside a C comment)!  During the processing of C<char *host> line,
-$arg will evaluate to C<ST(0)>, and C<$v{timep}> will evaluate to
-C<ST(1)>.
-
 =head2 Default Parameter Values
 
-Default values for XSUB arguments can be specified by placing an
-assignment statement in the parameter list.  The default value may
-be a number, a string or the special string C<NO_INIT>.  Defaults should
+Default values can be specified for function parameters by
+placing an assignment statement in the parameter list.  The
+default value may be a number or a string.  Defaults should
 always be used on the right-most parameters only.
 
 To allow the XSUB for rpcb_gettime() to have a default host
 value the parameters to the XSUB could be rearranged.  The
 XSUB will then call the real rpcb_gettime() function with
-the parameters in the correct order.  This XSUB can be called
-from Perl with either of the following statements:
+the parameters in the correct order.  Perl will call this
+XSUB with either of the following statements.
 
      $status = rpcb_gettime( $timep, $host );
 
@@ -626,29 +375,20 @@ the parameters in the correct order for that function.
      rpcb_gettime(timep,host="localhost")
           char *host
           time_t timep = NO_INIT
-        CODE:
+          CODE:
                RETVAL = rpcb_gettime( host, &timep );
-        OUTPUT:
+          OUTPUT:
           timep
           RETVAL
 
 =head2 The PREINIT: Keyword
 
-The PREINIT: keyword allows extra variables to be declared immediately
-before or after the declarations of the parameters from the INPUT: section
-are emitted.
-
-If a variable is declared inside a CODE: section it will follow any typemap
-code that is emitted for the input parameters.  This may result in the
-declaration ending up after C code, which is C syntax error.  Similar
-errors may happen with an explicit C<;>-type or C<+>-type initialization of
-parameters is used (see L<"Initializing Function Parameters">).  Declaring
-these variables in an INIT: section will not help.
-
-In such cases, to force an additional variable to be declared together
-with declarations of other variables, place the declaration into a
-PREINIT: section.  The PREINIT: keyword may be used one or more times
-within an XSUB.
+The PREINIT: keyword allows extra variables to be declared before the
+typemaps are expanded.  If a variable is declared in a CODE: block then that
+variable will follow any typemap code.  This may result in a C syntax
+error.  To force the variable to be declared before the typemap code, place
+it into a PREINIT: block.  The PREINIT: keyword may be used one or more
+times within an XSUB.
 
 The following examples are equivalent, but if the code is using complex
 typemaps then the first example is safer.
@@ -656,98 +396,25 @@ typemaps then the first example is safer.
      bool_t
      rpcb_gettime(timep)
           time_t timep = NO_INIT
-	PREINIT:
+	  PREINIT:
           char *host = "localhost";
-        CODE:
+          CODE:
 	  RETVAL = rpcb_gettime( host, &timep );
-        OUTPUT:
+          OUTPUT:
           timep
           RETVAL
 
-For this particular case an INIT: keyword would generate the
-same C code as the PREINIT: keyword.  Another correct, but error-prone example:
+A correct, but error-prone example.
 
      bool_t
      rpcb_gettime(timep)
           time_t timep = NO_INIT
-	CODE:
+	  CODE:
           char *host = "localhost";
 	  RETVAL = rpcb_gettime( host, &timep );
-        OUTPUT:
+          OUTPUT:
           timep
           RETVAL
-
-Another way to declare C<host> is to use a C block in the CODE: section:
-
-     bool_t
-     rpcb_gettime(timep)
-          time_t timep = NO_INIT
-	CODE:
-	  {
-            char *host = "localhost";
-	    RETVAL = rpcb_gettime( host, &timep );
-	  }
-        OUTPUT:
-          timep
-          RETVAL
-
-The ability to put additional declarations before the typemap entries are
-processed is very handy in the cases when typemap conversions manipulate
-some global state:
-
-    MyObject
-    mutate(o)
-	PREINIT:
-	    MyState st = global_state;
-	INPUT:
-	    MyObject o;
-	CLEANUP:
-	    reset_to(global_state, st);
-
-Here we suppose that conversion to C<MyObject> in the INPUT: section and from
-MyObject when processing RETVAL will modify a global variable C<global_state>.
-After these conversions are performed, we restore the old value of
-C<global_state> (to avoid memory leaks, for example).
-
-There is another way to trade clarity for compactness: INPUT sections allow
-declaration of C variables which do not appear in the parameter list of
-a subroutine.  Thus the above code for mutate() can be rewritten as
-
-    MyObject
-    mutate(o)
-	  MyState st = global_state;
-	  MyObject o;
-	CLEANUP:
-	  reset_to(global_state, st);
-
-and the code for rpcb_gettime() can be rewritten as
-
-     bool_t
-     rpcb_gettime(timep)
-	  time_t timep = NO_INIT
-	  char *host = "localhost";
-	C_ARGS:
-	  host, &timep
-	OUTPUT:
-          timep
-          RETVAL
-
-=head2 The SCOPE: Keyword
-
-The SCOPE: keyword allows scoping to be enabled for a particular XSUB. If
-enabled, the XSUB will invoke ENTER and LEAVE automatically.
-
-To support potentially complex type mappings, if a typemap entry used
-by an XSUB contains a comment like C</*scope*/> then scoping will
-be automatically enabled for that XSUB.
-
-To enable scoping:
-
-    SCOPE: ENABLE
-
-To disable scoping:
-
-    SCOPE: DISABLE
 
 =head2 The INPUT: Keyword
 
@@ -763,14 +430,14 @@ evaluated late, after a PREINIT.
     bool_t
     rpcb_gettime(host,timep)
           char *host
-	PREINIT:
+	  PREINIT:
 	  time_t tt;
-	INPUT:
+	  INPUT:
           time_t timep
-        CODE:
+          CODE:
                RETVAL = rpcb_gettime( host, &tt );
 	       timep = tt;
-        OUTPUT:
+          OUTPUT:
           timep
           RETVAL
 
@@ -778,152 +445,21 @@ The next example shows each input parameter evaluated late.
 
     bool_t
     rpcb_gettime(host,timep)
-	PREINIT:
+	  PREINIT:
 	  time_t tt;
-	INPUT:
+	  INPUT:
           char *host
-	PREINIT:
+	  PREINIT:
 	  char *h;
-	INPUT:
+	  INPUT:
           time_t timep
-        CODE:
+          CODE:
 	       h = host;
 	       RETVAL = rpcb_gettime( h, &tt );
 	       timep = tt;
-        OUTPUT:
+          OUTPUT:
           timep
           RETVAL
-
-Since INPUT sections allow declaration of C variables which do not appear
-in the parameter list of a subroutine, this may be shortened to:
-
-    bool_t
-    rpcb_gettime(host,timep)
-	  time_t tt;
-          char *host;
-	  char *h = host;
-          time_t timep;
-        CODE:
-	  RETVAL = rpcb_gettime( h, &tt );
-	  timep = tt;
-        OUTPUT:
-          timep
-          RETVAL
-
-(We used our knowledge that input conversion for C<char *> is a "simple" one,
-thus C<host> is initialized on the declaration line, and our assignment
-C<h = host> is not performed too early.  Otherwise one would need to have the
-assignment C<h = host> in a CODE: or INIT: section.)
-
-=head2 The IN/OUTLIST/IN_OUTLIST/OUT/IN_OUT Keywords
-
-In the list of parameters for an XSUB, one can precede parameter names
-by the C<IN>/C<OUTLIST>/C<IN_OUTLIST>/C<OUT>/C<IN_OUT> keywords.
-C<IN> keyword is the default, the other keywords indicate how the Perl
-interface should differ from the C interface.
-
-Parameters preceded by C<OUTLIST>/C<IN_OUTLIST>/C<OUT>/C<IN_OUT>
-keywords are considered to be used by the C subroutine I<via
-pointers>.  C<OUTLIST>/C<OUT> keywords indicate that the C subroutine
-does not inspect the memory pointed by this parameter, but will write
-through this pointer to provide additional return values.
-
-Parameters preceded by C<OUTLIST> keyword do not appear in the usage
-signature of the generated Perl function.
-
-Parameters preceded by C<IN_OUTLIST>/C<IN_OUT>/C<OUT> I<do> appear as
-parameters to the Perl function.  With the exception of
-C<OUT>-parameters, these parameters are converted to the corresponding
-C type, then pointers to these data are given as arguments to the C
-function.  It is expected that the C function will write through these
-pointers.
-
-The return list of the generated Perl function consists of the C return value
-from the function (unless the XSUB is of C<void> return type or
-C<The NO_OUTPUT Keyword> was used) followed by all the C<OUTLIST>
-and C<IN_OUTLIST> parameters (in the order of appearance).  On the
-return from the XSUB the C<IN_OUT>/C<OUT> Perl parameter will be
-modified to have the values written by the C function.
-
-For example, an XSUB
-
-  void
-  day_month(OUTLIST day, IN unix_time, OUTLIST month)
-    int day
-    int unix_time
-    int month
-
-should be used from Perl as
-
-  my ($day, $month) = day_month(time);
-
-The C signature of the corresponding function should be
-
-  void day_month(int *day, int unix_time, int *month);
-
-The C<IN>/C<OUTLIST>/C<IN_OUTLIST>/C<IN_OUT>/C<OUT> keywords can be
-mixed with ANSI-style declarations, as in
-
-  void
-  day_month(OUTLIST int day, int unix_time, OUTLIST int month)
-
-(here the optional C<IN> keyword is omitted).
-
-The C<IN_OUT> parameters are identical with parameters introduced with
-L<The & Unary Operator> and put into the C<OUTPUT:> section (see
-L<The OUTPUT: Keyword>).  The C<IN_OUTLIST> parameters are very similar,
-the only difference being that the value C function writes through the
-pointer would not modify the Perl parameter, but is put in the output
-list.
-
-The C<OUTLIST>/C<OUT> parameter differ from C<IN_OUTLIST>/C<IN_OUT>
-parameters only by the initial value of the Perl parameter not
-being read (and not being given to the C function - which gets some
-garbage instead).  For example, the same C function as above can be
-interfaced with as
-
-  void day_month(OUT int day, int unix_time, OUT int month);
-
-or
-
-  void
-  day_month(day, unix_time, month)
-      int &day = NO_INIT
-      int  unix_time
-      int &month = NO_INIT
-    OUTPUT:
-      day
-      month
-
-However, the generated Perl function is called in very C-ish style:
-
-  my ($day, $month);
-  day_month($day, time, $month);
-
-=head2 The C<length(NAME)> Keyword
-
-If one of the input arguments to the C function is the length of a string
-argument C<NAME>, one can substitute the name of the length-argument by
-C<length(NAME)> in the XSUB declaration.  This argument must be omitted when
-the generated Perl function is called.  E.g.,
-
-  void
-  dump_chars(char *s, short l)
-  {
-    short n = 0;
-    while (n < l) {
-        printf("s[%d] = \"\\%#03o\"\n", n, (int)s[n]);
-        n++;
-    }
-  }
-
-  MODULE = x		PACKAGE = x
-
-  void dump_chars(char *s, short length(s))
-
-should be called as C<dump_chars($string)>.
-
-This directive is supported with ANSI-type function declarations only.
 
 =head2 Variable-length Parameter Lists
 
@@ -948,42 +484,15 @@ The XS code, with ellipsis, follows.
      bool_t
      rpcb_gettime(timep, ...)
           time_t timep = NO_INIT
-	PREINIT:
+	  PREINIT:
           char *host = "localhost";
-	  STRLEN n_a;
-        CODE:
-	  if( items > 1 )
-	       host = (char *)SvPV(ST(1), n_a);
-	  RETVAL = rpcb_gettime( host, &timep );
-        OUTPUT:
+          CODE:
+		  if( items > 1 )
+		       host = (char *)SvPV(ST(1), na);
+		  RETVAL = rpcb_gettime( host, &timep );
+          OUTPUT:
           timep
           RETVAL
-
-=head2 The C_ARGS: Keyword
-
-The C_ARGS: keyword allows creating of XSUBS which have different
-calling sequence from Perl than from C, without a need to write
-CODE: or PPCODE: section.  The contents of the C_ARGS: paragraph is
-put as the argument to the called C function without any change.
-
-For example, suppose that a C function is declared as
-
-    symbolic nth_derivative(int n, symbolic function, int flags);
-
-and that the default flags are kept in a global C variable
-C<default_flags>.  Suppose that you want to create an interface which
-is called as
-
-    $second_deriv = $function->nth_derivative(2);
-
-To do this, declare the XSUB as
-
-    symbolic
-    nth_derivative(function, n)
-	symbolic	function
-	int		n
-      C_ARGS:
-	n, function, default_flags
 
 =head2 The PPCODE: Keyword
 
@@ -992,28 +501,8 @@ to tell the B<xsubpp> compiler that the programmer is supplying the code to
 control the argument stack for the XSUBs return values.  Occasionally one
 will want an XSUB to return a list of values rather than a single value.
 In these cases one must use PPCODE: and then explicitly push the list of
-values on the stack.  The PPCODE: and CODE:  keywords should not be used
+values on the stack.  The PPCODE: and CODE:  keywords are not used
 together within the same XSUB.
-
-The actual difference between PPCODE: and CODE: sections is in the
-initialization of C<SP> macro (which stands for the I<current> Perl
-stack pointer), and in the handling of data on the stack when returning
-from an XSUB.  In CODE: sections SP preserves the value which was on
-entry to the XSUB: SP is on the function pointer (which follows the
-last parameter).  In PPCODE: sections SP is moved backward to the
-beginning of the parameter list, which allows C<PUSH*()> macros
-to place output values in the place Perl expects them to be when
-the XSUB returns back to Perl.
-
-The generated trailer for a CODE: section ensures that the number of return
-values Perl will see is either 0 or 1 (depending on the C<void>ness of the
-return value of the C function, and heuristics mentioned in
-L<"The RETVAL Variable">).  The trailer generated for a PPCODE: section
-is based on the number of return values and on the number of times
-C<SP> was updated by C<[X]PUSH*()> macros.
-
-Note that macros C<ST(i)>, C<XST_m*()> and C<XSRETURN*()> work equally
-well in CODE: sections and PPCODE: sections.
 
 The following XSUB will call the C rpcb_gettime() function
 and will return its two output values, timep and status, to
@@ -1022,12 +511,12 @@ Perl as a single list.
      void
      rpcb_gettime(host)
           char *host
-	PREINIT:
+	  PREINIT:
           time_t  timep;
           bool_t  status;
-        PPCODE:
+          PPCODE:
           status = rpcb_gettime( host, &timep );
-          EXTEND(SP, 2);
+          EXTEND(sp, 2);
           PUSHs(sv_2mortal(newSViv(status)));
           PUSHs(sv_2mortal(newSViv(timep)));
 
@@ -1042,7 +531,7 @@ directive.
 
 The EXTEND() macro is used to make room on the argument
 stack for 2 return values.  The PPCODE: directive causes the
-B<xsubpp> compiler to create a stack pointer available as C<SP>, and it
+B<xsubpp> compiler to create a stack pointer called C<sp>, and it
 is this pointer which is being used in the EXTEND() macro.
 The values are then pushed onto the stack with the PUSHs()
 macro.
@@ -1052,12 +541,9 @@ the following statement.
 
      ($status, $timep) = rpcb_gettime("localhost");
 
-When handling output parameters with a PPCODE section, be sure to handle
-'set' magic properly.  See L<perlguts> for details about 'set' magic.
-
 =head2 Returning Undef And Empty Lists
 
-Occasionally the programmer will want to return simply
+Occasionally the programmer will want to simply return
 C<undef> or an empty list if a function fails rather than a
 separate status value.  The rpcb_gettime() function offers
 just this situation.  If the function succeeds we would like
@@ -1067,19 +553,19 @@ of $timep will either be undef or it will be a valid time.
 
      $timep = rpcb_gettime( "localhost" );
 
-The following XSUB uses the C<SV *> return type as a mnemonic only,
-and uses a CODE: block to indicate to the compiler
+The following XSUB uses the C<void> return type to disable the generation of
+the RETVAL variable and uses a CODE: block to indicate to the compiler
 that the programmer has supplied all the necessary code.  The
 sv_newmortal() call will initialize the return value to undef, making that
 the default return value.
 
-     SV *
+     void
      rpcb_gettime(host)
           char *  host
-	PREINIT:
+	  PREINIT:
           time_t  timep;
           bool_t x;
-        CODE:
+          CODE:
           ST(0) = sv_newmortal();
           if( rpcb_gettime( host, &timep ) )
                sv_setnv( ST(0), (double)timep);
@@ -1087,19 +573,19 @@ the default return value.
 The next example demonstrates how one would place an explicit undef in the
 return value, should the need arise.
 
-     SV *
+     void
      rpcb_gettime(host)
           char *  host
-	PREINIT:
+	  PREINIT:
           time_t  timep;
           bool_t x;
-        CODE:
+          CODE:
           ST(0) = sv_newmortal();
           if( rpcb_gettime( host, &timep ) ){
                sv_setnv( ST(0), (double)timep);
           }
           else{
-               ST(0) = &PL_sv_undef;
+               ST(0) = &sv_undef;
           }
 
 To return an empty list one must use a PPCODE: block and
@@ -1108,53 +594,27 @@ then not push return values on the stack.
      void
      rpcb_gettime(host)
           char *host
-	PREINIT:
+	  PREINIT:
           time_t  timep;
-        PPCODE:
+          PPCODE:
           if( rpcb_gettime( host, &timep ) )
                PUSHs(sv_2mortal(newSViv(timep)));
           else{
-	      /* Nothing pushed on stack, so an empty
-	       * list is implicitly returned. */
+          /* Nothing pushed on stack, so an empty */
+          /* list is implicitly returned. */
           }
 
 Some people may be inclined to include an explicit C<return> in the above
 XSUB, rather than letting control fall through to the end.  In those
 situations C<XSRETURN_EMPTY> should be used, instead.  This will ensure that
-the XSUB stack is properly adjusted.  Consult L<perlapi> for other
-C<XSRETURN> macros.
-
-Since C<XSRETURN_*> macros can be used with CODE blocks as well, one can
-rewrite this example as:
-
-     int
-     rpcb_gettime(host)
-          char *host
-	PREINIT:
-          time_t  timep;
-        CODE:
-          RETVAL = rpcb_gettime( host, &timep );
-	  if (RETVAL == 0)
-		XSRETURN_UNDEF;
-	OUTPUT:
-	  RETVAL
-
-In fact, one can put this check into a POSTCALL: section as well.  Together
-with PREINIT: simplifications, this leads to:
-
-     int
-     rpcb_gettime(host)
-          char *host
-          time_t  timep;
-	POSTCALL:
-	  if (RETVAL == 0)
-		XSRETURN_UNDEF;
+the XSUB stack is properly adjusted.  Consult L<perlguts/"API LISTING"> for
+other C<XSRETURN> macros.
 
 =head2 The REQUIRE: Keyword
 
 The REQUIRE: keyword is used to indicate the minimum version of the
 B<xsubpp> compiler needed to compile the XS module.  An XS module which
-contains the following statement will compile with only B<xsubpp> version
+contains the following statement will only compile with B<xsubpp> version
 1.922 or greater:
 
 	REQUIRE: 1.922
@@ -1166,18 +626,6 @@ before it terminates.  When the CLEANUP:  keyword is used it must follow
 any CODE:, PPCODE:, or OUTPUT: blocks which are present in the XSUB.  The
 code specified for the cleanup block will be added as the last statements
 in the XSUB.
-
-=head2 The POSTCALL: Keyword
-
-This keyword can be used when an XSUB requires special procedures
-executed after the C subroutine call is performed.  When the POSTCALL:
-keyword is used it must precede OUTPUT: and CLEANUP: blocks which are
-present in the XSUB.
-
-See examples in L<"The NO_OUTPUT Keyword"> and L<"Returning Undef And Empty Lists">.
-
-The POSTCALL: block does not make a lot of sense when the C subroutine
-call is supplied by user by providing either CODE: or PPCODE: section.
 
 =head2 The BOOT: Keyword
 
@@ -1199,7 +647,7 @@ terminate the code block.
 =head2 The VERSIONCHECK: Keyword
 
 The VERSIONCHECK: keyword corresponds to B<xsubpp>'s C<-versioncheck> and
-C<-noversioncheck> options.  This keyword overrides the command line
+C<-noversioncheck> options.  This keyword overrides the commandline
 options.  Version checking is enabled by default.  When version checking is
 enabled the XS module will attempt to verify that its version matches the
 version of the PM module.
@@ -1215,7 +663,7 @@ To disable version checking:
 =head2 The PROTOTYPES: Keyword
 
 The PROTOTYPES: keyword corresponds to B<xsubpp>'s C<-prototypes> and
-C<-noprototypes> options.  This keyword overrides the command line options.
+C<-noprototypes> options.  This keyword overrides the commandline options.
 Prototypes are enabled by default.  When prototypes are enabled XSUBs will
 be given Perl prototypes.  This keyword may be used multiple times in an XS
 module to enable and disable prototypes for different parts of the module.
@@ -1239,29 +687,20 @@ prototypes.
     bool_t
     rpcb_gettime(timep, ...)
           time_t timep = NO_INIT
-	PROTOTYPE: $;$
-	PREINIT:
+	  PROTOTYPE: $;$
+	  PREINIT:
           char *host = "localhost";
-	  STRLEN n_a;
-        CODE:
+          CODE:
 		  if( items > 1 )
-		       host = (char *)SvPV(ST(1), n_a);
+		       host = (char *)SvPV(ST(1), na);
 		  RETVAL = rpcb_gettime( host, &timep );
-        OUTPUT:
+          OUTPUT:
           timep
           RETVAL
 
-If the prototypes are enabled, you can disable it locally for a given
-XSUB as in the following example:
-
-    void
-    rpcb_gettime_noproto()
-        PROTOTYPE: DISABLE
-    ...
-
 =head2 The ALIAS: Keyword
 
-The ALIAS: keyword allows an XSUB to have two or more unique Perl names
+The ALIAS: keyword allows an XSUB to have two more more unique Perl names
 and to know which of those names was used when it was invoked.  The Perl
 names may be fully-qualified with package names.  Each alias is given an
 index.  The compiler will setup a variable called C<ix> which contain the
@@ -1275,140 +714,13 @@ C<BAR::getit()> for this function.
     rpcb_gettime(host,timep)
           char *host
           time_t &timep
-	ALIAS:
+	  ALIAS:
 	    FOO::gettime = 1
 	    BAR::getit = 2
-	INIT:
+	  INIT:
 	  printf("# ix = %d\n", ix );
-        OUTPUT:
+          OUTPUT:
           timep
-
-=head2 The OVERLOAD: Keyword
-
-Instead of writing an overloaded interface using pure Perl, you
-can also use the OVERLOAD keyword to define additional Perl names
-for your functions (like the ALIAS: keyword above).  However, the
-overloaded functions must be defined with three parameters (except
-for the nomethod() function which needs four parameters).  If any
-function has the OVERLOAD: keyword, several additional lines
-will be defined in the c file generated by xsubpp in order to 
-register with the overload magic.
-
-Since blessed objects are actually stored as RV's, it is useful
-to use the typemap features to preprocess parameters and extract
-the actual SV stored within the blessed RV. See the sample for
-T_PTROBJ_SPECIAL below.
-
-To use the OVERLOAD: keyword, create an XS function which takes
-three input parameters ( or use the c style '...' definition) like
-this:
-
-    SV *
-    cmp (lobj, robj, swap)
-    My_Module_obj    lobj
-    My_Module_obj    robj
-    IV               swap
-    OVERLOAD: cmp <=>
-    { /* function defined here */}
-
-In this case, the function will overload both of the three way
-comparison operators.  For all overload operations using non-alpha
-characters, you must type the parameter without quoting, separating
-multiple overloads with whitespace.  Note that "" (the stringify 
-overload) should be entered as \"\" (i.e. escaped).
-
-=head2 The FALLBACK: Keyword
-
-In addition to the OVERLOAD keyword, if you need to control how
-Perl autogenerates missing overloaded operators, you can set the
-FALLBACK keyword in the module header section, like this:
-
-    MODULE = RPC  PACKAGE = RPC
-
-    FALLBACK: TRUE
-    ...
-
-where FALLBACK can take any of the three values TRUE, FALSE, or
-UNDEF.  If you do not set any FALLBACK value when using OVERLOAD,
-it defaults to UNDEF.  FALLBACK is not used except when one or 
-more functions using OVERLOAD have been defined.  Please see
-L<overload/Fallback> for more details.
-
-=head2 The INTERFACE: Keyword
-
-This keyword declares the current XSUB as a keeper of the given
-calling signature.  If some text follows this keyword, it is
-considered as a list of functions which have this signature, and
-should be attached to the current XSUB.
-
-For example, if you have 4 C functions multiply(), divide(), add(),
-subtract() all having the signature:
-
-    symbolic f(symbolic, symbolic);
-
-you can make them all to use the same XSUB using this:
-
-    symbolic
-    interface_s_ss(arg1, arg2)  
-	symbolic	arg1
-	symbolic	arg2
-    INTERFACE:
-	multiply divide 
-	add subtract
-
-(This is the complete XSUB code for 4 Perl functions!)  Four generated
-Perl function share names with corresponding C functions.
-
-The advantage of this approach comparing to ALIAS: keyword is that there
-is no need to code a switch statement, each Perl function (which shares
-the same XSUB) knows which C function it should call.  Additionally, one
-can attach an extra function remainder() at runtime by using
-
-    CV *mycv = newXSproto("Symbolic::remainder", 
-			  XS_Symbolic_interface_s_ss, __FILE__, "$$");
-    XSINTERFACE_FUNC_SET(mycv, remainder);
-
-say, from another XSUB.  (This example supposes that there was no
-INTERFACE_MACRO: section, otherwise one needs to use something else instead of
-C<XSINTERFACE_FUNC_SET>, see the next section.)
-
-=head2 The INTERFACE_MACRO: Keyword
-
-This keyword allows one to define an INTERFACE using a different way
-to extract a function pointer from an XSUB.  The text which follows
-this keyword should give the name of macros which would extract/set a
-function pointer.  The extractor macro is given return type, C<CV*>,
-and C<XSANY.any_dptr> for this C<CV*>.  The setter macro is given cv,
-and the function pointer.
-
-The default value is C<XSINTERFACE_FUNC> and C<XSINTERFACE_FUNC_SET>.
-An INTERFACE keyword with an empty list of functions can be omitted if
-INTERFACE_MACRO keyword is used.
-
-Suppose that in the previous example functions pointers for 
-multiply(), divide(), add(), subtract() are kept in a global C array
-C<fp[]> with offsets being C<multiply_off>, C<divide_off>, C<add_off>,
-C<subtract_off>.  Then one can use 
-
-    #define XSINTERFACE_FUNC_BYOFFSET(ret,cv,f) \
-	((XSINTERFACE_CVT_ANON(ret))fp[CvXSUBANY(cv).any_i32])
-    #define XSINTERFACE_FUNC_BYOFFSET_set(cv,f) \
-	CvXSUBANY(cv).any_i32 = CAT2( f, _off )
-
-in C section,
-
-    symbolic
-    interface_s_ss(arg1, arg2)  
-	symbolic	arg1
-	symbolic	arg2
-      INTERFACE_MACRO: 
-	XSINTERFACE_FUNC_BYOFFSET
-	XSINTERFACE_FUNC_BYOFFSET_set
-      INTERFACE:
-	multiply divide 
-	add subtract
-
-in XSUB section.
 
 =head2 The INCLUDE: Keyword
 
@@ -1422,7 +734,7 @@ The file F<Rpcb1.xsh> contains our C<rpcb_gettime()> function:
     rpcb_gettime(host,timep)
           char *host
           time_t &timep
-        OUTPUT:
+          OUTPUT:
           timep
 
 The XS module can use INCLUDE: to pull that file into it.
@@ -1448,29 +760,29 @@ variable (see L<"The ALIAS: Keyword">), or maybe via the C<items> variable
 B<default> case if it is not associated with a conditional.  The following
 example shows CASE switched via C<ix> with a function C<rpcb_gettime()>
 having an alias C<x_gettime()>.  When the function is called as
-C<rpcb_gettime()> its parameters are the usual C<(char *host, time_t *timep)>,
-but when the function is called as C<x_gettime()> its parameters are
+C<rpcb_gettime()> it's parameters are the usual C<(char *host, time_t *timep)>, 
+but when the function is called as C<x_gettime()> is parameters are
 reversed, C<(time_t *timep, char *host)>.
 
     long
     rpcb_gettime(a,b)
       CASE: ix == 1
-	ALIAS:
+	  ALIAS:
 	  x_gettime = 1
-	INPUT:
+	  INPUT:
 	  # 'a' is timep, 'b' is host
           char *b
           time_t a = NO_INIT
-        CODE:
+          CODE:
                RETVAL = rpcb_gettime( b, &a );
-        OUTPUT:
+          OUTPUT:
           a
           RETVAL
       CASE:
 	  # 'a' is host, 'b' is timep
           char *a
           time_t &b = NO_INIT
-        OUTPUT:
+          OUTPUT:
           b
           RETVAL
 
@@ -1483,15 +795,12 @@ the different argument lists.
 
 =head2 The & Unary Operator
 
-The C<&> unary operator in the INPUT: section is used to tell B<xsubpp>
-that it should convert a Perl value to/from C using the C type to the left
-of C<&>, but provide a pointer to this value when the C function is called.
+The & unary operator is used to tell the compiler that it should dereference
+the object when it calls the C function.  This is used when a CODE: block is
+not used and the object is a not a pointer type (the object is an C<int> or
+C<long> but not a C<int*> or C<long*>).
 
-This is useful to avoid a CODE: block for a C function which takes a parameter
-by reference.  Typically, the parameter should be not a pointer type (an
-C<int> or C<long> but not an C<int*> or C<long*>).
-
-The following XSUB will generate incorrect C code.  The B<xsubpp> compiler will
+The following XSUB will generate incorrect C code.  The xsubpp compiler will
 turn this into code which calls C<rpcb_gettime()> with parameters C<(char
 *host, time_t timep)>, but the real C<rpcb_gettime()> wants the C<timep>
 parameter to be of type C<time_t*> rather than C<time_t>.
@@ -1500,10 +809,10 @@ parameter to be of type C<time_t*> rather than C<time_t>.
     rpcb_gettime(host,timep)
           char *host
           time_t timep
-        OUTPUT:
+          OUTPUT:
           timep
 
-That problem is corrected by using the C<&> operator.  The B<xsubpp> compiler
+That problem is corrected by using the C<&> operator.  The xsubpp compiler
 will now turn this into code which calls C<rpcb_gettime()> correctly with
 parameters C<(char *host, time_t *timep)>.  It does this by carrying the
 C<&> through, so the function call looks like C<rpcb_gettime(host, &timep)>.
@@ -1512,28 +821,22 @@ C<&> through, so the function call looks like C<rpcb_gettime(host, &timep)>.
     rpcb_gettime(host,timep)
           char *host
           time_t &timep
-        OUTPUT:
+          OUTPUT:
           timep
 
-=head2 Inserting POD, Comments and C Preprocessor Directives
+=head2 Inserting Comments and C Preprocessor Directives
 
-C preprocessor directives are allowed within BOOT:, PREINIT: INIT:, CODE:,
-PPCODE:, POSTCALL:, and CLEANUP: blocks, as well as outside the functions.
-Comments are allowed anywhere after the MODULE keyword.  The compiler will
-pass the preprocessor directives through untouched and will remove the
-commented lines. POD documentation is allowed at any point, both in the
-C and XS language sections. POD must be terminated with a C<=cut> command;
-C<xsubpp> will exit with an error if it does not. It is very unlikely that
-human generated C code will be mistaken for POD, as most indenting styles
-result in whitespace in front of any line starting with C<=>. Machine
-generated XS files may fall into this trap unless care is taken to
-ensure that a space breaks the sequence "\n=".
-
+C preprocessor directives are allowed within BOOT:, PREINIT: INIT:,
+CODE:, PPCODE: and CLEANUP: blocks, as well as outside the functions.
+Comments are allowed anywhere after the MODULE keyword.  The compiler
+will pass the preprocessor directives through untouched and will remove
+the commented lines.
 Comments can be added to XSUBs by placing a C<#> as the first
 non-whitespace of a line.  Care should be taken to avoid making the
 comment look like a C preprocessor directive, lest it be interpreted as
 such.  The simplest way to prevent this is to put whitespace in front of
 the C<#>.
+
 
 If you use preprocessor directives to choose one of two
 versions of a function, use
@@ -1549,14 +852,13 @@ and not
     #if ... version2
     #endif
 
-because otherwise B<xsubpp> will believe that you made a duplicate
+because otherwise xsubpp will believe that you made a duplicate
 definition of the function.  Also, put a blank line before the
 #else/#endif so it will not be seen as part of the function body.
 
 =head2 Using XS With C++
 
-If an XSUB name contains C<::>, it is considered to be a C++ method.
-The generated Perl function will assume that
+If a function is defined as a C++ method then it will assume
 its first argument is an object pointer.  The object pointer
 will be stored in a variable called THIS.  The object should
 have been created by C++ with the new() function and should
@@ -1564,8 +866,7 @@ be blessed by Perl with the sv_setref_pv() macro.  The
 blessing of the object by Perl can be handled by a typemap.  An example
 typemap is shown at the end of this section.
 
-If the return type of the XSUB includes C<static>, the method is considered
-to be a static method.  It will call the C++
+If the method is defined as static it will call the C++
 function using the class::method() syntax.  If the method is not static
 the function will be called using the THIS-E<gt>method() syntax.
 
@@ -1593,37 +894,22 @@ not listed.
      color::set_blue( val )
           int val
 
-Both Perl functions will expect an object as the first parameter.  In the 
-generated C++ code the object is called C<THIS>, and the method call will
-be performed on this object.  So in the C++ code the blue() and set_blue()
-methods will be called as this:
+Both functions will expect an object as the first parameter.  The xsubpp
+compiler will call that object C<THIS> and will use it to call the specified
+method.  So in the C++ code the blue() and set_blue() methods will be called
+in the following manner.
 
      RETVAL = THIS->blue();
 
      THIS->set_blue( val );
 
-You could also write a single get/set method using an optional argument:
-
-     int
-     color::blue( val = NO_INIT )
-         int val
-         PROTOTYPE $;$
-         CODE:
-             if (items > 1)
-                 THIS->set_blue( val );
-             RETVAL = THIS->blue();
-         OUTPUT:
-             RETVAL
-
 If the function's name is B<DESTROY> then the C++ C<delete> function will be
-called and C<THIS> will be given as its parameter.  The generated C++ code for
+called and C<THIS> will be given as its parameter.
 
      void
      color::DESTROY()
 
-will look like this:
-
-     color *THIS = ...;	// Initialized as in typemap
+The C++ code will call C<delete>.
 
      delete THIS;
 
@@ -1635,9 +921,9 @@ argument.
      color *
      color::new()
 
-The generated C++ code will call C<new>.
+The C++ code will call C<new>.
 
-     RETVAL = new color();
+	RETVAL = new color();
 
 The following is an example of a typemap that could be used for this C++
 example.
@@ -1650,7 +936,7 @@ example.
     # char* having the name of the package for the blessing.
     O_OBJECT
     	sv_setref_pv( $arg, CLASS, (void*)$var );
-
+    
     INPUT
     O_OBJECT
     	if( sv_isobject($arg) && (SvTYPE(SvRV($arg)) == SVt_PVMG) )
@@ -1663,59 +949,30 @@ example.
 =head2 Interface Strategy
 
 When designing an interface between Perl and a C library a straight
-translation from C to XS (such as created by C<h2xs -x>) is often sufficient.
-However, sometimes the interface will look
+translation from C to XS is often sufficient.  The interface will often be
 very C-like and occasionally nonintuitive, especially when the C function
-modifies one of its parameters, or returns failure inband (as in "negative
-return values mean failure").  In cases where the programmer wishes to
+modifies one of its parameters.  In cases where the programmer wishes to
 create a more Perl-like interface the following strategy may help to
 identify the more critical parts of the interface.
 
-Identify the C functions with input/output or output parameters.  The XSUBs for
-these functions may be able to return lists to Perl.
-
-Identify the C functions which use some inband info as an indication
-of failure.  They may be
-candidates to return undef or an empty list in case of failure.  If the
-failure may be detected without a call to the C function, you may want to use
-an INIT: section to report the failure.  For failures detectable after the C
-function returns one may want to use a POSTCALL: section to process the
-failure.  In more complicated cases use CODE: or PPCODE: sections.
-
-If many functions use the same failure indication based on the return value,
-you may want to create a special typedef to handle this situation.  Put
-
-  typedef int negative_is_failure;
-
-near the beginning of XS file, and create an OUTPUT typemap entry
-for C<negative_is_failure> which converts negative values to C<undef>, or
-maybe croak()s.  After this the return value of type C<negative_is_failure>
-will create more Perl-like interface.
+Identify the C functions which modify their parameters.  The XSUBs for
+these functions may be able to return lists to Perl, or may be
+candidates to return undef or an empty list in case of failure.
 
 Identify which values are used by only the C and XSUB functions
-themselves, say, when a parameter to a function should be a contents of a
-global variable.  If Perl does not need to access the contents of the value
+themselves.  If Perl does not need to access the contents of the value
 then it may not be necessary to provide a translation for that value
 from C to Perl.
 
 Identify the pointers in the C function parameter lists and return
-values.  Some pointers may be used to implement input/output or
-output parameters, they can be handled in XS with the C<&> unary operator,
-and, possibly, using the NO_INIT keyword.
-Some others will require handling of types like C<int *>, and one needs
-to decide what a useful Perl translation will do in such a case.  When
-the semantic is clear, it is advisable to put the translation into a typemap
-file.
+values.  Some pointers can be handled in XS with the & unary operator on
+the variable name while others will require the use of the * operator on
+the type name.  In general it is easier to work with the & operator.
 
 Identify the structures used by the C functions.  In many
 cases it may be helpful to use the T_PTROBJ typemap for
 these structures so they can be manipulated by Perl as
-blessed objects.  (This is handled automatically by C<h2xs -x>.)
-
-If the same C type is used in several different contexts which require
-different translations, C<typedef> several new types mapped to this C type,
-and create separate F<typemap> entries for these new types.  Use these
-types in declarations of return type and parameters to XSUBs.
+blessed objects.
 
 =head2 Perl Objects And C Structures
 
@@ -1762,7 +1019,7 @@ trim the name to the word DESTROY as Perl will expect.
      void
      rpcb_DESTROY(netconf)
           Netconfig *netconf
-        CODE:
+          CODE:
           printf("Now in NetconfigPtr::DESTROY\n");
           free( netconf );
 
@@ -1787,21 +1044,19 @@ getnetconfigent() XSUB and an object created by a normal Perl subroutine.
 
 The typemap is a collection of code fragments which are used by the B<xsubpp>
 compiler to map C function parameters and values to Perl values.  The
-typemap file may consist of three sections labelled C<TYPEMAP>, C<INPUT>, and
-C<OUTPUT>.  An unlabelled initial section is assumed to be a C<TYPEMAP>
-section.  The INPUT section tells
-the compiler how to translate Perl values
+typemap file may consist of three sections labeled C<TYPEMAP>, C<INPUT>, and
+C<OUTPUT>.  The INPUT section tells the compiler how to translate Perl values
 into variables of certain C types.  The OUTPUT section tells the compiler
 how to translate the values from certain C types into values Perl can
 understand.  The TYPEMAP section tells the compiler which of the INPUT and
 OUTPUT code fragments should be used to map a given C type to a Perl value.
-The section labels C<TYPEMAP>, C<INPUT>, or C<OUTPUT> must begin
-in the first column on a line by themselves, and must be in uppercase.
+Each of the sections of the typemap must be preceded by one of the TYPEMAP,
+INPUT, or OUTPUT keywords.
 
-The default typemap in the C<lib/ExtUtils> directory of the Perl source
-contains many useful types which can be used by Perl extensions.  Some
-extensions define additional typemaps which they keep in their own directory.
-These additional typemaps may reference INPUT and OUTPUT maps in the main
+The default typemap in the C<ext> directory of the Perl source contains many
+useful types which can be used by Perl extensions.  Some extensions define
+additional typemaps which they keep in their own directory.  These
+additional typemaps may reference INPUT and OUTPUT maps in the main
 typemap.  The B<xsubpp> compiler will allow the extension's own typemap to
 override any mappings which are in the default typemap.
 
@@ -1813,234 +1068,8 @@ with the T_PTROBJ typemap.  The typemap used by getnetconfigent() is shown
 here.  Note that the C type is separated from the XS type with a tab and
 that the C unary operator C<*> is considered to be a part of the C type name.
 
-	TYPEMAP
-	Netconfig *<tab>T_PTROBJ
-
-Here's a more complicated example: suppose that you wanted C<struct
-netconfig> to be blessed into the class C<Net::Config>.  One way to do
-this is to use underscores (_) to separate package names, as follows:
-
-        typedef struct netconfig * Net_Config;
-
-And then provide a typemap entry C<T_PTROBJ_SPECIAL> that maps underscores to
-double-colons (::), and declare C<Net_Config> to be of that type:
-
-
-        TYPEMAP
-        Net_Config      T_PTROBJ_SPECIAL
-
-        INPUT
-        T_PTROBJ_SPECIAL
-                if (sv_derived_from($arg, \"${(my $ntt=$ntype)=~s/_/::/g;\$ntt}\")) {
-                        IV tmp = SvIV((SV*)SvRV($arg));
-                        $var = INT2PTR($type, tmp);
-                }
-                else
-                        croak(\"$var is not of type ${(my $ntt=$ntype)=~s/_/::/g;\$ntt}\")
-
-        OUTPUT
-        T_PTROBJ_SPECIAL
-                sv_setref_pv($arg, \"${(my $ntt=$ntype)=~s/_/::/g;\$ntt}\",
-                (void*)$var);
-
-The INPUT and OUTPUT sections substitute underscores for double-colons
-on the fly, giving the desired effect.  This example demonstrates some
-of the power and versatility of the typemap facility.
-
-The INT2PTR macro (defined in perl.h) casts an integer to a pointer, 
-of a given type, taking care of the possible different size of integers
-and pointers.  There are also PTR2IV, PTR2UV, PTR2NV macros,
-to map the other way, which may be useful in OUTPUT sections.
-
-=head2 Safely Storing Static Data in XS
-
-Starting with Perl 5.8, a macro framework has been defined to allow
-static data to be safely stored in XS modules that will be accessed from
-a multi-threaded Perl.
-
-Although primarily designed for use with multi-threaded Perl, the macros
-have been designed so that they will work with non-threaded Perl as well.
-
-It is therefore strongly recommended that these macros be used by all
-XS modules that make use of static data.
-
-The easiest way to get a template set of macros to use is by specifying
-the C<-g> (C<--global>) option with h2xs (see L<h2xs>).
-
-Below is an example module that makes use of the macros.
-
-    #include "EXTERN.h"
-    #include "perl.h"
-    #include "XSUB.h"
-
-    /* Global Data */
-
-    #define MY_CXT_KEY "BlindMice::_guts" XS_VERSION
-
-    typedef struct {
-        int count;
-        char name[3][100];
-    } my_cxt_t;
-
-    START_MY_CXT
-
-    MODULE = BlindMice           PACKAGE = BlindMice
-
-    BOOT:
-    {
-        MY_CXT_INIT;
-        MY_CXT.count = 0;
-        strcpy(MY_CXT.name[0], "None");
-        strcpy(MY_CXT.name[1], "None");
-        strcpy(MY_CXT.name[2], "None");
-    }                              
-
-    int
-    newMouse(char * name)
-        char * name;
-        PREINIT:
-          dMY_CXT;
-        CODE:
-          if (MY_CXT.count >= 3) {
-              warn("Already have 3 blind mice");
-              RETVAL = 0;
-          }
-          else {
-              RETVAL = ++ MY_CXT.count;
-              strcpy(MY_CXT.name[MY_CXT.count - 1], name);
-          }
-
-    char *
-    get_mouse_name(index)
-      int index
-      CODE:
-        dMY_CXT;
-        RETVAL = MY_CXT.lives ++;
-        if (index > MY_CXT.count)
-          croak("There are only 3 blind mice.");
-        else
-          RETVAL = newSVpv(MY_CXT.name[index - 1]);
-
-    void
-    CLONE(...)
-	CODE:
-	MY_CXT_CLONE;
-
-B<REFERENCE>
-
-=over 5
-
-=item MY_CXT_KEY
-
-This macro is used to define a unique key to refer to the static data
-for an XS module. The suggested naming scheme, as used by h2xs, is to
-use a string that consists of the module name, the string "::_guts"
-and the module version number.
-
-    #define MY_CXT_KEY "MyModule::_guts" XS_VERSION
-
-=item typedef my_cxt_t
-
-This struct typedef I<must> always be called C<my_cxt_t> -- the other
-C<CXT*> macros assume the existence of the C<my_cxt_t> typedef name.
-
-Declare a typedef named C<my_cxt_t> that is a structure that contains
-all the data that needs to be interpreter-local.
-
-    typedef struct {
-        int some_value;
-    } my_cxt_t;
-
-=item START_MY_CXT
-
-Always place the START_MY_CXT macro directly after the declaration
-of C<my_cxt_t>.
-
-=item MY_CXT_INIT
-
-The MY_CXT_INIT macro initialises storage for the C<my_cxt_t> struct.
-
-It I<must> be called exactly once -- typically in a BOOT: section. If you
-are maintaining multiple interpreters, it should be called once in each
-interpreter instance, except for interpreters cloned from existing ones.
-(But see C<MY_CXT_CLONE> below.)
-
-=item dMY_CXT
-
-Use the dMY_CXT macro (a declaration) in all the functions that access
-MY_CXT.
-
-=item MY_CXT
-
-Use the MY_CXT macro to access members of the C<my_cxt_t> struct. For
-example, if C<my_cxt_t> is 
-
-    typedef struct {
-        int index;
-    } my_cxt_t;
-
-then use this to access the C<index> member
-
-    dMY_CXT;
-    MY_CXT.index = 2;
-
-=item aMY_CXT/pMY_CXT
-
-C<dMY_CXT> may be quite expensive to calculate, and to avoid the overhead
-of invoking it in each function it is possible to pass the declaration
-onto other functions using the C<aMY_CXT>/C<pMY_CXT> macros, eg
-
-    void sub1() {
-	dMY_CXT;
-	MY_CXT.index = 1;
-	sub2(aMY_CXT);
-    }
-
-    void sub2(pMY_CXT) {
-	MY_CXT.index = 2;
-    }
-
-Analogously to C<pTHX>, there are equivalent forms for when the macro is the
-first or last in multiple arguments, where an underscore represents a
-comma, i.e.  C<_aMY_CXT>, C<aMY_CXT_>, C<_pMY_CXT> and C<pMY_CXT_>.
-
-=item MY_CXT_CLONE
-
-By default, when a new interpreter is created as a copy of an existing one
-(eg via C<<threads->create()>>), both interpreters share the same physical
-my_cxt_t structure. Calling C<MY_CXT_CLONE> (typically via the package's
-C<CLONE()> function), causes a byte-for-byte copy of the structure to be
-taken, and any future dMY_CXT will cause the copy to be accessed instead.
-
-=item MY_CXT_INIT_INTERP(my_perl)
-
-=item dMY_CXT_INTERP(my_perl)
-
-These are versions of the macros which take an explicit interpreter as an
-argument.
-
-=back
-
-Note that these macros will only work together within the I<same> source
-file; that is, a dMY_CTX in one source file will access a different structure
-than a dMY_CTX in another source file.
-
-=head2 Thread-aware system interfaces
-
-Starting from Perl 5.8, in C/C++ level Perl knows how to wrap
-system/library interfaces that have thread-aware versions
-(e.g. getpwent_r()) into frontend macros (e.g. getpwent()) that
-correctly handle the multithreaded interaction with the Perl
-interpreter.  This will happen transparently, the only thing
-you need to do is to instantiate a Perl interpreter.
-
-This wrapping happens always when compiling Perl core source
-(PERL_CORE is defined) or the Perl core extensions (PERL_EXT is
-defined).  When compiling XS code outside of Perl core the wrapping
-does not take place.  Note, however, that intermixing the _r-forms
-(as Perl compiled for multithreaded operation will do) and the _r-less
-forms is neither well-defined (inconsistent results, data corruption,
-or even crashes become more likely), nor is it very portable.
+     TYPEMAP
+     Netconfig *<tab>T_PTROBJ
 
 =head1 EXAMPLES
 
@@ -2056,12 +1085,12 @@ File C<RPC.xs>: Interface to some ONC+ RPC bind library functions.
 
      MODULE = RPC  PACKAGE = RPC
 
-     SV *
+     void
      rpcb_gettime(host="localhost")
           char *host
-	PREINIT:
+	  PREINIT:
           time_t  timep;
-        CODE:
+          CODE:
           ST(0) = sv_newmortal();
           if( rpcb_gettime( host, &timep ) )
                sv_setnv( ST(0), (double)timep );
@@ -2075,7 +1104,7 @@ File C<RPC.xs>: Interface to some ONC+ RPC bind library functions.
      void
      rpcb_DESTROY(netconf)
           Netconfig *netconf
-        CODE:
+          CODE:
           printf("NetconfigPtr::DESTROY\n");
           free( netconf );
 
@@ -2117,6 +1146,5 @@ This document covers features supported by C<xsubpp> 1.935.
 
 =head1 AUTHOR
 
-Originally written by Dean Roehrich <F<roehrich@cray.com>>.
-
-Maintained since 1996 by The Perl Porters <F<perlbug@perl.org>>.
+Dean Roehrich F<E<lt>roehrich@cray.comE<gt>>
+Mar 12, 1996

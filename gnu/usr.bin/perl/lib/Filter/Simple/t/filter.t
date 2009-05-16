@@ -1,15 +1,11 @@
 BEGIN {
-    if( $ENV{PERL_CORE} ) {
-        chdir 't';
-        @INC = ('../lib', 'lib');
-    }
-    else {
-        unshift @INC, 't/lib/';
+    if ($ENV{PERL_CORE}) {
+        chdir('t') if -d 't';
+	@INC = qw(lib/Filter/Simple ../lib);
     }
 }
-chdir 't';
 
-use Filter::Simple::FilterTest qr/not ok/ => "ok", fail => "ok";
+use FilterTest qr/not ok/ => "ok", fail => "ok";
 
 print "1..6\n";
 
@@ -24,7 +20,7 @@ fail(3);
 print "not " unless "whatnot okapi" eq "whatokapi";
 print "ok 5\n";
 
-no Filter::Simple::FilterTest;
+no FilterTest;
 
 print "not " unless "not ok" =~ /^not /;
 print "ok 6\n";

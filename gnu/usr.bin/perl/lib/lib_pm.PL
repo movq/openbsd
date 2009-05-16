@@ -58,7 +58,7 @@ my \@inc_version_list = $Config_inc_version_list;
 print OUT <<'!NO!SUBS!';
 
 our @ORIG_INC = @INC;	# take a handy copy of 'original' value
-our $VERSION = '0.5565';
+our $VERSION = '0.5564';
 my $Is_MacOS = $^O eq 'MacOS';
 my $Mac_FS;
 if ($Is_MacOS) {
@@ -71,31 +71,30 @@ sub import {
 
     my %names;
     foreach (reverse @_) {
-	my $path = $_;		# we'll be modifying it, so break the alias
-	if ($path eq '') {
+	if ($_ eq '') {
 	    require Carp;
 	    Carp::carp("Empty compile time value given to use lib");
 	}
 
-	$path = _nativize($path);
+	local $_ = _nativize($_);
 
-	if (-e $path && ! -d _) {
+	if (-e && ! -d _) {
 	    require Carp;
 	    Carp::carp("Parameter to use lib must be directory, not file");
 	}
-	unshift(@INC, $path);
+	unshift(@INC, $_);
 	# Add any previous version directories we found at configure time
 	foreach my $incver (@inc_version_list)
 	{
 	    my $dir = $Is_MacOS
-		? File::Spec->catdir( $path, $incver )
-		: "$path/$incver";
+		? File::Spec->catdir( $_, $incver )
+		: "$_/$incver";
 	    unshift(@INC, $dir) if -d $dir;
 	}
-	# Put a corresponding archlib directory in front of $path if it
-	# looks like $path has an archlib directory below it.
+	# Put a corresponding archlib directory in front of $_ if it
+	# looks like $_ has an archlib directory below it.
 	my($arch_auto_dir, $arch_dir, $version_dir, $version_arch_dir)
-	    = _get_dirs($path);
+	    = _get_dirs($_);
 	unshift(@INC, $arch_dir)         if -d $arch_auto_dir;
 	unshift(@INC, $version_dir)      if -d $version_dir;
 	unshift(@INC, $version_arch_dir) if -d $version_arch_dir;
@@ -112,11 +111,11 @@ sub unimport {
 
     my %names;
     foreach (@_) {
-	my $path = _nativize($_);
+	local $_ = _nativize($_);
 
 	my($arch_auto_dir, $arch_dir, $version_dir, $version_arch_dir)
-	    = _get_dirs($path);
-	++$names{$path};
+	    = _get_dirs($_);
+	++$names{$_};
 	++$names{$arch_dir}         if -d $arch_auto_dir;
 	++$names{$version_dir}      if -d $version_dir;
 	++$names{$version_arch_dir} if -d $version_arch_dir;
@@ -134,15 +133,15 @@ sub _get_dirs {
     # we could use this for all platforms in the future, but leave it
     # Mac-only for now, until there is more time for testing it.
     if ($Is_MacOS) {
-	$arch_auto_dir    = File::Spec->catdir( $dir, $archname, 'auto' );
-	$arch_dir         = File::Spec->catdir( $dir, $archname, );
-	$version_dir      = File::Spec->catdir( $dir, $version );
-	$version_arch_dir = File::Spec->catdir( $dir, $version, $archname );
+	$arch_auto_dir    = File::Spec->catdir( $_, $archname, 'auto' );
+	$arch_dir         = File::Spec->catdir( $_, $archname, );
+	$version_dir      = File::Spec->catdir( $_, $version );
+	$version_arch_dir = File::Spec->catdir( $_, $version, $archname );
     } else {
-	$arch_auto_dir    = "$dir/$archname/auto";
-	$arch_dir         = "$dir/$archname";
-	$version_dir      = "$dir/$version";
-	$version_arch_dir = "$dir/$version/$archname";
+	$arch_auto_dir    = "$_/$archname/auto";
+	$arch_dir         = "$_/$archname";
+	$version_dir      = "$_/$version";
+	$version_arch_dir = "$_/$version/$archname";
     }
     return($arch_auto_dir, $arch_dir, $version_dir, $version_arch_dir);
 }
@@ -195,10 +194,6 @@ For each directory in LIST (called $dir here) the lib module also
 checks to see if a directory called $dir/$archname/auto exists.
 If so the $dir/$archname directory is assumed to be a corresponding
 architecture specific directory and is added to @INC in front of $dir.
-
-The current value of C<$archname> can be found with this command:
-
-    perl -V:archname
 
 To avoid memory leaks, all trailing duplicate entries in @INC are
 removed.

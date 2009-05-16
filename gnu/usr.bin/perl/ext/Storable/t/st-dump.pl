@@ -39,7 +39,6 @@ use Carp;
 
 %dump = (
 	'SCALAR'	=> 'dump_scalar',
-	'LVALUE'	=> 'dump_scalar',
 	'ARRAY'		=> 'dump_array',
 	'HASH'		=> 'dump_hash',
 	'REF'		=> 'dump_ref',

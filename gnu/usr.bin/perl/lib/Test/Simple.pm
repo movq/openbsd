@@ -2,16 +2,23 @@ package Test::Simple;
 
 use 5.004;
 
-use strict;
+use strict 'vars';
+use vars qw($VERSION);
+$VERSION = '0.45';
 
-our $VERSION = '0.86';
-$VERSION = eval $VERSION;    ## no critic (BuiltinFunctions::ProhibitStringyEval)
 
-use Test::Builder::Module;
-our @ISA    = qw(Test::Builder::Module);
-our @EXPORT = qw(ok);
+use Test::Builder;
+my $Test = Test::Builder->new;
 
-my $CLASS = __PACKAGE__;
+sub import {
+    my $self = shift;
+    my $caller = caller;
+    *{$caller.'::ok'} = \&ok;
+
+    $Test->exported_to($caller);
+    $Test->plan(@_);
+}
+
 
 =head1 NAME
 
@@ -76,9 +83,10 @@ will do what you mean (fail if stuff is empty)
 
 =cut
 
-sub ok ($;$) {    ## no critic (Subroutines::ProhibitSubroutinePrototypes)
-    return $CLASS->builder->ok(@_);
+sub ok ($;$) {
+    $Test->ok(@_);
 }
+
 
 =back
 
@@ -98,7 +106,7 @@ considered a failure and will exit with 255.
 So the exit codes are...
 
     0                   all tests successful
-    255                 test died or all passed but wrong # of tests run
+    255                 test died
     any other number    how many failed (including missing or extras)
 
 If you fail more than 254 tests, it will be reported as 254.
@@ -121,7 +129,7 @@ Here's an example of a simple .t file for the fictional Film module.
                              Rating   => 'R',
                              NumExplodingSheep => 1
                            });
-    ok( defined($btaste) && ref $btaste eq 'Film,     'new() works' );
+    ok( defined($btaste) and ref $btaste eq 'Film',     'new() works' );
 
     ok( $btaste->Title      eq 'Bad Taste',     'Title() get'    );
     ok( $btaste->Director   eq 'Peter Jackson', 'Director() get' );
@@ -135,8 +143,7 @@ It will produce output like this:
     ok 2 - Title() get
     ok 3 - Director() get
     not ok 4 - Rating() get
-    #   Failed test 'Rating() get'
-    #   in t/film.t at line 14.
+    #    Failed test (t/film.t at line 14)
     ok 5 - NumExplodingSheep() get
     # Looks like you failed 1 tests of 5
 
@@ -189,9 +196,23 @@ Test::More.  Test::Simple is 100% forward compatible with Test::More
 (i.e. you can just use Test::More instead of Test::Simple in your
 programs and things will still work).
 
-=back
+=item L<Test>
 
-Look in Test::More's SEE ALSO for more testing modules.
+The original Perl testing module.
+
+=item L<Test::Unit>
+
+Elaborate unit testing.
+
+=item L<Test::Inline>, L<SelfTest>
+
+Embed tests in your code!
+
+=item L<Test::Harness>
+
+Interprets the output of your test program.
+
+=back
 
 
 =head1 AUTHORS
@@ -202,7 +223,7 @@ E<lt>schwern@pobox.comE<gt>, wardrobe by Calvin Klein.
 
 =head1 COPYRIGHT
 
-Copyright 2001-2008 by Michael G Schwern E<lt>schwern@pobox.comE<gt>.
+Copyright 2001 by Michael G Schwern E<lt>schwern@pobox.comE<gt>.
 
 This program is free software; you can redistribute it and/or 
 modify it under the same terms as Perl itself.

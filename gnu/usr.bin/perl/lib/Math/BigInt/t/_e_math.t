@@ -31,7 +31,7 @@ BEGIN
   plan tests => 26;
   }
 
-use Math::BigFloat lib => 'Calc';
+use Math::BigFloat;
 
 #############################################################################
 # add

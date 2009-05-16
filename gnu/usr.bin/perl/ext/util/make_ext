@@ -4,34 +4,15 @@
 # It primarily used by the perl Makefile:
 #
 # d_dummy $(dynamic_ext): miniperl preplibrary FORCE
-# 	@sh ext/util/make_ext dynamic $@ MAKE=$(MAKE) LIBPERL_A=$(LIBPERL)
+#        ext/util/make_ext dynamic $@
 #
 # It may be deleted in a later release of perl so try to
 # avoid using it for other purposes.
 
 target=$1;  shift
 extspec=$1; shift
-makecmd=$1; shift  # Should be something like MAKE=make
 passthru="$*" # allow extra macro=value to be passed through
 echo ""
-
-# Previously, $make was taken from config.sh.  However, the user might
-# instead be running a possibly incompatible make.  This might happen if
-# the user types "gmake" instead of a plain "make", for example.  The
-# correct current value of MAKE will come through from the main perl
-# makefile as MAKE=/whatever/make in $makecmd.  We'll be cautious in
-# case third party users of this script (are there any?) don't have the
-# MAKE=$(MAKE) argument, which was added after 5.004_03.
-case "$makecmd" in
-MAKE=*)
-	eval $makecmd
-	;;
-*)	echo 'ext/util/make_ext:  WARNING:  Please include MAKE=$(MAKE)'
-	echo '	in your call to make_ext.  See ext/util/make_ext for details.'
-	exit 1
-	;;
-esac
-
 
 case $CONFIG in
 '')
@@ -53,25 +34,23 @@ if test "X$extspec" = X; then
 fi
 
 # The Perl Makefile.SH will expand all extensions to
-#	lib/auto/X/X.a  (or lib/auto/X/Y/Y.a if nested)
+#	lib/auto/X/X.a  (or lib/auto/X/Y/Y.a is nested)
 # A user wishing to run make_ext might use
-#	X (or X/Y or X::Y if nested)
+#	X (or X/Y or X::Y is nested)
 
 # canonise into X/Y form (pname)
 case "$extspec" in
 lib*)	# Remove lib/auto prefix and /*.* suffix
 	pname=`echo "$extspec" | sed -e 's:^lib/auto/::' -e 's:/[^/]*\.[^/]*$::' ` ;;
-ext*)	# Remove ext/ prefix and /pm_to_blib suffix
-	pname=`echo "$extspec" | sed -e 's:^ext/::' -e 's:/pm_to_blib$::' ` ;;
 *::*)	# Convert :: to /
 	pname=`echo "$extspec" | sed -e 's/::/\//g' ` ;;
-*.o)    pname=`echo "$extspec" | sed -e 's/\.o//'` ;;
 *)	pname="$extspec" ;;
 esac
 # echo "Converted $extspec to $pname"
 
 mname=`echo "$pname"   | sed -e 's!/!::!g'`
 depth=`echo "$pname"   | sed -e 's![^/][^/]*!..!g'`
+make=${altmake-make}
 makefile=Makefile
 makeargs=''
 makeopts=''
@@ -81,31 +60,18 @@ if test ! -d "ext/$pname"; then
     exit 0 # not an error ?
 fi
 
-case "$osname" in
-catamount) # Snowball's chance of building extensions.
-  echo "This is $osname, not building $mname, sorry."
-  exit 0
-  ;;
-esac
 
 echo "	Making $mname ($target)"
 
 cd ext/$pname
 
-# check link type and do any preliminaries.  Valid link types are
-# 'dynamic', 'static', and 'static_pic' (the last one respects
-# CCCDLFLAGS such as -fPIC -- see static_target in the main Makefile.SH)
+# check link type and do any preliminaries
 case "$target" in
-dynamic)    makeargs="LINKTYPE=dynamic";
-	    target=all
-	    ;;
+	    # convert 'static' or 'dynamic' into 'all LINKTYPE=XXX'
 static)     makeargs="LINKTYPE=static CCCDLFLAGS="
 	    target=all
 	    ;;
-static_pic) makeargs="LINKTYPE=static"
-	    target=all
-	    ;;
-nonxs)      makeargs="";
+dynamic)    makeargs="LINKTYPE=dynamic";
 	    target=all
 	    ;;
 
@@ -126,10 +92,15 @@ nonxs)      makeargs="";
 esac
 
 if test ! -f $makefile ; then
-	test -f Makefile.PL && $run ../$depth/miniperl -I../$depth/lib Makefile.PL INSTALLDIRS=perl INSTALLMAN3DIR=none PERL_CORE=1 $passthru
+	test -f Makefile.PL && ../$depth/miniperl -I../$depth/lib Makefile.PL INSTALLDIRS=perl $passthru
 fi
 if test ! -f $makefile ; then
-	echo "Warning: No Makefile!"
+	if test -f Makefile.SH; then
+		echo "Warning: Writing $makefile from old-style Makefile.SH!"
+		sh Makefile.SH
+	else
+		echo "Warning: No Makefile!"
+	fi
 fi
 
 case "$target" in
@@ -137,10 +108,10 @@ clean)		;;
 realclean)	;;
 *)	# Give makefile an opportunity to rewrite itself.
 	# reassure users that life goes on...
-	$MAKE config MAKE=$MAKE $passthru || echo "$MAKE config failed, continuing anyway..."
+	$make config $passthru || echo "$make config failed, continuing anyway..."
 	;;
 esac
 
-$MAKE $makeopts $target MAKE=$MAKE $makeargs $passthru || exit
+$make $makeopts $target $makeargs $passthru || exit
 
 exit $?

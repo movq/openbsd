@@ -1,10 +1,12 @@
+# $Id: Assert.pm,v 1.2 2002/04/26 05:12:27 schwern Exp $
+
 package Test::Harness::Assert;
 
 use strict;
 require Exporter;
 use vars qw($VERSION @EXPORT @ISA);
 
-$VERSION = '0.02';
+$VERSION = '0.01';
 
 @ISA = qw(Exporter);
 @EXPORT = qw(assert);
@@ -28,9 +30,11 @@ A simple assert routine since we don't have Carp::Assert handy.
 
 B<For internal use by Test::Harness ONLY!>
 
-=head1 FUNCTIONS
+=head2 Functions
 
-=head2 C<assert()>
+=over 4
+
+=item B<assert>
 
   assert( EXPR, $name );
 
@@ -53,7 +57,7 @@ sub assert ($;$) {
 
 =head1 AUTHOR
 
-Michael G Schwern C<< <schwern at pobox.com> >>
+Michael G Schwern E<lt>schwern@pobox.comE<gt>
 
 =head1 SEE ALSO
 

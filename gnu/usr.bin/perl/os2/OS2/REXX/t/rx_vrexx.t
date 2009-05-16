@@ -3,11 +3,7 @@ BEGIN {
     @INC = '../lib' if -d 'lib';
     require Config; import Config;
     if (-d 'lib' and $Config{'extensions'} !~ /\bOS2(::|\/)REXX\b/) {
-	print "1..0 # skipped: OS2::REXX not built\n";
-	exit 0;
-    }
-    if (defined $ENV{PERL_TEST_NOVREXX}) {
-	print "1..0 # skipped: request via PERL_TEST_NOVREXX\n";
+	print "1..0\n";
 	exit 0;
     }
 }
@@ -22,7 +18,7 @@ foreach $dir (split(';', $path)) {
   print "# found at `$found'\n";
   last;
 }
-$found or print "1..0 # skipped: cannot find $name.DLL\n" and exit;
+$found or die "1..0\n#Cannot find $name.DLL\n";
 
 print "1..10\n";
 
