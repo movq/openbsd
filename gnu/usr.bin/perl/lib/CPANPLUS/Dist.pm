@@ -27,7 +27,7 @@ for my $key ( @methods ) {
 
 =head1 NAME
 
-CPANPLUS::Dist - base class for CPANPLUS::Dist::MM and CPANPLUS::Dist::Build
+CPANPLUS::Dist
 
 =head1 SYNOPSIS
 

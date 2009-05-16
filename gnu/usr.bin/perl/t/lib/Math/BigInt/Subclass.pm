@@ -6,16 +6,14 @@ require 5.005_02;
 use strict;
 
 use Exporter;
-use Math::BigInt (1.64);
-# $lib is for the "lib => " test
+use Math::BigInt(1.56);
 use vars qw($VERSION @ISA $PACKAGE @EXPORT_OK
-	    $lib						
             $accuracy $precision $round_mode $div_scale);
 
 @ISA = qw(Exporter Math::BigInt);
 @EXPORT_OK = qw(bgcd objectify);
 
-$VERSION = 0.04;
+$VERSION = 0.03;
 
 use overload;	# inherit overload from BigInt
 
@@ -23,7 +21,6 @@ use overload;	# inherit overload from BigInt
 $accuracy = $precision = undef;
 $round_mode = 'even';
 $div_scale = 40;
-$lib = '';
 
 sub new
 {
@@ -49,11 +46,6 @@ sub blcm
   Math::BigInt::blcm(@_);
   }
 
-sub as_int
-  {
-  Math::BigInt->new($_[0]);
-  }
-
 BEGIN
   {
   *objectify = \&Math::BigInt::objectify;
@@ -75,8 +67,7 @@ sub import
   my @a; my $t = 0;
   foreach (@_)
     {
-    # remove the "lib => foo" parameters and store it
-    $lib = $_, $t = 0, next if $t == 1;
+    $t = 0, next if $t == 1;
     if ($_ eq 'lib')
       {
       $t = 1; next;

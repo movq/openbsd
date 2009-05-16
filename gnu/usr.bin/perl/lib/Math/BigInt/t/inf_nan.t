@@ -3,9 +3,14 @@
 # test inf/NaN handling all in one place
 # Thanx to Jarkko for the excellent explanations and the tables
 
-use Test::More;
+use Test;
 use strict;
 
+BEGIN
+  {
+  chdir 't' if -d 't';
+  unshift @INC, '../lib';
+  }
 BEGIN
   {
   $| = 1;	
@@ -28,11 +33,9 @@ BEGIN
     }
   print "# INC = @INC\n";
 
-	        # values    groups   operators   classes   tests 
-  plan tests =>   7       * 6      * 5         * 4       * 2 +
-                  7       * 6      * 2         * 4       * 1	  # bmod
-;
-# see bottom:		+ 4 * 10;					  # 4 classes * 10 NaN == NaN tests
+	        # values    groups   oprators   classes   tests 
+  plan tests =>   7       * 6      * 5        * 4       * 2 +
+                  7       * 6      * 2        * 4       * 1;		# bmod
   }
 
 use Math::BigInt;
@@ -106,8 +109,10 @@ foreach (qw/
     $args[2] = '0' if $args[2] eq '-0';		# BigInt/Float hasn't got -0
     my $r = $x->badd($y);
 
-    is($x->bstr(),$args[2],"x $class $args[0] + $args[1]");
-    is($x->bstr(),$args[2],"r $class $args[0] + $args[1]");
+    print "# x $class $args[0] + $args[1] should be $args[2] but is $x\n",
+      if !ok ($x->bstr(),$args[2]);
+    print "# r $class $args[0] + $args[1] should be $args[2] but is $r\n",
+      if !ok ($x->bstr(),$args[2]);
     }
   }
 
@@ -170,8 +175,10 @@ foreach (qw/
     $args[2] = '0' if $args[2] eq '-0';		# BigInt/Float hasn't got -0
     my $r = $x->bsub($y);
 
-    is($x->bstr(),$args[2],"x $class $args[0] - $args[1]");
-    is($r->bstr(),$args[2],"r $class $args[0] - $args[1]");
+    print "# x $class $args[0] - $args[1] should be $args[2] but is $x\n"
+      if !ok ($x->bstr(),$args[2]);
+    print "# r $class $args[0] - $args[1] should be $args[2] but is $r\n"
+      if !ok ($r->bstr(),$args[2]);
     }
   }
 
@@ -235,8 +242,10 @@ foreach (qw/
     $args[2] = '0' if $args[2] eq '-0';	# BigInt hasn't got -0
     my $r = $x->bmul($y);
 
-    is($x->bstr(),$args[2],"x $class $args[0] * $args[1]");
-    is($r->bstr(),$args[2],"r $class $args[0] * $args[1]");
+    print "# x $class $args[0] * $args[1] should be $args[2] but is $x\n"
+      if !ok ($x->bstr(),$args[2]);
+    print "# r $class $args[0] * $args[1] should be $args[2] but is $r\n"
+      if !ok ($r->bstr(),$args[2]);
     }
   }
 
@@ -303,53 +312,30 @@ foreach (qw/
 
     # bdiv in scalar context
     my $r = $x->bdiv($y);
-    is($x->bstr(),$args[2],"x $class $args[0] / $args[1]");
-    is($r->bstr(),$args[2],"r $class $args[0] / $args[1]");
+    print "# x $class $args[0] / $args[1] should be $args[2] but is $x\n"
+      if !ok ($x->bstr(),$args[2]);
+    print "# r $class $args[0] / $args[1] should be $args[2] but is $r\n"
+      if !ok ($r->bstr(),$args[2]);
 
     # bmod and bdiv in list context
     my ($d,$rem) = $t->bdiv($y);
 
     # bdiv in list context
-    is($t->bstr(),$args[2],"t $class $args[0] / $args[1]");
-    is($d->bstr(),$args[2],"d $class $args[0] / $args[1]");
+    print "# t $class $args[0] / $args[1] should be $args[2] but is $t\n"
+      if !ok ($t->bstr(),$args[2]);
+    print "# d $class $args[0] / $args[1] should be $args[2] but is $d\n"
+      if !ok ($d->bstr(),$args[2]);
     
     # bmod
     my $m = $tmod->bmod($y);
 
     # bmod() agrees with bdiv?
-    is($m->bstr(),$rem->bstr(),"m $class $args[0] % $args[1]");
+    print "# m $class $args[0] % $args[1] should be $rem but is $m\n"
+      if !ok ($m->bstr(),$rem->bstr());
     # bmod() return agrees with set value?
-    is($tmod->bstr(),$m->bstr(),"o $class $args[0] % $args[1]");
+    print "# o $class $args[0] % $args[1] should be $m ($rem) but is $tmod\n"
+      if !ok ($tmod->bstr(),$m->bstr());
 
     }
   }
 
-#############################################################################
-# overloaded comparisations
-
-# these are disabled for now, since Perl itself can't seem to make up it's
-# mind what NaN actually is, see [perl #33106].
-
-#
-#foreach my $c (@classes)
-#  {
-#  my $x = $c->bnan();
-#  my $y = $c->bnan();		# test with two different objects, too
-#  my $a = $c->bzero();
-#
-#  is ($x == $y, undef, 'NaN == NaN: undef');
-#  is ($x != $y, 1, 'NaN != NaN: 1');
-#  
-#  is ($x == $x, undef, 'NaN == NaN: undef');
-#  is ($x != $x, 1, 'NaN != NaN: 1');
-#  
-#  is ($a != $x, 1, '0 != NaN: 1');
-#  is ($a == $x, undef, '0 == NaN: undef');
-#
-#  is ($a < $x, undef, '0 < NaN: undef');
-#  is ($a <= $x, undef, '0 <= NaN: undef');
-#  is ($a >= $x, undef, '0 >= NaN: undef');
-#  is ($a > $x, undef, '0 > NaN: undef');
-#  }
-
-# All done.

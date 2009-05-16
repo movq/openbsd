@@ -8,7 +8,7 @@ use Log::Message private => 0;;
 
 =head1 NAME
 
-CPANPLUS::Error - error handling code for CPANPLUS
+CPANPLUS::Error
 
 =head1 SYNOPSIS
 

@@ -14,8 +14,6 @@ BEGIN {
 }
 
 
-use Test::More tests => 29;
-
 use Scalar::Util qw(refaddr);
 use vars qw($t $y $x *F $v $r);
 use Symbol qw(gensym);
@@ -23,40 +21,21 @@ use Symbol qw(gensym);
 # Ensure we do not trigger and tied methods
 tie *F, 'MyTie';
 
+print "1..13\n";
+
 my $i = 1;
 foreach $v (undef, 10, 'string') {
-  is(refaddr($v), undef, "not " . (defined($v) ? "'$v'" : "undef"));
+  print "not " if defined refaddr($v);
+  print "ok ",$i++,"\n";
 }
 
 foreach $r ({}, \$t, [], \*F, sub {}) {
-  my $n = "$r";
-  $n =~ /0x(\w+)/;
-  my $addr = do { local $^W; hex $1 };
-  my $before = ref($r);
-  is( refaddr($r), $addr, $n);
-  is( ref($r), $before, $n);
-
+  my $addr = $r + 0;
+  print "not " unless refaddr($r) == $addr;
+  print "ok ",$i++,"\n";
   my $obj = bless $r, 'FooBar';
-  is( refaddr($r), $addr, "blessed with overload $n");
-  is( ref($r), 'FooBar', $n);
-}
-
-{
-  my $z = '77';
-  my $y = \$z;
-  my $a = '78';
-  my $b = \$a;
-  tie my %x, 'Hash3', {};
-  $x{$y} = 22;
-  $x{$b} = 23;
-  my $xy = $x{$y};
-  my $xb = $x{$b}; 
-  ok(ref($x{$y}));
-  ok(ref($x{$b}));
-  ok(refaddr($xy) == refaddr($y));
-  ok(refaddr($xb) == refaddr($b));
-  ok(refaddr($x{$y}));
-  ok(refaddr($x{$b}));
+  print "not " unless refaddr($r) == $addr;
+  print "ok ",$i++,"\n";
 }
 
 package FooBar;
@@ -72,29 +51,4 @@ sub DESTROY {}
 sub AUTOLOAD {
   warn "$AUTOLOAD called";
   exit 1; # May be in an eval
-}
-
-package Hash3;
-
-use Scalar::Util qw(refaddr);
-
-sub TIEHASH
-{
-	my $pkg = shift;
-	return bless [ @_ ], $pkg;
-}
-sub FETCH
-{
-	my $self = shift;
-	my $key = shift;
-	my ($underlying) = @$self;
-	return $underlying->{refaddr($key)};
-}
-sub STORE
-{
-	my $self = shift;
-	my $key = shift;
-	my $value = shift;
-	my ($underlying) = @$self;
-	return ($underlying->{refaddr($key)} = $key);
 }

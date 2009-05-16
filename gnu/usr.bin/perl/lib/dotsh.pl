@@ -1,13 +1,6 @@
 #
 #   @(#)dotsh.pl                                               03/19/94
 #
-# This library is no longer being maintained, and is included for backward
-# compatibility with Perl 4 programs which may require it.
-#
-# In particular, this should not be used as an example of modern Perl
-# programming techniques.
-#
-#
 #   Author: Charles Collins
 #
 #   Description:
@@ -27,15 +20,13 @@
 #         dependent upon. These variables MUST be defined using shell syntax.
 #
 #   Example:
-#      &dotsh ('/foo/bar', 'arg1');
-#      &dotsh ('/foo/bar');
-#      &dotsh ('/foo/bar arg1 ... argN');
+#      &dotsh ('/tmp/foo', 'arg1');
+#      &dotsh ('/tmp/foo');
+#      &dotsh ('/tmp/foo arg1 ... argN');
 #
 sub dotsh {
    local(@sh) = @_;
-   local($tmp,$key,$shell,$command,$args,$vars) = '';
-   local(*dotsh);
-   undef *dotsh;
+   local($tmp,$key,$shell,*dotsh,$command,$args,$vars) = '';
    $dotsh = shift(@sh);
    @dotsh = split (/\s/, $dotsh);
    $command = shift (@dotsh);
@@ -46,7 +37,7 @@ sub dotsh {
    $shell = "$1 -c" if ($_ =~ /^\#\!\s*(\S+(\/sh|\/ksh|\/zsh|\/csh))\s*$/);
    close (_SH_ENV);
    if (!$shell) {
-      if ($ENV{'SHELL'} =~ /\/sh$|\/ksh$|\/zsh$|\/bash$|\/csh$/) {
+      if ($ENV{'SHELL'} =~ /\/sh$|\/ksh$|\/zsh$|\/csh$/) {
 	 $shell = "$ENV{'SHELL'} -c";
       } else {
 	 print "SHELL not recognized!\nUsing /bin/sh...\n";
@@ -54,17 +45,19 @@ sub dotsh {
       }
    }
    if (length($vars) > 0) {
-      open (_SH_ENV, "$shell \"$vars && . $command $args && set \" |") || die;
+      system "$shell \"$vars;. $command $args; set > /tmp/_sh_env$$\"";
    } else {
-      open (_SH_ENV, "$shell \". $command $args && set \" |") || die;
+      system "$shell \". $command $args; set > /tmp/_sh_env$$\"";
    }
 
+   open (_SH_ENV, "/tmp/_sh_env$$") || die "Could not open /tmp/_sh_env$$!\n";
    while (<_SH_ENV>) {
        chop;
-       m/^([^=]*)=(.*)/s;
-       $ENV{$1} = $2;
+       /=/;
+       $ENV{$`} = $';
    }
    close (_SH_ENV);
+   system "rm -f /tmp/_sh_env$$";
 
    foreach $key (keys(%ENV)) {
        $tmp .= "\$$key = \$ENV{'$key'};" if $key =~ /^[A-Za-z]\w*$/;

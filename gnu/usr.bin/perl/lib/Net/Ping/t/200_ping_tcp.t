@@ -11,7 +11,7 @@ BEGIN {
     print "1..0 \# Skip: no Socket\n";
     exit;
   }
-  unless (getservbyname('echo', 'tcp')) {
+  unless (getservbyname('echo', 'udp')) {
     print "1..0 \# Skip: no echo port\n";
     exit;
   }
@@ -35,7 +35,7 @@ plan tests => 13;
 # Everything loaded fine
 ok 1;
 
-my $p = new Net::Ping "tcp",9;
+my $p = new Net::Ping "tcp";
 
 # new() worked?
 ok !!$p;

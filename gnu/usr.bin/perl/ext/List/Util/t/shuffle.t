@@ -13,24 +13,28 @@ BEGIN {
     }
 }
 
-use Test::More tests => 6;
 
 use List::Util qw(shuffle);
+
+print "1..5\n";
 
 my @r;
 
 @r = shuffle();
-ok( !@r,	'no args');
+print "not " if @r;
+print "ok 1\n";
 
 @r = shuffle(9);
-is( 0+@r,	1,	'1 in 1 out');
-is( $r[0],	9,	'one arg');
+print "not " unless @r == 1 and $r[0] = 9;
+print "ok 2\n";
 
 my @in = 1..100;
 @r = shuffle(@in);
-is( 0+@r,	0+@in,	'arg count');
+print "not " unless @r == @in;
+print "ok 3\n";
 
-isnt( "@r",	"@in",	'result different to args');
+print "not " if join("",@r) eq join("",@in);
+print "ok 4\n";
 
-my @s = sort { $a <=> $b } @r;
-is( "@in",	"@s",	'values');
+print "not " if join("",sort { $a <=> $b } @r) ne join("",@in);
+print "ok 5\n";

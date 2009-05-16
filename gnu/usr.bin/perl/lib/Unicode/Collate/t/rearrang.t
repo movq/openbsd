@@ -5,9 +5,12 @@ BEGIN {
 	    "cannot stringify a Unicode code point\n";
 	exit 0;
     }
+}
+
+BEGIN {
     if ($ENV{PERL_CORE}) {
-	chdir('t') if -d 't';
-	@INC = $^O eq 'MacOS' ? qw(::lib) : qw(../lib);
+        chdir('t') if -d 't';
+        @INC = $^O eq 'MacOS' ? qw(::lib) : qw(../lib);
     }
 }
 
@@ -25,7 +28,6 @@ ok(1);
 my $Collator = Unicode::Collate->new(
   table => 'keys.txt',
   normalization => undef,
-  UCA_Version => 9,
 );
 
 # rearrange : 0x0E40..0x0E44, 0x0EC0..0x0EC4 (default)
@@ -71,7 +73,6 @@ my $no_rearrange = Unicode::Collate->new(
   table => undef,
   normalization => undef,
   rearrange => [],
-  UCA_Version => 9,
 );
 
 ok($no_rearrange->lt("A", "B"));
@@ -86,7 +87,6 @@ my $undef_rearrange = Unicode::Collate->new(
   table => undef,
   normalization => undef,
   rearrange => undef,
-  UCA_Version => 9,
 );
 
 ok($undef_rearrange->lt("A", "B"));

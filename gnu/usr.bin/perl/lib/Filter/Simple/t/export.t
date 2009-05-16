@@ -1,16 +1,12 @@
 BEGIN {
-    if( $ENV{PERL_CORE} ) {
-        chdir 't';
-        @INC = ('../lib', 'lib');
-    }
-    else {
-        unshift @INC, 't/lib/';
+    if ($ENV{PERL_CORE}) {
+        chdir('t') if -d 't';
+	@INC = qw(lib/Filter/Simple ../lib);
     }
 }
-chdir 't';
 
 BEGIN { print "1..1\n" }
 
-use Filter::Simple::ExportTest 'ok';
+use ExportTest 'ok';
 
 notok 1;

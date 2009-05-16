@@ -1,17 +1,12 @@
 BEGIN {
-    if( $ENV{PERL_CORE} ) {
-        chdir 't';
-        @INC = ('../lib', 'lib');
-    }
-    else {
-        unshift @INC, 't/lib';
+    if ($ENV{PERL_CORE}) {
+        chdir('t') if -d 't';
+	@INC = qw(lib/Filter/Simple ../lib);
     }
 }
-chdir 't';
 
 BEGIN { print "1..4\n" }
 
-use lib 'lib';
-use Filter::Simple::ImportTest (1..3);
+use ImportTest (1..3);
 
 say "not ok 4\n";

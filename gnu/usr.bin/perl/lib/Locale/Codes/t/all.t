@@ -12,6 +12,11 @@
 # starting with list of languages/countries/currencies.
 #
 
+BEGIN {
+        chdir 't' if -d 't';
+        @INC = '../lib';
+}
+
 use Locale::Country;
 use Locale::Language;
 use Locale::Currency;

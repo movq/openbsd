@@ -21,5 +21,4 @@ print "1..1\n";
      seek(foo, 0, 0);
      print 'not ' unless <foo> eq "foo 44\n";
      print "ok 1\n";
-     close foo;
 }

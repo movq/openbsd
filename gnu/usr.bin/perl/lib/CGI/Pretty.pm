@@ -10,7 +10,7 @@ package CGI::Pretty;
 use strict;
 use CGI ();
 
-$CGI::Pretty::VERSION = '1.08';
+$CGI::Pretty::VERSION = '1.03';
 $CGI::DefaultClass = __PACKAGE__;
 $CGI::Pretty::AutoloadClass = 'CGI';
 @CGI::Pretty::ISA = qw( CGI );
@@ -19,23 +19,14 @@ initialize_globals();
 
 sub _prettyPrint {
     my $input = shift;
-    return if !$$input;
-    return if !$CGI::Pretty::LINEBREAK || !$CGI::Pretty::INDENT;
-
-#    print STDERR "'", $$input, "'\n";
 
     foreach my $i ( @CGI::Pretty::AS_IS ) {
-	if ( $$input =~ m{</$i>}si ) {
-	    my ( $a, $b, $c ) = $$input =~ m{(.*)(<$i[\s/>].*?</$i>)(.*)}si;
-	    next if !$b;
-	    $a ||= "";
-	    $c ||= "";
-
-	    _prettyPrint( \$a ) if $a;
-	    _prettyPrint( \$c ) if $c;
+	if ( $$input =~ /<\/$i>/si ) {
+	    my ( $a, $b, $c, $d, $e ) = $$input =~ /(.*)<$i(\s?)(.*?)>(.*?)<\/$i>(.*)/si;
+	    _prettyPrint( \$a );
+	    _prettyPrint( \$e );
 	    
-	    $b ||= "";
-	    $$input = "$a$b$c";
+	    $$input = "$a<$i$b$c>$d</$i>$e";
 	    return;
 	}
     }
@@ -46,13 +37,14 @@ sub comment {
     my($self,@p) = CGI::self_or_CGI(@_);
 
     my $s = "@p";
-    $s =~ s/$CGI::Pretty::LINEBREAK/$CGI::Pretty::LINEBREAK$CGI::Pretty::INDENT/g if $CGI::Pretty::LINEBREAK; 
+    $s =~ s/$CGI::Pretty::LINEBREAK/$CGI::Pretty::LINEBREAK$CGI::Pretty::INDENT/g; 
     
     return $self->SUPER::comment( "$CGI::Pretty::LINEBREAK$CGI::Pretty::INDENT$s$CGI::Pretty::LINEBREAK" ) . $CGI::Pretty::LINEBREAK;
 }
 
 sub _make_tag_func {
     my ($self,$tagname) = @_;
+    return $self->SUPER::_make_tag_func($tagname) if $tagname=~/^(start|end)_/;
 
     # As Lincoln as noted, the last else clause is VERY hairy, and it
     # took me a while to figure out what I was trying to do.
@@ -65,74 +57,51 @@ sub _make_tag_func {
     # guru, so if anybody wants to contribute something that would
     # be quicker, easier to read, etc, I would be more than
     # willing to put it in - Brian
+    
+    return qq{
+	sub $tagname { 
+	    # handle various cases in which we're called
+	    # most of this bizarre stuff is to avoid -w errors
+	    shift if \$_[0] && 
+		(!ref(\$_[0]) && \$_[0] eq \$CGI::DefaultClass) ||
+		    (ref(\$_[0]) &&
+		     (substr(ref(\$_[0]),0,3) eq 'CGI' ||
+		    UNIVERSAL::isa(\$_[0],'CGI')));
+	    
+	    my(\$attr) = '';
+	    if (ref(\$_[0]) && ref(\$_[0]) eq 'HASH') {
+		my(\@attr) = make_attributes('',shift);
+		\$attr = " \@attr" if \@attr;
+	    }
 
-    my $func = qq"
-	sub $tagname {";
+	    my(\$tag,\$untag) = ("\U<$tagname\E\$attr>","\U</$tagname>\E");
+	    return \$tag unless \@_;
 
-    $func .= q'
-            shift if $_[0] && 
-                    (ref($_[0]) &&
-                     (substr(ref($_[0]),0,3) eq "CGI" ||
-                    UNIVERSAL::isa($_[0],"CGI")));
-	    my($attr) = "";
-	    if (ref($_[0]) && ref($_[0]) eq "HASH") {
-		my(@attr) = make_attributes(shift()||undef,1);
-		$attr = " @attr" if @attr;
-	    }';
+	    my \@result;
+	    my \$NON_PRETTIFY_ENDTAGS =  join "", map { "</\$_>" } \@CGI::Pretty::AS_IS;
 
-    if ($tagname=~/start_(\w+)/i) {
-	$func .= qq! 
-            return "<\L$1\E\$attr>\$CGI::Pretty::LINEBREAK";} !;
-    } elsif ($tagname=~/end_(\w+)/i) {
-	$func .= qq! 
-            return "<\L/$1\E>\$CGI::Pretty::LINEBREAK"; } !;
-    } else {
-	$func .= qq#
-	    return ( \$CGI::XHTML ? "<\L$tagname\E\$attr />" : "<\L$tagname\E\$attr>" ) .
-                   \$CGI::Pretty::LINEBREAK unless \@_;
-	    my(\$tag,\$untag) = ("<\L$tagname\E\$attr>","</\L$tagname>\E");
-
-            my \%ASIS = map { lc("\$_") => 1 } \@CGI::Pretty::AS_IS;
-            my \@args;
-            if ( \$CGI::Pretty::LINEBREAK || \$CGI::Pretty::INDENT ) {
-   	      if(ref(\$_[0]) eq 'ARRAY') {
-                 \@args = \@{\$_[0]}
-              } else {
-                  foreach (\@_) {
-		      \$args[0] .= \$_;
-                      \$args[0] .= \$CGI::Pretty::LINEBREAK if \$args[0] !~ /\$CGI::Pretty::LINEBREAK\$/ && 0;
-                      chomp \$args[0] if exists \$ASIS{ "\L$tagname\E" };
-                      
-  	              \$args[0] .= \$" if \$args[0] !~ /\$CGI::Pretty::LINEBREAK\$/ && 1;
-		  }
-                  chop \$args[0];
-	      }
-            }
-            else {
-              \@args = ref(\$_[0]) eq 'ARRAY' ? \@{\$_[0]} : "\@_";
-            }
-
-            my \@result;
-            if ( exists \$ASIS{ "\L$tagname\E" } ) {
+	    if ( \$NON_PRETTIFY_ENDTAGS =~ /\$untag/ ) {
 		\@result = map { "\$tag\$_\$untag\$CGI::Pretty::LINEBREAK" } 
-		 \@args;
+		 (ref(\$_[0]) eq 'ARRAY') ? \@{\$_[0]} : "\@_";
 	    }
 	    else {
 		\@result = map { 
 		    chomp; 
-		    my \$tmp = \$_;
-		    CGI::Pretty::_prettyPrint( \\\$tmp );
-                    \$tag . \$CGI::Pretty::LINEBREAK .
-                    \$CGI::Pretty::INDENT . \$tmp . \$CGI::Pretty::LINEBREAK . 
-                    \$untag . \$CGI::Pretty::LINEBREAK
-                } \@args;
+		    if ( \$_ !~ /<\\// ) {
+			s/\$CGI::Pretty::LINEBREAK/\$CGI::Pretty::LINEBREAK\$CGI::Pretty::INDENT/g; 
+		    } 
+		    else {
+			my \$tmp = \$_;
+			CGI::Pretty::_prettyPrint( \\\$tmp );
+			\$_ = \$tmp;
+		    }
+		    "\$tag\$CGI::Pretty::LINEBREAK\$CGI::Pretty::INDENT\$_\$CGI::Pretty::LINEBREAK\$untag\$CGI::Pretty::LINEBREAK" } 
+		(ref(\$_[0]) eq 'ARRAY') ? \@{\$_[0]} : "\@_";
 	    }
-	    local \$" = "" if \$CGI::Pretty::LINEBREAK || \$CGI::Pretty::INDENT;
+	    local \$" = "";
 	    return "\@result";
-	}#;
-    }    
-
-    return $func;
+	}
+    };
 }
 
 sub start_html {
@@ -147,16 +116,7 @@ sub new {
     my $class = shift;
     my $this = $class->SUPER::new( @_ );
 
-    if ($CGI::MOD_PERL) {
-        if ($CGI::MOD_PERL == 1) {
-            my $r = Apache->request;
-            $r->register_cleanup(\&CGI::Pretty::_reset_globals);
-        }
-        else {
-            my $r = Apache2::RequestUtil->request;
-            $r->pool->cleanup_register(\&CGI::Pretty::_reset_globals);
-        }
-    }
+    Apache->request->register_cleanup(\&CGI::Pretty::_reset_globals) if ($CGI::MOD_PERL);
     $class->_reset_globals if $CGI::PERLEX;
 
     return bless $this, $class;
@@ -167,10 +127,10 @@ sub initialize_globals {
     $CGI::Pretty::INDENT = "\t";
     
     # This is the string used for seperation between tags
-    $CGI::Pretty::LINEBREAK = $/;
+    $CGI::Pretty::LINEBREAK = "\n";
 
     # These tags are not prettify'd.
-    @CGI::Pretty::AS_IS = qw( a pre code script textarea td );
+    @CGI::Pretty::AS_IS = qw( A PRE CODE SCRIPT TEXTAREA );
 
     1;
 }

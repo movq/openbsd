@@ -19,7 +19,7 @@ $Params::Check::VERBOSE = 1;
 
 =head1 NAME
 
-CPANPLUS::Module::Checksums - functions for validating distribution checksums
+CPANPLUS::Module::Checksums
 
 =head1 SYNOPSIS
 

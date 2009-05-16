@@ -1,19 +1,14 @@
 #!./perl -w
 
-no strict;
-
 BEGIN {
-    if ($ENV{PERL_CORE}) {
-	@INC = '../lib';
-	chdir 't';
-    }
+    chdir('t') if -d 't';
+    @INC = '../lib';
 }
 
 use Getopt::Long;
-my $want_version="2.24";
-die("Getopt::Long version $want_version required--this is only version ".
+die("Getopt::Long version 2.24 required--this is only version ".
     $Getopt::Long::VERSION)
-  unless $Getopt::Long::VERSION ge $want_version;
+  unless $Getopt::Long::VERSION >= 2.24;
 print "1..9\n";
 
 @ARGV = qw(-Foo -baR --foo bar);

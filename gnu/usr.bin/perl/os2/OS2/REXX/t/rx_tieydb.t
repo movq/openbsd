@@ -9,9 +9,7 @@ BEGIN {
 }
 
 use OS2::REXX;
-$rx = load OS2::REXX "RXU"     # from RXU1a.ZIP
-  or print "1..0 # skipped: cannot find RXU.DLL\n" and exit;
-
+$rx = load OS2::REXX "ydbautil" or die "1..0\n# load\n";    # from RXU17.ZIP
 print "1..7\n", "ok 1\n";
 
 $rx->prefix("Rx");                         # implicit function prefix

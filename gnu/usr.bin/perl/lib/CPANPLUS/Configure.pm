@@ -39,7 +39,7 @@ for my $meth ( qw[conf]) {
 
 =head1 NAME
 
-CPANPLUS::Configure - CPANPLUS configuration file
+CPANPLUS::Configure
 
 =head1 SYNOPSIS
 

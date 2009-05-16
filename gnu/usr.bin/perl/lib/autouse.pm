@@ -1,9 +1,9 @@
 package autouse;
 
 #use strict;		# debugging only
-use 5.006;		# use warnings
+use 5.003_90;		# ->can, for my $var
 
-$autouse::VERSION = '1.06';
+$autouse::VERSION = '1.01';
 
 $autouse::DEBUG ||= 0;
 
@@ -25,7 +25,7 @@ sub import {
 	vet_import $module;
 	local $Exporter::ExportLevel = $Exporter::ExportLevel + 1;
 	# $Exporter::Verbose = 1;
-	return $module->import(map { (my $f = $_) =~ s/\(.*?\)$//; $f } @_);
+	return $module->import(map { (my $f = $_) =~ s/\(.*?\)$// } @_);
     }
 
     # It is not loaded: need to do real work.
@@ -39,7 +39,7 @@ sub import {
 
 	my $closure_import_func = $func;	# Full name
 	my $closure_func = $func;		# Name inside package
-	my $index = rindex($func, '::');
+	my $index = index($func, '::');
 	if ($index == -1) {
 	    $closure_import_func = "${callpkg}::$func";
 	} else {
@@ -50,10 +50,10 @@ sub import {
 
 	my $load_sub = sub {
 	    unless ($INC{$pm}) {
-		require $pm;
+		eval {require $pm};
+		die if $@;
 		vet_import $module;
 	    }
-            no warnings qw(redefine prototype);
 	    *$closure_import_func = \&{"${module}::$closure_func"};
 	    print "autousing $module; "
 		  ."imported $closure_func as $closure_import_func\n"
@@ -62,8 +62,7 @@ sub import {
 	};
 
 	if (defined $proto) {
-	    *$closure_import_func = eval "sub ($proto) { goto &\$load_sub }"
-	        || die;
+	    *$closure_import_func = eval "sub ($proto) { &\$load_sub }";
 	} else {
 	    *$closure_import_func = $load_sub;
 	}
@@ -73,10 +72,9 @@ sub import {
 sub vet_import ($) {
     my $module = shift;
     if (my $import = $module->can('import')) {
-	croak "autoused module $module has unique import() method"
+	croak "autoused module has unique import() method"
 	    unless defined(&Exporter::import)
-		   && ($import == \&Exporter::import ||
-		       $import == \&UNIVERSAL::import)
+		   && $import == \&Exporter::import;
     }
 }
 
@@ -97,40 +95,28 @@ autouse - postpone load of modules until a function is used
 
 If the module C<Module> is already loaded, then the declaration
 
-  use autouse 'Module' => qw(func1 func2($;$));
+  use autouse 'Module' => qw(func1 func2($;$) Module::func3);
 
 is equivalent to
 
   use Module qw(func1 func2);
 
-if C<Module> defines func2() with prototype C<($;$)>, and func1() has
-no prototypes.  (At least if C<Module> uses C<Exporter>'s C<import>,
-otherwise it is a fatal error.)
+if C<Module> defines func2() with prototype C<($;$)>, and func1() and
+func3() have no prototypes.  (At least if C<Module> uses C<Exporter>'s
+C<import>, otherwise it is a fatal error.)
 
 If the module C<Module> is not loaded yet, then the above declaration
-declares functions func1() and func2() in the current package.  When
-these functions are called, they load the package C<Module> if needed,
-and substitute themselves with the correct definitions.
-
-=begin _deprecated
-
-   use Module qw(Module::func3);
-
-will work and is the equivalent to:
-
-   use Module qw(func3);
-
-It is not a very useful feature and has been deprecated.
-
-=end _deprecated
-
+declares functions func1() and func2() in the current package, and
+declares a function Module::func3().  When these functions are called,
+they load the package C<Module> if needed, and substitute themselves
+with the correct definitions.
 
 =head1 WARNING
 
 Using C<autouse> will move important steps of your program's execution
 from compile time to runtime.  This can
 
-=over 4
+=over
 
 =item *
 
@@ -159,6 +145,15 @@ your scripts like this:
 The first line ensures that the errors in your argument specification
 are found early.  When you ship your application you should comment
 out the first line, since it makes the second one useless.
+
+=head1 BUGS
+
+If Module::func3() is autoused, and the module is loaded between the
+C<autouse> directive and a call to Module::func3(), warnings about
+redefinition would appear if warnings are enabled.
+
+If Module::func3() is autoused, warnings are disabled when loading the
+module via autoused functions.
 
 =head1 AUTHOR
 

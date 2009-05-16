@@ -212,6 +212,12 @@ In programs:
 	$digest = $sha->hexdigest;
 	$digest = $sha->b64digest;
 
+From the command line:
+
+	$ shasum files
+
+	$ shasum --help
+
 =head1 SYNOPSIS (HMAC-SHA)
 
 		# Functional interface only

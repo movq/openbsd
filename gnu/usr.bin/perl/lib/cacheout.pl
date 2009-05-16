@@ -1,12 +1,3 @@
-#
-# This library is no longer being maintained, and is included for backward
-# compatibility with Perl 4 programs which may require it.
-#
-# In particular, this should not be used as an example of modern Perl
-# programming techniques.
-#
-# Suggested alternative: FileCache
-
 # Open in their package.
 
 sub cacheout'open {
@@ -44,7 +35,7 @@ $seq = 0;
 $numopen = 0;
 
 if (open(PARAM,'/usr/include/sys/param.h')) {
-    local($_, $.);
+    local($.);
     while (<PARAM>) {
 	$maxopen = $1 - 4 if /^\s*#\s*define\s+NOFILE\s+(\d+)/;
     }

@@ -5,8 +5,12 @@
 # Test a simple open in the cwd and tmpdir foreach of the
 # security levels
 
-use Test;
-BEGIN { plan tests => 13 }
+BEGIN {
+	chdir 't' if -d 't';
+	@INC = '../lib';
+	require Test; import Test;
+	plan(tests => 13);
+}
 
 use strict;
 use File::Spec;
@@ -104,9 +108,7 @@ sub test_security {
       ok( (-e $fname1) );
       push(@files, $fname1); # store for end block
   } elsif (File::Temp->safe_level() != File::Temp::STANDARD) {
-      chomp($@);
-      my $skip2 = "Skip: " . File::Spec->tmpdir() . " possibly insecure:  $@.  " .
-	 "See INSTALL under 'make test'";
+      my $skip2 = "Skip system possibly insecure, see INSTALL, section 'make test'";
       skip($skip2, 1);
       # plus we need an end block so the tests come out in the right order
       eval q{ END { skip($skip2,1); } 1; } || die;
@@ -127,9 +129,7 @@ sub test_security {
       push(@files, $fname2); # store for end block
       close($fh2);
   } elsif (File::Temp->safe_level() != File::Temp::STANDARD) {
-      chomp($@);
-      my $skip2 = "Skip: current directory possibly insecure: $@.  " .
-	 "See INSTALL under 'make test'";
+      my $skip2 = "Skip system possibly insecure, see INSTALL, section 'make test'";
       skip($skip2, 1);
       # plus we need an end block so the tests come out in the right order
       eval q{ END { skip($skip2,1); } 1; } || die;

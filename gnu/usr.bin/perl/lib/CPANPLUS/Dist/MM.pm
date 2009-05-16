@@ -23,7 +23,7 @@ local $Params::Check::VERBOSE = 1;
 
 =head1 NAME
 
-CPANPLUS::Dist::MM - distribution class for MakeMaker
+CPANPLUS::Dist::MM
 
 =head1 SYNOPSIS
 

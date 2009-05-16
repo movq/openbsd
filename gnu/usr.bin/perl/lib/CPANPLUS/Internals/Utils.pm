@@ -17,7 +17,7 @@ local $Params::Check::VERBOSE = 1;
 
 =head1 NAME
 
-CPANPLUS::Internals::Utils - convenience functions for CPANPLUS
+CPANPLUS::Internals::Utils
 
 =head1 SYNOPSIS
 

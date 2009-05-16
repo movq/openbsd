@@ -12,7 +12,7 @@ Each encoding has one "canonical" name.  The "canonical"
 name is chosen from the names of the encoding by picking
 the first in the following sequence (with a few exceptions).
 
-=over 2
+=over 4
 
 =item *
 
@@ -87,14 +87,10 @@ Encode::Unicode, which will be autoloaded on demand.
   UTF-32                                                      [UC]
   UTF-32BE	UCS-4                                         [UC]
   UTF-32LE                                                    [UC]
-  UTF-7                                                  [RFC2152]
   ----------------------------------------------------------------
 
 To find how (UCS-2|UTF-(16|32))(LE|BE)? differ from one another,
 see L<Encode::Unicode>. 
-
-UTF-7 is a special encoding which "re-encodes" UTF-16BE into a 7-bit
-encoding.  It is implemented seperately by Encode::Unicode::UTF7.
 
 =head2 Encode::Byte -- Extended ASCII
 
@@ -103,7 +99,7 @@ Symbols and EBCDIC. The following encodings are based on single-byte
 encodings implemented as extended ASCII.  Most of them map
 \x80-\xff (upper half) to non-ASCII characters.
 
-=over 2
+=over 4
 
 =item ISO-8859 and corresponding vendor mappings
 
@@ -124,8 +120,8 @@ L<http://czyborra.com/charsets/iso8859.html> for details.
                                                 MacCroatian
                                                 MacRomanian
                                                 MacRumanian
-  Latin3[1]     iso-8859-3      
-  Latin4[2]     iso-8859-4              
+  Latin3 [1]    iso-8859-3      
+  Latin4 [2]    iso-8859-4              
   Cyrillics     iso-8859-5      cp855   cp1251  MacCyrillic
     (See also next section)     cp866           MacUkrainian
   Arabic        iso-8859-6      cp864   cp1256  MacArabic
@@ -137,7 +133,7 @@ L<http://czyborra.com/charsets/iso8859.html> for details.
   Nordics       iso-8859-10     cp865
                                 cp861           MacIcelandic
                                                 MacSami
-  Thai          iso-8859-11[3]  cp874           MacThai
+  Thai          iso-8859-11 [3] cp874           MacThai
   (iso-8859-12 is nonexistent. Reserved for Indics?)
   Baltics       iso-8859-13     cp775           cp1257
   Celtics       iso-8859-14
@@ -148,7 +144,7 @@ L<http://czyborra.com/charsets/iso8859.html> for details.
 
   [1] Esperanto, Maltese, and Turkish. Turkish is now on 8859-9.
   [2] Baltics.  Now on 8859-10, except for Latvian.
-  [3] TIS 620 +  Non-Breaking Space (0xA0 / U+00A0)
+  [3] Also know as TIS 620. 
   [4] Nicknamed Latin0; the Euro sign as well as French and Finnish
       letters that are missing from 8859-1 were added.
 
@@ -172,38 +168,13 @@ For gory details, see L<http://czyborra.com/charsets/cyrillic.html>
   koi8-u                                                 [RFC2319]
   ----------------------------------------------------------------
 
-=back
-
-=head2 gsm0338 - Hentai Latin 1
+=item gsm0338 - Hentai Latin 1
 
 GSM0338 is for GSM handsets. Though it shares alphanumerals with
 ASCII, control character ranges and other parts are mapped very
-differently, mainly to store Greek characters.  There are also escape
-sequences (starting with 0x1B) to cover e.g. the Euro sign.  
-
-This was once handled by L<Encode::Bytes> but because of all those
-unusual specifications, Encode 2.20 has relocated the support to
-L<Encode::GSM0338>. See L<Encode::GSM0338> for details.
-
-=over 2
-
-=item gsm0338 support before 2.19
-
-Some special cases like a trailing 0x00 byte or a lone 0x1B byte are not
-well-defined and decode() will return an empty string for them.
-One possible workaround is
-
-   $gsm =~ s/\x00\z/\x00\x00/;
-   $uni = decode("gsm0338", $gsm);
-   $uni .= "\xA0" if $gsm =~ /\x1B\z/;
-
-Note that the Encode implementation of GSM0338 does not implement the
-reuse of Latin capital letters as Greek capital letters (for example,
-the 0x5A is U+005A (LATIN CAPITAL LETTER Z), not U+0396 (GREEK CAPITAL
-LETTER ZETA).
-
-The GSM0338 is also covered in Encode::Byte even though it is not
-an "extended ASCII" encoding.
+differently, presumably to store Greek and Cyrillic alphabets.
+This is also covered in Encode::Byte even though it is not an
+"extended ASCII" encoding.
 
 =back
 
@@ -211,11 +182,11 @@ an "extended ASCII" encoding.
 
 Note that Vietnamese is listed above.  Also read "Encoding vs Charset"
 below.  Also note that these are implemented in distinct modules by
-countries, due to the size concerns (simplified Chinese is mapped
+countries, due the the size concerns (simplified Chinese is mapped
 to 'CN', continental China, while traditional Chinese is mapped to
-'TW', Taiwan).  Please refer to their respective documentation pages.
+'TW', Taiwan).  Please refer to their respective documentataion pages.
 
-=over 2
+=over 4
 
 =item Encode::CN -- Continental China
 
@@ -270,7 +241,7 @@ to 'CN', continental China, while traditional Chinese is mapped to
 
 =item Encode::HanExtra -- More Chinese via CPAN
 
-Due to the size concerns, additional Chinese encodings below are
+Due to size concerns, additional Chinese encodings below are
 distributed separately on CPAN, under the name Encode::HanExtra.
 
   Standard      DOS/Win Macintosh                Comment/Reference
@@ -300,7 +271,7 @@ distributed separately on CPAN, under the name Encode::JIS2K.
 
 =head2 Miscellaneous encodings
 
-=over 2
+=over 4
 
 =item Encode::EBCDIC
 
@@ -330,8 +301,7 @@ For symbols  and dingbats.
 =item Encode::MIME::Header
 
 Strictly speaking, MIME header encoding documented in RFC 2047 is more
-of encapsulation than encoding.  However, their support in modern
-world is imperative so they are supported.
+of encapsulation than encoding.  But included anyway.
 
   ----------------------------------------------------------------
   MIME-Header                                            [RFC2047]
@@ -353,7 +323,7 @@ The following encodings are not supported as yet; some because they
 are rarely used, some because of technical difficulties.  They may
 be supported by external modules via CPAN in the future, however.
 
-=over 2
+=over 4
 
 =item   ISO-2022-JP-2 [RFC1554]
 
@@ -446,7 +416,7 @@ needed, we need to differentiate I<encoding> and I<character set>.
 To understand that, here is a description of how we make computers
 grok our characters.
 
-=over 2
+=over 4
 
 =item *
 
@@ -485,7 +455,7 @@ Technically, or mathematically, speaking, a character set encoded in
 such a CES that maps character by character may form a CCS.  EUC is such
 an example.  The CES of EUC is as follows:
 
-=over 2
+=over 4
 
 =item *
 
@@ -522,7 +492,7 @@ applicability for information exchange over the Internet and to
 choose the most suitable aliases to name them in the context of 
 such communication.
 
-=over 2
+=over 4
 
 =item * 
 
@@ -570,7 +540,7 @@ are IANA-registered C<charset>s. See [RFC 2781] for details.
 Jungshik Shin reports that UTF-16 with a BOM is well accepted
 by MS IE 5/6 and NS 4/6. Beware however that
 
-=over 2
+=over 4
 
 =item *
 
@@ -619,7 +589,7 @@ is a proprietary name.
 
 Microsoft products misuse the following names:
 
-=over 2
+=over 4
 
 =item KS_C_5601-1987
 
@@ -675,8 +645,7 @@ probably has more rights for the name, though it may be objected
 that Microsoft shouldn't have used JIS as part of the name
 in the first place.
 
-Unambiguous name: C<CP932>. C<IANA> name (also used by Mozilla, and
-provided as an alias by Encode): C<Windows-31J>.
+Unambiguous name: C<CP932>. C<IANA> name (not used?): C<Windows-31J>.
 
 Encode separately supports C<Shift_JIS> and C<cp932>.
 
@@ -684,7 +653,7 @@ Encode separately supports C<Shift_JIS> and C<cp932>.
 
 =head1 Glossary
 
-=over 2
+=over 4
 
 =item character repertoire
 
@@ -717,7 +686,7 @@ retained it. This is how [RFC 2277] and [RFC 2278] bless C<charset>:
  scheme; this is also what is used as an identifier in MIME "charset="
  parameters, and registered in the IANA charset registry ...  (Note
  that this is NOT a term used by other standards bodies, such as ISO).
- [RFC 2277]
+                                               [RFC 2277]
 
 =item EUC
 
@@ -775,14 +744,14 @@ L<Encode::MIME::Header>, L<Encode::Guess>
 
 =head1 References
 
-=over 2
+=over 4
 
 =item ECMA
 
 European Computer Manufacturers Association
 L<http://www.ecma.ch>
 
-=over 2
+=over 4
 
 =item ECMA-035 (eq C<ISO-2022>)
 
@@ -797,7 +766,7 @@ The specification of ISO-2022 is available from the link above.
 Internet Assigned Numbers Authority
 L<http://www.iana.org/>
 
-=over 2
+=over 4
 
 =item Assigned Charset Names by IANA
 
@@ -825,7 +794,7 @@ L<http://www.faqs.org/rfcs/>
 Unicode Consortium
 L<http://www.unicode.org/>
 
-=over 2
+=over 4
 
 =item Unicode Glossary
 
@@ -839,13 +808,13 @@ The glossary of this document is based upon this site.
 
 =head2 Other Notable Sites
 
-=over 2
+=over 4
 
 =item czyborra.com
 
 L<http://czyborra.com/>
 
-Contains a lot of useful information, especially gory details of ISO
+Contains a a lot of useful information, especially gory details of ISO
 vs. vendor mappings.
 
 =item CJK.inf
@@ -878,7 +847,7 @@ L<http://www.debian.org/doc/manuals/intro-i18n/ch-codes.en.html>
 
 =head2 Offline sources
 
-=over 2
+=over 4
 
 =item C<CJKV Information Processing> by Ken Lunde
 

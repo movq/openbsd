@@ -1,591 +1,316 @@
 =head1 NAME
 
-perlfaq5 - Files and Formats
+perlfaq5 - Files and Formats ($Revision: 1.22 $, $Date: 1997/04/24 22:44:02 $)
 
 =head1 DESCRIPTION
 
 This section deals with I/O and the "f" issues: filehandles, flushing,
 formats, and footers.
 
-=head2 How do I flush/unbuffer an output filehandle?  Why must I do this?
-X<flush> X<buffer> X<unbuffer> X<autoflush>
-
-Perl does not support truly unbuffered output (except insofar as you
-can C<syswrite(OUT, $char, 1)>), although it does support is "command
-buffering", in which a physical write is performed after every output
-command.
+=head2 How do I flush/unbuffer a filehandle?  Why must I do this?
 
 The C standard I/O library (stdio) normally buffers characters sent to
-devices so that there isn't a system call for each byte. In most stdio
-implementations, the type of output buffering and the size of the
-buffer varies according to the type of device. Perl's C<print()> and
-C<write()> functions normally buffer output, while C<syswrite()>
-bypasses buffering all together.
+devices.  This is done for efficiency reasons, so that there isn't a
+system call for each byte.  Any time you use print() or write() in
+Perl, you go though this buffering.  syswrite() circumvents stdio and
+buffering.
 
-If you want your output to be sent immediately when you execute
-C<print()> or C<write()> (for instance, for some network protocols),
-you must set the handle's autoflush flag. This flag is the Perl
-variable C<$|> and when it is set to a true value, Perl will flush the
-handle's buffer after each C<print()> or C<write()>. Setting C<$|>
-affects buffering only for the currently selected default filehandle.
-You choose this handle with the one argument C<select()> call (see
-L<perlvar/$E<verbar>> and L<perlfunc/select>).
+In most stdio implementations, the type of buffering and the size of
+the buffer varies according to the type of device.  Disk files are block
+buffered, often with a buffer size of more than 2k.  Pipes and sockets
+are often buffered with a buffer size between 1/2 and 2k.  Serial devices
+(e.g. modems, terminals) are normally line-buffered, and stdio sends
+the entire line when it gets the newline.
 
-Use C<select()> to choose the desired handle, then set its
-per-filehandle variables.
+Perl does not support truly unbuffered output (except insofar as you can
+C<syswrite(OUT, $char, 1)>).  What it does instead support is "command
+buffering", in which a physical write is performed after every output
+command.  This isn't as hard on your system as unbuffering, but does
+get the output where you want it when you want it.
 
-	$old_fh = select(OUTPUT_HANDLE);
-	$| = 1;
-	select($old_fh);
+If you expect characters to get to your device when you print them there,
+you'll want to autoflush its handle, as in the older:
 
-Some modules offer object-oriented access to handles and their
-variables, although they may be overkill if this is the only thing you
-do with them.  You can use C<IO::Handle>:
+    use FileHandle;
+    open(DEV, "<+/dev/tty"); 	  # ceci n'est pas une pipe
+    DEV->autoflush(1);
 
-	use IO::Handle;
-	open my( $printer ), ">", "/dev/printer");   # but is this?
-	$printer->autoflush(1);
+or the newer IO::* modules:
 
-or C<IO::Socket> (which inherits from C<IO::Handle>):
+    use IO::Handle;
+    open(DEV, ">/dev/printer");   # but is this?
+    DEV->autoflush(1);
 
-	use IO::Socket;		  # this one is kinda a pipe?
-	my $sock = IO::Socket::INET->new( 'www.example.com:80' );
+or even this:
 
-	$sock->autoflush();
+    use IO::Socket;		  # this one is kinda a pipe?
+    $sock = IO::Socket::INET->new(PeerAddr => 'www.perl.com',
+				  PeerPort => 'http(80)',
+				  Proto    => 'tcp');
+    die "$!" unless $sock;
 
-You can also flush an C<IO::Handle> object without setting
-C<autoflush>. Call the C<flush> method to flush the buffer yourself:
+    $sock->autoflush();
+    $sock->print("GET /\015\012");
+    $document = join('', $sock->getlines());
+    print "DOC IS: $document\n";
 
-	use IO::Handle;
-	open my( $printer ), ">", "/dev/printer"); 
-	$printer->flush; # one time flush
+Note the hardcoded carriage return and newline in their octal
+equivalents.  This is the ONLY way (currently) to assure a proper
+flush on all platforms, including Macintosh.
 
-	
-=head2 How do I change, delete, or insert a line in a file, or append to the beginning of a file?
-X<file, editing>
+You can use select() and the C<$|> variable to control autoflushing
+(see L<perlvar/$|> and L<perlfunc/select>):
 
-(contributed by brian d foy)
+    $oldh = select(DEV);
+    $| = 1;
+    select($oldh);
 
-The basic idea of inserting, changing, or deleting a line from a text
-file involves reading and printing the file to the point you want to
-make the change, making the change, then reading and printing the rest
-of the file. Perl doesn't provide random access to lines (especially
-since the record input separator, C<$/>, is mutable), although modules
-such as C<Tie::File> can fake it.
+You'll also see code that does this without a temporary variable, as in
 
-A Perl program to do these tasks takes the basic form of opening a
-file, printing its lines, then closing the file:
+    select((select(DEV), $| = 1)[0]);
 
-	open my $in,  '<',  $file      or die "Can't read old file: $!";
-	open my $out, '>', "$file.new" or die "Can't write new file: $!";
+=head2 How do I change one line in a file/delete a line in a file/insert a line in the middle of a file/append to the beginning of a file?
 
-	while( <$in> )
-		{
-		print $out $_;
-		}
+Although humans have an easy time thinking of a text file as being a
+sequence of lines that operates much like a stack of playing cards --
+or punch cards -- computers usually see the text file as a sequence of
+bytes.  In general, there's no direct way for Perl to seek to a
+particular line of a file, insert text into a file, or remove text
+from a file.
 
-   close $out;
+(There are exceptions in special circumstances.  Replacing a sequence
+of bytes with another sequence of the same length is one.  Another is
+using the C<$DB_RECNO> array bindings as documented in L<DB_File>.
+Yet another is manipulating files with all lines the same length.)
 
-Within that basic form, add the parts that you need to insert, change,
-or delete lines.
+The general solution is to create a temporary copy of the text file with
+the changes you want, then copy that over the original.
 
-To prepend lines to the beginning, print those lines before you enter
-the loop that prints the existing lines.
+    $old = $file;
+    $new = "$file.tmp.$$";
+    $bak = "$file.bak";
 
-	open my $in,  '<',  $file      or die "Can't read old file: $!";
-	open my $out, '>', "$file.new" or die "Can't write new file: $!";
+    open(OLD, "< $old") 	or die "can't open $old: $!";
+    open(NEW, "> $new") 	or die "can't open $new: $!";
 
-	print "# Add this line to the top\n"; # <--- HERE'S THE MAGIC
+    # Correct typos, preserving case
+    while (<OLD>) {
+	s/\b(p)earl\b/${1}erl/i;
+	(print NEW $_)		or die "can't write to $new: $!";
+    }
 
-	while( <$in> )
-		{
-		print $out $_;
-		}
+    close(OLD)			or die "can't close $old: $!";
+    close(NEW) 			or die "can't close $new: $!";
 
-   close $out;
+    rename($old, $bak)		or die "can't rename $old to $bak: $!";
+    rename($new, $old)		or die "can't rename $new to $old: $!";
 
-To change existing lines, insert the code to modify the lines inside
-the C<while> loop. In this case, the code finds all lowercased
-versions of "perl" and uppercases them. The happens for every line, so
-be sure that you're supposed to do that on every line!
+Perl can do this sort of thing for you automatically with the C<-i>
+command-line switch or the closely-related C<$^I> variable (see
+L<perlrun> for more details).  Note that
+C<-i> may require a suffix on some non-Unix systems; see the
+platform-specific documentation that came with your port.
 
-	open my $in,  '<',  $file      or die "Can't read old file: $!";
-	open my $out, '>', "$file.new" or die "Can't write new file: $!";
+    # Renumber a series of tests from the command line
+    perl -pi -e 's/(^\s+test\s+)\d+/ $1 . ++$count /e' t/op/taint.t
 
-	print "# Add this line to the top\n";
+    # form a script
+    local($^I, @ARGV) = ('.bak', glob("*.c"));
+    while (<>) {
+	if ($. == 1) {
+	    print "This line should appear at the top of each file\n";
+	}
+	s/\b(p)earl\b/${1}erl/i;        # Correct typos, preserving case
+	print;
+	close ARGV if eof;              # Reset $.
+    }
 
-	while( <$in> )
-		{
-		s/\b(perl)\b/Perl/g;
-		print $out $_;
-		}
+If you need to seek to an arbitrary line of a file that changes
+infrequently, you could build up an index of byte positions of where
+the line ends are in the file.  If the file is large, an index of
+every tenth or hundredth line end would allow you to seek and read
+fairly efficiently.  If the file is sorted, try the look.pl library
+(part of the standard perl distribution).
 
-   close $out;
+In the unique case of deleting lines at the end of a file, you
+can use tell() and truncate().  The following code snippet deletes
+the last line of a file without making a copy or reading the
+whole file into memory:
 
-To change only a particular line, the input line number, C<$.>, is
-useful. First read and print the lines up to the one you  want to
-change. Next, read the single line you want to change, change it, and
-print it. After that, read the rest of the lines and print those:
+	open (FH, "+< $file");
+        while ( <FH> ) { $addr = tell(FH) unless eof(FH) }
+        truncate(FH, $addr);
 
-	while( <$in> )   # print the lines before the change
-		{
-		print $out $_;
-		last if $. == 4; # line number before change
-		}
-
-	my $line = <$in>;
-	$line =~ s/\b(perl)\b/Perl/g;
-	print $out $line;
-
-	while( <$in> )   # print the rest of the lines
-		{
-		print $out $_;
-		}
-		
-To skip lines, use the looping controls. The C<next> in this example
-skips comment lines, and the C<last> stops all processing once it
-encounters either C<__END__> or C<__DATA__>.
-
-	while( <$in> )
-		{
-		next if /^\s+#/;             # skip comment lines
-		last if /^__(END|DATA)__$/;  # stop at end of code marker
-		print $out $_;
-		}
-
-Do the same sort of thing to delete a particular line by using C<next>
-to skip the lines you don't want to show up in the output. This
-example skips every fifth line:
-
-	while( <$in> )
-		{
-		next unless $. % 5;
-		print $out $_;
-		}
-
-If, for some odd reason, you really want to see the whole file at once
-rather than processing line by line, you can slurp it in (as long as
-you can fit the whole thing in memory!):
-
-	open my $in,  '<',  $file      or die "Can't read old file: $!"
-	open my $out, '>', "$file.new" or die "Can't write new file: $!";
-
-	my @lines = do { local $/; <$in> }; # slurp!
-
-		# do your magic here
-
-	print $out @lines;
-
-Modules such as C<File::Slurp> and C<Tie::File> can help with that
-too. If you can, however, avoid reading the entire file at once. Perl
-won't give that memory back to the operating system until the process
-finishes.
-
-You can also use Perl one-liners to modify a file in-place. The
-following changes all 'Fred' to 'Barney' in F<inFile.txt>, overwriting
-the file with the new contents. With the C<-p> switch, Perl wraps a
-C<while> loop around the code you specify with C<-e>, and C<-i> turns
-on in-place editing. The current line is in C<$_>. With C<-p>, Perl
-automatically prints the value of C<$_> at the end of the loop. See
-L<perlrun> for more details.
-
-	perl -pi -e 's/Fred/Barney/' inFile.txt
-
-To make a backup of C<inFile.txt>, give C<-i> a file extension to add:
-
-	perl -pi.bak -e 's/Fred/Barney/' inFile.txt
-
-To change only the fifth line, you can add a test checking C<$.>, the
-input line number, then only perform the operation when the test
-passes:
-
-	perl -pi -e 's/Fred/Barney/ if $. == 5' inFile.txt
-
-To add lines before a certain line, you can add a line (or lines!)
-before Perl prints C<$_>:
-
-	perl -pi -e 'print "Put before third line\n" if $. == 3' inFile.txt
-
-You can even add a line to the beginning of a file, since the current
-line prints at the end of the loop:
-
-	perl -pi -e 'print "Put before first line\n" if $. == 1' inFile.txt
-
-To insert a line after one already in the file, use the C<-n> switch.
-It's just like C<-p> except that it doesn't print C<$_> at the end of
-the loop, so you have to do that yourself. In this case, print C<$_>
-first, then print the line that you want to add.
-
-	perl -ni -e 'print; print "Put after fifth line\n" if $. == 5' inFile.txt
-
-To delete lines, only print the ones that you want.
-
-	perl -ni -e 'print unless /d/' inFile.txt
-
-		... or ...
-
-	perl -pi -e 'next unless /d/' inFile.txt
+Error checking is left as an exercise for the reader.
 
 =head2 How do I count the number of lines in a file?
-X<file, counting lines> X<lines> X<line>
 
 One fairly efficient way is to count newlines in the file. The
 following program uses a feature of tr///, as documented in L<perlop>.
 If your text file doesn't end with a newline, then it's not really a
 proper text file, so this may report one fewer line than you expect.
 
-	$lines = 0;
-	open(FILE, $filename) or die "Can't open `$filename': $!";
-	while (sysread FILE, $buffer, 4096) {
-		$lines += ($buffer =~ tr/\n//);
-		}
-	close FILE;
-
-This assumes no funny games with newline translations.
-
-=head2 How can I use Perl's C<-i> option from within a program?
-X<-i> X<in-place>
-
-C<-i> sets the value of Perl's C<$^I> variable, which in turn affects
-the behavior of C<< <> >>; see L<perlrun> for more details.  By
-modifying the appropriate variables directly, you can get the same
-behavior within a larger program.  For example:
-
-	# ...
-	{
-	local($^I, @ARGV) = ('.orig', glob("*.c"));
-	while (<>) {
-		if ($. == 1) {
-			print "This line should appear at the top of each file\n";
-		}
-		s/\b(p)earl\b/${1}erl/i;        # Correct typos, preserving case
-		print;
-		close ARGV if eof;              # Reset $.
-		}
-	}
-	# $^I and @ARGV return to their old values here
-
-This block modifies all the C<.c> files in the current directory,
-leaving a backup of the original data from each file in a new
-C<.c.orig> file.
-
-=head2 How can I copy a file?
-X<copy> X<file, copy>
-
-(contributed by brian d foy)
-
-Use the File::Copy module. It comes with Perl and can do a
-true copy across file systems, and it does its magic in
-a portable fashion.
-
-	use File::Copy;
-
-	copy( $original, $new_copy ) or die "Copy failed: $!";
-
-If you can't use File::Copy, you'll have to do the work yourself:
-open the original file, open the destination file, then print
-to the destination file as you read the original.
+    $lines = 0;
+    open(FILE, $filename) or die "Can't open `$filename': $!";
+    while (sysread FILE, $buffer, 4096) {
+	$lines += ($buffer =~ tr/\n//);
+    }
+    close FILE;
 
 =head2 How do I make a temporary file name?
-X<file, temporary>
 
-If you don't need to know the name of the file, you can use C<open()>
-with C<undef> in place of the file name.  The C<open()> function
-creates an anonymous temporary file.
+Use the process ID and/or the current time-value.  If you need to have
+many temporary files in one process, use a counter:
 
-	open my $tmp, '+>', undef or die $!;
-
-Otherwise, you can use the File::Temp module.
-
-	use File::Temp qw/ tempfile tempdir /;
-
-	$dir = tempdir( CLEANUP => 1 );
-	($fh, $filename) = tempfile( DIR => $dir );
-
-	# or if you don't need to know the filename
-
-	$fh = tempfile( DIR => $dir );
-
-The File::Temp has been a standard module since Perl 5.6.1.  If you
-don't have a modern enough Perl installed, use the C<new_tmpfile>
-class method from the IO::File module to get a filehandle opened for
-reading and writing.  Use it if you don't need to know the file's name:
-
+    BEGIN {
 	use IO::File;
-	$fh = IO::File->new_tmpfile()
-	or die "Unable to make new temporary file: $!";
-
-If you're committed to creating a temporary file by hand, use the
-process ID and/or the current time-value.  If you need to have many
-temporary files in one process, use a counter:
-
-	BEGIN {
 	use Fcntl;
-	my $temp_dir = -d '/tmp' ? '/tmp' : $ENV{TMPDIR} || $ENV{TEMP};
-	my $base_name = sprintf "%s/%d-%d-0000", $temp_dir, $$, time;
-
+	my $temp_dir = -d '/tmp' ? '/tmp' : $ENV{TMP} || $ENV{TEMP};
+	my $base_name = sprintf("%s/%d-%d-0000", $temp_dir, $$, time());
 	sub temp_file {
-		local *FH;
-		my $count = 0;
-		until( defined(fileno(FH)) || $count++ > 100 ) {
-			$base_name =~ s/-(\d+)$/"-" . (1 + $1)/e;
-			# O_EXCL is required for security reasons.
-			sysopen FH, $base_name, O_WRONLY|O_EXCL|O_CREAT;
-			}
-
-		if( defined fileno(FH) ) {
-			return (*FH, $base_name);
-			}
-		else {
-			return ();
-			}
-		}
-		
+	    my $fh = undef;
+	    my $count = 0;
+	    until (defined($fh) || $count > 100) {
+		$base_name =~ s/-(\d+)$/"-" . (1 + $1)/e;
+		$fh = IO::File->new($base_name, O_WRONLY|O_EXCL|O_CREAT, 0644)
+	    }
+	    if (defined($fh)) {
+		return ($fh, $base_name);
+	    } else {
+		return ();
+	    }
 	}
+    }
+
+Or you could simply use IO::Handle::new_tmpfile.
 
 =head2 How can I manipulate fixed-record-length files?
-X<fixed-length> X<file, fixed-length records>
 
-The most efficient way is using L<pack()|perlfunc/"pack"> and
-L<unpack()|perlfunc/"unpack">.  This is faster than using
-L<substr()|perlfunc/"substr"> when taking many, many strings.  It is
-slower for just a few.
+The most efficient way is using pack() and unpack().  This is faster
+than using substr().  Here is a sample chunk of code to break up and
+put back together again some fixed-format input lines, in this case
+from the output of a normal, Berkeley-style ps:
 
-Here is a sample chunk of code to break up and put back together again
-some fixed-format input lines, in this case from the output of a normal,
-Berkeley-style ps:
-
-	# sample input line:
-	#   15158 p5  T      0:00 perl /home/tchrist/scripts/now-what
-	my $PS_T = 'A6 A4 A7 A5 A*';
-	open my $ps, '-|', 'ps';
-	print scalar <$ps>;
-	my @fields = qw( pid tt stat time command );
-	while (<$ps>) {
-		my %process;
-		@process{@fields} = unpack($PS_T, $_);
-	for my $field ( @fields ) {
-		print "$field: <$process{$field}>\n";
+    # sample input line:
+    #   15158 p5  T      0:00 perl /home/tchrist/scripts/now-what
+    $PS_T = 'A6 A4 A7 A5 A*';
+    open(PS, "ps|");
+    $_ = <PS>; print;
+    while (<PS>) {
+	($pid, $tt, $stat, $time, $command) = unpack($PS_T, $_);
+	for $var (qw!pid tt stat time command!) {
+	    print "$var: <$$var>\n";
 	}
-	print 'line=', pack($PS_T, @process{@fields} ), "\n";
-	}
-
-We've used a hash slice in order to easily handle the fields of each row.
-Storing the keys in an array means it's easy to operate on them as a
-group or loop over them with for. It also avoids polluting the program
-with global variables and using symbolic references.
+	print 'line=', pack($PS_T, $pid, $tt, $stat, $time, $command),
+		"\n";
+    }
 
 =head2 How can I make a filehandle local to a subroutine?  How do I pass filehandles between subroutines?  How do I make an array of filehandles?
-X<filehandle, local> X<filehandle, passing> X<filehandle, reference>
 
-As of perl5.6, open() autovivifies file and directory handles
-as references if you pass it an uninitialized scalar variable.
-You can then pass these references just like any other scalar,
-and use them in the place of named handles.
+You may have some success with typeglobs, as we always had to use
+in days of old:
 
-	open my    $fh, $file_name;
+    local(*FH);
 
-	open local $fh, $file_name;
+But while still supported, that isn't the best to go about getting
+local filehandles.  Typeglobs have their drawbacks.  You may well want
+to use the C<FileHandle> module, which creates new filehandles for you
+(see L<FileHandle>):
 
-	print $fh "Hello World!\n";
-
-	process_file( $fh );
-
-If you like, you can store these filehandles in an array or a hash.
-If you access them directly, they aren't simple scalars and you
-need to give C<print> a little help by placing the filehandle
-reference in braces. Perl can only figure it out on its own when
-the filehandle reference is a simple scalar.
-
-	my @fhs = ( $fh1, $fh2, $fh3 );
-
-	for( $i = 0; $i <= $#fhs; $i++ ) {
-		print {$fhs[$i]} "just another Perl answer, \n";
-		}
-
-Before perl5.6, you had to deal with various typeglob idioms
-which you may see in older code.
-
-	open FILE, "> $filename";
-	process_typeglob(   *FILE );
-	process_reference( \*FILE );
-
-	sub process_typeglob  { local *FH = shift; print FH  "Typeglob!" }
-	sub process_reference { local $fh = shift; print $fh "Reference!" }
-
-If you want to create many anonymous handles, you should
-check out the Symbol or IO::Handle modules.
-
-=head2 How can I use a filehandle indirectly?
-X<filehandle, indirect>
-
-An indirect filehandle is using something other than a symbol
-in a place that a filehandle is expected.  Here are ways
-to get indirect filehandles:
-
-	$fh =   SOME_FH;       # bareword is strict-subs hostile
-	$fh =  "SOME_FH";      # strict-refs hostile; same package only
-	$fh =  *SOME_FH;       # typeglob
-	$fh = \*SOME_FH;       # ref to typeglob (bless-able)
-	$fh =  *SOME_FH{IO};   # blessed IO::Handle from *SOME_FH typeglob
-
-Or, you can use the C<new> method from one of the IO::* modules to
-create an anonymous filehandle, store that in a scalar variable,
-and use it as though it were a normal filehandle.
-
-	use IO::Handle;                     # 5.004 or higher
-	$fh = IO::Handle->new();
-
-Then use any of those as you would a normal filehandle.  Anywhere that
-Perl is expecting a filehandle, an indirect filehandle may be used
-instead. An indirect filehandle is just a scalar variable that contains
-a filehandle.  Functions like C<print>, C<open>, C<seek>, or
-the C<< <FH> >> diamond operator will accept either a named filehandle
-or a scalar variable containing one:
-
-	($ifh, $ofh, $efh) = (*STDIN, *STDOUT, *STDERR);
-	print $ofh "Type it: ";
-	$got = <$ifh>
-	print $efh "What was that: $got";
-
-If you're passing a filehandle to a function, you can write
-the function in two ways:
-
-	sub accept_fh {
-		my $fh = shift;
-		print $fh "Sending to indirect filehandle\n";
+    use FileHandle;
+    sub findme {
+        my $fh = FileHandle->new();
+	open($fh, "</etc/hosts") or die "no /etc/hosts: $!";
+        while (<$fh>) {
+	    print if /\b127\.(0\.0\.)?1\b/;
 	}
+	# $fh automatically closes/disappears here
+    }
 
-Or it can localize a typeglob and use the filehandle directly:
+Internally, Perl believes filehandles to be of class IO::Handle.  You
+may use that module directly if you'd like (see L<IO::Handle>), or
+one of its more specific derived classes.
 
-	sub accept_fh {
-		local *FH = shift;
-		print  FH "Sending to localized filehandle\n";
-	}
+Once you have IO::File or FileHandle objects, you can pass them
+between subroutines or store them in hashes as you would any other
+scalar values:
 
-Both styles work with either objects or typeglobs of real filehandles.
-(They might also work with strings under some circumstances, but this
-is risky.)
+    use FileHandle;
 
-	accept_fh(*STDOUT);
-	accept_fh($handle);
+    # Storing filehandles in a hash and array
+    foreach $filename (@names) {
+        my $fh = new FileHandle($filename)		or die;
+        $file{$filename} = $fh;
+        push(@files, $fh);
+    }
 
-In the examples above, we assigned the filehandle to a scalar variable
-before using it.  That is because only simple scalar variables, not
-expressions or subscripts of hashes or arrays, can be used with
-built-ins like C<print>, C<printf>, or the diamond operator.  Using
-something other than a simple scalar variable as a filehandle is
-illegal and won't even compile:
+    # Using the filehandles in the array
+    foreach $file (@files) {
+	print $file "Testing\n";
+    }
 
-	@fd = (*STDIN, *STDOUT, *STDERR);
-	print $fd[1] "Type it: ";                           # WRONG
-	$got = <$fd[0]>                                     # WRONG
-	print $fd[2] "What was that: $got";                 # WRONG
+    # You have to do the { } ugliness when you're specifying the
+    # filehandle by anything other than a simple scalar variable.
+    print { $files[2] } "Testing\n";
 
-With C<print> and C<printf>, you get around this by using a block and
-an expression where you would place the filehandle:
+    # Passing filehandles to subroutines
+    sub debug {
+	my $filehandle = shift;
+	printf $filehandle "DEBUG: ", @_;
+    }
 
-	print  { $fd[1] } "funny stuff\n";
-	printf { $fd[1] } "Pity the poor %x.\n", 3_735_928_559;
-	# Pity the poor deadbeef.
-
-That block is a proper block like any other, so you can put more
-complicated code there.  This sends the message out to one of two places:
-
-	$ok = -x "/bin/cat";
-	print { $ok ? $fd[1] : $fd[2] } "cat stat $ok\n";
-	print { $fd[ 1+ ($ok || 0) ]  } "cat stat $ok\n";
-
-This approach of treating C<print> and C<printf> like object methods
-calls doesn't work for the diamond operator.  That's because it's a
-real operator, not just a function with a comma-less argument.  Assuming
-you've been storing typeglobs in your structure as we did above, you
-can use the built-in function named C<readline> to read a record just
-as C<< <> >> does.  Given the initialization shown above for @fd, this
-would work, but only because readline() requires a typeglob.  It doesn't
-work with objects or strings, which might be a bug we haven't fixed yet.
-
-	$got = readline($fd[0]);
-
-Let it be noted that the flakiness of indirect filehandles is not
-related to whether they're strings, typeglobs, objects, or anything else.
-It's the syntax of the fundamental operators.  Playing the object
-game doesn't help you at all here.
+    debug($fh, "Testing\n");
 
 =head2 How can I set up a footer format to be used with write()?
-X<footer>
 
 There's no builtin way to do this, but L<perlform> has a couple of
 techniques to make it possible for the intrepid hacker.
 
 =head2 How can I write() into a string?
-X<write, into a string>
 
-See L<perlform/"Accessing Formatting Internals"> for an C<swrite()> function.
+See L<perlform> for an swrite() function.
 
-=head2 How can I open a filehandle to a string?
-X<string>, X<open>, X<IO::Scalar>, X<filehandle>
-
-(contributed by Peter J. Holzer, hjp-usenet2@hjp.at)
-
-Since Perl 5.8.0, you can pass a reference to a scalar instead of the
-filename to create a file handle which you can used to read from or write to
-a string:
-
-	open(my $fh, '>', \$string) or die "Could not open string for writing";
-	print $fh "foo\n";
-	print $fh "bar\n";	# $string now contains "foo\nbar\n"
-
-	open(my $fh, '<', \$string) or die "Could not open string for reading";
-	my $x = <$fh>;	# $x now contains "foo\n"
-
-With older versions of Perl, the C<IO::String> module provides similar
-functionality.
-    
 =head2 How can I output my numbers with commas added?
-X<number, commify>
 
-(contributed by brian d foy and Benjamin Goldberg)
+This one will do it for you:
 
-You can use L<Number::Format> to separate places in a number.
-It handles locale information for those of you who want to insert
-full stops instead (or anything else that they want to use,
-really).
+    sub commify {
+	local $_  = shift;
+	1 while s/^(-?\d+)(\d{3})/$1,$2/;
+	return $_;
+    }
 
-This subroutine will add commas to your number:
+    $n = 23659019423.2331;
+    print "GOT: ", commify($n), "\n";
 
-	sub commify {
-		local $_  = shift;
-		1 while s/^([-+]?\d+)(\d{3})/$1,$2/;
-		return $_;
-		}
+    GOT: 23,659,019,423.2331
 
-This regex from Benjamin Goldberg will add commas to numbers:
+You can't just:
 
-	s/(^[-+]?\d+?(?=(?>(?:\d{3})+)(?!\d))|\G\d{3}(?=\d))/$1,/g;
+    s/^(-?\d+)(\d{3})/$1,$2/g;
 
-It is easier to see with comments:
+because you have to put the comma in and then recalculate your
+position.
 
-	s/(
-		^[-+]?             # beginning of number.
-		\d+?               # first digits before first comma
-		(?=                # followed by, (but not included in the match) :
-			(?>(?:\d{3})+) # some positive multiple of three digits.
-			(?!\d)         # an *exact* multiple, not x * 3 + 1 or whatever.
-		)
-		|                  # or:
-		\G\d{3}            # after the last group, get three digits
-		(?=\d)             # but they have to have more digits after them.
-	)/$1,/xg;
+Alternatively, this commifies all numbers in a line regardless of
+whether they have decimal portions, are preceded by + or -, or
+whatever:
+
+    # from Andrew Johnson <ajohnson@gpu.srv.ualberta.ca>
+    sub commify {
+       my $input = shift;
+        $input = reverse $input;
+        $input =~ s<(\d\d\d)(?=\d)(?!\d*\.)><$1,>g;
+        return reverse $input;
+    }
 
 =head2 How can I translate tildes (~) in a filename?
-X<tilde> X<tilde expansion>
 
-Use the <> (glob()) operator, documented in L<perlfunc>.  Older
-versions of Perl require that you have a shell installed that groks
-tildes.  Recent perl versions have this feature built in. The
-File::KGlob module (available from CPAN) gives more portable glob
-functionality.
+Use the E<lt>E<gt> (glob()) operator, documented in L<perlfunc>.  This
+requires that you have a shell installed that groks tildes, meaning
+csh or tcsh or (some versions of) ksh, and thus may have portability
+problems.  The Glob::KGlob module (available from CPAN) gives more
+portable glob functionality.
 
 Within Perl, you may use this directly:
 
@@ -601,137 +326,79 @@ Within Perl, you may use this directly:
 	      : ( $ENV{HOME} || $ENV{LOGDIR} )
 	}ex;
 
-=head2 How come when I open a file read-write it wipes it out?
-X<clobber> X<read-write> X<clobbering> X<truncate> X<truncating>
+=head2 How come when I open the file read-write it wipes it out?
 
 Because you're using something like this, which truncates the file and
 I<then> gives you read-write access:
 
-	open(FH, "+> /path/name");		# WRONG (almost always)
+    open(FH, "+> /path/name");	# WRONG
 
 Whoops.  You should instead use this, which will fail if the file
 doesn't exist.
 
-	open(FH, "+< /path/name");  	# open for update
+    open(FH, "+< /path/name");	# open for update
 
-Using ">" always clobbers or creates.  Using "<" never does
-either.  The "+" doesn't change this.
+If this is an issue, try:
 
-Here are examples of many kinds of file opens.  Those using sysopen()
-all assume
+    sysopen(FH, "/path/name", O_RDWR|O_CREAT, 0644);
 
-	use Fcntl;
+Error checking is left as an exercise for the reader.
 
-To open file for reading:
+=head2 Why do I sometimes get an "Argument list too long" when I use <*>?
 
-	open(FH, "< $path")                                 || die $!;
-	sysopen(FH, $path, O_RDONLY)                        || die $!;
-
-To open file for writing, create new file if needed or else truncate old file:
-
-	open(FH, "> $path") || die $!;
-	sysopen(FH, $path, O_WRONLY|O_TRUNC|O_CREAT)        || die $!;
-	sysopen(FH, $path, O_WRONLY|O_TRUNC|O_CREAT, 0666)  || die $!;
-
-To open file for writing, create new file, file must not exist:
-
-	sysopen(FH, $path, O_WRONLY|O_EXCL|O_CREAT)         || die $!;
-	sysopen(FH, $path, O_WRONLY|O_EXCL|O_CREAT, 0666)   || die $!;
-
-To open file for appending, create if necessary:
-
-	open(FH, ">> $path") || die $!;
-	sysopen(FH, $path, O_WRONLY|O_APPEND|O_CREAT)       || die $!;
-	sysopen(FH, $path, O_WRONLY|O_APPEND|O_CREAT, 0666) || die $!;
-
-To open file for appending, file must exist:
-
-	sysopen(FH, $path, O_WRONLY|O_APPEND)               || die $!;
-
-To open file for update, file must exist:
-
-	open(FH, "+< $path")                                || die $!;
-	sysopen(FH, $path, O_RDWR)                          || die $!;
-
-To open file for update, create file if necessary:
-
-	sysopen(FH, $path, O_RDWR|O_CREAT)                  || die $!;
-	sysopen(FH, $path, O_RDWR|O_CREAT, 0666)            || die $!;
-
-To open file for update, file must not exist:
-
-	sysopen(FH, $path, O_RDWR|O_EXCL|O_CREAT)           || die $!;
-	sysopen(FH, $path, O_RDWR|O_EXCL|O_CREAT, 0666)     || die $!;
-
-To open a file without blocking, creating if necessary:
-
-	sysopen(FH, "/foo/somefile", O_WRONLY|O_NDELAY|O_CREAT)
-	    or die "can't open /foo/somefile: $!":
-
-Be warned that neither creation nor deletion of files is guaranteed to
-be an atomic operation over NFS.  That is, two processes might both
-successfully create or unlink the same file!  Therefore O_EXCL
-isn't as exclusive as you might wish.
-
-See also the new L<perlopentut> if you have it (new for 5.6).
-
-=head2 Why do I sometimes get an "Argument list too long" when I use E<lt>*E<gt>?
-X<argument list too long>
-
-The C<< <> >> operator performs a globbing operation (see above).
-In Perl versions earlier than v5.6.0, the internal glob() operator forks
-csh(1) to do the actual glob expansion, but
+The C<E<lt>E<gt>> operator performs a globbing operation (see above).
+By default glob() forks csh(1) to do the actual glob expansion, but
 csh can't handle more than 127 items and so gives the error message
 C<Argument list too long>.  People who installed tcsh as csh won't
 have this problem, but their users may be surprised by it.
 
-To get around this, either upgrade to Perl v5.6.0 or later, do the glob
-yourself with readdir() and patterns, or use a module like File::KGlob,
-one that doesn't use the shell to do globbing.
+To get around this, either do the glob yourself with C<Dirhandle>s and
+patterns, or use a module like Glob::KGlob, one that doesn't use the
+shell to do globbing.
 
 =head2 Is there a leak/bug in glob()?
-X<glob>
 
 Due to the current implementation on some operating systems, when you
 use the glob() function or its angle-bracket alias in a scalar
-context, you may cause a memory leak and/or unpredictable behavior.  It's
+context, you may cause a leak and/or unpredictable behavior.  It's
 best therefore to use glob() only in list context.
 
-=head2 How can I open a file with a leading ">" or trailing blanks?
-X<filename, special characters>
+=head2 How can I open a file with a leading "E<gt>" or trailing blanks?
 
-(contributed by Brian McCauley)
+Normally perl ignores trailing blanks in filenames, and interprets
+certain leading characters (or a trailing "|") to mean something
+special.  To avoid this, you might want to use a routine like this.
+It makes incomplete pathnames into explicit relative ones, and tacks a
+trailing null byte on the name to make perl leave it alone:
 
-The special two argument form of Perl's open() function ignores
-trailing blanks in filenames and infers the mode from certain leading
-characters (or a trailing "|"). In older versions of Perl this was the
-only version of open() and so it is prevalent in old code and books.
+    sub safe_filename {
+	local $_  = shift;
+	return m#^/#
+		? "$_\0"
+		: "./$_\0";
+    }
 
-Unless you have a particular reason to use the two argument form you
-should use the three argument form of open() which does not treat any
-characters in the filename as special.
+    $fn = safe_filename("<<<something really wicked   ");
+    open(FH, "> $fn") or "couldn't open $fn: $!";
 
-	open FILE, "<", "  file  ";  # filename is "   file   "
-	open FILE, ">", ">file";     # filename is ">file"
+You could also use the sysopen() function (see L<perlfunc/sysopen>).
 
 =head2 How can I reliably rename a file?
-X<rename> X<mv> X<move> X<file, rename> X<ren>
 
-If your operating system supports a proper mv(1) utility or its
-functional equivalent, this works:
+Well, usually you just use Perl's rename() function.  But that may
+not work everywhere, in particular, renaming files across file systems.
+If your operating system supports a mv(1) program or its moral equivalent,
+this works:
 
-	rename($old, $new) or system("mv", $old, $new);
+    rename($old, $new) or system("mv", $old, $new);
 
-It may be more portable to use the File::Copy module instead.
-You just copy to the new file to the new name (checking return
-values), then delete the old one.  This isn't really the same
-semantically as a rename(), which preserves meta-information like
+It may be more compelling to use the File::Copy module instead.  You
+just copy to the new file to the new name (checking return values),
+then delete the old one.  This isn't really the same semantics as a
+real rename(), though, which preserves metainformation like
 permissions, timestamps, inode info, etc.
 
-Newer versions of File::Copy export a move() function.
-
 =head2 How can I lock a file?
-X<lock> X<file, lock> X<flock>
 
 Perl's builtin flock() function (see L<perlfunc> for details) will call
 flock(2) if that exists, fcntl(2) if it doesn't (on perl version 5.004 and
@@ -753,289 +420,181 @@ filehandle be open for writing (or appending, or read/writing).
 
 =item 3
 
-Some versions of flock() can't lock files over a network (e.g. on NFS file
-systems), so you'd need to force the use of fcntl(2) when you build Perl.
-But even this is dubious at best.  See the flock entry of L<perlfunc>
-and the F<INSTALL> file in the source distribution for information on
-building Perl to do this.
-
-Two potentially non-obvious but traditional flock semantics are that
-it waits indefinitely until the lock is granted, and that its locks are
-I<merely advisory>.  Such discretionary locks are more flexible, but
-offer fewer guarantees.  This means that files locked with flock() may
-be modified by programs that do not also use flock().  Cars that stop
-for red lights get on well with each other, but not with cars that don't
-stop for red lights.  See the perlport manpage, your port's specific
-documentation, or your system-specific local manpages for details.  It's
-best to assume traditional behavior if you're writing portable programs.
-(If you're not, you should as always feel perfectly free to write
-for your own system's idiosyncrasies (sometimes called "features").
-Slavish adherence to portability concerns shouldn't get in the way of
-your getting your job done.)
-
-For more information on file locking, see also
-L<perlopentut/"File Locking"> if you have it (new for 5.6).
+Some versions of flock() can't lock files over a network (e.g. on NFS
+file systems), so you'd need to force the use of fcntl(2) when you
+build Perl.  See the flock entry of L<perlfunc>, and the F<INSTALL>
+file in the source distribution for information on building Perl to do
+this.
 
 =back
 
-=head2 Why can't I just open(FH, "E<gt>file.lock")?
-X<lock, lockfile race condition>
+The CPAN module File::Lock offers similar functionality and (if you
+have dynamic loading) won't require you to rebuild perl if your
+flock() can't lock network files.
+
+=head2 What can't I just open(FH, ">file.lock")?
 
 A common bit of code B<NOT TO USE> is this:
 
-	sleep(3) while -e "file.lock";	# PLEASE DO NOT USE
-	open(LCK, "> file.lock");		# THIS BROKEN CODE
+    sleep(3) while -e "file.lock";	# PLEASE DO NOT USE
+    open(LCK, "> file.lock");		# THIS BROKEN CODE
 
 This is a classic race condition: you take two steps to do something
 which must be done in one.  That's why computer hardware provides an
 atomic test-and-set instruction.   In theory, this "ought" to work:
 
-	sysopen(FH, "file.lock", O_WRONLY|O_EXCL|O_CREAT)
-		or die "can't open  file.lock: $!";
+    sysopen(FH, "file.lock", O_WRONLY|O_EXCL|O_CREAT, 0644)
+		or die "can't open  file.lock: $!":
 
 except that lamentably, file creation (and deletion) is not atomic
 over NFS, so this won't work (at least, not every time) over the net.
-Various schemes involving link() have been suggested, but
-these tend to involve busy-wait, which is also less than desirable.
+Various schemes involving involving link() have been suggested, but
+these tend to involve busy-wait, which is also subdesirable.
 
 =head2 I still don't get locking.  I just want to increment the number in the file.  How can I do this?
-X<counter> X<file, counter>
 
 Didn't anyone ever tell you web-page hit counters were useless?
-They don't count number of hits, they're a waste of time, and they serve
-only to stroke the writer's vanity.  It's better to pick a random number;
-they're more realistic.
 
-Anyway, this is what you can do if you can't help yourself.
+Anyway, this is what to do:
 
-	use Fcntl qw(:DEFAULT :flock);
-	sysopen(FH, "numfile", O_RDWR|O_CREAT) 	 or die "can't open numfile: $!";
-	flock(FH, LOCK_EX) 				 or die "can't flock numfile: $!";
-	$num = <FH> || 0;
-	seek(FH, 0, 0) 				 or die "can't rewind numfile: $!";
-	truncate(FH, 0) 				 or die "can't truncate numfile: $!";
-	(print FH $num+1, "\n")			 or die "can't write numfile: $!";
-	close FH 					 or die "can't close numfile: $!";
+    use Fcntl;
+    sysopen(FH, "numfile", O_RDWR|O_CREAT, 0644) or die "can't open numfile: $!";
+    flock(FH, 2) 				 or die "can't flock numfile: $!";
+    $num = <FH> || 0;
+    seek(FH, 0, 0) 				 or die "can't rewind numfile: $!";
+    truncate(FH, 0) 				 or die "can't truncate numfile: $!";
+    (print FH $num+1, "\n")			 or die "can't write numfile: $!";
+    # DO NOT UNLOCK THIS UNTIL YOU CLOSE
+    close FH 					 or die "can't close numfile: $!";
 
 Here's a much better web-page hit counter:
 
-	$hits = int( (time() - 850_000_000) / rand(1_000) );
+    $hits = int( (time() - 850_000_000) / rand(1_000) );
 
 If the count doesn't impress your friends, then the code might.  :-)
 
-=head2 All I want to do is append a small amount of text to the end of a file.  Do I still have to use locking?
-X<append> X<file, append>
-
-If you are on a system that correctly implements flock() and you use the
-example appending code from "perldoc -f flock" everything will be OK
-even if the OS you are on doesn't implement append mode correctly (if
-such a system exists.) So if you are happy to restrict yourself to OSs
-that implement flock() (and that's not really much of a restriction)
-then that is what you should do.
-
-If you know you are only going to use a system that does correctly
-implement appending (i.e. not Win32) then you can omit the seek() from
-the code in the previous answer.
-
-If you know you are only writing code to run on an OS and filesystem that
-does implement append mode correctly (a local filesystem on a modern
-Unix for example), and you keep the file in block-buffered mode and you
-write less than one buffer-full of output between each manual flushing
-of the buffer then each bufferload is almost guaranteed to be written to
-the end of the file in one chunk without getting intermingled with
-anyone else's output. You can also use the syswrite() function which is
-simply a wrapper around your systems write(2) system call.
-
-There is still a small theoretical chance that a signal will interrupt
-the system level write() operation before completion.  There is also a
-possibility that some STDIO implementations may call multiple system
-level write()s even if the buffer was empty to start.  There may be some
-systems where this probability is reduced to zero.
-
 =head2 How do I randomly update a binary file?
-X<file, binary patch>
 
 If you're just trying to patch a binary, in many cases something as
 simple as this works:
 
-	perl -i -pe 's{window manager}{window mangler}g' /usr/bin/emacs
+    perl -i -pe 's{window manager}{window mangler}g' /usr/bin/emacs
 
 However, if you have fixed sized records, then you might do something more
 like this:
 
-	$RECSIZE = 220; # size of record, in bytes
-	$recno   = 37;  # which record to update
-	open(FH, "+<somewhere") || die "can't update somewhere: $!";
-	seek(FH, $recno * $RECSIZE, 0);
-	read(FH, $record, $RECSIZE) == $RECSIZE || die "can't read record $recno: $!";
-	# munge the record
-	seek(FH, -$RECSIZE, 1);
-	print FH $record;
-	close FH;
+    $RECSIZE = 220; # size of record, in bytes
+    $recno   = 37;  # which record to update
+    open(FH, "+<somewhere") || die "can't update somewhere: $!";
+    seek(FH, $recno * $RECSIZE, 0);
+    read(FH, $record, $RECSIZE) == $RECSIZE || die "can't read record $recno: $!";
+    # munge the record
+    seek(FH, $recno * $RECSIZE, 0);
+    print FH $record;
+    close FH;
 
 Locking and error checking are left as an exercise for the reader.
-Don't forget them or you'll be quite sorry.
+Don't forget them, or you'll be quite sorry.
+
+Don't forget to set binmode() under DOS-like platforms when operating
+on files that have anything other than straight text in them.  See the
+docs on open() and on binmode() for more details.
 
 =head2 How do I get a file's timestamp in perl?
-X<timestamp> X<file, timestamp>
 
-If you want to retrieve the time at which the file was last
-read, written, or had its meta-data (owner, etc) changed,
-you use the B<-A>, B<-M>, or B<-C> file test operations as
-documented in L<perlfunc>.  These retrieve the age of the
-file (measured against the start-time of your program) in
-days as a floating point number. Some platforms may not have
-all of these times.  See L<perlport> for details. To
-retrieve the "raw" time in seconds since the epoch, you
-would call the stat function, then use localtime(),
-gmtime(), or POSIX::strftime() to convert this into
-human-readable form.
+If you want to retrieve the time at which the file was last read,
+written, or had its meta-data (owner, etc) changed, you use the B<-M>,
+B<-A>, or B<-C> filetest operations as documented in L<perlfunc>.  These
+retrieve the age of the file (measured against the start-time of your
+program) in days as a floating point number.  To retrieve the "raw"
+time in seconds since the epoch, you would call the stat function,
+then use localtime(), gmtime(), or POSIX::strftime() to convert this
+into human-readable form.
 
 Here's an example:
 
-	$write_secs = (stat($file))[9];
-	printf "file %s updated at %s\n", $file,
-	scalar localtime($write_secs);
+    $write_secs = (stat($file))[9];
+    print "file $file updated at ", scalar(localtime($file)), "\n";
 
 If you prefer something more legible, use the File::stat module
 (part of the standard distribution in version 5.004 and later):
 
-	# error checking left as an exercise for reader.
-	use File::stat;
-	use Time::localtime;
-	$date_string = ctime(stat($file)->mtime);
-	print "file $file updated at $date_string\n";
+    use File::stat;
+    use Time::localtime;
+    $date_string = ctime(stat($file)->mtime);
+    print "file $file updated at $date_string\n";
 
-The POSIX::strftime() approach has the benefit of being,
-in theory, independent of the current locale.  See L<perllocale>
-for details.
+Error checking is left as an exercise for the reader.
 
 =head2 How do I set a file's timestamp in perl?
-X<timestamp> X<file, timestamp>
 
 You use the utime() function documented in L<perlfunc/utime>.
 By way of example, here's a little program that copies the
 read and write times from its first argument to all the rest
 of them.
 
-	if (@ARGV < 2) {
-		die "usage: cptimes timestamp_file other_files ...\n";
-		}
-	$timestamp = shift;
-	($atime, $mtime) = (stat($timestamp))[8,9];
-	utime $atime, $mtime, @ARGV;
+    if (@ARGV < 2) {
+	die "usage: cptimes timestamp_file other_files ...\n";
+    }
+    $timestamp = shift;
+    ($atime, $mtime) = (stat($timestamp))[8,9];
+    utime $atime, $mtime, @ARGV;
 
-Error checking is, as usual, left as an exercise for the reader.
+Error checking is left as an exercise for the reader.
 
-The perldoc for utime also has an example that has the same
-effect as touch(1) on files that I<already exist>.
-
-Certain file systems have a limited ability to store the times
-on a file at the expected level of precision.  For example, the
-FAT and HPFS filesystem are unable to create dates on files with
-a finer granularity than two seconds.  This is a limitation of
-the filesystems, not of utime().
+Note that utime() currently doesn't work correctly with Win95/NT
+ports.  A bug has been reported.  Check it carefully before using
+it on those platforms.
 
 =head2 How do I print to more than one file at once?
-X<print, to multiple files>
 
-To connect one filehandle to several output filehandles,
-you can use the IO::Tee or Tie::FileHandle::Multiplex modules.
+If you only have to do this once, you can do this:
 
-If you only have to do this once, you can print individually
-to each filehandle.
+    for $fh (FH1, FH2, FH3) { print $fh "whatever\n" }
 
-	for $fh (FH1, FH2, FH3) { print $fh "whatever\n" }
+To connect up to one filehandle to several output filehandles, it's
+easiest to use the tee(1) program if you have it, and let it take care
+of the multiplexing:
 
-=head2 How can I read in an entire file all at once?
-X<slurp> X<file, slurping>
+    open (FH, "| tee file1 file2 file3");
 
-You can use the File::Slurp module to do it in one step.
+Otherwise you'll have to write your own multiplexing print function --
+or your own tee program -- or use Tom Christiansen's, at
+http://www.perl.com/CPAN/authors/id/TOMC/scripts/tct.gz, which is
+written in Perl.
 
-	use File::Slurp;
-
-	$all_of_it = read_file($filename); # entire file in scalar
-	@all_lines = read_file($filename); # one line perl element
-
-The customary Perl approach for processing all the lines in a file is to
-do so one line at a time:
-
-	open (INPUT, $file) 	|| die "can't open $file: $!";
-	while (<INPUT>) {
-		chomp;
-		# do something with $_
-		}
-	close(INPUT)	    	|| die "can't close $file: $!";
-
-This is tremendously more efficient than reading the entire file into
-memory as an array of lines and then processing it one element at a time,
-which is often--if not almost always--the wrong approach.  Whenever
-you see someone do this:
-
-	@lines = <INPUT>;
-
-you should think long and hard about why you need everything loaded at
-once.  It's just not a scalable solution.  You might also find it more
-fun to use the standard Tie::File module, or the DB_File module's
-$DB_RECNO bindings, which allow you to tie an array to a file so that
-accessing an element the array actually accesses the corresponding
-line in the file.
-
-You can read the entire filehandle contents into a scalar.
-
-	{
-	local(*INPUT, $/);
-	open (INPUT, $file) 	|| die "can't open $file: $!";
-	$var = <INPUT>;
-	}
-
-That temporarily undefs your record separator, and will automatically
-close the file at block exit.  If the file is already open, just use this:
-
-	$var = do { local $/; <INPUT> };
-
-For ordinary files you can also use the read function.
-
-	read( INPUT, $var, -s INPUT );
-
-The third argument tests the byte size of the data on the INPUT filehandle
-and reads that many bytes into the buffer $var.
+In theory a IO::Tee class could be written, but to date we haven't
+seen such.
 
 =head2 How can I read in a file by paragraphs?
-X<file, reading by paragraphs>
 
-Use the C<$/> variable (see L<perlvar> for details).  You can either
+Use the C<$\> variable (see L<perlvar> for details).  You can either
 set it to C<""> to eliminate empty paragraphs (C<"abc\n\n\n\ndef">,
 for instance, gets treated as two paragraphs and not three), or
 C<"\n\n"> to accept empty paragraphs.
 
-Note that a blank line must have no blanks in it.  Thus
-S<C<"fred\n \nstuff\n\n">> is one paragraph, but C<"fred\n\nstuff\n\n"> is two.
-
 =head2 How can I read a single character from a file?  From the keyboard?
-X<getc> X<file, reading one character at a time>
 
 You can use the builtin C<getc()> function for most filehandles, but
 it won't (easily) work on a terminal device.  For STDIN, either use
-the Term::ReadKey module from CPAN or use the sample code in
+the Term::ReadKey module from CPAN, or use the sample code in
 L<perlfunc/getc>.
 
-If your system supports the portable operating system programming
-interface (POSIX), you can use the following code, which you'll note
-turns off echo processing as well.
+If your system supports POSIX, you can use the following code, which
+you'll note turns off echo processing as well.
 
-	#!/usr/bin/perl -w
-	use strict;
-	$| = 1;
-	for (1..4) {
-		my $got;
-		print "gimme: ";
-		$got = getone();
-		print "--> $got\n";
-		}
+    #!/usr/bin/perl -w
+    use strict;
+    $| = 1;
+    for (1..4) {
+	my $got;
+	print "gimme: ";
+	$got = getone();
+	print "--> $got\n";
+    }
     exit;
 
-	BEGIN {
+    BEGIN {
 	use POSIX qw(:termios_h);
 
 	my ($term, $oterm, $echo, $noecho, $fd_stdin);
@@ -1050,110 +609,132 @@ turns off echo processing as well.
 	$noecho   = $oterm & ~$echo;
 
 	sub cbreak {
-		$term->setlflag($noecho);
-		$term->setcc(VTIME, 1);
-		$term->setattr($fd_stdin, TCSANOW);
-		}
-
-	sub cooked {
-		$term->setlflag($oterm);
-		$term->setcc(VTIME, 0);
-		$term->setattr($fd_stdin, TCSANOW);
-		}
-
-	sub getone {
-		my $key = '';
-		cbreak();
-		sysread(STDIN, $key, 1);
-		cooked();
-		return $key;
-		}
-
+	    $term->setlflag($noecho);
+	    $term->setcc(VTIME, 1);
+	    $term->setattr($fd_stdin, TCSANOW);
 	}
 
-	END { cooked() }
+	sub cooked {
+	    $term->setlflag($oterm);
+	    $term->setcc(VTIME, 0);
+	    $term->setattr($fd_stdin, TCSANOW);
+	}
 
-The Term::ReadKey module from CPAN may be easier to use.  Recent versions
-include also support for non-portable systems as well.
+	sub getone {
+	    my $key = '';
+	    cbreak();
+	    sysread(STDIN, $key, 1);
+	    cooked();
+	    return $key;
+	}
 
-	use Term::ReadKey;
-	open(TTY, "</dev/tty");
-	print "Gimme a char: ";
-	ReadMode "raw";
-	$key = ReadKey 0, *TTY;
-	ReadMode "normal";
-	printf "\nYou said %s, char number %03d\n",
-		$key, ord $key;
+    }
 
-=head2 How can I tell whether there's a character waiting on a filehandle?
+    END { cooked() }
 
-The very first thing you should do is look into getting the Term::ReadKey
-extension from CPAN.  As we mentioned earlier, it now even has limited
-support for non-portable (read: not open systems, closed, proprietary,
-not POSIX, not Unix, etc) systems.
+The Term::ReadKey module from CPAN may be easier to use:
 
-You should also check out the Frequently Asked Questions list in
+    use Term::ReadKey;
+    open(TTY, "</dev/tty");
+    print "Gimme a char: ";
+    ReadMode "raw";
+    $key = ReadKey 0, *TTY;
+    ReadMode "normal";
+    printf "\nYou said %s, char number %03d\n",
+        $key, ord $key;
+
+For DOS systems, Dan Carson <dbc@tc.fluke.COM> reports the following:
+
+To put the PC in "raw" mode, use ioctl with some magic numbers gleaned
+from msdos.c (Perl source file) and Ralf Brown's interrupt list (comes
+across the net every so often):
+
+    $old_ioctl = ioctl(STDIN,0,0);     # Gets device info
+    $old_ioctl &= 0xff;
+    ioctl(STDIN,1,$old_ioctl | 32);    # Writes it back, setting bit 5
+
+Then to read a single character:
+
+    sysread(STDIN,$c,1);               # Read a single character
+
+And to put the PC back to "cooked" mode:
+
+    ioctl(STDIN,1,$old_ioctl);         # Sets it back to cooked mode.
+
+So now you have $c.  If C<ord($c) == 0>, you have a two byte code, which
+means you hit a special key.  Read another byte with C<sysread(STDIN,$c,1)>,
+and that value tells you what combination it was according to this
+table:
+
+    # PC 2-byte keycodes = ^@ + the following:
+
+    # HEX     KEYS
+    # ---     ----
+    # 0F      SHF TAB
+    # 10-19   ALT QWERTYUIOP
+    # 1E-26   ALT ASDFGHJKL
+    # 2C-32   ALT ZXCVBNM
+    # 3B-44   F1-F10
+    # 47-49   HOME,UP,PgUp
+    # 4B      LEFT
+    # 4D      RIGHT
+    # 4F-53   END,DOWN,PgDn,Ins,Del
+    # 54-5D   SHF F1-F10
+    # 5E-67   CTR F1-F10
+    # 68-71   ALT F1-F10
+    # 73-77   CTR LEFT,RIGHT,END,PgDn,HOME
+    # 78-83   ALT 1234567890-=
+    # 84      CTR PgUp
+
+This is all trial and error I did a long time ago, I hope I'm reading the
+file that worked.
+
+=head2 How can I tell if there's a character waiting on a filehandle?
+
+You should check out the Frequently Asked Questions list in
 comp.unix.* for things like this: the answer is essentially the same.
 It's very system dependent.  Here's one solution that works on BSD
 systems:
 
-	sub key_ready {
-		my($rin, $nfd);
-		vec($rin, fileno(STDIN), 1) = 1;
-		return $nfd = select($rin,undef,undef,0);
-		}
+    sub key_ready {
+	my($rin, $nfd);
+	vec($rin, fileno(STDIN), 1) = 1;
+	return $nfd = select($rin,undef,undef,0);
+    }
 
-If you want to find out how many characters are waiting, there's
-also the FIONREAD ioctl call to be looked at.  The I<h2ph> tool that
-comes with Perl tries to convert C include files to Perl code, which
-can be C<require>d.  FIONREAD ends up defined as a function in the
-I<sys/ioctl.ph> file:
+You should look into getting the Term::ReadKey extension from CPAN.
 
-	require 'sys/ioctl.ph';
+=head2 How do I open a file without blocking?
 
-	$size = pack("L", 0);
-	ioctl(FH, FIONREAD(), $size)    or die "Couldn't call ioctl: $!\n";
-	$size = unpack("L", $size);
+You need to use the O_NDELAY or O_NONBLOCK flag from the Fcntl module
+in conjunction with sysopen():
 
-If I<h2ph> wasn't installed or doesn't work for you, you can
-I<grep> the include files by hand:
+    use Fcntl;
+    sysopen(FH, "/tmp/somefile", O_WRONLY|O_NDELAY|O_CREAT, 0644)
+    or die "can't open /tmp/somefile: $!":
 
-	% grep FIONREAD /usr/include/*/*
-	/usr/include/asm/ioctls.h:#define FIONREAD      0x541B
+=head2 How do I create a file only if it doesn't exist?
 
-Or write a small C program using the editor of champions:
+You need to use the O_CREAT and O_EXCL flags from the Fcntl module in
+conjunction with sysopen():
 
-	% cat > fionread.c
-	#include <sys/ioctl.h>
-	main() {
-	    printf("%#08x\n", FIONREAD);
-	}
-	^D
-	% cc -o fionread fionread.c
-	% ./fionread
-	0x4004667f
+    use Fcntl;
+    sysopen(FH, "/tmp/somefile", O_WRONLY|O_EXCL|O_CREAT, 0644)
+		or die "can't open /tmp/somefile: $!":
 
-And then hard code it, leaving porting as an exercise to your successor.
-
-	$FIONREAD = 0x4004667f;         # XXX: opsys dependent
-
-	$size = pack("L", 0);
-	ioctl(FH, $FIONREAD, $size)     or die "Couldn't call ioctl: $!\n";
-	$size = unpack("L", $size);
-
-FIONREAD requires a filehandle connected to a stream, meaning that sockets,
-pipes, and tty devices work, but I<not> files.
+Be warned that neither creation nor deletion of files is guaranteed to
+be an atomic operation over NFS.  That is, two processes might both
+successful create or unlink the same file!
 
 =head2 How do I do a C<tail -f> in perl?
-X<tail> X<IO::Handle> X<File::Tail> X<clearerr>
 
 First try
 
-	seek(GWFILE, 0, 1);
+    seek(GWFILE, 0, 1);
 
 The statement C<seek(GWFILE, 0, 1)> doesn't change the current position,
 but it does clear the end-of-file condition on the handle, so that the
-next C<< <GWFILE> >> makes Perl try again to read something.
+next <GWFILE> makes Perl try again to read something.
 
 If that doesn't work (it relies on features of your stdio implementation),
 then you need something more like this:
@@ -1166,91 +747,63 @@ then you need something more like this:
 	  seek(GWFILE, $curpos, 0);  # seek to where we had been
 	}
 
-If this still doesn't work, look into the C<clearerr> method
-from C<IO::Handle>, which resets the error and end-of-file states
-on the handle.
-
-There's also a C<File::Tail> module from CPAN.
+If this still doesn't work, look into the POSIX module.  POSIX defines
+the clearerr() method, which can remove the end of file condition on a
+filehandle.  The method: read until end of file, clearerr(), read some
+more.  Lather, rinse, repeat.
 
 =head2 How do I dup() a filehandle in Perl?
-X<dup>
 
 If you check L<perlfunc/open>, you'll see that several of the ways
 to call open() should do the trick.  For example:
 
-	open(LOG, ">>/foo/logfile");
-	open(STDERR, ">&LOG");
+    open(LOG, ">>/tmp/logfile");
+    open(STDERR, ">&LOG");
 
 Or even with a literal numeric descriptor:
 
    $fd = $ENV{MHCONTEXTFD};
    open(MHCONTEXT, "<&=$fd");	# like fdopen(3S)
 
-Note that "<&STDIN" makes a copy, but "<&=STDIN" make
-an alias.  That means if you close an aliased handle, all
-aliases become inaccessible.  This is not true with
-a copied one.
-
-Error checking, as always, has been left as an exercise for the reader.
+Error checking has been left as an exercise for the reader.
 
 =head2 How do I close a file descriptor by number?
-X<file, closing file descriptors> X<POSIX> X<close>
 
-If, for some reason, you have a file descriptor instead of a
-filehandle (perhaps you used C<POSIX::open>), you can use the
-C<close()> function from the C<POSIX> module:
-
-	use POSIX ();
-	
-	POSIX::close( $fd );
-	
-This should rarely be necessary, as the Perl C<close()> function is to be
+This should rarely be necessary, as the Perl close() function is to be
 used for things that Perl opened itself, even if it was a dup of a
-numeric descriptor as with C<MHCONTEXT> above.  But if you really have
+numeric descriptor, as with MHCONTEXT above.  But if you really have
 to, you may be able to do this:
 
-	require 'sys/syscall.ph';
-	$rc = syscall(&SYS_close, $fd + 0);  # must force numeric
-	die "can't sysclose $fd: $!" unless $rc == -1;
+    require 'sys/syscall.ph';
+    $rc = syscall(&SYS_close, $fd + 0);  # must force numeric
+    die "can't sysclose $fd: $!" unless $rc == -1;
 
-Or, just use the fdopen(3S) feature of C<open()>:
-
-	{
-	open my( $fh ), "<&=$fd" or die "Cannot reopen fd=$fd: $!";
-	close $fh;
-	}
-
-=head2 Why can't I use "C:\temp\foo" in DOS paths?  Why doesn't `C:\temp\foo.exe` work?
-X<filename, DOS issues>
+=head2 Why can't I use "C:\temp\foo" in DOS paths?  What doesn't `C:\temp\foo.exe` work?
 
 Whoops!  You just put a tab and a formfeed into that filename!
 Remember that within double quoted strings ("like\this"), the
 backslash is an escape character.  The full list of these is in
 L<perlop/Quote and Quote-like Operators>.  Unsurprisingly, you don't
 have a file called "c:(tab)emp(formfeed)oo" or
-"c:(tab)emp(formfeed)oo.exe" on your legacy DOS filesystem.
+"c:(tab)emp(formfeed)oo.exe" on your DOS filesystem.
 
 Either single-quote your strings, or (preferably) use forward slashes.
 Since all DOS and Windows versions since something like MS-DOS 2.0 or so
 have treated C</> and C<\> the same in a path, you might as well use the
-one that doesn't clash with Perl--or the POSIX shell, ANSI C and C++,
-awk, Tcl, Java, or Python, just to mention a few.  POSIX paths
-are more portable, too.
+one that doesn't clash with Perl -- or the POSIX shell, ANSI C and C++,
+awk, Tcl, Java, or Python, just to mention a few.
 
 =head2 Why doesn't glob("*.*") get all the files?
-X<glob>
 
 Because even on non-Unix ports, Perl's glob function follows standard
 Unix globbing semantics.  You'll need C<glob("*")> to get all (non-hidden)
-files.  This makes glob() portable even to legacy systems.  Your
-port may include proprietary globbing functions as well.  Check its
-documentation for details.
+files.
 
 =head2 Why does Perl let me delete read-only files?  Why does C<-i> clobber protected files?  Isn't this a bug in Perl?
 
-This is elaborately and painstakingly described in the
-F<file-dir-perms> article in the "Far More Than You Ever Wanted To
-Know" collection in http://www.cpan.org/misc/olddoc/FMTEYEWTK.tgz .
+This is elaborately and painstakingly described in the "Far More Than
+You Every Wanted To Know" in
+http://www.perl.com/CPAN/doc/FMTEYEWTK/file-dir-perms .
 
 The executive summary: learn how your filesystem works.  The
 permissions on a file say what can happen to the data in that file.
@@ -1261,67 +814,17 @@ of the directory, not of the file).  If you try to write to the file,
 the permissions of the file govern whether you're allowed to.
 
 =head2 How do I select a random line from a file?
-X<file, selecting a random line>
 
 Here's an algorithm from the Camel Book:
 
-	srand;
-	rand($.) < 1 && ($line = $_) while <>;
+    srand;
+    rand($.) < 1 && ($line = $_) while <>;
 
-This has a significant advantage in space over reading the whole file
-in.  You can find a proof of this method in I<The Art of Computer
-Programming>, Volume 2, Section 3.4.2, by Donald E. Knuth.
-
-You can use the File::Random module which provides a function
-for that algorithm:
-
-	use File::Random qw/random_line/;
-	my $line = random_line($filename);
-
-Another way is to use the Tie::File module, which treats the entire
-file as an array.  Simply access a random array element.
-
-=head2 Why do I get weird spaces when I print an array of lines?
-
-Saying
-
-	print "@lines\n";
-
-joins together the elements of C<@lines> with a space between them.
-If C<@lines> were C<("little", "fluffy", "clouds")> then the above
-statement would print
-
-	little fluffy clouds
-
-but if each element of C<@lines> was a line of text, ending a newline
-character C<("little\n", "fluffy\n", "clouds\n")> then it would print:
-
-	little
-	 fluffy
-	 clouds
-
-If your array contains lines, just print them:
-
-	print @lines;
-
-=head1 REVISION
-
-Revision: $Revision: 10126 $
-
-Date: $Date: 2007-10-27 21:29:20 +0200 (Sat, 27 Oct 2007) $
-
-See L<perlfaq> for source control details and availability.
+This has a significant advantage in space over reading the whole
+file in.
 
 =head1 AUTHOR AND COPYRIGHT
 
-Copyright (c) 1997-2007 Tom Christiansen, Nathan Torkington, and
-other authors as noted. All rights reserved.
+Copyright (c) 1997 Tom Christiansen and Nathan Torkington.
+All rights reserved.  See L<perlfaq> for distribution information.
 
-This documentation is free; you can redistribute it and/or modify it
-under the same terms as Perl itself.
-
-Irrespective of its distribution, all code examples here are in the public
-domain.  You are permitted and encouraged to use this code and any
-derivatives thereof in your own programs for fun or for profit as you
-see fit.  A simple comment in the code giving credit to the FAQ would
-be courteous but is not required.

@@ -4,9 +4,12 @@ BEGIN {
 	    "cannot stringify a Unicode code point\n";
 	exit 0;
     }
+}
+
+BEGIN {
     if ($ENV{PERL_CORE}) {
-	chdir('t') if -d 't';
-	@INC = $^O eq 'MacOS' ? qw(::lib) : qw(../lib);
+        chdir('t') if -d 't';
+        @INC = $^O eq 'MacOS' ? qw(::lib) : qw(../lib);
     }
 }
 
@@ -16,6 +19,9 @@ BEGIN { plan tests => 72 };
 use strict;
 use warnings;
 use Unicode::Collate;
+
+use vars qw($IsEBCDIC);
+$IsEBCDIC = ord("A") != 0x41;
 
 #########################
 
@@ -30,7 +36,7 @@ my $Collator = Unicode::Collate->new(
 
 # a collator for hangul sorting,
 # cf. http://std.dkuug.dk/JTC1/SC22/WG20/docs/documents.html
-#     http://std.dkuug.dk/JTC1/SC22/WG20/docs/n1051-hangulsort.pdf
+#     http://std.dkuug.dk/JTC1/SC22/WG20/docs/n1051-hangulsort.pdf 
 my $hangul = Unicode::Collate->new(
   level => 3,
   table => undef,

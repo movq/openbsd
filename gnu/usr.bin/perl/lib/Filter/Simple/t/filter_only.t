@@ -1,16 +1,11 @@
 BEGIN {
-    if( $ENV{PERL_CORE} ) {
-        chdir 't';
-        @INC = ('../lib', 'lib');
-    }
-    else {
-        unshift @INC, 't/lib/';
+    if ($ENV{PERL_CORE}) {
+        chdir('t') if -d 't';
+	@INC = qw(lib/Filter/Simple ../lib);
     }
 }
-chdir 't';
 
-use Filter::Simple::FilterOnlyTest qr/not ok/ => "ok", 
-                                   "bad" => "ok", fail => "die";
+use FilterOnlyTest qr/not ok/ => "ok", "bad" => "ok", fail => "die";
 print "1..9\n";
 
 sub fail { print "ok ", $_[0], "\n" }
@@ -27,7 +22,7 @@ print "ok 5\n";
 
 ok 7 unless not ok 6;
 
-no Filter::Simple::FilterOnlyTest; # THE FUN STOPS HERE
+no FilterOnlyTest; # THE FUN STOPS HERE
 
 print "not " unless "not ok" =~ /^not /;
 print "ok 8\n";

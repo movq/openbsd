@@ -1,31 +1,74 @@
 package OS2::REXX;
 
+use Carp;
 require Exporter;
-use XSLoader;
-require OS2::DLL;
-
-@ISA = qw(Exporter);
+require DynaLoader;
+@ISA = qw(Exporter DynaLoader);
 # Items to export into callers namespace by default
 # (move infrequently used names to @EXPORT_OK below)
 @EXPORT = qw(REXX_call REXX_eval REXX_eval_with);
 # Other items we are prepared to export if requested
-@EXPORT_OK = qw(drop register);
+@EXPORT_OK = qw(drop);
 
-$VERSION = '1.03';
+sub AUTOLOAD {
+    $AUTOLOAD =~ /^OS2::REXX::.+::(.+)$/
+      or confess("Undefined subroutine &$AUTOLOAD called");
+    return undef if $1 eq "DESTROY";
+    $_[0]->find($1)
+      or confess("Can't find entry '$1' to DLL '$_[0]->{File}'");
+    goto &$AUTOLOAD;
+}
 
-# We cannot just put OS2::DLL in @ISA, since some scripts would use
-# function interface, not method interface...
+@libs = split(/;/, $ENV{'PERL5REXX'} || $ENV{'PERLREXX'} || $ENV{'LIBPATH'} || $ENV{'PATH'});
+%dlls = ();
 
-*_call = \&OS2::DLL::_call;
-*load = \&OS2::DLL::load;
-*find = \&OS2::DLL::find;
-
-XSLoader::load 'OS2::REXX';
+bootstrap OS2::REXX;
 
 # Preloaded methods go here.  Autoload methods go after __END__, and are
 # processed by the autosplit program.
 
-sub register {_register($_) for @_}
+# Cannot autoload, the autoloader is used for the REXX functions.
+
+sub load
+{
+	confess 'Usage: load OS2::REXX <file> [<dirs>]' unless $#_ >= 1;
+	my ($class, $file, @where) = (@_, @libs);
+	return $dlls{$file} if $dlls{$file};
+	my $handle;
+	foreach (@where) {
+		$handle = DynaLoader::dl_load_file("$_/$file.dll");
+		last if $handle;
+	}
+	$handle = DynaLoader::dl_load_file($file) unless $handle;
+	return undef unless $handle;
+	eval "package OS2::REXX::$file; \@ISA = ('OS2::REXX');"
+	   . "sub AUTOLOAD {"
+	   . "  \$OS2::REXX::AUTOLOAD = \$AUTOLOAD;"
+	   . "  goto &OS2::REXX::AUTOLOAD;"
+	   . "} 1;" or die "eval package $@";
+	return $dlls{$file} = bless {Handle => $handle, File => $file, Queue => 'SESSION' }, "OS2::REXX::$file";
+}
+
+sub find
+{
+	my $self   = shift;
+	my $file   = $self->{File};
+	my $handle = $self->{Handle};
+	my $prefix = exists($self->{Prefix}) ? $self->{Prefix} : "";
+	my $queue  = $self->{Queue};
+	foreach (@_) {
+		my $name = "OS2::REXX::${file}::$_";
+		next if defined(&$name);
+		my $addr = DynaLoader::dl_find_symbol($handle, uc $prefix.$_)
+		        || DynaLoader::dl_find_symbol($handle, $prefix.$_)
+			or return 0;
+		eval "package OS2::REXX::$file; sub $_".
+		     "{ shift; OS2::REXX::_call('$_', $addr, '$queue', \@_); }".
+		     "1;"
+			or die "eval sub";
+	}
+	return 1;
+}
 
 sub prefix
 {
@@ -262,36 +305,11 @@ One enables REXX runtime by bracketing your code by
 
 	REXX_call \&subroutine_name;
 
-Inside such a call one has access to REXX variables (see below).
-
-An alternative way to execute code inside a REXX compartment is
+Inside such a call one has access to REXX variables (see below), and to
 
 	REXX_eval EXPR;
 	REXX_eval_with EXPR, 
 		subroutine_name_in_REXX => \&Perl_subroutine
-
-Here C<EXPR> is a REXX code to run; to execute Perl code one needs to put
-it inside Perl_subroutine(), and call this subroutine from REXX, as in
-
-	REXX_eval_with <<EOE, foo => sub { 123 * shift };
-	  say foo(2)
-	EOE
-
-If one needs more Perl subroutines available, one can "import" them into
-REXX from inside Perl_subroutine(); since REXX is not case-sensitive,
-the names should be uppercased.
-
-	use OS2::REXX 'register';
-
-	sub BAR { 123 + shift}
-	sub BAZ { 789 }
-	sub importer { register qw(BAR BAZ) }
-
-	REXX_eval_with <<'EOE', importer => \&importer;
-	  call importer
-	  say bar(34)
-	  say baz()
-	EOE
 
 =head2 Bind scalar variable to REXX variable:
 
@@ -325,73 +343,6 @@ part of the key and it is subject to character set restrictions.
 =head2 Erase REXX variables with given stem (bound or not):
 
 	OS2::REXX::dropall("STEM" [, "STEM" [, ...]]);
-
-=head2 Make Perl functions available in REXX:
-
-	OS2::REXX::register("NAME" [, "NAME" [, ...]]);
-
-Since REXX is not case-sensitive, the names should be uppercase.
-
-=head1 Subcommand handlers
-
-By default, the executed REXX code runs without any default subcommand
-handler present.  A subcommand handler named C<PERLEVAL> is defined, but
-not made a default.  Use C<ADDRESS PERLEVAL> REXX command to make it a default
-handler; alternatively, use C<ADDRESS Handler WhatToDo> to direct a command
-to the handler you like.
-
-Experiments show that the handler C<CMD> is also available; probably it is
-provided by the REXX runtime.
-
-=head1 Interfacing from REXX to Perl
-
-This module provides an interface from Perl to REXX, and from REXX-inside-Perl
-back to Perl.  There is an alternative scenario which allows usage of Perl
-from inside REXX.
-
-A DLL F<PerlRexx> provides an API to Perl as REXX functions
-
-  PERL
-  PERLTERM
-  PERLINIT
-  PERLEXIT
-  PERLEVAL
-  PERLLASTERROR
-  PERLEXPORTALL
-  PERLDROPALL
-  PERLDROPALLEXIT
-
-A subcommand handler C<PERLEVALSUBCOMMAND> can also be registered.  Calling
-the function PERLEXPORTALL() exports all these functions, as well as
-exports this subcommand handler under the name C<EVALPERL>.  PERLDROPALL()
-inverts this action (and unloads PERLEXPORTALL() as well).  In particular
-
-  rc = RxFuncAdd("PerlExportAll", 'PerlRexx', "PERLEXPORTALL")
-  rc = PerlExportAll()
-  res = PERLEVAL(perlarg)
-  ADDRESS EVALPERL perlarg1
-  rc = PerlDropAllExit()
-
-loads all the functions above, evals the Perl code in the REXX variable
-C<perlarg>, putting the result into the REXX variable C<res>,
-then evals the Perl code in the REXX variable C<perlarg1>, and, finally,
-drops the loaded functions and the subcommand handler, deinitializes
-the Perl interpreter, and exits the Perl's C runtime library.
-
-PERLEXIT() or PERLDROPALLEXIT() should be called as the last command of
-the REXX program.  (This is considered as a bug.)  Their purpose is to flush
-all the output buffers of the Perl's C runtime library.
-
-C<PERLLASTERROR> gives the reason for the failure of the last PERLEVAL().
-It is useful inside C<signal on syntax> handler.  PERLINIT() and PERLTERM()
-initialize and deinitialize the Perl interpreter.
-
-C<PERLEVAL(string)> initializes the Perl interpreter (if needed), and
-evaluates C<string> as Perl code.  The result is returned to REXX stringified,
-undefined result is considered as failure.
-
-C<PERL(string)> does the same as C<PERLEVAL(string)> wrapped by calls to
-PERLINIT() and PERLEXIT().
 
 =head1 NOTES
 
@@ -428,56 +379,11 @@ overridden. So unless you know better than I do, do not access REXX
 variables (probably tied to Perl variables) or call REXX functions
 which access REXX queues or REXX variables in signal handlers.
 
-See C<t/rx*.t> and the next section for examples.
-
-=head1 EXAMPLE
-
-  use OS2::REXX;
-
-  sub Ender::DESTROY { $vrexx->VExit; print "Exiting...\n" }
-
-  $vrexx = OS2::REXX->load('VREXX');
-  REXX_call {			# VOpenWindow takes a stem
-    local $SIG{TERM} = sub {die}; # enable Ender::DESTROY
-    local $SIG{INT} = sub {die};	# enable Ender::DESTROY
-
-    $code = $vrexx->VInit;
-    print "Init code = `$code'\n";
-    die "error initializing VREXX" if $code eq 'ERROR';
-
-    my $ender = bless [], 'Ender'; # Call Ender::DESTROY on exit
-
-    print "VREXX Version ", $vrexx->VGetVersion, "\n";
-
-    tie %pos, 'OS2::REXX', 'POS.' or die;
-    %pos = ( LEFT   => 0, RIGHT  => 7, TOP    => 5, BOTTOM => 0 );
-
-    $id = $vrexx->VOpenWindow('To disconnect:', 'WHITE', 'POS');
-    $vrexx->VForeColor($id, 'BLACK');
-    $vrexx->VSetFont($id, 'TIME', '30');
-    $tlim = time + 60;
-    while ( ($r = $tlim - time) >= 0 ) {
-      $vrexx->VClearWindow($id);
-      $vrexx->VSay($id, 100, 50, (sprintf "%02i:%02i", int($r/60), $r % 60));
-      sleep 1;
-    }
-    print "Close code = `$res'\n" if $res = $vrexx->VCloseWindow($id);
-  };
-
-
-
-=head1 ENVIRONMENT
-
-If C<PERL_REXX_DEBUG> is set, prints trace info on calls to REXX runtime
-environment.
+See C<t/rx*.t> for examples.
 
 =head1 AUTHOR
 
 Andreas Kaiser ak@ananke.s.bawue.de, with additions by Ilya Zakharevich
 ilya@math.ohio-state.edu.
-
-=head1 SEE ALSO
-
-L<OS2::DLL>.
 
 =cut

@@ -25,7 +25,8 @@ from the command line.
 
 =cut
 
-sub import {
+sub import
+{
     Test::Builder::Tester::color(1);
 }
 

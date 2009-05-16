@@ -1,18 +1,18 @@
 # Pod::Text::Color -- Convert POD data to formatted color ASCII text
-# $Id: Color.pm,v 1.6 2008/09/29 17:36:14 millert Exp $
+# $Id: Color.pm,v 1.1 2000/04/06 16:09:48 millert Exp $
 #
-# Copyright 1999, 2001, 2004, 2006 by Russ Allbery <rra@stanford.edu>
+# Copyright 1999 by Russ Allbery <rra@stanford.edu>
 #
-# This program is free software; you may redistribute it and/or modify it
+# This program is free software; you can redistribute it and/or modify it
 # under the same terms as Perl itself.
 #
-# This is just a basic proof of concept.  It should later be modified to make
-# better use of color, take options changing what colors are used for what
-# text, and the like.
+# This is just a basic proof of concept.  It should later be modified to
+# make better use of color, take options changing what colors are used for
+# what text, and the like.
 
-##############################################################################
+############################################################################
 # Modules and declarations
-##############################################################################
+############################################################################
 
 package Pod::Text::Color;
 
@@ -26,40 +26,34 @@ use vars qw(@ISA $VERSION);
 
 @ISA = qw(Pod::Text);
 
-# Don't use the CVS revision as the version, since this module is also in Perl
-# core and too many things could munge CVS magic revision strings.  This
-# number should ideally be the same as the CVS revision in podlators, however.
-$VERSION = 2.03;
+# Use the CVS revision of this file as its version number.
+($VERSION = (split (' ', q$Revision: 1.1 $ ))[1]) =~ s/\.(\d)$/.0$1/;
 
-##############################################################################
+
+############################################################################
 # Overrides
-##############################################################################
+############################################################################
 
 # Make level one headings bold.
 sub cmd_head1 {
-    my ($self, $attrs, $text) = @_;
-    $text =~ s/\s+$//;
-    $self->SUPER::cmd_head1 ($attrs, colored ($text, 'bold'));
+    my $self = shift;
+    local $_ = shift;
+    s/\s+$//;
+    $self->SUPER::cmd_head1 (colored ($_, 'bold'));
 }
 
 # Make level two headings bold.
 sub cmd_head2 {
-    my ($self, $attrs, $text) = @_;
-    $text =~ s/\s+$//;
-    $self->SUPER::cmd_head2 ($attrs, colored ($text, 'bold'));
+    my $self = shift;
+    local $_ = shift;
+    s/\s+$//;
+    $self->SUPER::cmd_head2 (colored ($_, 'bold'));
 }
 
-# Fix the various formatting codes.
-sub cmd_b { return colored ($_[2], 'bold')   }
-sub cmd_f { return colored ($_[2], 'cyan')   }
-sub cmd_i { return colored ($_[2], 'yellow') }
-
-# Output any included code in green.
-sub output_code {
-    my ($self, $code) = @_;
-    $code = colored ($code, 'green');
-    $self->output ($code);
-}
+# Fix the various interior sequences.
+sub seq_b { return colored ($_[1], 'bold')   }
+sub seq_f { return colored ($_[1], 'cyan')   }
+sub seq_i { return colored ($_[1], 'yellow') }
 
 # We unfortunately have to override the wrapping code here, since the normal
 # wrapping code gets really confused by all the escape sequences.
@@ -68,15 +62,10 @@ sub wrap {
     local $_ = shift;
     my $output = '';
     my $spaces = ' ' x $$self{MARGIN};
-    my $width = $$self{opt_width} - $$self{MARGIN};
-
-    # We have to do $shortchar and $longchar in variables because the
-    # construct ${char}{0,$width} didn't do the right thing until Perl 5.8.x.
-    my $char = '(?:(?:\e\[[\d;]+m)*[^\n])';
-    my $shortchar = $char . "{0,$width}";
-    my $longchar = $char . "{$width}";
+    my $width = $$self{width} - $$self{MARGIN};
     while (length > $width) {
-        if (s/^($shortchar)\s+// || s/^($longchar)//) {
+        if (s/^((?:(?:\e\[[\d;]+m)?[^\n]){0,$width})\s+//
+            || s/^((?:(?:\e\[[\d;]+m)?[^\n]){$width})//) {
             $output .= $spaces . $1 . "\n";
         } else {
             last;
@@ -87,9 +76,9 @@ sub wrap {
     $output;
 }
 
-##############################################################################
+############################################################################
 # Module return value and documentation
-##############################################################################
+############################################################################
 
 1;
 __END__
@@ -127,21 +116,10 @@ B<pod2text> should be taught about those.
 
 =head1 SEE ALSO
 
-L<Pod::Text>, L<Pod::Simple>
-
-The current version of this module is always available from its web site at
-L<http://www.eyrie.org/~eagle/software/podlators/>.  It is also part of the
-Perl core distribution as of 5.6.0.
+L<Pod::Text|Pod::Text>, L<Pod::Parser|Pod::Parser>
 
 =head1 AUTHOR
 
-Russ Allbery <rra@stanford.edu>.
-
-=head1 COPYRIGHT AND LICENSE
-
-Copyright 1999, 2001, 2004, 2006 by Russ Allbery <rra@stanford.edu>.
-
-This program is free software; you may redistribute it and/or modify it
-under the same terms as Perl itself.
+Russ Allbery E<lt>rra@stanford.eduE<gt>.
 
 =cut

@@ -1,10 +1,6 @@
 #include "EXTERN.h"
 #include "perl.h"
 #include "XSUB.h"
-#ifndef NO_PPPORT_H
-#   define NEED_sv_2pv_nolen
-#   include "ppport.h"
-#endif
 
 #ifdef I_UNISTD
 #   include <unistd.h>
@@ -12,14 +8,7 @@
 
 /* The realpath() implementation from OpenBSD 2.9 (realpath.c 1.4)
  * Renamed here to bsd_realpath() to avoid library conflicts.
- * --jhi 2000-06-20 
- */
-
-/* See
- * http://www.xray.mpe.mpg.de/mailing-lists/perl5-porters/2004-11/msg00979.html
- * for the details of why the BSD license is compatible with the
- * AL/GPL standard perl license.
- */
+ * --jhi 2000-06-20 */
 
 /*
  * Copyright (c) 1994
@@ -36,7 +25,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -72,7 +65,9 @@ static char *rcsid = "$OpenBSD: realpath.c,v 1.4 1998/05/18 09:55:19 deraadt Exp
  */
 static
 char *
-bsd_realpath(const char *path, char *resolved)
+bsd_realpath(path, resolved)
+	const char *path;
+	char *resolved;
 {
 #ifdef VMS
        dTHX;
@@ -171,7 +166,7 @@ loop:
 		rootd = 0;
 
 	if (*wbuf) {
-		if (strlen(resolved) + strlen(wbuf) + (1 - rootd) + 1 > MAXPATHLEN) {
+		if (strlen(resolved) + strlen(wbuf) + rootd + 1 > MAXPATHLEN) {
 			errno = ENAMETOOLONG;
 			goto err1;
 		}
@@ -215,184 +210,6 @@ err2:
 #endif
 }
 
-#ifndef SV_CWD_RETURN_UNDEF
-#define SV_CWD_RETURN_UNDEF \
-sv_setsv(sv, &PL_sv_undef); \
-return FALSE
-#endif
-
-#ifndef OPpENTERSUB_HASTARG
-#define OPpENTERSUB_HASTARG     32      /* Called from OP tree. */
-#endif
-
-#ifndef dXSTARG
-#define dXSTARG SV * targ = ((PL_op->op_private & OPpENTERSUB_HASTARG) \
-                             ? PAD_SV(PL_op->op_targ) : sv_newmortal())
-#endif
-
-#ifndef XSprePUSH
-#define XSprePUSH (sp = PL_stack_base + ax - 1)
-#endif
-
-#ifndef SV_CWD_ISDOT
-#define SV_CWD_ISDOT(dp) \
-    (dp->d_name[0] == '.' && (dp->d_name[1] == '\0' || \
-        (dp->d_name[1] == '.' && dp->d_name[2] == '\0')))
-#endif
-
-#ifndef getcwd_sv
-/* Taken from perl 5.8's util.c */
-#define getcwd_sv(a) Perl_getcwd_sv(aTHX_ a)
-int Perl_getcwd_sv(pTHX_ register SV *sv)
-{
-#ifndef PERL_MICRO
-
-#ifndef INCOMPLETE_TAINTS
-    SvTAINTED_on(sv);
-#endif
-
-#ifdef HAS_GETCWD
-    {
-	char buf[MAXPATHLEN];
-
-	/* Some getcwd()s automatically allocate a buffer of the given
-	 * size from the heap if they are given a NULL buffer pointer.
-	 * The problem is that this behaviour is not portable. */
-	if (getcwd(buf, sizeof(buf) - 1)) {
-	    STRLEN len = strlen(buf);
-	    sv_setpvn(sv, buf, len);
-	    return TRUE;
-	}
-	else {
-	    sv_setsv(sv, &PL_sv_undef);
-	    return FALSE;
-	}
-    }
-
-#else
-  {
-    Stat_t statbuf;
-    int orig_cdev, orig_cino, cdev, cino, odev, oino, tdev, tino;
-    int namelen, pathlen=0;
-    DIR *dir;
-    Direntry_t *dp;
-
-    (void)SvUPGRADE(sv, SVt_PV);
-
-    if (PerlLIO_lstat(".", &statbuf) < 0) {
-	SV_CWD_RETURN_UNDEF;
-    }
-
-    orig_cdev = statbuf.st_dev;
-    orig_cino = statbuf.st_ino;
-    cdev = orig_cdev;
-    cino = orig_cino;
-
-    for (;;) {
-	odev = cdev;
-	oino = cino;
-
-	if (PerlDir_chdir("..") < 0) {
-	    SV_CWD_RETURN_UNDEF;
-	}
-	if (PerlLIO_stat(".", &statbuf) < 0) {
-	    SV_CWD_RETURN_UNDEF;
-	}
-
-	cdev = statbuf.st_dev;
-	cino = statbuf.st_ino;
-
-	if (odev == cdev && oino == cino) {
-	    break;
-	}
-	if (!(dir = PerlDir_open("."))) {
-	    SV_CWD_RETURN_UNDEF;
-	}
-
-	while ((dp = PerlDir_read(dir)) != NULL) {
-#ifdef DIRNAMLEN
-	    namelen = dp->d_namlen;
-#else
-	    namelen = strlen(dp->d_name);
-#endif
-	    /* skip . and .. */
-	    if (SV_CWD_ISDOT(dp)) {
-		continue;
-	    }
-
-	    if (PerlLIO_lstat(dp->d_name, &statbuf) < 0) {
-		SV_CWD_RETURN_UNDEF;
-	    }
-
-	    tdev = statbuf.st_dev;
-	    tino = statbuf.st_ino;
-	    if (tino == oino && tdev == odev) {
-		break;
-	    }
-	}
-
-	if (!dp) {
-	    SV_CWD_RETURN_UNDEF;
-	}
-
-	if (pathlen + namelen + 1 >= MAXPATHLEN) {
-	    SV_CWD_RETURN_UNDEF;
-	}
-
-	SvGROW(sv, pathlen + namelen + 1);
-
-	if (pathlen) {
-	    /* shift down */
-	    Move(SvPVX(sv), SvPVX(sv) + namelen + 1, pathlen, char);
-	}
-
-	/* prepend current directory to the front */
-	*SvPVX(sv) = '/';
-	Move(dp->d_name, SvPVX(sv)+1, namelen, char);
-	pathlen += (namelen + 1);
-
-#ifdef VOID_CLOSEDIR
-	PerlDir_close(dir);
-#else
-	if (PerlDir_close(dir) < 0) {
-	    SV_CWD_RETURN_UNDEF;
-	}
-#endif
-    }
-
-    if (pathlen) {
-	SvCUR_set(sv, pathlen);
-	*SvEND(sv) = '\0';
-	SvPOK_only(sv);
-
-	if (PerlDir_chdir(SvPVX(sv)) < 0) {
-	    SV_CWD_RETURN_UNDEF;
-	}
-    }
-    if (PerlLIO_stat(".", &statbuf) < 0) {
-	SV_CWD_RETURN_UNDEF;
-    }
-
-    cdev = statbuf.st_dev;
-    cino = statbuf.st_ino;
-
-    if (cdev != orig_cdev || cino != orig_cino) {
-	Perl_croak(aTHX_ "Unstable directory path, "
-		   "current directory changed unexpectedly");
-    }
-
-    return TRUE;
-  }
-#endif
-
-#else
-    return FALSE;
-#endif
-}
-
-#endif
-
-
 MODULE = Cwd		PACKAGE = Cwd
 
 PROTOTYPES: ENABLE
@@ -411,29 +228,15 @@ PPCODE:
 }
 
 void
-getcwd(...)
-PROTOTYPE: DISABLE
-PPCODE:
-{
-    dXSTARG;
-    getcwd_sv(TARG);
-    XSprePUSH; PUSHTARG;
-#ifndef INCOMPLETE_TAINTS
-    SvTAINTED_on(TARG);
-#endif
-}
-
-void
 abs_path(pathsv=Nullsv)
     SV *pathsv
-PROTOTYPE: DISABLE
 PPCODE:
 {
     dXSTARG;
     char *path;
     char buf[MAXPATHLEN];
 
-    path = pathsv ? SvPV_nolen(pathsv) : (char *)".";
+    path = pathsv ? SvPV_nolen(pathsv) : ".";
 
     if (bsd_realpath(path, buf)) {
         sv_setpvn(TARG, buf, strlen(buf));
@@ -448,41 +251,3 @@ PPCODE:
     SvTAINTED_on(TARG);
 #endif
 }
-
-#if defined(WIN32) && !defined(UNDER_CE)
-
-void
-getdcwd(...)
-PPCODE:
-{
-    dXSTARG;
-    int drive;
-    char *dir;
-
-    /* Drive 0 is the current drive, 1 is A:, 2 is B:, 3 is C: and so on. */
-    if ( items == 0 ||
-        (items == 1 && (!SvOK(ST(0)) || (SvPOK(ST(0)) && !SvCUR(ST(0))))))
-        drive = 0;
-    else if (items == 1 && SvPOK(ST(0)) && SvCUR(ST(0)) &&
-             isALPHA(SvPVX(ST(0))[0]))
-        drive = toUPPER(SvPVX(ST(0))[0]) - 'A' + 1;
-    else
-        croak("Usage: getdcwd(DRIVE)");
-
-    New(0,dir,MAXPATHLEN,char);
-    if (_getdcwd(drive, dir, MAXPATHLEN)) {
-        sv_setpvn(TARG, dir, strlen(dir));
-        SvPOK_only(TARG);
-    }
-    else
-        sv_setsv(TARG, &PL_sv_undef);
-
-    Safefree(dir);
-
-    XSprePUSH; PUSHTARG;
-#ifndef INCOMPLETE_TAINTS
-    SvTAINTED_on(TARG);
-#endif
-}
-
-#endif

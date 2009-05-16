@@ -16,24 +16,19 @@ package Storable; @ISA = qw(Exporter DynaLoader);
 	dclone
 	retrieve_fd
 	lock_store lock_nstore lock_retrieve
-        file_magic read_magic
 );
 
 use AutoLoader;
-use FileHandle;
 use vars qw($canonical $forgive_me $VERSION);
 
-$VERSION = '2.18';
+$VERSION = '2.04';
 *AUTOLOAD = \&AutoLoader::AUTOLOAD;		# Grrr...
 
 #
 # Use of Log::Agent is optional
 #
 
-{
-    local $SIG{__DIE__};
-    eval "use Log::Agent";
-}
+eval "use Log::Agent";
 
 require Carp;
 
@@ -50,11 +45,6 @@ BEGIN {
 			sub LOCK_EX ()	{2}
 		};
 	}
-}
-
-sub CLONE {
-    # clone context under threads
-    Storable::init_perinterp();
 }
 
 # Can't Autoload cleanly as this clashes 8.3 with &retrieve
@@ -115,86 +105,39 @@ sub show_file_magic {
 EOM
 }
 
-sub file_magic {
-    my $file = shift;
-    my $fh = new FileHandle;
-    open($fh, "<". $file) || die "Can't open '$file': $!";
-    binmode($fh);
-    defined(sysread($fh, my $buf, 32)) || die "Can't read from '$file': $!";
-    close($fh);
-
-    $file = "./$file" unless $file;  # ensure TRUE value
-
-    return read_magic($buf, $file);
-}
-
 sub read_magic {
-    my($buf, $file) = @_;
-    my %info;
+  my $header = shift;
+  return unless defined $header and length $header > 11;
+  my $result;
+  if ($header =~ s/^perl-store//) {
+    die "Can't deal with version 0 headers";
+  } elsif ($header =~ s/^pst0//) {
+    $result->{file} = 1;
+  }
+  # Assume it's a string.
+  my ($major, $minor, $bytelen) = unpack "C3", $header;
 
-    my $buflen = length($buf);
-    my $magic;
-    if ($buf =~ s/^(pst0|perl-store)//) {
-	$magic = $1;
-	$info{file} = $file || 1;
-    }
-    else {
-	return undef if $file;
-	$magic = "";
-    }
+  my $net_order = $major & 1;
+  $major >>= 1;
+  @$result{qw(major minor netorder)} = ($major, $minor, $net_order);
 
-    return undef unless length($buf);
+  return $result if $net_order;
 
-    my $net_order;
-    if ($magic eq "perl-store" && ord(substr($buf, 0, 1)) > 1) {
-	$info{version} = -1;
-	$net_order = 0;
-    }
-    else {
-	$net_order = ord(substr($buf, 0, 1, ""));
-	my $major = $net_order >> 1;
-	return undef if $major > 4; # sanity (assuming we never go that high)
-	$info{major} = $major;
-	$net_order &= 0x01;
-	if ($major > 1) {
-	    return undef unless length($buf);
-	    my $minor = ord(substr($buf, 0, 1, ""));
-	    $info{minor} = $minor;
-	    $info{version} = "$major.$minor";
-	    $info{version_nv} = sprintf "%d.%03d", $major, $minor;
-	}
-	else {
-	    $info{version} = $major;
-	}
-    }
-    $info{version_nv} ||= $info{version};
-    $info{netorder} = $net_order;
+  # I assume that it is rare to find v1 files, so this is an intentionally
+  # inefficient way of doing it, to make the rest of the code constant.
+  if ($major < 2) {
+    delete $result->{minor};
+    $header = '.' . $header;
+    $bytelen = $minor;
+  }
 
-    unless ($net_order) {
-	return undef unless length($buf);
-	my $len = ord(substr($buf, 0, 1, ""));
-	return undef unless length($buf) >= $len;
-	return undef unless $len == 4 || $len == 8;  # sanity
-	$info{byteorder} = substr($buf, 0, $len, "");
-	$info{intsize} = ord(substr($buf, 0, 1, ""));
-	$info{longsize} = ord(substr($buf, 0, 1, ""));
-	$info{ptrsize} = ord(substr($buf, 0, 1, ""));
-	if ($info{version_nv} >= 2.002) {
-	    return undef unless length($buf);
-	    $info{nvsize} = ord(substr($buf, 0, 1, ""));
-	}
-    }
-    $info{hdrsize} = $buflen - length($buf);
+  @$result{qw(byteorder intsize longsize ptrsize)} =
+    unpack "x3 A$bytelen C3", $header;
 
-    return \%info;
-}
-
-sub BIN_VERSION_NV {
-    sprintf "%d.%03d", BIN_MAJOR(), BIN_MINOR();
-}
-
-sub BIN_WRITE_VERSION_NV {
-    sprintf "%d.%03d", BIN_MAJOR(), BIN_WRITE_MINOR();
+  if ($major >= 2 and $minor >= 2) {
+    $result->{nvsize} = unpack "x6 x$bytelen C", $header;
+  }
+  $result;
 }
 
 #
@@ -418,9 +361,6 @@ sub thaw {
 	return $self;
 }
 
-1;
-__END__
-
 =head1 NAME
 
 Storable - persistence for Perl data structures
@@ -568,22 +508,6 @@ creating lookup tables for complicated queries.
 
 Canonical order does not imply network order; those are two orthogonal
 settings.
-
-=head1 CODE REFERENCES
-
-Since Storable version 2.05, CODE references may be serialized with
-the help of L<B::Deparse>. To enable this feature, set
-C<$Storable::Deparse> to a true value. To enable deserialization,
-C<$Storable::Eval> should be set to a true value. Be aware that
-deserialization is done through C<eval>, which is dangerous if the
-Storable file contains malicious data. You can set C<$Storable::Eval>
-to a subroutine reference which would be used instead of C<eval>. See
-below for an example using a L<Safe> compartment for deserialization
-of CODE references.
-
-If C<$Storable::Deparse> and/or C<$Storable::Eval> are set to false
-values, then the value of C<$Storable::forgive_me> (see below) is
-respected while serializing and deserializing.
 
 =head1 FORWARD COMPATIBILITY
 
@@ -747,40 +671,6 @@ It is up to you to use this information to populate I<obj> the way you want.
 
 Returned value: none.
 
-=item C<STORABLE_attach> I<class>, I<cloning>, I<serialized>
-
-While C<STORABLE_freeze> and C<STORABLE_thaw> are useful for classes where
-each instance is independent, this mechanism has difficulty (or is
-incompatible) with objects that exist as common process-level or
-system-level resources, such as singleton objects, database pools, caches
-or memoized objects.
-
-The alternative C<STORABLE_attach> method provides a solution for these
-shared objects. Instead of C<STORABLE_freeze> --E<gt> C<STORABLE_thaw>,
-you implement C<STORABLE_freeze> --E<gt> C<STORABLE_attach> instead.
-
-Arguments: I<class> is the class we are attaching to, I<cloning> is a flag
-indicating whether we're in a dclone() or a regular de-serialization via
-thaw(), and I<serialized> is the stored string for the resource object.
-
-Because these resource objects are considered to be owned by the entire
-process/system, and not the "property" of whatever is being serialized,
-no references underneath the object should be included in the serialized
-string. Thus, in any class that implements C<STORABLE_attach>, the
-C<STORABLE_freeze> method cannot return any references, and C<Storable>
-will throw an error if C<STORABLE_freeze> tries to return references.
-
-All information required to "attach" back to the shared resource object
-B<must> be contained B<only> in the C<STORABLE_freeze> return string.
-Otherwise, C<STORABLE_freeze> behaves as normal for C<STORABLE_attach>
-classes.
-
-Because C<STORABLE_attach> is passed the class (rather than an object),
-it also returns the object directly, rather than modifying the passed
-object.
-
-Returned value: object of type C<class>
-
 =back
 
 =head2 Predicates
@@ -869,107 +759,6 @@ implementation of the C<file> utility, version 3.38 or later,
 is expected to contain support for recognising Storable files
 out-of-the-box, in addition to other kinds of Perl files.
 
-You can also use the following functions to extract the file header
-information from Storable images:
-
-=over
-
-=item $info = Storable::file_magic( $filename )
-
-If the given file is a Storable image return a hash describing it.  If
-the file is readable, but not a Storable image return C<undef>.  If
-the file does not exist or is unreadable then croak.
-
-The hash returned has the following elements:
-
-=over
-
-=item C<version>
-
-This returns the file format version.  It is a string like "2.7".
-
-Note that this version number is not the same as the version number of
-the Storable module itself.  For instance Storable v0.7 create files
-in format v2.0 and Storable v2.15 create files in format v2.7.  The
-file format version number only increment when additional features
-that would confuse older versions of the module are added.
-
-Files older than v2.0 will have the one of the version numbers "-1",
-"0" or "1".  No minor number was used at that time.
-
-=item C<version_nv>
-
-This returns the file format version as number.  It is a string like
-"2.007".  This value is suitable for numeric comparisons.
-
-The constant function C<Storable::BIN_VERSION_NV> returns a comparable
-number that represent the highest file version number that this
-version of Storable fully support (but see discussion of
-C<$Storable::accept_future_minor> above).  The constant
-C<Storable::BIN_WRITE_VERSION_NV> function returns what file version
-is written and might be less than C<Storable::BIN_VERSION_NV> in some
-configuations.
-
-=item C<major>, C<minor>
-
-This also returns the file format version.  If the version is "2.7"
-then major would be 2 and minor would be 7.  The minor element is
-missing for when major is less than 2.
-
-=item C<hdrsize>
-
-The is the number of bytes that the Storable header occupies.
-
-=item C<netorder>
-
-This is TRUE if the image store data in network order.  This means
-that it was created with nstore() or similar.
-
-=item C<byteorder>
-
-This is only present when C<netorder> is FALSE.  It is the
-$Config{byteorder} string of the perl that created this image.  It is
-a string like "1234" (32 bit little endian) or "87654321" (64 bit big
-endian).  This must match the current perl for the image to be
-readable by Storable.
-
-=item C<intsize>, C<longsize>, C<ptrsize>, C<nvsize>
-
-These are only present when C<netorder> is FALSE. These are the sizes of
-various C datatypes of the perl that created this image.  These must
-match the current perl for the image to be readable by Storable.
-
-The C<nvsize> element is only present for file format v2.2 and
-higher.
-
-=item C<file>
-
-The name of the file.
-
-=back
-
-=item $info = Storable::read_magic( $buffer )
-
-=item $info = Storable::read_magic( $buffer, $must_be_file )
-
-The $buffer should be a Storable image or the first few bytes of it.
-If $buffer starts with a Storable header, then a hash describing the
-image is returned, otherwise C<undef> is returned.
-
-The hash has the same structure as the one returned by
-Storable::file_magic().  The C<file> element is true if the image is a
-file image.
-
-If the $must_be_file argument is provided and is TRUE, then return
-C<undef> unless the image looks like it belongs to a file dump.
-
-The maximum size of a Storable header is currently 21 bytes.  If the
-provided $buffer is only the first part of a Storable image it should
-at least be this long to ensure that read_magic() will recognize it as
-such.
-
-=back
-
 =head1 EXAMPLES
 
 Here are some code samples showing a possible usage of Storable:
@@ -978,10 +767,10 @@ Here are some code samples showing a possible usage of Storable:
 
 	%color = ('Blue' => 0.1, 'Red' => 0.8, 'Black' => 0, 'White' => 1);
 
-	store(\%color, 'mycolors') or die "Can't store %a in mycolors!\n";
+	store(\%color, '/tmp/colors') or die "Can't store %a in /tmp/colors!\n";
 
-	$colref = retrieve('mycolors');
-	die "Unable to retrieve from mycolors!\n" unless defined $colref;
+	$colref = retrieve('/tmp/colors');
+	die "Unable to retrieve from /tmp/colors!\n" unless defined $colref;
 	printf "Blue is still %lf\n", $colref->{'Blue'};
 
 	$colref2 = dclone(\%color);
@@ -994,28 +783,6 @@ which prints (on my machine):
 
 	Blue is still 0.100000
 	Serialization of %color is 102 bytes long.
-
-Serialization of CODE references and deserialization in a safe
-compartment:
-
-=for example begin
-
-	use Storable qw(freeze thaw);
-	use Safe;
-	use strict;
-	my $safe = new Safe;
-        # because of opcodes used in "use strict":
-	$safe->permit(qw(:default require));
-	local $Storable::Deparse = 1;
-	local $Storable::Eval = sub { $safe->reval($_[0]) };
-	my $serialized = freeze(sub { 42 });
-	my $code = thaw($serialized);
-	$code->() == 42;
-
-=for example end
-
-=for example_testing
-        is( $code->(), 42 );
 
 =head1 WARNING
 
@@ -1045,9 +812,9 @@ your data.  There is no slowdown on retrieval.
 
 =head1 BUGS
 
-You can't store GLOB, FORMLINE, etc.... If you can define semantics
-for those operations, feel free to enhance Storable so that it can
-deal with them.
+You can't store GLOB, CODE, FORMLINE, etc.... If you can define
+semantics for those operations, feel free to enhance Storable so that
+it can deal with them.
 
 The store functions will C<croak> if they run into such references
 unless you set C<$Storable::forgive_me> to some C<TRUE> value. In that
@@ -1081,7 +848,7 @@ data back to 8 bit and C<croak()> if the conversion fails.
 Prior to Storable 2.01, no distinction was made between signed and
 unsigned integers on storing.  By default Storable prefers to store a
 scalars string representation (if it has one) so this would only cause
-problems when storing large unsigned integers that had never been converted
+problems when storing large unsigned integers that had never been coverted
 to string or floating point.  In other words values that had been generated
 by integer operations such as logic ops and then not used in any string or
 arithmetic context before storing.

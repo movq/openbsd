@@ -1,11 +1,5 @@
 ;# Usage: &look(*FILEHANDLE,$key,$dict,$fold)
-#
-# This library is no longer being maintained, and is included for backward
-# compatibility with Perl 4 programs which may require it.
-#
-# In particular, this should not be used as an example of modern Perl
-# programming techniques.
-#
+
 ;# Sets file position in FILEHANDLE to be first line greater than or equal
 ;# (stringwise) to $key.  Pass flags for dictionary order and case folding.
 
@@ -16,7 +10,7 @@ sub look {
        $blksize,$blocks) = stat(FH);
     $blksize = 8192 unless $blksize;
     $key =~ s/[^\w\s]//g if $dict;
-    $key = lc $key if $fold;
+    $key =~ y/A-Z/a-z/ if $fold;
     $max = int($size / $blksize);
     while ($max - $min > 1) {
 	$mid = int(($max + $min) / 2);
@@ -25,7 +19,7 @@ sub look {
 	$_ = <FH>;
 	chop;
 	s/[^\w\s]//g if $dict;
-	$_ = lc $_ if $fold;
+	y/A-Z/a-z/ if $fold;
 	if ($_ lt $key) {
 	    $min = $mid;
 	}
@@ -39,7 +33,7 @@ sub look {
     while (<FH>) {
 	chop;
 	s/[^\w\s]//g if $dict;
-	$_ = lc $_ if $fold;
+	y/A-Z/a-z/ if $fold;
 	last if $_ ge $key;
 	$min = tell(FH);
     }

@@ -4,16 +4,6 @@
 ;#	...
 ;#	$long = $foo{$short};
 
-#
-# This library is no longer being maintained, and is included for backward
-# compatibility with Perl 4 programs which may require it.
-#
-# In particular, this should not be used as an example of modern Perl
-# programming techniques.
-#
-# Suggested alternative: Text::Abbrev
-#
-
 package abbrev;
 
 sub main'abbrev {
@@ -27,7 +17,7 @@ sub main'abbrev {
 	$len = 1;
 	foreach $cmp (@cmp) {
 	    next if $cmp eq $name;
-	    while (@extra && substr($cmp,0,$len) eq $abbrev) {
+	    while (substr($cmp,0,$len) eq $abbrev) {
 		$abbrev .= shift(@extra);
 		++$len;
 	    }

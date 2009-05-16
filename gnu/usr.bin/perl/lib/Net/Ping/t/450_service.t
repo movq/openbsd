@@ -19,8 +19,7 @@ use Net::Ping;
 # for the TCP Server stuff instead of doing
 # all that direct socket() junk manually.
 
-plan tests => 26, ($^O eq 'MSWin32' ? (todo => [18]) :
-		   $^O eq "hpux"    ? (todo => [9, 18]) : ());
+plan tests => 26, ($^O eq 'MSWin32' ? (todo => [18]) : ());
 
 # Everything loaded fine
 ok 1;

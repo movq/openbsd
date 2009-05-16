@@ -49,9 +49,9 @@ these classes with methods that are specific to file handles.
 
 =over 4
 
-=item new ( FILENAME [,MODE [,PERMS]] )
+=item new ([ ARGS ] )
 
-Creates an C<IO::File>.  If it receives any parameters, they are passed to
+Creates a C<IO::File>.  If it receives any parameters, they are passed to
 the method C<open>; if the open fails, the object is destroyed.  Otherwise,
 it is returned to the caller.
 
@@ -71,73 +71,51 @@ Otherwise, it is returned to the caller.
 
 =item open( FILENAME [,MODE [,PERMS]] )
 
-=item open( FILENAME, IOLAYERS )
-
 C<open> accepts one, two or three parameters.  With one parameter,
-it is just a front end for the built-in C<open> function.  With two or three
+it is just a front end for the built-in C<open> function.  With two
 parameters, the first parameter is a filename that may include
 whitespace or other special characters, and the second parameter is
 the open mode, optionally followed by a file permission value.
 
 If C<IO::File::open> receives a Perl mode string ("E<gt>", "+E<lt>", etc.)
-or an ANSI C fopen() mode string ("w", "r+", etc.), it uses the basic
-Perl C<open> operator (but protects any special characters).
+or a POSIX fopen() mode string ("w", "r+", etc.), it uses the basic
+Perl C<open> operator.
 
 If C<IO::File::open> is given a numeric mode, it passes that mode
 and the optional permissions value to the Perl C<sysopen> operator.
-The permissions default to 0666.
-
-If C<IO::File::open> is given a mode that includes the C<:> character,
-it passes all the three arguments to the three-argument C<open> operator.
-
-For convenience, C<IO::File> exports the O_XXX constants from the
-Fcntl module, if this module is available.
-
-=item binmode( [LAYER] )
-
-C<binmode> sets C<binmode> on the underlying C<IO> object, as documented
-in C<perldoc -f binmode>.
-
-C<binmode> accepts one optional parameter, which is the layer to be
-passed on to the C<binmode> call.
+For convenience, C<IO::File::import> tries to import the O_XXX
+constants from the Fcntl module.  If dynamic loading is not available,
+this may fail, but the rest of IO::File will still work.
 
 =back
-
-=head1 NOTE
-
-Some operating systems may perform  C<IO::File::new()> or C<IO::File::open()>
-on a directory without errors.  This behavior is not portable and not
-suggested for use.  Using C<opendir()> and C<readdir()> or C<IO::Dir> are
-suggested instead.
 
 =head1 SEE ALSO
 
 L<perlfunc>, 
 L<perlop/"I/O Operators">,
-L<IO::Handle>,
-L<IO::Seekable>,
-L<IO::Dir>
+L<IO::Handle>
+L<IO::Seekable>
 
 =head1 HISTORY
 
-Derived from FileHandle.pm by Graham Barr E<lt>F<gbarr@pobox.com>E<gt>.
+Derived from FileHandle.pm by Graham Barr E<lt>F<bodg@tiuk.ti.com>E<gt>.
 
 =cut
 
-use 5.006_001;
+require 5.000;
 use strict;
-our($VERSION, @EXPORT, @EXPORT_OK, @ISA);
+use vars qw($VERSION @EXPORT @EXPORT_OK $AUTOLOAD @ISA);
 use Carp;
 use Symbol;
 use SelectSaver;
 use IO::Seekable;
-use File::Spec;
 
 require Exporter;
+require DynaLoader;
 
-@ISA = qw(IO::Handle IO::Seekable Exporter);
+@ISA = qw(IO::Handle IO::Seekable Exporter DynaLoader);
 
-$VERSION = "1.14";
+$VERSION = "1.06021";
 
 @EXPORT = @IO::Seekable::EXPORT;
 
@@ -148,6 +126,7 @@ eval {
     Fcntl->import(@O);  # first we import what we want to export
     push(@EXPORT, @O);
 };
+
 
 ################################################
 ## Constructor
@@ -178,27 +157,11 @@ sub open {
 	if ($mode =~ /^\d+$/) {
 	    defined $perms or $perms = 0666;
 	    return sysopen($fh, $file, $mode, $perms);
-	} elsif ($mode =~ /:/) {
-	    return open($fh, $mode, $file) if @_ == 3;
-	    croak 'usage: $fh->open(FILENAME, IOLAYERS)';
-	} else {
-            return open($fh, IO::Handle::_open_mode_string($mode), $file);
-        }
+	}
+	$file = './' . $file if $file =~ m{\A[^\\/\w]};
+	$file = IO::Handle::_open_mode_string($mode) . " $file\0";
     }
     open($fh, $file);
-}
-
-################################################
-## Binmode
-##
-
-sub binmode {
-    ( @_ == 1 or @_ == 2 ) or croak 'usage $fh->binmode([LAYER])';
-
-    my($fh, $layer) = @_;
-
-    return binmode $$fh unless $layer;
-    return binmode $$fh, $layer;
 }
 
 1;

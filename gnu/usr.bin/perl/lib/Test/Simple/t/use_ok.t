@@ -1,17 +1,13 @@
 #!/usr/bin/perl -w
-# $Id$
 
 BEGIN {
     if( $ENV{PERL_CORE} ) {
         chdir 't';
-        @INC = qw(../lib ../lib/Test/Simple/t/lib);
-    }
-    else {
-        unshift @INC, 't/lib';
+        @INC = '../lib';
     }
 }
 
-use Test::More tests => 15;
+use Test::More tests => 10;
 
 # Using Symbol because it's core and exports lots of stuff.
 {
@@ -39,30 +35,4 @@ use Test::More tests => 15;
     ::use_ok("constant", qw(foo bar));
     ::ok( defined &foo, 'constant' );
     ::is( $warn, undef, 'no warning');
-}
-
-{
-    package Foo::five;
-    ::use_ok("Symbol", 1.02);
-}
-
-{
-    package Foo::six;
-    ::use_ok("NoExporter", 1.02);
-}
-
-{
-    package Foo::seven;
-    local $SIG{__WARN__} = sub {
-        # Old perls will warn on X.YY_ZZ style versions.  Not our problem
-        warn @_ unless $_[0] =~ /^Argument "\d+\.\d+_\d+" isn't numeric/;
-    };
-    ::use_ok("Test::More", 0.47);
-}
-
-{
-    package Foo::eight;
-    local $SIG{__DIE__};
-    ::use_ok("SigDie");
-    ::ok(defined $SIG{__DIE__}, '  SIG{__DIE__} preserved');
 }

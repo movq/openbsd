@@ -6,26 +6,8 @@ use Test;
 BEGIN
   {
   $| = 1;
-  # to locate the testing files
-  my $location = $0; $location =~ s/constant.t//i;
-  if ($ENV{PERL_CORE})
-    {
-    # testing with the core distribution
-    @INC = qw(../t/lib);
-    }
-  unshift @INC, qw(../lib);
-  if (-d 't')
-    {
-    chdir 't';
-    require File::Spec;
-    unshift @INC, File::Spec->catdir(File::Spec->updir, $location);
-    }
-  else
-    {
-    unshift @INC, $location;
-    }
-  print "# INC = @INC\n";
-
+  chdir 't' if -d 't';
+  unshift @INC, '../lib'; # for running manually
   plan tests => 7;
   if ($] < 5.006)
     {
@@ -39,7 +21,7 @@ use Math::BigInt ':constant';
 ok (2 ** 255,'57896044618658097711785492504343953926634992332820282019728792003956564819968');
 
 {
-  no warnings 'portable';	# protect against "non-portable" warnings
+  no warnings 'portable';
 # hexadecimal constants
 ok (0x123456789012345678901234567890,
     Math::BigInt->new('0x123456789012345678901234567890'));

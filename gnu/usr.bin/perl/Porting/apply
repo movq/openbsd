@@ -1,8 +1,8 @@
 #!/usr/bin/perl -w
 my $file = pop(@ARGV);
 my %meta;
-$ENV{'P4PORT'} ||= 'bactrian:1667';
-$ENV{'P4CLIENT'} ||= 'ni-s';
+$ENV{'P4PORT'} = 'bactrian:1667';
+$ENV{'P4CLIENT'} = 'camel-linux';
 open(FILE,$file) || die "Cannot open $file:$!";
 while (<FILE>)
  {
@@ -17,7 +17,7 @@ my $code = $?;
 warn "$code from patch\n";
 foreach (@results)
  {
-  if (/[Pp]atching\s+file\s*(\S+)/)
+  if (/patching\s+file\s*(.*?)\s*$/)
    {
     push(@edit,$1);
    }
@@ -69,4 +69,3 @@ sub System
    _exit(exec $cmd);
   }
 }
-

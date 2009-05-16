@@ -6,7 +6,7 @@ use Locale::Maketext::Simple    Class => 'CPANPLUS', Style => 'gettext';
 
 =head1 NAME
 
-CPANPLUS::Shell::Default::Plugins::Source - plugin that mimics source(1)
+CPANPLUS::Shell::Default::Plugins::Source 
 
 =head1 SYNOPSIS
 

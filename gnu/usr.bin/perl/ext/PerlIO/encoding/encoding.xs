@@ -32,7 +32,7 @@
    "SUPER::flush.
 
    Note that "flush" is _also_ called for read mode - we still do the
-   (back)-translate so that the base class's "flush" sees the
+   (back)-translate so that the the base class's "flush" sees the
    correct number of encoded chars for positioning the seek
    pointer. (This double translation is the worst performance issue -
    particularly with all-perl encode engine.)
@@ -48,7 +48,6 @@ typedef struct {
     SV *enc;			/* the encoding object */
     SV *chk;                    /* CHECK in Encode methods */
     int flags;			/* Flags currently just needs lines */
-    int inEncodeCall;		/* trap recursive encode calls */
 } PerlIOEncode;
 
 #define NEEDS_LINES	1
@@ -114,13 +113,12 @@ PerlIOEncode_pushed(pTHX_ PerlIO * f, const char *mode, SV * arg, PerlIO_funcs *
 	code = -1;
     }
     else {
-
-       /* $enc->renew */
+#ifdef USE_NEW_SEQUENCE
 	PUSHMARK(sp);
 	XPUSHs(result);
 	PUTBACK;
-	if (call_method("renew",G_SCALAR|G_EVAL) != 1 || SvTRUE(ERRSV)) {
-	    Perl_warner(aTHX_ packWARN(WARN_IO), "\"%" SVf "\" does not support renew method",
+	if (call_method("new_sequence",G_SCALAR|G_EVAL) != 1 || SvTRUE(ERRSV)) {
+	    Perl_warner(aTHX_ packWARN(WARN_IO), "\"%" SVf "\" does not support new_sequence",
 			arg);
 	}
 	else {
@@ -128,6 +126,7 @@ PerlIOEncode_pushed(pTHX_ PerlIO * f, const char *mode, SV * arg, PerlIO_funcs *
 	    result = POPs;
 	    PUTBACK;
 	}
+#endif
 	e->enc = newSVsv(result);
 	PUSHMARK(sp);
 	XPUSHs(e->enc);
@@ -148,7 +147,6 @@ PerlIOEncode_pushed(pTHX_ PerlIO * f, const char *mode, SV * arg, PerlIO_funcs *
     }
 
     e->chk = newSVsv(get_sv("PerlIO::encoding::fallback", 0));
-    e->inEncodeCall = 0;
 
     FREETMPS;
     LEAVE;
@@ -257,7 +255,7 @@ PerlIOEncode_fill(pTHX_ PerlIO * f)
 	STDCHAR *ptr = PerlIO_get_ptr(n);
 	SSize_t use  = (avail >= 0) ? avail : 0;
 	SV *uni;
-	char *s = Nullch;
+	char *s;
 	STRLEN len = 0;
 	e->base.ptr = e->base.end = (STDCHAR *) Nullch;
 	(void) PerlIOEncode_get_base(aTHX_ f);
@@ -310,8 +308,8 @@ PerlIOEncode_fill(pTHX_ PerlIO * f)
 	}
 	else {
 	    /* Create a "dummy" SV to represent the available data from layer below */
-	    if (SvLEN(e->dataSV) && SvPVX_const(e->dataSV)) {
-		Safefree(SvPVX_mutable(e->dataSV));
+	    if (SvLEN(e->dataSV) && SvPVX(e->dataSV)) {
+		Safefree(SvPVX(e->dataSV));
 	    }
 	    if (use > (SSize_t)e->base.bufsiz) {
 		if (e->flags & NEEDS_LINES) {
@@ -323,8 +321,8 @@ PerlIOEncode_fill(pTHX_ PerlIO * f)
 	       use = e->base.bufsiz;
 	    }
 	    }
-	    SvPV_set(e->dataSV, (char *) ptr);
-	    SvLEN_set(e->dataSV, 0);  /* Hands off sv.c - it isn't yours */
+	    SvPVX(e->dataSV) = (char *) ptr;
+	    SvLEN(e->dataSV) = 0;  /* Hands off sv.c - it isn't yours */
 	    SvCUR_set(e->dataSV,use);
 	    SvPOK_only(e->dataSV);
 	}
@@ -406,7 +404,6 @@ PerlIOEncode_flush(pTHX_ PerlIO * f)
 	STRLEN len;
 	SSize_t count = 0;
 	if ((PerlIOBase(f)->flags & PERLIO_F_WRBUF) && (e->base.ptr > e->base.buf)) {
-	    if (e->inEncodeCall) return 0;
 	    /* Write case - encode the buffer and write() to layer below */
 	    PUSHSTACKi(PERLSI_MAGIC);
 	    SPAGAIN;
@@ -419,12 +416,9 @@ PerlIOEncode_flush(pTHX_ PerlIO * f)
 	    XPUSHs(e->bufsv);
 	    XPUSHs(e->chk);
 	    PUTBACK;
-	    e->inEncodeCall = 1;
 	    if (call_method("encode", G_SCALAR) != 1) {
-		e->inEncodeCall = 0;
 		Perl_die(aTHX_ "panic: encode did not return a value");
 	    }
-	    e->inEncodeCall = 0;
 	    SPAGAIN;
 	    str = POPs;
 	    PUTBACK;
@@ -459,7 +453,6 @@ PerlIOEncode_flush(pTHX_ PerlIO * f)
 	    }
 	    /* See if there is anything left in the buffer */
 	    if (e->base.ptr < e->base.end) {
-		if (e->inEncodeCall) return 0;
 		/* Bother - have unread data.
 		   re-encode and unread() to layer below
 		 */
@@ -469,8 +462,8 @@ PerlIOEncode_flush(pTHX_ PerlIO * f)
 		SAVETMPS;
 		str = sv_newmortal();
 		sv_upgrade(str, SVt_PV);
-		SvPV_set(str, (char*)e->base.ptr);
-		SvLEN_set(str, 0);
+		SvPVX(str) = (char*)e->base.ptr;
+		SvLEN(str) = 0;
 		SvCUR_set(str, e->base.end - e->base.ptr);
 		SvPOK_only(str);
 		SvUTF8_on(str);
@@ -479,12 +472,9 @@ PerlIOEncode_flush(pTHX_ PerlIO * f)
 		XPUSHs(str);
 		XPUSHs(e->chk);
 		PUTBACK;
-		e->inEncodeCall = 1;
 		if (call_method("encode", G_SCALAR) != 1) {
-		    e->inEncodeCall = 0;
-		    Perl_die(aTHX_ "panic: encode did not return a value");
+		     Perl_die(aTHX_ "panic: encode did not return a value");
 		}
-		e->inEncodeCall = 0;
 		SPAGAIN;
 		str = POPs;
 		PUTBACK;
@@ -537,7 +527,7 @@ Off_t
 PerlIOEncode_tell(pTHX_ PerlIO * f)
 {
     PerlIOBuf *b = PerlIOSelf(f, PerlIOBuf);
-    /* Unfortunately the only way to get a position is to (re-)translate,
+    /* Unfortunately the only way to get a postion is to (re-)translate,
        the UTF8 we have in bufefr and then ask layer below
      */
     PerlIO_flush(f);

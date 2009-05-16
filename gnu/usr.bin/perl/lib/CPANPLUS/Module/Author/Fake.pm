@@ -17,7 +17,7 @@ $Params::Check::VERBOSE = 1;
 
 =head1 NAME
 
-CPANPLUS::Module::Author::Fake - class for creating fake author objects
+CPANPLUS::Module::Author::Fake
 
 =head1 SYNOPSIS
 

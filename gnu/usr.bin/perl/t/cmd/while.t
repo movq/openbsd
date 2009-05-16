@@ -1,6 +1,8 @@
 #!./perl
 
-print "1..22\n";
+# $RCSfile: while.t,v $$Revision: 4.1 $$Date: 92/08/07 18:27:15 $
+
+print "1..10\n";
 
 open (tmp,'>Cmd_while.tmp') || die "Can't create Cmd_while.tmp.";
 print tmp "tvi925\n";
@@ -8,7 +10,7 @@ print tmp "tvi920\n";
 print tmp "vt100\n";
 print tmp "Amiga\n";
 print tmp "paper\n";
-close tmp or die "Could not close: $!";
+close tmp;
 
 # test "last" command
 
@@ -88,7 +90,6 @@ loop: while (<fh>) {
 if (!eof || $bad) {print "not ok 8\n";} else {print "ok 8\n";}
 if (!$badcont) {print "ok 9\n";} else {print "not ok 9\n";}
 
-close(fh) || die "Can't close Cmd_while.tmp.";
 unlink 'Cmd_while.tmp' || `/bin/rm Cmd_While.tmp`;
 
 #$x = 0;
@@ -107,73 +108,3 @@ $i = 9;
     $i++;
 }
 print "ok $i\n";
-
-# Check curpm is reset when jumping out of a scope
-'abc' =~ /b/;
-WHILE:
-while (1) {
-  $i++;
-  print "#$`,$&,$',\nnot " unless $` . $& . $' eq "abc";
-  print "ok $i\n";
-  {                             # Localize changes to $` and friends
-    'end' =~ /end/;
-    redo WHILE if $i == 11;
-    next WHILE if $i == 12;
-    # 13 do a normal loop
-    last WHILE if $i == 14;
-  }
-}
-$i++;
-print "not " unless $` . $& . $' eq "abc";
-print "ok $i\n";
-
-# check that scope cleanup happens right when there's a continue block
-{
-    my $var = 16;
-    while (my $i = ++$var) {
-	next if $i == 17;
-	last if $i > 17;
-	my $i = 0;
-    }
-    continue {
-        print "ok ", $var-1, "\nok $i\n";
-    }
-}
-
-{
-    local $l = 18;
-    {
-        local $l = 0
-    }
-    continue {
-        print "ok $l\n"
-    }
-}
-
-{
-    local $l = 19;
-    my $x = 0;
-    while (!$x++) {
-        local $l = 0
-    }
-    continue {
-        print "ok $l\n"
-    }
-}
-
-$i = 20;
-{
-    while (1) {
-	my $x;
-	print $x if defined $x;
-	$x = "not ";
-	print "ok $i\n"; ++$i;
-	if ($i == 21) {
-	    next;
-	}
-	last;
-    }
-    continue {
-        print "ok $i\n"; ++$i;
-    }
-}

@@ -1,8 +1,8 @@
 /*  sockadapt.h
  *
- *  Authors: Charles Bailey  bailey@newman.upenn.edu
+ *  Authors: Charles Bailey  bailey@genetics.upenn.edu
  *           David Denholm  denholm@conmat.phys.soton.ac.uk
- *  Last Revised:  4-Mar-1997
+ *  Last Revised: 17-Mar-1995
  *
  *  This file should include any other header files and procide any
  *  declarations, typedefs, and prototypes needed by perl for TCP/IP
@@ -11,39 +11,15 @@
  *  This version is set up for perl5 with socketshr 0.9D TCP/IP support.
  */
 
-#ifndef __SOCKADAPT_INCLUDED
-#define __SOCKADAPT_INCLUDED 1
-
-#if defined(DECCRTL_SOCKETS)
-    /* Use builtin socket interface in DECCRTL and
-     * UCX emulation in whatever TCP/IP stack is present.
-     * Provide prototypes for missing routines; stubs are
-     * in sockadapt.c.
-     */
-#  include <socket.h>
-#  include <inet.h>
-#  include <in.h>
-#  include <netdb.h>
-#if ((__VMS_VER >= 70000000) && (__DECC_VER >= 50200000)) || (__CRTL_VER >= 70000000)
-#else
-   void sethostent(int);
-   void endhostent(void);
-   void setnetent(int);
-   void endnetent(void);
-   void setprotoent(int);
-   void endprotoent(void);
-   void setservent(int);
-   void endservent(void);
-#endif
-#  if defined(__DECC) && defined(__DECC_VER) && (__DECC_VER >= 50200000) && !defined(Sock_size_t)
-#    define Sock_size_t unsigned int
-#  endif
-
-#else
-    /* Pull in SOCKETSHR's header, and set up structures for
-     * gcc, whose basic header file set doesn't include the
-     * TCP/IP stuff.
-     */
+/* SocketShr doesn't support these routines, but the DECC RTL contains
+ * stubs with these names, designed to be used with the UCX socket
+ * library.  We avoid linker collisions by substituting new names.
+ */
+#define getnetbyaddr no_getnetbyaddr
+#define getnetbyname no_getnetbyname
+#define getnetent    no_getnetent
+#define setnetent    no_setnetent
+#define endnetent    no_endnetent
 
 
 #ifdef __GNU_CC__
@@ -133,7 +109,7 @@ struct netent {
 struct netent *getnetbyaddr( long net, int type);
 struct netent *getnetbyname( char *name);
 struct netent *getnetent();
-void setnetent(int);
+void setnetent();
 void endnetent();
 
 #else /* !__GNU_CC__ */
@@ -145,26 +121,15 @@ void endnetent();
 #include <socket.h>
 #include <in.h>
 #include <inet.h>
-
-/* SocketShr doesn't support these routines, but the DECC RTL contains
- * stubs with these names, designed to be used with the UCX socket
- * library.  We avoid linker collisions by substituting new names.
- */
-#define getnetbyaddr no_getnetbyaddr
-#define getnetbyname no_getnetbyname
-#define getnetent    no_getnetent
-#define setnetent    no_setnetent
-#define endnetent    no_endnetent
-
 #include <netdb.h>
-#endif
-
-/* We don't have these two in the system headers. */
-void setnetent(int);
+/* However, we don't have these two in the system headers. */
+void setnetent();
 void endnetent();
 
+#endif
+
 #include <socketshr.h>
-/* socketshr.h from SocketShr 0.9D doesn't alias fileno; its comments say
+/* socketshr.h from SocketShr 0.9D doesn't alias fileno; it's comments say
  * that the CRTL version works OK.  This isn't the case, at least with
  * VAXC, so we use the SocketShr version.
  * N.B. This means that sockadapt.h must be included *after* stdio.h.
@@ -175,14 +140,3 @@ void endnetent();
 #endif
 #define fileno si_fileno
 int si_fileno(FILE *);
-
-
-/* Catch erroneous results for UDP sockets -- see sockadapt.c */
-#ifdef getpeername
-#  undef getpeername
-#endif
-#define getpeername my_getpeername
-int my_getpeername (int, struct sockaddr *, int *);
-
-#endif /* SOCKETSHR stuff */
-#endif /* include guard */

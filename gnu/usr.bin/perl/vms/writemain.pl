@@ -5,7 +5,7 @@
 # linker options file which causes the bootstrap routines for
 # these extension to be universal symbols in PerlShr.Exe.
 #
-# Last modified 29-Nov-1994 by Charles Bailey  bailey@newman.upenn.edu
+# Last modified 29-Nov-1994 by Charles Bailey  bailey@genetics.upenn.edu
 #
 
 if (-f 'miniperlmain.c') { $dir = ''; }
@@ -34,15 +34,14 @@ if (!$ok) {
 print OUT <<'EOH';
 
 static void
-xs_init(pTHX)
+xs_init()
 {
+    dXSUB_SYS;
 EOH
 
 if (@ARGV) {
-  $names = join(' ',@ARGV);
-  $names =~ tr/"//d;  # Plan9 doesn't remove "" on command line
   # Allow for multiple names in one quoted group
-  @exts = split(/\s+/,$names);
+  @exts = split(/\s+/, join(' ',@ARGV));
 }
 
 if (@exts) {
@@ -50,10 +49,8 @@ if (@exts) {
   foreach $ext (@exts) {
     my($subname) = $ext;
     $subname =~ s/::/__/g;
-    print OUT "extern void	boot_${subname} (pTHX_ CV* cv);\n"
+    print OUT "extern void	boot_${subname} _((CV* cv));\n"
   }
-  # May not actually be a declaration, so put after other declarations
-  print OUT "  dXSUB_SYS;\n";
   foreach $ext (@exts) {
     my($subname) = $ext;
     $subname =~ s/::/__/g;

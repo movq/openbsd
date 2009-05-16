@@ -2,7 +2,6 @@
 
 use Config;
 use File::Basename qw(&basename &dirname);
-use Cwd;
 
 # List explicitly here the variables you want Configure to
 # generate.  Metaconfig only looks for shell variables, so you
@@ -13,7 +12,6 @@ use Cwd;
 
 # This forces PL files to create target in same directory as PL file.
 # This is so that make depend always knows where to find PL derivatives.
-$origdir = cwd;
 chdir dirname($0);
 $file = basename($0, '.PL');
 $file .= '.com' if $^O eq 'VMS';
@@ -39,7 +37,7 @@ print OUT <<'!NO!SUBS!';
 # From: Roderick Schertler <roderick@gate.net>
 # To: perl5-porters@africa.nicoh.com
 # Subject: POD lines with only spaces
-#
+# 
 # There are some places in the documentation where a POD directive is
 # ignored because the line before it contains whitespace (and so the
 # directive doesn't start a paragraph).  This patch adds a way to check
@@ -48,32 +46,25 @@ print OUT <<'!NO!SUBS!';
 # problem currently exists.
 #
 #  Version 1.00  Original.
-#  Version 1.01  Andy Dougherty <doughera@lafayette.edu>
+#  Version 1.01  Andy Dougherty <doughera@lafcol.lafayette.edu>
 #    Trivial modifications to output format for easier auto-parsing
 #    Broke it out as a separate function to avoid nasty
 #	Make/Shell/Perl quoting problems, and also to make it easier
 #	to grow.  Someone will probably want to rewrite in terms of
 #	some sort of Pod::Checker module.  Or something.  Consider this
 #	a placeholder for the future.
-#  Version 1.02  Roderick Schertler <roderick@argon.org>
-#	Check for pod directives following any kind of unempty line, not
-#	just lines of whitespace.
-
-@directive = qw(head1 head2 item over back cut pod for begin end);
-@directive{@directive} = (1) x @directive;
-
-$exit = $last_unempty = 0;
+$exit = $last_blank = 0;
 while (<>) {
-    s/(\012|\015\012|\015)$//;
-    if (/^=(\S+)/ && $directive{$1} && $last_unempty) {
-	printf "%s: line %5d, no blank line preceding directive =%s\n",
+    chop;
+    if (/^(=\S+)/ && $last_blank) {
+	printf "%s: line %5d, Non-empty line preceeding directive %s\n",
 		$ARGV, $., $1;
 	$exit = 1;
     }
-    $last_unempty = ($_ ne '');
+    $last_blank = /^\s+$/;
     if (eof) {
 	close(ARGV);
-	$last_unempty = 0;
+	$last_blank = 0;
     }
 }
 exit $exit
@@ -82,4 +73,3 @@ exit $exit
 close OUT or die "Can't close $file: $!";
 chmod 0755, $file or die "Can't reset permissions for $file: $!\n";
 exec("$Config{'eunicefix'} $file") if $Config{'eunicefix'} ne ':';
-chdir $origdir;

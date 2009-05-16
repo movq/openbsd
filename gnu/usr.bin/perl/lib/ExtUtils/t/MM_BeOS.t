@@ -15,7 +15,7 @@ use Test::More;
 
 BEGIN {
 	if ($^O =~ /beos/i) {
-		plan tests => 4;
+		plan tests => 2;
 	} else {
 		plan skip_all => 'This is not BeOS';
 	}
@@ -40,17 +40,9 @@ use File::Basename;
 
 require_ok( 'ExtUtils::MM_BeOS' );
 
-my $MM = bless { NAME => "Foo" }, 'MM';
-
-# init_linker
+# perl_archive()
 {
-    my $libperl = File::Spec->catfile('$(PERL_INC)', 
-                                      $Config{libperl} || 'libperl.a' );
-    my $export  = '';
-    my $after   = '';
-    $MM->init_linker;
-
-    is( $MM->{PERL_ARCHIVE},        $libperl,   'PERL_ARCHIVE' );
-    is( $MM->{PERL_ARCHIVE_AFTER},  $after,     'PERL_ARCHIVE_AFTER' );
-    is( $MM->{EXPORT_LIST},         $export,    'EXPORT_LIST' );
+    my $libperl = $Config{libperl} || 'libperl.a';
+    is( MM->perl_archive(), File::Spec->catfile('$(PERL_INC)', $libperl ),
+	    'perl_archive() should respect libperl setting' );
 }
