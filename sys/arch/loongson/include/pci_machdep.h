@@ -1,4 +1,4 @@
-/*	$OpenBSD: pci_machdep.h,v 1.1 2009/08/05 09:46:47 miod Exp $ */
+/*	$OpenBSD: pci_machdep.h,v 1.1.1.1 2009/08/05 09:46:47 miod Exp $ */
 
 /*
  * Copyright (c) 2003-2004 Opsycon AB  (www.opsycon.se / www.opsycon.com)
