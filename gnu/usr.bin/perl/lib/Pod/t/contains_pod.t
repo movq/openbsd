@@ -2,10 +2,9 @@
 
 # Copyright (C) 2005  Joshua Hoblitt
 #
-# $Id: contains_pod.t,v 1.1.1.1 2006/03/28 18:48:57 millert Exp $
+# $Id: contains_pod.t,v 1.1.1.2 2009/10/12 18:11:06 millert Exp $
 
 use strict;
-
 BEGIN {
     if( $ENV{PERL_CORE} ) {
         chdir 't';
@@ -15,11 +14,14 @@ BEGIN {
     }
 }
 
-
-use Test::More tests => 1;
+use Test::More tests => 2;
 
 use Pod::Find qw( contains_pod );
 
 {
     ok(contains_pod('lib/contains_pod.xr'), "contains pod");
+}
+
+{
+    ok(contains_pod('lib/contains_bad_pod.xr'), "contains bad pod");
 }
