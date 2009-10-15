@@ -1,5 +1,5 @@
 /* $FreeBSD: src/gnu/usr.bin/cc/cc_tools/freebsd-native.h,v 1.28.8.1 2009/04/15 03:14:26 kensmith Exp $ */
-/* $OpenBSD: openbsd-native.h,v 1.1 2009/10/15 20:50:21 robert Exp $ */
+/* $OpenBSD: openbsd-native.h,v 1.1.1.1 2009/10/15 20:50:21 robert Exp $ */
 
 /* OPENBSD_NATIVE is defined when gcc is integrated into the OpenBSD
    source tree so it can be configured appropriately without using
