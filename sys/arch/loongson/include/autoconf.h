@@ -1,4 +1,4 @@
-/*	$OpenBSD: autoconf.h,v 1.1 2009/11/21 18:30:18 miod Exp $ */
+/*	$OpenBSD: autoconf.h,v 1.1.1.1 2009/11/21 18:30:18 miod Exp $ */
 
 /*
  * Copyright (c) 2001-2003 Opsycon AB  (www.opsycon.se / www.opsycon.com)
