@@ -1,4 +1,4 @@
-/* $OpenBSD: cpu.h,v 1.1 2009/11/23 10:32:35 miod Exp $ */
+/* $OpenBSD: cpu.h,v 1.1.1.1 2009/11/23 10:32:35 miod Exp $ */
 /*-
  * Copyright (c) 1992, 1993
  *	The Regents of the University of California.  All rights reserved.
