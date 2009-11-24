@@ -1,4 +1,4 @@
-/*	$OpenBSD: intr.h,v 1.1 2009/11/24 11:20:50 miod Exp $ */
+/*	$OpenBSD: intr.h,v 1.1.1.1 2009/11/24 11:20:50 miod Exp $ */
 
 /*
  * Copyright (c) 2001-2004 Opsycon AB  (www.opsycon.se / www.opsycon.com)
