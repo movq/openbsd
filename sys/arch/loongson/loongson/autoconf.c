@@ -1,4 +1,4 @@
-/*	$OpenBSD: autoconf.c,v 1.1 2009/11/24 11:28:11 miod Exp $	*/
+/*	$OpenBSD: autoconf.c,v 1.1.1.1 2009/11/24 11:28:11 miod Exp $	*/
 /*
  * Copyright (c) 2009 Miodrag Vallat.
  *
