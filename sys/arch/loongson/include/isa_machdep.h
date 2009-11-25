@@ -1,4 +1,4 @@
-/*	$OpenBSD: isa_machdep.h,v 1.1 2009/11/25 19:44:27 miod Exp $	*/
+/*	$OpenBSD: isa_machdep.h,v 1.1.1.1 2009/11/25 19:44:27 miod Exp $	*/
 
 /*
  * Copyright (c) 2007 Miodrag Vallat.
