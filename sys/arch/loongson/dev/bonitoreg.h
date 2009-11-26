@@ -1,4 +1,4 @@
-/*	$OpenBSD: bonitoreg.h,v 1.1 2009/11/26 15:50:07 miod Exp $	*/
+/*	$OpenBSD: bonitoreg.h,v 1.1.1.1 2009/11/26 15:50:07 miod Exp $	*/
 /*	$NetBSD: bonitoreg.h,v 1.6 2005/12/24 20:07:19 perry Exp $	*/
 
 /*
