@@ -1,4 +1,4 @@
-/*	$OpenBSD: pmon32.S,v 1.1 2009/12/11 05:15:14 miod Exp $	*/
+/*	$OpenBSD: pmon32.S,v 1.1.1.1 2009/12/11 05:15:14 miod Exp $	*/
 
 /*
  * Copyright (c) 2009 Miodrag Vallat.
