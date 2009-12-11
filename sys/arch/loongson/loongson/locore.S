@@ -1,4 +1,4 @@
-/*	$OpenBSD: locore.S,v 1.1 2009/12/11 05:14:52 miod Exp $ */
+/*	$OpenBSD: locore.S,v 1.1.1.1 2009/12/11 05:14:52 miod Exp $ */
 
 /*
  * Copyright (c) 2001-2004 Opsycon AB  (www.opsycon.se / www.opsycon.com)
