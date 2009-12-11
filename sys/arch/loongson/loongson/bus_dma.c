@@ -1,4 +1,4 @@
-/*	$OpenBSD: bus_dma.c,v 1.1 2009/12/11 17:23:29 miod Exp $ */
+/*	$OpenBSD: bus_dma.c,v 1.1.1.1 2009/12/11 17:23:29 miod Exp $ */
 
 /*
  * Copyright (c) 2003-2004 Opsycon AB  (www.opsycon.se / www.opsycon.com)
