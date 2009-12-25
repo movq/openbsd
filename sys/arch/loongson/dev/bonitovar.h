@@ -1,4 +1,4 @@
-/*	$OpenBSD: bonitovar.h,v 1.1 2009/12/25 21:28:23 miod Exp $	*/
+/*	$OpenBSD: bonitovar.h,v 1.1.1.1 2009/12/25 21:28:23 miod Exp $	*/
 /*	$NetBSD: bonitovar.h,v 1.4 2008/04/28 20:23:28 martin Exp $	*/
 
 /*-

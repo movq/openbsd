@@ -1,4 +1,4 @@
-/*	$OpenBSD: bus.h,v 1.1 2009/12/25 21:25:46 miod Exp $	*/
+/*	$OpenBSD: bus.h,v 1.1.1.1 2009/12/25 21:25:46 miod Exp $	*/
 
 /*
  * Copyright (c) 2003-2004 Opsycon AB Sweden.  All rights reserved.
