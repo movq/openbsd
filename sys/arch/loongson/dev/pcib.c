@@ -1,4 +1,4 @@
-/*	$OpenBSD: pcib.c,v 1.1 2009/12/25 21:04:34 miod Exp $	*/
+/*	$OpenBSD: pcib.c,v 1.1.1.1 2009/12/25 21:04:34 miod Exp $	*/
 
 /*
  * Copyright (c) 2009 Miodrag Vallat.

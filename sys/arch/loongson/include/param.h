@@ -1,4 +1,4 @@
-/* $OpenBSD: param.h,v 1.1 2009/12/25 21:04:47 miod Exp $ */
+/* $OpenBSD: param.h,v 1.1.1.1 2009/12/25 21:04:47 miod Exp $ */
 /* public domain */
 
 #ifndef _MACHINE_PARAM_H_

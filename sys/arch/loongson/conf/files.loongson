@@ -1,4 +1,4 @@
-#	$OpenBSD: files.loongson,v 1.1 2009/12/25 21:09:57 miod Exp $
+#	$OpenBSD: files.loongson,v 1.1.1.1 2009/12/25 21:09:57 miod Exp $
 
 # Standard stanzas config(8) can't run without
 maxpartitions 16
