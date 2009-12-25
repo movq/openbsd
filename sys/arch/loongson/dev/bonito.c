@@ -1,4 +1,4 @@
-/*	$OpenBSD: bonito.c,v 1.1 2009/12/25 22:09:45 miod Exp $	*/
+/*	$OpenBSD: bonito.c,v 1.1.1.1 2009/12/25 22:09:45 miod Exp $	*/
 /*	$NetBSD: bonito_mainbus.c,v 1.11 2008/04/28 20:23:10 martin Exp $	*/
 /*	$NetBSD: bonito_pci.c,v 1.5 2008/04/28 20:23:28 martin Exp $	*/
 

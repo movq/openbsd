@@ -1,4 +1,4 @@
-/*	$OpenBSD: loongson2_machdep.c,v 1.1 2009/12/25 22:04:21 miod Exp $	*/
+/*	$OpenBSD: loongson2_machdep.c,v 1.1.1.1 2009/12/25 22:04:21 miod Exp $	*/
 
 /*
  * Copyright (c) 2009 Miodrag Vallat.
