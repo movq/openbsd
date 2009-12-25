@@ -1,4 +1,4 @@
-/*	$OpenBSD: glx.c,v 1.1 2009/12/25 22:11:08 miod Exp $	*/
+/*	$OpenBSD: glx.c,v 1.1.1.1 2009/12/25 22:11:08 miod Exp $	*/
 
 /*
  * Copyright (c) 2009 Miodrag Vallat.
