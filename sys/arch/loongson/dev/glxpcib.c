@@ -1,4 +1,4 @@
-/*      $OpenBSD: glxpcib.c,v 1.1 2009/12/25 21:04:25 miod Exp $	*/
+/*      $OpenBSD: glxpcib.c,v 1.1.1.1 2009/12/25 21:04:25 miod Exp $	*/
 
 /*
  * Copyright (c) 2007 Marc Balmer <mbalmer@openbsd.org>
