@@ -1,4 +1,4 @@
-/*	$OpenBSD: smfb.c,v 1.1 2009/12/25 21:19:32 miod Exp $	*/
+/*	$OpenBSD: smfb.c,v 1.1.1.1 2009/12/25 21:19:32 miod Exp $	*/
 
 /*
  * Copyright (c) 2009 Miodrag Vallat.
