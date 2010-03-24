@@ -1,4 +1,4 @@
-/*	$OpenBSD: top.c,v 1.70 2010/03/18 12:47:48 otto Exp $	*/
+/*	$OpenBSD: top.c,v 1.69 2010/01/29 00:36:09 tedu Exp $	*/
 
 /*
  *  Top users/processes display for Unix
@@ -407,24 +407,6 @@ restart:
 	 *		indicates infinity (by being -1)
 	 */
 	while ((displays == -1) || (displays-- > 0)) {
-		if (winchflag) {
-			/*
-			 * reascertain the screen
-			 * dimensions
-			 */
-			get_screensize();
-			resizeterm(screen_length, screen_width + 1);
-
-			/* tell display to resize */
-			max_topn = display_resize();
-
-			/* reset the signal handler */
-			(void) signal(SIGWINCH, sigwinch);
-
-			reset_display();
-			winchflag = 0;
-		}
-
 		/* get the current stats */
 		get_system_info(&system_info);
 
@@ -582,6 +564,24 @@ rundisplay(void)
 		reinit_screen();
 		reset_display();
 		tstopflag = 0;
+		return 1;
+	}
+	if (winchflag) {
+		/*
+		 * reascertain the screen
+		 * dimensions
+		 */
+		get_screensize();
+		resizeterm(screen_length, screen_width + 1);
+
+		/* tell display to resize */
+		max_topn = display_resize();
+
+		/* reset the signal handler */
+		(void) signal(SIGWINCH, sigwinch);
+
+		reset_display();
+		winchflag = 0;
 		return 1;
 	}
 	/*
