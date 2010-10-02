@@ -1,4 +1,4 @@
-/* $OpenBSD: key.c,v 1.6 2010/08/11 18:38:30 jasper Exp $ */
+/* $OpenBSD: key.c,v 1.5 2006/04/03 01:33:09 djm Exp $ */
 
 /*
  * key.c
@@ -72,35 +72,30 @@ load_file(struct iovec *iov, char *filename)
 {
 	struct stat st;
 	int fd;
-	int rval = -1;
 	
 	if ((fd = open(filename, O_RDONLY)) < 0)
-		goto done;
+		return (-1);
 	
 	if (fstat(fd, &st) < 0)
-		goto done;
+		return (-1);
 	
 	if (st.st_size == 0 || st.st_size >= SIZE_MAX) {
 		errno = EINVAL;
-		goto done;
+		return (-1);
 	}
 	if ((iov->iov_base = malloc(st.st_size + 1)) == NULL)
-		goto done;
+		return (-1);
 
 	iov->iov_len = st.st_size;
 	((u_char *)iov->iov_base)[iov->iov_len] = '\0';
 	
 	if (read(fd, iov->iov_base, iov->iov_len) != iov->iov_len) {
 		free(iov->iov_base);
-		goto done;
+		return (-1);
 	}
-
-	rval = 0;
-
-done:
-	if (fd != -1)
-	    close(fd);
-	return (rval);
+	close(fd);
+	
+	return (0);
 }
 
 struct key *
