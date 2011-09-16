@@ -97,7 +97,7 @@ fi
 # Make a temp file name in the proper directory.
 
 dstdir=`dirname $dst`
-dsttmp=$dstdir/_inst.$$_
+dsttmp=$dstdir/#inst.$$#
 
 # Move or copy the file name to the temp name
 

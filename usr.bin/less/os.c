@@ -1,11 +1,27 @@
 /*
- * Copyright (C) 1984-2011  Mark Nudelman
+ * Copyright (c) 1984,1985,1989,1994,1995  Mark Nudelman
+ * All rights reserved.
  *
- * You may distribute under the terms of either the GNU General Public
- * License or the Less License, as specified in the README file.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice in the documentation and/or other materials provided with 
+ *    the distribution.
  *
- * For more information about less, or for information on how to 
- * contact the author, see the README file.
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY
+ * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR 
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR 
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT 
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR 
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE 
+ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN 
+ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 
@@ -23,6 +39,7 @@
 
 #include "less.h"
 #include <signal.h>
+#include <setjmp.h>
 #if HAVE_TIME_H
 #include <time.h>
 #endif
@@ -39,10 +56,29 @@
 #define	time_type	long
 #endif
 
-extern int sigs;
+/*
+ * BSD setjmp() saves (and longjmp() restores) the signal mask.
+ * This costs a system call or two per setjmp(), so if possible we clear the
+ * signal mask with sigsetmask(), and use _setjmp()/_longjmp() instead.
+ * On other systems, setjmp() doesn't affect the signal mask and so
+ * _setjmp() does not exist; we just use setjmp().
+ */
+#if HAVE__SETJMP && HAVE_SIGSETMASK
+#define SET_JUMP	_setjmp
+#define LONG_JUMP	_longjmp
+#else
+#define SET_JUMP	setjmp
+#define LONG_JUMP	longjmp
+#endif
+
+public int reading;
+
+static jmp_buf read_label;
 
 /*
  * Like read() system call, but is deliberately interruptible.
+ * A call to intread() from a signal handler will interrupt
+ * any pending iread().
  */
 	public int
 iread(fd, buf, len)
@@ -52,12 +88,7 @@ iread(fd, buf, len)
 {
 	register int n;
 
-start:
-#if MSDOS_COMPILER==WIN32C
-	if (ABORT_SIGS())
-		return (READ_INTR);
-#else
-#if MSDOS_COMPILER && MSDOS_COMPILER != DJGPPC
+#if MSOFTC
 	if (kbhit())
 	{
 		int c;
@@ -68,68 +99,34 @@ start:
 		ungetch(c);
 	}
 #endif
+	if (SET_JUMP(read_label))
+	{
+		/*
+		 * We jumped here from intread.
+		 */
+		reading = 0;
+#if HAVE_SIGSETMASK
+		sigsetmask(0);
 #endif
+		return (READ_INTR);
+	}
 
 	flush();
-#if MSDOS_COMPILER==DJGPPC
-	if (isatty(fd))
-	{
-		/*
-		 * Don't try reading from a TTY until a character is
-		 * available, because that makes some background programs
-		 * believe DOS is busy in a way that prevents those
-		 * programs from working while "less" waits.
-		 */
-		fd_set readfds;
-
-		FD_ZERO(&readfds);
-		FD_SET(fd, &readfds);
-		if (select(fd+1, &readfds, 0, 0, 0) == -1)
-			return (-1);
-	}
-#endif
+	reading = 1;
 	n = read(fd, buf, len);
-#if 1
-	/*
-	 * This is a kludge to workaround a problem on some systems
-	 * where terminating a remote tty connection causes read() to
-	 * start returning 0 forever, instead of -1.
-	 */
-	{
-		extern int ignore_eoi;
-		if (!ignore_eoi)
-		{
-			static int consecutive_nulls = 0;
-			if (n == 0)
-				consecutive_nulls++;
-			else
-				consecutive_nulls = 0;
-			if (consecutive_nulls > 20)
-				quit(QUIT_ERROR);
-		}
-	}
-#endif
+	reading = 0;
 	if (n < 0)
-	{
-#if HAVE_ERRNO
-		/*
-		 * Certain values of errno indicate we should just retry the read.
-		 */
-#if MUST_DEFINE_ERRNO
-		extern int errno;
-#endif
-#ifdef EINTR
-		if (errno == EINTR)
-			goto start;
-#endif
-#ifdef EAGAIN
-		if (errno == EAGAIN)
-			goto start;
-#endif
-#endif
 		return (-1);
-	}
 	return (n);
+}
+
+/*
+ * Interrupt a pending iread().
+ */
+	public void
+intread()
+{
+	LONG_JUMP(read_label, 1);
 }
 
 /*
@@ -162,7 +159,7 @@ strerror(err)
   
 	if (err < sys_nerr)
 		return sys_errlist[err];
-	snprintf(buf, sizeof(buf), "Error %d", err);
+	sprintf(buf, "Error %d", err);
 	return buf;
 #else
 	return ("cannot open");
@@ -179,130 +176,60 @@ errno_message(filename)
 {
 	register char *p;
 	register char *m;
-	size_t len;
 #if HAVE_ERRNO
-#if MUST_DEFINE_ERRNO
 	extern int errno;
-#endif
 	p = strerror(errno);
 #else
 	p = "cannot open";
 #endif
-	len = strlen(filename) + strlen(p) + 3;
-	m = (char *) ecalloc(len, sizeof(char));
-	SNPRINTF2(m, len, "%s: %s", filename, p);
+	m = (char *) ecalloc(strlen(filename) + strlen(p) + 3, sizeof(char));
+	sprintf(m, "%s: %s", filename, p);
 	return (m);
 }
 
-/* #define HAVE_FLOAT 0 */
-
-	static POSITION
-muldiv(val, num, den)
-	POSITION val, num, den;
+/*
+ * Return the largest possible number that can fit in a long.
+ */
+#ifdef MAXLONG
+	static long
+get_maxlong()
 {
-#if HAVE_FLOAT
-	double v = (((double) val) * num) / den;
-	return ((POSITION) (v + 0.5));
-#else
-	POSITION v = ((POSITION) val) * num;
-
-	if (v / num == val)
-		/* No overflow */
-		return (POSITION) (v / den);
-	else
-		/* Above calculation overflows; 
-		 * use a method that is less precise but won't overflow. */
-		return (POSITION) (val / (den / num));
-#endif
+	return (MAXLONG);
 }
+#else
+	static long
+get_maxlong()
+{
+	long n, n2;
+
+	/*
+	 * Keep doubling n until we overflow.
+	 * {{ This actually only returns the largest power of two that
+	 *    can fit in a long, but percentage() doesn't really need
+	 *    it any more accurate than that. }}
+	 */
+	n2 = 128;  /* Hopefully no maxlong is less than 128! */
+	do {
+		n = n2;
+		n2 *= 2;
+	} while (n2 / 2 == n);
+	return (n);
+}
+#endif
 
 /*
- * Return the ratio of two POSITIONS, as a percentage.
- * {{ Assumes a POSITION is a long int. }}
+ * Return the ratio of two longs, as a percentage.
  */
 	public int
 percentage(num, den)
-	POSITION num, den;
+	long num, den;
 {
-	return (int) muldiv(num,  (POSITION) 100, den);
-}
-
-/*
- * Return the specified percentage of a POSITION.
- */
-	public POSITION
-percent_pos(pos, percent, fraction)
-	POSITION pos;
-	int percent;
-	long fraction;
-{
-	/* Change percent (parts per 100) to perden (parts per NUM_FRAC_DENOM). */
-	POSITION perden = (percent * (NUM_FRAC_DENOM / 100)) + (fraction / 100);
-
-	if (perden == 0)
-		return (0);
-	return (POSITION) muldiv(pos, perden, (POSITION) NUM_FRAC_DENOM);
-}
-
-#if !HAVE_STRCHR
-/*
- * strchr is used by regexp.c.
- */
-	char *
-strchr(s, c)
-	char *s;
-	int c;
-{
-	for ( ;  *s != '\0';  s++)
-		if (*s == c)
-			return (s);
-	if (c == '\0')
-		return (s);
-	return (NULL);
-}
-#endif
-
-#if !HAVE_MEMCPY
-	VOID_POINTER
-memcpy(dst, src, len)
-	VOID_POINTER dst;
-	VOID_POINTER src;
-	int len;
-{
-	char *dstp = (char *) dst;
-	char *srcp = (char *) src;
-	int i;
-
-	for (i = 0;  i < len;  i++)
-		dstp[i] = srcp[i];
-	return (dst);
-}
-#endif
-
-#ifdef _OSK_MWC32
-
-/*
- * This implements an ANSI-style intercept setup for Microware C 3.2
- */
-	public int 
-os9_signal(type, handler)
-	int type;
-	RETSIGTYPE (*handler)();
-{
-	intercept(handler);
-}
-
-#include <sgstat.h>
-
-	int 
-isatty(f)
-	int f;
-{
-	struct sgbuf sgbuf;
-
-	if (_gs_opt(f, &sgbuf) < 0)
-		return -1;
-	return (sgbuf.sg_class == 0);
-}
+	static long maxlong100 = 0;
 	
-#endif
+	if (maxlong100 == 0)
+		maxlong100 = get_maxlong() / 100;
+	if (num > maxlong100)
+		return (num / (den/100));
+	else
+		return (100*num / den);
+}

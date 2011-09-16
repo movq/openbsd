@@ -1,11 +1,27 @@
 /*
- * Copyright (C) 1984-2011  Mark Nudelman
+ * Copyright (c) 1984,1985,1989,1994,1995  Mark Nudelman
+ * All rights reserved.
  *
- * You may distribute under the terms of either the GNU General Public
- * License or the Less License, as specified in the README file.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice in the documentation and/or other materials provided with 
+ *    the distribution.
  *
- * For more information about less, or for information on how to 
- * contact the author, see the README file.
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY
+ * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR 
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR 
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT 
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR 
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE 
+ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN 
+ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 
@@ -15,6 +31,8 @@
  * A signal usually merely causes a bit to be set in the "signals" word.
  * At some convenient time, the mainline code checks to see if any
  * signals need processing by calling psignal().
+ * If we happen to be reading from a file [in iread()] at the time
+ * the signal is received, we call intread to interrupt the iread.
  */
 
 #include "less.h"
@@ -30,8 +48,7 @@ extern int screen_trashed;
 extern int lnloop;
 extern int linenums;
 extern int wscroll;
-extern int quit_on_intr;
-extern long jump_sline_fraction;
+extern int reading;
 
 /*
  * Interrupt signal handler.
@@ -41,20 +58,13 @@ extern long jump_sline_fraction;
 u_interrupt(type)
 	int type;
 {
-	bell();
 #if OS2
-	LSIGNAL(SIGINT, SIG_ACK);
+	SIGNAL(SIGINT, SIG_ACK);
 #endif
+	SIGNAL(SIGINT, u_interrupt);
 	sigs |= S_INTERRUPT;
-#if MSDOS_COMPILER==DJGPPC
-	/*
-	 * If a keyboard has been hit, it must be Ctrl-C
-	 * (as opposed to Ctrl-Break), so consume it.
-	 * (Otherwise, Less will beep when it sees Ctrl-C from keyboard.)
-	 */
-	if (kbhit())
-		getkey();
-#endif
+	if (reading)
+		intread();
 }
 
 #ifdef SIGTSTP
@@ -66,7 +76,10 @@ u_interrupt(type)
 stop(type)
 	int type;
 {
+	SIGNAL(SIGTSTP, stop);
 	sigs |= S_STOP;
+	if (reading)
+		intread();
 }
 #endif
 
@@ -79,7 +92,10 @@ stop(type)
 winch(type)
 	int type;
 {
+	SIGNAL(SIGWINCH, winch);
 	sigs |= S_WINCH;
+	if (reading)
+		intread();
 }
 #else
 #ifdef SIGWIND
@@ -91,32 +107,12 @@ winch(type)
 winch(type)
 	int type;
 {
+	SIGNAL(SIGWIND, winch);
 	sigs |= S_WINCH;
+	if (reading)
+		intread();
 }
 #endif
-#endif
-
-#if MSDOS_COMPILER==WIN32C
-/*
- * Handle CTRL-C and CTRL-BREAK keys.
- */
-#include "windows.h"
-
-	static BOOL WINAPI 
-wbreak_handler(dwCtrlType)
-	DWORD dwCtrlType;
-{
-	switch (dwCtrlType)
-	{
-	case CTRL_C_EVENT:
-	case CTRL_BREAK_EVENT:
-		sigs |= S_INTERRUPT;
-		return (TRUE);
-	default:
-		break;
-	}
-	return (FALSE);
-}
 #endif
 
 /*
@@ -131,42 +127,31 @@ init_signals(on)
 		/*
 		 * Set signal handlers.
 		 */
-		(void) LSIGNAL(SIGINT, u_interrupt);
-#if MSDOS_COMPILER==WIN32C
-		SetConsoleCtrlHandler(wbreak_handler, TRUE);
-#endif
+		(void) SIGNAL(SIGINT, u_interrupt);
 #ifdef SIGTSTP
-		(void) LSIGNAL(SIGTSTP, stop);
+		(void) SIGNAL(SIGTSTP, stop);
 #endif
 #ifdef SIGWINCH
-		(void) LSIGNAL(SIGWINCH, winch);
-#endif
+		(void) SIGNAL(SIGWINCH, winch);
+#else
 #ifdef SIGWIND
-		(void) LSIGNAL(SIGWIND, winch);
+		(void) SIGNAL(SIGWIND, winch);
 #endif
-#ifdef SIGQUIT
-		(void) LSIGNAL(SIGQUIT, SIG_IGN);
 #endif
 	} else
 	{
 		/*
 		 * Restore signals to defaults.
 		 */
-		(void) LSIGNAL(SIGINT, SIG_DFL);
-#if MSDOS_COMPILER==WIN32C
-		SetConsoleCtrlHandler(wbreak_handler, FALSE);
-#endif
+		(void) SIGNAL(SIGINT, SIG_DFL);
 #ifdef SIGTSTP
-		(void) LSIGNAL(SIGTSTP, SIG_DFL);
+		(void) SIGNAL(SIGTSTP, SIG_DFL);
 #endif
 #ifdef SIGWINCH
-		(void) LSIGNAL(SIGWINCH, SIG_IGN);
+		(void) SIGNAL(SIGWINCH, SIG_IGN);
 #endif
 #ifdef SIGWIND
-		(void) LSIGNAL(SIGWIND, SIG_IGN);
-#endif
-#ifdef SIGQUIT
-		(void) LSIGNAL(SIGQUIT, SIG_DFL);
+		(void) SIGNAL(SIGWIND, SIG_IGN);
 #endif
 	}
 }
@@ -191,16 +176,16 @@ psignals()
 		 * Clean up the terminal.
 		 */
 #ifdef SIGTTOU
-		LSIGNAL(SIGTTOU, SIG_IGN);
+		SIGNAL(SIGTTOU, SIG_IGN);
 #endif
 		clear_bot();
 		deinit();
 		flush();
 		raw_mode(0);
 #ifdef SIGTTOU
-		LSIGNAL(SIGTTOU, SIG_DFL);
+		SIGNAL(SIGTTOU, SIG_DFL);
 #endif
-		LSIGNAL(SIGTSTP, SIG_DFL);
+		SIGNAL(SIGTSTP, SIG_DFL);
 		kill(getpid(), SIGTSTP);
 		/*
 		 * ... Bye bye. ...
@@ -208,7 +193,7 @@ psignals()
 		 * Reset the terminal and arrange to repaint the
 		 * screen when we get back to the main command loop.
 		 */
-		LSIGNAL(SIGTSTP, stop);
+		SIGNAL(SIGTSTP, stop);
 		raw_mode(1);
 		init();
 		screen_trashed = 1;
@@ -228,33 +213,30 @@ psignals()
 		if (sc_width != old_width || sc_height != old_height)
 		{
 			wscroll = (sc_height + 1) / 2;
-			calc_jump_sline();
-			calc_shift_count();
 			screen_trashed = 1;
 		}
 	}
 #endif
 	if (tsignals & S_INTERRUPT)
 	{
-		if (quit_on_intr)
-			quit(QUIT_INTERRUPT);
+		bell();
+		/*
+		 * {{ You may wish to replace the bell() with 
+		 *    error("Interrupt", NULL_PARG); }}
+		 */
+
+		/*
+		 * If we were interrupted while in the "calculating 
+		 * line numbers" loop, turn off line numbers.
+		 */
+		if (lnloop)
+		{
+			lnloop = 0;
+			if (linenums == 2)
+				screen_trashed = 1;
+			linenums = 0;
+			error("Line numbers turned off", NULL_PARG);
+		}
+
 	}
-}
-
-/*
- * Custom version of signal() that causes syscalls to be interrupted.
- */
-	public void
-(*lsignal(s, a))()
-	int s;
-	void (*a) ();
-{
-	struct sigaction sa, osa;
-
-	sa.sa_handler = a;
-	sigemptyset(&sa.sa_mask);
-	sa.sa_flags = 0;		/* don't restart system calls */
-	if (sigaction(s, &sa, &osa) != 0)
-		return (SIG_ERR);
-	return (osa.sa_handler);
 }

@@ -24,20 +24,11 @@
  *
  * *** NOTE: this code has been altered slightly for use in Tcl. ***
  * Slightly modified by David MacKenzie to undo most of the changes for TCL.
- * Added regexec2 with notbol parameter. -- 4/19/99 Mark Nudelman
  */
 
-#include "less.h"
-#if HAVE_STDIO_H
 #include <stdio.h>
-#endif
-#if HAVE_STDLIB_H
-#include <stdlib.h>
-#endif
-#if HAVE_STRING_H
-#include <string.h>
-#endif
 #include "regexp.h"
+char *strchr();
 
 /*
  * The "internal use only" fields in regexp.h are present to pass info from
@@ -76,7 +67,6 @@
  */
 
 /* definition	number	opnd?	meaning */
-#undef EOL
 #define	END	0	/* no	End of program. */
 #define	BOL	1	/* no	Match "" at beginning of line. */
 #define	EOL	2	/* no	Match "" at end of line. */
@@ -720,10 +710,9 @@ STATIC char *regprop();
  - regexec - match a regexp against a string
  */
 int
-regexec2(prog, string, notbol)
+regexec(prog, string)
 register regexp *prog;
 register char *string;
-int notbol;
 {
 	register char *s;
 
@@ -752,10 +741,7 @@ int notbol;
 	}
 
 	/* Mark beginning of line for ^ . */
-	if (notbol)
-		regbol = NULL;
-	else
-		regbol = string;
+	regbol = string;
 
 	/* Simplest case:  anchored match need be tried only once. */
 	if (prog->reganch)
@@ -779,14 +765,6 @@ int notbol;
 
 	/* Failure. */
 	return(0);
-}
-
-int
-regexec(prog, string)
-register regexp *prog;
-register char *string;
-{
-	return regexec2(prog, string, 0);
 }
 
 /*
@@ -1144,7 +1122,7 @@ char *op;
 	register char *p;
 	static char buf[50];
 
-	(void) strlcpy(buf, ":", sizeof(buf));
+	(void) strcpy(buf, ":");
 
 	switch (OP(op)) {
 	case BOL:
@@ -1186,8 +1164,7 @@ char *op;
 	case OPEN+7:
 	case OPEN+8:
 	case OPEN+9:
-		snprintf(buf+strlen(buf), sizeof(buf)-strlen(buf),
-		    "OPEN%d", OP(op)-OPEN);
+		sprintf(buf+strlen(buf), "OPEN%d", OP(op)-OPEN);
 		p = NULL;
 		break;
 	case CLOSE+1:
@@ -1199,8 +1176,7 @@ char *op;
 	case CLOSE+7:
 	case CLOSE+8:
 	case CLOSE+9:
-		snprintf(buf+strlen(buf), sizeof(buf)-strlen(buf),
-		    "CLOSE%d", OP(op)-CLOSE);
+		sprintf(buf+strlen(buf), "CLOSE%d", OP(op)-CLOSE);
 		p = NULL;
 		break;
 	case STAR:
@@ -1214,7 +1190,7 @@ char *op;
 		break;
 	}
 	if (p != NULL)
-		(void) strlcat(buf, p, sizeof(buf));
+		(void) strcat(buf, p);
 	return(buf);
 }
 #endif

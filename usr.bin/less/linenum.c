@@ -1,11 +1,27 @@
 /*
- * Copyright (C) 1984-2011  Mark Nudelman
+ * Copyright (c) 1984,1985,1989,1994,1995  Mark Nudelman
+ * All rights reserved.
  *
- * You may distribute under the terms of either the GNU General Public
- * License or the Less License, as specified in the README file.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice in the documentation and/or other materials provided with 
+ *    the distribution.
  *
- * For more information about less, or for information on how to 
- * contact the author, see the README file.
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY
+ * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR 
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR 
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT 
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR 
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE 
+ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN 
+ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 
@@ -34,18 +50,19 @@
  */
 
 #include "less.h"
+#include "position.h"
 
 /*
  * Structure to keep track of a line number and the associated file position.
  * A doubly-linked circular list of line numbers is kept ordered by line number.
  */
-struct linenum_info
+struct linenum
 {
-	struct linenum_info *next;	/* Link to next in the list */
-	struct linenum_info *prev;	/* Line to previous in the list */
+	struct linenum *next;		/* Link to next in the list */
+	struct linenum *prev;		/* Line to previous in the list */
 	POSITION pos;			/* File position */
 	POSITION gap;			/* Gap between prev and next */
-	LINENUM line;			/* Line number */
+	int line;			/* Line number */
 };
 /*
  * "gap" needs some explanation: the gap of any particular line number
@@ -56,19 +73,20 @@ struct linenum_info
  * when we have a new one to insert and the table is full.
  */
 
-#define	NPOOL	200			/* Size of line number pool */
+#define	NPOOL	50			/* Size of line number pool */
 
 #define	LONGTIME	(2)		/* In seconds */
 
-static struct linenum_info anchor;	/* Anchor of the list */
-static struct linenum_info *freelist;	/* Anchor of the unused entries */
-static struct linenum_info pool[NPOOL];	/* The pool itself */
-static struct linenum_info *spare;		/* We always keep one spare entry */
+public int lnloop = 0;			/* Are we in the line num loop? */
+
+static struct linenum anchor;		/* Anchor of the list */
+static struct linenum *freelist;	/* Anchor of the unused entries */
+static struct linenum pool[NPOOL];	/* The pool itself */
+static struct linenum *spare;		/* We always keep one spare entry */
 
 extern int linenums;
 extern int sigs;
 extern int sc_height;
-extern int screen_trashed;
 
 /*
  * Initialize the line number structures.
@@ -76,7 +94,7 @@ extern int screen_trashed;
 	public void
 clr_linenum()
 {
-	register struct linenum_info *p;
+	register struct linenum *p;
 
 	/*
 	 * Put all the entries on the free list.
@@ -103,7 +121,7 @@ clr_linenum()
  */
 	static void
 calcgap(p)
-	register struct linenum_info *p;
+	register struct linenum *p;
 {
 	/*
 	 * Don't bother to compute a gap for the anchor.
@@ -122,14 +140,14 @@ calcgap(p)
  * FIRST character in the specified line.
  */
 	public void
-add_lnum(linenum, pos)
-	LINENUM linenum;
+add_lnum(lno, pos)
+	int lno;
 	POSITION pos;
 {
-	register struct linenum_info *p;
-	register struct linenum_info *new;
-	register struct linenum_info *nextp;
-	register struct linenum_info *prevp;
+	register struct linenum *p;
+	register struct linenum *new;
+	register struct linenum *nextp;
+	register struct linenum *prevp;
 	register POSITION mingap;
 
 	/*
@@ -137,7 +155,7 @@ add_lnum(linenum, pos)
 	 * The entries are sorted by position.
 	 */
 	for (p = anchor.next;  p != &anchor && p->pos < pos;  p = p->next)
-		if (p->line == linenum)
+		if (p->line == lno)
 			/* We already have this one. */
 			return;
 	nextp = p;
@@ -168,7 +186,7 @@ add_lnum(linenum, pos)
 	new->next = nextp;
 	new->prev = prevp;
 	new->pos = pos;
-	new->line = linenum;
+	new->line = lno;
 
 	nextp->prev = new;
 	prevp->next = new;
@@ -213,6 +231,12 @@ add_lnum(linenum, pos)
 longloopmessage()
 {
 	ierror("Calculating line numbers", NULL_PARG);
+	/*
+	 * Set the lnloop flag here, so if the user interrupts while
+	 * we are calculating line numbers, the signal handler will 
+	 * turn off line numbers (linenums=0).
+	 */
+	lnloop = 1;
 }
 
 static int loopcount;
@@ -243,31 +267,15 @@ longish()
 }
 
 /*
- * Turn off line numbers because the user has interrupted
- * a lengthy line number calculation.
- */
-	static void
-abort_long()
-{
-	if (linenums == OPT_ONPLUS)
-		/*
-		 * We were displaying line numbers, so need to repaint.
-		 */
-		screen_trashed = 1;
-	linenums = 0;
-	error("Line numbers turned off", NULL_PARG);
-}
-
-/*
  * Find the line number associated with a given position.
  * Return 0 if we can't figure it out.
  */
-	public LINENUM
+	public int
 find_linenum(pos)
 	POSITION pos;
 {
-	register struct linenum_info *p;
-	register LINENUM linenum;
+	register struct linenum *p;
+	register int lno;
 	POSITION cpos;
 
 	if (!linenums)
@@ -306,6 +314,7 @@ find_linenum(pos)
 	 * The decision is based on which way involves 
 	 * traversing fewer bytes in the file.
 	 */
+	flush();
 #if HAVE_TIME
 	startime = get_time();
 #endif
@@ -318,30 +327,27 @@ find_linenum(pos)
 		if (ch_seek(p->pos))
 			return (0);
 		loopcount = 0;
-		for (linenum = p->line, cpos = p->pos;  cpos < pos;  linenum++)
+		for (lno = p->line, cpos = p->pos;  cpos < pos;  lno++)
 		{
 			/*
 			 * Allow a signal to abort this loop.
 			 */
-			cpos = forw_raw_line(cpos, (char **)NULL, (int *)NULL);
-			if (ABORT_SIGS()) {
-				abort_long();
-				return (0);
-			}
-			if (cpos == NULL_POSITION)
+			cpos = forw_raw_line(cpos, (char **)NULL);
+			if (ABORT_SIGS() || cpos == NULL_POSITION)
 				return (0);
 			longish();
 		}
+		lnloop = 0;
 		/*
 		 * We might as well cache it.
 		 */
-		add_lnum(linenum, cpos);
+		add_lnum(lno, cpos);
 		/*
 		 * If the given position is not at the start of a line,
 		 * make sure we return the correct line number.
 		 */
 		if (cpos > pos)
-			linenum--;
+			lno--;
 	} else
 	{
 		/*
@@ -350,27 +356,24 @@ find_linenum(pos)
 		if (ch_seek(p->pos))
 			return (0);
 		loopcount = 0;
-		for (linenum = p->line, cpos = p->pos;  cpos > pos;  linenum--)
+		for (lno = p->line, cpos = p->pos;  cpos > pos;  lno--)
 		{
 			/*
 			 * Allow a signal to abort this loop.
 			 */
-			cpos = back_raw_line(cpos, (char **)NULL, (int *)NULL);
-			if (ABORT_SIGS()) {
-				abort_long();
-				return (0);
-			}
-			if (cpos == NULL_POSITION)
+			cpos = back_raw_line(cpos, (char **)NULL);
+			if (ABORT_SIGS() || cpos == NULL_POSITION)
 				return (0);
 			longish();
 		}
+		lnloop = 0;
 		/*
 		 * We might as well cache it.
 		 */
-		add_lnum(linenum, cpos);
+		add_lnum(lno, cpos);
 	}
 
-	return (linenum);
+	return (lno);
 }
 
 /*
@@ -378,14 +381,14 @@ find_linenum(pos)
  * Return NULL_POSITION if we can't figure it out.
  */
 	public POSITION
-find_pos(linenum)
-	LINENUM linenum;
+find_pos(lno)
+	int lno;
 {
-	register struct linenum_info *p;
+	register struct linenum *p;
 	POSITION cpos;
-	LINENUM clinenum;
+	int clno;
 
-	if (linenum <= 1)
+	if (lno <= 1)
 		/*
 		 * Line number 1 is beginning of file.
 		 */
@@ -394,13 +397,14 @@ find_pos(linenum)
 	/*
 	 * Find the entry nearest to the line number we want.
 	 */
-	for (p = anchor.next;  p != &anchor && p->line < linenum;  p = p->next)
+	for (p = anchor.next;  p != &anchor && p->line < lno;  p = p->next)
 		continue;
-	if (p->line == linenum)
+	if (p->line == lno)
 		/* Found it exactly. */
 		return (p->pos);
 
-	if (p == &anchor || linenum - p->prev->line < p->line - linenum)
+	flush();
+	if (p == &anchor || lno - p->prev->line < p->line - lno)
 	{
 		/*
 		 * Go forward.
@@ -408,15 +412,13 @@ find_pos(linenum)
 		p = p->prev;
 		if (ch_seek(p->pos))
 			return (NULL_POSITION);
-		for (clinenum = p->line, cpos = p->pos;  clinenum < linenum;  clinenum++)
+		for (clno = p->line, cpos = p->pos;  clno < lno;  clno++)
 		{
 			/*
 			 * Allow a signal to abort this loop.
 			 */
-			cpos = forw_raw_line(cpos, (char **)NULL, (int *)NULL);
-			if (ABORT_SIGS())
-				return (NULL_POSITION);
-			if (cpos == NULL_POSITION)
+			cpos = forw_raw_line(cpos, (char **)NULL);
+			if (ABORT_SIGS() || cpos == NULL_POSITION)
 				return (NULL_POSITION);
 		}
 	} else
@@ -426,22 +428,20 @@ find_pos(linenum)
 		 */
 		if (ch_seek(p->pos))
 			return (NULL_POSITION);
-		for (clinenum = p->line, cpos = p->pos;  clinenum > linenum;  clinenum--)
+		for (clno = p->line, cpos = p->pos;  clno > lno;  clno--)
 		{
 			/*
 			 * Allow a signal to abort this loop.
 			 */
-			cpos = back_raw_line(cpos, (char **)NULL, (int *)NULL);
-			if (ABORT_SIGS())
-				return (NULL_POSITION);
-			if (cpos == NULL_POSITION)
+			cpos = back_raw_line(cpos, (char **)NULL);
+			if (ABORT_SIGS() || cpos == NULL_POSITION)
 				return (NULL_POSITION);
 		}
 	}
 	/*
 	 * We might as well cache it.
 	 */
-	add_lnum(clinenum, cpos);
+	add_lnum(clno, cpos);
 	return (cpos);
 }
 
@@ -450,13 +450,13 @@ find_pos(linenum)
  * The argument "where" tells which line is to be considered
  * the "current" line (e.g. TOP, BOTTOM, MIDDLE, etc).
  */
-	public LINENUM
+	public int
 currline(where)
 	int where;
 {
 	POSITION pos;
 	POSITION len;
-	LINENUM linenum;
+	int lnum;
 
 	pos = position(where);
 	len = ch_length();
@@ -464,8 +464,8 @@ currline(where)
 		pos = position(++where);
 	if (pos == NULL_POSITION)
 		pos = len;
-	linenum = find_linenum(pos);
+	lnum = find_linenum(pos);
 	if (pos == len)
-		linenum--;
-	return (linenum);
+		lnum--;
+	return (lnum);
 }

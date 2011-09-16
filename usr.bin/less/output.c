@@ -1,11 +1,27 @@
 /*
- * Copyright (C) 1984-2011  Mark Nudelman
+ * Copyright (c) 1984,1985,1989,1994,1995  Mark Nudelman
+ * All rights reserved.
  *
- * You may distribute under the terms of either the GNU General Public
- * License or the Less License, as specified in the README file.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice in the documentation and/or other materials provided with 
+ *    the distribution.
  *
- * For more information about less, or for information on how to 
- * contact the author, see the README file.
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY
+ * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR 
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR 
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT 
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR 
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE 
+ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN 
+ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 
@@ -14,31 +30,15 @@
  */
 
 #include "less.h"
-#if MSDOS_COMPILER==WIN32C
-#include "windows.h"
-#endif
 
 public int errmsgs;	/* Count of messages displayed by error() */
 public int need_clr;
-public int final_attr;
-public int at_prompt;
 
 extern int sigs;
 extern int sc_width;
 extern int so_s_width, so_e_width;
 extern int screen_trashed;
 extern int any_display;
-extern int is_tty;
-extern int oldbot;
-
-#if MSDOS_COMPILER==WIN32C || MSDOS_COMPILER==BORLANDC || MSDOS_COMPILER==DJGPPC
-extern int ctldisp;
-extern int nm_fg_color, nm_bg_color;
-extern int bo_fg_color, bo_bg_color;
-extern int ul_fg_color, ul_bg_color;
-extern int so_fg_color, so_bg_color;
-extern int bl_fg_color, bl_bg_color;
-#endif
 
 /*
  * Display the line which is in the line buffer.
@@ -49,6 +49,7 @@ put_line()
 	register int c;
 	register int i;
 	int a;
+	int curr_attr;
 
 	if (ABORT_SIGS())
 	{
@@ -59,22 +60,51 @@ put_line()
 		return;
 	}
 
-	final_attr = AT_NORMAL;
+	curr_attr = AT_NORMAL;
 
 	for (i = 0;  (c = gline(i, &a)) != '\0';  i++)
 	{
-		at_switch(a);
-		final_attr = a;
+		if (a != curr_attr)
+		{
+			/*
+			 * Changing attributes.
+			 * Display the exit sequence for the old attribute
+			 * and the enter sequence for the new one.
+			 */
+			switch (curr_attr)
+			{
+			case AT_UNDERLINE:	ul_exit();	break;
+			case AT_BOLD:		bo_exit();	break;
+			case AT_BLINK:		bl_exit();	break;
+			case AT_STANDOUT:	so_exit();	break;
+			}
+			switch (a)
+			{
+			case AT_UNDERLINE:	ul_enter();	break;
+			case AT_BOLD:		bo_enter();	break;
+			case AT_BLINK:		bl_enter();	break;
+			case AT_STANDOUT:	so_enter();	break;
+			}
+			curr_attr = a;
+		}
+		if (curr_attr == AT_INVIS)
+			continue;
 		if (c == '\b')
 			putbs();
 		else
 			putchr(c);
 	}
 
-	at_exit();
+	switch (curr_attr)
+	{
+	case AT_UNDERLINE:	ul_exit();	break;
+	case AT_BOLD:		bo_exit();	break;
+	case AT_BLINK:		bl_exit();	break;
+	case AT_STANDOUT:	so_exit();	break;
+	}
 }
 
-static char obuf[OUTBUF_SIZE];
+static char obuf[1024];
 static char *ob = obuf;
 
 /*
@@ -99,215 +129,19 @@ flush()
 	register int n;
 	register int fd;
 
+#if MSOFTC
+	*ob = '\0';
+	_outtext(obuf);
+	ob = obuf;
+#else
 	n = ob - obuf;
 	if (n == 0)
 		return;
-
-#if MSDOS_COMPILER==MSOFTC
-	if (is_tty && any_display)
-	{
-		*ob = '\0';
-		_outtext(obuf);
-		ob = obuf;
-		return;
-	}
-#else
-#if MSDOS_COMPILER==WIN32C || MSDOS_COMPILER==BORLANDC || MSDOS_COMPILER==DJGPPC
-	if (is_tty && any_display)
-	{
-		*ob = '\0';
-		if (ctldisp != OPT_ONPLUS)
-			WIN32textout(obuf, ob - obuf);
-		else
-		{
-			/*
-			 * Look for SGR escape sequences, and convert them
-			 * to color commands.  Replace bold, underline,
-			 * and italic escapes into colors specified via
-			 * the -D command-line option.
-			 */
-			char *anchor, *p, *p_next;
-			unsigned char fg, bg;
-			static unsigned char at;
-#if MSDOS_COMPILER==WIN32C
-			/* Screen colors used by 3x and 4x SGR commands. */
-			static unsigned char screen_color[] = {
-				0, /* BLACK */
-				FOREGROUND_RED,
-				FOREGROUND_GREEN,
-				FOREGROUND_RED|FOREGROUND_GREEN,
-				FOREGROUND_BLUE, 
-				FOREGROUND_BLUE|FOREGROUND_RED,
-				FOREGROUND_BLUE|FOREGROUND_GREEN,
-				FOREGROUND_BLUE|FOREGROUND_GREEN|FOREGROUND_RED
-			};
-#else
-			static enum COLORS screen_color[] = {
-				BLACK, RED, GREEN, BROWN,
-				BLUE, MAGENTA, CYAN, LIGHTGRAY
-			};
-#endif
-
-			for (anchor = p_next = obuf;
-			     (p_next = memchr(p_next, ESC, ob - p_next)) != NULL; )
-			{
-				p = p_next;
-				if (p[1] == '[')  /* "ESC-[" sequence */
-				{
-					if (p > anchor)
-					{
-						/*
-						 * If some chars seen since
-						 * the last escape sequence,
-						 * write them out to the screen.
-						 */
-						WIN32textout(anchor, p-anchor);
-						anchor = p;
-					}
-					p += 2;  /* Skip the "ESC-[" */
-					if (is_ansi_end(*p))
-					{
-						/*
-						 * Handle null escape sequence
-						 * "ESC[m", which restores
-						 * the normal color.
-						 */
-						p++;
-						anchor = p_next = p;
-						WIN32setcolors(nm_fg_color, nm_bg_color);
-						continue;
-					}
-					p_next = p;
-
-					/*
-					 * Select foreground/background colors
-					 * based on the escape sequence. 
-					 */
-					fg = nm_fg_color;
-					bg = nm_bg_color;
-					while (!is_ansi_end(*p))
-					{
-						char *q;
-						long code = strtol(p, &q, 10);
-
-						if (*q == '\0')
-						{
-							/*
-							 * Incomplete sequence.
-							 * Leave it unprocessed
-							 * in the buffer.
-							 */
-							int slop = q - anchor;
-							/* {{ strlcpy args overlap! }} */
-							strlcpy(obuf, anchor,
-							    sizeof(obuf));
-							ob = &obuf[slop];
-							return;
-						}
-
-						if (q == p ||
-						    code > 49 || code < 0 ||
-						    (!is_ansi_end(*q) && *q != ';'))
-						{
-							p_next = q;
-							break;
-						}
-						if (*q == ';')
-							q++;
-
-						switch (code)
-						{
-						default:
-						/* case 0: all attrs off */
-							fg = nm_fg_color;
-							bg = nm_bg_color;
-							at = 0;
-							break;
-						case 1:	/* bold on */
-							at |= 1;
-							break;
-						case 3:	/* italic on */
-						case 7: /* inverse on */
-							at |= 2;
-							break;
-						case 4:	/* underline on */
-							at |= 4;
-							break;
-						case 5: /* slow blink on */
-						case 6: /* fast blink on */
-							at |= 8;
-							break;
-						case 8:	/* concealed on */
-							fg = (bg & 7) | 8;
-							break;
-						case 22: /* bold off */
-							at &= ~1;
-							break;
-						case 23: /* italic off */
-						case 27: /* inverse off */
-							at &= ~2;
-							break;
-						case 24: /* underline off */
-							at &= ~4;
-							break;
-						case 30: case 31: case 32:
-						case 33: case 34: case 35:
-						case 36: case 37:
-							fg = (fg & 8) | (screen_color[code - 30]);
-							break;
-						case 39: /* default fg */
-							fg = nm_fg_color;
-							break;
-						case 40: case 41: case 42:
-						case 43: case 44: case 45:
-						case 46: case 47:
-							bg = (bg & 8) | (screen_color[code - 40]);
-							break;
-						case 49: /* default fg */
-							bg = nm_bg_color;
-							break;
-						}
-						p = q;
-					}
-					if (!is_ansi_end(*p) || p == p_next)
-						break;
-					if (at & 1)
-					{
-							fg = bo_fg_color;
-							bg = bo_bg_color;
-					} else if (at & 2)
-					{
-							fg = so_fg_color;
-							bg = so_bg_color;
-					} else if (at & 4)
-					{
-							fg = ul_fg_color;
-							bg = ul_bg_color;
-					} else if (at & 8)
-					{
-							fg = bl_fg_color;
-							bg = bl_bg_color;
-					}
-					fg &= 0xf;
-					bg &= 0xf;
-					WIN32setcolors(fg, bg);
-					p_next = anchor = p + 1;
-				} else
-					p_next++;
-			}
-
-			/* Output what's left in the buffer.  */
-			WIN32textout(anchor, ob - anchor);
-		}
-		ob = obuf;
-		return;
-	}
-#endif
-#endif
-	fd = (any_display) ? STDOUT_FILENO : STDERR_FILENO;
+	fd = (any_display) ? 1 : 2;
 	if (write(fd, obuf, n) != n)
 		screen_trashed = 1;
 	ob = obuf;
+#endif
 }
 
 /*
@@ -317,50 +151,18 @@ flush()
 putchr(c)
 	int c;
 {
-#if 0 /* fake UTF-8 output for testing */
-	extern int utf_mode;
-	if (utf_mode)
-	{
-		static char ubuf[MAX_UTF_CHAR_LEN];
-		static int ubuf_len = 0;
-		static int ubuf_index = 0;
-		if (ubuf_len == 0)
-		{
-			ubuf_len = utf_len(c);
-			ubuf_index = 0;
-		}
-		ubuf[ubuf_index++] = c;
-		if (ubuf_index < ubuf_len)
-			return c;
-		c = get_wchar(ubuf) & 0xFF;
-		ubuf_len = 0;
-	}
-#endif
+	if (ob >= &obuf[sizeof(obuf)])
+		flush();
 	if (need_clr)
 	{
 		need_clr = 0;
 		clear_bot();
 	}
-#if MSDOS_COMPILER
-	if (c == '\n' && is_tty)
-	{
-		/* remove_top(1); */
+#if MSOFTC
+	if (c == '\n')
 		putchr('\r');
-	}
-#else
-#ifdef _OSK
-	if (c == '\n' && is_tty)  /* In OS-9, '\n' == 0x0D */
-		putchr(0x0A);
 #endif
-#endif
-	/*
-	 * Some versions of flush() write to *ob, so we must flush
-	 * when we are still one char from the end of obuf.
-	 */
-	if (ob >= &obuf[sizeof(obuf)-1])
-		flush();
 	*ob++ = c;
-	at_prompt = 0;
 	return (c);
 }
 
@@ -377,56 +179,34 @@ putstr(s)
 
 
 /*
- * Convert an integral type to a string.
- */
-#define TYPE_TO_A_FUNC(funcname, type) \
-void funcname(num, buf, len) \
-	type num; \
-	char *buf; \
-	size_t len; \
-{ \
-	int neg = (num < 0); \
-	char tbuf[INT_STRLEN_BOUND(num)+2]; \
-	register char *s = tbuf + sizeof(tbuf); \
-	if (neg) num = -num; \
-	*--s = '\0'; \
-	do { \
-		*--s = (num % 10) + '0'; \
-	} while ((num /= 10) != 0); \
-	if (neg) *--s = '-'; \
-	strlcpy(buf, s, len); \
-}
-
-TYPE_TO_A_FUNC(postoa, POSITION)
-TYPE_TO_A_FUNC(linenumtoa, LINENUM)
-TYPE_TO_A_FUNC(inttoa, int)
-
-/*
  * Output an integer in a given radix.
  */
 	static int
-iprint_int(num)
+iprintnum(num, radix)
 	int num;
+	int radix;
 {
-	char buf[INT_STRLEN_BOUND(num)];
+	register char *s;
+	int r;
+	int neg;
+	char buf[10];
 
-	inttoa(num, buf, sizeof(buf));
-	putstr(buf);
-	return (strlen(buf));
-}
+	if (neg = (num < 0))
+		num = -num;
 
-/*
- * Output a line number in a given radix.
- */
-	static int
-iprint_linenum(num)
-	LINENUM num;
-{
-	char buf[INT_STRLEN_BOUND(num)];
+	s = buf;
+	do
+	{
+		*s++ = (num % radix) + '0';
+	} while ((num /= radix) != 0);
 
-	linenumtoa(num, buf, sizeof(buf));
-	putstr(buf);
-	return (strlen(buf));
+	if (neg)
+		*s++ = '-';
+	r = s - buf;
+
+	while (s > buf)
+		putchr(*--s);
+	return (r);
 }
 
 /*
@@ -434,11 +214,12 @@ iprint_linenum(num)
  * using a more portable argument list mechanism than printf's.
  */
 	static int
-less_printf(fmt, parg)
+iprintf(fmt, parg)
 	register char *fmt;
 	PARG *parg;
 {
 	register char *s;
+	register int n;
 	register int col;
 
 	col = 0;
@@ -451,8 +232,7 @@ less_printf(fmt, parg)
 		} else
 		{
 			++fmt;
-			switch (*fmt++)
-			{
+			switch (*fmt++) {
 			case 's':
 				s = parg->p_string;
 				parg++;
@@ -463,37 +243,14 @@ less_printf(fmt, parg)
 				}
 				break;
 			case 'd':
-				col += iprint_int(parg->p_int);
+				n = parg->p_int;
 				parg++;
-				break;
-			case 'n':
-				col += iprint_linenum(parg->p_linenum);
-				parg++;
+				col += iprintnum(n, 10);
 				break;
 			}
 		}
 	}
 	return (col);
-}
-
-/*
- * Get a RETURN.
- * If some other non-trivial char is pressed, unget it, so it will
- * become the next command.
- */
-	public void
-get_return()
-{
-	int c;
-
-#if ONLY_RETURN
-	while ((c = getchr()) != '\n' && c != '\r')
-		bell();
-#else
-	c = getchr();
-	if (c != '\n' && c != '\r' && c != ' ' && c != READ_INTR)
-		ungetcc(c);
-#endif
 }
 
 /*
@@ -505,36 +262,40 @@ error(fmt, parg)
 	char *fmt;
 	PARG *parg;
 {
+	int c;
 	int col = 0;
 	static char return_to_continue[] = "  (press RETURN)";
 
 	errmsgs++;
 
-	if (any_display && is_tty)
+	if (any_display)
 	{
-		if (!oldbot)
-			squish_check();
-		at_exit();
 		clear_bot();
-		at_enter(AT_STANDOUT);
+		so_enter();
 		col += so_s_width;
 	}
 
-	col += less_printf(fmt, parg);
+	col += iprintf(fmt, parg);
 
-	if (!(any_display && is_tty))
+	if (!any_display)
 	{
 		putchr('\n');
 		return;
 	}
 
 	putstr(return_to_continue);
-	at_exit();
+	so_exit();
 	col += sizeof(return_to_continue) + so_e_width;
 
-	get_return();
+#if ONLY_RETURN
+	while ((c = getchr()) != '\n' && c != '\r')
+		bell();
+#else
+	c = getchr();
+	if (c != '\n' && c != '\r' && c != ' ' && c != READ_INTR)
+		ungetcc(c);
+#endif
 	lower_left();
-    clear_eol();
 
 	if (col >= sc_width)
 		/*
@@ -560,12 +321,11 @@ ierror(fmt, parg)
 	char *fmt;
 	PARG *parg;
 {
-	at_exit();
 	clear_bot();
-	at_enter(AT_STANDOUT);
-	(void) less_printf(fmt, parg);
+	so_enter();
+	(void) iprintf(fmt, parg);
 	putstr(intr_to_abort);
-	at_exit();
+	so_exit();
 	flush();
 	need_clr = 1;
 }
@@ -582,13 +342,13 @@ query(fmt, parg)
 	register int c;
 	int col = 0;
 
-	if (any_display && is_tty)
+	if (any_display)
 		clear_bot();
 
-	(void) less_printf(fmt, parg);
+	(void) iprintf(fmt, parg);
 	c = getchr();
 
-	if (!(any_display && is_tty))
+	if (!any_display)
 	{
 		putchr('\n');
 		return (c);

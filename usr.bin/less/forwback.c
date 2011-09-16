@@ -1,11 +1,27 @@
 /*
- * Copyright (C) 1984-2011  Mark Nudelman
+ * Copyright (c) 1984,1985,1989,1994,1995  Mark Nudelman
+ * All rights reserved.
  *
- * You may distribute under the terms of either the GNU General Public
- * License or the Less License, as specified in the README file.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice in the documentation and/or other materials provided with 
+ *    the distribution.
  *
- * For more information about less, or for information on how to 
- * contact the author, see the README file.
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY
+ * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR 
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR 
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT 
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR 
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE 
+ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN 
+ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 
@@ -17,22 +33,20 @@
 #include "less.h"
 #include "position.h"
 
+public int hit_eof;	/* Keeps track of how many times we hit end of file */
 public int screen_trashed;
 public int squished;
-public int no_back_scroll = 0;
-public int forw_prompt;
 
 extern int sigs;
 extern int top_scroll;
 extern int quiet;
 extern int sc_width, sc_height;
+extern int quit_at_eof;
 extern int plusoption;
 extern int forw_scroll;
 extern int back_scroll;
+extern int need_clr;
 extern int ignore_eoi;
-extern int clear_bg;
-extern int final_attr;
-extern int oldbot;
 #if TAGS
 extern char *tagoption;
 #endif
@@ -50,47 +64,25 @@ eof_bell()
 }
 
 /*
- * Check to see if the end of file is currently displayed.
+ * Check to see if the end of file is currently "displayed".
  */
-	public int
-eof_displayed()
+	static void
+eof_check()
 {
 	POSITION pos;
 
 	if (ignore_eoi)
-		return (0);
-
-	if (ch_length() == NULL_POSITION)
-		/*
-		 * If the file length is not known,
-		 * we can't possibly be displaying EOF.
-		 */
-		return (0);
-
+		return;
+	if (ABORT_SIGS())
+		return;
 	/*
 	 * If the bottom line is empty, we are at EOF.
 	 * If the bottom line ends at the file length,
 	 * we must be just at EOF.
 	 */
 	pos = position(BOTTOM_PLUS_ONE);
-	return (pos == NULL_POSITION || pos == ch_length());
-}
-
-/*
- * Check to see if the entire file is currently displayed.
- */
-	public int
-entire_file_displayed()
-{
-	POSITION pos;
-
-	/* Make sure last line of file is displayed. */
-	if (!eof_displayed())
-		return (0);
-
-	/* Make sure first line of file is displayed. */
-	pos = position(0);
-	return (pos == NULL_POSITION || pos == 0);
+	if (pos == NULL_POSITION || pos == ch_length())
+		hit_eof++;
 }
 
 /*
@@ -99,7 +91,7 @@ entire_file_displayed()
  * of the screen; this can happen when we display a short file
  * for the first time.
  */
-	public void
+	static void
 squish_check()
 {
 	if (!squished)
@@ -154,11 +146,13 @@ forw(n, pos, force, only_last, nblank)
 			 *    to hit eof in the middle of this screen,
 			 *    but we don't yet know if that will happen. }}
 			 */
-			pos_clear();
-			add_forw_pos(pos);
-			force = 1;
-			clear();
+			if (top_scroll == OPT_ONPLUS || first_time)
+				clear();
 			home();
+			force = 1;
+		} else
+		{
+			clear_bot();
 		}
 
 		if (pos != position(BOTTOM_PLUS_ONE) || empty_screen())
@@ -173,7 +167,8 @@ forw(n, pos, force, only_last, nblank)
 			force = 1;
 			if (top_scroll)
 			{
-				clear();
+				if (top_scroll == OPT_ONPLUS)
+					clear();
 				home();
 			} else if (!first_time)
 			{
@@ -208,15 +203,9 @@ forw(n, pos, force, only_last, nblank)
 				/*
 				 * End of file: stop here unless the top line 
 				 * is still empty, or "force" is true.
-				 * Even if force is true, stop when the last
-				 * line in the file reaches the top of screen.
 				 */
 				eof = 1;
 				if (!force && position(TOP) != NULL_POSITION)
-					break;
-				if (!empty_lines(0, 0) && 
-				    !empty_lines(1, 1) &&
-				     empty_lines(2, sc_height-1))
 					break;
 			}
 		}
@@ -247,31 +236,17 @@ forw(n, pos, force, only_last, nblank)
 			squished = 1;
 			continue;
 		}
-		put_line();
-#if 0
-		/* {{ 
-		 * Can't call clear_eol here.  The cursor might be at end of line
-		 * on an ignaw terminal, so clear_eol would clear the last char
-		 * of the current line instead of all of the next line.
-		 * If we really need to do this on clear_bg terminals, we need
-		 * to find a better way.
-		 * }}
-		 */
-		if (clear_bg && apply_at_specials(final_attr) != AT_NORMAL)
-		{
-			/*
-			 * Writing the last character on the last line
-			 * of the display may have scrolled the screen.
-			 * If we were in standout mode, clear_bg terminals 
-			 * will fill the new line with the standout color.
-			 * Now we're in normal mode again, so clear the line.
-			 */
+		if (top_scroll == 1)
 			clear_eol();
-		}
-#endif
-		forw_prompt = 1;
+		put_line();
 	}
 
+	if (ignore_eoi)
+		hit_eof = 0;
+	else if (eof && !ABORT_SIGS())
+		hit_eof++;
+	else
+		eof_check();
 	if (nlines == 0)
 		eof_bell();
 	else if (do_repaint)
@@ -295,6 +270,7 @@ back(n, pos, force, only_last)
 
 	squish_check();
 	do_repaint = (n > get_back_scroll() || (only_last && n > sc_height-1));
+	hit_eof = 0;
 	while (--n >= 0)
 	{
 		/*
@@ -323,12 +299,11 @@ back(n, pos, force, only_last)
 		}
 	}
 
+	eof_check();
 	if (nlines == 0)
 		eof_bell();
 	else if (do_repaint)
 		repaint();
-	else if (!oldbot)
-		lower_left();
 	(void) currline(BOTTOM);
 }
 
@@ -344,7 +319,7 @@ forward(n, force, only_last)
 {
 	POSITION pos;
 
-	if (get_quit_at_eof() && eof_displayed() && !(ch_getflags() & CH_HELPFILE))
+	if (quit_at_eof && hit_eof)
 	{
 		/*
 		 * If the -e flag is set and we're trying to go
@@ -378,6 +353,7 @@ forward(n, force, only_last)
 		} else
 		{
 			eof_bell();
+			hit_eof++;
 			return;
 		}
 	}
@@ -414,8 +390,6 @@ backward(n, force, only_last)
 	public int
 get_back_scroll()
 {
-	if (no_back_scroll)
-		return (0);
 	if (back_scroll >= 0)
 		return (back_scroll);
 	if (top_scroll)

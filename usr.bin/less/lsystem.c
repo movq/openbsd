@@ -1,11 +1,27 @@
 /*
- * Copyright (C) 1984-2011  Mark Nudelman
+ * Copyright (c) 1984,1985,1989,1994,1995  Mark Nudelman
+ * All rights reserved.
  *
- * You may distribute under the terms of either the GNU General Public
- * License or the Less License, as specified in the README file.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice in the documentation and/or other materials provided with 
+ *    the distribution.
  *
- * For more information about less, or for information on how to 
- * contact the author, see the README file.
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY
+ * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR 
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR 
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT 
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR 
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE 
+ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN 
+ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 
@@ -14,18 +30,12 @@
  * Necessarily very OS dependent.
  */
 
-#include "less.h"
 #include <signal.h>
+#include "less.h"
 #include "position.h"
 
-#if MSDOS_COMPILER
+#if MSOFTC
 #include <dos.h>
-#ifdef _MSC_VER
-#include <direct.h>
-#define setdisk(n) _chdrive((n)+1)
-#else
-#include <dir.h>
-#endif
 #endif
 
 extern int screen_trashed;
@@ -39,19 +49,16 @@ extern IFILE curr_ifile;
  * Like plain "system()", but handles resetting terminal modes, etc.
  */
 	public void
-lsystem(cmd, donemsg)
+lsystem(cmd)
 	char *cmd;
-	char *donemsg;
 {
 	register int inp;
-#if HAVE_SHELL
+#if MSOFTC || OS2
+	register int inp2;
+#endif
 	register char *shell;
 	register char *p;
-#endif
 	IFILE save_ifile;
-#if MSDOS_COMPILER && MSDOS_COMPILER!=WIN32C
-	char cwd[FILENAME_MAX+1];
-#endif
 
 	/*
 	 * Print the command which is to be executed,
@@ -67,26 +74,10 @@ lsystem(cmd, donemsg)
 		putstr("\n");
 	}
 
-#if MSDOS_COMPILER
-#if MSDOS_COMPILER==WIN32C
-	if (*cmd == '\0')
-		cmd = getenv("COMSPEC");
-#else
-	/*
-	 * Working directory is global on MSDOS.
-	 * The child might change the working directory, so we
-	 * must save and restore CWD across calls to "system",
-	 * or else we won't find our file when we return and
-	 * try to "reedit_ifile" it.
-	 */
-	getcwd(cwd, FILENAME_MAX);
-#endif
-#endif
-
 	/*
 	 * Close the current input file.
 	 */
-	save_ifile = save_curr_ifile();
+	save_ifile = curr_ifile;
 	(void) edit_ifile(NULL_IFILE);
 
 	/*
@@ -95,16 +86,12 @@ lsystem(cmd, donemsg)
 	deinit();
 	flush();	/* Make sure the deinit chars get out */
 	raw_mode(0);
-#if MSDOS_COMPILER==WIN32C
-	close_getchr();
-#endif
 
 	/*
 	 * Restore signals to their defaults.
 	 */
 	init_signals(0);
 
-#if HAVE_DUP
 	/*
 	 * Force standard input to be the user's terminal
 	 * (the normal standard input), even if less's standard input 
@@ -112,14 +99,8 @@ lsystem(cmd, donemsg)
 	 */
 	inp = dup(0);
 	close(0);
-#if OS2
-	/* The __open() system call translates "/dev/tty" to "con". */
-	if (__open("/dev/tty", OPEN_READ) < 0)
-#else
-	if (open("/dev/tty", OPEN_READ) < 0)
-#endif
+	if (OPEN_TTYIN() < 0)
 		dup(inp);
-#endif
 
 	/*
 	 * Pass the command to the system to be executed.
@@ -129,20 +110,15 @@ lsystem(cmd, donemsg)
 	 */
 #if HAVE_SHELL
 	p = NULL;
-	if ((shell = lgetenv("SHELL")) != NULL && *shell != '\0')
+	if ((shell = getenv("SHELL")) != NULL && *shell != '\0')
 	{
 		if (*cmd == '\0')
 			p = save(shell);
 		else
 		{
-			char *esccmd = shell_quote(cmd);
-			if (esccmd != NULL)
-			{
-				size_t len = strlen(shell) + strlen(esccmd) + 5;
-				p = (char *) ecalloc(len, sizeof(char));
-				SNPRINTF3(p, len, "%s %s %s", shell, shell_coption(), esccmd);
-				free(esccmd);
-			}
+			p = (char *) ecalloc(strlen(shell) + strlen(cmd) + 7, 
+					sizeof(char));
+			sprintf(p, "%s -c \"%s\"", shell, cmd);
 		}
 	}
 	if (p == NULL)
@@ -152,76 +128,34 @@ lsystem(cmd, donemsg)
 		else
 			p = save(cmd);
 	}
+
 	system(p);
 	free(p);
 #else
-#if MSDOS_COMPILER==DJGPPC
-	/*
-	 * Make stdin of the child be in cooked mode.
-	 */
-	setmode(0, O_TEXT);
-	/*
-	 * We don't need to catch signals of the child (it
-	 * also makes trouble with some DPMI servers).
-	 */
-	__djgpp_exception_toggle();
-  	system(cmd);
-	__djgpp_exception_toggle();
-#else
+#if OS2
+	if (*cmd == '\0')
+		cmd = "cmd.exe";
+#endif
 	system(cmd);
 #endif
-#endif
 
-#if HAVE_DUP
 	/*
 	 * Restore standard input, reset signals, raw mode, etc.
 	 */
 	close(0);
 	dup(inp);
 	close(inp);
-#endif
 
-#if MSDOS_COMPILER==WIN32C
-	open_getchr();
-#endif
 	init_signals(1);
 	raw_mode(1);
-	if (donemsg != NULL)
-	{
-		putstr(donemsg);
-		putstr("  (press RETURN)");
-		get_return();
-		putchr('\n');
-		flush();
-	}
 	init();
 	screen_trashed = 1;
-
-#if MSDOS_COMPILER && MSDOS_COMPILER!=WIN32C
-	/*
-	 * Restore the previous directory (possibly
-	 * changed by the child program we just ran).
-	 */
-	chdir(cwd);
-#if MSDOS_COMPILER != DJGPPC
-	/*
-	 * Some versions of chdir() don't change to the drive
-	 * which is part of CWD.  (DJGPP does this in chdir.)
-	 */
-	if (cwd[1] == ':')
-	{
-		if (cwd[0] >= 'a' && cwd[0] <= 'z')
-			setdisk(cwd[0] - 'a');
-		else if (cwd[0] >= 'A' && cwd[0] <= 'Z')
-			setdisk(cwd[0] - 'A');
-	}
-#endif
-#endif
 
 	/*
 	 * Reopen the current input file.
 	 */
-	reedit_ifile(save_ifile);
+	if (edit_ifile(save_ifile))
+		quit(QUIT_ERROR);
 
 #if defined(SIGWINCH) || defined(SIGWIND)
 	/*
@@ -243,12 +177,10 @@ lsystem(cmd, donemsg)
  * The section to be piped is the section "between" the current
  * position and the position marked by the given letter.
  *
- * If the mark is after the current screen, the section between
- * the top line displayed and the mark is piped.
- * If the mark is before the current screen, the section between
- * the mark and the bottom line displayed is piped.
- * If the mark is on the current screen, or if the mark is ".",
- * the whole current screen is piped.
+ * The "current" position means the top line displayed if the mark
+ * is after the current screen, or the bottom line displayed if
+ * the mark is before the current screen.
+ * If the mark is on the current screen, the whole screen is displayed.
  */
 	public int
 pipe_mark(c, cmd)
@@ -273,7 +205,7 @@ pipe_mark(c, cmd)
  	if (c == '.') 
  		return (pipe_data(cmd, tpos, bpos));
  	else if (mpos <= tpos)
- 		return (pipe_data(cmd, mpos, bpos));
+ 		return (pipe_data(cmd, mpos, tpos));
  	else if (bpos == NULL_POSITION)
  		return (pipe_data(cmd, tpos, bpos));
  	else
@@ -320,11 +252,8 @@ pipe_data(cmd, spos, epos)
 	flush();
 	raw_mode(0);
 	init_signals(0);
-#if MSDOS_COMPILER==WIN32C
-	close_getchr();
-#endif
 #ifdef SIGPIPE
-	LSIGNAL(SIGPIPE, SIG_IGN);
+	SIGNAL(SIGPIPE, SIG_IGN);
 #endif
 
 	c = EOI;
@@ -355,10 +284,7 @@ pipe_data(cmd, spos, epos)
 	pclose(f);
 
 #ifdef SIGPIPE
-	LSIGNAL(SIGPIPE, SIG_DFL);
-#endif
-#if MSDOS_COMPILER==WIN32C
-	open_getchr();
+	SIGNAL(SIGPIPE, SIG_DFL);
 #endif
 	init_signals(1);
 	raw_mode(1);
