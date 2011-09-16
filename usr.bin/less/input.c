@@ -1,11 +1,27 @@
 /*
- * Copyright (C) 1984-2011  Mark Nudelman
+ * Copyright (c) 1984,1985,1989,1994,1995  Mark Nudelman
+ * All rights reserved.
  *
- * You may distribute under the terms of either the GNU General Public
- * License or the Less License, as specified in the README file.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice in the documentation and/or other materials provided with 
+ *    the distribution.
  *
- * For more information about less, or for information on how to 
- * contact the author, see the README file.
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY
+ * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR 
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR 
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT 
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR 
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE 
+ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN 
+ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 
@@ -23,13 +39,7 @@
 
 extern int squeeze;
 extern int chopline;
-extern int hshift;
-extern int quit_if_one_screen;
 extern int sigs;
-extern int ignore_eoi;
-extern int status_col;
-extern POSITION start_attnpos;
-extern POSITION end_attnpos;
 #if HILITE_SEARCH
 extern int hilite_search;
 extern int size_linebuf;
@@ -46,30 +56,19 @@ extern int size_linebuf;
 forw_line(curr_pos)
 	POSITION curr_pos;
 {
-	POSITION base_pos;
 	POSITION new_pos;
 	register int c;
 	int blankline;
 	int endline;
-	int backchars;
 
-get_forw_line:
 	if (curr_pos == NULL_POSITION)
 	{
 		null_line();
 		return (NULL_POSITION);
 	}
 #if HILITE_SEARCH
-	if (hilite_search == OPT_ONPLUS || is_filtering() || status_col)
-		/*
-		 * If we are ignoring EOI (command F), only prepare
-		 * one line ahead, to avoid getting stuck waiting for
-		 * slow data without displaying the data we already have.
-		 * If we're not ignoring EOI, we *could* do the same, but
-		 * for efficiency we prepare several lines ahead at once.
-		 */
-		prep_hilite(curr_pos, curr_pos + 3*size_linebuf, 
-				ignore_eoi ? 1 : -1);
+	if (hilite_search == OPT_ONPLUS)
+		prep_hilite(curr_pos, curr_pos + 3*size_linebuf);
 #endif
 	if (ch_seek(curr_pos))
 	{
@@ -77,59 +76,10 @@ get_forw_line:
 		return (NULL_POSITION);
 	}
 
-	/*
-	 * Step back to the beginning of the line.
-	 */
-	base_pos = curr_pos;
-	for (;;)
-	{
-		if (ABORT_SIGS())
-		{
-			null_line();
-			return (NULL_POSITION);
-		}
-		c = ch_back_get();
-		if (c == EOI)
-			break;
-		if (c == '\n')
-		{
-			(void) ch_forw_get();
-			break;
-		}
-		--base_pos;
-	}
+	prewind();
+	plinenum(curr_pos);
+	(void) ch_seek(curr_pos);
 
-	/*
-	 * Read forward again to the position we should start at.
-	 */
- 	prewind();
-	plinenum(base_pos);
-	(void) ch_seek(base_pos);
-	new_pos = base_pos;
-	while (new_pos < curr_pos)
-	{
-		if (ABORT_SIGS())
-		{
-			null_line();
-			return (NULL_POSITION);
-		}
-		c = ch_forw_get();
-		backchars = pappend(c, new_pos);
-		new_pos++;
-		if (backchars > 0)
-		{
-			pshift_all();
-			new_pos -= backchars;
-			while (--backchars >= 0)
-				(void) ch_back_get();
-		}
-	}
-	(void) pflushmbc();
-	pshift_all();
-
-	/*
-	 * Read the first character to display.
-	 */
 	c = ch_forw_get();
 	if (c == EOI)
 	{
@@ -138,9 +88,6 @@ get_forw_line:
 	}
 	blankline = (c == '\n' || c == '\r');
 
-	/*
-	 * Read each character in the line and append to the line buffer.
-	 */
 	for (;;)
 	{
 		if (ABORT_SIGS())
@@ -153,70 +100,39 @@ get_forw_line:
 			/*
 			 * End of the line.
 			 */
-			backchars = pflushmbc();
 			new_pos = ch_tell();
-			if (backchars > 0 && !chopline && hshift == 0)
-			{
-				new_pos -= backchars + 1;
-				endline = FALSE;
-			} else
-				endline = TRUE;
+			endline = 1;
 			break;
 		}
-		if (c != '\r')
-			blankline = 0;
 
 		/*
 		 * Append the char to the line and get the next char.
 		 */
-		backchars = pappend(c, ch_tell()-1);
-		if (backchars > 0)
+		if (pappend(c, ch_tell()-1))
 		{
 			/*
 			 * The char won't fit in the line; the line
 			 * is too long to print in the screen width.
 			 * End the line here.
 			 */
-			if (chopline || hshift > 0)
+			if (chopline)
 			{
 				do
 				{
-					if (ABORT_SIGS())
-					{
-						null_line();
-						return (NULL_POSITION);
-					}
 					c = ch_forw_get();
 				} while (c != '\n' && c != EOI);
 				new_pos = ch_tell();
-				endline = TRUE;
-				quit_if_one_screen = FALSE;
+				endline = 1;
 			} else
 			{
-				new_pos = ch_tell() - backchars;
-				endline = FALSE;
+				new_pos = ch_tell() - 1;
+				endline = 0;
 			}
 			break;
 		}
 		c = ch_forw_get();
 	}
-
-	pdone(endline, 1);
-
-#if HILITE_SEARCH
-	if (is_filtered(base_pos))
-	{
-		/*
-		 * We don't want to display this line.
-		 * Get the next line.
-		 */
-		curr_pos = new_pos;
-		goto get_forw_line;
-	}
-
-	if (status_col && is_hilited(base_pos, ch_tell()-1, 1, NULL))
-		set_status_col('*');
-#endif
+	pdone(endline);
 
 	if (squeeze && blankline)
 	{
@@ -250,21 +166,19 @@ get_forw_line:
 back_line(curr_pos)
 	POSITION curr_pos;
 {
-	POSITION new_pos, begin_new_pos, base_pos;
+	POSITION new_pos, begin_new_pos;
 	int c;
 	int endline;
-	int backchars;
 
-get_back_line:
 	if (curr_pos == NULL_POSITION || curr_pos <= ch_zero())
 	{
 		null_line();
 		return (NULL_POSITION);
 	}
 #if HILITE_SEARCH
-	if (hilite_search == OPT_ONPLUS || is_filtering() || status_col)
+	if (hilite_search == OPT_ONPLUS)
 		prep_hilite((curr_pos < 3*size_linebuf) ? 
-				0 : curr_pos - 3*size_linebuf, curr_pos, -1);
+				0 : curr_pos - 3*size_linebuf, curr_pos);
 #endif
 	if (ch_seek(curr_pos-1))
 	{
@@ -277,9 +191,9 @@ get_back_line:
 		/*
 		 * Find out if the "current" line was blank.
 		 */
-		(void) ch_forw_get();    /* Skip the newline */
-		c = ch_forw_get();       /* First char of "current" line */
-		(void) ch_back_get();    /* Restore our position */
+		(void) ch_forw_get();	/* Skip the newline */
+		c = ch_forw_get();	/* First char of "current" line */
+		(void) ch_back_get();	/* Restore our position */
 		(void) ch_back_get();
 
 		if (c == '\n' || c == '\r')
@@ -321,7 +235,7 @@ get_back_line:
 			 * This is the newline ending the previous line.
 			 * We have hit the beginning of the line.
 			 */
-			base_pos = ch_tell() + 1;
+			new_pos = ch_tell() + 1;
 			break;
 		}
 		if (c == EOI)
@@ -331,7 +245,7 @@ get_back_line:
 			 * This must be the first line in the file.
 			 * This must, of course, be the beginning of the line.
 			 */
-			base_pos = ch_tell();
+			new_pos = ch_tell();
 			break;
 		}
 	}
@@ -345,17 +259,16 @@ get_back_line:
 	 *    are much longer than the screen width, 
 	 *    but I don't know of any better way. }}
 	 */
-	new_pos = base_pos;
 	if (ch_seek(new_pos))
 	{
 		null_line();
 		return (NULL_POSITION);
 	}
-	endline = FALSE;
-	prewind();
-	plinenum(new_pos);
+	endline = 0;
     loop:
 	begin_new_pos = new_pos;
+	prewind();
+	plinenum(new_pos);
 	(void) ch_seek(new_pos);
 
 	do
@@ -369,90 +282,29 @@ get_back_line:
 		new_pos++;
 		if (c == '\n')
 		{
-			backchars = pflushmbc();
-			if (backchars > 0 && !chopline && hshift == 0)
-			{
-				backchars++;
-				goto shift;
-			}
-			endline = TRUE;
+			endline = 1;
 			break;
 		}
-		backchars = pappend(c, ch_tell()-1);
-		if (backchars > 0)
+		if (pappend(c, ch_tell()-1))
 		{
 			/*
 			 * Got a full printable line, but we haven't
 			 * reached our curr_pos yet.  Discard the line
 			 * and start a new one.
 			 */
-			if (chopline || hshift > 0)
+			if (chopline)
 			{
-				endline = TRUE;
-				quit_if_one_screen = FALSE;
+				endline = 1;
 				break;
 			}
-		shift:
-			pshift_all();
-			while (backchars-- > 0)
-			{
-				(void) ch_back_get();
-				new_pos--;
-			}
+			pdone(0);
+			(void) ch_back_get();
+			new_pos--;
 			goto loop;
 		}
 	} while (new_pos < curr_pos);
 
-	pdone(endline, 0);
-
-#if HILITE_SEARCH
-	if (is_filtered(base_pos))
-	{
-		/*
-		 * We don't want to display this line.
-		 * Get the previous line.
-		 */
-		curr_pos = begin_new_pos;
-		goto get_back_line;
-	}
-
-	if (status_col && is_hilited(base_pos, ch_tell()-1, 1, NULL))
-		set_status_col('*');
-#endif
+	pdone(endline);
 
 	return (begin_new_pos);
-}
-
-/*
- * Set attnpos.
- */
-	public void
-set_attnpos(pos)
-	POSITION pos;
-{
-	int c;
-
-	if (pos != NULL_POSITION)
-	{
-		if (ch_seek(pos))
-			return;
-		for (;;)
-		{
-			c = ch_forw_get();
-			if (c == EOI)
-				return;
-			if (c != '\n' && c != '\r')
-				break;
-			pos++;
-		}
-	}
-	start_attnpos = pos;
-	for (;;)
-	{
-		c = ch_forw_get();
-		pos++;
-		if (c == EOI || c == '\n' || c == '\r')
-			break;
-	}
-	end_attnpos = pos;
 }
