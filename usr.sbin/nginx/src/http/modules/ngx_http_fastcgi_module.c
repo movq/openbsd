@@ -1703,10 +1703,8 @@ ngx_http_fastcgi_input_filter(ngx_event_pipe_t *p, ngx_buf_t *buf)
         }
 
         if (p->free) {
-            cl = p->free;
-            b = cl->buf;
-            p->free = cl->next;
-            ngx_free_chain(p->pool, cl);
+            b = p->free->buf;
+            p->free = p->free->next;
 
         } else {
             b = ngx_alloc_buf(p->pool);
