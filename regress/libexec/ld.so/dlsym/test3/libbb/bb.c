@@ -1,4 +1,4 @@
-/*	$OpenBSD: bb.c,v 1.2 2005/09/19 21:50:27 drahn Exp $	*/
+/*	$OpenBSD: bb.c,v 1.1 2005/09/19 03:34:18 kurt Exp $	*/
 
 /*
  * Copyright (c) 2005 Kurt Miller <kurt@openbsd.org>
@@ -20,7 +20,6 @@
 #include <stdio.h>
 
 int bbSymbol;
-int commonSymbol;
 
 /*
  * this test is setup where the main program group dlopen's libbb and libdd

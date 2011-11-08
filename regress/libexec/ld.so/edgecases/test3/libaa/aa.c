@@ -1,4 +1,4 @@
-/*	$OpenBSD: aa.c,v 1.1.1.1 2005/09/23 19:02:29 kurt Exp $	*/
+/*	$OpenBSD: aa.c,v 1.1 2005/09/23 19:02:29 kurt Exp $	*/
 
 /*
  * Copyright (c) 2005 Kurt Miller <kurt@openbsd.org>

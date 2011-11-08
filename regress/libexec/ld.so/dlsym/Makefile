@@ -1,5 +1,5 @@
-# $OpenBSD: Makefile,v 1.3 2005/09/19 03:34:58 kurt Exp $
+# $OpenBSD: Makefile,v 1.1 2005/09/14 15:59:37 kurt Exp $
 
-SUBDIR+= test1 test2 test3
+SUBDIR+= test1
 
 .include <bsd.subdir.mk>

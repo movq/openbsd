@@ -1,5 +1,5 @@
-# $OpenBSD: Makefile,v 1.2 2005/09/15 15:38:34 kurt Exp $
+# $OpenBSD: Makefile,v 1.1 2005/09/14 15:59:37 kurt Exp $
 
-SUBDIR+= libaa prog1 prog2
+SUBDIR+= libaa prog1
 
 .include <bsd.subdir.mk>

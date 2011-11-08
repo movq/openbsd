@@ -1,8 +1,10 @@
-# $OpenBSD: Makefile,v 1.2 2010/05/10 18:20:31 drahn Exp $
+# $OpenBSD: Makefile,v 1.1 2007/07/31 20:31:42 kurt Exp $
 
 .include <bsd.own.mk>
 
-.if ${COMPILER_VERSION:L} == "gcc3" || ${COMPILER_VERSION:L} == "gcc4" 
+USE_GCC3?=No
+
+.if ${USE_GCC3:L} == "yes"
 SUBDIR+= libaa libab test1 test2
 .endif
 
