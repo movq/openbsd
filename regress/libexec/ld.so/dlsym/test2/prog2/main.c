@@ -1,4 +1,4 @@
-/*	$OpenBSD: main.c,v 1.3 2005/09/19 18:39:38 deraadt Exp $	*/
+/*	$OpenBSD: main.c,v 1.1 2005/09/15 22:16:27 kurt Exp $	*/
 
 /*
  * Copyright (c) 2005 Kurt Miller <kurt@openbsd.org>
@@ -26,14 +26,13 @@ main()
 {
 	int ret = 0;
 	void *libbb = dlopen("libbb.so", RTLD_LAZY);
-	int (*bbTest1)(void *);
 
 	if (libbb == NULL) {
 		printf("dlopen(\"libbb.so\", RTLD_LAZY) FAILED\n");
-		return (1);
+		return (-1);
 	}
 
-	bbTest1 = dlsym(libbb, "bbTest1");
+	int (*bbTest1)(void *) = dlsym(libbb, "bbTest1");
 
 	ret = (*bbTest1)(libbb);
 
