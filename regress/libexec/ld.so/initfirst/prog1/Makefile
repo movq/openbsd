@@ -1,30 +1,57 @@
-# $OpenBSD: Makefile,v 1.1 2011/11/08 23:51:02 guenther Exp $
+# $OpenBSD: Makefile,v 1.1.1.1 2011/11/29 03:38:26 kurt Exp $
 
-PROGS=		prog1 prog2 prog3 prog4
-SRCS=		main.c
-OBJS=		main.o
-LDFLAGS+=	-Wl,-E
-LDFLAGS+=	-Wl,-rpath,$(IF1_OBJDIR) -L$(IF1_OBJDIR)
-LDFLAGS+=	-Wl,-rpath,$(IF2_OBJDIR) -L$(IF2_OBJDIR)
-LDFLAGS+=	-Wl,-rpath,$(IF3_OBJDIR) -L$(IF3_OBJDIR)
-LDFLAGS+=	-Wl,-rpath,$(NORMAL_OBJDIR) -L$(NORMAL_OBJDIR)
-LDADD_prog1+=	-lnormal -lif1 -lif2
-LDADD_prog2+=	-lif1 -lnormal -lif2
-LDADD_prog3+=	-lif1 -lif2 -lnormal
-LDADD_prog4+=	-lif1 -lif2 -lif3
+.include <bsd.obj.mk>
 
-REGRESS_TARGETS=do-prog1 do-prog2 do-prog3 do-prog4
+PROG=prog1
 
-do-prog1: prog1
-	./prog1 | grep -v ^fini | cmp -s ${.CURDIR}/expected1 -
-do-prog2: prog2
-	./prog2 | grep -v ^fini | cmp -s ${.CURDIR}/expected2 -
-do-prog3: prog3
-	./prog3 | grep -v ^fini | cmp -s ${.CURDIR}/expected3 -
-do-prog4: prog4
-	./prog4 | grep -v ^fini | cmp -s ${.CURDIR}/expected4 -
+SRCS=prog1.C
+
+AA_DIR=${.CURDIR}/../libaa
+AA_OBJDIR!=    if [ -d $(AA_DIR)/${__objdir} ]; then \
+                        echo "$(AA_DIR)/${__objdir}"; \
+		else \
+			echo "$(AA_DIR)"; \
+		fi
+
+AB_DIR=${.CURDIR}/../libab
+AB_OBJDIR!=    if [ -d $(AB_DIR)/${__objdir} ]; then \
+                        echo "$(AB_DIR)/${__objdir}"; \
+		else \
+			echo "$(AB_DIR)"; \
+		fi
+
+AC_DIR=${.CURDIR}/../libac
+AC_OBJDIR!=    if [ -d $(AC_DIR)/${__objdir} ]; then \
+                        echo "$(AC_DIR)/${__objdir}"; \
+		else \
+			echo "$(AC_DIR)"; \
+		fi
+
+AD_DIR=${.CURDIR}/../libad
+AD_OBJDIR!=    if [ -d $(AD_DIR)/${__objdir} ]; then \
+                        echo "$(AD_DIR)/${__objdir}"; \
+		else \
+			echo "$(AD_DIR)"; \
+		fi
+
+AE_DIR=${.CURDIR}/../libae
+AE_OBJDIR!=    if [ -d $(AE_DIR)/${__objdir} ]; then \
+                        echo "$(AE_DIR)/${__objdir}"; \
+		else \
+			echo "$(AE_DIR)"; \
+		fi
+
+LDADD=-laa
+LDFLAGS=  -L$(AA_OBJDIR)
+LDFLAGS+= -Wl,-rpath,$(AA_OBJDIR) 
+LDFLAGS+= -Wl,-rpath,$(AB_OBJDIR) 
+LDFLAGS+= -Wl,-rpath,$(AC_OBJDIR) 
+LDFLAGS+= -Wl,-rpath,$(AD_OBJDIR) 
+LDFLAGS+= -Wl,-rpath,$(AE_OBJDIR) 
+NOMAN=
+CC=c++
+
+run-regress-${PROG}: ${PROG}
+	[ "`./${PROG}`" = "DBECAPpacebd" ]
 
 .include <bsd.regress.mk>
-
-${PROGS}: ${LIBCRT0} ${OBJS} ${LIBC} ${CRTBEGIN} ${CRTEND} ${DPADD}
-	${CC} ${LDFLAGS} ${LDSTATIC} -o ${.TARGET} ${OBJS} ${LDADD_${.TARGET}}
