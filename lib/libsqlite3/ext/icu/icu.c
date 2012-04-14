@@ -9,7 +9,7 @@
 **    May you share freely, never taking more than you give.
 **
 *************************************************************************
-** $Id: icu.c,v 1.1 2012/04/14 13:13:19 espie Exp $
+** $Id: icu.c,v 1.1.1.1 2012/04/14 13:13:19 espie Exp $
 **
 ** This file implements an integration between the ICU library 
 ** ("International Components for Unicode", an open-source library 
