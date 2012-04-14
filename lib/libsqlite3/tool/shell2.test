@@ -11,7 +11,7 @@
 #
 # The focus of this file is testing the CLI shell tool.
 #
-# $Id: shell2.test,v 1.1.1.1 2012/04/14 13:13:17 espie Exp $
+# $Id: shell2.test,v 1.1 2012/04/14 13:13:17 espie Exp $
 #
 
 # Test plan:

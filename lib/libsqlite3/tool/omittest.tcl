@@ -1,5 +1,5 @@
 
-set rcsid {$Id: omittest.tcl,v 1.1.1.1 2012/04/14 13:13:17 espie Exp $}
+set rcsid {$Id: omittest.tcl,v 1.1 2012/04/14 13:13:17 espie Exp $}
 
 # Documentation for this script. This may be output to stderr
 # if the script is invoked incorrectly.

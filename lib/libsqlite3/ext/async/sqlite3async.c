@@ -10,7 +10,7 @@
 **
 *************************************************************************
 **
-** $Id: sqlite3async.c,v 1.1.1.1 2012/04/14 13:13:18 espie Exp $
+** $Id: sqlite3async.c,v 1.1 2012/04/14 13:13:18 espie Exp $
 **
 ** This file contains the implementation of an asynchronous IO backend 
 ** for SQLite.
