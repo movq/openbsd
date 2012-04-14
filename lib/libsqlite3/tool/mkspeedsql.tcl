@@ -10,7 +10,7 @@
 #*************************************************************************
 # This file generates SQL text used for performance testing.
 #
-# $Id: mkspeedsql.tcl,v 1.1.1.1 2012/04/14 13:13:17 espie Exp $
+# $Id: mkspeedsql.tcl,v 1.1 2012/04/14 13:13:17 espie Exp $
 #
 
 # Set a uniform random seed

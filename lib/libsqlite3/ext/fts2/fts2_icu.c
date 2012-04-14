@@ -11,7 +11,7 @@
 *************************************************************************
 ** This file implements a tokenizer for fts2 based on the ICU library.
 ** 
-** $Id: fts2_icu.c,v 1.1.1.1 2012/04/14 13:13:18 espie Exp $
+** $Id: fts2_icu.c,v 1.1 2012/04/14 13:13:18 espie Exp $
 */
 
 #if !defined(SQLITE_CORE) || defined(SQLITE_ENABLE_FTS2)
