@@ -1,4 +1,4 @@
-/*	$OpenBSD: intvar.h,v 1.2 2012/04/17 15:22:04 miod Exp $	*/
+/*	$OpenBSD: intvar.h,v 1.3 2012/04/18 11:01:55 miod Exp $	*/
 /*	$NetBSD: int2var.h,v 1.3 2008/08/23 17:25:54 tsutsui Exp $	*/
 
 /*
@@ -33,5 +33,3 @@ void	*int2_intr_establish(int, int, int (*)(void *),
 int	 int2_is_intr_pending(int);
 void	 int2_intr_disable(void *);
 void	 int2_intr_enable(void *);
-
-void	 int2_wait_fifo(uint32_t);
