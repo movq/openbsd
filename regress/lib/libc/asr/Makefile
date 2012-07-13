@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.1 2012/07/13 17:49:53 eric Exp $
+#	$OpenBSD: Makefile,v 1.1.1.1 2012/07/13 17:49:53 eric Exp $
 
 #
 # Note on building and running the regress tests:
