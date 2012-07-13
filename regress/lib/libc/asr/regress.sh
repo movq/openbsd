@@ -1,4 +1,4 @@
-#	$OpenBSD: regress.sh,v 1.1 2012/07/13 17:49:53 eric Exp $
+#	$OpenBSD: regress.sh,v 1.1.1.1 2012/07/13 17:49:53 eric Exp $
 
 . regress.subr
 
