@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-#	$OpenBSD: relayd.pl,v 1.5 2012/11/02 17:47:04 bluhm Exp $
+#	$OpenBSD: relayd.pl,v 1.6 2012/12/28 20:36:25 bluhm Exp $
 
 # Copyright (c) 2010-2012 Alexander Bluhm <bluhm@openbsd.org>
 #
@@ -55,7 +55,7 @@ my $r = Relayd->new(
     connectaddr         => "127.0.0.1",
     connectport         => $sport,
     %{$args{relayd}},
-    test                => $test,
+    testfile            => $test,
 );
 my $c = Client->new(
     func                => \&write_char,
@@ -73,6 +73,7 @@ $s->up;
 
 $c->down;
 $s->down;
+$r->kill_child;
 $r->down;
 
 foreach ([ client => $c ], [ relayd => $r ], [ server => $s ]) {
