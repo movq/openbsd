@@ -1,4 +1,4 @@
-# test persistent http 1.1 connection over http relay
+# test persistent https 1.1 connection over http relay
 
 use strict;
 use warnings;
