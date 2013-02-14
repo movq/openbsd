@@ -1,5 +1,5 @@
 /* bn_x931p.c */
-/* Written by Dr Stephen N Henson (steve@openssl.org) for the OpenSSL
+/* Written by Dr Stephen N Henson (shenson@bigfoot.com) for the OpenSSL
  * project 2005.
  */
 /* ====================================================================
@@ -59,7 +59,10 @@
 #include <stdio.h>
 #include <openssl/bn.h>
 
+#ifdef OPENSSL_FIPS
+
 /* X9.31 routines for prime derivation */
+
 
 /* X9.31 prime derivation. This is used to generate the primes pi
  * (p1, p2, q1, q2) from a parameter Xpi by checking successive odd
@@ -67,7 +70,7 @@
  */
 
 static int bn_x931_derive_pi(BIGNUM *pi, const BIGNUM *Xpi, BN_CTX *ctx,
-			BN_GENCB *cb)
+			void (*cb)(int, int, void *), void *cb_arg)
 	{
 	int i = 0;
 	if (!BN_copy(pi, Xpi))
@@ -77,14 +80,16 @@ static int bn_x931_derive_pi(BIGNUM *pi, const BIGNUM *Xpi, BN_CTX *ctx,
 	for(;;)
 		{
 		i++;
-		BN_GENCB_call(cb, 0, i);
+		if (cb)
+			cb(0, i, cb_arg);
 		/* NB 27 MR is specificed in X9.31 */
-		if (BN_is_prime_fasttest_ex(pi, 27, ctx, 1, cb))
+		if (BN_is_prime_fasttest(pi, 27, cb, ctx, cb_arg, 1))
 			break;
 		if (!BN_add_word(pi, 2))
 			return 0;
 		}
-	BN_GENCB_call(cb, 2, i);
+	if (cb)
+		cb(2, i, cb_arg);
 	return 1;
 	}
 
@@ -93,9 +98,10 @@ static int bn_x931_derive_pi(BIGNUM *pi, const BIGNUM *Xpi, BN_CTX *ctx,
  * not NULL they will be returned too: this is needed for testing.
  */
 
-int BN_X931_derive_prime_ex(BIGNUM *p, BIGNUM *p1, BIGNUM *p2,
+int BN_X931_derive_prime(BIGNUM *p, BIGNUM *p1, BIGNUM *p2,
+			void (*cb)(int, int, void *), void *cb_arg,
 			const BIGNUM *Xp, const BIGNUM *Xp1, const BIGNUM *Xp2,
-			const BIGNUM *e, BN_CTX *ctx, BN_GENCB *cb)
+			const BIGNUM *e, BN_CTX *ctx)
 	{
 	int ret = 0;
 
@@ -118,10 +124,10 @@ int BN_X931_derive_prime_ex(BIGNUM *p, BIGNUM *p1, BIGNUM *p2,
 
 	pm1 = BN_CTX_get(ctx);
 
-	if (!bn_x931_derive_pi(p1, Xp1, ctx, cb))
+	if (!bn_x931_derive_pi(p1, Xp1, ctx, cb, cb_arg))
 		goto err;
 
-	if (!bn_x931_derive_pi(p2, Xp2, ctx, cb))
+	if (!bn_x931_derive_pi(p2, Xp2, ctx, cb, cb_arg))
 		goto err;
 
 	if (!BN_mul(p1p2, p1, p2, ctx))
@@ -160,7 +166,8 @@ int BN_X931_derive_prime_ex(BIGNUM *p, BIGNUM *p1, BIGNUM *p2,
 	for (;;)
 		{
 		int i = 1;
-		BN_GENCB_call(cb, 0, i++);
+		if (cb)
+			cb(0, i++, cb_arg);
 		if (!BN_copy(pm1, p))
 			goto err;
 		if (!BN_sub_word(pm1, 1))
@@ -172,13 +179,14 @@ int BN_X931_derive_prime_ex(BIGNUM *p, BIGNUM *p1, BIGNUM *p2,
 		 * offering similar or better guarantees 50 MR is considerably 
 		 * better.
 		 */
-			&& BN_is_prime_fasttest_ex(p, 50, ctx, 1, cb))
+			&& BN_is_prime_fasttest(p, 50, cb, ctx, cb_arg, 1))
 			break;
 		if (!BN_add(p, p, p1p2))
 			goto err;
 		}
 
-	BN_GENCB_call(cb, 3, 0);
+	if (cb)
+		cb(3, 0, cb_arg);
 
 	ret = 1;
 
@@ -240,11 +248,11 @@ int BN_X931_generate_Xpq(BIGNUM *Xp, BIGNUM *Xq, int nbits, BN_CTX *ctx)
  * are generated using the previous function and supplied as input.
  */
 
-int BN_X931_generate_prime_ex(BIGNUM *p, BIGNUM *p1, BIGNUM *p2,
+int BN_X931_generate_prime(BIGNUM *p, BIGNUM *p1, BIGNUM *p2,
 			BIGNUM *Xp1, BIGNUM *Xp2,
 			const BIGNUM *Xp,
 			const BIGNUM *e, BN_CTX *ctx,
-			BN_GENCB *cb)
+			void (*cb)(int, int, void *), void *cb_arg)
 	{
 	int ret = 0;
 
@@ -258,7 +266,8 @@ int BN_X931_generate_prime_ex(BIGNUM *p, BIGNUM *p1, BIGNUM *p2,
 		goto error;
 	if (!BN_rand(Xp2, 101, 0, 0))
 		goto error;
-	if (!BN_X931_derive_prime_ex(p, p1, p2, Xp, Xp1, Xp2, e, ctx, cb))
+	if (!BN_X931_derive_prime(p, p1, p2, cb, cb_arg,
+						Xp, Xp1, Xp2, e, ctx))
 		goto error;
 
 	ret = 1;
@@ -270,3 +279,4 @@ int BN_X931_generate_prime_ex(BIGNUM *p, BIGNUM *p1, BIGNUM *p2,
 
 	}
 
+#endif

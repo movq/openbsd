@@ -509,17 +509,15 @@ static int TS_check_status_info(TS_RESP *response)
 						    TS_failure_info[i].code))
 				{
 				if (!first)
-					strlcat(failure_text, ",",
-						TS_STATUS_BUF_SIZE);
+					strcpy(failure_text, ",");
 				else
 					first = 0;
-				strlcat(failure_text, TS_failure_info[i].text,
-					TS_STATUS_BUF_SIZE);
+				strcat(failure_text, TS_failure_info[i].text);
 				}
 			}
 		}
 	if (failure_text[0] == '\0')
-		strlcpy(failure_text, "unspecified", TS_STATUS_BUF_SIZE);
+		strcpy(failure_text, "unspecified");
 
 	/* Making up the error string. */
 	TSerr(TS_F_TS_CHECK_STATUS_INFO, TS_R_NO_TIME_STAMP_TOKEN);
@@ -616,15 +614,12 @@ static int TS_compute_imprint(BIO *data, TS_TST_INFO *tst_info,
 		goto err;
 		}
 
-	if (!EVP_DigestInit(&md_ctx, md))
-		goto err;
+	EVP_DigestInit(&md_ctx, md);
 	while ((length = BIO_read(data, buffer, sizeof(buffer))) > 0)
 		{
-		if (!EVP_DigestUpdate(&md_ctx, buffer, length))
-			goto err;
+		EVP_DigestUpdate(&md_ctx, buffer, length);
 		}
-	if (!EVP_DigestFinal(&md_ctx, *imprint, NULL))
-		goto err;
+	EVP_DigestFinal(&md_ctx, *imprint, NULL);
 
 	return 1;
  err:
