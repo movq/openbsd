@@ -1,4 +1,4 @@
-/*	$OpenBSD: net.c,v 1.20 2013/03/11 17:40:11 deraadt Exp $	*/
+/*	$OpenBSD: net.c,v 1.19 2012/04/15 03:25:27 jsg Exp $	*/
 
 /*
  * Copyright (c) 2005 Håkan Olsson.  All rights reserved.
@@ -511,8 +511,7 @@ net_accept(int accept_socket)
 			    "socket, closing.");
 			close(s);
 		}
-	} else if (errno != EWOULDBLOCK && errno != EINTR &&
-	    errno != ECONNABORTED)
+	} else
 		log_err("net: accept()");
 }
 
