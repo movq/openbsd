@@ -1,4 +1,4 @@
-# test divert-to with udp
+# test divert-reply with udp
 
 use strict;
 use warnings;
