@@ -1,18 +1,18 @@
 /*
- * Copyright (c) 2003 Kungliga Tekniska Högskolan
- * (Royal Institute of Technology, Stockholm, Sweden). 
- * All rights reserved. 
+ * Copyright (c) 2003-2005 Kungliga Tekniska HÃ¶gskolan
+ * (Royal Institute of Technology, Stockholm, Sweden).
+ * All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without 
- * modification, are permitted provided that the following conditions 
- * are met: 
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
  *
- * 1. Redistributions of source code must retain the above copyright 
- *    notice, this list of conditions and the following disclaimer. 
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
  *
- * 2. Redistributions in binary form must reproduce the above copyright 
- *    notice, this list of conditions and the following disclaimer in the 
- *    documentation and/or other materials provided with the distribution. 
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
  *
  * 3. Neither the name of KTH nor the names of its contributors may be
  *    used to endorse or promote products derived from this software without
@@ -33,8 +33,6 @@
 #include "krb5_locl.h"
 #include <err.h>
 #include <getarg.h>
-
-RCSID("$KTH: test_crypto.c,v 1.3 2005/04/04 17:54:50 lha Exp $");
 
 static void
 time_encryption(krb5_context context, size_t size,
@@ -79,15 +77,56 @@ time_encryption(krb5_context context, size_t size,
 
     timevalsub(&tv2, &tv1);
 
-    printf("%s size: %7lu iterations: %d time: %3ld.%06ld\n", 
+    printf("%s size: %7lu iterations: %d time: %3ld.%06ld\n",
 	   etype_name, (unsigned long)size, iterations,
 	   (long)tv2.tv_sec, (long)tv2.tv_usec);
 
+    free(buf);
+    free(etype_name);
     krb5_crypto_destroy(context, crypto);
     krb5_free_keyblock_contents(context, &key);
 }
 
+static void
+time_s2k(krb5_context context,
+	 krb5_enctype etype,
+	 const char *password,
+	 krb5_salt salt,
+	 int iterations)
+{
+    struct timeval tv1, tv2;
+    krb5_error_code ret;
+    krb5_keyblock key;
+    krb5_data opaque;
+    char *etype_name;
+    int i;
 
+    ret = krb5_enctype_to_string(context, etype, &etype_name);
+    if (ret)
+	krb5_err(context, 1, ret, "krb5_enctype_to_string");
+
+    opaque.data = NULL;
+    opaque.length = 0;
+
+    gettimeofday(&tv1, NULL);
+
+    for (i = 0; i < iterations; i++) {
+	ret = krb5_string_to_key_salt_opaque(context, etype, password, salt,
+					 opaque, &key);
+	if (ret)
+	    krb5_err(context, 1, ret, "krb5_string_to_key_data_salt_opaque");
+	krb5_free_keyblock_contents(context, &key);
+    }
+
+    gettimeofday(&tv2, NULL);
+
+    timevalsub(&tv2, &tv1);
+
+    printf("%s string2key %d iterations time: %3ld.%06ld\n",
+	   etype_name, iterations, (long)tv2.tv_sec, (long)tv2.tv_usec);
+    free(etype_name);
+
+}
 
 static int version_flag = 0;
 static int help_flag	= 0;
@@ -114,10 +153,11 @@ main(int argc, char **argv)
 {
     krb5_context context;
     krb5_error_code ret;
-    int i, iterations;
-    int optind = 0;
+    int i, enciter, s2kiter;
+    int optidx = 0;
+    krb5_salt salt;
 
-    krb5_enctype enctypes[] = { 
+    krb5_enctype enctypes[] = {
 	ETYPE_DES_CBC_CRC,
 	ETYPE_DES3_CBC_SHA1,
 	ETYPE_ARCFOUR_HMAC_MD5,
@@ -127,9 +167,9 @@ main(int argc, char **argv)
 
     setprogname(argv[0]);
 
-    if(getarg(args, sizeof(args) / sizeof(args[0]), argc, argv, &optind))
+    if(getarg(args, sizeof(args) / sizeof(args[0]), argc, argv, &optidx))
 	usage(1);
-    
+
     if (help_flag)
 	usage (0);
 
@@ -138,26 +178,32 @@ main(int argc, char **argv)
 	exit(0);
     }
 
-    argc -= optind;
-    argv += optind;
-
+    salt.salttype = KRB5_PW_SALT;
+    salt.saltvalue.data = NULL;
+    salt.saltvalue.length = 0;
 
     ret = krb5_init_context(&context);
     if (ret)
 	errx (1, "krb5_init_context failed: %d", ret);
 
-    iterations = 1000;
+    enciter = 1000;
+    s2kiter = 100;
 
     for (i = 0; i < sizeof(enctypes)/sizeof(enctypes[0]); i++) {
-	time_encryption(context, 16, enctypes[i], iterations);
-	time_encryption(context, 32, enctypes[i], iterations);
-	time_encryption(context, 512, enctypes[i], iterations);
-	time_encryption(context, 1024, enctypes[i], iterations);
-	time_encryption(context, 2048, enctypes[i], iterations);
-	time_encryption(context, 4096, enctypes[i], iterations);
-	time_encryption(context, 8192, enctypes[i], iterations);
-	time_encryption(context, 16384, enctypes[i], iterations);
-	time_encryption(context, 32768, enctypes[i], iterations);
+
+	krb5_enctype_enable(context, enctypes[i]);
+
+	time_encryption(context, 16, enctypes[i], enciter);
+	time_encryption(context, 32, enctypes[i], enciter);
+	time_encryption(context, 512, enctypes[i], enciter);
+	time_encryption(context, 1024, enctypes[i], enciter);
+	time_encryption(context, 2048, enctypes[i], enciter);
+	time_encryption(context, 4096, enctypes[i], enciter);
+	time_encryption(context, 8192, enctypes[i], enciter);
+	time_encryption(context, 16384, enctypes[i], enciter);
+	time_encryption(context, 32768, enctypes[i], enciter);
+
+	time_s2k(context, enctypes[i], "mYsecreitPassword", salt, s2kiter);
     }
 
     krb5_free_context(context);
