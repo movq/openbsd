@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.3 2013/09/28 21:59:39 miod Exp $
+#	$OpenBSD: Makefile,v 1.4 2013/10/08 21:55:22 miod Exp $
 
 SIZE?=	size
 
@@ -28,7 +28,7 @@ netboot: netboot.aout a2coff
 	${DESTDIR}${MDEC_DIR}/a2coff netboot.aout netboot
 
 netboot.aout: ${OBJS} ${LIBS}
-	${LD} ${LDFLAGS} -o $@ ${OBJS} ${LIBS} `cc -print-libgcc-file-name`
+	${LD} ${LDFLAGS} -o $@ ${OBJS} ${LIBS} `${CC} -print-libgcc-file-name`
 	@${SIZE} $@
 
 a2coff:	${DESTDIR}${MDEC_DIR}/a2coff

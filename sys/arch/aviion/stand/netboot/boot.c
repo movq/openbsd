@@ -1,4 +1,4 @@
-/*	$OpenBSD: boot.c,v 1.2 2010/04/18 15:09:02 miod Exp $ */
+/*	$OpenBSD: boot.c,v 1.3 2013/10/08 21:55:22 miod Exp $ */
 
 /*-
  * Copyright (c) 1995 Theo de Raadt
@@ -85,7 +85,7 @@ netboot(const char *args, int bootdev, int bootunit, int bootpart)
 		if (ret != 0)
 			return;
 
-		exec_aout(file, args, bootdev, bootunit, bootpart);
+		exec(file, args, bootdev, bootunit, bootpart);
 		printf("netboot: %s: %s\n", file, strerror(errno));
 		ask = 1;
 	}
