@@ -27259,7 +27259,11 @@ static int afpLock(sqlite3_file *id, int eFileLock){
     mask = (sizeof(long)==8) ? LARGEST_INT64 : 0x7fffffff;
     /* Now get the read-lock SHARED_LOCK */
     /* note that the quality of the randomness doesn't matter that much */
+#ifdef HAVE_ARC4RANDOM
+    lk = arc4random();
+#else
     lk = random(); 
+#endif
     pInode->sharedByte = (lk & mask)%(SHARED_SIZE - 1);
     lrc1 = afpSetLock(context->dbPath, pFile, 
           SHARED_FIRST+pInode->sharedByte, 1, 1);
@@ -130321,7 +130325,7 @@ SQLITE_API int sqlite3_extension_init(
 **    May you share freely, never taking more than you give.
 **
 *************************************************************************
-** $Id: sqlite3.c,v 1.1 2013/06/17 19:11:44 robert Exp $
+** $Id: sqlite3.c,v 1.2 2013/11/30 18:11:59 deraadt Exp $
 **
 ** This file implements an integration between the ICU library 
 ** ("International Components for Unicode", an open-source library 
