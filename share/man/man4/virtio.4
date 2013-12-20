@@ -1,4 +1,4 @@
-.\"     $OpenBSD: virtio.4,v 1.7 2013/07/16 16:05:49 schwarze Exp $
+.\"     $OpenBSD: virtio.4,v 1.8 2013/12/20 22:10:19 matthew Exp $
 .\"
 .\" Copyright (c) 2012 Stefan Fritsch <sf@sfritsch.de>
 .\"
@@ -14,7 +14,7 @@
 .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.Dd $Mdocdate: July 16 2013 $
+.Dd $Mdocdate: December 20 2013 $
 .Dt VIRTIO 4
 .Os
 .Sh NAME
@@ -33,13 +33,15 @@ Currently there are drivers for the following
 .Nm
 devices:
 .Pp
-.Bl -tag -width "vioblk(4)XXX" -offset indent -compact
+.Bl -tag -width "vioscsi(4)XXX" -offset indent -compact
 .It Xr vio 4
 VirtIO network device
 .It Xr vioblk 4
 VirtIO disk
 .It Xr viomb 4
 VirtIO memory ballooning driver
+.It Xr vioscsi 4
+VirtIO SCSI adapter
 .El
 .Sh SEE ALSO
 .Xr intro 4
