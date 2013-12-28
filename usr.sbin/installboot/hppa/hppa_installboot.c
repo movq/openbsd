@@ -1,4 +1,4 @@
-/*	$OpenBSD: hppa_installboot.c,v 1.1 2013/12/27 14:23:49 jsing Exp $	*/
+/*	$OpenBSD: hppa_installboot.c,v 1.2 2013/12/28 13:58:15 jsing Exp $	*/
 
 /*
  * Copyright (c) 2013 Joel Sing <jsing@openbsd.org>
@@ -15,8 +15,6 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
-
-#include <unistd.h>
 
 #include "installboot.h"
 
