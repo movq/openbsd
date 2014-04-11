@@ -58,7 +58,6 @@
 
 /* Written by David L. Jones <jonesd@kcgl1.eng.ohio-state.edu>
  * Date:   22-JUL-1996
- * Revised: 25-SEP-1997		Update for 0.8.1, BIO_CTRL_SET -> BIO_C_SET_FD
  */
 /* VMS */
 #include <stdio.h>
@@ -66,11 +65,10 @@
 #include <string.h>
 #include <errno.h>
 #include "cryptlib.h"
-#include <openssl/bio.h>
+#include "bio.h"
 
 #include <iodef.h>		/* VMS IO$_ definitions */
-#include <starlet.h>
-
+extern int SYS$QIOW();
 typedef unsigned short io_channel;
 /*************************************************************************/
 struct io_status { short status, count; long flags; };
@@ -88,11 +86,11 @@ struct rpc_ctx {
     struct rpc_msg msg;
 };
 
-static int rtcp_write(BIO *h,const char *buf,int num);
+static int rtcp_write(BIO *h,char *buf,int num);
 static int rtcp_read(BIO *h,char *buf,int size);
-static int rtcp_puts(BIO *h,const char *str);
+static int rtcp_puts(BIO *h,char *str);
 static int rtcp_gets(BIO *h,char *str,int size);
-static long rtcp_ctrl(BIO *h,int cmd,long arg1,void *arg2);
+static long rtcp_ctrl(BIO *h,int cmd,long arg1,char *arg2);
 static int rtcp_new(BIO *h);
 static int rtcp_free(BIO *data);
 
@@ -107,27 +105,20 @@ static BIO_METHOD rtcp_method=
 	rtcp_ctrl,
 	rtcp_new,
 	rtcp_free,
-	NULL,
 	};
 
-BIO_METHOD *BIO_s_rtcp(void)
+BIO_METHOD *BIO_s_rtcp()
 	{
 	return(&rtcp_method);
 	}
 /*****************************************************************************/
 /* Decnet I/O routines.
  */
-
-#ifdef __DECC
-#pragma message save
-#pragma message disable DOLLARID
-#endif
-
 static int get ( io_channel chan, char *buffer, int maxlen, int *length )
 {
     int status;
     struct io_status iosb;
-    status = sys$qiow ( 0, chan, IO$_READVBLK, &iosb, 0, 0,
+    status = SYS$QIOW ( 0, chan, IO$_READVBLK, &iosb, 0, 0,
 	buffer, maxlen, 0, 0, 0, 0 );
     if ( (status&1) == 1 ) status = iosb.status;
     if ( (status&1) == 1 ) *length = iosb.count;
@@ -138,40 +129,40 @@ static int put ( io_channel chan, char *buffer, int length )
 {
     int status;
     struct io_status iosb;
-    status = sys$qiow ( 0, chan, IO$_WRITEVBLK, &iosb, 0, 0,
+    status = SYS$QIOW ( 0, chan, IO$_WRITEVBLK, &iosb, 0, 0,
 	buffer, length, 0, 0, 0, 0 );
     if ( (status&1) == 1 ) status = iosb.status;
     return status;
 }
-
-#ifdef __DECC
-#pragma message restore
-#endif
-
 /***************************************************************************/
 
-static int rtcp_new(BIO *bi)
+static int rtcp_new(bi)
+BIO *bi;
 {
     struct rpc_ctx *ctx;
 	bi->init=1;
 	bi->num=0;
 	bi->flags = 0;
-	bi->ptr=OPENSSL_malloc(sizeof(struct rpc_ctx));
+	bi->ptr=Malloc(sizeof(struct rpc_ctx));
 	ctx = (struct rpc_ctx *) bi->ptr;
 	ctx->filled = 0;
 	ctx->pos = 0;
 	return(1);
 }
 
-static int rtcp_free(BIO *a)
+static int rtcp_free(a)
+BIO *a;
 {
 	if (a == NULL) return(0);
-	if ( a->ptr ) OPENSSL_free ( a->ptr );
+	if ( a->ptr ) Free ( a->ptr );
 	a->ptr = NULL;
 	return(1);
 }
 	
-static int rtcp_read(BIO *b, char *out, int outl)
+static int rtcp_read(b,out,outl)
+BIO *b;
+char *out;
+int outl;
 {
     int status, length;
     struct rpc_ctx *ctx;
@@ -218,7 +209,10 @@ static int rtcp_read(BIO *b, char *out, int outl)
     return length;
 }
 
-static int rtcp_write(BIO *b, const char *in, int inl)
+static int rtcp_write(b,in,inl)
+BIO *b;
+char *in;
+int inl;
 {
     int status, i, segment, length;
     struct rpc_ctx *ctx;
@@ -247,7 +241,11 @@ static int rtcp_write(BIO *b, const char *in, int inl)
     return(i);
 }
 
-static long rtcp_ctrl(BIO *b, int cmd, long num, void *ptr)
+static long rtcp_ctrl(b,cmd,num,ptr)
+BIO *b;
+int cmd;
+long num;
+char *ptr;
 	{
 	long ret=1;
 
@@ -257,7 +255,7 @@ static long rtcp_ctrl(BIO *b, int cmd, long num, void *ptr)
 	case BIO_CTRL_EOF:
 		ret = 1;
 		break;
-	case BIO_C_SET_FD:
+	case BIO_CTRL_SET:
 		b->num = num;
 		ret = 1;
 	 	break;
@@ -278,12 +276,17 @@ static long rtcp_ctrl(BIO *b, int cmd, long num, void *ptr)
 	return(ret);
 	}
 
-static int rtcp_gets(BIO *bp, char *buf, int size)
+static int rtcp_gets(bp,buf,size)
+BIO *bp;
+char *buf;
+int size;
 	{
 	return(0);
 	}
 
-static int rtcp_puts(BIO *bp, const char *str)
+static int rtcp_puts(bp,str)
+BIO *bp;
+char *str;
 {
     int length;
     if (str == NULL) return(0);

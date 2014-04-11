@@ -61,46 +61,46 @@
 #include <string.h>
 #include <time.h>
 #include "apps.h"
-#include <openssl/err.h>
-#include <openssl/objects.h>
-#include <openssl/evp.h>
-#include <openssl/x509.h>
-#include <openssl/pkcs7.h>
-#include <openssl/pem.h>
+#include "err.h"
+#include "objects.h"
+#include "evp.h"
+#include "x509.h"
+#include "pkcs7.h"
+#include "pem.h"
 
 #undef PROG
 #define PROG	pkcs7_main
 
-/* -inform arg	- input format - default PEM (DER or PEM)
+/* -inform arg	- input format - default PEM (one of DER, TXT or PEM)
  * -outform arg - output format - default PEM
  * -in arg	- input file - default stdin
  * -out arg	- output file - default stdout
+ * -des		- encrypt output if PEM format with DES in cbc mode
+ * -des3	- encrypt output if PEM format
+ * -idea	- encrypt output if PEM format
  * -print_certs
  */
 
-int MAIN(int, char **);
-
-int MAIN(int argc, char **argv)
+int MAIN(argc, argv)
+int argc;
+char **argv;
 	{
 	PKCS7 *p7=NULL;
 	int i,badops=0;
+#if !defined(NO_DES) || !defined(NO_IDEA)
+	EVP_CIPHER *enc=NULL;
+#endif
 	BIO *in=NULL,*out=NULL;
 	int informat,outformat;
-	char *infile,*outfile,*prog;
-	int print_certs=0,text=0,noout=0,p7_print=0;
-	int ret=1;
-#ifndef OPENSSL_NO_ENGINE
-	char *engine=NULL;
-#endif
+	char *infile,*outfile,*prog,buf[256];
+	int print_certs=0;
+	int ret=0;
 
 	apps_startup();
 
 	if (bio_err == NULL)
 		if ((bio_err=BIO_new(BIO_s_file())) != NULL)
 			BIO_set_fp(bio_err,stderr,BIO_NOCLOSE|BIO_FP_TEXT);
-
-	if (!load_config(bio_err, NULL))
-		goto end;
 
 	infile=NULL;
 	outfile=NULL;
@@ -132,20 +132,17 @@ int MAIN(int argc, char **argv)
 			if (--argc < 1) goto bad;
 			outfile= *(++argv);
 			}
-		else if (strcmp(*argv,"-noout") == 0)
-			noout=1;
-		else if (strcmp(*argv,"-text") == 0)
-			text=1;
-		else if (strcmp(*argv,"-print") == 0)
-			p7_print=1;
 		else if (strcmp(*argv,"-print_certs") == 0)
 			print_certs=1;
-#ifndef OPENSSL_NO_ENGINE
-		else if (strcmp(*argv,"-engine") == 0)
-			{
-			if (--argc < 1) goto bad;
-			engine= *(++argv);
-			}
+#ifndef NO_DES
+		else if (strcmp(*argv,"-des") == 0)
+			enc=EVP_des_cbc();
+		else if (strcmp(*argv,"-des3") == 0)
+			enc=EVP_des_ede3_cbc();
+#endif
+#ifndef NO_IDEA
+		else if (strcmp(*argv,"-idea") == 0)
+			enc=EVP_idea_cbc();
 #endif
 		else
 			{
@@ -162,25 +159,20 @@ int MAIN(int argc, char **argv)
 bad:
 		BIO_printf(bio_err,"%s [options] <infile >outfile\n",prog);
 		BIO_printf(bio_err,"where options are\n");
-		BIO_printf(bio_err," -inform arg   input format - DER or PEM\n");
-		BIO_printf(bio_err," -outform arg  output format - DER or PEM\n");
-		BIO_printf(bio_err," -in arg       input file\n");
+		BIO_printf(bio_err," -inform arg   input format - one of DER TXT PEM\n");
+		BIO_printf(bio_err," -outform arg  output format - one of DER TXT PEM\n");
+		BIO_printf(bio_err," -in arg       inout file\n");
 		BIO_printf(bio_err," -out arg      output file\n");
 		BIO_printf(bio_err," -print_certs  print any certs or crl in the input\n");
-		BIO_printf(bio_err," -text         print full details of certificates\n");
-		BIO_printf(bio_err," -noout        don't output encoded data\n");
-#ifndef OPENSSL_NO_ENGINE
-		BIO_printf(bio_err," -engine e     use engine e, possibly a hardware device.\n");
+		BIO_printf(bio_err," -des          encrypt PEM output with cbc des\n");
+		BIO_printf(bio_err," -des3         encrypt PEM output with ede cbc des using 168 bit key\n");
+#ifndef NO_IDEA
+		BIO_printf(bio_err," -idea         encrypt PEM output with cbc idea\n");
 #endif
-		ret = 1;
-		goto end;
+		EXIT(1);
 		}
 
 	ERR_load_crypto_strings();
-
-#ifndef OPENSSL_NO_ENGINE
-        setup_engine(bio_err, engine, 0);
-#endif
 
 	in=BIO_new(BIO_s_file());
 	out=BIO_new(BIO_s_file());
@@ -205,7 +197,7 @@ bad:
 	if	(informat == FORMAT_ASN1)
 		p7=d2i_PKCS7_bio(in,NULL);
 	else if (informat == FORMAT_PEM)
-		p7=PEM_read_bio_PKCS7(in,NULL,NULL,NULL);
+		p7=PEM_read_bio_PKCS7(in,NULL,NULL);
 	else
 		{
 		BIO_printf(bio_err,"bad input format specified for pkcs7 object\n");
@@ -219,15 +211,7 @@ bad:
 		}
 
 	if (outfile == NULL)
-		{
 		BIO_set_fp(out,stdout,BIO_NOCLOSE);
-#ifdef OPENSSL_SYS_VMS
-		{
-		BIO *tmpbio = BIO_new(BIO_f_linebuffer());
-		out = BIO_push(tmpbio, out);
-		}
-#endif
-		}
 	else
 		{
 		if (BIO_write_filename(out,outfile) <= 0)
@@ -237,13 +221,10 @@ bad:
 			}
 		}
 
-	if (p7_print)
-		PKCS7_print_ctx(out, p7, 0, NULL);
-
 	if (print_certs)
 		{
-		STACK_OF(X509) *certs=NULL;
-		STACK_OF(X509_CRL) *crls=NULL;
+		STACK *certs=NULL;
+		STACK *crls=NULL;
 
 		i=OBJ_obj2nid(p7->type);
 		switch (i)
@@ -264,13 +245,22 @@ bad:
 			{
 			X509 *x;
 
-			for (i=0; i<sk_X509_num(certs); i++)
+			for (i=0; i<sk_num(certs); i++)
 				{
-				x=sk_X509_value(certs,i);
-				if(text) X509_print(out, x);
-				else dump_cert_text(out, x);
+				x=(X509 *)sk_value(certs,i);
 
-				if(!noout) PEM_write_bio_X509(out,x);
+				X509_NAME_oneline(X509_get_subject_name(x),
+					buf,256);
+				BIO_puts(out,"subject=");
+				BIO_puts(out,buf);
+
+				X509_NAME_oneline(X509_get_issuer_name(x),
+					buf,256);
+				BIO_puts(out,"\nissuer= ");
+				BIO_puts(out,buf);
+				BIO_puts(out,"\n");
+
+				PEM_write_bio_X509(out,x);
 				BIO_puts(out,"\n");
 				}
 			}
@@ -278,13 +268,21 @@ bad:
 			{
 			X509_CRL *crl;
 
-			for (i=0; i<sk_X509_CRL_num(crls); i++)
+			for (i=0; i<sk_num(crls); i++)
 				{
-				crl=sk_X509_CRL_value(crls,i);
+				crl=(X509_CRL *)sk_value(crls,i);
 
-				X509_CRL_print(out, crl);
+				X509_NAME_oneline(crl->crl->issuer,buf,256);
+				BIO_puts(out,"issuer= ");
+				BIO_puts(out,buf);
 
-				if(!noout)PEM_write_bio_X509_CRL(out,crl);
+				BIO_puts(out,"\nlast update=");
+				ASN1_UTCTIME_print(out,crl->crl->lastUpdate);
+				BIO_puts(out,"\nnext update=");
+				ASN1_UTCTIME_print(out,crl->crl->nextUpdate);
+				BIO_puts(out,"\n");
+
+				PEM_write_bio_X509_CRL(out,crl);
 				BIO_puts(out,"\n");
 				}
 			}
@@ -293,28 +291,25 @@ bad:
 		goto end;
 		}
 
-	if(!noout) {
-		if 	(outformat == FORMAT_ASN1)
-			i=i2d_PKCS7_bio(out,p7);
-		else if (outformat == FORMAT_PEM)
-			i=PEM_write_bio_PKCS7(out,p7);
-		else	{
-			BIO_printf(bio_err,"bad output format specified for outfile\n");
-			goto end;
-			}
+	if 	(outformat == FORMAT_ASN1)
+		i=i2d_PKCS7_bio(out,p7);
+	else if (outformat == FORMAT_PEM)
+		i=PEM_write_bio_PKCS7(out,p7);
+	else	{
+		BIO_printf(bio_err,"bad output format specified for outfile\n");
+		goto end;
+		}
 
-		if (!i)
-			{
-			BIO_printf(bio_err,"unable to write pkcs7 object\n");
-			ERR_print_errors(bio_err);
-			goto end;
-			}
-	}
+	if (!i)
+		{
+		BIO_printf(bio_err,"unable to write pkcs7 object\n");
+		ERR_print_errors(bio_err);
+		goto end;
+		}
 	ret=0;
 end:
 	if (p7 != NULL) PKCS7_free(p7);
 	if (in != NULL) BIO_free(in);
-	if (out != NULL) BIO_free_all(out);
-	apps_shutdown();
-	OPENSSL_EXIT(ret);
+	if (out != NULL) BIO_free(out);
+	EXIT(ret);
 	}

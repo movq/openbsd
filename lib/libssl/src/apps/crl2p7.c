@@ -63,27 +63,33 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include "apps.h"
-#include <openssl/err.h>
-#include <openssl/evp.h>
-#include <openssl/x509.h>
-#include <openssl/pkcs7.h>
-#include <openssl/pem.h>
-#include <openssl/objects.h>
+#include "err.h"
+#include "evp.h"
+#include "x509.h"
+#include "pkcs7.h"
+#include "pem.h"
+#include "objects.h"
 
-static int add_certs_from_file(STACK_OF(X509) *stack, char *certfile);
+#ifndef NOPROTO
+static int add_certs_from_file(STACK *stack, char *certfile);
+#else
+static int add_certs_from_file();
+#endif
+
 #undef PROG
 #define PROG	crl2pkcs7_main
 
-/* -inform arg	- input format - default PEM (DER or PEM)
+/* -inform arg	- input format - default PEM (one of DER, TXT or PEM)
  * -outform arg - output format - default PEM
  * -in arg	- input file - default stdin
  * -out arg	- output file - default stdout
  */
 
-int MAIN(int, char **);
-
-int MAIN(int argc, char **argv)
+int MAIN(argc, argv)
+int argc;
+char **argv;
 	{
 	int i,badops=0;
 	BIO *in=NULL,*out=NULL;
@@ -92,9 +98,8 @@ int MAIN(int argc, char **argv)
 	PKCS7 *p7 = NULL;
 	PKCS7_SIGNED *p7s = NULL;
 	X509_CRL *crl=NULL;
-	STACK_OF(OPENSSL_STRING) *certflst=NULL;
-	STACK_OF(X509_CRL) *crl_stack=NULL;
-	STACK_OF(X509) *cert_stack=NULL;
+	STACK *crl_stack=NULL;
+	STACK *cert_stack=NULL;
 	int ret=1,nocrl=0;
 
 	apps_startup();
@@ -107,6 +112,7 @@ int MAIN(int argc, char **argv)
 	outfile=NULL;
 	informat=FORMAT_PEM;
 	outformat=FORMAT_PEM;
+	certfile=NULL;
 
 	prog=argv[0];
 	argc--;
@@ -140,8 +146,7 @@ int MAIN(int argc, char **argv)
 		else if (strcmp(*argv,"-certfile") == 0)
 			{
 			if (--argc < 1) goto bad;
-			if(!certflst) certflst = sk_OPENSSL_STRING_new_null();
-			sk_OPENSSL_STRING_push(certflst,*(++argv));
+			certfile= *(++argv);
 			}
 		else
 			{
@@ -158,15 +163,13 @@ int MAIN(int argc, char **argv)
 bad:
 		BIO_printf(bio_err,"%s [options] <infile >outfile\n",prog);
 		BIO_printf(bio_err,"where options are\n");
-		BIO_printf(bio_err," -inform arg    input format - DER or PEM\n");
-		BIO_printf(bio_err," -outform arg   output format - DER or PEM\n");
-		BIO_printf(bio_err," -in arg        input file\n");
+		BIO_printf(bio_err," -inform arg    input format - one of DER TXT PEM\n");
+		BIO_printf(bio_err," -outform arg   output format - one of DER TXT PEM\n");
+		BIO_printf(bio_err," -in arg        inout file\n");
 		BIO_printf(bio_err," -out arg       output file\n");
 		BIO_printf(bio_err," -certfile arg  certificates file of chain to a trusted CA\n");
-		BIO_printf(bio_err,"                (can be used more than once)\n");
 		BIO_printf(bio_err," -nocrl         no crl to load, just certs from '-certfile'\n");
-		ret = 1;
-		goto end;
+		EXIT(1);
 		}
 
 	ERR_load_crypto_strings();
@@ -195,7 +198,7 @@ bad:
 		if 	(informat == FORMAT_ASN1)
 			crl=d2i_X509_CRL_bio(in,NULL);
 		else if (informat == FORMAT_PEM)
-			crl=PEM_read_bio_X509_CRL(in,NULL,NULL,NULL);
+			crl=PEM_read_bio_X509_CRL(in,NULL,NULL);
 		else	{
 			BIO_printf(bio_err,"bad input format specified for input crl\n");
 			goto end;
@@ -215,39 +218,29 @@ bad:
 	p7s->contents->type=OBJ_nid2obj(NID_pkcs7_data);
 
 	if (!ASN1_INTEGER_set(p7s->version,1)) goto end;
-	if ((crl_stack=sk_X509_CRL_new_null()) == NULL) goto end;
+	if ((crl_stack=sk_new(NULL)) == NULL) goto end;
 	p7s->crl=crl_stack;
 	if (crl != NULL)
 		{
-		sk_X509_CRL_push(crl_stack,crl);
-		crl=NULL; /* now part of p7 for OPENSSL_freeing */
+		sk_push(crl_stack,(char *)crl);
+		crl=NULL; /* now part of p7 for Freeing */
 		}
 
-	if ((cert_stack=sk_X509_new_null()) == NULL) goto end;
+	if ((cert_stack=sk_new(NULL)) == NULL) goto end;
 	p7s->cert=cert_stack;
 
-	if(certflst) for(i = 0; i < sk_OPENSSL_STRING_num(certflst); i++) {
-		certfile = sk_OPENSSL_STRING_value(certflst, i);
+	if (certfile != NULL) 
+		{
 		if (add_certs_from_file(cert_stack,certfile) < 0)
 			{
-			BIO_printf(bio_err, "error loading certificates\n");
+			BIO_printf(bio_err,"error loading certificates\n");
 			ERR_print_errors(bio_err);
 			goto end;
 			}
-	}
-
-	sk_OPENSSL_STRING_free(certflst);
+		}
 
 	if (outfile == NULL)
-		{
 		BIO_set_fp(out,stdout,BIO_NOCLOSE);
-#ifdef OPENSSL_SYS_VMS
-		{
-		BIO *tmpbio = BIO_new(BIO_f_linebuffer());
-		out = BIO_push(tmpbio, out);
-		}
-#endif
-		}
 	else
 		{
 		if (BIO_write_filename(out,outfile) <= 0)
@@ -274,12 +267,11 @@ bad:
 	ret=0;
 end:
 	if (in != NULL) BIO_free(in);
-	if (out != NULL) BIO_free_all(out);
+	if (out != NULL) BIO_free(out);
 	if (p7 != NULL) PKCS7_free(p7);
 	if (crl != NULL) X509_CRL_free(crl);
 
-	apps_shutdown();
-	OPENSSL_EXIT(ret);
+	EXIT(ret);
 	}
 
 /*
@@ -292,35 +284,40 @@ end:
  *	number of certs added if successful, -1 if not.
  *----------------------------------------------------------------------
  */
-static int add_certs_from_file(STACK_OF(X509) *stack, char *certfile)
+static int add_certs_from_file(stack,certfile)
+STACK *stack;
+char *certfile;
 	{
+	struct stat st;
 	BIO *in=NULL;
 	int count=0;
 	int ret= -1;
-	STACK_OF(X509_INFO) *sk=NULL;
+	STACK *sk=NULL;
 	X509_INFO *xi;
+
+	if ((stat(certfile,&st) != 0))
+		{
+		BIO_printf(bio_err,"unable to file the file, %s\n",certfile);
+		goto end;
+		}
 
 	in=BIO_new(BIO_s_file());
 	if ((in == NULL) || (BIO_read_filename(in,certfile) <= 0))
 		{
-		BIO_printf(bio_err,"error opening the file, %s\n",certfile);
 		goto end;
 		}
 
 	/* This loads from a file, a stack of x509/crl/pkey sets */
-	sk=PEM_X509_INFO_read_bio(in,NULL,NULL,NULL);
-	if (sk == NULL) {
-		BIO_printf(bio_err,"error reading the file, %s\n",certfile);
-		goto end;
-	}
+	sk=PEM_X509_INFO_read_bio(in,NULL,NULL);
+	if (sk == NULL) goto end;
 
 	/* scan over it and pull out the CRL's */
-	while (sk_X509_INFO_num(sk))
+	while (sk_num(sk))
 		{
-		xi=sk_X509_INFO_shift(sk);
+		xi=(X509_INFO *)sk_shift(sk);
 		if (xi->x509 != NULL)
 			{
-			sk_X509_push(stack,xi->x509);
+			sk_push(stack,(char *)xi->x509);
 			xi->x509=NULL;
 			count++;
 			}
@@ -329,9 +326,9 @@ static int add_certs_from_file(STACK_OF(X509) *stack, char *certfile)
 
 	ret=count;
 end:
- 	/* never need to OPENSSL_free x */
+ 	/* never need to Free x */
 	if (in != NULL) BIO_free(in);
-	if (sk != NULL) sk_X509_INFO_free(sk);
+	if (sk != NULL) sk_free(sk);
 	return(ret);
 	}
 

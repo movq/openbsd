@@ -56,18 +56,17 @@
  * [including the GNU Public Licence.]
  */
 
-#include <openssl/blowfish.h>
+#include "blowfish.h"
 #include "bf_locl.h"
-#include <openssl/opensslv.h>
 
 /* Blowfish as implemented from 'Blowfish: Springer-Verlag paper'
- * (From LECTURE NOTES IN COMPUTER SCIENCE 809, FAST SOFTWARE ENCRYPTION,
+ * (From LECTURE NOTES IN COIMPUTER SCIENCE 809, FAST SOFTWARE ENCRYPTION,
  * CAMBRIDGE SECURITY WORKSHOP, CAMBRIDGE, U.K., DECEMBER 9-11, 1993)
  */
 
-const char BF_version[]="Blowfish" OPENSSL_VERSION_PTEXT;
+char *BF_version="BlowFish part of SSLeay 0.9.0b 29-Jun-1998";
 
-const char *BF_options(void)
+char *BF_options()
 	{
 #ifdef BF_PTR
 	return("blowfish(ptr)");
@@ -78,17 +77,20 @@ const char *BF_options(void)
 #endif
 	}
 
-void BF_ecb_encrypt(const unsigned char *in, unsigned char *out,
-	     const BF_KEY *key, int encrypt)
+void BF_ecb_encrypt(in, out, ks, encrypt)
+unsigned char *in;
+unsigned char *out;
+BF_KEY *ks;
+int encrypt;
 	{
 	BF_LONG l,d[2];
 
 	n2l(in,l); d[0]=l;
 	n2l(in,l); d[1]=l;
 	if (encrypt)
-		BF_encrypt(d,key);
+		BF_encrypt(d,ks);
 	else
-		BF_decrypt(d,key);
+		BF_decrypt(d,ks);
 	l=d[0]; l2n(l,out);
 	l=d[1]; l2n(l,out);
 	l=d[0]=d[1]=0;

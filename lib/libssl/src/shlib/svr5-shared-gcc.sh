@@ -1,7 +1,7 @@
 #!/usr/bin/sh
 
 major="0"
-minor="9.7b"
+minor="9.7"
 
 slib=libssl
 sh_slib=$slib.so.$major.$minor
@@ -9,7 +9,7 @@ sh_slib=$slib.so.$major.$minor
 clib=libcrypto
 sh_clib=$clib.so.$major.$minor
 
-FLAGS="-O3 -DFILIO_H -fomit-frame-pointer -pthread"
+FLAGS="-O3 -DFILIO_H -fomit-frame-pointer -pthread
 SHFLAGS="-DPIC -fPIC"
 
 touch $sh_clib

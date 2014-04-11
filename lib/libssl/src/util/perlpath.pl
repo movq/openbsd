@@ -1,4 +1,4 @@
-#!/usr/local/bin/perl
+#!/usr/bin/perl
 #
 # modify the '#!/usr/local/bin/perl'
 # line in all scripts that rely on perl.
@@ -17,12 +17,7 @@ sub wanted
 	@a=<IN>;
 	close(IN);
 
-	if (-d $ARGV[0]) {
-		$a[0]="#!$ARGV[0]/perl\n";
-	}
-	else {
-		$a[0]="#!$ARGV[0]\n";
-	}
+	$a[0]="#!$ARGV[0]/perl\n";
 
 	# Playing it safe...
 	$new="$_.new";

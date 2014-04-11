@@ -56,14 +56,14 @@
  * [including the GNU Public Licence.]
  */
 
-#include <openssl/cast.h>
+#include "cast.h"
 #include "cast_lcl.h"
 
-#ifndef OPENBSD_CAST_ASM
-void CAST_encrypt(CAST_LONG *data, const CAST_KEY *key)
+void CAST_encrypt(data,key)
+CAST_LONG *data;
+CAST_KEY *key;
 	{
-	register CAST_LONG l,r,t;
-	const register CAST_LONG *k;
+	register CAST_LONG l,r,*k,t;
 
 	k= &(key->data[0]);
 	l=data[0];
@@ -81,34 +81,29 @@ void CAST_encrypt(CAST_LONG *data, const CAST_KEY *key)
 	E_CAST( 9,k,r,l,+,^,-);
 	E_CAST(10,k,l,r,^,-,+);
 	E_CAST(11,k,r,l,-,+,^);
-	if(!key->short_key)
-	    {
-	    E_CAST(12,k,l,r,+,^,-);
-	    E_CAST(13,k,r,l,^,-,+);
-	    E_CAST(14,k,l,r,-,+,^);
-	    E_CAST(15,k,r,l,+,^,-);
-	    }
+	E_CAST(12,k,l,r,+,^,-);
+	E_CAST(13,k,r,l,^,-,+);
+	E_CAST(14,k,l,r,-,+,^);
+	E_CAST(15,k,r,l,+,^,-);
 
 	data[1]=l&0xffffffffL;
 	data[0]=r&0xffffffffL;
 	}
 
-void CAST_decrypt(CAST_LONG *data, const CAST_KEY *key)
+void CAST_decrypt(data,key)
+CAST_LONG *data;
+CAST_KEY *key;
 	{
-	register CAST_LONG l,r,t;
-	const register CAST_LONG *k;
+	register CAST_LONG l,r,*k,t;
 
 	k= &(key->data[0]);
 	l=data[0];
 	r=data[1];
 
-	if(!key->short_key)
-	    {
-	    E_CAST(15,k,l,r,+,^,-);
-	    E_CAST(14,k,r,l,-,+,^);
-	    E_CAST(13,k,l,r,^,-,+);
-	    E_CAST(12,k,r,l,+,^,-);
-	    }
+	E_CAST(15,k,l,r,+,^,-);
+	E_CAST(14,k,r,l,-,+,^);
+	E_CAST(13,k,l,r,^,-,+);
+	E_CAST(12,k,r,l,+,^,-);
 	E_CAST(11,k,l,r,-,+,^);
 	E_CAST(10,k,r,l,^,-,+);
 	E_CAST( 9,k,l,r,+,^,-);
@@ -125,17 +120,21 @@ void CAST_decrypt(CAST_LONG *data, const CAST_KEY *key)
 	data[1]=l&0xffffffffL;
 	data[0]=r&0xffffffffL;
 	}
-#endif
 
-void CAST_cbc_encrypt(const unsigned char *in, unsigned char *out, long length,
-	     const CAST_KEY *ks, unsigned char *iv, int enc)
+void CAST_cbc_encrypt(in, out, length, ks, iv, encrypt)
+unsigned char *in;
+unsigned char *out;
+long length;
+CAST_KEY *ks;
+unsigned char *iv;
+int encrypt;
 	{
 	register CAST_LONG tin0,tin1;
 	register CAST_LONG tout0,tout1,xor0,xor1;
 	register long l=length;
 	CAST_LONG tin[2];
 
-	if (enc)
+	if (encrypt)
 		{
 		n2l(iv,tout0);
 		n2l(iv,tout1);
@@ -208,3 +207,4 @@ void CAST_cbc_encrypt(const unsigned char *in, unsigned char *out, long length,
 	tin0=tin1=tout0=tout1=xor0=xor1=0;
 	tin[0]=tin[1]=0;
 	}
+

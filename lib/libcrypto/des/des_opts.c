@@ -59,23 +59,19 @@
 /* define PART1, PART2, PART3 or PART4 to build only with a few of the options.
  * This is for machines with 64k code segment size restrictions. */
 
-#if !defined(OPENSSL_SYS_MSDOS) && (!defined(OPENSSL_SYS_VMS) || defined(__DECC)) && !defined(OPENSSL_SYS_MACOSX)
+#ifndef MSDOS
 #define TIMES
 #endif
 
 #include <stdio.h>
-#ifndef OPENSSL_SYS_MSDOS
-#include <openssl/e_os2.h>
-#include OPENSSL_UNISTD
+#ifndef MSDOS
+#include <unistd.h>
 #else
 #include <io.h>
 extern void exit();
 #endif
-
-#ifndef OPENSSL_SYS_NETWARE
 #include <signal.h>
-#endif
-
+#ifndef VMS
 #ifndef _IRIX
 #include <time.h>
 #endif
@@ -83,27 +79,25 @@ extern void exit();
 #include <sys/types.h>
 #include <sys/times.h>
 #endif
-
-/* Depending on the VMS version, the tms structure is perhaps defined.
-   The __TMS macro will show if it was.  If it wasn't defined, we should
-   undefine TIMES, since that tells the rest of the program how things
-   should be handled.				-- Richard Levitte */
-#if defined(OPENSSL_SYS_VMS_DECC) && !defined(__TMS)
-#undef TIMES
+#else /* VMS */
+#include <types.h>
+struct tms {
+	time_t tms_utime;
+	time_t tms_stime;
+	time_t tms_uchild;	/* I dunno...  */
+	time_t tms_uchildsys;	/* so these names are a guess :-) */
+	}
 #endif
-
 #ifndef TIMES
 #include <sys/timeb.h>
 #endif
 
-
-#if defined(sun) || defined(__ultrix)
-#define _POSIX_SOURCE
+#ifdef sun
 #include <limits.h>
 #include <sys/param.h>
 #endif
 
-#include <openssl/des.h>
+#include "des.h"
 #include "spr.h"
 
 #define DES_DEFAULT_OPTIONS
@@ -122,10 +116,10 @@ extern void exit();
 #undef DES_RISC2
 #undef DES_PTR
 #undef D_ENCRYPT
-#define DES_encrypt1 des_encrypt_u4_cisc_idx
-#define DES_encrypt2 des_encrypt2_u4_cisc_idx
-#define DES_encrypt3 des_encrypt3_u4_cisc_idx
-#define DES_decrypt3 des_decrypt3_u4_cisc_idx
+#define des_encrypt  des_encrypt_u4_cisc_idx
+#define des_encrypt2 des_encrypt2_u4_cisc_idx
+#define des_encrypt3 des_encrypt3_u4_cisc_idx
+#define des_decrypt3 des_decrypt3_u4_cisc_idx
 #undef HEADER_DES_LOCL_H
 #include "des_enc.c"
 
@@ -134,14 +128,14 @@ extern void exit();
 #undef DES_RISC2
 #undef DES_PTR
 #undef D_ENCRYPT
-#undef DES_encrypt1
-#undef DES_encrypt2
-#undef DES_encrypt3
-#undef DES_decrypt3
-#define DES_encrypt1 des_encrypt_u16_cisc_idx
-#define DES_encrypt2 des_encrypt2_u16_cisc_idx
-#define DES_encrypt3 des_encrypt3_u16_cisc_idx
-#define DES_decrypt3 des_decrypt3_u16_cisc_idx
+#undef des_encrypt
+#undef des_encrypt2
+#undef des_encrypt3
+#undef des_decrypt3
+#define des_encrypt  des_encrypt_u16_cisc_idx
+#define des_encrypt2 des_encrypt2_u16_cisc_idx
+#define des_encrypt3 des_encrypt3_u16_cisc_idx
+#define des_decrypt3 des_decrypt3_u16_cisc_idx
 #undef HEADER_DES_LOCL_H
 #include "des_enc.c"
 
@@ -150,14 +144,14 @@ extern void exit();
 #undef DES_RISC2
 #undef DES_PTR
 #undef D_ENCRYPT
-#undef DES_encrypt1
-#undef DES_encrypt2
-#undef DES_encrypt3
-#undef DES_decrypt3
-#define DES_encrypt1 des_encrypt_u4_risc1_idx
-#define DES_encrypt2 des_encrypt2_u4_risc1_idx
-#define DES_encrypt3 des_encrypt3_u4_risc1_idx
-#define DES_decrypt3 des_decrypt3_u4_risc1_idx
+#undef des_encrypt
+#undef des_encrypt2
+#undef des_encrypt3
+#undef des_decrypt3
+#define des_encrypt  des_encrypt_u4_risc1_idx
+#define des_encrypt2 des_encrypt2_u4_risc1_idx
+#define des_encrypt3 des_encrypt3_u4_risc1_idx
+#define des_decrypt3 des_decrypt3_u4_risc1_idx
 #undef HEADER_DES_LOCL_H
 #include "des_enc.c"
 
@@ -170,14 +164,14 @@ extern void exit();
 #define DES_RISC2
 #undef DES_PTR
 #undef D_ENCRYPT
-#undef DES_encrypt1
-#undef DES_encrypt2
-#undef DES_encrypt3
-#undef DES_decrypt3
-#define DES_encrypt1 des_encrypt_u4_risc2_idx
-#define DES_encrypt2 des_encrypt2_u4_risc2_idx
-#define DES_encrypt3 des_encrypt3_u4_risc2_idx
-#define DES_decrypt3 des_decrypt3_u4_risc2_idx
+#undef des_encrypt
+#undef des_encrypt2
+#undef des_encrypt3
+#undef des_decrypt3
+#define des_encrypt  des_encrypt_u4_risc2_idx
+#define des_encrypt2 des_encrypt2_u4_risc2_idx
+#define des_encrypt3 des_encrypt3_u4_risc2_idx
+#define des_decrypt3 des_decrypt3_u4_risc2_idx
 #undef HEADER_DES_LOCL_H
 #include "des_enc.c"
 
@@ -186,14 +180,14 @@ extern void exit();
 #undef DES_RISC2
 #undef DES_PTR
 #undef D_ENCRYPT
-#undef DES_encrypt1
-#undef DES_encrypt2
-#undef DES_encrypt3
-#undef DES_decrypt3
-#define DES_encrypt1 des_encrypt_u16_risc1_idx
-#define DES_encrypt2 des_encrypt2_u16_risc1_idx
-#define DES_encrypt3 des_encrypt3_u16_risc1_idx
-#define DES_decrypt3 des_decrypt3_u16_risc1_idx
+#undef des_encrypt
+#undef des_encrypt2
+#undef des_encrypt3
+#undef des_decrypt3
+#define des_encrypt  des_encrypt_u16_risc1_idx
+#define des_encrypt2 des_encrypt2_u16_risc1_idx
+#define des_encrypt3 des_encrypt3_u16_risc1_idx
+#define des_decrypt3 des_decrypt3_u16_risc1_idx
 #undef HEADER_DES_LOCL_H
 #include "des_enc.c"
 
@@ -202,14 +196,14 @@ extern void exit();
 #define DES_RISC2
 #undef DES_PTR
 #undef D_ENCRYPT
-#undef DES_encrypt1
-#undef DES_encrypt2
-#undef DES_encrypt3
-#undef DES_decrypt3
-#define DES_encrypt1 des_encrypt_u16_risc2_idx
-#define DES_encrypt2 des_encrypt2_u16_risc2_idx
-#define DES_encrypt3 des_encrypt3_u16_risc2_idx
-#define DES_decrypt3 des_decrypt3_u16_risc2_idx
+#undef des_encrypt
+#undef des_encrypt2
+#undef des_encrypt3
+#undef des_decrypt3
+#define des_encrypt  des_encrypt_u16_risc2_idx
+#define des_encrypt2 des_encrypt2_u16_risc2_idx
+#define des_encrypt3 des_encrypt3_u16_risc2_idx
+#define des_decrypt3 des_decrypt3_u16_risc2_idx
 #undef HEADER_DES_LOCL_H
 #include "des_enc.c"
 
@@ -222,14 +216,14 @@ extern void exit();
 #undef DES_RISC2
 #define DES_PTR
 #undef D_ENCRYPT
-#undef DES_encrypt1
-#undef DES_encrypt2
-#undef DES_encrypt3
-#undef DES_decrypt3
-#define DES_encrypt1 des_encrypt_u4_cisc_ptr
-#define DES_encrypt2 des_encrypt2_u4_cisc_ptr
-#define DES_encrypt3 des_encrypt3_u4_cisc_ptr
-#define DES_decrypt3 des_decrypt3_u4_cisc_ptr
+#undef des_encrypt
+#undef des_encrypt2
+#undef des_encrypt3
+#undef des_decrypt3
+#define des_encrypt  des_encrypt_u4_cisc_ptr
+#define des_encrypt2 des_encrypt2_u4_cisc_ptr
+#define des_encrypt3 des_encrypt3_u4_cisc_ptr
+#define des_decrypt3 des_decrypt3_u4_cisc_ptr
 #undef HEADER_DES_LOCL_H
 #include "des_enc.c"
 
@@ -238,14 +232,14 @@ extern void exit();
 #undef DES_RISC2
 #define DES_PTR
 #undef D_ENCRYPT
-#undef DES_encrypt1
-#undef DES_encrypt2
-#undef DES_encrypt3
-#undef DES_decrypt3
-#define DES_encrypt1 des_encrypt_u16_cisc_ptr
-#define DES_encrypt2 des_encrypt2_u16_cisc_ptr
-#define DES_encrypt3 des_encrypt3_u16_cisc_ptr
-#define DES_decrypt3 des_decrypt3_u16_cisc_ptr
+#undef des_encrypt
+#undef des_encrypt2
+#undef des_encrypt3
+#undef des_decrypt3
+#define des_encrypt  des_encrypt_u16_cisc_ptr
+#define des_encrypt2 des_encrypt2_u16_cisc_ptr
+#define des_encrypt3 des_encrypt3_u16_cisc_ptr
+#define des_decrypt3 des_decrypt3_u16_cisc_ptr
 #undef HEADER_DES_LOCL_H
 #include "des_enc.c"
 
@@ -254,14 +248,14 @@ extern void exit();
 #undef DES_RISC2
 #define DES_PTR
 #undef D_ENCRYPT
-#undef DES_encrypt1
-#undef DES_encrypt2
-#undef DES_encrypt3
-#undef DES_decrypt3
-#define DES_encrypt1 des_encrypt_u4_risc1_ptr
-#define DES_encrypt2 des_encrypt2_u4_risc1_ptr
-#define DES_encrypt3 des_encrypt3_u4_risc1_ptr
-#define DES_decrypt3 des_decrypt3_u4_risc1_ptr
+#undef des_encrypt
+#undef des_encrypt2
+#undef des_encrypt3
+#undef des_decrypt3
+#define des_encrypt  des_encrypt_u4_risc1_ptr
+#define des_encrypt2 des_encrypt2_u4_risc1_ptr
+#define des_encrypt3 des_encrypt3_u4_risc1_ptr
+#define des_decrypt3 des_decrypt3_u4_risc1_ptr
 #undef HEADER_DES_LOCL_H
 #include "des_enc.c"
 
@@ -274,14 +268,14 @@ extern void exit();
 #define DES_RISC2
 #define DES_PTR
 #undef D_ENCRYPT
-#undef DES_encrypt1
-#undef DES_encrypt2
-#undef DES_encrypt3
-#undef DES_decrypt3
-#define DES_encrypt1 des_encrypt_u4_risc2_ptr
-#define DES_encrypt2 des_encrypt2_u4_risc2_ptr
-#define DES_encrypt3 des_encrypt3_u4_risc2_ptr
-#define DES_decrypt3 des_decrypt3_u4_risc2_ptr
+#undef des_encrypt
+#undef des_encrypt2
+#undef des_encrypt3
+#undef des_decrypt3
+#define des_encrypt  des_encrypt_u4_risc2_ptr
+#define des_encrypt2 des_encrypt2_u4_risc2_ptr
+#define des_encrypt3 des_encrypt3_u4_risc2_ptr
+#define des_decrypt3 des_decrypt3_u4_risc2_ptr
 #undef HEADER_DES_LOCL_H
 #include "des_enc.c"
 
@@ -290,14 +284,14 @@ extern void exit();
 #undef DES_RISC2
 #define DES_PTR
 #undef D_ENCRYPT
-#undef DES_encrypt1
-#undef DES_encrypt2
-#undef DES_encrypt3
-#undef DES_decrypt3
-#define DES_encrypt1 des_encrypt_u16_risc1_ptr
-#define DES_encrypt2 des_encrypt2_u16_risc1_ptr
-#define DES_encrypt3 des_encrypt3_u16_risc1_ptr
-#define DES_decrypt3 des_decrypt3_u16_risc1_ptr
+#undef des_encrypt
+#undef des_encrypt2
+#undef des_encrypt3
+#undef des_decrypt3
+#define des_encrypt  des_encrypt_u16_risc1_ptr
+#define des_encrypt2 des_encrypt2_u16_risc1_ptr
+#define des_encrypt3 des_encrypt3_u16_risc1_ptr
+#define des_decrypt3 des_decrypt3_u16_risc1_ptr
 #undef HEADER_DES_LOCL_H
 #include "des_enc.c"
 
@@ -306,14 +300,14 @@ extern void exit();
 #define DES_RISC2
 #define DES_PTR
 #undef D_ENCRYPT
-#undef DES_encrypt1
-#undef DES_encrypt2
-#undef DES_encrypt3
-#undef DES_decrypt3
-#define DES_encrypt1 des_encrypt_u16_risc2_ptr
-#define DES_encrypt2 des_encrypt2_u16_risc2_ptr
-#define DES_encrypt3 des_encrypt3_u16_risc2_ptr
-#define DES_decrypt3 des_decrypt3_u16_risc2_ptr
+#undef des_encrypt
+#undef des_encrypt2
+#undef des_encrypt3
+#undef des_decrypt3
+#define des_encrypt  des_encrypt_u16_risc2_ptr
+#define des_encrypt2 des_encrypt2_u16_risc2_ptr
+#define des_encrypt3 des_encrypt3_u16_risc2_ptr
+#define des_decrypt3 des_decrypt3_u16_risc2_ptr
 #undef HEADER_DES_LOCL_H
 #include "des_enc.c"
 
@@ -323,7 +317,11 @@ extern void exit();
 #ifndef HZ
 # ifndef CLK_TCK
 #  ifndef _BSD_CLK_TCK_ /* FreeBSD fix */
-#   define HZ	100.0
+#   ifndef VMS
+#    define HZ	100.0
+#   else /* VMS */
+#    define HZ	100.0
+#   endif
 #  else /* _BSD_CLK_TCK_ */
 #   define HZ ((double)_BSD_CLK_TCK_)
 #  endif
@@ -335,7 +333,12 @@ extern void exit();
 #define BUFSIZE	((long)1024)
 long run=0;
 
+#ifndef NOPROTO
 double Time_F(int s);
+#else
+double Time_F();
+#endif
+
 #ifdef SIGALRM
 #if defined(__STDC__) || defined(sgi)
 #define SIGRETTYPE void
@@ -343,8 +346,14 @@ double Time_F(int s);
 #define SIGRETTYPE int
 #endif
 
+#ifndef NOPROTO
 SIGRETTYPE sig_done(int sig);
-SIGRETTYPE sig_done(int sig)
+#else
+SIGRETTYPE sig_done();
+#endif
+
+SIGRETTYPE sig_done(sig)
+int sig;
 	{
 	signal(SIGALRM,sig_done);
 	run=0;
@@ -357,7 +366,8 @@ SIGRETTYPE sig_done(int sig)
 #define START	0
 #define STOP	1
 
-double Time_F(int s)
+double Time_F(s)
+int s;
 	{
 	double ret;
 #ifdef TIMES
@@ -405,7 +415,7 @@ double Time_F(int s)
 	for (count=0,run=1; COND(cb); count++) \
 		{ \
 		unsigned long d[2]; \
-		func(d,&sch,DES_ENCRYPT); \
+		func(d,&(sch[0]),DES_ENCRYPT); \
 		} \
 	tm[index]=Time_F(STOP); \
 	fprintf(stderr,"%ld %s's in %.2f second\n",count,name,tm[index]); \
@@ -415,14 +425,16 @@ double Time_F(int s)
 	fprintf(stderr,"%s bytes per sec = %12.2f (%5.1fuS)\n",name, \
 		tm[index]*8,1.0e6/tm[index]);
 
-int main(int argc, char **argv)
+int main(argc,argv)
+int argc;
+char **argv;
 	{
 	long count;
 	static unsigned char buf[BUFSIZE];
-	static DES_cblock key ={0x12,0x34,0x56,0x78,0x9a,0xbc,0xde,0xf0};
-	static DES_cblock key2={0x34,0x56,0x78,0x9a,0xbc,0xde,0xf0,0x12};
-	static DES_cblock key3={0x56,0x78,0x9a,0xbc,0xde,0xf0,0x12,0x34};
-	DES_key_schedule sch,sch2,sch3;
+	static des_cblock key ={0x12,0x34,0x56,0x78,0x9a,0xbc,0xde,0xf0};
+	static des_cblock key2={0x34,0x56,0x78,0x9a,0xbc,0xde,0xf0,0x12};
+	static des_cblock key3={0x56,0x78,0x9a,0xbc,0xde,0xf0,0x12,0x34};
+	des_key_schedule sch,sch2,sch3;
 	double d,tm[16],max=0;
 	int rank[16];
 	char *str[16];
@@ -438,17 +450,17 @@ int main(int argc, char **argv)
 		}
 
 #ifndef TIMES
-	fprintf(stderr,"To get the most accurate results, try to run this\n");
+	fprintf(stderr,"To get the most acurate results, try to run this\n");
 	fprintf(stderr,"program when this computer is idle.\n");
 #endif
 
-	DES_set_key_unchecked(&key,&sch);
-	DES_set_key_unchecked(&key2,&sch2);
-	DES_set_key_unchecked(&key3,&sch3);
+	des_set_key((C_Block *)key,sch);
+	des_set_key((C_Block *)key2,sch2);
+	des_set_key((C_Block *)key3,sch3);
 
 #ifndef SIGALRM
 	fprintf(stderr,"First we calculate the approximate speed ...\n");
-	DES_set_key_unchecked(&key,sch);
+	des_set_key((C_Block *)key,sch);
 	count=10;
 	do	{
 		long i;
@@ -457,7 +469,7 @@ int main(int argc, char **argv)
 		count*=2;
 		Time_F(START);
 		for (i=count; i; i--)
-			DES_encrypt1(data,&(sch[0]),DES_ENCRYPT);
+			des_encrypt(data,&(sch[0]),DES_ENCRYPT);
 		d=Time_F(STOP);
 		} while (d < 3.0);
 	ca=count;
@@ -602,7 +614,7 @@ int main(int argc, char **argv)
 		break;
 		}
 	exit(0);
-#if defined(LINT) || defined(OPENSSL_SYS_MSDOS)
+#if defined(LINT) || defined(MSDOS)
 	return(0);
 #endif
 	}

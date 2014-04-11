@@ -1,4 +1,4 @@
-#!/usr/local/bin/perl
+#!/usr/bin/perl
 
 #
 # Make PEM encoded data have lines of 64 bytes of data

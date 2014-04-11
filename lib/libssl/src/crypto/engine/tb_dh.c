@@ -52,6 +52,8 @@
  *
  */
 
+#include <openssl/evp.h>
+#include <openssl/engine.h>
 #include "eng_int.h"
 
 /* If this symbol is defined then ENGINE_get_default_DH(), the function that is
@@ -76,7 +78,7 @@ int ENGINE_register_DH(ENGINE *e)
 	{
 	if(e->dh_meth)
 		return engine_table_register(&dh_table,
-				engine_unregister_all_DH, e, &dummy_nid, 1, 0);
+				&engine_unregister_all_DH, e, &dummy_nid, 1, 0);
 	return 1;
 	}
 
@@ -92,7 +94,7 @@ int ENGINE_set_default_DH(ENGINE *e)
 	{
 	if(e->dh_meth)
 		return engine_table_register(&dh_table,
-				engine_unregister_all_DH, e, &dummy_nid, 1, 1);
+				&engine_unregister_all_DH, e, &dummy_nid, 1, 1);
 	return 1;
 	}
 

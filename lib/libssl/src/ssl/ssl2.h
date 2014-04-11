@@ -67,8 +67,8 @@ extern "C" {
 #define SSL2_VERSION		0x0002
 #define SSL2_VERSION_MAJOR	0x00
 #define SSL2_VERSION_MINOR	0x02
-/* #define SSL2_CLIENT_VERSION	0x0002 */
-/* #define SSL2_SERVER_VERSION	0x0002 */
+#define SSL2_CLIENT_VERSION	0x0002
+#define SSL2_SERVER_VERSION	0x0002
 
 /* Protocol Message Codes */
 #define SSL2_MT_ERROR			0
@@ -133,12 +133,8 @@ extern "C" {
 
 /* Upper/Lower Bounds */
 #define SSL2_MAX_MASTER_KEY_LENGTH_IN_BITS	256
-#ifdef OPENSSL_SYS_MPE
-#define SSL2_MAX_RECORD_LENGTH_2_BYTE_HEADER	29998u
-#else
-#define SSL2_MAX_RECORD_LENGTH_2_BYTE_HEADER	32767u  /* 2^15-1 */
-#endif
-#define SSL2_MAX_RECORD_LENGTH_3_BYTE_HEADER	16383 /* 2^14-1 */
+#define SSL2_MAX_RECORD_LENGTH_2_BYTE_HEADER	(unsigned int)32767 
+#define SSL2_MAX_RECORD_LENGTH_3_BYTE_HEADER	16383 /**/
 
 #define SSL2_CHALLENGE_LENGTH	16
 /*#define SSL2_CHALLENGE_LENGTH	32 */
@@ -155,9 +151,7 @@ extern "C" {
 #define  CERT		char
 #endif
 
-#ifndef OPENSSL_NO_SSL_INTERN
-
-typedef struct ssl2_state_st
+typedef struct ssl2_ctx_st
 	{
 	int three_byte_header;
 	int clear_text;		/* clear text */
@@ -168,7 +162,7 @@ typedef struct ssl2_state_st
 	 * args were passwd */
 	unsigned int wnum;	/* number of bytes sent so far */
 	int wpend_tot;
-	const unsigned char *wpend_buf;
+	char *wpend_buf;
 
 	int wpend_off;	/* offset to data to write */
 	int wpend_len; 	/* number of bytes passwd to write */
@@ -191,6 +185,7 @@ typedef struct ssl2_state_st
 	unsigned char *ract_data;
 	unsigned char *wact_data;
 	unsigned char *mac_data;
+	unsigned char *pad_data;
 
 	unsigned char *read_key;
 	unsigned char *write_key;
@@ -210,18 +205,16 @@ typedef struct ssl2_state_st
 		unsigned int conn_id_length;
 		unsigned int cert_type;	
 		unsigned int cert_length;
-		unsigned int csl; 
-		unsigned int clear;
+		int csl; 
+		int clear;
 		unsigned int enc; 
 		unsigned char ccl[SSL2_MAX_CERT_CHALLENGE_LENGTH];
-		unsigned int cipher_spec_length;
+		int cipher_spec_length;
 		unsigned int session_id_length;
 		unsigned int clen;
 		unsigned int rlen;
 		} tmp;
-	} SSL2_STATE;
-
-#endif
+	} SSL2_CTX;
 
 /* SSLv2 */
 /* client */

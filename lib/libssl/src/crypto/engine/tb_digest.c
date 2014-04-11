@@ -52,6 +52,8 @@
  *
  */
 
+#include <openssl/evp.h>
+#include <openssl/engine.h>
 #include "eng_int.h"
 
 /* If this symbol is defined then ENGINE_get_digest_engine(), the function that
@@ -79,7 +81,7 @@ int ENGINE_register_digests(ENGINE *e)
 		int num_nids = e->digests(e, NULL, &nids, 0);
 		if(num_nids > 0)
 			return engine_table_register(&digest_table,
-					engine_unregister_all_digests, e, nids,
+					&engine_unregister_all_digests, e, nids,
 					num_nids, 0);
 		}
 	return 1;
@@ -101,7 +103,7 @@ int ENGINE_set_default_digests(ENGINE *e)
 		int num_nids = e->digests(e, NULL, &nids, 0);
 		if(num_nids > 0)
 			return engine_table_register(&digest_table,
-					engine_unregister_all_digests, e, nids,
+					&engine_unregister_all_digests, e, nids,
 					num_nids, 1);
 		}
 	return 1;

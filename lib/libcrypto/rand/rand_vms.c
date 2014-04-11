@@ -69,17 +69,6 @@
 # pragma message disable DOLLARID
 #endif
 
-/* Use 32-bit pointers almost everywhere.  Define the type to which to
- * cast a pointer passed to an external function.
- */
-#if __INITIAL_POINTER_SIZE == 64
-# define PTR_T __void_ptr64
-# pragma pointer_size save
-# pragma pointer_size 32
-#else /* __INITIAL_POINTER_SIZE == 64 */
-# define PTR_T void *
-#endif /* __INITIAL_POINTER_SIZE == 64 [else] */
-
 static struct items_data_st
 	{
 	short length, code;	/* length is amount of bytes */
@@ -112,12 +101,11 @@ int RAND_poll(void)
 	pitem = item;
 
 	/* Setup */
-	while (pitems_data->length
-		&& (total_length + pitems_data->length <= 256))
+	while (pitems_data->length)
 		{
 		pitem->length = pitems_data->length;
 		pitem->code = pitems_data->code;
-		pitem->buffer = (long *)&data_buffer[total_length];
+		pitem->buffer = (long *)data_buffer[total_length];
 		pitem->retlen = 0;
 		total_length += pitems_data->length;
 		pitems_data++;
@@ -136,12 +124,11 @@ int RAND_poll(void)
 		{
 		if (status == SS$_NORMAL)
 			{
-			RAND_add( (PTR_T)data_buffer, total_length,
-			 total_length/2);
+			RAND_add(data_buffer, total_length, total_length/2);
 			}
 		}
 	sys$gettim(iosb);
-	RAND_add( (PTR_T)iosb, sizeof(iosb), sizeof(iosb)/2);
+	RAND_add((unsigned char *)iosb, sizeof(iosb), sizeof(iosb)/2);
 	return 1;
 }
 

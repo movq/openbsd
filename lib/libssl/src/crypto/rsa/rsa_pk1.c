@@ -58,17 +58,32 @@
 
 #include <stdio.h>
 #include "cryptlib.h"
-#include <openssl/bn.h>
-#include <openssl/rsa.h>
-#include <openssl/rand.h>
+#include "bn.h"
+#include "rsa.h"
+#include "rand.h"
 
-int RSA_padding_add_PKCS1_type_1(unsigned char *to, int tlen,
-	     const unsigned char *from, int flen)
+#ifndef NOPROTO
+int RSA_padding_add_PKCS1_type_1();
+int RSA_padding_check_PKCS1_type_1();
+int RSA_padding_add_PKCS1_type_2();
+int RSA_padding_check_PKCS1_type_2();
+int RSA_padding_add_SSLv23();
+int RSA_padding_check_SSLv23();
+int RSA_padding_add_none();
+int RSA_padding_check_none();
+
+#endif
+
+int RSA_padding_add_PKCS1_type_1(to,tlen,from,flen)
+unsigned char *to;
+int tlen;
+unsigned char *from;
+int flen;
 	{
 	int j;
 	unsigned char *p;
 
-	if (flen > (tlen-RSA_PKCS1_PADDING_SIZE))
+	if (flen > (tlen-11))
 		{
 		RSAerr(RSA_F_RSA_PADDING_ADD_PKCS1_TYPE_1,RSA_R_DATA_TOO_LARGE_FOR_KEY_SIZE);
 		return(0);
@@ -79,7 +94,7 @@ int RSA_padding_add_PKCS1_type_1(unsigned char *to, int tlen,
 	*(p++)=0;
 	*(p++)=1; /* Private Key BT (Block Type) */
 
-	/* pad out with 0xff data */
+	/* padd out with 0xff data */
 	j=tlen-3-flen;
 	memset(p,0xff,j);
 	p+=j;
@@ -88,14 +103,17 @@ int RSA_padding_add_PKCS1_type_1(unsigned char *to, int tlen,
 	return(1);
 	}
 
-int RSA_padding_check_PKCS1_type_1(unsigned char *to, int tlen,
-	     const unsigned char *from, int flen, int num)
+int RSA_padding_check_PKCS1_type_1(to,tlen,from,flen)
+unsigned char *to;
+int tlen;
+unsigned char *from;
+int flen;
 	{
 	int i,j;
-	const unsigned char *p;
+	unsigned char *p;
 
 	p=from;
-	if ((num != (flen+1)) || (*(p++) != 01))
+	if (*(p++) != 01)
 		{
 		RSAerr(RSA_F_RSA_PADDING_CHECK_PKCS1_TYPE_1,RSA_R_BLOCK_TYPE_IS_NOT_01);
 		return(-1);
@@ -130,18 +148,16 @@ int RSA_padding_check_PKCS1_type_1(unsigned char *to, int tlen,
 		}
 	i++; /* Skip over the '\0' */
 	j-=i;
-	if (j > tlen)
-		{
-		RSAerr(RSA_F_RSA_PADDING_CHECK_PKCS1_TYPE_1,RSA_R_DATA_TOO_LARGE);
-		return(-1);
-		}
 	memcpy(to,p,(unsigned int)j);
 
 	return(j);
 	}
 
-int RSA_padding_add_PKCS1_type_2(unsigned char *to, int tlen,
-	     const unsigned char *from, int flen)
+int RSA_padding_add_PKCS1_type_2(to,tlen,from,flen)
+unsigned char *to;
+int tlen;
+unsigned char *from;
+int flen;
 	{
 	int i,j;
 	unsigned char *p;
@@ -160,14 +176,12 @@ int RSA_padding_add_PKCS1_type_2(unsigned char *to, int tlen,
 	/* pad out with non-zero random data */
 	j=tlen-3-flen;
 
-	if (RAND_bytes(p,j) <= 0)
-		return(0);
+	RAND_bytes(p,j);
 	for (i=0; i<j; i++)
 		{
 		if (*p == '\0')
 			do	{
-				if (RAND_bytes(p,1) <= 0)
-					return(0);
+				RAND_bytes(p,1);
 				} while (*p == '\0');
 		p++;
 		}
@@ -178,21 +192,21 @@ int RSA_padding_add_PKCS1_type_2(unsigned char *to, int tlen,
 	return(1);
 	}
 
-int RSA_padding_check_PKCS1_type_2(unsigned char *to, int tlen,
-	     const unsigned char *from, int flen, int num)
+int RSA_padding_check_PKCS1_type_2(to,tlen,from,flen)
+unsigned char *to;
+int tlen;
+unsigned char *from;
+int flen;
 	{
 	int i,j;
-	const unsigned char *p;
+	unsigned char *p;
 
 	p=from;
-	if ((num != (flen+1)) || (*(p++) != 02))
+	if (*(p++) != 02)
 		{
 		RSAerr(RSA_F_RSA_PADDING_CHECK_PKCS1_TYPE_2,RSA_R_BLOCK_TYPE_IS_NOT_02);
 		return(-1);
 		}
-#ifdef PKCS1_CHECK
-	return(num-11);
-#endif
 
 	/* scan over padding data */
 	j=flen-1; /* one for type. */
@@ -212,11 +226,6 @@ int RSA_padding_check_PKCS1_type_2(unsigned char *to, int tlen,
 		}
 	i++; /* Skip over the '\0' */
 	j-=i;
-	if (j > tlen)
-		{
-		RSAerr(RSA_F_RSA_PADDING_CHECK_PKCS1_TYPE_2,RSA_R_DATA_TOO_LARGE);
-		return(-1);
-		}
 	memcpy(to,p,(unsigned int)j);
 
 	return(j);

@@ -117,19 +117,6 @@
 
 #include <openssl/e_os2.h>
 
-/* need for #define _POSIX_C_SOURCE arises whenever you pass -ansi to gcc
- * [maybe others?], because it masks interfaces not discussed in standard,
- * sigaction and fileno included. -pedantic would be more appropriate for
- * the intended purposes, but we can't prevent users from adding -ansi.
- */
-#if !defined(_POSIX_C_SOURCE) && defined(OPENSSL_SYS_VMS)
-#define _POSIX_C_SOURCE 2
-#endif
-#include <signal.h>
-#include <stdio.h>
-#include <string.h>
-#include <errno.h>
-
 #if !defined(OPENSSL_SYS_MSDOS) && !defined(OPENSSL_SYS_VMS)
 # ifdef OPENSSL_UNISTD
 #  include OPENSSL_UNISTD
@@ -158,6 +145,10 @@
 /* 06-Apr-92 Luke Brennan    Support for VMS */
 #include "ui_locl.h"
 #include "cryptlib.h"
+#include <signal.h>
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
 
 #ifdef OPENSSL_SYS_VMS		/* prototypes for sys$whatever */
 # include <starlet.h>
@@ -168,9 +159,7 @@
 
 #ifdef WIN_CONSOLE_BUG
 # include <windows.h>
-#ifndef OPENSSL_SYS_WINCE
 # include <wincon.h>
-#endif
 #endif
 
 
@@ -202,13 +191,7 @@
 # define SGTTY
 #endif
 
-#if defined(OPENSSL_SYS_VXWORKS)
-#undef TERMIOS
-#undef TERMIO
-#undef SGTTY
-#endif
-
-#if defined(OPENSSL_SYS_NETWARE)
+#if defined(OPENSSL_SYS_VSWORKS)
 #undef TERMIOS
 #undef TERMIO
 #undef SGTTY
@@ -238,7 +221,7 @@
 # define TTY_set(tty,data)	ioctl(tty,TIOCSETP,data)
 #endif
 
-#if !defined(_LIBC) && !defined(OPENSSL_SYS_MSDOS) && !defined(OPENSSL_SYS_VMS) && !defined(OPENSSL_SYS_MACINTOSH_CLASSIC) && !defined(OPENSSL_SYS_SUNOS)
+#if !defined(_LIBC) && !defined(OPENSSL_SYS_MSDOS) && !defined(OPENSSL_SYS_VMS) && !defined(OPENSSL_SYS_MACINTOSH_CLASSIC)
 # include <sys/ioctl.h>
 #endif
 
@@ -258,11 +241,7 @@ struct IOSB {
 	};
 #endif
 
-#ifdef OPENSSL_SYS_SUNOS
-	typedef int sig_atomic_t;
-#endif
-
-#if defined(OPENSSL_SYS_MACINTOSH_CLASSIC) || defined(MAC_OS_GUSI_SOURCE) || defined(OPENSSL_SYS_NETWARE)
+#if defined(OPENSSL_SYS_MACINTOSH_CLASSIC) || defined(MAC_OS_GUSI_SOURCE)
 /*
  * This one needs work. As a matter of fact the code is unoperational
  * and this is only a trick to get it compiled.
@@ -290,7 +269,7 @@ static long tty_orig[3], tty_new[3]; /* XXX   Is there any guarantee that this w
 static long status;
 static unsigned short channel = 0;
 #else
-#if !defined(OPENSSL_SYS_MSDOS) || defined(__DJGPP__)
+#ifndef OPENSSL_SYS_MSDOS
 static TTY_STRUCT tty_orig,tty_new;
 #endif
 #endif
@@ -298,12 +277,10 @@ static FILE *tty_in, *tty_out;
 static int is_a_tty;
 
 /* Declare static functions */
-#if !defined(OPENSSL_SYS_WIN16) && !defined(OPENSSL_SYS_WINCE)
-static int read_till_nl(FILE *);
+static void read_till_nl(FILE *);
 static void recsig(int);
 static void pushsig(void);
 static void popsig(void);
-#endif
 #if defined(OPENSSL_SYS_MSDOS) && !defined(OPENSSL_SYS_WIN16)
 static int noecho_fgets(char *buf, int size, FILE *tty);
 #endif
@@ -390,22 +367,18 @@ static int read_string(UI *ui, UI_STRING *uis)
 	}
 
 
-#if !defined(OPENSSL_SYS_WIN16) && !defined(OPENSSL_SYS_WINCE)
 /* Internal functions to read a string without echoing */
-static int read_till_nl(FILE *in)
+static void read_till_nl(FILE *in)
 	{
 #define SIZE 4
 	char buf[SIZE+1];
 
 	do	{
-		if (fgets(buf,sizeof(buf),in) == NULL)
-			break;
+		fgets(buf,SIZE,in);
 		} while (strchr(buf,'\n') == NULL);
-	return 1;
 	}
 
-static volatile sig_atomic_t intr_signal;
-#endif
+static sig_atomic_t intr_signal;
 
 static int read_string_inner(UI *ui, UI_STRING *uis, int echo, int strip_nl)
 	{
@@ -413,9 +386,9 @@ static int read_string_inner(UI *ui, UI_STRING *uis, int echo, int strip_nl)
 	int ok;
 	char result[BUFSIZ];
 	int maxsize = BUFSIZ-1;
-#if !defined(OPENSSL_SYS_WIN16) && !defined(OPENSSL_SYS_WINCE)
 	char *p;
 
+#ifndef OPENSSL_SYS_WIN16
 	intr_signal=0;
 	ok=0;
 	ps=0;
@@ -449,8 +422,7 @@ static int read_string_inner(UI *ui, UI_STRING *uis, int echo, int strip_nl)
 			*p='\0';
 		}
 	else
-		if (!read_till_nl(tty_in))
-			goto error;
+		read_till_nl(tty_in);
 	if (UI_set_result(ui, uis, result) >= 0)
 		ok=1;
 
@@ -467,7 +439,7 @@ error:
 	ok=1;
 #endif
 
-	OPENSSL_cleanse(result,BUFSIZ);
+	memset(result,0,BUFSIZ);
 	return ok;
 	}
 
@@ -478,7 +450,7 @@ static int open_console(UI *ui)
 	CRYPTO_w_lock(CRYPTO_LOCK_UI);
 	is_a_tty = 1;
 
-#if defined(OPENSSL_SYS_MACINTOSH_CLASSIC) || defined(OPENSSL_SYS_VXWORKS) || defined(OPENSSL_SYS_NETWARE) || defined(OPENSSL_SYS_BEOS)
+#if defined(OPENSSL_SYS_MACINTOSH_CLASSIC) || defined(OPENSSL_SYS_VSWORKS)
 	tty_in=stdin;
 	tty_out=stderr;
 #else
@@ -493,8 +465,8 @@ static int open_console(UI *ui)
 		tty_out=stderr;
 #endif
 
-#if defined(TTY_get) && !defined(OPENSSL_SYS_VMS)
- 	if (TTY_get(fileno(tty_in),&tty_orig) == -1)
+#if defined(TTY_get) && !defined(VMS)
+	if (TTY_get(fileno(tty_in),&tty_orig) == -1)
 		{
 #ifdef ENOTTY
 		if (errno == ENOTTY)
@@ -568,7 +540,7 @@ static int echo_console(UI *ui)
 
 static int close_console(UI *ui)
 	{
-	if (tty_in != stdin) fclose(tty_in);
+	if (tty_in != stderr) fclose(tty_in);
 	if (tty_out != stderr) fclose(tty_out);
 #ifdef OPENSSL_SYS_VMS
 	status = sys$dassgn(channel);
@@ -579,13 +551,10 @@ static int close_console(UI *ui)
 	}
 
 
-#if !defined(OPENSSL_SYS_WIN16) && !defined(OPENSSL_SYS_WINCE)
 /* Internal functions to handle signals and act on them */
 static void pushsig(void)
 	{
-#ifndef OPENSSL_SYS_WIN32
 	int i;
-#endif
 #ifdef SIGACTION
 	struct sigaction sa;
 
@@ -593,14 +562,6 @@ static void pushsig(void)
 	sa.sa_handler=recsig;
 #endif
 
-#ifdef OPENSSL_SYS_WIN32
-	savsig[SIGABRT]=signal(SIGABRT,recsig);
-	savsig[SIGFPE]=signal(SIGFPE,recsig);
-	savsig[SIGILL]=signal(SIGILL,recsig);
-	savsig[SIGINT]=signal(SIGINT,recsig);
-	savsig[SIGSEGV]=signal(SIGSEGV,recsig);
-	savsig[SIGTERM]=signal(SIGTERM,recsig);
-#else
 	for (i=1; i<NX509_SIG; i++)
 		{
 #ifdef SIGUSR1
@@ -621,7 +582,6 @@ static void pushsig(void)
 		savsig[i]=signal(i,recsig);
 #endif
 		}
-#endif
 
 #ifdef SIGWINCH
 	signal(SIGWINCH,SIG_DFL);
@@ -630,15 +590,8 @@ static void pushsig(void)
 
 static void popsig(void)
 	{
-#ifdef OPENSSL_SYS_WIN32
-	signal(SIGABRT,savsig[SIGABRT]);
-	signal(SIGFPE,savsig[SIGFPE]);
-	signal(SIGILL,savsig[SIGILL]);
-	signal(SIGINT,savsig[SIGINT]);
-	signal(SIGSEGV,savsig[SIGSEGV]);
-	signal(SIGTERM,savsig[SIGTERM]);
-#else
 	int i;
+
 	for (i=1; i<NX509_SIG; i++)
 		{
 #ifdef SIGUSR1
@@ -655,17 +608,15 @@ static void popsig(void)
 		signal(i,savsig[i]);
 #endif
 		}
-#endif
 	}
 
 static void recsig(int i)
 	{
 	intr_signal=i;
 	}
-#endif
 
 /* Internal functions specific for Windows */
-#if defined(OPENSSL_SYS_MSDOS) && !defined(OPENSSL_SYS_WIN16) && !defined(OPENSSL_SYS_WINCE)
+#if defined(OPENSSL_SYS_MSDOS) && !defined(OPENSSL_SYS_WIN16)
 static int noecho_fgets(char *buf, int size, FILE *tty)
 	{
 	int i;
@@ -682,8 +633,6 @@ static int noecho_fgets(char *buf, int size, FILE *tty)
 		size--;
 #ifdef WIN16TTY
 		i=_inchar();
-#elif defined(_WIN32)
-		i=_getch();
 #else
 		i=getch();
 #endif

@@ -57,7 +57,6 @@
  */
 
 #include <string.h>
-#include "cryptlib.h"
 #include <openssl/e_os2.h>
 #include <openssl/buffer.h>
 #include <openssl/ui.h>
@@ -90,7 +89,6 @@ UI *UI_new_method(const UI_METHOD *method)
 
 	ret->strings=NULL;
 	ret->user_data=NULL;
-	ret->flags=0;
 	CRYPTO_new_ex_data(CRYPTO_EX_INDEX_UI, ret, &ret->ex_data);
 	return ret;
 	}
@@ -146,8 +144,7 @@ static UI_STRING *general_allocate_prompt(UI *ui, const char *prompt,
 		{
 		UIerr(UI_F_GENERAL_ALLOCATE_PROMPT,ERR_R_PASSED_NULL_PARAMETER);
 		}
-	else if ((type == UIT_PROMPT || type == UIT_VERIFY
-			 || type == UIT_BOOLEAN) && result_buf == NULL)
+	else if (result_buf == NULL)
 		{
 		UIerr(UI_F_GENERAL_ALLOCATE_PROMPT,UI_R_NO_RESULT_BUFFER);
 		}
@@ -238,7 +235,7 @@ static int general_allocate_boolean(UI *ui,
 	return ret;
 	}
 
-/* Returns the index to the place in the stack or -1 for error.  Uses a
+/* Returns the index to the place in the stack or 0 for error.  Uses a
    direct reference to the prompt.  */
 int UI_add_input_string(UI *ui, const char *prompt, int flags,
 	char *result_buf, int minsize, int maxsize)
@@ -431,14 +428,14 @@ char *UI_construct_prompt(UI *ui, const char *object_desc,
 		len += sizeof(prompt3) - 1;
 
 		prompt = (char *)OPENSSL_malloc(len + 1);
-		BUF_strlcpy(prompt, prompt1, len + 1);
-		BUF_strlcat(prompt, object_desc, len + 1);
+		strcpy(prompt, prompt1);
+		strcat(prompt, object_desc);
 		if (object_name)
 			{
-			BUF_strlcat(prompt, prompt2, len + 1);
-			BUF_strlcat(prompt, object_name, len + 1);
+			strcat(prompt, prompt2);
+			strcat(prompt, object_name);
 			}
-		BUF_strlcat(prompt, prompt3, len + 1);
+		strcat(prompt, prompt3);
 		}
 	return prompt;
 	}
@@ -546,7 +543,7 @@ int UI_process(UI *ui)
 	return ok;
 	}
 
-int UI_ctrl(UI *ui, int cmd, long i, void *p, void (*f)(void))
+int UI_ctrl(UI *ui, int cmd, long i, void *p, void (*f)())
 	{
 	if (ui == NULL)
 		{
@@ -621,10 +618,8 @@ UI_METHOD *UI_create_method(char *name)
 	UI_METHOD *ui_method = (UI_METHOD *)OPENSSL_malloc(sizeof(UI_METHOD));
 
 	if (ui_method)
-		{
 		memset(ui_method, 0, sizeof(*ui_method));
-		ui_method->name = BUF_strdup(name);
-		}
+	ui_method->name = BUF_strdup(name);
 	return ui_method;
 	}
 
@@ -693,17 +688,6 @@ int UI_method_set_closer(UI_METHOD *method, int (*closer)(UI *ui))
 		return -1;
 	}
 
-int UI_method_set_prompt_constructor(UI_METHOD *method, char *(*prompt_constructor)(UI* ui, const char* object_desc, const char* object_name))
-	{
-	if (method)
-		{
-		method->ui_construct_prompt = prompt_constructor;
-		return 0;
-		}
-	else
-		return -1;
-	}
-
 int (*UI_method_get_opener(UI_METHOD *method))(UI*)
 	{
 	if (method)
@@ -740,14 +724,6 @@ int (*UI_method_get_closer(UI_METHOD *method))(UI*)
 	{
 	if (method)
 		return method->ui_close_session;
-	else
-		return NULL;
-	}
-
-char* (*UI_method_get_prompt_constructor(UI_METHOD *method))(UI*, const char*, const char*)
-	{
-	if (method)
-		return method->ui_construct_prompt;
 	else
 		return NULL;
 	}
@@ -855,8 +831,8 @@ int UI_set_result(UI *ui, UI_STRING *uis, const char *result)
 	case UIT_PROMPT:
 	case UIT_VERIFY:
 		{
-		char number1[DECIMAL_SIZE(uis->_.string_data.result_minsize)+1];
-		char number2[DECIMAL_SIZE(uis->_.string_data.result_maxsize)+1];
+		char number1[20];
+		char number2[20];
 
 		BIO_snprintf(number1, sizeof(number1), "%d",
 			uis->_.string_data.result_minsize);
@@ -887,8 +863,7 @@ int UI_set_result(UI *ui, UI_STRING *uis, const char *result)
 			return -1;
 			}
 
-		BUF_strlcpy(uis->result_buf, result,
-			    uis->_.string_data.result_maxsize + 1);
+		strcpy(uis->result_buf, result);
 		break;
 	case UIT_BOOLEAN:
 		{

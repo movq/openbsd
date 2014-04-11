@@ -8,10 +8,9 @@
 */
 
 #include <stdio.h>
-#include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
-#include <openssl/evp.h>
+#include <evp.h>
 
 #define STDIN     	0
 #define STDOUT    	1
@@ -45,7 +44,7 @@ void do_encode()
 {
 	char buf[BUFLEN];
 	char ebuf[BUFLEN+24];
-	unsigned int ebuflen;
+	unsigned int ebuflen, rc;
 	EVP_ENCODE_CTX ectx;
         
 	EVP_EncodeInit(&ectx);
@@ -79,7 +78,7 @@ void do_decode()
 {
  	char buf[BUFLEN];
  	char ebuf[BUFLEN+24];
-	unsigned int ebuflen;
+	unsigned int ebuflen, rc;
 	EVP_ENCODE_CTX ectx;
         
 	EVP_DecodeInit(&ectx);

@@ -1,11 +1,10 @@
-#!/usr/local/bin/perl
+#!/usr/bin/perl
 
-$0 =~ m/(.*[\/\\])[^\/\\]+$/; $dir=$1;
-push(@INC,"${dir}","${dir}../../perlasm");
+push(@INC,"perlasm","../../perlasm");
 require "x86asm.pl";
 require "cbc.pl";
 
-&asm_init($ARGV[0],"bf-586.pl",$ARGV[$#ARGV] eq "386");
+&asm_init($ARGV[0],"bf-586.pl");
 
 $BF_ROUNDS=16;
 $BF_OFF=($BF_ROUNDS+2)*4;
@@ -19,7 +18,7 @@ $tmp4="edx";
 
 &BF_encrypt("BF_encrypt",1);
 &BF_encrypt("BF_decrypt",0);
-&cbc("BF_cbc_encrypt","BF_encrypt","BF_decrypt",1,4,5,3,-1,-1) unless $main'openbsd;
+&cbc("BF_cbc_encrypt","BF_encrypt","BF_decrypt",1,4,5,3,-1,-1);
 &asm_finish();
 
 sub BF_encrypt

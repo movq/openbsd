@@ -1,168 +1,77 @@
-$! MKSHARED.COM -- Create shareable images.
+$! MKSHARED.COM -- script to created shareable images on VMS
 $!
-$! P1: "64" for 64-bit pointers.
+$! No command line parameters.  This should be run at the start of the source
+$! tree (the same directory where one finds INSTALL.VMS).
 $!
-$! P2: Zlib object library path (optional).
-$!
-$! Input:	[.UTIL]LIBEAY.NUM,[.xxx.EXE.CRYPTO]SSL_LIBCRYPTO[32].OLB
-$!		[.UTIL]SSLEAY.NUM,[.xxx.EXE.SSL]SSL_LIBSSL[32].OLB
-$!		[.CRYPTO.xxx]OPENSSLCONF.H
-$! Output:	[.xxx.EXE.CRYPTO]SSL_LIBCRYPTO_SHR[32].OPT,.MAP,.EXE
-$!		[.xxx.EXE.SSL]SSL_LIBSSL_SRH[32].OPT,.MAP,.EXE
+$! Input:	[.UTIL]LIBEAY.NUM,[.AXP.EXE.CRYPTO]LIBCRYPTO.OLB
+$!		[.UTIL]SSLEAY.NUM,[.AXP.EXE.SSL]LIBSSL.OLB
+$! Output:	[.AXP.EXE.CRYPTO]LIBCRYPTO.OPT,.MAP,.EXE
+$!		[.AXP.EXE.SSL]LIBSSL.OPT,.MAP,.EXE
 $!
 $! So far, tests have only been made on VMS for Alpha.  VAX will come in time.
 $! ===========================================================================
-$!
-$! Announce/identify.
-$!
-$ proc = f$environment( "procedure")
-$ write sys$output "@@@ "+ -
-   f$parse( proc, , , "name")+ f$parse( proc, , , "type")
-$!
-$! Save the original default device:[directory].
-$!
-$ def_orig = f$environment( "default")
-$ on error then goto tidy
-$ on control_c then goto tidy
-$!
-$! SET DEFAULT to the main kit directory.
-$!
-$ proc = f$environment("procedure")
-$ proc = f$parse( "A.;", proc)- "A.;"
-$ set default 'proc'
-$ set default [-]
-$!
+$
 $! ----- Prepare info for processing: version number and file info
 $ gosub read_version_info
 $ if libver .eqs. ""
 $ then
 $   write sys$error "ERROR: Couldn't find any library version info..."
-$   go to tidy:
+$   exit
 $ endif
 $
-$ if (f$getsyi("cpu") .lt. 128)
+$ if f$getsyi("CPU") .ge. 128
 $ then
-$   arch_vax = 1
-$   arch = "VAX"
+$   libid  = "Crypto"
+$   libnum = "[.UTIL]LIBEAY.NUM"
+$   libdir = "[.AXP.EXE.CRYPTO]"
+$   libolb = "''libdir'LIBCRYPTO.OLB"
+$   libopt = "''libdir'LIBCRYPTO.OPT"
+$   libmap = "''libdir'LIBCRYPTO.MAP"
+$   libgoal= "''libdir'LIBCRYPTO.EXE"
+$   libref = ""
+$   gosub create_axp_shr
+$   libid  = "SSL"
+$   libnum = "[.UTIL]SSLEAY.NUM"
+$   libdir = "[.AXP.EXE.SSL]"
+$   libolb = "''libdir'LIBSSL.OLB"
+$   libopt = "''libdir'LIBSSL.OPT"
+$   libmap = "''libdir'LIBSSL.MAP"
+$   libgoal= "''libdir'LIBSSL.EXE"
+$   libref = "[.AXP.EXE.CRYPTO]LIBCRYPTO.EXE"
+$   gosub create_axp_shr
 $ else
-$   arch_vax = 0
-$   arch = f$edit( f$getsyi( "ARCH_NAME"), "UPCASE")
-$   if (arch .eqs. "") then arch = "UNK"
-$ endif
-$!
-$ archd = arch
-$ lib32 = "32"
-$ shr = "SHR32"
-$!
-$ if (p1 .nes. "")
-$ then
-$   if (p1 .eqs. "64")
-$   then
-$     archd = arch+ "_64"
-$     lib32 = ""
-$     shr = "SHR"
-$   else
-$     if (p1 .nes. "32")
-$     then
-$       write sys$output "Second argument invalid."
-$       write sys$output "It should be "32", "64", or nothing."
-$       exit
-$     endif
-$   endif
-$ endif
-$!
-$! ----- Prepare info for processing: disabled algorithms info
-$ gosub read_disabled_algorithms_info
-$!
-$ ZLIB = p2
-$ zlib_lib = ""
-$ if (ZLIB .nes. "")
-$ then
-$   file2 = f$parse( ZLIB, "libz.olb", , , "syntax_only")
-$   if (f$search( file2) .eqs. "")
-$   then
-$     write sys$output ""
-$     write sys$output "The Option ", ZLIB, " Is Invalid."
-$     write sys$output "    Can't find library: ''file2'"
-$     write sys$output ""
-$     goto tidy
-$   endif
-$   zlib_lib = ", ''file2' /library"
-$ endif
-$!
-$ if (arch_vax)
-$ then
 $   libtit = "CRYPTO_TRANSFER_VECTOR"
 $   libid  = "Crypto"
 $   libnum = "[.UTIL]LIBEAY.NUM"
-$   libdir = "[.''ARCHD'.EXE.CRYPTO]"
-$   libmar = "''libdir'SSL_LIBCRYPTO_''shr'.MAR"
-$   libolb = "''libdir'SSL_LIBCRYPTO''lib32'.OLB"
-$   libopt = "''libdir'SSL_LIBCRYPTO_''shr'.OPT"
-$   libobj = "''libdir'SSL_LIBCRYPTO_''shr'.OBJ"
-$   libmap = "''libdir'SSL_LIBCRYPTO_''shr'.MAP"
-$   libgoal= "''libdir'SSL_LIBCRYPTO_''shr'.EXE"
+$   libdir = "[.VAX.EXE.CRYPTO]"
+$   libmar = "''libdir'LIBCRYPTO.MAR"
+$   libolb = "''libdir'LIBCRYPTO.OLB"
+$   libopt = "''libdir'LIBCRYPTO.OPT"
+$   libobj = "''libdir'LIBCRYPTO.OBJ"
+$   libmap = "''libdir'LIBCRYPTO.MAP"
+$   libgoal= "''libdir'LIBCRYPTO.EXE"
 $   libref = ""
 $   libvec = "LIBCRYPTO"
-$   if f$search( libolb) .nes. "" then gosub create_vax_shr
+$   gosub create_vax_shr
 $   libtit = "SSL_TRANSFER_VECTOR"
 $   libid  = "SSL"
 $   libnum = "[.UTIL]SSLEAY.NUM"
-$   libdir = "[.''ARCHD'.EXE.SSL]"
-$   libmar = "''libdir'SSL_LIBSSL_''shr'.MAR"
-$   libolb = "''libdir'SSL_LIBSSL''lib32'.OLB"
-$   libopt = "''libdir'SSL_LIBSSL_''shr'.OPT"
-$   libobj = "''libdir'SSL_LIBSSL_''shr'.OBJ"
-$   libmap = "''libdir'SSL_LIBSSL_''shr'.MAP"
-$   libgoal= "''libdir'SSL_LIBSSL_''shr'.EXE"
-$   libref = "[.''ARCHD'.EXE.CRYPTO]SSL_LIBCRYPTO_''shr'.EXE"
+$   libdir = "[.VAX.EXE.SSL]"
+$   libmar = "''libdir'LIBSSL.MAR"
+$   libolb = "''libdir'LIBSSL.OLB"
+$   libopt = "''libdir'LIBSSL.OPT"
+$   libobj = "''libdir'LIBSSL.OBJ"
+$   libmap = "''libdir'LIBSSL.MAP"
+$   libgoal= "''libdir'LIBSSL.EXE"
+$   libref = "[.VAX.EXE.CRYPTO]LIBCRYPTO.EXE"
 $   libvec = "LIBSSL"
-$   if f$search( libolb) .nes. "" then gosub create_vax_shr
-$ else
-$   libid  = "Crypto"
-$   libnum = "[.UTIL]LIBEAY.NUM"
-$   libdir = "[.''ARCHD'.EXE.CRYPTO]"
-$   libolb = "''libdir'SSL_LIBCRYPTO''lib32'.OLB"
-$   libopt = "''libdir'SSL_LIBCRYPTO_''shr'.OPT"
-$   libmap = "''libdir'SSL_LIBCRYPTO_''shr'.MAP"
-$   libgoal= "''libdir'SSL_LIBCRYPTO_''shr'.EXE"
-$   libref = ""
-$   if f$search( libolb) .nes. "" then gosub create_nonvax_shr
-$   libid  = "SSL"
-$   libnum = "[.UTIL]SSLEAY.NUM"
-$   libdir = "[.''ARCHD'.EXE.SSL]"
-$   libolb = "''libdir'SSL_LIBSSL''lib32'.OLB"
-$   libopt = "''libdir'SSL_LIBSSL_''shr'.OPT"
-$   libmap = "''libdir'SSL_LIBSSL_''shr'.MAP"
-$   libgoal= "''libdir'SSL_LIBSSL_''shr'.EXE"
-$   libref = "[.''ARCHD'.EXE.CRYPTO]SSL_LIBCRYPTO_''shr'.EXE"
-$   if f$search( libolb) .nes. "" then gosub create_nonvax_shr
+$   gosub create_vax_shr
 $ endif
-$!
-$ tidy:
-$!
-$! Close any open files.
-$!
-$ if (f$trnlnm( "libnum", "LNM$PROCESS", 0, "SUPERVISOR") .nes. "") then -
-   close libnum
-$!
-$ if (f$trnlnm( "mar", "LNM$PROCESS", 0, "SUPERVISOR") .nes. "") then -
-   close mar
-$!
-$ if (f$trnlnm( "opt", "LNM$PROCESS", 0, "SUPERVISOR") .nes. "") then -
-   close opt
-$!
-$ if (f$trnlnm( "vf", "LNM$PROCESS", 0, "SUPERVISOR") .nes. "") then -
-   close vf
-$!
-$! Restore the original default device:[directory].
-$!
-$ set default 'def_orig'
 $ exit
 $
-$! ----- Subroutines to build the shareable libraries
-$! For each supported architecture, there's a main shareable library
-$! creator, which is called from the main code above.
+$! ----- Soubroutines to actually build the shareable libraries
+$! The way things work, there's a main shareable library creator for each
+$! supported architecture, which is called from the main code above.
 $! The creator will define a number of variables to tell the next levels of
 $! subroutines what routines to use to write to the option files, call the
 $! main processor, read_func_num, and when that is done, it will write version
@@ -188,29 +97,28 @@ $! read_func_num depends on the following variables from the creator:
 $! libwriter	The name of the writer routine to call for each .num file line
 $! -----
 $
-$! ----- Subroutines for non-VAX
+$! ----- Subroutines for AXP
 $! -----
 $! The creator routine
-$ create_nonvax_shr:
-$   open /write opt 'libopt'
+$ create_axp_shr:
+$   open/write opt 'libopt'
 $   write opt "identification=""",libid," ",libverstr,""""
-$   write opt libolb, " /library"
+$   write opt libolb,"/lib"
 $   if libref .nes. "" then write opt libref,"/SHARE"
 $   write opt "SYMBOL_VECTOR=(-"
 $   libfirstentry := true
 $   libwrch   := opt
-$   libwriter := write_nonvax_transfer_entry
+$   libwriter := write_axp_transfer_entry
 $   textcount = 0
 $   gosub read_func_num
 $   write opt ")"
 $   write opt "GSMATCH=",libvmatch,",",libver
 $   close opt
-$   link /map = 'libmap' /full /share = 'libgoal' 'libopt' /options -
-     'zlib_lib'
+$   link/map='libmap'/full/share='libgoal' 'libopt'/option
 $   return
 $
 $! The record writer routine
-$ write_nonvax_transfer_entry:
+$ write_axp_transfer_entry:
 $   if libentry .eqs. ".dummy" then return
 $   if info_kind .eqs. "VARIABLE"
 $   then
@@ -236,11 +144,11 @@ $   libfirstentry := false
 $   textcount = textcount + textcount_this
 $   return
 $
-$! ----- Subroutines for VAX
+$! ----- Subroutines for AXP
 $! -----
 $! The creator routine
 $ create_vax_shr:
-$   open /write mar 'libmar'
+$   open/write mar 'libmar'
 $   type sys$input:/out=mar:
 ;
 ; Transfer vector for VAX shareable image
@@ -275,10 +183,10 @@ $!   libwriter := write_vax_vtransfer_entry
 $!   gosub read_func_num
 $   write mar "	.END"
 $   close mar
-$   open /write opt 'libopt'
+$   open/write opt 'libopt'
 $   write opt "identification=""",libid," ",libverstr,""""
 $   write opt libobj
-$   write opt libolb, " /library"
+$   write opt libolb,"/lib"
 $   if libref .nes. "" then write opt libref,"/SHARE"
 $   type sys$input:/out=opt:
 !
@@ -297,8 +205,7 @@ $   libwriter := write_vax_psect_attr
 $   gosub read_func_num
 $   close opt
 $   macro/obj='libobj' 'libmar'
-$   link /map = 'libmap' /full /share = 'libgoal' 'libopt' /options -
-     'zlib_lib'
+$   link/map='libmap'/full/share='libgoal' 'libopt'/option
 $   return
 $
 $! The record writer routine for VAX functions
@@ -320,9 +227,9 @@ $   return
 $
 $! ----- Common subroutines
 $! -----
-$! The .num file reader.  This one has great responsibility.
+$! The .num file reader.  This one has great responsability.
 $ read_func_num:
-$   open /read libnum 'libnum'
+$   open libnum 'libnum'
 $   goto read_nums
 $
 $ read_nums:
@@ -330,46 +237,35 @@ $   libentrynum=0
 $   liblastentry:=false
 $   entrycount=0
 $   loop:
-$     read /end=loop_end /err=loop_end libnum line
-$     lin = f$edit( line, "COMPRESS,TRIM")
-$!    Skip a "#" comment line.
-$     if (f$extract( 0, 1, lin) .eqs. "#") then goto loop
-$     entrynum = f$int(f$element( 1, " ", lin))
-$     entryinfo = f$element( 2, " ", lin)
-$     curentry = f$element( 0, " ", lin)
-$     info_exist = f$element( 0, ":", entryinfo)
-$     info_platforms = ","+ f$element(1, ":", entryinfo)+ ","
-$     info_kind = f$element( 2, ":", entryinfo)
-$     info_algorithms = ","+ f$element( 3, ":", entryinfo)+ ","
+$     read/end=loop_end/err=loop_end libnum line
+$     entrynum=f$int(f$element(1," ",f$edit(line,"COMPRESS,TRIM")))
+$     entryinfo=f$element(2," ",f$edit(line,"COMPRESS,TRIM"))
+$     curentry=f$element(0," ",f$edit(line,"COMPRESS,TRIM"))
+$     info_exist=f$element(0,":",entryinfo)
+$     info_platforms=","+f$element(1,":",entryinfo)+","
+$     info_kind=f$element(2,":",entryinfo)
+$     info_algorithms=","+f$element(3,":",entryinfo)+","
 $     if info_exist .eqs. "NOEXIST" then goto loop
 $     truesum = 0
 $     falsesum = 0
 $     negatives = 1
 $     plat_i = 0
 $     loop1:
-$       plat_entry = f$element( plat_i, ",", info_platforms)
+$       plat_entry = f$element(plat_i,",",info_platforms)
 $       plat_i = plat_i + 1
 $       if plat_entry .eqs. "" then goto loop1
 $       if plat_entry .nes. ","
 $       then
 $         if f$extract(0,1,plat_entry) .nes. "!" then negatives = 0
-$         if (arch_vax)
+$         if f$getsyi("CPU") .lt. 128
 $         then
 $           if plat_entry .eqs. "EXPORT_VAR_AS_FUNCTION" then -
 $             truesum = truesum + 1
 $           if plat_entry .eqs. "!EXPORT_VAR_AS_FUNCTION" then -
 $             falsesum = falsesum + 1
 $         endif
-$!
-$         if ((plat_entry .eqs. "VMS") .or. -
-            ((plat_entry .eqs. "ZLIB") .and. (ZLIB .nes. "")) .or. -
-            (arch_vax .and. (plat_entry .eqs. "VMSVAX"))) then -
-            truesum = truesum + 1
-$!
-$         if ((plat_entry .eqs. "!VMS") .or. -
-            (arch_vax .and. (plat_entry .eqs. "!VMSVAX"))) then -
-            falsesum = falsesum + 1
-$!
+$         if plat_entry .eqs. "VMS" then truesum = truesum + 1
+$         if plat_entry .eqs. "!VMS" then falsesum = falsesum + 1
 $	  goto loop1
 $       endif
 $     endloop1:
@@ -388,7 +284,7 @@ $	alg_i = alg_i + 1
 $       if alg_entry .eqs. "" then goto loop2
 $       if alg_entry .nes. ","
 $       then
-$	  if disabled_algorithms - ("," + alg_entry + ",") .nes disabled_algorithms then goto loop
+$         if alg_entry .eqs. "KRB5" then goto loop ! Special for now
 $         if f$trnlnm("OPENSSL_NO_"+alg_entry) .nes. "" then goto loop
 $	  goto loop2
 $       endif
@@ -431,7 +327,7 @@ $
 $! The version number reader
 $ read_version_info:
 $   libver = ""
-$   open /read vf [.CRYPTO]OPENSSLV.H
+$   open/read vf [.CRYPTO]OPENSSLV.H
 $   loop_rvi:
 $     read/err=endloop_rvi/end=endloop_rvi vf rvi_line
 $     if rvi_line - "SHLIB_VERSION_NUMBER """ .eqs. rvi_line then -
@@ -454,23 +350,4 @@ $       libvmatch = "LEQUAL"
 $     endif
 $   endloop_rvi:
 $   close vf
-$   return
-$
-$! The disabled algorithms reader
-$ read_disabled_algorithms_info:
-$   disabled_algorithms = ","
-$   open /read cf [.CRYPTO.'ARCH']OPENSSLCONF.H
-$   loop_rci:
-$     read/err=endloop_rci/end=endloop_rci cf rci_line
-$     rci_line = f$edit(rci_line,"TRIM,COMPRESS")
-$     rci_ei = 0
-$     if f$extract(0,9,rci_line) .eqs. "# define " then rci_ei = 2
-$     if f$extract(0,8,rci_line) .eqs. "#define " then rci_ei = 1
-$     if rci_ei .eq. 0 then goto loop_rci
-$     rci_e = f$element(rci_ei," ",rci_line)
-$     if f$extract(0,11,rci_e) .nes. "OPENSSL_NO_" then goto loop_rci
-$     disabled_algorithms = disabled_algorithms + f$extract(11,999,rci_e) + ","
-$     goto loop_rci
-$   endloop_rci:
-$   close cf
 $   return

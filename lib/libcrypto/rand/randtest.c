@@ -58,14 +58,12 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <openssl/rand.h>
-
-#include "../e_os.h"
+#include "rand.h"
 
 /* some FIPS 140-1 random number test */
 /* some simple tests */
 
-int main(int argc,char **argv)
+int main()
 	{
 	unsigned char buf[2500];
 	int i,j,k,s,sign,nsign,err=0;
@@ -75,13 +73,7 @@ int main(int argc,char **argv)
 	/*double d; */
 	long d;
 
-	i = RAND_pseudo_bytes(buf,2500);
-	if (i < 0)
-		{
-		printf ("init failed, the rand method is not properly installed\n");
-		err++;
-		goto err;
-		}
+	RAND_bytes(buf,2500);
 
 	n1=0;
 	for (i=0; i<16; i++) n2[i]=0;
@@ -125,7 +117,7 @@ int main(int argc,char **argv)
 	/* test 1 */
 	if (!((9654 < n1) && (n1 < 10346)))
 		{
-		printf("test 1 failed, X=%lu\n",n1);
+		printf("test 1 failed, X=%ld\n",n1);
 		err++;
 		}
 	printf("test 1 done\n");
@@ -158,37 +150,37 @@ int main(int argc,char **argv)
 		{
 		if (!((2267 < runs[i][0]) && (runs[i][0] < 2733)))
 			{
-			printf("test 3 failed, bit=%d run=%d num=%lu\n",
+			printf("test 3 failed, bit=%d run=%d num=%ld\n",
 				i,1,runs[i][0]);
 			err++;
 			}
 		if (!((1079 < runs[i][1]) && (runs[i][1] < 1421)))
 			{
-			printf("test 3 failed, bit=%d run=%d num=%lu\n",
+			printf("test 3 failed, bit=%d run=%d num=%ld\n",
 				i,2,runs[i][1]);
 			err++;
 			}
 		if (!(( 502 < runs[i][2]) && (runs[i][2] <  748)))
 			{
-			printf("test 3 failed, bit=%d run=%d num=%lu\n",
+			printf("test 3 failed, bit=%d run=%d num=%ld\n",
 				i,3,runs[i][2]);
 			err++;
 			}
 		if (!(( 223 < runs[i][3]) && (runs[i][3] <  402)))
 			{
-			printf("test 3 failed, bit=%d run=%d num=%lu\n",
+			printf("test 3 failed, bit=%d run=%d num=%ld\n",
 				i,4,runs[i][3]);
 			err++;
 			}
 		if (!((  90 < runs[i][4]) && (runs[i][4] <  223)))
 			{
-			printf("test 3 failed, bit=%d run=%d num=%lu\n",
+			printf("test 3 failed, bit=%d run=%d num=%ld\n",
 				i,5,runs[i][4]);
 			err++;
 			}
 		if (!((  90 < runs[i][5]) && (runs[i][5] <  223)))
 			{
-			printf("test 3 failed, bit=%d run=%d num=%lu\n",
+			printf("test 3 failed, bit=%d run=%d num=%ld\n",
 				i,6,runs[i][5]);
 			err++;
 			}
@@ -198,22 +190,18 @@ int main(int argc,char **argv)
 	/* test 4 */
 	if (runs[0][33] != 0)
 		{
-		printf("test 4 failed, bit=%d run=%d num=%lu\n",
+		printf("test 4 failed, bit=%d run=%d num=%ld\n",
 			0,34,runs[0][33]);
 		err++;
 		}
 	if (runs[1][33] != 0)
 		{
-		printf("test 4 failed, bit=%d run=%d num=%lu\n",
+		printf("test 4 failed, bit=%d run=%d num=%ld\n",
 			1,34,runs[1][33]);
 		err++;
 		}
 	printf("test 4 done\n");
- err:
 	err=((err)?1:0);
-#ifdef OPENSSL_SYS_NETWARE
-    if (err) printf("ERROR: %d\n", err);
-#endif
-	EXIT(err);
+	exit(err);
 	return(err);
 	}

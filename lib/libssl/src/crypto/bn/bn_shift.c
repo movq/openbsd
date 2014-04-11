@@ -60,13 +60,12 @@
 #include "cryptlib.h"
 #include "bn_lcl.h"
 
-int BN_lshift1(BIGNUM *r, const BIGNUM *a)
+int BN_lshift1(r, a)
+BIGNUM *r;
+BIGNUM *a;
 	{
 	register BN_ULONG *ap,*rp,t,c;
 	int i;
-
-	bn_check_top(r);
-	bn_check_top(a);
 
 	if (r != a)
 		{
@@ -92,58 +91,52 @@ int BN_lshift1(BIGNUM *r, const BIGNUM *a)
 		*rp=1;
 		r->top++;
 		}
-	bn_check_top(r);
 	return(1);
 	}
 
-int BN_rshift1(BIGNUM *r, const BIGNUM *a)
+int BN_rshift1(r, a)
+BIGNUM *r;
+BIGNUM *a;
 	{
 	BN_ULONG *ap,*rp,t,c;
-	int i,j;
-
-	bn_check_top(r);
-	bn_check_top(a);
+	int i;
 
 	if (BN_is_zero(a))
 		{
 		BN_zero(r);
 		return(1);
 		}
-	i = a->top;
-	ap= a->d;
-	j = i-(ap[i-1]==1);
 	if (a != r)
 		{
-		if (bn_wexpand(r,j) == NULL) return(0);
+		if (bn_wexpand(r,a->top) == NULL) return(0);
+		r->top=a->top;
 		r->neg=a->neg;
 		}
+	ap=a->d;
 	rp=r->d;
-	t=ap[--i];
-	c=(t&1)?BN_TBIT:0;
-	if (t>>=1) rp[i]=t;
-	while (i>0)
+	c=0;
+	for (i=a->top-1; i>=0; i--)
 		{
-		t=ap[--i];
+		t=ap[i];
 		rp[i]=((t>>1)&BN_MASK2)|c;
 		c=(t&1)?BN_TBIT:0;
 		}
-	r->top=j;
-	bn_check_top(r);
+	bn_fix_top(r);
 	return(1);
 	}
 
-int BN_lshift(BIGNUM *r, const BIGNUM *a, int n)
+int BN_lshift(r, a, n)
+BIGNUM *r;
+BIGNUM *a;
+int n;
 	{
 	int i,nw,lb,rb;
 	BN_ULONG *t,*f;
 	BN_ULONG l;
 
-	bn_check_top(r);
-	bn_check_top(a);
-
 	r->neg=a->neg;
+	if (bn_wexpand(r,a->top+(n/BN_BITS2)+1) == NULL) return(0);
 	nw=n/BN_BITS2;
-	if (bn_wexpand(r,a->top+nw+1) == NULL) return(0);
 	lb=n%BN_BITS2;
 	rb=BN_BITS2-lb;
 	f=a->d;
@@ -163,61 +156,55 @@ int BN_lshift(BIGNUM *r, const BIGNUM *a, int n)
 /*	for (i=0; i<nw; i++)
 		t[i]=0;*/
 	r->top=a->top+nw+1;
-	bn_correct_top(r);
-	bn_check_top(r);
+	bn_fix_top(r);
 	return(1);
 	}
 
-int BN_rshift(BIGNUM *r, const BIGNUM *a, int n)
+int BN_rshift(r, a, n)
+BIGNUM *r;
+BIGNUM *a;
+int n;
 	{
 	int i,j,nw,lb,rb;
 	BN_ULONG *t,*f;
 	BN_ULONG l,tmp;
 
-	bn_check_top(r);
-	bn_check_top(a);
-
 	nw=n/BN_BITS2;
 	rb=n%BN_BITS2;
 	lb=BN_BITS2-rb;
-	if (nw >= a->top || a->top == 0)
+	if (nw > a->top)
 		{
 		BN_zero(r);
 		return(1);
 		}
-	i = (BN_num_bits(a)-n+(BN_BITS2-1))/BN_BITS2;
 	if (r != a)
 		{
 		r->neg=a->neg;
-		if (bn_wexpand(r,i) == NULL) return(0);
-		}
-	else
-		{
-		if (n == 0)
-			return 1; /* or the copying loop will go berserk */
+		if (bn_wexpand(r,a->top-nw+1) == NULL) return(0);
 		}
 
 	f= &(a->d[nw]);
 	t=r->d;
 	j=a->top-nw;
-	r->top=i;
+	r->top=j;
 
 	if (rb == 0)
 		{
-		for (i=j; i != 0; i--)
+		for (i=j+1; i > 0; i--)
 			*(t++)= *(f++);
 		}
 	else
 		{
 		l= *(f++);
-		for (i=j-1; i != 0; i--)
+		for (i=1; i<j; i++)
 			{
 			tmp =(l>>rb)&BN_MASK2;
 			l= *(f++);
 			*(t++) =(tmp|(l<<lb))&BN_MASK2;
 			}
-		if ((l = (l>>rb)&BN_MASK2)) *(t) = l;
+		*(t++) =(l>>rb)&BN_MASK2;
 		}
-	bn_check_top(r);
+	*t=0;
+	bn_fix_top(r);
 	return(1);
 	}

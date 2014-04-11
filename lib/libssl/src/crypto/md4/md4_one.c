@@ -59,20 +59,18 @@
 #include <stdio.h>
 #include <string.h>
 #include <openssl/md4.h>
-#include <openssl/crypto.h>
 
 #ifdef CHARSET_EBCDIC
 #include <openssl/ebcdic.h>
 #endif
 
-unsigned char *MD4(const unsigned char *d, size_t n, unsigned char *md)
+unsigned char *MD4(const unsigned char *d, unsigned long n, unsigned char *md)
 	{
 	MD4_CTX c;
 	static unsigned char m[MD4_DIGEST_LENGTH];
 
 	if (md == NULL) md=m;
-	if (!MD4_Init(&c))
-		return NULL;
+	MD4_Init(&c);
 #ifndef CHARSET_EBCDIC
 	MD4_Update(&c,d,n);
 #else
@@ -91,7 +89,7 @@ unsigned char *MD4(const unsigned char *d, size_t n, unsigned char *md)
 	}
 #endif
 	MD4_Final(md,&c);
-	OPENSSL_cleanse(&c,sizeof(c)); /* security consideration */
+	memset(&c,0,sizeof(c)); /* security consideration */
 	return(md);
 	}
 

@@ -57,12 +57,12 @@
  */
 
 #include <stdio.h>
-#include <openssl/err.h>
-#include <openssl/ssl.h>
+#include "err.h"
+#include "ssl.h"
 
-void SSL_load_error_strings(void)
+void SSL_load_error_strings()
 	{
-#ifndef OPENSSL_NO_ERR
+#ifndef NO_ERR
 	ERR_load_crypto_strings();
 	ERR_load_SSL_strings();
 #endif

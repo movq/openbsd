@@ -1,5 +1,5 @@
 /* conf_sap.c */
-/* Written by Stephen Henson (steve@openssl.org) for the OpenSSL
+/* Written by Stephen Henson (shenson@bigfoot.com) for the OpenSSL
  * project 2001.
  */
 /* ====================================================================
@@ -63,9 +63,7 @@
 #include <openssl/dso.h>
 #include <openssl/x509.h>
 #include <openssl/asn1.h>
-#ifndef OPENSSL_NO_ENGINE
 #include <openssl/engine.h>
-#endif
 
 /* This is the automatic configuration loader: it is called automatically by
  * OpenSSL when any of a number of standard initialisation functions are called,
@@ -80,16 +78,14 @@ void OPENSSL_config(const char *config_name)
 		return;
 
 	OPENSSL_load_builtin_modules();
-#ifndef OPENSSL_NO_ENGINE
 	/* Need to load ENGINEs */
 	ENGINE_load_builtin_engines();
-#endif
 	/* Add others here? */
 
 
 	ERR_clear_error();
-	if (CONF_modules_load_file(NULL, config_name,
-	CONF_MFLAGS_DEFAULT_SECTION|CONF_MFLAGS_IGNORE_MISSING_FILE) <= 0)
+	if (CONF_modules_load_file(NULL, NULL,
+					CONF_MFLAGS_IGNORE_MISSING_FILE) <= 0)
 		{
 		BIO *bio_err;
 		ERR_load_crypto_strings();

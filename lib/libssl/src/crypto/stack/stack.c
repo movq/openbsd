@@ -59,7 +59,7 @@
 /* Code for stacks
  * Author - Eric Young v 1.0
  * 1.2 eay 12-Mar-97 -	Modified sk_find so that it _DOES_ return the
- *			lowest index for the searched item.
+ *			lowest index for the seached item.
  *
  * 1.1 eay - Take from netdb and added to SSLeay
  *
@@ -67,35 +67,38 @@
  */
 #include <stdio.h>
 #include "cryptlib.h"
-#include <openssl/stack.h>
-#include <openssl/objects.h>
+#include "stack.h"
 
 #undef MIN_NODES
 #define MIN_NODES	4
 
-const char STACK_version[]="Stack" OPENSSL_VERSION_PTEXT;
+char *STACK_version="STACK part of SSLeay 0.9.0b 29-Jun-1998";
+
+#ifndef NOPROTO
+#define	FP_ICC	(int (*)(const void *,const void *))
+#else
+#define FP_ICC
+#endif
 
 #include <errno.h>
 
-int (*sk_set_cmp_func(_STACK *sk, int (*c)(const void *, const void *)))
-		(const void *, const void *)
+void sk_set_cmp_func(sk,c)
+STACK *sk;
+int (*c)();
 	{
-	int (*old)(const void *,const void *)=sk->comp;
-
 	if (sk->comp != c)
 		sk->sorted=0;
 	sk->comp=c;
-
-	return old;
 	}
 
-_STACK *sk_dup(_STACK *sk)
+STACK *sk_dup(sk)
+STACK *sk;
 	{
-	_STACK *ret;
+	STACK *ret;
 	char **s;
 
 	if ((ret=sk_new(sk->comp)) == NULL) goto err;
-	s=(char **)OPENSSL_realloc((char *)ret->data,
+	s=(char **)Realloc((char *)ret->data,
 		(unsigned int)sizeof(char *)*sk->num_alloc);
 	if (s == NULL) goto err;
 	ret->data=s;
@@ -107,25 +110,19 @@ _STACK *sk_dup(_STACK *sk)
 	ret->comp=sk->comp;
 	return(ret);
 err:
-	if(ret)
-		sk_free(ret);
 	return(NULL);
 	}
 
-_STACK *sk_new_null(void)
+STACK *sk_new(c)
+int (*c)();
 	{
-	return sk_new((int (*)(const void *, const void *))0);
-	}
-
-_STACK *sk_new(int (*c)(const void *, const void *))
-	{
-	_STACK *ret;
+	STACK *ret;
 	int i;
 
-	if ((ret=OPENSSL_malloc(sizeof(_STACK))) == NULL)
-		goto err;
-	if ((ret->data=OPENSSL_malloc(sizeof(char *)*MIN_NODES)) == NULL)
-		goto err;
+	if ((ret=(STACK *)Malloc(sizeof(STACK))) == NULL)
+		goto err0;
+	if ((ret->data=(char **)Malloc(sizeof(char *)*MIN_NODES)) == NULL)
+		goto err1;
 	for (i=0; i<MIN_NODES; i++)
 		ret->data[i]=NULL;
 	ret->comp=c;
@@ -133,20 +130,22 @@ _STACK *sk_new(int (*c)(const void *, const void *))
 	ret->num=0;
 	ret->sorted=0;
 	return(ret);
-err:
-	if(ret)
-		OPENSSL_free(ret);
+err1:
+	Free((char *)ret);
+err0:
 	return(NULL);
 	}
 
-int sk_insert(_STACK *st, void *data, int loc)
+int sk_insert(st,data,loc)
+STACK *st;
+char *data;
+int loc;
 	{
 	char **s;
 
-	if(st == NULL) return 0;
 	if (st->num_alloc <= st->num+1)
 		{
-		s=OPENSSL_realloc((char *)st->data,
+		s=(char **)Realloc((char *)st->data,
 			(unsigned int)sizeof(char *)*st->num_alloc*2);
 		if (s == NULL)
 			return(0);
@@ -160,14 +159,14 @@ int sk_insert(_STACK *st, void *data, int loc)
 		int i;
 		char **f,**t;
 
-		f=st->data;
-		t=&(st->data[1]);
-		for (i=st->num; i>=loc; i--)
+		f=(char **)st->data;
+		t=(char **)&(st->data[1]);
+		for (i=st->num; i>loc; i--)
 			t[i]=f[i];
 			
 #ifdef undef /* no memmove on sunos :-( */
-		memmove(&(st->data[loc+1]),
-			&(st->data[loc]),
+		memmove( (char *)&(st->data[loc+1]),
+			(char *)&(st->data[loc]),
 			sizeof(char *)*(st->num-loc));
 #endif
 		st->data[loc]=data;
@@ -177,7 +176,9 @@ int sk_insert(_STACK *st, void *data, int loc)
 	return(st->num);
 	}
 
-void *sk_delete_ptr(_STACK *st, void *p)
+char *sk_delete_ptr(st,p)
+STACK *st;
+char *p;
 	{
 	int i;
 
@@ -187,12 +188,14 @@ void *sk_delete_ptr(_STACK *st, void *p)
 	return(NULL);
 	}
 
-void *sk_delete(_STACK *st, int loc)
+char *sk_delete(st,loc)
+STACK *st;
+int loc;
 	{
 	char *ret;
 	int i,j;
 
-	if(!st || (loc < 0) || (loc >= st->num)) return NULL;
+	if ((st->num == 0) || (loc < 0) || (loc >= st->num)) return(NULL);
 
 	ret=st->data[loc];
 	if (loc != st->num-1)
@@ -210,12 +213,13 @@ void *sk_delete(_STACK *st, int loc)
 	return(ret);
 	}
 
-static int internal_find(_STACK *st, void *data, int ret_val_options)
+int sk_find(st,data)
+STACK *st;
+char *data;
 	{
-	const void * const *r;
+	char **r;
 	int i;
-
-	if(st == NULL) return -1;
+	int (*comp_func)();
 
 	if (st->comp == NULL)
 		{
@@ -224,48 +228,55 @@ static int internal_find(_STACK *st, void *data, int ret_val_options)
 				return(i);
 		return(-1);
 		}
-	sk_sort(st);
+	comp_func=(int (*)())st->comp;
+	if (!st->sorted)
+		{
+		qsort((char *)st->data,st->num,sizeof(char *),FP_ICC comp_func);
+		st->sorted=1;
+		}
 	if (data == NULL) return(-1);
-	r=OBJ_bsearch_ex_(&data,st->data,st->num,sizeof(void *),st->comp,
-			  ret_val_options);
+	r=(char **)bsearch(&data,(char *)st->data,
+		st->num,sizeof(char *),FP_ICC comp_func);
 	if (r == NULL) return(-1);
-	return (int)((char **)r-st->data);
+	i=(int)(r-st->data);
+	for ( ; i>0; i--)
+		if ((*st->comp)(&(st->data[i-1]),&data) < 0)
+			break;
+	return(i);
 	}
 
-int sk_find(_STACK *st, void *data)
-	{
-	return internal_find(st, data, OBJ_BSEARCH_FIRST_VALUE_ON_MATCH);
-	}
-int sk_find_ex(_STACK *st, void *data)
-	{
-	return internal_find(st, data, OBJ_BSEARCH_VALUE_ON_NOMATCH);
-	}
-
-int sk_push(_STACK *st, void *data)
+int sk_push(st,data)
+STACK *st;
+char *data;
 	{
 	return(sk_insert(st,data,st->num));
 	}
 
-int sk_unshift(_STACK *st, void *data)
+int sk_unshift(st,data)
+STACK *st;
+char *data;
 	{
 	return(sk_insert(st,data,0));
 	}
 
-void *sk_shift(_STACK *st)
+char *sk_shift(st)
+STACK *st;
 	{
 	if (st == NULL) return(NULL);
 	if (st->num <= 0) return(NULL);
 	return(sk_delete(st,0));
 	}
 
-void *sk_pop(_STACK *st)
+char *sk_pop(st)
+STACK *st;
 	{
 	if (st == NULL) return(NULL);
 	if (st->num <= 0) return(NULL);
 	return(sk_delete(st,st->num-1));
 	}
 
-void sk_zero(_STACK *st)
+void sk_zero(st)
+STACK *st;
 	{
 	if (st == NULL) return;
 	if (st->num <= 0) return;
@@ -273,7 +284,9 @@ void sk_zero(_STACK *st)
 	st->num=0;
 	}
 
-void sk_pop_free(_STACK *st, void (*func)(void *))
+void sk_pop_free(st,func)
+STACK *st;
+void (*func)();
 	{
 	int i;
 
@@ -284,51 +297,11 @@ void sk_pop_free(_STACK *st, void (*func)(void *))
 	sk_free(st);
 	}
 
-void sk_free(_STACK *st)
+void sk_free(st)
+STACK *st;
 	{
 	if (st == NULL) return;
-	if (st->data != NULL) OPENSSL_free(st->data);
-	OPENSSL_free(st);
+	if (st->data != NULL) Free((char *)st->data);
+	Free((char *)st);
 	}
 
-int sk_num(const _STACK *st)
-{
-	if(st == NULL) return -1;
-	return st->num;
-}
-
-void *sk_value(const _STACK *st, int i)
-{
-	if(!st || (i < 0) || (i >= st->num)) return NULL;
-	return st->data[i];
-}
-
-void *sk_set(_STACK *st, int i, void *value)
-{
-	if(!st || (i < 0) || (i >= st->num)) return NULL;
-	return (st->data[i] = value);
-}
-
-void sk_sort(_STACK *st)
-	{
-	if (st && !st->sorted)
-		{
-		int (*comp_func)(const void *,const void *);
-
-		/* same comment as in sk_find ... previously st->comp was declared
-		 * as a (void*,void*) callback type, but this made the population
-		 * of the callback pointer illogical - our callbacks compare
-		 * type** with type**, so we leave the casting until absolutely
-		 * necessary (ie. "now"). */
-		comp_func=(int (*)(const void *,const void *))(st->comp);
-		qsort(st->data,st->num,sizeof(char *), comp_func);
-		st->sorted=1;
-		}
-	}
-
-int sk_is_sorted(const _STACK *st)
-	{
-	if (!st)
-		return 1;
-	return st->sorted;
-	}

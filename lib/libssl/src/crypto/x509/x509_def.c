@@ -57,25 +57,27 @@
  */
 
 #include <stdio.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include "cryptlib.h"
-#include <openssl/crypto.h>
-#include <openssl/x509.h>
+#include "crypto.h"
+#include "x509.h"
 
-const char *X509_get_default_private_dir(void)
+char *X509_get_default_private_dir()
 	{ return(X509_PRIVATE_DIR); }
 	
-const char *X509_get_default_cert_area(void)
+char *X509_get_default_cert_area()
 	{ return(X509_CERT_AREA); }
 
-const char *X509_get_default_cert_dir(void)
+char *X509_get_default_cert_dir()
 	{ return(X509_CERT_DIR); }
 
-const char *X509_get_default_cert_file(void)
+char *X509_get_default_cert_file()
 	{ return(X509_CERT_FILE); }
 
-const char *X509_get_default_cert_dir_env(void)
+char *X509_get_default_cert_dir_env()
 	{ return(X509_CERT_DIR_EVP); }
 
-const char *X509_get_default_cert_file_env(void)
+char *X509_get_default_cert_file_env()
 	{ return(X509_CERT_FILE_EVP); }
 

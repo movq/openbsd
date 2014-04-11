@@ -58,26 +58,21 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <openssl/crypto.h>
-#include <openssl/blowfish.h>
+#include "blowfish.h"
 #include "bf_locl.h"
 #include "bf_pi.h"
 
-void BF_set_key(BF_KEY *key, int len, const unsigned char *data)
-#ifdef OPENSSL_FIPS
-	{
-	fips_cipher_abort(BLOWFISH);
-	private_BF_set_key(key, len, data);
-	}
-void private_BF_set_key(BF_KEY *key, int len, const unsigned char *data)
-#endif
+void BF_set_key(key,len,data)
+BF_KEY *key;
+int len;
+unsigned char *data;
 	{
 	int i;
 	BF_LONG *p,ri,in[2];
-	const unsigned char *d,*end;
+	unsigned char *d,*end;
 
 
-	memcpy(key,&bf_init,sizeof(BF_KEY));
+	memcpy((char *)key,(char *)&bf_init,sizeof(BF_KEY));
 	p=key->P;
 
 	if (len > ((BF_ROUNDS+2)*4)) len=(BF_ROUNDS+2)*4;

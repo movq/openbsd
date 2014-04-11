@@ -59,39 +59,16 @@
 #include <stdio.h>
 #include <time.h>
 #include "cryptlib.h"
-#ifndef OPENSSL_NO_SHA
-#include <openssl/bn.h>
-#include <openssl/dsa.h>
-#include <openssl/rand.h>
+#include "sha.h"
+#include "bn.h"
+#include "dsa.h"
+#include "rand.h"
 
-#ifdef OPENSSL_FIPS
-#include <openssl/fips.h>
-#endif
-
-static int dsa_builtin_keygen(DSA *dsa);
-
-int DSA_generate_key(DSA *dsa)
-	{
-#ifdef OPENSSL_FIPS
-	if (FIPS_mode() && !(dsa->meth->flags & DSA_FLAG_FIPS_METHOD)
-			&& !(dsa->flags & DSA_FLAG_NON_FIPS_ALLOW))
-		{
-		DSAerr(DSA_F_DSA_GENERATE_KEY, DSA_R_NON_FIPS_DSA_METHOD);
-		return 0;
-		}
-#endif
-	if(dsa->meth->dsa_keygen)
-		return dsa->meth->dsa_keygen(dsa);
-#ifdef OPENSSL_FIPS
-	if (FIPS_mode())
-		return FIPS_dsa_generate_key(dsa);
-#endif
-	return dsa_builtin_keygen(dsa);
-	}
-
-static int dsa_builtin_keygen(DSA *dsa)
+int DSA_generate_key(dsa)
+DSA *dsa;
 	{
 	int ok=0;
+	unsigned int i;
 	BN_CTX *ctx=NULL;
 	BIGNUM *pub_key=NULL,*priv_key=NULL;
 
@@ -104,9 +81,14 @@ static int dsa_builtin_keygen(DSA *dsa)
 	else
 		priv_key=dsa->priv_key;
 
-	do
-		if (!BN_rand_range(priv_key,dsa->q)) goto err;
-	while (BN_is_zero(priv_key));
+	i=BN_num_bits(dsa->q);
+	for (;;)
+		{
+		BN_rand(priv_key,i,1,0);
+		if (BN_cmp(priv_key,dsa->q) >= 0)
+			BN_sub(priv_key,priv_key,dsa->q);
+		if (!BN_is_zero(priv_key)) break;
+		}
 
 	if (dsa->pub_key == NULL)
 		{
@@ -114,22 +96,8 @@ static int dsa_builtin_keygen(DSA *dsa)
 		}
 	else
 		pub_key=dsa->pub_key;
-	
-	{
-		BIGNUM local_prk;
-		BIGNUM *prk;
 
-		if ((dsa->flags & DSA_FLAG_NO_EXP_CONSTTIME) == 0)
-			{
-			BN_init(&local_prk);
-			prk = &local_prk;
-			BN_with_flags(prk, priv_key, BN_FLG_CONSTTIME);
-			}
-		else
-			prk = priv_key;
-
-		if (!BN_mod_exp(pub_key,dsa->g,prk,dsa->p,ctx)) goto err;
-	}
+	if (!BN_mod_exp(pub_key,dsa->g,priv_key,dsa->p,ctx)) goto err;
 
 	dsa->priv_key=priv_key;
 	dsa->pub_key=pub_key;
@@ -141,4 +109,4 @@ err:
 	if (ctx != NULL) BN_CTX_free(ctx);
 	return(ok);
 	}
-#endif
+

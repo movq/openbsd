@@ -1,5 +1,5 @@
 /* eng_cnf.c */
-/* Written by Stephen Henson (steve@openssl.org) for the OpenSSL
+/* Written by Stephen Henson (shenson@bigfoot.com) for the OpenSSL
  * project 2001.
  */
 /* ====================================================================
@@ -56,8 +56,11 @@
  *
  */
 
-#include "eng_int.h"
+#include <stdio.h>
+#include <openssl/crypto.h>
+#include "cryptlib.h"
 #include <openssl/conf.h>
+#include <openssl/engine.h>
 
 /* #define ENGINE_CONF_DEBUG */
 
@@ -89,17 +92,15 @@ static int int_engine_init(ENGINE *e)
 	}
 	
 
-static int int_engine_configure(char *name, char *value, const CONF *cnf)
+int int_engine_configure(char *name, char *value, const CONF *cnf)
 	{
 	int i;
 	int ret = 0;
 	long do_init = -1;
 	STACK_OF(CONF_VALUE) *ecmds;
-	CONF_VALUE *ecmd = NULL;
+	CONF_VALUE *ecmd;
 	char *ctrlname, *ctrlvalue;
 	ENGINE *e = NULL;
-	int soft = 0;
-
 	name = skip_dot(name);
 #ifdef ENGINE_CONF_DEBUG
 	fprintf(stderr, "Configuring engine %s\n", name);
@@ -127,8 +128,6 @@ static int int_engine_configure(char *name, char *value, const CONF *cnf)
 		/* Override engine name to use */
 		if (!strcmp(ctrlname, "engine_id"))
 			name = ctrlvalue;
-		else if (!strcmp(ctrlname, "soft_load"))
-			soft = 1;
 		/* Load a dynamic ENGINE */
 		else if (!strcmp(ctrlname, "dynamic_path"))
 			{
@@ -151,20 +150,15 @@ static int int_engine_configure(char *name, char *value, const CONF *cnf)
 			if (!e)
 				{
 				e = ENGINE_by_id(name);
-				if (!e && soft)
-					{
-					ERR_clear_error();
-					return 1;
-					}
 				if (!e)
-					goto err;
+					return 0;
 				}
 			/* Allow "EMPTY" to mean no value: this allows a valid
 			 * "value" to be passed to ctrls of type NO_INPUT
 		 	 */
 			if (!strcmp(ctrlvalue, "EMPTY"))
 				ctrlvalue = NULL;
-			if (!strcmp(ctrlname, "init"))
+			else if (!strcmp(ctrlname, "init"))
 				{
 				if (!NCONF_get_number_e(cnf, value, "init", &do_init))
 					goto err;
@@ -186,27 +180,16 @@ static int int_engine_configure(char *name, char *value, const CONF *cnf)
 				}
 			else if (!ENGINE_ctrl_cmd_string(e,
 					ctrlname, ctrlvalue, 0))
-				goto err;
+				return 0;
 			}
 
 
 
 		}
 	if (e && (do_init == -1) && !int_engine_init(e))
-		{
-		ecmd = NULL;
 		goto err;
-		}
 	ret = 1;
 	err:
-	if (ret != 1)
-		{
-		ENGINEerr(ENGINE_F_INT_ENGINE_CONFIGURE, ENGINE_R_ENGINE_CONFIGURATION_ERROR);
-		if (ecmd)
-			ERR_add_error_data(6, "section=", ecmd->section, 
-						", name=", ecmd->name,
-						", value=", ecmd->value);
-		}
 	if (e)
 		ENGINE_free(e);
 	return ret;
@@ -227,7 +210,7 @@ static int int_engine_module_init(CONF_IMODULE *md, const CONF *cnf)
 
 	if (!elist)
 		{
-		ENGINEerr(ENGINE_F_INT_ENGINE_MODULE_INIT, ENGINE_R_ENGINES_SECTION_ERROR);
+		ENGINEerr(ENGINE_F_ENGINE_MODULE_INIT, ENGINE_R_ENGINES_SECTION_ERROR);
 		return 0;
 		}
 

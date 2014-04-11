@@ -1,5 +1,5 @@
 /* test.h */
-/* $Id: test.h,v 1.4 2010/10/01 22:58:57 djm Exp $ */
+/* $Id: test.h,v 1.1 2002/05/15 02:29:18 beck Exp $ */
 
 
 void test_process_init(int fd, int client_p, void *apparg);

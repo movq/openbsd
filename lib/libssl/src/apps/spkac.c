@@ -1,6 +1,6 @@
 /* apps/spkac.c */
 
-/* Written by Dr Stephen N Henson (steve@openssl.org) for the OpenSSL
+/* Written by Dr Stephen N Henson (shenson@bigfoot.com) for the OpenSSL
  * project 1999. Based on an original idea by Massimiliano Pala
  * (madwolf@openca.org).
  */
@@ -63,10 +63,8 @@
 #include <time.h>
 #include "apps.h"
 #include <openssl/bio.h>
-#include <openssl/conf.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
-#include <openssl/lhash.h>
 #include <openssl/x509.h>
 #include <openssl/pem.h>
 
@@ -81,28 +79,20 @@ int MAIN(int, char **);
 
 int MAIN(int argc, char **argv)
 	{
-	ENGINE *e = NULL;
 	int i,badops=0, ret = 1;
-	BIO *in = NULL,*out = NULL;
+	BIO *in = NULL,*out = NULL, *key = NULL;
 	int verify=0,noout=0,pubkey=0;
 	char *infile = NULL,*outfile = NULL,*prog;
 	char *passargin = NULL, *passin = NULL;
-	const char *spkac = "SPKAC", *spksect = "default";
-	char *spkstr = NULL;
+	char *spkac = "SPKAC", *spksect = "default", *spkstr = NULL;
 	char *challenge = NULL, *keyfile = NULL;
-	CONF *conf = NULL;
+	LHASH *conf = NULL;
 	NETSCAPE_SPKI *spki = NULL;
 	EVP_PKEY *pkey = NULL;
-#ifndef OPENSSL_NO_ENGINE
-	char *engine=NULL;
-#endif
 
 	apps_startup();
 
 	if (!bio_err) bio_err = BIO_new_fp(stderr, BIO_NOCLOSE);
-
-	if (!load_config(bio_err, NULL))
-		goto end;
 
 	prog=argv[0];
 	argc--;
@@ -144,13 +134,6 @@ int MAIN(int argc, char **argv)
 			if (--argc < 1) goto bad;
 			spksect= *(++argv);
 			}
-#ifndef OPENSSL_NO_ENGINE
-		else if (strcmp(*argv,"-engine") == 0)
-			{
-			if (--argc < 1) goto bad;
-			engine= *(++argv);
-			}
-#endif
 		else if (strcmp(*argv,"-noout") == 0)
 			noout=1;
 		else if (strcmp(*argv,"-pubkey") == 0)
@@ -176,9 +159,6 @@ bad:
 		BIO_printf(bio_err," -noout         don't print SPKAC\n");
 		BIO_printf(bio_err," -pubkey        output public key\n");
 		BIO_printf(bio_err," -verify        verify SPKAC signature\n");
-#ifndef OPENSSL_NO_ENGINE
-		BIO_printf(bio_err," -engine e      use engine e, possibly a hardware device.\n");
-#endif
 		goto end;
 		}
 
@@ -188,34 +168,29 @@ bad:
 		goto end;
 	}
 
-#ifndef OPENSSL_NO_ENGINE
-        e = setup_engine(bio_err, engine, 0);
-#endif
-
 	if(keyfile) {
-		pkey = load_key(bio_err,
-				strcmp(keyfile, "-") ? keyfile : NULL,
-				FORMAT_PEM, 1, passin, e, "private key");
+		if(strcmp(keyfile, "-")) key = BIO_new_file(keyfile, "r");
+		else key = BIO_new_fp(stdin, BIO_NOCLOSE);
+		if(!key) {
+			BIO_printf(bio_err, "Error opening key file\n");
+			ERR_print_errors(bio_err);
+			goto end;
+		}
+		pkey = PEM_read_bio_PrivateKey(key, NULL, NULL, passin);
 		if(!pkey) {
+			BIO_printf(bio_err, "Error reading private key\n");
+			ERR_print_errors(bio_err);
 			goto end;
 		}
 		spki = NETSCAPE_SPKI_new();
 		if(challenge) ASN1_STRING_set(spki->spkac->challenge,
-						 challenge, (int)strlen(challenge));
+						 challenge, strlen(challenge));
 		NETSCAPE_SPKI_set_pubkey(spki, pkey);
 		NETSCAPE_SPKI_sign(spki, pkey, EVP_md5());
 		spkstr = NETSCAPE_SPKI_b64_encode(spki);
 
 		if (outfile) out = BIO_new_file(outfile, "w");
-		else {
-			out = BIO_new_fp(stdout, BIO_NOCLOSE);
-#ifdef OPENSSL_SYS_VMS
-			{
-			    BIO *tmpbio = BIO_new(BIO_f_linebuffer());
-			    out = BIO_push(tmpbio, out);
-			}
-#endif
-		}
+		else out = BIO_new_fp(stdout, BIO_NOCLOSE);
 
 		if(!out) {
 			BIO_printf(bio_err, "Error opening output file\n");
@@ -223,7 +198,7 @@ bad:
 			goto end;
 		}
 		BIO_printf(out, "SPKAC=%s\n", spkstr);
-		OPENSSL_free(spkstr);
+		Free(spkstr);
 		ret = 0;
 		goto end;
 	}
@@ -239,16 +214,15 @@ bad:
 		goto end;
 	}
 
-	conf = NCONF_new(NULL);
-	i = NCONF_load_bio(conf, in, NULL);
+	conf = CONF_load_bio(NULL, in, NULL);
 
-	if(!i) {
+	if(!conf) {
 		BIO_printf(bio_err, "Error parsing config file\n");
 		ERR_print_errors(bio_err);
 		goto end;
 	}
 
-	spkstr = NCONF_get_string(conf, spksect, spkac);
+	spkstr = CONF_get_string(conf, spksect, spkac);
 		
 	if(!spkstr) {
 		BIO_printf(bio_err, "Can't find SPKAC called \"%s\"\n", spkac);
@@ -265,15 +239,7 @@ bad:
 	}
 
 	if (outfile) out = BIO_new_file(outfile, "w");
-	else {
-		out = BIO_new_fp(stdout, BIO_NOCLOSE);
-#ifdef OPENSSL_SYS_VMS
-		{
-		    BIO *tmpbio = BIO_new(BIO_f_linebuffer());
-		    out = BIO_push(tmpbio, out);
-		}
-#endif
-	}
+	else out = BIO_new_fp(stdout, BIO_NOCLOSE);
 
 	if(!out) {
 		BIO_printf(bio_err, "Error opening output file\n");
@@ -285,7 +251,7 @@ bad:
 	pkey = NETSCAPE_SPKI_get_pubkey(spki);
 	if(verify) {
 		i = NETSCAPE_SPKI_verify(spki, pkey);
-		if (i > 0) BIO_printf(bio_err, "Signature OK\n");
+		if(i) BIO_printf(bio_err, "Signature OK\n");
 		else {
 			BIO_printf(bio_err, "Signature Failure\n");
 			ERR_print_errors(bio_err);
@@ -297,12 +263,12 @@ bad:
 	ret = 0;
 
 end:
-	NCONF_free(conf);
+	CONF_free(conf);
 	NETSCAPE_SPKI_free(spki);
 	BIO_free(in);
-	BIO_free_all(out);
+	BIO_free(out);
+	BIO_free(key);
 	EVP_PKEY_free(pkey);
-	if(passin) OPENSSL_free(passin);
-	apps_shutdown();
-	OPENSSL_EXIT(ret);
+	if(passin) Free(passin);
+	EXIT(ret);
 	}

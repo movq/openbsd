@@ -57,22 +57,21 @@
  */
 
 #include <stdio.h>
-#include <string.h>
-#include <openssl/ripemd.h>
-#include <openssl/crypto.h>
+#include "rmd_locl.h"
 
-unsigned char *RIPEMD160(const unsigned char *d, size_t n,
-	     unsigned char *md)
+unsigned char *RIPEMD160(d, n, md)
+unsigned char *d;
+unsigned long n;
+unsigned char *md;
 	{
 	RIPEMD160_CTX c;
 	static unsigned char m[RIPEMD160_DIGEST_LENGTH];
 
 	if (md == NULL) md=m;
-	if (!RIPEMD160_Init(&c))
-		return NULL;
+	RIPEMD160_Init(&c);
 	RIPEMD160_Update(&c,d,n);
 	RIPEMD160_Final(md,&c);
-	OPENSSL_cleanse(&c,sizeof(c)); /* security consideration */
+	memset(&c,0,sizeof(c)); /* security consideration */
 	return(md);
 	}
 

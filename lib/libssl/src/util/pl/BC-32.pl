@@ -1,9 +1,6 @@
-#!/usr/local/bin/perl
-# Borland C++ builder 3 and 4 -- Janez Jere <jj@void.si>
+#!/usr/bin/perl
+# VCw16lib.pl - the file for Visual C++ 1.52b for windows, static libraries
 #
-
-$ssl=	"ssleay32";
-$crypto="libeay32";
 
 $o='\\';
 $cp='copy';
@@ -11,114 +8,95 @@ $rm='del';
 
 # C compiler stuff
 $cc='bcc32';
-$lflags="-ap -Tpe -x -Gn ";
-$mlflags='';
 
-$out_def="out32";
-$tmp_def="tmp32";
-$inc_def="inc32";
-#enable max error messages, disable most common warnings
-$cflags="-DWIN32_LEAN_AND_MEAN -q -w-ccc -w-rch -w-pia -w-aus -w-par -w-inl  -c -tWC -tWM -DOPENSSL_SYSNAME_WIN32 -DL_ENDIAN -DDSO_WIN32 -D_stricmp=stricmp -D_strnicmp=strnicmp ";
 if ($debug)
-{
-    $cflags.="-Od -y -v -vi- -D_DEBUG";
-    $mlflags.=' ';
-}
+	{ $op="-v "; }
+else	{ $op="-O "; }
+
+$cflags="-d $op -DL_ENDIAN ";
+# I add the stack opt
+$base_lflags="-c";
+$lflags="$base_lflags";
+
+$cflags.=" -DWINDOWS -DWIN32";
+$app_cflag="-WC";
+$lib_cflag="-WC";
+$lflags.=" -Tpe";
+
+if ($shlib)
+	{
+	$mlflags="$base_lflags -Tpe"; # stack if defined in .def file
+	$libs="libw ldllcew";
+	}
 else
-{
-    $cflags.="-O2 -ff -fp";
-}
+	{ $mlflags=''; }
 
 $obj='.obj';
 $ofile="-o";
 
 # EXE linking stuff
-$link="ilink32";
+$link="tlink32";
 $efile="";
 $exep='.exe';
-if ($no_sock)
-	{ $ex_libs=""; }
-else	{ $ex_libs="cw32mt.lib import32.lib"; }
+$ex_libs="CW32.LIB IMPORT32.LIB";
+$ex_libs.=$no_sock?"":" wsock32.lib";
+$shlib_ex_obj="" if $shlib;
+$app_ex_obj="C0X32.OBJ";
 
 # static library stuff
-$mklib='tlib /P64';
+$mklib='tlib';
 $ranlib='';
 $plib="";
 $libp=".lib";
 $shlibp=($shlib)?".dll":".lib";
 $lfile='';
 
-$shlib_ex_obj="";
-$app_ex_obj="c0x32.obj"; 
-
-$asm='nasmw -f obj -d__omf__';
-$asm.=" /Zi" if $debug;
-$afile='-o';
-
-$bn_mulw_obj='';
-$bn_mulw_src='';
-$des_enc_obj='';
-$des_enc_src='';
-$bf_enc_obj='';
-$bf_enc_src='';
-
-if (!$no_asm)
+$asm='ml /Cp /c /Cx';
+$afile='/Fo';
+if ($noasm)
 	{
-	$bn_mulw_obj='crypto\bn\asm\bn_win32.obj';
-	$bn_mulw_src='crypto\bn\asm\bn_win32.asm';
-	$des_enc_obj='crypto\des\asm\d_win32.obj crypto\des\asm\y_win32.obj';
-	$des_enc_src='crypto\des\asm\d_win32.asm crypto\des\asm\y_win32.asm';
-	$bf_enc_obj='crypto\bf\asm\b_win32.obj';
-	$bf_enc_src='crypto\bf\asm\b_win32.asm';
-	$cast_enc_obj='crypto\cast\asm\c_win32.obj';
-	$cast_enc_src='crypto\cast\asm\c_win32.asm';
-	$rc4_enc_obj='crypto\rc4\asm\r4_win32.obj';
-	$rc4_enc_src='crypto\rc4\asm\r4_win32.asm';
-	$rc5_enc_obj='crypto\rc5\asm\r5_win32.obj';
-	$rc5_enc_src='crypto\rc5\asm\r5_win32.asm';
-	$md5_asm_obj='crypto\md5\asm\m5_win32.obj';
-	$md5_asm_src='crypto\md5\asm\m5_win32.asm';
-	$sha1_asm_obj='crypto\sha\asm\s1_win32.obj';
-	$sha1_asm_src='crypto\sha\asm\s1_win32.asm';
-	$rmd160_asm_obj='crypto\ripemd\asm\rm_win32.obj';
-	$rmd160_asm_src='crypto\ripemd\asm\rm_win32.asm';
-	$cflags.=" -DBN_ASM -DMD5_ASM -DSHA1_ASM -DRMD160_ASM";
+	$bn_mulw_obj='';
+	$bn_mulw_src='';
 	}
-
-if ($shlib)
+else
 	{
-	$mlflags.=" $lflags /dll";
-#	$cflags =~ s| /MD| /MT|;
-	$lib_cflag=" /GD -D_WINDLL -D_DLL";
-	$out_def="out32dll";
-	$tmp_def="tmp32dll";
+	$bn_mulw_obj='crypto\bn\asm\x86b32.obj';
+	$bn_mulw_src='crypto\bn\asm\x86m32.asm';
 	}
 
 sub do_lib_rule
 	{
-	local($objs,$target,$name,$shlib)=@_;
+	local($target,$name,$shlib)=@_;
 	local($ret,$Name);
 
 	$taget =~ s/\//$o/g if $o ne '/';
 	($Name=$name) =~ tr/a-z/A-Z/;
 
-#	$target="\$(LIB_D)$o$target";
-	$ret.="$target: $objs\n";
+	$ret.="$target: \$(${Name}OBJ)\n";
+	$ret.="\t\$(RM) \$(O_$Name)\n";
+
+	# Due to a pathetic line length limit, I unwrap the args.
+	local($lib_names)="";
+	local($dll_names)="";
+	foreach $_ (sort split(/\s+/,$Vars{"${Name}OBJ"}))
+		{
+		$lib_names.="  +$_ &\n";
+		$dll_names.="  $_\n";
+		}
+
 	if (!$shlib)
 		{
-		$ret.=<<___;
-	-\$(RM) $lfile$target
-	\$(MKLIB) $lfile$target \@&&!
-+\$(**: = &^
-+)
-!
-___
+		$ret.="\t\$(MKLIB) $target & <<|\n$lib_names\n,\n|\n";
 		}
 	else
 		{
-		local($ex)=($target =~ /O_SSL/)?' $(L_CRYPTO)':'';
-		$ex.=' ws2_32.lib gdi32.lib';
-		$ret.="\t\$(LINK) \$(MLFLAGS) $efile$target /def:ms/${Name}.def @<<\n  \$(SHLIB_EX_OBJ) $objs $ex\n<<\n";
+		# $(SHLIB_EX_OBJ)
+		local($ex)=($Name eq "SSL")?' $(L_CRYPTO) winsock':"";
+		$ret.="\t\$(LINK) \$(MLFLAGS) @&&|\n";
+		$ret.=$dll_names;
+		$ret.="\n  $target\n\n  $ex $libs\nms$o${name}16.def;\n|\n";
+		($out_lib=$target) =~ s/O_/L_/;
+		$ret.="\timplib /nowep $out_lib $target\n\n";
 		}
 	$ret.="\n";
 	return($ret);
@@ -127,12 +105,30 @@ ___
 sub do_link_rule
 	{
 	local($target,$files,$dep_libs,$libs)=@_;
-	local($ret,$_);
+	local($ret,$f,$_,@f);
 	
 	$file =~ s/\//$o/g if $o ne '/';
 	$n=&bname($targer);
 	$ret.="$target: $files $dep_libs\n";
-	$ret.="\t\$(LINK) \$(LFLAGS) $files \$(APP_EX_OBJ), $target,, $libs\n\n";
+	$ret.="  \$(LINK) @&&|";
+	
+	# Due to a pathetic line length limit, I have to unwrap the args.
+	$r="  \$(LFLAGS) ";
+	if ($files =~ /\(([^)]*)\)$/)
+		{
+		@a=('$(APP_EX_OBJ)');
+		push(@a,sort split(/\s+/,$Vars{$1}));
+		foreach $_ (@a)
+			{
+			$ret.="\n  $r $_ +";
+			$r="";
+			}
+		chop($ret);
+		$ret.="\n";
+		}
+	else
+		{ $ret.="\n $r \$(APP_EX_OBJ) $files\n"; }
+	$ret.="  $target\n\n  $libs\n\n|\n\n";
 	return($ret);
 	}
 

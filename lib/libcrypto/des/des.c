@@ -58,26 +58,17 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <openssl/opensslconf.h>
-#ifndef OPENSSL_SYS_MSDOS
-#ifndef OPENSSL_SYS_VMS
-#include OPENSSL_UNISTD
-#else /* OPENSSL_SYS_VMS */
-#ifdef __DECC
+#ifndef MSDOS
 #include <unistd.h>
-#else /* not __DECC */
-#include <math.h>
-#endif /* __DECC */
-#endif /* OPENSSL_SYS_VMS */
-#else /* OPENSSL_SYS_MSDOS */
+#else
 #include <io.h>
+#define RAND
 #endif
 
 #include <time.h>
 #include "des_ver.h"
 
-#ifdef OPENSSL_SYS_VMS
+#ifdef VMS
 #include <types.h>
 #include <stat.h>
 #else
@@ -86,10 +77,21 @@
 #endif
 #include <sys/stat.h>
 #endif
-#include <openssl/des.h>
-#include <openssl/rand.h>
-#include <openssl/ui_compat.h>
+#if defined(NOCONST)
+#define const
+#endif
+#include "des.h"
 
+#if defined(__STDC__) || defined(VMS) || defined(M_XENIX) || defined(MSDOS)
+#include <string.h>
+#endif
+
+#ifdef RAND
+#define random rand
+#define srandom(s) srand(s)
+#endif
+
+#ifndef NOPROTO
 void usage(void);
 void doencryption(void);
 int uufwrite(unsigned char *data, int size, unsigned int num, FILE *fp);
@@ -97,10 +99,21 @@ void uufwriteEnd(FILE *fp);
 int uufread(unsigned char *out,int size,unsigned int num,FILE *fp);
 int uuencode(unsigned char *in,int num,unsigned char *out);
 int uudecode(unsigned char *in,int num,unsigned char *out);
-void DES_3cbc_encrypt(DES_cblock *input,DES_cblock *output,long length,
-	DES_key_schedule sk1,DES_key_schedule sk2,
-	DES_cblock *ivec1,DES_cblock *ivec2,int enc);
-#ifdef OPENSSL_SYS_VMS
+void des_3cbc_encrypt(des_cblock *input,des_cblock *output,long length,
+	des_key_schedule sk1,des_key_schedule sk2,
+	des_cblock *ivec1,des_cblock *ivec2,int enc);
+#else
+void usage();
+void doencryption();
+int uufwrite();
+void uufwriteEnd();
+int uufread();
+int uuencode();
+int uudecode();
+void des_3cbc_encrypt();
+#endif
+
+#ifdef VMS
 #define EXIT(a) exit(a&0x10000000L)
 #else
 #define EXIT(a) exit(a)
@@ -120,12 +133,14 @@ int uubufnum=0;
 #define OUTUUBUF	(65*100)
 unsigned char b[OUTUUBUF];
 unsigned char bb[300];
-DES_cblock cksum={0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
+des_cblock cksum={0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
 char cksumname[200]="";
 
 int vflag,cflag,eflag,dflag,kflag,bflag,fflag,sflag,uflag,flag3,hflag,error;
 
-int main(int argc, char **argv)
+int main(argc, argv)
+int argc;
+char **argv;
 	{
 	int i;
 	struct stat ins,outs;
@@ -153,14 +168,12 @@ int main(int argc, char **argv)
 				case 'c':
 					cflag=1;
 					strncpy(cksumname,p,200);
-					cksumname[sizeof(cksumname)-1]='\0';
 					p+=strlen(cksumname);
 					break;
 				case 'C':
 					cflag=1;
 					longk=1;
 					strncpy(cksumname,p,200);
-					cksumname[sizeof(cksumname)-1]='\0';
 					p+=strlen(cksumname);
 					break;
 				case 'e':
@@ -192,7 +205,6 @@ int main(int argc, char **argv)
 				case 'u':
 					uflag=1;
 					strncpy(uuname,p,200);
-					uuname[sizeof(uuname)-1]='\0';
 					p+=strlen(uuname);
 					break;
 				case 'h':
@@ -262,12 +274,12 @@ int main(int argc, char **argv)
 #endif			
 	if (	(in != NULL) &&
 		(out != NULL) &&
-#ifndef OPENSSL_SYS_MSDOS
+#ifndef MSDOS
 		(stat(in,&ins) != -1) &&
 		(stat(out,&outs) != -1) &&
 		(ins.st_dev == outs.st_dev) &&
 		(ins.st_ino == outs.st_ino))
-#else /* OPENSSL_SYS_MSDOS */
+#else /* MSDOS */
 		(strcmp(in,out) == 0))
 #endif
 			{
@@ -302,7 +314,7 @@ int main(int argc, char **argv)
 		EXIT(5);
 		}
 
-#ifdef OPENSSL_SYS_MSDOS
+#ifdef MSDOS
 	/* This should set the file to binary mode. */
 	{
 #include <fcntl.h>
@@ -319,33 +331,33 @@ int main(int argc, char **argv)
 	EXIT(0);
 	}
 
-void usage(void)
+void usage()
 	{
 	char **u;
 	static const char *Usage[]={
 "des <options> [input-file [output-file]]",
 "options:",
 "-v         : des(1) version number",
-"-e         : encrypt using SunOS compatible user key to DES key conversion.",
+"-e         : encrypt using sunOS compatible user key to DES key conversion.",
 "-E         : encrypt ",
-"-d         : decrypt using SunOS compatible user key to DES key conversion.",
+"-d         : decrypt using sunOS compatible user key to DES key conversion.",
 "-D         : decrypt ",
-"-c[ckname] : generate a cbc_cksum using SunOS compatible user key to",
+"-c[ckname] : generate a cbc_cksum using sunOS compatible user key to",
 "             DES key conversion and output to ckname (stdout default,",
 "             stderr if data being output on stdout).  The checksum is",
 "             generated before encryption and after decryption if used",
 "             in conjunction with -[eEdD].",
 "-C[ckname] : generate a cbc_cksum as for -c but compatible with -[ED].",
 "-k key     : use key 'key'",
-"-h         : the key that is entered will be a hexadecimal number",
+"-h         : the key that is entered will be a hexidecimal number",
 "             that is used directly as the des key",
 "-u[uuname] : input file is uudecoded if -[dD] or output uuencoded data if -[eE]",
 "             (uuname is the filename to put in the uuencode header).",
-"-b         : encrypt using DES in ecb encryption mode, the default is cbc mode.",
-"-3         : encrypt using triple DES encryption.  This uses 2 keys",
+"-b         : encrypt using DES in ecb encryption mode, the defaut is cbc mode.",
+"-3         : encrypt using tripple DES encryption.  This uses 2 keys",
 "             generated from the input key.  If the input key is less",
-"             than 8 characters long, this is equivalent to normal",
-"             encryption.  Default is triple cbc, -b makes it triple ecb.",
+"             than 8 characters long, this is equivelent to normal",
+"             encryption.  Default is tripple cbc, -b makes it tripple ecb.",
 NULL
 };
 	for (u=(char **)Usage; *u; u++)
@@ -357,29 +369,31 @@ NULL
 	EXIT(1);
 	}
 
-void doencryption(void)
+void doencryption()
 	{
 #ifdef _LIBC
+	extern int srandom();
+	extern int random();
 	extern unsigned long time();
 #endif
 
 	register int i;
-	DES_key_schedule ks,ks2;
-	DES_cblock iv,iv2;
+	des_key_schedule ks,ks2;
+	unsigned char iv[8],iv2[8];
 	char *p;
 	int num=0,j,k,l,rem,ll,len,last,ex=0;
-	DES_cblock kk,k2;
+	des_cblock kk,k2;
 	FILE *O;
 	int Exit=0;
-#ifndef OPENSSL_SYS_MSDOS
+#ifndef MSDOS
 	static unsigned char buf[BUFSIZE+8],obuf[BUFSIZE+8];
 #else
 	static unsigned char *buf=NULL,*obuf=NULL;
 
 	if (buf == NULL)
 		{
-		if (    (( buf=OPENSSL_malloc(BUFSIZE+8)) == NULL) ||
-			((obuf=OPENSSL_malloc(BUFSIZE+8)) == NULL))
+		if (    (( buf=(unsigned char *)Malloc(BUFSIZE+8)) == NULL) ||
+			((obuf=(unsigned char *)Malloc(BUFSIZE+8)) == NULL))
 			{
 			fputs("Not enough memory\n",stderr);
 			Exit=10;
@@ -426,19 +440,19 @@ void doencryption(void)
 			else
 				k2[i-8]=k;
 			}
-		DES_set_key_unchecked(&k2,&ks2);
-		OPENSSL_cleanse(k2,sizeof(k2));
+		des_set_key((C_Block *)k2,ks2);
+		memset(k2,0,sizeof(k2));
 		}
 	else if (longk || flag3)
 		{
 		if (flag3)
 			{
-			DES_string_to_2keys(key,&kk,&k2);
-			DES_set_key_unchecked(&k2,&ks2);
-			OPENSSL_cleanse(k2,sizeof(k2));
+			des_string_to_2keys(key,(C_Block *)kk,(C_Block *)k2);
+			des_set_key((C_Block *)k2,ks2);
+			memset(k2,0,sizeof(k2));
 			}
 		else
-			DES_string_to_key(key,&kk);
+			des_string_to_key(key,(C_Block *)kk);
 		}
 	else
 		for (i=0; i<KEYSIZ; i++)
@@ -456,9 +470,9 @@ void doencryption(void)
 				kk[i]=key[i]|0x80;
 			}
 
-	DES_set_key_unchecked(&kk,&ks);
-	OPENSSL_cleanse(key,sizeof(key));
-	OPENSSL_cleanse(kk,sizeof(kk));
+	des_set_key((C_Block *)kk,ks);
+	memset(key,0,sizeof(key));
+	memset(kk,0,sizeof(kk));
 	/* woops - A bug that does not showup under unix :-( */
 	memset(iv,0,sizeof(iv));
 	memset(iv2,0,sizeof(iv2));
@@ -484,8 +498,9 @@ void doencryption(void)
 			len=l-rem;
 			if (feof(DES_IN))
 				{
+				srandom((unsigned int)time(NULL));
 				for (i=7-rem; i>0; i--)
-					RAND_pseudo_bytes(buf + l++, 1);
+					buf[l++]=random()&0xff;
 				buf[l++]=rem;
 				ex=1;
 				len+=rem;
@@ -495,8 +510,8 @@ void doencryption(void)
 
 			if (cflag)
 				{
-				DES_cbc_cksum(buf,&cksum,
-					(long)len,&ks,&cksum);
+				des_cbc_cksum((C_Block *)buf,(C_Block *)cksum,
+					(long)len,ks,(C_Block *)cksum);
 				if (!eflag)
 					{
 					if (feof(DES_IN)) break;
@@ -506,34 +521,34 @@ void doencryption(void)
 
 			if (bflag && !flag3)
 				for (i=0; i<l; i+=8)
-					DES_ecb_encrypt(
-						(DES_cblock *)&(buf[i]),
-						(DES_cblock *)&(obuf[i]),
-						&ks,do_encrypt);
+					des_ecb_encrypt(
+						(des_cblock *)&(buf[i]),
+						(des_cblock *)&(obuf[i]),
+						ks,do_encrypt);
 			else if (flag3 && bflag)
 				for (i=0; i<l; i+=8)
-					DES_ecb2_encrypt(
-						(DES_cblock *)&(buf[i]),
-						(DES_cblock *)&(obuf[i]),
-						&ks,&ks2,do_encrypt);
+					des_ecb2_encrypt(
+						(des_cblock *)&(buf[i]),
+						(des_cblock *)&(obuf[i]),
+						ks,ks2,do_encrypt);
 			else if (flag3 && !bflag)
 				{
 				char tmpbuf[8];
 
 				if (rem) memcpy(tmpbuf,&(buf[l]),
 					(unsigned int)rem);
-				DES_3cbc_encrypt(
-					(DES_cblock *)buf,(DES_cblock *)obuf,
-					(long)l,ks,ks2,&iv,
-					&iv2,do_encrypt);
+				des_3cbc_encrypt(
+					(des_cblock *)buf,(des_cblock *)obuf,
+					(long)l,ks,ks2,(des_cblock *)iv,
+					(des_cblock *)iv2,do_encrypt);
 				if (rem) memcpy(&(buf[l]),tmpbuf,
 					(unsigned int)rem);
 				}
 			else
 				{
-				DES_cbc_encrypt(
-					buf,obuf,
-					(long)l,&ks,&iv,do_encrypt);
+				des_cbc_encrypt(
+					(des_cblock *)buf,(des_cblock *)obuf,
+					(long)l,ks,(des_cblock *)iv,do_encrypt);
 				if (l >= 8) memcpy(iv,&(obuf[l-8]),8);
 				}
 			if (rem) memcpy(buf,&(buf[l]),(unsigned int)rem);
@@ -585,28 +600,28 @@ void doencryption(void)
 
 			if (bflag && !flag3)
 				for (i=0; i<l; i+=8)
-					DES_ecb_encrypt(
-						(DES_cblock *)&(buf[i]),
-						(DES_cblock *)&(obuf[i]),
-						&ks,do_encrypt);
+					des_ecb_encrypt(
+						(des_cblock *)&(buf[i]),
+						(des_cblock *)&(obuf[i]),
+						ks,do_encrypt);
 			else if (flag3 && bflag)
 				for (i=0; i<l; i+=8)
-					DES_ecb2_encrypt(
-						(DES_cblock *)&(buf[i]),
-						(DES_cblock *)&(obuf[i]),
-						&ks,&ks2,do_encrypt);
+					des_ecb2_encrypt(
+						(des_cblock *)&(buf[i]),
+						(des_cblock *)&(obuf[i]),
+						ks,ks2,do_encrypt);
 			else if (flag3 && !bflag)
 				{
-				DES_3cbc_encrypt(
-					(DES_cblock *)buf,(DES_cblock *)obuf,
-					(long)l,ks,ks2,&iv,
-					&iv2,do_encrypt);
+				des_3cbc_encrypt(
+					(des_cblock *)buf,(des_cblock *)obuf,
+					(long)l,ks,ks2,(des_cblock *)iv,
+					(des_cblock *)iv2,do_encrypt);
 				}
 			else
 				{
-				DES_cbc_encrypt(
-					buf,obuf,
-				 	(long)l,&ks,&iv,do_encrypt);
+				des_cbc_encrypt(
+					(des_cblock *)buf,(des_cblock *)obuf,
+				 	(long)l,ks,(des_cblock *)iv,do_encrypt);
 				if (l >= 8) memcpy(iv,&(buf[l-8]),8);
 				}
 
@@ -631,9 +646,9 @@ void doencryption(void)
 				l=l-8+last;
 				}
 			i=0;
-			if (cflag) DES_cbc_cksum(obuf,
-				(DES_cblock *)cksum,(long)l/8*8,&ks,
-				(DES_cblock *)cksum);
+			if (cflag) des_cbc_cksum((C_Block *)obuf,
+				(C_Block *)cksum,(long)l/8*8,ks,
+				(C_Block *)cksum);
 			while (i != l)
 				{
 				j=fwrite(obuf,1,(unsigned int)l-i,DES_OUT);
@@ -666,23 +681,30 @@ void doencryption(void)
 		if (l) fclose(CKSUM_OUT);
 		}
 problems:
-	OPENSSL_cleanse(buf,sizeof(buf));
-	OPENSSL_cleanse(obuf,sizeof(obuf));
-	OPENSSL_cleanse(&ks,sizeof(ks));
-	OPENSSL_cleanse(&ks2,sizeof(ks2));
-	OPENSSL_cleanse(iv,sizeof(iv));
-	OPENSSL_cleanse(iv2,sizeof(iv2));
-	OPENSSL_cleanse(kk,sizeof(kk));
-	OPENSSL_cleanse(k2,sizeof(k2));
-	OPENSSL_cleanse(uubuf,sizeof(uubuf));
-	OPENSSL_cleanse(b,sizeof(b));
-	OPENSSL_cleanse(bb,sizeof(bb));
-	OPENSSL_cleanse(cksum,sizeof(cksum));
+	memset(buf,0,sizeof(buf));
+	memset(obuf,0,sizeof(obuf));
+	memset(ks,0,sizeof(ks));
+	memset(ks2,0,sizeof(ks2));
+	memset(iv,0,sizeof(iv));
+	memset(iv2,0,sizeof(iv2));
+	memset(kk,0,sizeof(kk));
+	memset(k2,0,sizeof(k2));
+	memset(uubuf,0,sizeof(uubuf));
+	memset(b,0,sizeof(b));
+	memset(bb,0,sizeof(bb));
+	memset(cksum,0,sizeof(cksum));
 	if (Exit) EXIT(Exit);
 	}
 
-/*    We ignore this parameter but it should be > ~50 I believe    */
-int uufwrite(unsigned char *data, int size, unsigned int num, FILE *fp)
+int uufwrite(data, size, num, fp)
+unsigned char *data;
+int size;
+unsigned int num;
+FILE *fp;
+      
+     /* We ignore this parameter but it should be > ~50 I believe */
+   
+    
 	{
 	int i,j,left,rem,ret=num;
 	static int start=1;
@@ -735,7 +757,8 @@ int uufwrite(unsigned char *data, int size, unsigned int num, FILE *fp)
 	return(ret);
 	}
 
-void uufwriteEnd(FILE *fp)
+void uufwriteEnd(fp)
+FILE *fp;
 	{
 	int j;
 	static const char *end=" \nend\n";
@@ -751,8 +774,11 @@ void uufwriteEnd(FILE *fp)
 	fwrite(end,1,strlen(end),fp);
 	}
 
-/* int size:  should always be > ~ 60; I actually ignore this parameter :-)    */
-int uufread(unsigned char *out, int size, unsigned int num, FILE *fp)
+int uufread(out, size, num, fp)
+unsigned char *out;
+int size; /* should always be > ~ 60; I actually ignore this parameter :-) */
+unsigned int num;
+FILE *fp;
 	{
 	int i,j,tot;
 	static int done=0;
@@ -824,7 +850,10 @@ int uufread(unsigned char *out, int size, unsigned int num, FILE *fp)
                     *((c)++)=(unsigned char)(((l)    )&0xff))
 
 
-int uuencode(unsigned char *in, int num, unsigned char *out)
+int uuencode(in, num, out)
+unsigned char *in;
+int num;
+unsigned char *out;
 	{
 	int j,i,n,tot=0;
 	DES_LONG l;
@@ -854,7 +883,10 @@ int uuencode(unsigned char *in, int num, unsigned char *out)
 	return(tot);
 	}
 
-int uudecode(unsigned char *in, int num, unsigned char *out)
+int uudecode(in, num, out)
+unsigned char *in;
+int num;
+unsigned char *out;
 	{
 	int j,i,k;
 	unsigned int n=0,space=0;

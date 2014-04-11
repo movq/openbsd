@@ -49,15 +49,41 @@
  *
  */
 
+#include <assert.h>
 #include <openssl/aes.h>
-#include <openssl/modes.h>
+#include "aes_locl.h"
 
 void AES_cbc_encrypt(const unsigned char *in, unsigned char *out,
-		     size_t len, const AES_KEY *key,
+		     const unsigned long length, const AES_KEY *key,
 		     unsigned char *ivec, const int enc) {
 
-	if (enc)
-		CRYPTO_cbc128_encrypt(in,out,len,key,ivec,(block128_f)AES_encrypt);
+	int n;
+	unsigned long len = length;
+	unsigned char tmp[16];
+
+	assert(in && out && key && ivec);
+	assert(length % AES_BLOCK_SIZE == 0);
+	assert((AES_ENCRYPT == enc)||(AES_DECRYPT == enc));
+
+	if (AES_ENCRYPT == enc)
+		while (len > 0) {
+			for(n=0; n < 16; ++n)
+				tmp[n] = in[n] ^ ivec[n];
+			AES_encrypt(tmp, out, key);
+			memcpy(ivec, out, 16);
+			len -= 16;
+			in += 16;
+			out += 16;
+		}
 	else
-		CRYPTO_cbc128_decrypt(in,out,len,key,ivec,(block128_f)AES_decrypt);
+		while (len > 0) {
+			memcpy(tmp, in, 16);
+			AES_decrypt(in, out, key);
+			for(n=0; n < 16; ++n)
+				out[n] ^= ivec[n];
+			memcpy(ivec, tmp, 16);
+			len -= 16;
+			in += 16;
+			out += 16;
+		}
 }

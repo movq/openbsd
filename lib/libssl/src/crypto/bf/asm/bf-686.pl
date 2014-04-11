@@ -1,3 +1,4 @@
+#!/usr/bin/perl
 #!/usr/local/bin/perl
 
 push(@INC,"perlasm","../../perlasm");

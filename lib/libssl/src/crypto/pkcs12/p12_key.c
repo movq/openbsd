@@ -1,5 +1,5 @@
 /* p12_key.c */
-/* Written by Dr Stephen N Henson (steve@openssl.org) for the OpenSSL
+/* Written by Dr Stephen N Henson (shenson@bigfoot.com) for the OpenSSL
  * project 1999.
  */
 /* ====================================================================
@@ -59,12 +59,12 @@
 #include <stdio.h>
 #include "cryptlib.h"
 #include <openssl/pkcs12.h>
-#include <openssl/bn.h>
+
 
 /* Uncomment out this line to get debugging info about key generation */
 /*#define DEBUG_KEYGEN*/
 #ifdef DEBUG_KEYGEN
-#include <openssl/bio.h>
+#include <bio.h>
 extern BIO *bio_err;
 void h__dump (unsigned char *p, int len);
 #endif
@@ -74,146 +74,109 @@ void h__dump (unsigned char *p, int len);
 #define min(a,b) ((a) < (b) ? (a) : (b))
 #endif
 
-int PKCS12_key_gen_asc(const char *pass, int passlen, unsigned char *salt,
+int PKCS12_key_gen_asc (const char *pass, int passlen, unsigned char *salt,
 	     int saltlen, int id, int iter, int n, unsigned char *out,
 	     const EVP_MD *md_type)
 {
 	int ret;
 	unsigned char *unipass;
 	int uniplen;
-
-	if(!pass) {
-		unipass = NULL;
-		uniplen = 0;
-	} else if (!OPENSSL_asc2uni(pass, passlen, &unipass, &uniplen)) {
+	if (!asc2uni (pass, &unipass, &uniplen)) {
 		PKCS12err(PKCS12_F_PKCS12_KEY_GEN_ASC,ERR_R_MALLOC_FAILURE);
 		return 0;
 	}
-	ret = PKCS12_key_gen_uni(unipass, uniplen, salt, saltlen,
+	ret = PKCS12_key_gen_uni (unipass, uniplen, salt, saltlen,
 						 id, iter, n, out, md_type);
-	if (ret <= 0)
-	    return 0;
-	if(unipass) {
-		OPENSSL_cleanse(unipass, uniplen);	/* Clear password from memory */
-		OPENSSL_free(unipass);
-	}
+	memset(unipass, 0, uniplen);	/* Clear password from memory */
+	Free(unipass);
 	return ret;
 }
 
-int PKCS12_key_gen_uni(unsigned char *pass, int passlen, unsigned char *salt,
+int PKCS12_key_gen_uni (unsigned char *pass, int passlen, unsigned char *salt,
 	     int saltlen, int id, int iter, int n, unsigned char *out,
 	     const EVP_MD *md_type)
 {
 	unsigned char *B, *D, *I, *p, *Ai;
-	int Slen, Plen, Ilen, Ijlen;
+	int Slen, Plen, Ilen;
 	int i, j, u, v;
-	int ret = 0;
 	BIGNUM *Ij, *Bpl1;	/* These hold Ij and B + 1 */
 	EVP_MD_CTX ctx;
 #ifdef  DEBUG_KEYGEN
 	unsigned char *tmpout = out;
 	int tmpn = n;
-#endif
-
-#if 0
-	if (!pass) {
-		PKCS12err(PKCS12_F_PKCS12_KEY_GEN_UNI,ERR_R_PASSED_NULL_PARAMETER);
-		return 0;
-	}
-#endif
-
-	EVP_MD_CTX_init(&ctx);
-#ifdef  DEBUG_KEYGEN
-	fprintf(stderr, "KEYGEN DEBUG\n");
-	fprintf(stderr, "ID %d, ITER %d\n", id, iter);
-	fprintf(stderr, "Password (length %d):\n", passlen);
-	h__dump(pass, passlen);
-	fprintf(stderr, "Salt (length %d):\n", saltlen);
-	h__dump(salt, saltlen);
+	BIO_printf (bio_err, "KEYGEN DEBUG\n");
+	BIO_printf (bio_err, "ID %d, ITER %d\n", id, iter);
+	BIO_printf (bio_err, "Password (length %d):\n", passlen);
+	h__dump (pass, passlen);
+	BIO_printf (bio_err, "Salt (length %d):\n", saltlen);
+	h__dump (salt, saltlen);
+	BIO_printf (bio_err, "ID %d, ITER %d\n\n", id, iter);
 #endif
 	v = EVP_MD_block_size (md_type);
 	u = EVP_MD_size (md_type);
-	if (u < 0)
-	    return 0;
-	D = OPENSSL_malloc (v);
-	Ai = OPENSSL_malloc (u);
-	B = OPENSSL_malloc (v + 1);
+	D = Malloc (v);
+	Ai = Malloc (u);
+	B = Malloc (v + 1);
 	Slen = v * ((saltlen+v-1)/v);
-	if(passlen) Plen = v * ((passlen+v-1)/v);
-	else Plen = 0;
+	Plen = v * ((passlen+v-1)/v);
 	Ilen = Slen + Plen;
-	I = OPENSSL_malloc (Ilen);
+	I = Malloc (Ilen);
 	Ij = BN_new();
 	Bpl1 = BN_new();
-	if (!D || !Ai || !B || !I || !Ij || !Bpl1)
-		goto err;
+	if (!D || !Ai || !B || !I || !Ij || !Bpl1) {
+		PKCS12err(PKCS12_F_PKCS12_KEY_GEN_UNI,ERR_R_MALLOC_FAILURE);
+		return 0;
+	}
 	for (i = 0; i < v; i++) D[i] = id;
 	p = I;
 	for (i = 0; i < Slen; i++) *p++ = salt[i % saltlen];
 	for (i = 0; i < Plen; i++) *p++ = pass[i % passlen];
 	for (;;) {
-		if (!EVP_DigestInit_ex(&ctx, md_type, NULL)
-			|| !EVP_DigestUpdate(&ctx, D, v)
-			|| !EVP_DigestUpdate(&ctx, I, Ilen)
-			|| !EVP_DigestFinal_ex(&ctx, Ai, NULL))
-			goto err;
+		EVP_DigestInit (&ctx, md_type);
+		EVP_DigestUpdate (&ctx, D, v);
+		EVP_DigestUpdate (&ctx, I, Ilen);
+		EVP_DigestFinal (&ctx, Ai, NULL);
 		for (j = 1; j < iter; j++) {
-			if (!EVP_DigestInit_ex(&ctx, md_type, NULL)
-				|| !EVP_DigestUpdate(&ctx, Ai, u)
-				|| !EVP_DigestFinal_ex(&ctx, Ai, NULL))
-			goto err;
+			EVP_DigestInit (&ctx, md_type);
+			EVP_DigestUpdate (&ctx, Ai, u);
+			EVP_DigestFinal (&ctx, Ai, NULL);
 		}
 		memcpy (out, Ai, min (n, u));
 		if (u >= n) {
+			Free (Ai);
+			Free (B);
+			Free (D);
+			Free (I);
+			BN_free (Ij);
+			BN_free (Bpl1);
 #ifdef DEBUG_KEYGEN
-			fprintf(stderr, "Output KEY (length %d)\n", tmpn);
-			h__dump(tmpout, tmpn);
+			BIO_printf (bio_err, "Output KEY (length %d)\n", tmpn);
+			h__dump (tmpout, tmpn);
 #endif
-			ret = 1;
-			goto end;
+			return 1;	
 		}
 		n -= u;
 		out += u;
 		for (j = 0; j < v; j++) B[j] = Ai[j % u];
 		/* Work out B + 1 first then can use B as tmp space */
-		if (!BN_bin2bn (B, v, Bpl1)) goto err;
-		if (!BN_add_word (Bpl1, 1)) goto err;
+		BN_bin2bn (B, v, Bpl1);
+		BN_add_word (Bpl1, 1);
 		for (j = 0; j < Ilen ; j+=v) {
-			if (!BN_bin2bn (I + j, v, Ij)) goto err;
-			if (!BN_add (Ij, Ij, Bpl1)) goto err;
+			BN_bin2bn (I + j, v, Ij);
+			BN_add (Ij, Ij, Bpl1);
 			BN_bn2bin (Ij, B);
-			Ijlen = BN_num_bytes (Ij);
 			/* If more than 2^(v*8) - 1 cut off MSB */
-			if (Ijlen > v) {
+			if (BN_num_bytes (Ij) > v) {
 				BN_bn2bin (Ij, B);
 				memcpy (I + j, B + 1, v);
-#ifndef PKCS12_BROKEN_KEYGEN
-			/* If less than v bytes pad with zeroes */
-			} else if (Ijlen < v) {
-				memset(I + j, 0, v - Ijlen);
-				BN_bn2bin(Ij, I + j + v - Ijlen); 
-#endif
 			} else BN_bn2bin (Ij, I + j);
 		}
 	}
-
-err:
-	PKCS12err(PKCS12_F_PKCS12_KEY_GEN_UNI,ERR_R_MALLOC_FAILURE);
-
-end:
-	OPENSSL_free (Ai);
-	OPENSSL_free (B);
-	OPENSSL_free (D);
-	OPENSSL_free (I);
-	BN_free (Ij);
-	BN_free (Bpl1);
-	EVP_MD_CTX_cleanup(&ctx);
-	return ret;
 }
 #ifdef DEBUG_KEYGEN
 void h__dump (unsigned char *p, int len)
 {
-	for (; len --; p++) fprintf(stderr, "%02X", *p);
-	fprintf(stderr, "\n");	
+	for (; len --; p++) BIO_printf (bio_err, "%02X", *p);
+	BIO_printf (bio_err, "\n");	
 }
 #endif

@@ -9,9 +9,8 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <openssl/err.h>
-#include <openssl/ssl.h>
+#include "err.h"
+#include "ssl.h"
 
 extern int errno;
 
@@ -32,16 +31,11 @@ char *argv[];
 	else
 		host=argv[1];
 
-#ifdef WATT32
-	dbug_init();
-	sock_init();
-#endif
-
 	/* Lets get nice error messages */
 	SSL_load_error_strings();
 
 	/* Setup all the global SSL stuff */
-	OpenSSL_add_ssl_algorithms();
+	SSLeay_add_ssl_algorithms();
 	ssl_ctx=SSL_CTX_new(SSLv23_client_method());
 
 	/* Lets make a SSL structure */
@@ -54,7 +48,7 @@ char *argv[];
 
 	/* Lets use a connect BIO under the SSL BIO */
 	out=BIO_new(BIO_s_connect());
-	BIO_set_conn_hostname(out,host);
+	BIO_set_hostname(out,host);
 	BIO_set_nbio(out,1);
 	out=BIO_push(ssl_bio,out);
 

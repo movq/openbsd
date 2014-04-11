@@ -1,5 +1,5 @@
 /* ocsp_asn.c */
-/* Written by Dr Stephen N Henson (steve@openssl.org) for the OpenSSL
+/* Written by Dr Stephen N Henson (shenson@bigfoot.com) for the OpenSSL
  * project 2000.
  */
 /* ====================================================================
@@ -62,7 +62,7 @@
 ASN1_SEQUENCE(OCSP_SIGNATURE) = {
 	ASN1_SIMPLE(OCSP_SIGNATURE, signatureAlgorithm, X509_ALGOR),
 	ASN1_SIMPLE(OCSP_SIGNATURE, signature, ASN1_BIT_STRING),
-	ASN1_EXP_SEQUENCE_OF_OPT(OCSP_SIGNATURE, certs, X509, 0)
+	ASN1_EXP_SEQUENCE_OF(OCSP_SIGNATURE, certs, X509, 0)
 } ASN1_SEQUENCE_END(OCSP_SIGNATURE)
 
 IMPLEMENT_ASN1_FUNCTIONS(OCSP_SIGNATURE)
@@ -117,7 +117,7 @@ IMPLEMENT_ASN1_FUNCTIONS(OCSP_RESPONSE)
 
 ASN1_CHOICE(OCSP_RESPID) = {
 	   ASN1_EXP(OCSP_RESPID, value.byName, X509_NAME, 1),
-	   ASN1_EXP(OCSP_RESPID, value.byKey, ASN1_OCTET_STRING, 2)
+	   ASN1_IMP(OCSP_RESPID, value.byKey, ASN1_OCTET_STRING, 2)
 } ASN1_CHOICE_END(OCSP_RESPID)
 
 IMPLEMENT_ASN1_FUNCTIONS(OCSP_RESPID)

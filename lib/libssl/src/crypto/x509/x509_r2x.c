@@ -58,16 +58,22 @@
 
 #include <stdio.h>
 #include "cryptlib.h"
-#include <openssl/bn.h>
-#include <openssl/evp.h>
-#include <openssl/asn1.h>
-#include <openssl/x509.h>
-#include <openssl/objects.h>
-#include <openssl/buffer.h>
+#include "bn.h"
+#include "evp.h"
+#include "asn1.h"
+#include "x509.h"
+#include "objects.h"
+#include "buffer.h"
+#include "pem.h"
 
-X509 *X509_REQ_to_X509(X509_REQ *r, int days, EVP_PKEY *pkey)
+X509 *X509_REQ_to_X509(r,days,pkey)
+X509_REQ *r;
+int days;
+EVP_PKEY *pkey;
 	{
 	X509 *ret=NULL;
+	int er=1;
+	X509_REQ_INFO *ri=NULL;
 	X509_CINF *xi=NULL;
 	X509_NAME *xn;
 
@@ -78,36 +84,38 @@ X509 *X509_REQ_to_X509(X509_REQ *r, int days, EVP_PKEY *pkey)
 		}
 
 	/* duplicate the request */
+	ri=(X509_REQ_INFO *)ASN1_dup(i2d_X509_REQ_INFO,
+		(char *(*)())d2i_X509_REQ_INFO,(char *)r->req_info);
+	if (ri == NULL) goto err;
+
 	xi=ret->cert_info;
 
-	if (sk_X509_ATTRIBUTE_num(r->req_info->attributes) != 0)
+	if (sk_num(ri->attributes) != 0)
 		{
-		if ((xi->version=M_ASN1_INTEGER_new()) == NULL) goto err;
+		if ((xi->version=ASN1_INTEGER_new()) == NULL) goto err;
 		if (!ASN1_INTEGER_set(xi->version,2)) goto err;
 /*		xi->extensions=ri->attributes; <- bad, should not ever be done
 		ri->attributes=NULL; */
 		}
 
 	xn=X509_REQ_get_subject_name(r);
-	if (X509_set_subject_name(ret,X509_NAME_dup(xn)) == 0)
-		goto err;
-	if (X509_set_issuer_name(ret,X509_NAME_dup(xn)) == 0)
-		goto err;
+	X509_set_subject_name(ret,X509_NAME_dup(xn));
+	X509_set_issuer_name(ret,X509_NAME_dup(xn));
 
-	if (X509_gmtime_adj(xi->validity->notBefore,0) == NULL)
-		goto err;
-	if (X509_gmtime_adj(xi->validity->notAfter,(long)60*60*24*days) == NULL)
-		goto err;
+	X509_gmtime_adj(xi->validity->notBefore,0);
+	X509_gmtime_adj(xi->validity->notAfter,(long)60*60*24*days);
 
 	X509_set_pubkey(ret,X509_REQ_get_pubkey(r));
 
 	if (!X509_sign(ret,pkey,EVP_md5()))
 		goto err;
-	if (0)
-		{
+	er=0;
 err:
+	if (er)
+		{
 		X509_free(ret);
-		ret=NULL;
+		X509_REQ_INFO_free(ri);
+		return(NULL);
 		}
 	return(ret);
 	}

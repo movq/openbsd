@@ -59,13 +59,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "../apps/apps.h"
-#include <openssl/buffer.h>
-#include <openssl/err.h>
-#include <openssl/evp.h>
-#include <openssl/objects.h>
-#include <openssl/x509.h>
-#include <openssl/pem.h>
+#include "apps.h"
+#include "buffer.h"
+#include "err.h"
+#include "evp.h"
+#include "objects.h"
+#include "x509.h"
+#include "pem.h"
 
 #undef SIZE
 #undef BSIZE
@@ -83,6 +83,7 @@ char **argv;
 	unsigned char *buff=NULL,*bufsize=NULL;
 	int bsize=BSIZE,verbose=0;
 	int ret=1,inl;
+	unsigned char key[24],iv[MD5_DIGEST_LENGTH];
 	char *str=NULL;
 	char *hkey=NULL,*hiv=NULL;
 	int enc=1,printkey=0,i,base64=0;
@@ -90,7 +91,8 @@ char **argv;
 	EVP_CIPHER *cipher=NULL,*c;
 	char *inf=NULL,*outf=NULL;
 	BIO *in=NULL,*out=NULL,*b64=NULL,*benc=NULL,*rbio=NULL,*wbio=NULL;
-#define PROG_NAME_SIZE  39
+#define PROG_NAME_SIZE  16
+        char pname[PROG_NAME_SIZE];
 
 
 	apps_startup();
@@ -175,11 +177,11 @@ bad:
 		if (verbose) BIO_printf(bio_err,"bufsize=%d\n",bsize);
 		}
 
-	strbuf=OPENSSL_malloc(SIZE);
-	buff=(unsigned char *)OPENSSL_malloc(EVP_ENCODE_LENGTH(bsize));
+	strbuf=Malloc(SIZE);
+	buff=(unsigned char *)Malloc(EVP_ENCODE_LENGTH(bsize));
 	if ((buff == NULL) || (strbuf == NULL))
 		{
-		BIO_printf(bio_err,"OPENSSL_malloc failure\n");
+		BIO_printf(bio_err,"Malloc failure\n");
 		goto end;
 		}
 
@@ -257,8 +259,8 @@ bad:
 		BIO_printf(bio_err,"bytes written:%8ld\n",BIO_number_written(out));
 		}
 end:
-	if (strbuf != NULL) OPENSSL_free(strbuf);
-	if (buff != NULL) OPENSSL_free(buff);
+	if (strbuf != NULL) Free(strbuf);
+	if (buff != NULL) Free(buff);
 	if (in != NULL) BIO_free(in);
 	if (out != NULL) BIO_free(out);
 	if (benc != NULL) BIO_free(benc);

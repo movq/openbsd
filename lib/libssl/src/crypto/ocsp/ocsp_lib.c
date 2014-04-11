@@ -69,7 +69,6 @@
 #include <openssl/pem.h>
 #include <openssl/x509v3.h>
 #include <openssl/ocsp.h>
-#include <openssl/asn1t.h>
 
 /* Convert a certificate and its issuer to an OCSP_CERTID */
 
@@ -113,7 +112,7 @@ OCSP_CERTID *OCSP_cert_id_new(const EVP_MD *dgst,
 	if (alg->algorithm != NULL) ASN1_OBJECT_free(alg->algorithm);
 	if ((nid = EVP_MD_type(dgst)) == NID_undef)
 	        {
-		OCSPerr(OCSP_F_OCSP_CERT_ID_NEW,OCSP_R_UNKNOWN_NID);
+		OCSPerr(OCSP_F_CERT_ID_NEW,OCSP_R_UNKNOWN_NID);
 		goto err;
 		}
 	if (!(alg->algorithm=OBJ_nid2obj(nid))) goto err;
@@ -124,8 +123,7 @@ OCSP_CERTID *OCSP_cert_id_new(const EVP_MD *dgst,
 	if (!(ASN1_OCTET_STRING_set(cid->issuerNameHash, md, i))) goto err;
 
 	/* Calculate the issuerKey hash, excluding tag and length */
-	if (!EVP_Digest(issuerKey->data, issuerKey->length, md, &i, dgst, NULL))
-		goto err;
+	EVP_Digest(issuerKey->data, issuerKey->length, md, &i, dgst, NULL);
 
 	if (!(ASN1_OCTET_STRING_set(cid->issuerKeyHash, md, i))) goto err;
 
@@ -136,7 +134,7 @@ OCSP_CERTID *OCSP_cert_id_new(const EVP_MD *dgst,
 		}
 	return cid;
 digerr:
-	OCSPerr(OCSP_F_OCSP_CERT_ID_NEW,OCSP_R_DIGEST_ERR);
+	OCSPerr(OCSP_F_CERT_ID_NEW,OCSP_R_DIGEST_ERR);
 err:
 	if (cid) OCSP_CERTID_free(cid);
 	return NULL;
@@ -171,13 +169,13 @@ int OCSP_parse_url(char *url, char **phost, char **pport, char **ppath, int *pss
 
 	char *host, *port;
 
-	*phost = NULL;
-	*pport = NULL;
-	*ppath = NULL;
-
 	/* dup the buffer since we are going to mess with it */
 	buf = BUF_strdup(url);
 	if (!buf) goto mem_err;
+
+	*phost = NULL;
+	*pport = NULL;
+	*ppath = NULL;
 
 	/* Check for initial colon */
 	p = strchr(buf, ':');
@@ -255,12 +253,9 @@ int OCSP_parse_url(char *url, char **phost, char **pport, char **ppath, int *pss
 
 
 	err:
-	if (buf) OPENSSL_free(buf);
 	if (*ppath) OPENSSL_free(*ppath);
 	if (*pport) OPENSSL_free(*pport);
 	if (*phost) OPENSSL_free(*phost);
 	return 0;
 
 	}
-
-IMPLEMENT_ASN1_DUP_FUNCTION(OCSP_CERTID)

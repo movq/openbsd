@@ -1,6 +1,9 @@
 #!/bin/sh
 
-cmd='../util/shlib_wrap.sh ../apps/openssl pkcs7'
+PATH=../apps:$PATH
+export PATH
+
+cmd='../apps/ssleay pkcs7'
 
 if [ "$1"x != "x" ]; then
 	t=$1
@@ -8,7 +11,7 @@ else
 	t=pkcs7-1.pem
 fi
 
-echo "testing pkcs7 conversions (2)"
+echo testing pkcs7 conversions
 cp $t fff.p
 
 echo "p -> d"

@@ -59,20 +59,31 @@
 #include <stdio.h>
 #include <errno.h>
 #include "cryptlib.h"
-#include <openssl/rand.h>
-#include <openssl/bio.h>
+#include "rand.h"
+#include "bio.h"
+#include "evp.h"
 
 /* BIO_put and BIO_get both add to the digest,
  * BIO_gets returns the digest */
 
-static int nbiof_write(BIO *h,const char *buf,int num);
+#ifndef NOPROTO
+static int nbiof_write(BIO *h,char *buf,int num);
 static int nbiof_read(BIO *h,char *buf,int size);
-static int nbiof_puts(BIO *h,const char *str);
+static int nbiof_puts(BIO *h,char *str);
 static int nbiof_gets(BIO *h,char *str,int size);
-static long nbiof_ctrl(BIO *h,int cmd,long arg1,void *arg2);
+static long nbiof_ctrl(BIO *h,int cmd,long arg1,char *arg2);
 static int nbiof_new(BIO *h);
 static int nbiof_free(BIO *data);
-static long nbiof_callback_ctrl(BIO *h,int cmd,bio_info_cb *fp);
+#else
+static int nbiof_write();
+static int nbiof_read();
+static int nbiof_puts();
+static int nbiof_gets();
+static long nbiof_ctrl();
+static int nbiof_new();
+static int nbiof_free();
+#endif
+
 typedef struct nbio_test_st
 	{
 	/* only set if we sent a 'should retry' error */
@@ -91,19 +102,19 @@ static BIO_METHOD methods_nbiof=
 	nbiof_ctrl,
 	nbiof_new,
 	nbiof_free,
-	nbiof_callback_ctrl,
 	};
 
-BIO_METHOD *BIO_f_nbio_test(void)
+BIO_METHOD *BIO_f_nbio_test()
 	{
 	return(&methods_nbiof);
 	}
 
-static int nbiof_new(BIO *bi)
+static int nbiof_new(bi)
+BIO *bi;
 	{
 	NBIO_TEST *nt;
 
-	if (!(nt=(NBIO_TEST *)OPENSSL_malloc(sizeof(NBIO_TEST)))) return(0);
+	nt=(NBIO_TEST *)Malloc(sizeof(NBIO_TEST));
 	nt->lrn= -1;
 	nt->lwn= -1;
 	bi->ptr=(char *)nt;
@@ -112,31 +123,37 @@ static int nbiof_new(BIO *bi)
 	return(1);
 	}
 
-static int nbiof_free(BIO *a)
+static int nbiof_free(a)
+BIO *a;
 	{
 	if (a == NULL) return(0);
 	if (a->ptr != NULL)
-		OPENSSL_free(a->ptr);
+		Free(a->ptr);
 	a->ptr=NULL;
 	a->init=0;
 	a->flags=0;
 	return(1);
 	}
 	
-static int nbiof_read(BIO *b, char *out, int outl)
+static int nbiof_read(b,out,outl)
+BIO *b;
+char *out;
+int outl;
 	{
+	NBIO_TEST *nt;
 	int ret=0;
-#if 1
+#if 0
 	int num;
 	unsigned char n;
 #endif
 
 	if (out == NULL) return(0);
 	if (b->next_bio == NULL) return(0);
+	nt=(NBIO_TEST *)b->ptr;
 
 	BIO_clear_retry_flags(b);
-#if 1
-	RAND_pseudo_bytes(&n,1);
+#if 0
+	RAND_bytes(&n,1);
 	num=(n&0x07);
 
 	if (outl > num) outl=num;
@@ -156,7 +173,10 @@ static int nbiof_read(BIO *b, char *out, int outl)
 	return(ret);
 	}
 
-static int nbiof_write(BIO *b, const char *in, int inl)
+static int nbiof_write(b,in,inl)
+BIO *b;
+char *in;
+int inl;
 	{
 	NBIO_TEST *nt;
 	int ret=0;
@@ -177,7 +197,7 @@ static int nbiof_write(BIO *b, const char *in, int inl)
 		}
 	else
 		{
-		RAND_pseudo_bytes(&n,1);
+		RAND_bytes(&n,1);
 		num=(n&7);
 		}
 
@@ -201,7 +221,11 @@ static int nbiof_write(BIO *b, const char *in, int inl)
 	return(ret);
 	}
 
-static long nbiof_ctrl(BIO *b, int cmd, long num, void *ptr)
+static long nbiof_ctrl(b,cmd,num,ptr)
+BIO *b;
+int cmd;
+long num;
+char *ptr;
 	{
 	long ret;
 
@@ -223,28 +247,19 @@ static long nbiof_ctrl(BIO *b, int cmd, long num, void *ptr)
 	return(ret);
 	}
 
-static long nbiof_callback_ctrl(BIO *b, int cmd, bio_info_cb *fp)
-	{
-	long ret=1;
-
-	if (b->next_bio == NULL) return(0);
-	switch (cmd)
-		{
-	default:
-		ret=BIO_callback_ctrl(b->next_bio,cmd,fp);
-		break;
-		}
-	return(ret);
-	}
-
-static int nbiof_gets(BIO *bp, char *buf, int size)
+static int nbiof_gets(bp,buf,size)
+BIO *bp;
+char *buf;
+int size;
 	{
 	if (bp->next_bio == NULL) return(0);
 	return(BIO_gets(bp->next_bio,buf,size));
 	}
 
 
-static int nbiof_puts(BIO *bp, const char *str)
+static int nbiof_puts(bp,str)
+BIO *bp;
+char *str;
 	{
 	if (bp->next_bio == NULL) return(0);
 	return(BIO_puts(bp->next_bio,str));

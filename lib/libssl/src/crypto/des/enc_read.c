@@ -58,65 +58,46 @@
 
 #include <stdio.h>
 #include <errno.h>
-#include "cryptlib.h"
 #include "des_locl.h"
 
 /* This has some uglies in it but it works - even over sockets. */
 /*extern int errno;*/
-OPENSSL_IMPLEMENT_GLOBAL(int,DES_rw_mode,DES_PCBC_MODE)
+int des_rw_mode=DES_PCBC_MODE;
 
-
-/*
- * WARNINGS:
- *
- *  -  The data format used by DES_enc_write() and DES_enc_read()
- *     has a cryptographic weakness: When asked to write more
- *     than MAXWRITE bytes, DES_enc_write will split the data
- *     into several chunks that are all encrypted
- *     using the same IV.  So don't use these functions unless you
- *     are sure you know what you do (in which case you might
- *     not want to use them anyway).
- *
- *  -  This code cannot handle non-blocking sockets.
- *
- *  -  This function uses an internal state and thus cannot be
- *     used on multiple files.
- */
-
-
-int DES_enc_read(int fd, void *buf, int len, DES_key_schedule *sched,
-		 DES_cblock *iv)
+int des_enc_read(fd, buf, len, sched, iv)
+int fd;
+char *buf;
+int len;
+des_key_schedule sched;
+des_cblock (*iv);
 	{
-#if defined(OPENSSL_NO_POSIX_IO)
-	return(0);
-#else
 	/* data to be unencrypted */
 	int net_num=0;
 	static unsigned char *net=NULL;
 	/* extra unencrypted data 
 	 * for when a block of 100 comes in but is des_read one byte at
 	 * a time. */
-	static unsigned char *unnet=NULL;
+	static char *unnet=NULL;
 	static int unnet_start=0;
 	static int unnet_left=0;
-	static unsigned char *tmpbuf=NULL;
+	static char *tmpbuf=NULL;
 	int i;
 	long num=0,rnum;
 	unsigned char *p;
 
 	if (tmpbuf == NULL)
 		{
-		tmpbuf=OPENSSL_malloc(BSIZE);
+		tmpbuf=(char *)malloc(BSIZE);
 		if (tmpbuf == NULL) return(-1);
 		}
 	if (net == NULL)
 		{
-		net=OPENSSL_malloc(BSIZE);
+		net=(unsigned char *)malloc(BSIZE);
 		if (net == NULL) return(-1);
 		}
 	if (unnet == NULL)
 		{
-		unnet=OPENSSL_malloc(BSIZE);
+		unnet=(char *)malloc(BSIZE);
 		if (unnet == NULL) return(-1);
 		}
 	/* left over data from last decrypt */
@@ -128,7 +109,7 @@ int DES_enc_read(int fd, void *buf, int len, DES_key_schedule *sched,
 			 * with the number of bytes we have - should always
 			 * check the return value */
 			memcpy(buf,&(unnet[unnet_start]),
-			       unnet_left);
+				(unsigned int)unnet_left);
 			/* eay 26/08/92 I had the next 2 lines
 			 * reversed :-( */
 			i=unnet_left;
@@ -136,7 +117,7 @@ int DES_enc_read(int fd, void *buf, int len, DES_key_schedule *sched,
 			}
 		else
 			{
-			memcpy(buf,&(unnet[unnet_start]),len);
+			memcpy(buf,&(unnet[unnet_start]),(unsigned int)len);
 			unnet_start+=len;
 			unnet_left-=len;
 			i=len;
@@ -150,11 +131,7 @@ int DES_enc_read(int fd, void *buf, int len, DES_key_schedule *sched,
 	/* first - get the length */
 	while (net_num < HDRSIZE) 
 		{
-#ifndef OPENSSL_SYS_WIN32
-		i=read(fd,(void *)&(net[net_num]),HDRSIZE-net_num);
-#else
-		i=_read(fd,(void *)&(net[net_num]),HDRSIZE-net_num);
-#endif
+		i=read(fd,&(net[net_num]),(unsigned int)HDRSIZE-net_num);
 #ifdef EINTR
 		if ((i == -1) && (errno == EINTR)) continue;
 #endif
@@ -176,11 +153,7 @@ int DES_enc_read(int fd, void *buf, int len, DES_key_schedule *sched,
 	net_num=0;
 	while (net_num < rnum)
 		{
-#ifndef OPENSSL_SYS_WIN32
-		i=read(fd,(void *)&(net[net_num]),rnum-net_num);
-#else
-		i=_read(fd,(void *)&(net[net_num]),rnum-net_num);
-#endif
+		i=read(fd,&(net[net_num]),(unsigned int)rnum-net_num);
 #ifdef EINTR
 		if ((i == -1) && (errno == EINTR)) continue;
 #endif
@@ -191,13 +164,15 @@ int DES_enc_read(int fd, void *buf, int len, DES_key_schedule *sched,
 	/* Check if there will be data left over. */
 	if (len < num)
 		{
-		if (DES_rw_mode & DES_PCBC_MODE)
-			DES_pcbc_encrypt(net,unnet,num,sched,iv,DES_DECRYPT);
+		if (des_rw_mode & DES_PCBC_MODE)
+			des_pcbc_encrypt((des_cblock *)net,(des_cblock *)unnet,
+				num,sched,iv,DES_DECRYPT);
 		else
-			DES_cbc_encrypt(net,unnet,num,sched,iv,DES_DECRYPT);
-		memcpy(buf,unnet,len);
+			des_cbc_encrypt((des_cblock *)net,(des_cblock *)unnet,
+				num,sched,iv,DES_DECRYPT);
+		memcpy(buf,unnet,(unsigned int)len);
 		unnet_start=len;
-		unnet_left=num-len;
+		unnet_left=(int)num-len;
 
 		/* The following line is done because we return num
 		 * as the number of bytes read. */
@@ -213,28 +188,31 @@ int DES_enc_read(int fd, void *buf, int len, DES_key_schedule *sched,
 		if (len < rnum)
 			{
 
-			if (DES_rw_mode & DES_PCBC_MODE)
-				DES_pcbc_encrypt(net,tmpbuf,num,sched,iv,
-						 DES_DECRYPT);
+			if (des_rw_mode & DES_PCBC_MODE)
+				des_pcbc_encrypt((des_cblock *)net,
+					(des_cblock *)tmpbuf,
+					num,sched,iv,DES_DECRYPT);
 			else
-				DES_cbc_encrypt(net,tmpbuf,num,sched,iv,
-						DES_DECRYPT);
+				des_cbc_encrypt((des_cblock *)net,
+					(des_cblock *)tmpbuf,
+					num,sched,iv,DES_DECRYPT);
 
 			/* eay 26/08/92 fix a bug that returned more
 			 * bytes than you asked for (returned len bytes :-( */
-			memcpy(buf,tmpbuf,num);
+			memcpy(buf,tmpbuf,(unsigned int)num);
 			}
 		else
 			{
-			if (DES_rw_mode & DES_PCBC_MODE)
-				DES_pcbc_encrypt(net,buf,num,sched,iv,
-						 DES_DECRYPT);
+			if (des_rw_mode & DES_PCBC_MODE)
+				des_pcbc_encrypt((des_cblock *)net,
+					(des_cblock *)buf,num,sched,iv,
+					DES_DECRYPT);
 			else
-				DES_cbc_encrypt(net,buf,num,sched,iv,
-						DES_DECRYPT);
+				des_cbc_encrypt((des_cblock *)net,
+					(des_cblock *)buf,num,sched,iv,
+					DES_DECRYPT);
 			}
 		}
-	return num;
-#endif /* OPENSSL_NO_POSIX_IO */
+	return((int)num);
 	}
 

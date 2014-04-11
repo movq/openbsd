@@ -55,13 +55,11 @@
  * Hudson (tjh@cryptsoft.com).
  *
  */
-/* ====================================================================
- * Copyright 2002 Sun Microsystems, Inc. ALL RIGHTS RESERVED.
- * ECDH support in OpenSSL originally developed by 
- * SUN MICROSYSTEMS, INC., and contributed to the OpenSSL project.
- */
 
+#include <openssl/crypto.h>
+#include "cryptlib.h"
 #include "eng_int.h"
+#include <openssl/engine.h>
 
 /* The linked-list of pointers to engine types. engine_list_head
  * incorporates an implicit structural reference but engine_list_tail
@@ -193,14 +191,14 @@ ENGINE *ENGINE_get_first(void)
 	{
 	ENGINE *ret;
 
-	CRYPTO_w_lock(CRYPTO_LOCK_ENGINE);
+	CRYPTO_r_lock(CRYPTO_LOCK_ENGINE);
 	ret = engine_list_head;
 	if(ret)
 		{
 		ret->struct_ref++;
 		engine_ref_debug(ret, 0, 1)
 		}
-	CRYPTO_w_unlock(CRYPTO_LOCK_ENGINE);
+	CRYPTO_r_unlock(CRYPTO_LOCK_ENGINE);
 	return ret;
 	}
 
@@ -208,14 +206,14 @@ ENGINE *ENGINE_get_last(void)
 	{
 	ENGINE *ret;
 
-	CRYPTO_w_lock(CRYPTO_LOCK_ENGINE);
-	ret = engine_list_tail;
+	CRYPTO_r_lock(CRYPTO_LOCK_ENGINE);
+		ret = engine_list_tail;
 	if(ret)
 		{
 		ret->struct_ref++;
 		engine_ref_debug(ret, 0, 1)
 		}
-	CRYPTO_w_unlock(CRYPTO_LOCK_ENGINE);
+	CRYPTO_r_unlock(CRYPTO_LOCK_ENGINE);
 	return ret;
 	}
 
@@ -229,7 +227,7 @@ ENGINE *ENGINE_get_next(ENGINE *e)
 			ERR_R_PASSED_NULL_PARAMETER);
 		return 0;
 		}
-	CRYPTO_w_lock(CRYPTO_LOCK_ENGINE);
+	CRYPTO_r_lock(CRYPTO_LOCK_ENGINE);
 	ret = e->next;
 	if(ret)
 		{
@@ -237,7 +235,7 @@ ENGINE *ENGINE_get_next(ENGINE *e)
 		ret->struct_ref++;
 		engine_ref_debug(ret, 0, 1)
 		}
-	CRYPTO_w_unlock(CRYPTO_LOCK_ENGINE);
+	CRYPTO_r_unlock(CRYPTO_LOCK_ENGINE);
 	/* Release the structural reference to the previous ENGINE */
 	ENGINE_free(e);
 	return ret;
@@ -252,7 +250,7 @@ ENGINE *ENGINE_get_prev(ENGINE *e)
 			ERR_R_PASSED_NULL_PARAMETER);
 		return 0;
 		}
-	CRYPTO_w_lock(CRYPTO_LOCK_ENGINE);
+	CRYPTO_r_lock(CRYPTO_LOCK_ENGINE);
 	ret = e->prev;
 	if(ret)
 		{
@@ -260,7 +258,7 @@ ENGINE *ENGINE_get_prev(ENGINE *e)
 		ret->struct_ref++;
 		engine_ref_debug(ret, 0, 1)
 		}
-	CRYPTO_w_unlock(CRYPTO_LOCK_ENGINE);
+	CRYPTO_r_unlock(CRYPTO_LOCK_ENGINE);
 	/* Release the structural reference to the previous ENGINE */
 	ENGINE_free(e);
 	return ret;
@@ -326,17 +324,9 @@ static void engine_cpy(ENGINE *dest, const ENGINE *src)
 #ifndef OPENSSL_NO_DH
 	dest->dh_meth = src->dh_meth;
 #endif
-#ifndef OPENSSL_NO_ECDH
-	dest->ecdh_meth = src->ecdh_meth;
-#endif
-#ifndef OPENSSL_NO_ECDSA
-	dest->ecdsa_meth = src->ecdsa_meth;
-#endif
 	dest->rand_meth = src->rand_meth;
-	dest->store_meth = src->store_meth;
 	dest->ciphers = src->ciphers;
 	dest->digests = src->digests;
-	dest->pkey_meths = src->pkey_meths;
 	dest->destroy = src->destroy;
 	dest->init = src->init;
 	dest->finish = src->finish;
@@ -350,16 +340,15 @@ static void engine_cpy(ENGINE *dest, const ENGINE *src)
 ENGINE *ENGINE_by_id(const char *id)
 	{
 	ENGINE *iterator;
-	char *load_dir = NULL;
 	if(id == NULL)
 		{
 		ENGINEerr(ENGINE_F_ENGINE_BY_ID,
 			ERR_R_PASSED_NULL_PARAMETER);
 		return NULL;
 		}
-	CRYPTO_w_lock(CRYPTO_LOCK_ENGINE);
+	CRYPTO_r_lock(CRYPTO_LOCK_ENGINE);
 	iterator = engine_list_head;
-	while(iterator && (strcmp(id, iterator->id) != 0))
+	while(iterator && (strcmp(id, iterator->id) != 0)) 
 		iterator = iterator->next;
 	if(iterator)
 		{
@@ -383,8 +372,7 @@ ENGINE *ENGINE_by_id(const char *id)
 			engine_ref_debug(iterator, 0, 1)
 			}
 		}
-	CRYPTO_w_unlock(CRYPTO_LOCK_ENGINE);
-#if 0
+	CRYPTO_r_unlock(CRYPTO_LOCK_ENGINE);
 	if(iterator == NULL)
 		{
 		ENGINEerr(ENGINE_F_ENGINE_BY_ID,
@@ -392,42 +380,4 @@ ENGINE *ENGINE_by_id(const char *id)
 		ERR_add_error_data(2, "id=", id);
 		}
 	return iterator;
-#else
-	/* EEK! Experimental code starts */
-	if(iterator) return iterator;
-	/* Prevent infinite recusrion if we're looking for the dynamic engine. */
-	if (strcmp(id, "dynamic"))
-		{
-#ifdef OPENSSL_SYS_VMS
-		if((load_dir = getenv("OPENSSL_ENGINES")) == 0) load_dir = "SSLROOT:[ENGINES]";
-#else
-		if((load_dir = getenv("OPENSSL_ENGINES")) == 0) load_dir = ENGINESDIR;
-#endif
-		iterator = ENGINE_by_id("dynamic");
-		if(!iterator || !ENGINE_ctrl_cmd_string(iterator, "ID", id, 0) ||
-				!ENGINE_ctrl_cmd_string(iterator, "DIR_LOAD", "2", 0) ||
-				!ENGINE_ctrl_cmd_string(iterator, "DIR_ADD",
-					load_dir, 0) ||
-				!ENGINE_ctrl_cmd_string(iterator, "LOAD", NULL, 0))
-				goto notfound;
-		return iterator;
-		}
-notfound:
-	ENGINE_free(iterator);
-	ENGINEerr(ENGINE_F_ENGINE_BY_ID,ENGINE_R_NO_SUCH_ENGINE);
-	ERR_add_error_data(2, "id=", id);
-	return NULL;
-	/* EEK! Experimental code ends */
-#endif
-	}
-
-int ENGINE_up_ref(ENGINE *e)
-	{
-	if (e == NULL)
-		{
-		ENGINEerr(ENGINE_F_ENGINE_UP_REF,ERR_R_PASSED_NULL_PARAMETER);
-		return 0;
-		}
-	CRYPTO_add(&e->struct_ref,1,CRYPTO_LOCK_ENGINE);
-	return 1;
 	}

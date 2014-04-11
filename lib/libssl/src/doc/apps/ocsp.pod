@@ -11,10 +11,6 @@ B<openssl> B<ocsp>
 [B<-issuer file>]
 [B<-cert file>]
 [B<-serial n>]
-[B<-signer file>]
-[B<-signkey file>]
-[B<-sign_other file>]
-[B<-no_certs>]
 [B<-req_text>]
 [B<-resp_text>]
 [B<-text>]
@@ -24,36 +20,26 @@ B<openssl> B<ocsp>
 [B<-respin file>]
 [B<-nonce>]
 [B<-no_nonce>]
-[B<-url URL>]
+[B<-url responder_url>]
 [B<-host host:n>]
 [B<-path>]
-[B<-CApath dir>]
+[B<-CApath file>]
 [B<-CAfile file>]
 [B<-VAfile file>]
-[B<-validity_period n>]
-[B<-status_age n>]
+[B<-verify_certs file>]
 [B<-noverify>]
-[B<-verify_other file>]
 [B<-trust_other>]
 [B<-no_intern>]
-[B<-no_signature_verify>]
+[B<-no_sig_verify>]
 [B<-no_cert_verify>]
 [B<-no_chain>]
 [B<-no_cert_checks>]
-[B<-port num>]
-[B<-index file>]
-[B<-CA file>]
-[B<-rsigner file>]
-[B<-rkey file>]
-[B<-rother file>]
-[B<-resp_no_certs>]
-[B<-nmin n>]
-[B<-ndays n>]
-[B<-resp_key_id>]
-[B<-nrequest n>]
-[B<-md5|-sha1|...>]
+[B<-validity_period nsec>]
+[B<-status_age nsec>]
 
 =head1 DESCRIPTION
+
+B<WARNING: this documentation is preliminary and subject to change.>
 
 The Online Certificate Status Protocol (OCSP) enables applications to
 determine the (revocation) state of an identified certificate (RFC 2560).
@@ -74,7 +60,7 @@ specify output filename, default is standard output.
 
 This specifies the current issuer certificate. This option can be used
 multiple times. The certificate specified in B<filename> must be in
-PEM format. This option B<MUST> come before any B<-cert> options.
+PEM format.
 
 =item B<-cert filename>
 
@@ -96,10 +82,6 @@ option and the private key specified by the B<signkey> option. If
 the B<signkey> option is not present then the private key is read
 from the same file as the certificate. If neither option is specified then
 the OCSP request is not signed.
-
-=item B<-sign_other filename>
-
-Additional certificates to include in the signed request.
 
 =item B<-nonce>, B<-no_nonce>
 
@@ -138,7 +120,7 @@ or "/" by default.
 file or pathname containing trusted CA certificates. These are used to verify
 the signature on the OCSP response.
 
-=item B<-verify_other file>
+=item B<-verify_certs file>
 
 file containing additional certificates to search when attempting to locate
 the OCSP response signing certificate. Some responders omit the actual signer's
@@ -147,7 +129,7 @@ certificate in such cases.
 
 =item B<-trust_other>
 
-the certificates specified by the B<-verify_other> option should be explicitly
+the certificates specified by the B<-verify_certs> option should be explicitly
 trusted and no additional checks will be performed on them. This is useful
 when the complete responder certificate chain is not available or trusting a
 root CA is not appropriate.
@@ -155,7 +137,7 @@ root CA is not appropriate.
 =item B<-VAfile file>
 
 file containing explicitly trusted responder certificates. Equivalent to the
-B<-verify_other> and B<-trust_other> options.
+B<-verify_certs> and B<-trust_other> options.
 
 =item B<-noverify>
 
@@ -167,9 +149,9 @@ of the responders certificate.
 
 ignore certificates contained in the OCSP response when searching for the
 signers certificate. With this option the signers certificate must be specified
-with either the B<-verify_other> or B<-VAfile> options.
+with either the B<-verify_certs> or B<-VAfile> options.
 
-=item B<-no_signature_verify>
+=item B<-no_sig_verify>
 
 don't check the signature on the OCSP response. Since this option tolerates invalid
 signatures on OCSP responses it will normally only be used for testing purposes.
@@ -206,11 +188,6 @@ If the B<notAfter> time is omitted from a response then this means that new stat
 information is immediately available. In this case the age of the B<notBefore> field
 is checked to see it is not older than B<age> seconds old. By default this additional
 check is not performed.
-
-=item B<-md5|-sha1|-sha256|-ripemod160|...>
-
-this option sets digest algorithm to use for certificate identification
-in the OCSP request. By default SHA-1 is used. 
 
 =back
 

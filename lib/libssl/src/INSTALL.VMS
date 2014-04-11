@@ -8,54 +8,13 @@ Intro:
 
 This file is divided in the following parts:
 
-  Requirements			- Mandatory reading.
-  Checking the distribution	- Mandatory reading.
   Compilation			- Mandatory reading.
-  Logical names			- Mandatory reading.
   Test				- Mandatory reading.
   Installation			- Mandatory reading.
   Backward portability		- Read if it's an issue.
   Possible bugs or quirks	- A few warnings on things that
 				  may go wrong or may surprise you.
-  TODO				- Things that are to come.
-
-
-Requirements:
-=============
-
-To build and install OpenSSL, you will need:
-
- * DEC C or some other ANSI C compiler.  VAX C is *not* supported.
-   [Note: OpenSSL has only been tested with DEC C.  Compiling with 
-    a different ANSI C compiler may require some work]
-
-Checking the distribution:
-==========================
-
-There have been reports of places where the distribution didn't quite get
-through, for example if you've copied the tree from a NFS-mounted Unix
-mount point.
-
-The easiest way to check if everything got through as it should is to check
-for one of the following files:
-
-	[.CRYPTO]OPENSSLCONF.H_IN
-	[.CRYPTO]OPENSSLCONF_H.IN
-
-They should never exist both at once, but one of them should (preferably
-the first variant).  If you can't find any of those two, something went
-wrong.
-
-The best way to get a correct distribution is to download the gzipped tar
-file from ftp://ftp.openssl.org/source/, use GUNZIP to uncompress it and
-use VMSTAR to unpack the resulting tar file.
-
-GUNZIP is available in many places on the net.  One of the distribution
-points is the WKU software archive, ftp://ftp.wku.edu/vms/fileserv/ .
-
-VMSTAR is also available in many places on the net.  The recommended place
-to find information about it is http://www.free.lp.se/vmstar/ .
-
+  Report			- How to get in touch with me.
 
 Compilation:
 ============
@@ -69,29 +28,35 @@ for a command procedure name xxx-LIB.COM (in the library directories)
 or MAKExxx.COM (in the program directories) and read the comments at
 the top to understand how to use them.  However, if you want to
 compile all you can get, the simplest is to use MAKEVMS.COM in the top
-directory.  The syntax is the following:
+directory.  The syntax is trhe following:
 
-  @MAKEVMS <option> <bits> <debug-p> [<compiler>]
+  @MAKEVMS <option> <rsaref-p> <debug-p> [<compiler>]
 
 <option> must be one of the following:
 
       ALL       Just build "everything".
-      CONFIG    Just build the "[.CRYPTO]OPENSSLCONF.H" file.
-      BUILDINF  Just build the "[.INCLUDE]BUILDINF.H" file.
+      DATE      Just build the "[.INCLUDE]DATE.H" file.
       SOFTLINKS Just copies some files, to simulate Unix soft links.
-      BUILDALL  Same as ALL, except CONFIG, BUILDINF and SOFTLINKS aren't done.
       RSAREF    Just build the "[.xxx.EXE.RSAREF]LIBRSAGLUE.OLB" library.
       CRYPTO    Just build the "[.xxx.EXE.CRYPTO]LIBCRYPTO.OLB" library.
       SSL       Just build the "[.xxx.EXE.SSL]LIBSSL.OLB" library.
       SSL_TASK  Just build the "[.xxx.EXE.SSL]SSL_TASK.EXE" program.
-      TEST      Just build the "[.xxx.EXE.TEST]" test programs for OpenSSL.
-      APPS      Just build the "[.xxx.EXE.APPS]" application programs for OpenSSL.
+      TEST      Just build the "test" programs for OpenSSL.
+      APPS      Just build the "application" programs for OpenSSL.
 
-<bits> must be one of the following:
+<rsaref-p> must be one of the following:
 
-      ""        compile using default pointer size
-      32        compile using 32 bit pointer size
-      64        compile using 64 bit pointer size
+      RSAREF    compile using the RSAREF Library
+      NORSAREF  compile without using RSAREF
+
+Note: The RSAREF libraries are NOT INCLUDED and you have to
+      download it from "ftp://ftp.rsa.com/rsaref".  You have to
+      get the ".tar-Z" file as the ".zip" file dosen't have the
+      directory structure stored.  You have to extract the file
+      into the [.RSAREF] directory as that is where the scripts
+      will look for the files.
+
+Note 2: I have never done this, so I've no idea if it works or not.
 
 <debug-p> must be one of the following:
 
@@ -100,45 +65,27 @@ directory.  The syntax is the following:
 
 <compiler> must be one of the following:
 
+      VAXC      For VAX C.
       DECC      For DEC C.
       GNUC      For GNU C.
 
 
-You will find the crypto library in [.xxx.EXE.CRYPTO] (where xxx is VAX,
-ALPHA or IA64), called SSL_LIBCRYPTO32.OLB or SSL_LIBCRYPTO.OLB depending
-on how it was built.  You will find the SSL library in [.xxx.EXE.SSL],
-named SSL_LIBSSL32.OLB or SSL_LIBSSL.OLB, and you will find a bunch of
-useful programs in [.xxx.EXE.APPS].  However, these shouldn't be used
-right off unless it's just to test them.  For production use, make sure
-you install first, see Installation below.
+You will find the crypto library in [.xxx.EXE.CRYPTO], called LIBCRYPTO.OLB,
+where xxx is VAX or AXP.  You will find the SSL library in [.xxx.EXE.SSL],
+named LIBSSL.OLB, and you will find a bunch of useful programs in
+[.xxx.EXE.APPS].  However, these shouldn't be used right off unless it's
+just to test them.  For production use, make sure you install first, see
+Installation below.
 
-Note 1: Some programs in this package require a TCP/IP library.
+Note: Some programs in this package require a TCP/IP library.
 
 Note 2: if you want to compile the crypto library only, please make sure
-        you have at least done a @MAKEVMS CONFIG, a @MAKEVMS BUILDINF and
-        a @MAKEVMS SOFTLINKS.  A lot of things will break if you don't.
+        you have at least done a @MAKEVMS DATE and a @MAKEVMS SOFTLINKS.
+        A lot of things will break if you don't.
 
-
-Logical names:
-==============
-
-There are a few things that can't currently be given through the command
-line.  Instead, logical names are used.
-
-Currently, the logical names supported are:
-
-      OPENSSL_NO_ASM    with value YES, the assembler parts of OpenSSL will
-                        not be used.  Instead, plain C implementations are
-                        used.  This is good to try if something doesn't work.
-      OPENSSL_NO_'alg'  with value YES, the corresponding crypto algorithm
-                        will not be implemented.  Supported algorithms to
-                        do this with are: RSA, DSA, DH, MD2, MD4, MD5, RIPEMD,
-                        SHA, DES, MDC2, CR2, RC4, RC5, IDEA, BF, CAST, HMAC,
-                        SSL2.  So, for example, having the logical name
-                        OPENSSL_NO_RSA with the value YES means that the
-                        LIBCRYPTO.OLB library will not contain an RSA
-                        implementation.
-
+Note 3: Alpha users will get a number of informational messages when
+        compiling the [.asm]vms.mar file in the BN (bignum) part of
+        the crypto library.  These can be safely ignored.
 
 Test:
 =====
@@ -152,19 +99,16 @@ it's an ugly hack!) and rebuild. Please send a bug report to
 <openssl-bugs@openssl.org>, including the output of "openssl version -a"
 and of the failed test.
 
-
 Installation:
 =============
 
 Installation is easy, just do the following:
 
-  @INSTALL <root> <bits>
+  @INSTALL <root>
 
 <root> is the directory in which everything will be installed,
 subdirectories, libraries, header files, programs and startup command
 procedures.
-
-<bits> works the same way as for MAKEVMS.COM
 
 N.B.: INSTALL.COM builds a new directory structure, different from
 the directory tree where you have now build OpenSSL.
@@ -186,10 +130,6 @@ following command procedures:
         sets up the symbols to the applications.  Should be called
         from for example SYS$MANAGER:SYLOGIN.COM 
 
-  OPENSSL_UNDO.COM
-
-	deassigns the logical names created with OPENSSL_STARTUP.COM.
-
 The logical names that are set up are the following:
 
   SSLROOT       a dotted concealed logical name pointing at the
@@ -197,6 +137,7 @@ The logical names that are set up are the following:
 
   SSLCERTS      Initially an empty directory, this is the default
 		location for certificate files.
+  SSLMISC	Various scripts.
   SSLPRIVATE	Initially an empty directory, this is the default
 		location for private key files.
 
@@ -204,9 +145,8 @@ The logical names that are set up are the following:
 		programs.
   SSLINCLUDE    Contains the header files needed if you want to
 		compile programs with libcrypto or libssl.
-  SSLLIB        Contains the OpenSSL library files themselves:
-  		- SSL_LIBCRYPTO32.OLB and SSL_LIBSSL32.OLB or
-		- SSL_LIBCRYPTO.OLB and SSL_LIBSSL.OLB
+  SSLLIB        Contains the OpenSSL library files (LIBCRYPTO.OLB
+		and LIBSSL.OLB) themselves.
 
   OPENSSL	Same as SSLINCLUDE.  This is because the standard
 		way to include OpenSSL header files from version
@@ -217,7 +157,6 @@ The logical names that are set up are the following:
 		For more info on this issue, see the INSTALL. file
 		(the NOTE in section 4 of "Installation in Detail").
 		You don't need to "deleting old header files"!!!
-
 
 Backward portability:
 =====================
@@ -236,7 +175,7 @@ dependent on the OpenVMS version or the C library version, *and* you
 can use those macros to simulate older OpenVMS or C library versions,
 by defining the macros _VMS_V6_SOURCE, __VMS_VER and __CTRL_VER with
 correct values.  In the compilation scripts, I've provided the possibility
-for the user to influence the creation of such macros, through a bunch of
+for the user to influense the creation of such macros, through a bunch of
 symbols, all having names starting with USER_.  Here's the list of them:
 
   USER_CCFLAGS		 - Used to give additional qualifiers to the
@@ -258,7 +197,7 @@ following before you start compiling:
 The USER_CCDISABLEWARNINGS is there because otherwise, DEC C will complain
 that those macros have been changed.
 
-Note: Currently, this is only useful for library compilation.  The
+Note: Currently, this is only usefull for library compilation.  The
       programs will still be linked with the current version of the
       C library shareable image, and will thus complain if they are
       faced with an older version of the same C library shareable image.
@@ -271,6 +210,19 @@ Possible bugs or quirks:
 I'm not perfectly sure all the programs will use the SSLCERTS:
 directory by default, it may very well be that you have to give them
 extra arguments.  Please experiment.
+
+
+Report:
+=======
+
+I maintain a few mailinglists for bug reports and such on software that
+I develop/port/enhance/destroy.  Please look at http://www.free.lp.se/
+for further info.
+
+
+-- 
+Richard Levitte <richard@levitte.org>
+1999-03-09
 
 
 TODO:
@@ -290,4 +242,4 @@ have any ideas.
 
 --
 Richard Levitte <richard@levitte.org>
-2000-02-27, 2011-03-18
+1999-05-24

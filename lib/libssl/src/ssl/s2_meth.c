@@ -56,13 +56,12 @@
  * [including the GNU Public Licence.]
  */
 
-#include "ssl_locl.h"
-#ifndef OPENSSL_NO_SSL2
 #include <stdio.h>
-#include <openssl/objects.h>
+#include "objects.h"
+#include "ssl_locl.h"
 
-static const SSL_METHOD *ssl2_get_method(int ver);
-static const SSL_METHOD *ssl2_get_method(int ver)
+static SSL_METHOD *ssl2_get_method(ver)
+int ver;
 	{
 	if (ver == SSL2_VERSION)
 		return(SSLv2_method());
@@ -70,15 +69,20 @@ static const SSL_METHOD *ssl2_get_method(int ver)
 		return(NULL);
 	}
 
-IMPLEMENT_ssl2_meth_func(SSLv2_method,
-			 ssl2_accept,
-			 ssl2_connect,
-			 ssl2_get_method)
+SSL_METHOD *SSLv2_method()
+	{
+	static int init=1;
+	static SSL_METHOD SSLv2_data;
 
-#else /* !OPENSSL_NO_SSL2 */
+	if (init)
+		{
+		init=0;
+		memcpy((char *)&SSLv2_data,(char *)sslv2_base_method(),
+			sizeof(SSL_METHOD));
+		SSLv2_data.ssl_connect=ssl2_connect;
+		SSLv2_data.ssl_accept=ssl2_accept;
+		SSLv2_data.get_ssl_method=ssl2_get_method;
+		}
+	return(&SSLv2_data);
+	}
 
-# if PEDANTIC
-static void *dummy=&dummy;
-# endif
-
-#endif

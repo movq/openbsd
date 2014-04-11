@@ -58,81 +58,65 @@
 
 #include <stdio.h>
 #include "cryptlib.h"
+#include "evp.h"
+#include "objects.h"
 
-#ifndef OPENSSL_NO_DES
+#ifndef NOPROTO
+static void desx_cbc_init_key(EVP_CIPHER_CTX *ctx, unsigned char *key,
+	unsigned char *iv,int enc);
+static void desx_cbc_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
+	unsigned char *in, unsigned int inl);
+#else
+static void desx_cbc_init_key();
+static void desx_cbc_cipher();
+#endif
 
-#include <openssl/evp.h>
-#include <openssl/objects.h>
-#include "evp_locl.h"
-#include <openssl/des.h>
-
-static int desx_cbc_init_key(EVP_CIPHER_CTX *ctx, const unsigned char *key,
-			     const unsigned char *iv,int enc);
-static int desx_cbc_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
-			   const unsigned char *in, size_t inl);
-
-
-typedef struct
-    {
-    DES_key_schedule ks;/* key schedule */
-    DES_cblock inw;
-    DES_cblock outw;
-    } DESX_CBC_KEY;
-
-#define data(ctx) ((DESX_CBC_KEY *)(ctx)->cipher_data)
-
-static const EVP_CIPHER d_xcbc_cipher=
+static EVP_CIPHER d_xcbc_cipher=
 	{
 	NID_desx_cbc,
 	8,24,8,
-	EVP_CIPH_CBC_MODE,
 	desx_cbc_init_key,
 	desx_cbc_cipher,
 	NULL,
-	sizeof(DESX_CBC_KEY),
+	sizeof(EVP_CIPHER_CTX)-sizeof((((EVP_CIPHER_CTX *)NULL)->c))+
+		sizeof((((EVP_CIPHER_CTX *)NULL)->c.desx_cbc)),
 	EVP_CIPHER_set_asn1_iv,
 	EVP_CIPHER_get_asn1_iv,
-	NULL,
-	NULL
 	};
 
-const EVP_CIPHER *EVP_desx_cbc(void)
+EVP_CIPHER *EVP_desx_cbc()
 	{
 	return(&d_xcbc_cipher);
 	}
 	
-static int desx_cbc_init_key(EVP_CIPHER_CTX *ctx, const unsigned char *key,
-			     const unsigned char *iv, int enc)
+static void desx_cbc_init_key(ctx,key,iv,enc)
+EVP_CIPHER_CTX *ctx;
+unsigned char *key;
+unsigned char *iv;
+int enc;
 	{
-	DES_cblock *deskey = (DES_cblock *)key;
-
-	DES_set_key_unchecked(deskey,&data(ctx)->ks);
-	memcpy(&data(ctx)->inw[0],&key[8],8);
-	memcpy(&data(ctx)->outw[0],&key[16],8);
-
-	return 1;
-	}
-
-static int desx_cbc_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
-			   const unsigned char *in, size_t inl)
-	{
-	while (inl>=EVP_MAXCHUNK)
+	if (iv != NULL)
+		memcpy(&(ctx->oiv[0]),iv,8);
+	memcpy(&(ctx->iv[0]),&(ctx->oiv[0]),8);
+	if (key != NULL)
 		{
-		DES_xcbc_encrypt(in,out,(long)EVP_MAXCHUNK,&data(ctx)->ks,
-			 (DES_cblock *)&(ctx->iv[0]),
-			 &data(ctx)->inw,
-			 &data(ctx)->outw,
-			 ctx->encrypt);
-		inl-=EVP_MAXCHUNK;
-		in +=EVP_MAXCHUNK;
-		out+=EVP_MAXCHUNK;
+		des_set_key((des_cblock *)key,ctx->c.desx_cbc.ks);
+		memcpy(&(ctx->c.desx_cbc.inw[0]),&(key[8]),8);
+		memcpy(&(ctx->c.desx_cbc.outw[0]),&(key[16]),8);
 		}
-	if (inl)
-		DES_xcbc_encrypt(in,out,(long)inl,&data(ctx)->ks,
-			(DES_cblock *)&(ctx->iv[0]),
-			&data(ctx)->inw,
-			&data(ctx)->outw,
-			ctx->encrypt);
-	return 1;
 	}
-#endif
+
+static void desx_cbc_cipher(ctx,out,in,inl)
+EVP_CIPHER_CTX *ctx;
+unsigned char *out;
+unsigned char *in;
+unsigned int inl;
+	{
+	des_xcbc_encrypt(
+		(des_cblock *)in,(des_cblock *)out,
+		(long)inl, ctx->c.desx_cbc.ks,
+		(des_cblock *)&(ctx->iv[0]),
+		(des_cblock *)&(ctx->c.desx_cbc.inw[0]),
+		(des_cblock *)&(ctx->c.desx_cbc.outw[0]),
+		ctx->encrypt);
+	}

@@ -58,27 +58,23 @@
 
 #include <stdio.h>
 #include "cryptlib.h"
-#include <openssl/buffer.h>
-#include <openssl/asn1.h>
+#include "buffer.h"
+#include "x509.h"
 
-int i2a_ASN1_INTEGER(BIO *bp, ASN1_INTEGER *a)
+int i2a_ASN1_INTEGER(bp, a)
+BIO *bp;
+ASN1_INTEGER *a;
 	{
 	int i,n=0;
-	static const char *h="0123456789ABCDEF";
+	static char *h="0123456789ABCDEF";
 	char buf[2];
 
 	if (a == NULL) return(0);
 
-	if (a->type & V_ASN1_NEG)
-		{
-		if (BIO_write(bp, "-", 1) != 1) goto err;
-		n = 1;
-		}
-
 	if (a->length == 0)
 		{
 		if (BIO_write(bp,"00",2) != 2) goto err;
-		n += 2;
+		n=2;
 		}
 	else
 		{
@@ -100,7 +96,11 @@ err:
 	return(-1);
 	}
 
-int a2i_ASN1_INTEGER(BIO *bp, ASN1_INTEGER *bs, char *buf, int size)
+int a2i_ASN1_INTEGER(bp,bs,buf,size)
+BIO *bp;
+ASN1_INTEGER *bs;
+char *buf;
+int size;
 	{
 	int ret=0;
 	int i,j,k,m,n,again,bufsize;
@@ -123,18 +123,9 @@ int a2i_ASN1_INTEGER(BIO *bp, ASN1_INTEGER *bs, char *buf, int size)
 
 		for (j=0; j<i; j++)
 			{
-#ifndef CHARSET_EBCDIC
 			if (!(	((buf[j] >= '0') && (buf[j] <= '9')) ||
 				((buf[j] >= 'a') && (buf[j] <= 'f')) ||
 				((buf[j] >= 'A') && (buf[j] <= 'F'))))
-#else
-			/* This #ifdef is not strictly necessary, since
-			 * the characters A...F a...f 0...9 are contiguous
-			 * (yes, even in EBCDIC - but not the whole alphabet).
-			 * Nevertheless, isxdigit() is faster.
-			 */
-			if (!isxdigit(buf[j]))
-#endif
 				{
 				i=j;
 				break;
@@ -166,14 +157,15 @@ int a2i_ASN1_INTEGER(BIO *bp, ASN1_INTEGER *bs, char *buf, int size)
 		if (num+i > slen)
 			{
 			if (s == NULL)
-				sp=(unsigned char *)OPENSSL_malloc(
+				sp=(unsigned char *)Malloc(
 					(unsigned int)num+i*2);
 			else
-				sp=OPENSSL_realloc_clean(s,slen,num+i*2);
+				sp=(unsigned char *)Realloc(s,
+					(unsigned int)num+i*2);
 			if (sp == NULL)
 				{
 				ASN1err(ASN1_F_A2I_ASN1_INTEGER,ERR_R_MALLOC_FAILURE);
-				if (s != NULL) OPENSSL_free(s);
+				if (s != NULL) Free((char *)s);
 				goto err;
 				}
 			s=sp;

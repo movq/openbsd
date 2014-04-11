@@ -1,26 +1,16 @@
 $! TX509.COM  --  Tests x509 certificates
 $
-$	__arch = "VAX"
-$	if f$getsyi("cpu") .ge. 128 then -
-	   __arch = f$edit( f$getsyi( "ARCH_NAME"), "UPCASE")
-$	if __arch .eqs. "" then __arch = "UNK"
-$!
-$	if (p2 .eqs. "64") then __arch = __arch+ "_64"
-$!
-$	exe_dir = "sys$disk:[-.''__arch'.exe.apps]"
+$	__arch := VAX
+$	if f$getsyi("cpu") .ge. 128 then __arch := AXP
+$	exe_dir := sys$disk:[-.'__arch'.exe.apps]
 $
-$	cmd = "mcr ''exe_dir'openssl x509"
+$	cmd := mcr 'exe_dir'openssl x509
 $
-$	t = "testx509.pem"
+$	t := testx509.pem
 $	if p1 .nes. "" then t = p1
 $
 $	write sys$output "testing X509 conversions"
-$	if f$search("fff.*") .nes "" then delete fff.*;*
-$	if f$search("ff.*") .nes "" then delete ff.*;*
-$	if f$search("f.*") .nes "" then delete f.*;*
-$	convert/fdl=sys$input: 't' fff.p
-RECORD
-	FORMAT STREAM_LF
+$	copy 't' fff.p
 $
 $	write sys$output "p -> d"
 $	'cmd' -in fff.p -inform p -outform d -out f.d
@@ -62,27 +52,27 @@ $	write sys$output "p -> p"
 $	'cmd' -in f.p -inform p -outform p -out ff.p3
 $	if $severity .ne. 1 then exit 3
 $
-$	backup/compare fff.p f.p
+$	difference/output=nl: fff.p f.p
 $	if $severity .ne. 1 then exit 3
-$	backup/compare fff.p ff.p1
+$	difference/output=nl: fff.p ff.p1
 $	if $severity .ne. 1 then exit 3
-$	backup/compare fff.p ff.p2
+$	difference/output=nl: fff.p ff.p2
 $	if $severity .ne. 1 then exit 3
-$	backup/compare fff.p ff.p3
-$	if $severity .ne. 1 then exit 3
-$
-$	backup/compare f.n ff.n1
-$	if $severity .ne. 1 then exit 3
-$	backup/compare f.n ff.n2
-$	if $severity .ne. 1 then exit 3
-$	backup/compare f.n ff.n3
+$	difference/output=nl: fff.p ff.p3
 $	if $severity .ne. 1 then exit 3
 $
-$	backup/compare f.p ff.p1
+$	difference/output=nl: f.n ff.n1
 $	if $severity .ne. 1 then exit 3
-$	backup/compare f.p ff.p2
+$	difference/output=nl: f.n ff.n2
 $	if $severity .ne. 1 then exit 3
-$	backup/compare f.p ff.p3
+$	difference/output=nl: f.n ff.n3
+$	if $severity .ne. 1 then exit 3
+$
+$	difference/output=nl: f.p ff.p1
+$	if $severity .ne. 1 then exit 3
+$	difference/output=nl: f.p ff.p2
+$	if $severity .ne. 1 then exit 3
+$	difference/output=nl: f.p ff.p3
 $	if $severity .ne. 1 then exit 3
 $
 $	delete f.*;*,ff.*;*,fff.*;*

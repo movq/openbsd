@@ -67,7 +67,7 @@
 	and everything was OK. BUT if user types wrong password 
 	BIO_f_cipher outputs only garbage and my function crashes. Yes
 	I can and I should fix my function, but BIO_f_cipher is 
-	easy way to add encryption support to many existing applications
+	easy way to add encryption support to many exisiting applications
 	and it's hard to debug and fix them all. 
 
 	So I wanted another BIO which would catch the incorrect passwords and
@@ -80,10 +80,10 @@
 	1) you must somehow separate checksum from actual data. 
 	2) you need lot's of memory when reading the file, because you 
 	must read to the end of the file and verify the checksum before
-	letting the application to read the data. 
+	leting the application to read the data. 
 	
 	BIO_f_reliable tries to solve both problems, so that you can 
-	read and write arbitrary long streams using only fixed amount
+	read and write arbitraly long streams using only fixed amount
 	of memory.
 
 	BIO_f_reliable splits data stream into blocks. Each block is prefixed
@@ -91,7 +91,7 @@
 	several Kbytes of memory to buffer single block before verifying 
 	it's digest. 
 
-	BIO_f_reliable goes further and adds several important capabilities:
+	BIO_f_reliable goes futher and adds several important capabilities:
 
 	1) the digest of the block is computed over the whole stream 
 	-- so nobody can rearrange the blocks or remove or replace them.
@@ -102,7 +102,7 @@
 
 		*) digest is initialized with random seed instead of 
 		standardized one.
-		*) same seed is written to output
+		*) same seed is written to ouput
 		*) well-known text is then hashed and the output 
 		of the digest is also written to output.
 
@@ -110,7 +110,7 @@
 	and then compare the digest output.
 
 	Bad things: BIO_f_reliable knows what's going on in EVP_Digest. I 
-	initially wrote and tested this code on x86 machine and wrote the
+	initialy wrote and tested this code on x86 machine and wrote the
 	digests out in machine-dependent order :( There are people using
 	this code and I cannot change this easily without making existing
 	data files unreadable.
@@ -119,41 +119,48 @@
 
 #include <stdio.h>
 #include <errno.h>
-#include <assert.h>
 #include "cryptlib.h"
 #include <openssl/buffer.h>
 #include <openssl/bio.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 
-static int ok_write(BIO *h, const char *buf, int num);
-static int ok_read(BIO *h, char *buf, int size);
-static long ok_ctrl(BIO *h, int cmd, long arg1, void *arg2);
+static int ok_write(BIO *h,char *buf,int num);
+static int ok_read(BIO *h,char *buf,int size);
+static long ok_ctrl(BIO *h,int cmd,long arg1,char *arg2);
 static int ok_new(BIO *h);
 static int ok_free(BIO *data);
-static long ok_callback_ctrl(BIO *h, int cmd, bio_info_cb *fp);
-
-static int sig_out(BIO* b);
-static int sig_in(BIO* b);
-static int block_out(BIO* b);
-static int block_in(BIO* b);
+static void sig_out(BIO* b);
+static void sig_in(BIO* b);
+static void block_out(BIO* b);
+static void block_in(BIO* b);
 #define OK_BLOCK_SIZE	(1024*4)
 #define OK_BLOCK_BLOCK	4
 #define IOBS		(OK_BLOCK_SIZE+ OK_BLOCK_BLOCK+ 3*EVP_MAX_MD_SIZE)
 #define WELLKNOWN "The quick brown fox jumped over the lazy dog's back."
 
+#ifndef L_ENDIAN
+#define swapem(x) \
+	((unsigned long int)((((unsigned long int)(x) & 0x000000ffU) << 24) | \
+			     (((unsigned long int)(x) & 0x0000ff00U) <<  8) | \
+			     (((unsigned long int)(x) & 0x00ff0000U) >>  8) | \
+			     (((unsigned long int)(x) & 0xff000000U) >> 24)))
+#else
+#define swapem(x) (x)
+#endif
+
 typedef struct ok_struct
 	{
-	size_t buf_len;
-	size_t buf_off;
-	size_t buf_len_save;
-	size_t buf_off_save;
+	int buf_len;
+	int buf_off;
+	int buf_len_save;
+	int buf_off_save;
 	int cont;		/* <= 0 when finished */
 	int finished;
 	EVP_MD_CTX md;
 	int blockout;		/* output block is ready */ 
 	int sigio;		/* must process signature */
-	unsigned char buf[IOBS];
+	char buf[IOBS];
 	} BIO_OK_CTX;
 
 static BIO_METHOD methods_ok=
@@ -166,7 +173,6 @@ static BIO_METHOD methods_ok=
 	ok_ctrl,
 	ok_new,
 	ok_free,
-	ok_callback_ctrl,
 	};
 
 BIO_METHOD *BIO_f_reliable(void)
@@ -178,7 +184,7 @@ static int ok_new(BIO *bi)
 	{
 	BIO_OK_CTX *ctx;
 
-	ctx=(BIO_OK_CTX *)OPENSSL_malloc(sizeof(BIO_OK_CTX));
+	ctx=(BIO_OK_CTX *)Malloc(sizeof(BIO_OK_CTX));
 	if (ctx == NULL) return(0);
 
 	ctx->buf_len=0;
@@ -190,8 +196,6 @@ static int ok_new(BIO *bi)
 	ctx->blockout= 0;
 	ctx->sigio=1;
 
-	EVP_MD_CTX_init(&ctx->md);
-
 	bi->init=0;
 	bi->ptr=(char *)ctx;
 	bi->flags=0;
@@ -201,9 +205,8 @@ static int ok_new(BIO *bi)
 static int ok_free(BIO *a)
 	{
 	if (a == NULL) return(0);
-	EVP_MD_CTX_cleanup(&((BIO_OK_CTX *)a->ptr)->md);
-	OPENSSL_cleanse(a->ptr,sizeof(BIO_OK_CTX));
-	OPENSSL_free(a->ptr);
+	memset(a->ptr,0,sizeof(BIO_OK_CTX));
+	Free(a->ptr);
 	a->ptr=NULL;
 	a->init=0;
 	a->flags=0;
@@ -266,24 +269,10 @@ static int ok_read(BIO *b, char *out, int outl)
 		ctx->buf_len+= i;
 
 		/* no signature yet -- check if we got one */
-		if (ctx->sigio == 1)
-			{
-			if (!sig_in(b))
-				{
-				BIO_clear_retry_flags(b);
-				return 0;
-				}
-			}
+		if (ctx->sigio == 1) sig_in(b);
 
 		/* signature ok -- check if we got block */
-		if (ctx->sigio == 0)
-			{
-			if (!block_in(b))
-				{
-				BIO_clear_retry_flags(b);
-				return 0;
-				}
-			}
+		if (ctx->sigio == 0) block_in(b);
 
 		/* invalid block -- cancel */
 		if (ctx->cont <= 0) break;
@@ -295,20 +284,17 @@ static int ok_read(BIO *b, char *out, int outl)
 	return(ret);
 	}
 
-static int ok_write(BIO *b, const char *in, int inl)
+static int ok_write(BIO *b, char *in, int inl)
 	{
 	int ret=0,n,i;
 	BIO_OK_CTX *ctx;
-
-	if (inl <= 0) return inl;
 
 	ctx=(BIO_OK_CTX *)b->ptr;
 	ret=inl;
 
 	if ((ctx == NULL) || (b->next_bio == NULL) || (b->init == 0)) return(0);
 
-	if(ctx->sigio && !sig_out(b))
-		return 0;
+	if(ctx->sigio) sig_out(b);
 
 	do{
 		BIO_clear_retry_flags(b);
@@ -338,7 +324,7 @@ static int ok_write(BIO *b, const char *in, int inl)
 		if ((in == NULL) || (inl <= 0)) return(0);
 
 		n= (inl+ ctx->buf_len > OK_BLOCK_SIZE+ OK_BLOCK_BLOCK) ? 
-			(int)(OK_BLOCK_SIZE+OK_BLOCK_BLOCK-ctx->buf_len) : inl;
+				OK_BLOCK_SIZE+ OK_BLOCK_BLOCK- ctx->buf_len : inl;
 
 		memcpy((unsigned char *)(&(ctx->buf[ctx->buf_len])),(unsigned char *)in,n);
 		ctx->buf_len+= n;
@@ -347,11 +333,7 @@ static int ok_write(BIO *b, const char *in, int inl)
 
 		if(ctx->buf_len >= OK_BLOCK_SIZE+ OK_BLOCK_BLOCK)
 			{
-			if (!block_out(b))
-				{
-				BIO_clear_retry_flags(b);
-				return 0;
-				}
+			block_out(b);
 			}
 	}while(inl > 0);
 
@@ -360,7 +342,7 @@ static int ok_write(BIO *b, const char *in, int inl)
 	return(ret);
 	}
 
-static long ok_ctrl(BIO *b, int cmd, long num, void *ptr)
+static long ok_ctrl(BIO *b, int cmd, long num, char *ptr)
 	{
 	BIO_OK_CTX *ctx;
 	EVP_MD *md;
@@ -368,7 +350,7 @@ static long ok_ctrl(BIO *b, int cmd, long num, void *ptr)
 	long ret=1;
 	int i;
 
-	ctx=b->ptr;
+	ctx=(BIO_OK_CTX *)b->ptr;
 
 	switch (cmd)
 		{
@@ -398,8 +380,7 @@ static long ok_ctrl(BIO *b, int cmd, long num, void *ptr)
 	case BIO_CTRL_FLUSH:
 		/* do a final write */
 		if(ctx->blockout == 0)
-			if (!block_out(b))
-				return 0;
+			block_out(b);
 
 		while (ctx->blockout)
 			{
@@ -427,15 +408,14 @@ static long ok_ctrl(BIO *b, int cmd, long num, void *ptr)
 		ret=(long)ctx->cont;
 		break;
 	case BIO_C_SET_MD:
-		md=ptr;
-		if (!EVP_DigestInit_ex(&ctx->md, md, NULL))
-			return 0;
+		md=(EVP_MD *)ptr;
+		EVP_DigestInit(&(ctx->md),md);
 		b->init=1;
 		break;
 	case BIO_C_GET_MD:
 		if (b->init)
 			{
-			ppmd=ptr;
+			ppmd=(const EVP_MD **)ptr;
 			*ppmd=ctx->md.digest;
 			}
 		else
@@ -448,89 +428,60 @@ static long ok_ctrl(BIO *b, int cmd, long num, void *ptr)
 	return(ret);
 	}
 
-static long ok_callback_ctrl(BIO *b, int cmd, bio_info_cb *fp)
-	{
-	long ret=1;
+static void longswap(void *_ptr, int len)
+{
+#ifndef L_ENDIAN
+	int i;
+	char *ptr=_ptr;
 
-	if (b->next_bio == NULL) return(0);
-	switch (cmd)
-		{
-	default:
-		ret=BIO_callback_ctrl(b->next_bio,cmd,fp);
-		break;
-		}
-	return(ret);
+	for(i= 0;i < len;i+= 4){
+		*((unsigned long *)&(ptr[i]))= swapem(*((unsigned long *)&(ptr[i])));
 	}
-
-static void longswap(void *_ptr, size_t len)
-{	const union { long one; char little; } is_endian = {1};
-
-	if (is_endian.little) {
-		size_t i;
-		unsigned char *p=_ptr,c;
-
-		for(i= 0;i < len;i+= 4) {
-			c=p[0],p[0]=p[3],p[3]=c;
-			c=p[1],p[1]=p[2],p[2]=c;
-		}
-	}
+#endif
 }
 
-static int sig_out(BIO* b)
+static void sig_out(BIO* b)
 	{
 	BIO_OK_CTX *ctx;
 	EVP_MD_CTX *md;
 
-	ctx=b->ptr;
-	md=&ctx->md;
+	ctx=(BIO_OK_CTX *)b->ptr;
+	md= &(ctx->md);
 
-	if(ctx->buf_len+ 2* md->digest->md_size > OK_BLOCK_SIZE) return 1;
+	if(ctx->buf_len+ 2* md->digest->md_size > OK_BLOCK_SIZE) return;
 
-	if (!EVP_DigestInit_ex(md, md->digest, NULL))
-		goto berr;
-	/* FIXME: there's absolutely no guarantee this makes any sense at all,
-	 * particularly now EVP_MD_CTX has been restructured.
-	 */
-	RAND_pseudo_bytes(md->md_data, md->digest->md_size);
-	memcpy(&(ctx->buf[ctx->buf_len]), md->md_data, md->digest->md_size);
+	EVP_DigestInit(md, md->digest);
+	RAND_bytes(&(md->md.base[0]), md->digest->md_size);
+	memcpy(&(ctx->buf[ctx->buf_len]), &(md->md.base[0]), md->digest->md_size);
 	longswap(&(ctx->buf[ctx->buf_len]), md->digest->md_size);
 	ctx->buf_len+= md->digest->md_size;
 
-	if (!EVP_DigestUpdate(md, WELLKNOWN, strlen(WELLKNOWN)))
-		goto berr;
-	if (!EVP_DigestFinal_ex(md, &(ctx->buf[ctx->buf_len]), NULL))
-		goto berr;
+	EVP_DigestUpdate(md, (unsigned char*)WELLKNOWN, strlen(WELLKNOWN));
+	md->digest->final(&(ctx->buf[ctx->buf_len]), &(md->md.base[0]));
 	ctx->buf_len+= md->digest->md_size;
 	ctx->blockout= 1;
 	ctx->sigio= 0;
-	return 1;
-	berr:
-	BIO_clear_retry_flags(b);
-	return 0;
 	}
 
-static int sig_in(BIO* b)
+static void sig_in(BIO* b)
 	{
 	BIO_OK_CTX *ctx;
 	EVP_MD_CTX *md;
 	unsigned char tmp[EVP_MAX_MD_SIZE];
 	int ret= 0;
 
-	ctx=b->ptr;
-	md=&ctx->md;
+	ctx=(BIO_OK_CTX *)b->ptr;
+	md= &(ctx->md);
 
-	if((int)(ctx->buf_len-ctx->buf_off) < 2*md->digest->md_size) return 1;
+	if(ctx->buf_len- ctx->buf_off < 2* md->digest->md_size) return;
 
-	if (!EVP_DigestInit_ex(md, md->digest, NULL))
-		goto berr;
-	memcpy(md->md_data, &(ctx->buf[ctx->buf_off]), md->digest->md_size);
-	longswap(md->md_data, md->digest->md_size);
+	EVP_DigestInit(md, md->digest);
+	memcpy(&(md->md.base[0]), &(ctx->buf[ctx->buf_off]), md->digest->md_size);
+	longswap(&(md->md.base[0]), md->digest->md_size);
 	ctx->buf_off+= md->digest->md_size;
 
-	if (!EVP_DigestUpdate(md, WELLKNOWN, strlen(WELLKNOWN)))
-		goto berr;
-	if (!EVP_DigestFinal_ex(md, tmp, NULL))
-		goto berr;
+	EVP_DigestUpdate(md, (unsigned char*)WELLKNOWN, strlen(WELLKNOWN));
+	md->digest->final(tmp, &(md->md.base[0]));
 	ret= memcmp(&(ctx->buf[ctx->buf_off]), tmp, md->digest->md_size) == 0;
 	ctx->buf_off+= md->digest->md_size;
 	if(ret == 1)
@@ -547,62 +498,43 @@ static int sig_in(BIO* b)
 		{
 		ctx->cont= 0;
 		}
-	return 1;
-	berr:
-	BIO_clear_retry_flags(b);
-	return 0;
 	}
 
-static int block_out(BIO* b)
+static void block_out(BIO* b)
 	{
 	BIO_OK_CTX *ctx;
 	EVP_MD_CTX *md;
 	unsigned long tl;
 
-	ctx=b->ptr;
-	md=&ctx->md;
+	ctx=(BIO_OK_CTX *)b->ptr;
+	md= &(ctx->md);
 
 	tl= ctx->buf_len- OK_BLOCK_BLOCK;
-	ctx->buf[0]=(unsigned char)(tl>>24);
-	ctx->buf[1]=(unsigned char)(tl>>16);
-	ctx->buf[2]=(unsigned char)(tl>>8);
-	ctx->buf[3]=(unsigned char)(tl);
-	if (!EVP_DigestUpdate(md,
-		(unsigned char*) &(ctx->buf[OK_BLOCK_BLOCK]), tl))
-		goto berr;
-	if (!EVP_DigestFinal_ex(md, &(ctx->buf[ctx->buf_len]), NULL))
-		goto berr;
+	tl= swapem(tl);
+	memcpy(ctx->buf, &tl, OK_BLOCK_BLOCK);
+	tl= swapem(tl);
+	EVP_DigestUpdate(md, (unsigned char*) &(ctx->buf[OK_BLOCK_BLOCK]), tl);
+	md->digest->final(&(ctx->buf[ctx->buf_len]), &(md->md.base[0]));
 	ctx->buf_len+= md->digest->md_size;
 	ctx->blockout= 1;
-	return 1;
-	berr:
-	BIO_clear_retry_flags(b);
-	return 0;
 	}
 
-static int block_in(BIO* b)
+static void block_in(BIO* b)
 	{
 	BIO_OK_CTX *ctx;
 	EVP_MD_CTX *md;
-	unsigned long tl= 0;
+	long tl= 0;
 	unsigned char tmp[EVP_MAX_MD_SIZE];
 
-	ctx=b->ptr;
-	md=&ctx->md;
+	ctx=(BIO_OK_CTX *)b->ptr;
+	md= &(ctx->md);
 
-	assert(sizeof(tl)>=OK_BLOCK_BLOCK);	/* always true */
-	tl =ctx->buf[0]; tl<<=8;
-	tl|=ctx->buf[1]; tl<<=8;
-	tl|=ctx->buf[2]; tl<<=8;
-	tl|=ctx->buf[3];
-
-	if (ctx->buf_len < tl+ OK_BLOCK_BLOCK+ md->digest->md_size) return 1;
+	memcpy(&tl, ctx->buf, OK_BLOCK_BLOCK);
+	tl= swapem(tl);
+	if (ctx->buf_len < tl+ OK_BLOCK_BLOCK+ md->digest->md_size) return;
  
-	if (!EVP_DigestUpdate(md,
-			(unsigned char*) &(ctx->buf[OK_BLOCK_BLOCK]), tl))
-		goto berr;
-	if (!EVP_DigestFinal_ex(md, tmp, NULL))
-		goto berr;
+	EVP_DigestUpdate(md, (unsigned char*) &(ctx->buf[OK_BLOCK_BLOCK]), tl);
+	md->digest->final(tmp, &(md->md.base[0]));
 	if(memcmp(&(ctx->buf[tl+ OK_BLOCK_BLOCK]), tmp, md->digest->md_size) == 0)
 		{
 		/* there might be parts from next block lurking around ! */
@@ -616,9 +548,5 @@ static int block_in(BIO* b)
 		{
 		ctx->cont= 0;
 		}
-	return 1;
-	berr:
-	BIO_clear_retry_flags(b);
-	return 0;
 	}
 
