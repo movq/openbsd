@@ -57,32 +57,32 @@
  */
 
 #include <stdio.h>
-#include <openssl/objects.h>
+#include "objects.h"
 #include "ssl_locl.h"
 
-static const SSL_METHOD *tls1_get_method(int ver)
+static SSL_METHOD *tls1_get_method(ver)
+int ver;
 	{
-	if (ver == TLS1_2_VERSION)
-		return TLSv1_2_method();
-	if (ver == TLS1_1_VERSION)
-		return TLSv1_1_method();
 	if (ver == TLS1_VERSION)
-		return TLSv1_method();
-	return NULL;
+		return(TLSv1_method());
+	else
+		return(NULL);
 	}
 
-IMPLEMENT_tls_meth_func(TLS1_2_VERSION, TLSv1_2_method,
-			ssl3_accept,
-			ssl3_connect,
-			tls1_get_method)
+SSL_METHOD *TLSv1_method()
+	{
+	static int init=1;
+	static SSL_METHOD TLSv1_data;
 
-IMPLEMENT_tls_meth_func(TLS1_1_VERSION, TLSv1_1_method,
-			ssl3_accept,
-			ssl3_connect,
-			tls1_get_method)
-
-IMPLEMENT_tls_meth_func(TLS1_VERSION, TLSv1_method,
-			ssl3_accept,
-			ssl3_connect,
-			tls1_get_method)
+	if (init)
+		{
+		init=0;
+		memcpy((char *)&TLSv1_data,(char *)tlsv1_base_method(),
+			sizeof(SSL_METHOD));
+		TLSv1_data.ssl_connect=ssl3_connect;
+		TLSv1_data.ssl_accept=ssl3_accept;
+		TLSv1_data.get_ssl_method=tls1_get_method;
+		}
+	return(&TLSv1_data);
+	}
 

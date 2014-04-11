@@ -55,91 +55,68 @@
  * copied and put under another distribution licence
  * [including the GNU Public Licence.]
  */
-/* ====================================================================
- * Copyright (c) 1998-2001 The OpenSSL Project.  All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer. 
- *
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- *
- * 3. All advertising materials mentioning features or use of this
- *    software must display the following acknowledgment:
- *    "This product includes software developed by the OpenSSL Project
- *    for use in the OpenSSL Toolkit. (http://www.openssl.org/)"
- *
- * 4. The names "OpenSSL Toolkit" and "OpenSSL Project" must not be used to
- *    endorse or promote products derived from this software without
- *    prior written permission. For written permission, please contact
- *    openssl-core@openssl.org.
- *
- * 5. Products derived from this software may not be called "OpenSSL"
- *    nor may "OpenSSL" appear in their names without prior written
- *    permission of the OpenSSL Project.
- *
- * 6. Redistributions of any form whatsoever must retain the following
- *    acknowledgment:
- *    "This product includes software developed by the OpenSSL Project
- *    for use in the OpenSSL Toolkit (http://www.openssl.org/)"
- *
- * THIS SOFTWARE IS PROVIDED BY THE OpenSSL PROJECT ``AS IS'' AND ANY
- * EXPRESSED OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE OpenSSL PROJECT OR
- * ITS CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
- * OF THE POSSIBILITY OF SUCH DAMAGE.
- * ====================================================================
- *
- * This product includes cryptographic software written by Eric Young
- * (eay@cryptsoft.com).  This product includes software written by Tim
- * Hudson (tjh@cryptsoft.com).
- *
- */
 
-#include "ssl_locl.h"
-#ifndef OPENSSL_NO_SSL2
 #include <stdio.h>
 #include <errno.h>
 #define USE_SOCKETS
+#include "ssl_locl.h"
 
+/* SSLerr(SSL_F_GET_SERVER_HELLO,SSL_R_PEER_ERROR_NO_CIPHER);
+ * SSLerr(SSL_F_GET_SERVER_HELLO,SSL_R_PEER_ERROR_NO_CERTIFICATE);
+ * SSLerr(SSL_F_GET_SERVER_HELLO,SSL_R_PEER_ERROR_CERTIFICATE);
+ * SSLerr(SSL_F_GET_SERVER_HELLO,SSL_R_PEER_ERROR_UNSUPPORTED_CERTIFICATE_TYPE);
+ * SSLerr(SSL_F_GET_SERVER_HELLO,SSL_R_UNKNOWN_REMOTE_ERROR_TYPE);
+ */
+
+#ifndef NOPROTO
 static int read_n(SSL *s,unsigned int n,unsigned int max,unsigned int extend);
-static int n_do_ssl_write(SSL *s, const unsigned char *buf, unsigned int len);
-static int write_pending(SSL *s, const unsigned char *buf, unsigned int len);
+static int do_ssl_write(SSL *s, char *buf, unsigned int len);
+static int write_pending(SSL *s, char *buf, unsigned int len);
 static int ssl_mt_error(int n);
+#else
+static int read_n();
+static int do_ssl_write();
+static int write_pending();
+static int ssl_mt_error();
+#endif
 
+int ssl2_peek(s,buf,len)
+SSL *s;
+char *buf;
+int len;
+	{
+	int ret;
 
-/* SSL 2.0 imlementation for SSL_read/SSL_peek -
+	ret=ssl2_read(s,buf,len);
+	if (ret > 0)
+	        {
+		s->s2->ract_data_length+=ret;
+		s->s2->ract_data-=ret;
+		}
+	return(ret);
+	}
+
+/* SSL_read -
  * This routine will return 0 to len bytes, decrypted etc if required.
  */
-static int ssl2_read_internal(SSL *s, void *buf, int len, int peek)
+int ssl2_read(s, buf, len)
+SSL *s;
+char *buf;
+int len;
 	{
 	int n;
 	unsigned char mac[MAX_MAC_SIZE];
 	unsigned char *p;
 	int i;
-	int mac_size;
+	unsigned int mac_size=0;
 
- ssl2_read_again:
 	if (SSL_in_init(s) && !s->in_handshake)
 		{
 		n=s->handshake_func(s);
 		if (n < 0) return(n);
 		if (n == 0)
 			{
-			SSLerr(SSL_F_SSL2_READ_INTERNAL,SSL_R_SSL_HANDSHAKE_FAILURE);
+			SSLerr(SSL_F_SSL2_READ,SSL_R_SSL_HANDSHAKE_FAILURE);
 			return(-1);
 			}
 		}
@@ -156,21 +133,12 @@ static int ssl2_read_internal(SSL *s, void *buf, int len, int peek)
 			n=len;
 
 		memcpy(buf,s->s2->ract_data,(unsigned int)n);
-		if (!peek)
-			{
-			s->s2->ract_data_length-=n;
-			s->s2->ract_data+=n;
-			if (s->s2->ract_data_length == 0)
-				s->rstate=SSL_ST_READ_HEADER;
-			}
-
+		s->s2->ract_data_length-=n;
+		s->s2->ract_data+=n;
+		if (s->s2->ract_data_length == 0)
+			s->rstate=SSL_ST_READ_HEADER;
 		return(n);
 		}
-
-	/* s->s2->ract_data_length == 0
-	 * 
-	 * Fill the buffer, then goto ssl2_read_again.
-	 */
 
 	if (s->rstate == SSL_ST_READ_HEADER)
 		{
@@ -184,7 +152,7 @@ static int ssl2_read_internal(SSL *s, void *buf, int len, int peek)
 				(p[2] == SSL2_MT_CLIENT_HELLO) ||
 				(p[2] == SSL2_MT_SERVER_HELLO))))
 				{
-				SSLerr(SSL_F_SSL2_READ_INTERNAL,SSL_R_NON_SSLV2_INITIAL_PACKET);
+				SSLerr(SSL_F_SSL2_READ,SSL_R_NON_SSLV2_INITIAL_PACKET);
 				return(-1);
 				}
 			}
@@ -235,88 +203,60 @@ static int ssl2_read_internal(SSL *s, void *buf, int len, int peek)
 		/* Data portion */
 		if (s->s2->clear_text)
 			{
-			mac_size = 0;
 			s->s2->mac_data=p;
 			s->s2->ract_data=p;
-			if (s->s2->padding)
-				{
-				SSLerr(SSL_F_SSL2_READ_INTERNAL,SSL_R_ILLEGAL_PADDING);
-				return(-1);
-				}
+			s->s2->pad_data=NULL;
 			}
 		else
 			{
-			mac_size=EVP_MD_CTX_size(s->read_hash);
-			if (mac_size < 0)
-				return -1;
-			OPENSSL_assert(mac_size <= MAX_MAC_SIZE);
+			mac_size=EVP_MD_size(s->read_hash);
 			s->s2->mac_data=p;
 			s->s2->ract_data= &p[mac_size];
-			if (s->s2->padding + mac_size > s->s2->rlength)
-				{
-				SSLerr(SSL_F_SSL2_READ_INTERNAL,SSL_R_ILLEGAL_PADDING);
-				return(-1);
-				}
+			s->s2->pad_data= &p[mac_size+
+				s->s2->rlength-s->s2->padding];
 			}
 
 		s->s2->ract_data_length=s->s2->rlength;
 		/* added a check for length > max_size in case
 		 * encryption was not turned on yet due to an error */
 		if ((!s->s2->clear_text) &&
-			(s->s2->rlength >= (unsigned int)mac_size))
+			(s->s2->rlength >= mac_size))
 			{
 			ssl2_enc(s,0);
 			s->s2->ract_data_length-=mac_size;
 			ssl2_mac(s,mac,0);
 			s->s2->ract_data_length-=s->s2->padding;
-			if (	(timingsafe_bcmp(mac,s->s2->mac_data,mac_size) != 0) ||
+			if (	(memcmp(mac,s->s2->mac_data,
+				(unsigned int)mac_size) != 0) ||
 				(s->s2->rlength%EVP_CIPHER_CTX_block_size(s->enc_read_ctx) != 0))
 				{
-				SSLerr(SSL_F_SSL2_READ_INTERNAL,SSL_R_BAD_MAC_DECODE);
+				SSLerr(SSL_F_SSL2_READ,SSL_R_BAD_MAC_DECODE);
 				return(-1);
 				}
 			}
 		INC32(s->s2->read_sequence); /* expect next number */
 		/* s->s2->ract_data is now available for processing */
 
-		/* Possibly the packet that we just read had 0 actual data bytes.
-		 * (SSLeay/OpenSSL itself never sends such packets; see ssl2_write.)
-		 * In this case, returning 0 would be interpreted by the caller
-		 * as indicating EOF, so it's not a good idea.  Instead, we just
-		 * continue reading; thus ssl2_read_internal may have to process
-		 * multiple packets before it can return.
-		 *
-		 * [Note that using select() for blocking sockets *never* guarantees
-		 * that the next SSL_read will not block -- the available
-		 * data may contain incomplete packets, and except for SSL 2,
-		 * renegotiation can confuse things even more.] */
-
-		goto ssl2_read_again; /* This should really be
-		                       * "return ssl2_read(s,buf,len)",
-		                       * but that would allow for
-		                       * denial-of-service attacks if a
-		                       * C compiler is used that does not
-		                       * recognize end-recursion. */
+		/* If a 0 byte packet was sent, return 0, otherwise
+		 * we play havoc with people using select with
+		 * blocking sockets.  Let them handle a packet at a time,
+		 * they should really be using non-blocking sockets. */
+		if (s->s2->ract_data_length == 0)
+			return(0);
+		return(ssl2_read(s,buf,len));
 		}
 	else
 		{
-		SSLerr(SSL_F_SSL2_READ_INTERNAL,SSL_R_BAD_STATE);
+		SSLerr(SSL_F_SSL2_READ,SSL_R_BAD_STATE);
 			return(-1);
 		}
 	}
 
-int ssl2_read(SSL *s, void *buf, int len)
-	{
-	return ssl2_read_internal(s, buf, len, 0);
-	}
-
-int ssl2_peek(SSL *s, void *buf, int len)
-	{
-	return ssl2_read_internal(s, buf, len, 1);
-	}
-
-static int read_n(SSL *s, unsigned int n, unsigned int max,
-	     unsigned int extend)
+static int read_n(s, n, max, extend)
+SSL *s;
+unsigned int n;
+unsigned int max;
+unsigned int extend;
 	{
 	int i,off,newb;
 
@@ -414,9 +354,11 @@ static int read_n(SSL *s, unsigned int n, unsigned int max,
 	return(n);
 	}
 
-int ssl2_write(SSL *s, const void *_buf, int len)
+int ssl2_write(s, buf, len)
+SSL *s;
+char *buf;
+int len;
 	{
-	const unsigned char *buf=_buf;
 	unsigned int n,tot;
 	int i;
 
@@ -448,24 +390,23 @@ int ssl2_write(SSL *s, const void *_buf, int len)
 	n=(len-tot);
 	for (;;)
 		{
-		i=n_do_ssl_write(s,&(buf[tot]),n);
+		i=do_ssl_write(s,&(buf[tot]),n);
 		if (i <= 0)
 			{
 			s->s2->wnum=tot;
 			return(i);
 			}
-		if ((i == (int)n) ||
-			(s->mode & SSL_MODE_ENABLE_PARTIAL_WRITE))
-			{
-			return(tot+i);
-			}
-		
+		if (i == (int)n) return(tot+i);
+
 		n-=i;
 		tot+=i;
 		}
 	}
 
-static int write_pending(SSL *s, const unsigned char *buf, unsigned int len)
+static int write_pending(s,buf,len)
+SSL *s;
+char *buf;
+unsigned int len;
 	{
 	int i;
 
@@ -473,9 +414,7 @@ static int write_pending(SSL *s, const unsigned char *buf, unsigned int len)
 
 	/* check that they have given us the same buffer to
 	 * write */
-	if ((s->s2->wpend_tot > (int)len) ||
-		((s->s2->wpend_buf != buf) &&
-		 !(s->mode & SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER)))
+	if ((s->s2->wpend_tot > (int)len) || (s->s2->wpend_buf != buf))
 		{
 		SSLerr(SSL_F_WRITE_PENDING,SSL_R_BAD_WRITE_RETRY);
 		return(-1);
@@ -512,10 +451,12 @@ static int write_pending(SSL *s, const unsigned char *buf, unsigned int len)
 		}
 	}
 
-static int n_do_ssl_write(SSL *s, const unsigned char *buf, unsigned int len)
+static int do_ssl_write(s, buf, len)
+SSL *s;
+char *buf;
+unsigned int len;
 	{
-	unsigned int j,k,olen,p,bs;
-	int mac_size;
+	unsigned int j,k,olen,p,mac_size,bs;
 	register unsigned char *pp;
 
 	olen=len;
@@ -531,11 +472,7 @@ static int n_do_ssl_write(SSL *s, const unsigned char *buf, unsigned int len)
 	if (s->s2->clear_text)
 		mac_size=0;
 	else
-		{
-		mac_size=EVP_MD_CTX_size(s->write_hash);
-		if (mac_size < 0)
-			return -1;
-		}
+		mac_size=EVP_MD_size(s->write_hash);
 
 	/* lets set the pad p */
 	if (s->s2->clear_text)
@@ -550,9 +487,6 @@ static int n_do_ssl_write(SSL *s, const unsigned char *buf, unsigned int len)
 		{
 		bs=EVP_CIPHER_CTX_block_size(s->enc_read_ctx);
 		j=len+mac_size;
-		/* Two-byte headers allow for a larger record length than
-		 * three-byte headers, but we can't use them if we need
-		 * padding or if we have to set the escape bit. */
 		if ((j > SSL2_MAX_RECORD_LENGTH_3_BYTE_HEADER) &&
 			(!s->s2->escape))
 			{
@@ -568,39 +502,25 @@ static int n_do_ssl_write(SSL *s, const unsigned char *buf, unsigned int len)
 			}
 		else if ((bs <= 1) && (!s->s2->escape))
 			{
-			/* j <= SSL2_MAX_RECORD_LENGTH_3_BYTE_HEADER, thus
-			 * j < SSL2_MAX_RECORD_LENGTH_2_BYTE_HEADER */
+			/* len=len; */
 			s->s2->three_byte_header=0;
 			p=0;
 			}
-		else /* we may have to use a 3 byte header */
+		else /* 3 byte header */
 			{
-			/* If s->s2->escape is not set, then
-			 * j <= SSL2_MAX_RECORD_LENGTH_3_BYTE_HEADER, and thus
-			 * j < SSL2_MAX_RECORD_LENGTH_2_BYTE_HEADER. */
+			/*len=len; */
 			p=(j%bs);
 			p=(p == 0)?0:(bs-p);
 			if (s->s2->escape)
-				{
 				s->s2->three_byte_header=1;
-				if (j > SSL2_MAX_RECORD_LENGTH_3_BYTE_HEADER)
-					j=SSL2_MAX_RECORD_LENGTH_3_BYTE_HEADER;
-				}
 			else
 				s->s2->three_byte_header=(p == 0)?0:1;
 			}
 		}
-
-	/* Now
-	 *      j <= SSL2_MAX_RECORD_LENGTH_2_BYTE_HEADER
-	 * holds, and if s->s2->three_byte_header is set, then even
-	 *      j <= SSL2_MAX_RECORD_LENGTH_3_BYTE_HEADER.
-	 */
-
 	/* mac_size is the number of MAC bytes
 	 * len is the number of data bytes we are going to send
 	 * p is the number of padding bytes
-	 * (if it is a two-byte header, then p == 0) */
+	 * if p == 0, it is a 2 byte header */
 
 	s->s2->wlength=len;
 	s->s2->padding=p;
@@ -608,8 +528,10 @@ static int n_do_ssl_write(SSL *s, const unsigned char *buf, unsigned int len)
 	s->s2->wact_data= &(s->s2->wbuf[3+mac_size]);
 	/* we copy the data into s->s2->wbuf */
 	memcpy(s->s2->wact_data,buf,len);
+#ifdef PURIFY
 	if (p)
-		memset(&(s->s2->wact_data[len]),0,p); /* arbitrary padding */
+		memset(&(s->s2->wact_data[len]),0,p);
+#endif
 
 	if (!s->s2->clear_text)
 		{
@@ -645,7 +567,7 @@ static int n_do_ssl_write(SSL *s, const unsigned char *buf, unsigned int len)
 
 	/* lets try to actually write the data */
 	s->s2->wpend_tot=olen;
-	s->s2->wpend_buf=buf;
+	s->s2->wpend_buf=(char *)buf;
 
 	s->s2->wpend_ret=len;
 
@@ -653,56 +575,48 @@ static int n_do_ssl_write(SSL *s, const unsigned char *buf, unsigned int len)
 	return(write_pending(s,buf,olen));
 	}
 
-int ssl2_part_read(SSL *s, unsigned long f, int i)
+int ssl2_part_read(s,f,i)
+SSL *s;
+unsigned long f;
+int i;
 	{
 	unsigned char *p;
 	int j;
+
+	/* check for error */
+	if ((s->init_num == 0) && (i >= 3))
+		{
+		p=(unsigned char *)s->init_buf->data;
+		if (p[0] == SSL2_MT_ERROR)
+			{
+			j=(p[1]<<8)|p[2];
+			SSLerr((int)f,ssl_mt_error(j));
+			}
+		}
 
 	if (i < 0)
 		{
 		/* ssl2_return_error(s); */
 		/* for non-blocking io,
-		 * this is not necessarily fatal */
+		 * this is not fatal */
 		return(i);
 		}
 	else
 		{
 		s->init_num+=i;
-
-		/* Check for error.  While there are recoverable errors,
-		 * this function is not called when those must be expected;
-		 * any error detected here is fatal. */
-		if (s->init_num >= 3)
-			{
-			p=(unsigned char *)s->init_buf->data;
-			if (p[0] == SSL2_MT_ERROR)
-				{
-				j=(p[1]<<8)|p[2];
-				SSLerr((int)f,ssl_mt_error(j));
-				s->init_num -= 3;
-				if (s->init_num > 0)
-					memmove(p, p+3, s->init_num);
-				}
-			}
-
-		/* If it's not an error message, we have some error anyway --
-		 * the message was shorter than expected.  This too is treated
-		 * as fatal (at least if SSL_get_error is asked for its opinion). */
 		return(0);
 		}
 	}
 
-int ssl2_do_write(SSL *s)
+int ssl2_do_write(s)
+SSL *s;
 	{
 	int ret;
 
-	ret=ssl2_write(s,&s->init_buf->data[s->init_off],s->init_num);
+	ret=ssl2_write(s,(char *)&(s->init_buf->data[s->init_off]),
+		s->init_num);
 	if (ret == s->init_num)
-		{
-		if (s->msg_callback)
-			s->msg_callback(1, s->version, 0, s->init_buf->data, (size_t)(s->init_off + s->init_num), s, s->msg_callback_arg);
 		return(1);
-		}
 	if (ret < 0)
 		return(-1);
 	s->init_off+=ret;
@@ -710,7 +624,8 @@ int ssl2_do_write(SSL *s)
 	return(0);
 	}
 
-static int ssl_mt_error(int n)
+static int ssl_mt_error(n)
+int n;
 	{
 	int ret;
 
@@ -734,10 +649,3 @@ static int ssl_mt_error(int n)
 		}
 	return(ret);
 	}
-#else /* !OPENSSL_NO_SSL2 */
-
-# if PEDANTIC
-static void *dummy=&dummy;
-# endif
-
-#endif

@@ -15,7 +15,6 @@ B<openssl> B<genrsa>
 [B<-f4>]
 [B<-3>]
 [B<-rand file(s)>]
-[B<-engine id>]
 [B<numbits>]
 
 =head1 DESCRIPTION
@@ -52,15 +51,8 @@ the public exponent to use, either 65537 or 3. The default is 65537.
 a file or files containing random data used to seed the random number
 generator, or an EGD socket (see L<RAND_egd(3)|RAND_egd(3)>).
 Multiple files can be specified separated by a OS-dependent character.
-The separator is B<;> for MS-Windows, B<,> for OpenVMS, and B<:> for
+The separator is B<;> for MS-Windows, B<,> for OpenVSM, and B<:> for
 all others.
-
-=item B<-engine id>
-
-specifying an engine (by its unique B<id> string) will cause B<genrsa>
-to attempt to obtain a functional reference to the specified engine,
-thus initialising it if needed. The engine will then be set as the default
-for all available algorithms.
 
 =item B<numbits>
 
@@ -91,6 +83,3 @@ be much larger (typically 1024 bits).
 =head1 SEE ALSO
 
 L<gendsa(1)|gendsa(1)>
-
-=cut
-

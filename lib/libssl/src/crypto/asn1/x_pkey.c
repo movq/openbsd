@@ -58,33 +58,39 @@
 
 #include <stdio.h>
 #include "cryptlib.h"
-#include <openssl/evp.h>
-#include <openssl/objects.h>
-#include <openssl/asn1_mac.h>
-#include <openssl/x509.h>
+#include "evp.h"
+#include "objects.h"
+#include "asn1_mac.h"
+
+/* ASN1err(ASN1_F_D2I_X509_PKEY,ASN1_R_UNSUPPORTED_CIPHER); */
+/* ASN1err(ASN1_F_X509_PKEY_NEW,ASN1_R_IV_TOO_LARGE); */
 
 /* need to implement */
-int i2d_X509_PKEY(X509_PKEY *a, unsigned char **pp)
+int i2d_X509_PKEY(a,pp)
+X509_PKEY *a;
+unsigned char **pp;
 	{
 	return(0);
 	}
 
-X509_PKEY *d2i_X509_PKEY(X509_PKEY **a, const unsigned char **pp, long length)
+X509_PKEY *d2i_X509_PKEY(a,pp,length)
+X509_PKEY **a;
+unsigned char **pp;
+long length;
 	{
 	int i;
 	M_ASN1_D2I_vars(a,X509_PKEY *,X509_PKEY_new);
 
 	M_ASN1_D2I_Init();
 	M_ASN1_D2I_start_sequence();
-	M_ASN1_D2I_get_x(X509_ALGOR,ret->enc_algor,d2i_X509_ALGOR);
-	M_ASN1_D2I_get_x(ASN1_OCTET_STRING,ret->enc_pkey,d2i_ASN1_OCTET_STRING);
+	M_ASN1_D2I_get(ret->enc_algor,d2i_X509_ALGOR);
+	M_ASN1_D2I_get(ret->enc_pkey,d2i_ASN1_OCTET_STRING);
 
 	ret->cipher.cipher=EVP_get_cipherbyname(
 		OBJ_nid2ln(OBJ_obj2nid(ret->enc_algor->algorithm)));
 	if (ret->cipher.cipher == NULL)
 		{
 		c.error=ASN1_R_UNSUPPORTED_CIPHER;
-		c.line=__LINE__;
 		goto err;
 		}
 	if (ret->enc_algor->parameter->type == V_ASN1_OCTET_STRING) 
@@ -93,7 +99,6 @@ X509_PKEY *d2i_X509_PKEY(X509_PKEY **a, const unsigned char **pp, long length)
 		if (i > EVP_MAX_IV_LENGTH)
 			{
 			c.error=ASN1_R_IV_TOO_LARGE;
-			c.line=__LINE__;
 			goto err;
 			}
 		memcpy(ret->cipher.iv,
@@ -104,15 +109,14 @@ X509_PKEY *d2i_X509_PKEY(X509_PKEY **a, const unsigned char **pp, long length)
 	M_ASN1_D2I_Finish(a,X509_PKEY_free,ASN1_F_D2I_X509_PKEY);
 	}
 
-X509_PKEY *X509_PKEY_new(void)
+X509_PKEY *X509_PKEY_new()
 	{
 	X509_PKEY *ret=NULL;
-	ASN1_CTX c;
 
 	M_ASN1_New_Malloc(ret,X509_PKEY);
 	ret->version=0;
 	M_ASN1_New(ret->enc_algor,X509_ALGOR_new);
-	M_ASN1_New(ret->enc_pkey,M_ASN1_OCTET_STRING_new);
+	M_ASN1_New(ret->enc_pkey,ASN1_OCTET_STRING_new);
 	ret->dec_pkey=NULL;
 	ret->key_length=0;
 	ret->key_data=NULL;
@@ -124,7 +128,8 @@ X509_PKEY *X509_PKEY_new(void)
 	M_ASN1_New_Error(ASN1_F_X509_PKEY_NEW);
 	}
 
-void X509_PKEY_free(X509_PKEY *x)
+void X509_PKEY_free(x)
+X509_PKEY *x;
 	{
 	int i;
 
@@ -144,8 +149,8 @@ void X509_PKEY_free(X509_PKEY *x)
 #endif
 
 	if (x->enc_algor != NULL) X509_ALGOR_free(x->enc_algor);
-	if (x->enc_pkey != NULL) M_ASN1_OCTET_STRING_free(x->enc_pkey);
+	if (x->enc_pkey != NULL) ASN1_OCTET_STRING_free(x->enc_pkey);
 	if (x->dec_pkey != NULL)EVP_PKEY_free(x->dec_pkey);
-	if ((x->key_data != NULL) && (x->key_free)) OPENSSL_free(x->key_data);
-	OPENSSL_free(x);
+	if ((x->key_data != NULL) && (x->key_free)) Free((char *)x->key_data);
+	Free((char *)(char *)x);
 	}

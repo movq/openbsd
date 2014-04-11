@@ -1,5 +1,5 @@
 /* evp_acnf.c */
-/* Written by Stephen Henson (steve@openssl.org) for the OpenSSL
+/* Written by Stephen Henson (shenson@bigfoot.com) for the OpenSSL
  * project 2001.
  */
 /* ====================================================================
@@ -59,6 +59,7 @@
 #include "cryptlib.h"
 #include <openssl/evp.h>
 #include <openssl/conf.h>
+#include <openssl/engine.h>
 
 
 /* Load all algorithms and configure OpenSSL.

@@ -1,5 +1,5 @@
 /* v3_enum.c */
-/* Written by Dr Stephen N Henson (steve@openssl.org) for the OpenSSL
+/* Written by Dr Stephen N Henson (shenson@bigfoot.com) for the OpenSSL
  * project 1999.
  */
 /* ====================================================================
@@ -60,29 +60,35 @@
 #include "cryptlib.h"
 #include <openssl/x509v3.h>
 
+static ASN1_ENUMERATED *asn1_enumerated_new(void);
+
 static ENUMERATED_NAMES crl_reasons[] = {
-{CRL_REASON_UNSPECIFIED, 	 "Unspecified", "unspecified"},
-{CRL_REASON_KEY_COMPROMISE,	 "Key Compromise", "keyCompromise"},
-{CRL_REASON_CA_COMPROMISE,	 "CA Compromise", "CACompromise"},
-{CRL_REASON_AFFILIATION_CHANGED, "Affiliation Changed", "affiliationChanged"},
-{CRL_REASON_SUPERSEDED, 	 "Superseded", "superseded"},
-{CRL_REASON_CESSATION_OF_OPERATION,
-			"Cessation Of Operation", "cessationOfOperation"},
-{CRL_REASON_CERTIFICATE_HOLD,	 "Certificate Hold", "certificateHold"},
-{CRL_REASON_REMOVE_FROM_CRL,	 "Remove From CRL", "removeFromCRL"},
-{CRL_REASON_PRIVILEGE_WITHDRAWN, "Privilege Withdrawn", "privilegeWithdrawn"},
-{CRL_REASON_AA_COMPROMISE,	 "AA Compromise", "AACompromise"},
+{0, "Unspecified", "unspecified"},
+{1, "Key Compromise", "keyCompromise"},
+{2, "CA Compromise", "CACompromise"},
+{3, "Affiliation Changed", "affiliationChanged"},
+{4, "Superseded", "superseded"},
+{5, "Cessation Of Operation", "cessationOfOperation"},
+{6, "Certificate Hold", "certificateHold"},
+{8, "Remove From CRL", "removeFromCRL"},
 {-1, NULL, NULL}
 };
 
-const X509V3_EXT_METHOD v3_crl_reason = { 
-NID_crl_reason, 0, ASN1_ITEM_ref(ASN1_ENUMERATED),
-0,0,0,0,
+X509V3_EXT_METHOD v3_crl_reason = { 
+NID_crl_reason, 0,
+(X509V3_EXT_NEW)asn1_enumerated_new,
+(X509V3_EXT_FREE)ASN1_STRING_free,
+(X509V3_EXT_D2I)d2i_ASN1_ENUMERATED,
+(X509V3_EXT_I2D)i2d_ASN1_ENUMERATED,
 (X509V3_EXT_I2S)i2s_ASN1_ENUMERATED_TABLE,
-0,
-0,0,0,0,
-crl_reasons};
+(X509V3_EXT_S2I)NULL,
+NULL, NULL, NULL, NULL, crl_reasons};
 
+
+static ASN1_ENUMERATED *asn1_enumerated_new(void)
+{
+	return ASN1_ENUMERATED_new();
+}
 
 char *i2s_ASN1_ENUMERATED_TABLE(X509V3_EXT_METHOD *method,
 	     ASN1_ENUMERATED *e)

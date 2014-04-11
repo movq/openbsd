@@ -1,9 +1,9 @@
 /* ocsp_vfy.c */
-/* Written by Dr Stephen N Henson (steve@openssl.org) for the OpenSSL
+/* Written by Dr Stephen N Henson (shenson@bigfoot.com) for the OpenSSL
  * project 2000.
  */
 /* ====================================================================
- * Copyright (c) 2000-2004 The OpenSSL Project.  All rights reserved.
+ * Copyright (c) 2000 The OpenSSL Project.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -91,12 +91,9 @@ int OCSP_basic_verify(OCSP_BASICRESP *bs, STACK_OF(X509) *certs,
 		{
 		EVP_PKEY *skey;
 		skey = X509_get_pubkey(signer);
-		if (skey)
-			{
-			ret = OCSP_BASICRESP_verify(bs, skey, 0);
-			EVP_PKEY_free(skey);
-			}
-		if(!skey || ret <= 0)
+		ret = OCSP_BASICRESP_verify(bs, skey, 0);
+		EVP_PKEY_free(skey);
+		if(ret <= 0)
 			{
 			OCSPerr(OCSP_F_OCSP_BASIC_VERIFY, OCSP_R_SIGNATURE_FAILURE);
 			goto end;
@@ -275,7 +272,7 @@ static int ocsp_check_ids(STACK_OF(OCSP_SINGLERESP) *sresp, OCSP_CERTID **ret)
 
 	for (i = 1; i < idcount; i++)
 		{
-		tmpid = sk_OCSP_SINGLERESP_value(sresp, i)->certId;
+		tmpid = sk_OCSP_SINGLERESP_value(sresp, 0)->certId;
 		/* Check to see if IDs match */
 		if (OCSP_id_issuer_cmp(cid, tmpid))
 			{
@@ -311,8 +308,6 @@ static int ocsp_match_issuerid(X509 *cert, OCSP_CERTID *cid,
 			}
 
 		mdlen = EVP_MD_size(dgst);
-		if (mdlen < 0)
-		    return -1;
 		if ((cid->issuerNameHash->length != mdlen) ||
 		   (cid->issuerKeyHash->length != mdlen))
 			return 0;
@@ -321,7 +316,7 @@ static int ocsp_match_issuerid(X509 *cert, OCSP_CERTID *cid,
 			return -1;
 		if (memcmp(md, cid->issuerNameHash->data, mdlen))
 			return 0;
-		X509_pubkey_digest(cert, dgst, md, NULL);
+		X509_pubkey_digest(cert, EVP_sha1(), md, NULL);
 		if (memcmp(md, cid->issuerKeyHash->data, mdlen))
 			return 0;
 
@@ -335,7 +330,7 @@ static int ocsp_match_issuerid(X509 *cert, OCSP_CERTID *cid,
 		OCSP_CERTID *tmpid;
 		for (i = 0; i < sk_OCSP_SINGLERESP_num(sresp); i++)
 			{
-			tmpid = sk_OCSP_SINGLERESP_value(sresp, i)->certId;
+			tmpid = sk_OCSP_SINGLERESP_value(sresp, 0)->certId;
 			ret = ocsp_match_issuerid(cert, tmpid, NULL);
 			if (ret <= 0) return ret;
 			}
@@ -372,7 +367,7 @@ int OCSP_request_verify(OCSP_REQUEST *req, STACK_OF(X509) *certs, X509_STORE *st
 		return 0;
 		}
 	gen = req->tbsRequest->requestorName;
-	if (!gen || gen->type != GEN_DIRNAME)
+	if (gen->type != GEN_DIRNAME)
 		{
 		OCSPerr(OCSP_F_OCSP_REQUEST_VERIFY, OCSP_R_UNSUPPORTED_REQUESTORNAME_TYPE);
 		return 0;

@@ -53,7 +53,10 @@
  *
  */
 
+#include <openssl/crypto.h>
+#include "cryptlib.h"
 #include "eng_int.h"
+#include <openssl/engine.h>
 
 /* When querying a ENGINE-specific control command's 'description', this string
  * is used if the ENGINE_CMD_DEFN has cmd_desc set to NULL. */
@@ -100,8 +103,7 @@ static int int_ctrl_cmd_by_num(const ENGINE_CMD_DEFN *defn, unsigned int num)
 	return -1;
 	}
 
-static int int_ctrl_helper(ENGINE *e, int cmd, long i, void *p,
-			   void (*f)(void))
+static int int_ctrl_helper(ENGINE *e, int cmd, long i, void *p, void (*f)())
 	{
 	int idx;
 	char *s = (char *)p;
@@ -158,19 +160,15 @@ static int int_ctrl_helper(ENGINE *e, int cmd, long i, void *p,
 	case ENGINE_CTRL_GET_NAME_LEN_FROM_CMD:
 		return strlen(e->cmd_defns[idx].cmd_name);
 	case ENGINE_CTRL_GET_NAME_FROM_CMD:
-		return BIO_snprintf(s,strlen(e->cmd_defns[idx].cmd_name) + 1,
-				    "%s", e->cmd_defns[idx].cmd_name);
+		return sprintf(s, "%s", e->cmd_defns[idx].cmd_name);
 	case ENGINE_CTRL_GET_DESC_LEN_FROM_CMD:
 		if(e->cmd_defns[idx].cmd_desc)
 			return strlen(e->cmd_defns[idx].cmd_desc);
 		return strlen(int_no_description);
 	case ENGINE_CTRL_GET_DESC_FROM_CMD:
 		if(e->cmd_defns[idx].cmd_desc)
-			return BIO_snprintf(s,
-					    strlen(e->cmd_defns[idx].cmd_desc) + 1,
-					    "%s", e->cmd_defns[idx].cmd_desc);
-		return BIO_snprintf(s, strlen(int_no_description) + 1,"%s",
-				    int_no_description);
+			return sprintf(s, "%s", e->cmd_defns[idx].cmd_desc);
+		return sprintf(s, "%s", int_no_description);
 	case ENGINE_CTRL_GET_CMD_FLAGS:
 		return e->cmd_defns[idx].cmd_flags;
 		}
@@ -179,7 +177,7 @@ static int int_ctrl_helper(ENGINE *e, int cmd, long i, void *p,
 	return -1;
 	}
 
-int ENGINE_ctrl(ENGINE *e, int cmd, long i, void *p, void (*f)(void))
+int ENGINE_ctrl(ENGINE *e, int cmd, long i, void *p, void (*f)())
 	{
 	int ctrl_exists, ref_exists;
 	if(e == NULL)
@@ -249,13 +247,13 @@ int ENGINE_cmd_is_executable(ENGINE *e, int cmd)
 	}
 
 int ENGINE_ctrl_cmd(ENGINE *e, const char *cmd_name,
-        long i, void *p, void (*f)(void), int cmd_optional)
+        long i, void *p, void (*f)(), int cmd_optional)
         {
 	int num;
 
 	if((e == NULL) || (cmd_name == NULL))
 		{
-		ENGINEerr(ENGINE_F_ENGINE_CTRL_CMD,
+		ENGINEerr(ENGINE_F_ENGINE_CTRL_CMD_STRING,
 			ERR_R_PASSED_NULL_PARAMETER);
 		return 0;
 		}
@@ -280,7 +278,7 @@ int ENGINE_ctrl_cmd(ENGINE *e, const char *cmd_name,
 		}
 	/* Force the result of the control command to 0 or 1, for the reasons
 	 * mentioned before. */
-        if (ENGINE_ctrl(e, num, i, p, f) > 0)
+        if (ENGINE_ctrl(e, num, i, p, f))
                 return 1;
         return 0;
         }
@@ -345,7 +343,7 @@ int ENGINE_ctrl_cmd_string(ENGINE *e, const char *cmd_name, const char *arg,
 		 * usage of these commands is consistent across applications and
 		 * that certain applications don't understand it one way, and
 		 * others another. */
-		if(ENGINE_ctrl(e, num, 0, (void *)arg, NULL) > 0)
+		if(ENGINE_ctrl(e, num, 0, (void *)arg, NULL))
 			return 1;
 		return 0;
 		}
@@ -360,7 +358,7 @@ int ENGINE_ctrl_cmd_string(ENGINE *e, const char *cmd_name, const char *arg,
 	if(flags & ENGINE_CMD_FLAG_STRING)
 		{
 		/* Same explanation as above */
-		if(ENGINE_ctrl(e, num, 0, (void *)arg, NULL) > 0)
+		if(ENGINE_ctrl(e, num, 0, (void *)arg, NULL))
 			return 1;
 		return 0;
 		}
@@ -383,7 +381,7 @@ int ENGINE_ctrl_cmd_string(ENGINE *e, const char *cmd_name, const char *arg,
 		}
 	/* Force the result of the control command to 0 or 1, for the reasons
 	 * mentioned before. */
-	if(ENGINE_ctrl(e, num, l, NULL, NULL) > 0)
+	if(ENGINE_ctrl(e, num, l, NULL, NULL))
 		return 1;
 	return 0;
 	}

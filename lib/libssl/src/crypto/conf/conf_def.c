@@ -60,7 +60,6 @@
 
 #include <stdio.h>
 #include <string.h>
-#include "cryptlib.h"
 #include <openssl/stack.h>
 #include <openssl/lhash.h>
 #include <openssl/conf.h>
@@ -82,13 +81,12 @@ static int def_init_default(CONF *conf);
 static int def_init_WIN32(CONF *conf);
 static int def_destroy(CONF *conf);
 static int def_destroy_data(CONF *conf);
-static int def_load(CONF *conf, const char *name, long *eline);
-static int def_load_bio(CONF *conf, BIO *bp, long *eline);
-static int def_dump(const CONF *conf, BIO *bp);
-static int def_is_number(const CONF *conf, char c);
-static int def_to_int(const CONF *conf, char c);
+static int def_load(CONF *conf, BIO *bp, long *eline);
+static int def_dump(CONF *conf, BIO *bp);
+static int def_is_number(CONF *conf, char c);
+static int def_to_int(CONF *conf, char c);
 
-const char CONF_def_version[]="CONF_def" OPENSSL_VERSION_PTEXT;
+const char *CONF_def_version="CONF_def" OPENSSL_VERSION_PTEXT;
 
 static CONF_METHOD default_method = {
 	"OpenSSL default",
@@ -96,11 +94,10 @@ static CONF_METHOD default_method = {
 	def_init_default,
 	def_destroy,
 	def_destroy_data,
-	def_load_bio,
+	def_load,
 	def_dump,
 	def_is_number,
-	def_to_int,
-	def_load
+	def_to_int
 	};
 
 static CONF_METHOD WIN32_method = {
@@ -109,11 +106,10 @@ static CONF_METHOD WIN32_method = {
 	def_init_WIN32,
 	def_destroy,
 	def_destroy_data,
-	def_load_bio,
+	def_load,
 	def_dump,
 	def_is_number,
-	def_to_int,
-	def_load
+	def_to_int
 	};
 
 CONF_METHOD *NCONF_default()
@@ -129,7 +125,7 @@ static CONF *def_create(CONF_METHOD *meth)
 	{
 	CONF *ret;
 
-	ret = OPENSSL_malloc(sizeof(CONF) + sizeof(unsigned short *));
+	ret = (CONF *)OPENSSL_malloc(sizeof(CONF) + sizeof(unsigned short *));
 	if (ret)
 		if (meth->init(ret) == 0)
 			{
@@ -145,7 +141,7 @@ static int def_init_default(CONF *conf)
 		return 0;
 
 	conf->meth = &default_method;
-	conf->meth_data = CONF_type_default;
+	conf->meth_data = (void *)CONF_type_default;
 	conf->data = NULL;
 
 	return 1;
@@ -181,91 +177,66 @@ static int def_destroy_data(CONF *conf)
 	return 1;
 	}
 
-static int def_load(CONF *conf, const char *name, long *line)
+static int def_load(CONF *conf, BIO *in, long *line)
 	{
-	int ret;
-	BIO *in=NULL;
-
-#ifdef OPENSSL_SYS_VMS
-	in=BIO_new_file(name, "r");
-#else
-	in=BIO_new_file(name, "rb");
-#endif
-	if (in == NULL)
-		{
-		if (ERR_GET_REASON(ERR_peek_last_error()) == BIO_R_NO_SUCH_FILE)
-			CONFerr(CONF_F_DEF_LOAD,CONF_R_NO_SUCH_FILE);
-		else
-			CONFerr(CONF_F_DEF_LOAD,ERR_R_SYS_LIB);
-		return 0;
-		}
-
-	ret = def_load_bio(conf, in, line);
-	BIO_free(in);
-
-	return ret;
-	}
-
-static int def_load_bio(CONF *conf, BIO *in, long *line)
-	{
-/* The macro BUFSIZE conflicts with a system macro in VxWorks */
-#define CONFBUFSIZE	512
+#define BUFSIZE	512
+	char btmp[16];
 	int bufnum=0,i,ii;
 	BUF_MEM *buff=NULL;
 	char *s,*p,*end;
-	int again;
+	int again,n;
 	long eline=0;
-	char btmp[DECIMAL_SIZE(eline)+1];
 	CONF_VALUE *v=NULL,*tv;
 	CONF_VALUE *sv=NULL;
 	char *section=NULL,*buf;
+	STACK_OF(CONF_VALUE) *section_sk=NULL,*ts;
 	char *start,*psection,*pname;
 	void *h = (void *)(conf->data);
 
 	if ((buff=BUF_MEM_new()) == NULL)
 		{
-		CONFerr(CONF_F_DEF_LOAD_BIO,ERR_R_BUF_LIB);
+		CONFerr(CONF_F_CONF_LOAD_BIO,ERR_R_BUF_LIB);
 		goto err;
 		}
 
 	section=(char *)OPENSSL_malloc(10);
 	if (section == NULL)
 		{
-		CONFerr(CONF_F_DEF_LOAD_BIO,ERR_R_MALLOC_FAILURE);
+		CONFerr(CONF_F_CONF_LOAD_BIO,ERR_R_MALLOC_FAILURE);
 		goto err;
 		}
-	BUF_strlcpy(section,"default",10);
+	strcpy(section,"default");
 
 	if (_CONF_new_data(conf) == 0)
 		{
-		CONFerr(CONF_F_DEF_LOAD_BIO,ERR_R_MALLOC_FAILURE);
+		CONFerr(CONF_F_CONF_LOAD_BIO,ERR_R_MALLOC_FAILURE);
 		goto err;
 		}
 
 	sv=_CONF_new_section(conf,section);
 	if (sv == NULL)
 		{
-		CONFerr(CONF_F_DEF_LOAD_BIO,
+		CONFerr(CONF_F_CONF_LOAD_BIO,
 					CONF_R_UNABLE_TO_CREATE_NEW_SECTION);
 		goto err;
 		}
+	section_sk=(STACK_OF(CONF_VALUE) *)sv->value;
 
 	bufnum=0;
-	again=0;
 	for (;;)
 		{
-		if (!BUF_MEM_grow(buff,bufnum+CONFBUFSIZE))
+		again=0;
+		if (!BUF_MEM_grow(buff,bufnum+BUFSIZE))
 			{
-			CONFerr(CONF_F_DEF_LOAD_BIO,ERR_R_BUF_LIB);
+			CONFerr(CONF_F_CONF_LOAD_BIO,ERR_R_BUF_LIB);
 			goto err;
 			}
 		p= &(buff->data[bufnum]);
 		*p='\0';
-		BIO_gets(in, p, CONFBUFSIZE-1);
-		p[CONFBUFSIZE-1]='\0';
+		BIO_gets(in, p, BUFSIZE-1);
+		p[BUFSIZE-1]='\0';
 		ii=i=strlen(p);
-		if (i == 0 && !again) break;
-		again=0;
+		if (i == 0) break;
 		while (i > 0)
 			{
 			if ((p[i-1] != '\r') && (p[i-1] != '\n'))
@@ -275,7 +246,7 @@ static int def_load_bio(CONF *conf, BIO *in, long *line)
 			}
 		/* we removed some trailing stuff so there is a new
 		 * line on the end. */
-		if (ii && i == ii)
+		if (i == ii)
 			again=1; /* long line */
 		else
 			{
@@ -307,6 +278,7 @@ static int def_load_bio(CONF *conf, BIO *in, long *line)
 		buf=buff->data;
 
 		clear_comments(conf, buf);
+		n=strlen(buf);
 		s=eat_ws(conf, buf);
 		if (IS_EOF(conf,*s)) continue; /* blank line */
 		if (*s == '[')
@@ -326,7 +298,7 @@ again:
 					ss=p;
 					goto again;
 					}
-				CONFerr(CONF_F_DEF_LOAD_BIO,
+				CONFerr(CONF_F_CONF_LOAD_BIO,
 					CONF_R_MISSING_CLOSE_SQUARE_BRACKET);
 				goto err;
 				}
@@ -336,10 +308,11 @@ again:
 				sv=_CONF_new_section(conf,section);
 			if (sv == NULL)
 				{
-				CONFerr(CONF_F_DEF_LOAD_BIO,
+				CONFerr(CONF_F_CONF_LOAD_BIO,
 					CONF_R_UNABLE_TO_CREATE_NEW_SECTION);
 				goto err;
 				}
+			section_sk=(STACK_OF(CONF_VALUE) *)sv->value;
 			continue;
 			}
 		else
@@ -358,7 +331,7 @@ again:
 			p=eat_ws(conf, end);
 			if (*p != '=')
 				{
-				CONFerr(CONF_F_DEF_LOAD_BIO,
+				CONFerr(CONF_F_CONF_LOAD_BIO,
 						CONF_R_MISSING_EQUAL_SIGN);
 				goto err;
 				}
@@ -375,7 +348,7 @@ again:
 
 			if (!(v=(CONF_VALUE *)OPENSSL_malloc(sizeof(CONF_VALUE))))
 				{
-				CONFerr(CONF_F_DEF_LOAD_BIO,
+				CONFerr(CONF_F_CONF_LOAD_BIO,
 							ERR_R_MALLOC_FAILURE);
 				goto err;
 				}
@@ -384,11 +357,11 @@ again:
 			v->value=NULL;
 			if (v->name == NULL)
 				{
-				CONFerr(CONF_F_DEF_LOAD_BIO,
+				CONFerr(CONF_F_CONF_LOAD_BIO,
 							ERR_R_MALLOC_FAILURE);
 				goto err;
 				}
-			BUF_strlcpy(v->name,pname,strlen(pname)+1);
+			strcpy(v->name,pname);
 			if (!str_copy(conf,psection,&(v->value),start)) goto err;
 
 			if (strcmp(psection,section) != 0)
@@ -398,17 +371,21 @@ again:
 					tv=_CONF_new_section(conf,psection);
 				if (tv == NULL)
 					{
-					CONFerr(CONF_F_DEF_LOAD_BIO,
+					CONFerr(CONF_F_CONF_LOAD_BIO,
 					   CONF_R_UNABLE_TO_CREATE_NEW_SECTION);
 					goto err;
 					}
+				ts=(STACK_OF(CONF_VALUE) *)tv->value;
 				}
 			else
+				{
 				tv=sv;
+				ts=section_sk;
+				}
 #if 1
 			if (_CONF_add_string(conf, tv, v) == 0)
 				{
-				CONFerr(CONF_F_DEF_LOAD_BIO,
+				CONFerr(CONF_F_CONF_LOAD_BIO,
 							ERR_R_MALLOC_FAILURE);
 				goto err;
 				}
@@ -416,7 +393,7 @@ again:
 			v->section=tv->section;	
 			if (!sk_CONF_VALUE_push(ts,v))
 				{
-				CONFerr(CONF_F_DEF_LOAD_BIO,
+				CONFerr(CONF_F_CONF_LOAD_BIO,
 							ERR_R_MALLOC_FAILURE);
 				goto err;
 				}
@@ -439,13 +416,9 @@ err:
 	if (buff != NULL) BUF_MEM_free(buff);
 	if (section != NULL) OPENSSL_free(section);
 	if (line != NULL) *line=eline;
-	BIO_snprintf(btmp,sizeof btmp,"%ld",eline);
+	sprintf(btmp,"%ld",eline);
 	ERR_add_error_data(2,"line ",btmp);
-	if ((h != conf->data) && (conf->data != NULL))
-		{
-		CONF_free(conf->data);
-		conf->data=NULL;
-		}
+	if ((h != conf->data) && (conf->data != NULL)) CONF_free(conf->data);
 	if (v != NULL)
 		{
 		if (v->name != NULL) OPENSSL_free(v->name);
@@ -457,6 +430,9 @@ err:
 
 static void clear_comments(CONF *conf, char *p)
 	{
+	char *to;
+
+	to=p;
 	for (;;)
 		{
 		if (IS_FCOMMENT(conf,*p))
@@ -602,13 +578,13 @@ static int str_copy(CONF *conf, char *section, char **pto, char *from)
 				e++;
 				}
 			/* So at this point we have
-			 * np which is the start of the name string which is
+			 * ns which is the start of the name string which is
 			 *   '\0' terminated. 
-			 * cp which is the start of the section string which is
+			 * cs which is the start of the section string which is
 			 *   '\0' terminated.
 			 * e is the 'next point after'.
-			 * r and rr are the chars replaced by the '\0'
-			 * rp and rrp is where 'r' and 'rr' came from.
+			 * r and s are the chars replaced by the '\0'
+			 * rp and sp is where 'r' and 's' came from.
 			 */
 			p=_CONF_get_string(conf,cp,np);
 			if (rrp != NULL) *rrp=rr;
@@ -618,20 +594,10 @@ static int str_copy(CONF *conf, char *section, char **pto, char *from)
 				CONFerr(CONF_F_STR_COPY,CONF_R_VARIABLE_HAS_NO_VALUE);
 				goto err;
 				}
-			BUF_MEM_grow_clean(buf,(strlen(p)+buf->length-(e-from)));
+			BUF_MEM_grow(buf,(strlen(p)+len-(e-from)));
 			while (*p)
 				buf->data[to++]= *(p++);
-
-			/* Since we change the pointer 'from', we also have
-			   to change the perceived length of the string it
-			   points at.  /RL */
-			len -= e-from;
 			from=e;
-
-			/* In case there were no braces or parenthesis around
-			   the variable reference, we have to put back the
-			   character that was replaced with a '\0'.  /RL */
-			*rp = r;
 			}
 		else
 			buf->data[to++]= *(from++);
@@ -711,7 +677,7 @@ static char *scan_dquote(CONF *conf, char *p)
 	return(p);
 	}
 
-static void dump_value_doall_arg(CONF_VALUE *a, BIO *out)
+static void dump_value(CONF_VALUE *a, BIO *out)
 	{
 	if (a->name)
 		BIO_printf(out, "[%s] %s=%s\n", a->section, a->name, a->value);
@@ -719,21 +685,18 @@ static void dump_value_doall_arg(CONF_VALUE *a, BIO *out)
 		BIO_printf(out, "[[%s]]\n", a->section);
 	}
 
-static IMPLEMENT_LHASH_DOALL_ARG_FN(dump_value, CONF_VALUE, BIO)
-
-static int def_dump(const CONF *conf, BIO *out)
+static int def_dump(CONF *conf, BIO *out)
 	{
-	lh_CONF_VALUE_doall_arg(conf->data, LHASH_DOALL_ARG_FN(dump_value),
-				BIO, out);
+	lh_doall_arg(conf->data, (void (*)())dump_value, out);
 	return 1;
 	}
 
-static int def_is_number(const CONF *conf, char c)
+static int def_is_number(CONF *conf, char c)
 	{
 	return IS_NUMBER(conf,c);
 	}
 
-static int def_to_int(const CONF *conf, char c)
+static int def_to_int(CONF *conf, char c)
 	{
 	return c - '0';
 	}

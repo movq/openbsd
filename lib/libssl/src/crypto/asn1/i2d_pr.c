@@ -58,22 +58,28 @@
 
 #include <stdio.h>
 #include "cryptlib.h"
-#include <openssl/evp.h>
-#include <openssl/x509.h>
-#include "asn1_locl.h"
+#include "bn.h"
+#include "evp.h"
+#include "objects.h"
 
-int i2d_PrivateKey(EVP_PKEY *a, unsigned char **pp)
+int i2d_PrivateKey(a,pp)
+EVP_PKEY *a;
+unsigned char **pp;
 	{
-	if (a->ameth && a->ameth->old_priv_encode)
+#ifndef NO_RSA
+	if (a->type == EVP_PKEY_RSA)
 		{
-		return a->ameth->old_priv_encode(a, pp);
+		return(i2d_RSAPrivateKey(a->pkey.rsa,pp));
 		}
-	if (a->ameth && a->ameth->priv_encode) {
-		PKCS8_PRIV_KEY_INFO *p8 = EVP_PKEY2PKCS8(a);
-		int ret = i2d_PKCS8_PRIV_KEY_INFO(p8,pp);
-		PKCS8_PRIV_KEY_INFO_free(p8);
-		return ret;
-	}	
+	else
+#endif
+#ifndef NO_DSA
+	if (a->type == EVP_PKEY_DSA)
+		{
+		return(i2d_DSAPrivateKey(a->pkey.dsa,pp));
+		}
+#endif
+
 	ASN1err(ASN1_F_I2D_PRIVATEKEY,ASN1_R_UNSUPPORTED_PUBLIC_KEY_TYPE);
 	return(-1);
 	}

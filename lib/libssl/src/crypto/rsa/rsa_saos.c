@@ -58,14 +58,18 @@
 
 #include <stdio.h>
 #include "cryptlib.h"
-#include <openssl/bn.h>
-#include <openssl/rsa.h>
-#include <openssl/objects.h>
-#include <openssl/x509.h>
+#include "bn.h"
+#include "rsa.h"
+#include "objects.h"
+#include "x509.h"
 
-int RSA_sign_ASN1_OCTET_STRING(int type,
-	const unsigned char *m, unsigned int m_len,
-	unsigned char *sigret, unsigned int *siglen, RSA *rsa)
+int RSA_sign_ASN1_OCTET_STRING(type,m,m_len,sigret,siglen,rsa)
+int type;
+unsigned char *m;
+unsigned int m_len;
+unsigned char *sigret;
+unsigned int *siglen;
+RSA *rsa;
 	{
 	ASN1_OCTET_STRING sig;
 	int i,j,ret=1;
@@ -73,16 +77,16 @@ int RSA_sign_ASN1_OCTET_STRING(int type,
 
 	sig.type=V_ASN1_OCTET_STRING;
 	sig.length=m_len;
-	sig.data=(unsigned char *)m;
+	sig.data=m;
 
 	i=i2d_ASN1_OCTET_STRING(&sig,NULL);
 	j=RSA_size(rsa);
-	if (i > (j-RSA_PKCS1_PADDING_SIZE))
+	if ((i-RSA_PKCS1_PADDING) > j)
 		{
 		RSAerr(RSA_F_RSA_SIGN_ASN1_OCTET_STRING,RSA_R_DIGEST_TOO_BIG_FOR_RSA_KEY);
 		return(0);
 		}
-	s=(unsigned char *)OPENSSL_malloc((unsigned int)j+1);
+	s=(unsigned char *)Malloc((unsigned int)j+1);
 	if (s == NULL)
 		{
 		RSAerr(RSA_F_RSA_SIGN_ASN1_OCTET_STRING,ERR_R_MALLOC_FAILURE);
@@ -96,19 +100,21 @@ int RSA_sign_ASN1_OCTET_STRING(int type,
 	else
 		*siglen=i;
 
-	OPENSSL_cleanse(s,(unsigned int)j+1);
-	OPENSSL_free(s);
+	memset(s,0,(unsigned int)j+1);
+	Free(s);
 	return(ret);
 	}
 
-int RSA_verify_ASN1_OCTET_STRING(int dtype,
-	const unsigned char *m,
-	unsigned int m_len, unsigned char *sigbuf, unsigned int siglen,
-	RSA *rsa)
+int RSA_verify_ASN1_OCTET_STRING(dtype, m, m_len, sigbuf, siglen, rsa)
+int dtype;
+unsigned char *m;
+unsigned int m_len;
+unsigned char *sigbuf;
+unsigned int siglen;
+RSA *rsa;
 	{
 	int i,ret=0;
-	unsigned char *s;
-	const unsigned char *p;
+	unsigned char *p,*s;
 	ASN1_OCTET_STRING *sig=NULL;
 
 	if (siglen != (unsigned int)RSA_size(rsa))
@@ -117,7 +123,7 @@ int RSA_verify_ASN1_OCTET_STRING(int dtype,
 		return(0);
 		}
 
-	s=(unsigned char *)OPENSSL_malloc((unsigned int)siglen);
+	s=(unsigned char *)Malloc((unsigned int)siglen);
 	if (s == NULL)
 		{
 		RSAerr(RSA_F_RSA_VERIFY_ASN1_OCTET_STRING,ERR_R_MALLOC_FAILURE);
@@ -139,12 +145,9 @@ int RSA_verify_ASN1_OCTET_STRING(int dtype,
 	else
 		ret=1;
 err:
-	if (sig != NULL) M_ASN1_OCTET_STRING_free(sig);
-	if (s != NULL)
-		{
-		OPENSSL_cleanse(s,(unsigned int)siglen);
-		OPENSSL_free(s);
-		}
+	if (sig != NULL) ASN1_OCTET_STRING_free(sig);
+	memset(s,0,(unsigned int)siglen);
+	Free(s);
 	return(ret);
 	}
 

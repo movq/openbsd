@@ -1,5 +1,5 @@
 /* v3_bitst.c */
-/* Written by Dr Stephen N Henson (steve@openssl.org) for the OpenSSL
+/* Written by Dr Stephen N Henson (shenson@bigfoot.com) for the OpenSSL
  * project 1999.
  */
 /* ====================================================================
@@ -61,6 +61,12 @@
 #include <openssl/conf.h>
 #include <openssl/x509v3.h>
 
+static ASN1_BIT_STRING *asn1_bit_string_new(void);
+static ASN1_BIT_STRING *v2i_ASN1_BIT_STRING(X509V3_EXT_METHOD *method,
+				X509V3_CTX *ctx, STACK_OF(CONF_VALUE) *nval);
+static STACK_OF(CONF_VALUE) *i2v_ASN1_BIT_STRING(X509V3_EXT_METHOD *method,
+				ASN1_BIT_STRING *bits,
+				STACK_OF(CONF_VALUE) *extlist);
 static BIT_STRING_BITNAME ns_cert_type_table[] = {
 {0, "SSL Client", "client"},
 {1, "SSL Server", "server"},
@@ -88,10 +94,15 @@ static BIT_STRING_BITNAME key_usage_type_table[] = {
 
 
 
-const X509V3_EXT_METHOD v3_nscert = EXT_BITSTRING(NID_netscape_cert_type, ns_cert_type_table);
-const X509V3_EXT_METHOD v3_key_usage = EXT_BITSTRING(NID_key_usage, key_usage_type_table);
+X509V3_EXT_METHOD v3_nscert = EXT_BITSTRING(NID_netscape_cert_type, ns_cert_type_table);
+X509V3_EXT_METHOD v3_key_usage = EXT_BITSTRING(NID_key_usage, key_usage_type_table);
 
-STACK_OF(CONF_VALUE) *i2v_ASN1_BIT_STRING(X509V3_EXT_METHOD *method,
+static ASN1_BIT_STRING *asn1_bit_string_new(void)
+{
+	return ASN1_BIT_STRING_new();
+}
+
+static STACK_OF(CONF_VALUE) *i2v_ASN1_BIT_STRING(X509V3_EXT_METHOD *method,
 	     ASN1_BIT_STRING *bits, STACK_OF(CONF_VALUE) *ret)
 {
 	BIT_STRING_BITNAME *bnam;
@@ -102,14 +113,14 @@ STACK_OF(CONF_VALUE) *i2v_ASN1_BIT_STRING(X509V3_EXT_METHOD *method,
 	return ret;
 }
 	
-ASN1_BIT_STRING *v2i_ASN1_BIT_STRING(X509V3_EXT_METHOD *method,
+static ASN1_BIT_STRING *v2i_ASN1_BIT_STRING(X509V3_EXT_METHOD *method,
 	     X509V3_CTX *ctx, STACK_OF(CONF_VALUE) *nval)
 {
 	CONF_VALUE *val;
 	ASN1_BIT_STRING *bs;
 	int i;
 	BIT_STRING_BITNAME *bnam;
-	if(!(bs = M_ASN1_BIT_STRING_new())) {
+	if(!(bs = ASN1_BIT_STRING_new())) {
 		X509V3err(X509V3_F_V2I_ASN1_BIT_STRING,ERR_R_MALLOC_FAILURE);
 		return NULL;
 	}
@@ -118,12 +129,7 @@ ASN1_BIT_STRING *v2i_ASN1_BIT_STRING(X509V3_EXT_METHOD *method,
 		for(bnam = method->usr_data; bnam->lname; bnam++) {
 			if(!strcmp(bnam->sname, val->name) ||
 				!strcmp(bnam->lname, val->name) ) {
-				if(!ASN1_BIT_STRING_set_bit(bs, bnam->bitnum, 1)) {
-					X509V3err(X509V3_F_V2I_ASN1_BIT_STRING,
-						ERR_R_MALLOC_FAILURE);
-					M_ASN1_BIT_STRING_free(bs);
-					return NULL;
-				}
+				ASN1_BIT_STRING_set_bit(bs, bnam->bitnum, 1);
 				break;
 			}
 		}
@@ -131,7 +137,7 @@ ASN1_BIT_STRING *v2i_ASN1_BIT_STRING(X509V3_EXT_METHOD *method,
 			X509V3err(X509V3_F_V2I_ASN1_BIT_STRING,
 					X509V3_R_UNKNOWN_BIT_STRING_ARGUMENT);
 			X509V3_conf_err(val);
-			M_ASN1_BIT_STRING_free(bs);
+			ASN1_BIT_STRING_free(bs);
 			return NULL;
 		}
 	}

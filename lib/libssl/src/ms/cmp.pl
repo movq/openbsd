@@ -1,4 +1,4 @@
-#!/usr/local/bin/perl
+#!/usr/bin/perl
 
 ($#ARGV == 1) || die "usage: cmp.pl <file1> <file2>\n";
 

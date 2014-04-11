@@ -55,16 +55,10 @@
  * Hudson (tjh@cryptsoft.com).
  *
  */
-/* ====================================================================
- * Copyright 2002 Sun Microsystems, Inc. ALL RIGHTS RESERVED.
- * ECDH support in OpenSSL originally developed by 
- * SUN MICROSYSTEMS, INC., and contributed to the OpenSSL project.
- */
 
 #ifndef HEADER_ENGINE_INT_H
 #define HEADER_ENGINE_INT_H
 
-#include "cryptlib.h"
 /* Take public definitions from engine.h */
 #include <openssl/engine.h>
 
@@ -127,8 +121,6 @@ ENGINE *engine_table_select(ENGINE_TABLE **table, int nid);
 ENGINE *engine_table_select_tmp(ENGINE_TABLE **table, int nid, const char *f, int l);
 #define engine_table_select(t,n) engine_table_select_tmp(t,n,__FILE__,__LINE__)
 #endif
-typedef void (engine_table_doall_cb)(int nid, STACK_OF(ENGINE) *sk, ENGINE *def, void *arg);
-void engine_table_doall(ENGINE_TABLE *table, engine_table_doall_cb *cb, void *arg);
 
 /* Internal versions of API functions that have control over locking. These are
  * used between C files when functionality needs to be shared but the caller may
@@ -145,11 +137,6 @@ void engine_set_all_null(ENGINE *e);
 /* NB: Bitwise OR-able values for the "flags" variable in ENGINE are now exposed
  * in engine.h. */
 
-/* Free up dynamically allocated public key methods associated with ENGINE */
-
-void engine_pkey_meths_free(ENGINE *e);
-void engine_pkey_asn1_meths_free(ENGINE *e);
-
 /* This is a structure for storing implementations of various crypto
  * algorithms and functions. */
 struct engine_st
@@ -159,18 +146,12 @@ struct engine_st
 	const RSA_METHOD *rsa_meth;
 	const DSA_METHOD *dsa_meth;
 	const DH_METHOD *dh_meth;
-	const ECDH_METHOD *ecdh_meth;
-	const ECDSA_METHOD *ecdsa_meth;
 	const RAND_METHOD *rand_meth;
-	const STORE_METHOD *store_meth;
 	/* Cipher handling is via this callback */
 	ENGINE_CIPHERS_PTR ciphers;
 	/* Digest handling is via this callback */
 	ENGINE_DIGESTS_PTR digests;
-	/* Public key handling via this callback */
-	ENGINE_PKEY_METHS_PTR pkey_meths;
-	/* ASN1 public key handling via this callback */
-	ENGINE_PKEY_ASN1_METHS_PTR pkey_asn1_meths;
+
 
 	ENGINE_GEN_INT_FUNC_PTR	destroy;
 
@@ -179,8 +160,6 @@ struct engine_st
 	ENGINE_CTRL_FUNC_PTR ctrl;
 	ENGINE_LOAD_KEY_PTR load_privkey;
 	ENGINE_LOAD_KEY_PTR load_pubkey;
-
-	ENGINE_SSL_CLIENT_CERT_PTR load_ssl_client_cert;
 
 	const ENGINE_CMD_DEFN *cmd_defns;
 	int flags;

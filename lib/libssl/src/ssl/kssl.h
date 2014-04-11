@@ -82,12 +82,6 @@ extern "C" {
 #ifdef KRB5_HEIMDAL
 typedef unsigned char krb5_octet;
 #define FAR
-#else
-
-#ifndef FAR
-#define FAR
-#endif
-
 #endif
 
 /*	Uncomment this to debug kssl problems or
@@ -155,7 +149,7 @@ KSSL_CTX *kssl_ctx_new(void);
 KSSL_CTX *kssl_ctx_free(KSSL_CTX *kssl_ctx);
 void kssl_ctx_show(KSSL_CTX *kssl_ctx);
 krb5_error_code kssl_ctx_setprinc(KSSL_CTX *kssl_ctx, int which,
-        krb5_data *realm, krb5_data *entity, int nentities);
+        krb5_data *realm, krb5_data *entity);
 krb5_error_code	kssl_cget_tkt(KSSL_CTX *kssl_ctx,  krb5_data **enc_tktp,
         krb5_data *authenp, KSSL_ERR *kssl_err);
 krb5_error_code	kssl_sget_tkt(KSSL_CTX *kssl_ctx,  krb5_data *indata,
@@ -171,10 +165,6 @@ krb5_error_code  kssl_validate_times(krb5_timestamp atime,
 krb5_error_code  kssl_check_authent(KSSL_CTX *kssl_ctx, krb5_data *authentp,
 			            krb5_timestamp *atimep, KSSL_ERR *kssl_err);
 unsigned char	*kssl_skip_confound(krb5_enctype enctype, unsigned char *authn);
-
-void SSL_set0_kssl_ctx(SSL *s, KSSL_CTX *kctx);
-KSSL_CTX * SSL_get0_kssl_ctx(SSL *s);
-char *kssl_ctx_get0_client_princ(KSSL_CTX *kctx);
 
 #ifdef  __cplusplus
 }

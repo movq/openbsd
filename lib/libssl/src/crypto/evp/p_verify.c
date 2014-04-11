@@ -58,41 +58,20 @@
 
 #include <stdio.h>
 #include "cryptlib.h"
-#include <openssl/evp.h>
-#include <openssl/objects.h>
-#include <openssl/x509.h>
+#include "evp.h"
+#include "objects.h"
+#include "x509.h"
 
-int EVP_VerifyFinal(EVP_MD_CTX *ctx, const unsigned char *sigbuf,
-	     unsigned int siglen, EVP_PKEY *pkey)
+int EVP_VerifyFinal(ctx,sigbuf,siglen,pkey)
+EVP_MD_CTX *ctx;
+unsigned char *sigbuf;
+unsigned int siglen;
+EVP_PKEY *pkey;
 	{
 	unsigned char m[EVP_MAX_MD_SIZE];
 	unsigned int m_len;
-	int i=-1,ok=0,v;
-	EVP_MD_CTX tmp_ctx;
-	EVP_PKEY_CTX *pkctx = NULL;
-
-	EVP_MD_CTX_init(&tmp_ctx);
-	if (!EVP_MD_CTX_copy_ex(&tmp_ctx,ctx))
-		goto err;    
-	if (!EVP_DigestFinal_ex(&tmp_ctx,&(m[0]),&m_len))
-		goto err;
-	EVP_MD_CTX_cleanup(&tmp_ctx);
-
-	if (ctx->digest->flags & EVP_MD_FLAG_PKEY_METHOD_SIGNATURE)
-		{
-		i = -1;
-		pkctx = EVP_PKEY_CTX_new(pkey, NULL);
-		if (!pkctx)
-			goto err;
-		if (EVP_PKEY_verify_init(pkctx) <= 0)
-			goto err;
-		if (EVP_PKEY_CTX_set_signature_md(pkctx, ctx->digest) <= 0)
-			goto err;
-		i = EVP_PKEY_verify(pkctx, sigbuf, siglen, m, m_len);
-		err:
-		EVP_PKEY_CTX_free(pkctx);
-		return i;
-		}
+	int i,ok=0,v;
+	MS_STATIC EVP_MD_CTX tmp_ctx;
 
 	for (i=0; i<4; i++)
 		{
@@ -109,6 +88,8 @@ int EVP_VerifyFinal(EVP_MD_CTX *ctx, const unsigned char *sigbuf,
 		EVPerr(EVP_F_EVP_VERIFYFINAL,EVP_R_WRONG_PUBLIC_KEY_TYPE);
 		return(-1);
 		}
+	memcpy(&tmp_ctx,ctx,sizeof(EVP_MD_CTX));
+	EVP_DigestFinal(&tmp_ctx,&(m[0]),&m_len);
         if (ctx->digest->verify == NULL)
                 {
 		EVPerr(EVP_F_EVP_VERIFYFINAL,EVP_R_NO_VERIFY_FUNCTION_CONFIGURED);

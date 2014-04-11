@@ -58,16 +58,20 @@
 
 #include <stdio.h>
 #include <errno.h>
-#include <openssl/crypto.h>
+#include "crypto.h"
 #include "cryptlib.h"
-#include <openssl/bio.h>
-#include <openssl/stack.h>
+#include "bio.h"
+#include "stack.h"
 
-BIO *BIO_new(BIO_METHOD *method)
+static STACK *bio_meth=NULL;
+static int bio_meth_num=0;
+
+BIO *BIO_new(method)
+BIO_METHOD *method;
 	{
 	BIO *ret=NULL;
 
-	ret=(BIO *)OPENSSL_malloc(sizeof(BIO));
+	ret=(BIO *)Malloc(sizeof(BIO));
 	if (ret == NULL)
 		{
 		BIOerr(BIO_F_BIO_NEW,ERR_R_MALLOC_FAILURE);
@@ -75,13 +79,15 @@ BIO *BIO_new(BIO_METHOD *method)
 		}
 	if (!BIO_set(ret,method))
 		{
-		OPENSSL_free(ret);
+		Free(ret);
 		ret=NULL;
 		}
 	return(ret);
 	}
 
-int BIO_set(BIO *bio, BIO_METHOD *method)
+int BIO_set(bio,method)
+BIO *bio;
+BIO_METHOD *method;
 	{
 	bio->method=method;
 	bio->callback=NULL;
@@ -97,20 +103,17 @@ int BIO_set(BIO *bio, BIO_METHOD *method)
 	bio->references=1;
 	bio->num_read=0L;
 	bio->num_write=0L;
-	CRYPTO_new_ex_data(CRYPTO_EX_INDEX_BIO, bio, &bio->ex_data);
+	CRYPTO_new_ex_data(bio_meth,(char *)bio,&bio->ex_data);
 	if (method->create != NULL)
 		if (!method->create(bio))
-			{
-			CRYPTO_free_ex_data(CRYPTO_EX_INDEX_BIO, bio,
-					&bio->ex_data);
 			return(0);
-			}
 	return(1);
 	}
 
-int BIO_free(BIO *a)
+int BIO_free(a)
+BIO *a;
 	{
-	int i;
+	int ret=0,i;
 
 	if (a == NULL) return(0);
 
@@ -118,7 +121,7 @@ int BIO_free(BIO *a)
 #ifdef REF_PRINT
 	REF_PRINT("BIO",a);
 #endif
-	if (i > 0) return(1);
+        if (i > 0) return(1);
 #ifdef REF_CHECK
 	if (i < 0)
 		{
@@ -130,67 +133,21 @@ int BIO_free(BIO *a)
 		((i=(int)a->callback(a,BIO_CB_FREE,NULL,0,0L,1L)) <= 0))
 			return(i);
 
-	CRYPTO_free_ex_data(CRYPTO_EX_INDEX_BIO, a, &a->ex_data);
+	CRYPTO_free_ex_data(bio_meth,(char *)a,&a->ex_data);
 
 	if ((a->method == NULL) || (a->method->destroy == NULL)) return(1);
-	a->method->destroy(a);
-	OPENSSL_free(a);
+	ret=a->method->destroy(a);
+	Free(a);
 	return(1);
 	}
 
-void BIO_vfree(BIO *a)
-    { BIO_free(a); }
-
-void BIO_clear_flags(BIO *b, int flags)
-	{
-	b->flags &= ~flags;
-	}
-
-int	BIO_test_flags(const BIO *b, int flags)
-	{
-	return (b->flags & flags);
-	}
-
-void	BIO_set_flags(BIO *b, int flags)
-	{
-	b->flags |= flags;
-	}
-
-long (*BIO_get_callback(const BIO *b))(struct bio_st *,int,const char *,int, long,long)
-	{
-	return b->callback;
-	}
-
-void BIO_set_callback(BIO *b, long (*cb)(struct bio_st *,int,const char *,int, long,long))
-	{
-	b->callback = cb;
-	}
-
-void BIO_set_callback_arg(BIO *b, char *arg)
-	{
-	b->cb_arg = arg;
-	}
-
-char * BIO_get_callback_arg(const BIO *b)
-	{
-	return b->cb_arg;
-	}
-
-const char * BIO_method_name(const BIO *b)
-	{
-	return b->method->name;
-	}
-
-int BIO_method_type(const BIO *b)
-	{
-	return b->method->type;
-	}
-
-
-int BIO_read(BIO *b, void *out, int outl)
+int BIO_read(b,out,outl)
+BIO *b;
+char *out;
+int outl;
 	{
 	int i;
-	long (*cb)(BIO *,int,const char *,int,long,long);
+	long (*cb)();
 
 	if ((b == NULL) || (b->method == NULL) || (b->method->bread == NULL))
 		{
@@ -205,12 +162,11 @@ int BIO_read(BIO *b, void *out, int outl)
 
 	if (!b->init)
 		{
-		BIOerr(BIO_F_BIO_READ,BIO_R_UNINITIALIZED);
+		BIOerr(BIO_F_BIO_READ,BIO_R_UNINITALISED);
 		return(-2);
 		}
 
 	i=b->method->bread(b,out,outl);
-
 	if (i > 0) b->num_read+=(unsigned long)i;
 
 	if (cb != NULL)
@@ -219,10 +175,13 @@ int BIO_read(BIO *b, void *out, int outl)
 	return(i);
 	}
 
-int BIO_write(BIO *b, const void *in, int inl)
+int BIO_write(b,in,inl)
+BIO *b;
+char *in;
+int inl;
 	{
 	int i;
-	long (*cb)(BIO *,int,const char *,int,long,long);
+	long (*cb)();
 
 	if (b == NULL)
 		return(0);
@@ -240,12 +199,11 @@ int BIO_write(BIO *b, const void *in, int inl)
 
 	if (!b->init)
 		{
-		BIOerr(BIO_F_BIO_WRITE,BIO_R_UNINITIALIZED);
+		BIOerr(BIO_F_BIO_WRITE,BIO_R_UNINITALISED);
 		return(-2);
 		}
 
 	i=b->method->bwrite(b,in,inl);
-
 	if (i > 0) b->num_write+=(unsigned long)i;
 
 	if (cb != NULL)
@@ -254,10 +212,12 @@ int BIO_write(BIO *b, const void *in, int inl)
 	return(i);
 	}
 
-int BIO_puts(BIO *b, const char *in)
+int BIO_puts(b,in)
+BIO *b;
+char *in;
 	{
 	int i;
-	long (*cb)(BIO *,int,const char *,int,long,long);
+	long (*cb)();
 
 	if ((b == NULL) || (b->method == NULL) || (b->method->bputs == NULL))
 		{
@@ -273,13 +233,11 @@ int BIO_puts(BIO *b, const char *in)
 
 	if (!b->init)
 		{
-		BIOerr(BIO_F_BIO_PUTS,BIO_R_UNINITIALIZED);
+		BIOerr(BIO_F_BIO_PUTS,BIO_R_UNINITALISED);
 		return(-2);
 		}
 
 	i=b->method->bputs(b,in);
-
-	if (i > 0) b->num_write+=(unsigned long)i;
 
 	if (cb != NULL)
 		i=(int)cb(b,BIO_CB_PUTS|BIO_CB_RETURN,in,0,
@@ -287,10 +245,13 @@ int BIO_puts(BIO *b, const char *in)
 	return(i);
 	}
 
-int BIO_gets(BIO *b, char *in, int inl)
+int BIO_gets(b,in,inl)
+BIO *b;
+char *in;
+int inl;
 	{
 	int i;
-	long (*cb)(BIO *,int,const char *,int,long,long);
+	long (*cb)();
 
 	if ((b == NULL) || (b->method == NULL) || (b->method->bgets == NULL))
 		{
@@ -306,7 +267,7 @@ int BIO_gets(BIO *b, char *in, int inl)
 
 	if (!b->init)
 		{
-		BIOerr(BIO_F_BIO_GETS,BIO_R_UNINITIALIZED);
+		BIOerr(BIO_F_BIO_GETS,BIO_R_UNINITALISED);
 		return(-2);
 		}
 
@@ -318,19 +279,11 @@ int BIO_gets(BIO *b, char *in, int inl)
 	return(i);
 	}
 
-int BIO_indent(BIO *b,int indent,int max)
-	{
-	if(indent < 0)
-		indent=0;
-	if(indent > max)
-		indent=max;
-	while(indent--)
-		if(BIO_puts(b," ") != 1)
-			return 0;
-	return 1;
-	}
-
-long BIO_int_ctrl(BIO *b, int cmd, long larg, int iarg)
+long BIO_int_ctrl(b,cmd,larg,iarg)
+BIO *b;
+int cmd;
+long larg;
+int iarg;
 	{
 	int i;
 
@@ -338,7 +291,10 @@ long BIO_int_ctrl(BIO *b, int cmd, long larg, int iarg)
 	return(BIO_ctrl(b,cmd,larg,(char *)&i));
 	}
 
-char *BIO_ptr_ctrl(BIO *b, int cmd, long larg)
+char *BIO_ptr_ctrl(b,cmd,larg)
+BIO *b;
+int cmd;
+long larg;
 	{
 	char *p=NULL;
 
@@ -348,10 +304,14 @@ char *BIO_ptr_ctrl(BIO *b, int cmd, long larg)
 		return(p);
 	}
 
-long BIO_ctrl(BIO *b, int cmd, long larg, void *parg)
+long BIO_ctrl(b,cmd,larg,parg)
+BIO *b;
+int cmd;
+long larg;
+char *parg;
 	{
 	long ret;
-	long (*cb)(BIO *,int,const char *,int,long,long);
+	long (*cb)();
 
 	if (b == NULL) return(0);
 
@@ -375,49 +335,9 @@ long BIO_ctrl(BIO *b, int cmd, long larg, void *parg)
 	return(ret);
 	}
 
-long BIO_callback_ctrl(BIO *b, int cmd, void (*fp)(struct bio_st *, int, const char *, int, long, long))
-	{
-	long ret;
-	long (*cb)(BIO *,int,const char *,int,long,long);
-
-	if (b == NULL) return(0);
-
-	if ((b->method == NULL) || (b->method->callback_ctrl == NULL))
-		{
-		BIOerr(BIO_F_BIO_CALLBACK_CTRL,BIO_R_UNSUPPORTED_METHOD);
-		return(-2);
-		}
-
-	cb=b->callback;
-
-	if ((cb != NULL) &&
-		((ret=cb(b,BIO_CB_CTRL,(void *)&fp,cmd,0,1L)) <= 0))
-		return(ret);
-
-	ret=b->method->callback_ctrl(b,cmd,fp);
-
-	if (cb != NULL)
-		ret=cb(b,BIO_CB_CTRL|BIO_CB_RETURN,(void *)&fp,cmd,
-			0,ret);
-	return(ret);
-	}
-
-/* It is unfortunate to duplicate in functions what the BIO_(w)pending macros
- * do; but those macros have inappropriate return type, and for interfacing
- * from other programming languages, C macros aren't much of a help anyway. */
-size_t BIO_ctrl_pending(BIO *bio)
-	{
-	return BIO_ctrl(bio, BIO_CTRL_PENDING, 0, NULL);
-	}
-
-size_t BIO_ctrl_wpending(BIO *bio)
-	{
-	return BIO_ctrl(bio, BIO_CTRL_WPENDING, 0, NULL);
-	}
-
-
 /* put the 'bio' on the end of b's list of operators */
-BIO *BIO_push(BIO *b, BIO *bio)
+BIO *BIO_push(b,bio)
+BIO *b,*bio;
 	{
 	BIO *lb;
 
@@ -429,19 +349,18 @@ BIO *BIO_push(BIO *b, BIO *bio)
 	if (bio != NULL)
 		bio->prev_bio=lb;
 	/* called to do internal processing */
-	BIO_ctrl(b,BIO_CTRL_PUSH,0,lb);
+	BIO_ctrl(b,BIO_CTRL_PUSH,0,NULL);
 	return(b);
 	}
 
 /* Remove the first and return the rest */
-BIO *BIO_pop(BIO *b)
+BIO *BIO_pop(b)
+BIO *b;
 	{
 	BIO *ret;
 
 	if (b == NULL) return(NULL);
 	ret=b->next_bio;
-
-	BIO_ctrl(b,BIO_CTRL_POP,0,b);
 
 	if (b->prev_bio != NULL)
 		b->prev_bio->next_bio=b->next_bio;
@@ -450,10 +369,13 @@ BIO *BIO_pop(BIO *b)
 
 	b->next_bio=NULL;
 	b->prev_bio=NULL;
+	BIO_ctrl(b,BIO_CTRL_POP,0,NULL);
 	return(ret);
 	}
 
-BIO *BIO_get_retry_BIO(BIO *bio, int *reason)
+BIO *BIO_get_retry_BIO(bio,reason)
+BIO *bio;
+int *reason;
 	{
 	BIO *b,*last;
 
@@ -469,16 +391,18 @@ BIO *BIO_get_retry_BIO(BIO *bio, int *reason)
 	return(last);
 	}
 
-int BIO_get_retry_reason(BIO *bio)
+int BIO_get_retry_reason(bio)
+BIO *bio;
 	{
 	return(bio->retry_reason);
 	}
 
-BIO *BIO_find_type(BIO *bio, int type)
+BIO *BIO_find_type(bio,type)
+BIO *bio;
+int type;
 	{
 	int mt,mask;
 
-	if(!bio) return NULL;
 	mask=type&0xff;
 	do	{
 		if (bio->method != NULL)
@@ -497,13 +421,8 @@ BIO *BIO_find_type(BIO *bio, int type)
 	return(NULL);
 	}
 
-BIO *BIO_next(BIO *b)
-	{
-	if(!b) return NULL;
-	return b->next_bio;
-	}
-
-void BIO_free_all(BIO *bio)
+void BIO_free_all(bio)
+BIO *bio;
 	{
 	BIO *b;
 	int ref;
@@ -519,42 +438,42 @@ void BIO_free_all(BIO *bio)
 		}
 	}
 
-BIO *BIO_dup_chain(BIO *in)
+BIO *BIO_dup_chain(in)
+BIO *in;
 	{
-	BIO *ret=NULL,*eoc=NULL,*bio,*new_bio;
+	BIO *ret=NULL,*eoc=NULL,*bio,*new;
 
 	for (bio=in; bio != NULL; bio=bio->next_bio)
 		{
-		if ((new_bio=BIO_new(bio->method)) == NULL) goto err;
-		new_bio->callback=bio->callback;
-		new_bio->cb_arg=bio->cb_arg;
-		new_bio->init=bio->init;
-		new_bio->shutdown=bio->shutdown;
-		new_bio->flags=bio->flags;
+		if ((new=BIO_new(bio->method)) == NULL) goto err;
+		new->callback=bio->callback;
+		new->cb_arg=bio->cb_arg;
+		new->init=bio->init;
+		new->shutdown=bio->shutdown;
+		new->flags=bio->flags;
 
 		/* This will let SSL_s_sock() work with stdin/stdout */
-		new_bio->num=bio->num;
+		new->num=bio->num;
 
-		if (!BIO_dup_state(bio,(char *)new_bio))
+		if (!BIO_dup_state(bio,(char *)new))
 			{
-			BIO_free(new_bio);
+			BIO_free(new);
 			goto err;
 			}
 
-		/* copy app data */
-		if (!CRYPTO_dup_ex_data(CRYPTO_EX_INDEX_BIO, &new_bio->ex_data,
-					&bio->ex_data))
-			goto err;
+	        /* copy app data */
+	        if (!CRYPTO_dup_ex_data(bio_meth,&new->ex_data,&bio->ex_data))
+	                goto err;
 
 		if (ret == NULL)
 			{
-			eoc=new_bio;
+			eoc=new;
 			ret=eoc;
 			}
 		else
 			{
-			BIO_push(eoc,new_bio);
-			eoc=new_bio;
+			BIO_push(eoc,new);
+			eoc=new;
 			}
 		}
 	return(ret);
@@ -564,39 +483,37 @@ err:
 	return(NULL);	
 	}
 
-void BIO_copy_next_retry(BIO *b)
+void BIO_copy_next_retry(b)
+BIO *b;
 	{
 	BIO_set_flags(b,BIO_get_retry_flags(b->next_bio));
 	b->retry_reason=b->next_bio->retry_reason;
 	}
 
-int BIO_get_ex_new_index(long argl, void *argp, CRYPTO_EX_new *new_func,
-	     CRYPTO_EX_dup *dup_func, CRYPTO_EX_free *free_func)
-	{
-	return CRYPTO_get_ex_new_index(CRYPTO_EX_INDEX_BIO, argl, argp,
-				new_func, dup_func, free_func);
-	}
+int BIO_get_ex_new_index(argl,argp,new_func,dup_func,free_func)
+long argl;
+char *argp;
+int (*new_func)();
+int (*dup_func)();
+void (*free_func)();
+        {
+        bio_meth_num++;
+        return(CRYPTO_get_ex_new_index(bio_meth_num-1,&bio_meth,
+                argl,argp,new_func,dup_func,free_func));
+        }
 
-int BIO_set_ex_data(BIO *bio, int idx, void *data)
+int BIO_set_ex_data(bio,idx,data)
+BIO *bio;
+int idx;
+char *data;
 	{
 	return(CRYPTO_set_ex_data(&(bio->ex_data),idx,data));
 	}
 
-void *BIO_get_ex_data(BIO *bio, int idx)
+char *BIO_get_ex_data(bio,idx)
+BIO *bio;
+int idx;
 	{
 	return(CRYPTO_get_ex_data(&(bio->ex_data),idx));
 	}
 
-unsigned long BIO_number_read(BIO *bio)
-{
-	if(bio) return bio->num_read;
-	return 0;
-}
-
-unsigned long BIO_number_written(BIO *bio)
-{
-	if(bio) return bio->num_write;
-	return 0;
-}
-
-IMPLEMENT_STACK_OF(BIO)

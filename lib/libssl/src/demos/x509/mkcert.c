@@ -9,9 +9,7 @@
 #include <openssl/pem.h>
 #include <openssl/conf.h>
 #include <openssl/x509v3.h>
-#ifndef OPENSSL_NO_ENGINE
 #include <openssl/engine.h>
-#endif
 
 int mkcert(X509 **x509p, EVP_PKEY **pkeyp, int bits, int serial, int days);
 int add_ext(X509 *cert, int nid, char *value);
@@ -37,9 +35,7 @@ int main(int argc, char **argv)
 	X509_free(x509);
 	EVP_PKEY_free(pkey);
 
-#ifndef OPENSSL_NO_ENGINE
 	ENGINE_cleanup();
-#endif
 	CRYPTO_cleanup_all_ex_data();
 
 	CRYPTO_mem_leaks(bio_err);
@@ -92,7 +88,7 @@ int mkcert(X509 **x509p, EVP_PKEY **pkeyp, int bits, int serial, int days)
 		}
 	rsa=NULL;
 
-	X509_set_version(x,2);
+	X509_set_version(x,3);
 	ASN1_INTEGER_set(X509_get_serialNumber(x),serial);
 	X509_gmtime_adj(X509_get_notBefore(x),0);
 	X509_gmtime_adj(X509_get_notAfter(x),(long)60*60*24*days);
@@ -136,7 +132,7 @@ int mkcert(X509 **x509p, EVP_PKEY **pkeyp, int bits, int serial, int days)
 	}
 #endif
 	
-	if (!X509_sign(x,pk,EVP_sha1()))
+	if (!X509_sign(x,pk,EVP_md5()))
 		goto err;
 
 	*x509p=x;

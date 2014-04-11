@@ -25,8 +25,7 @@ handshake has been finished or an error occurred.
 
 If the underlying BIO is B<non-blocking>, SSL_connect() will also return
 when the underlying BIO could not satisfy the needs of SSL_connect()
-to continue the handshake, indicating the problem by the return value -1.
-In this case a call to SSL_get_error() with the
+to continue the handshake. In this case a call to SSL_get_error() with the
 return value of SSL_connect() will yield B<SSL_ERROR_WANT_READ> or
 B<SSL_ERROR_WANT_WRITE>. The calling process then must repeat the call after
 taking appropriate action to satisfy the needs of SSL_connect().
@@ -41,18 +40,18 @@ The following return values can occur:
 
 =over 4
 
-=item C<1>
+=item 1
 
 The TLS/SSL handshake was successfully completed, a TLS/SSL connection has been
 established.
 
-=item C<0>
+=item 0
 
 The TLS/SSL handshake was not successful but was shut down controlled and
 by the specifications of the TLS/SSL protocol. Call SSL_get_error() with the
 return value B<ret> to find out the reason.
 
-=item C<E<lt>0>
+=item -1
 
 The TLS/SSL handshake was not successful, because a fatal error occurred either
 at the protocol level or a connection failure occurred. The shutdown was
@@ -65,9 +64,6 @@ to find out the reason.
 =head1 SEE ALSO
 
 L<SSL_get_error(3)|SSL_get_error(3)>, L<SSL_accept(3)|SSL_accept(3)>,
-L<SSL_shutdown(3)|SSL_shutdown(3)>, L<ssl(3)|ssl(3)>, L<bio(3)|bio(3)>,
-L<SSL_set_connect_state(3)|SSL_set_connect_state(3)>,
-L<SSL_do_handshake(3)|SSL_do_handshake(3)>,
-L<SSL_CTX_new(3)|SSL_CTX_new(3)>
+L<SSL_shutdown(3)|SSL_shutdown(3)>, L<ssl(3)|ssl(3)> , L<bio(3)|bio(3)>
 
 =cut

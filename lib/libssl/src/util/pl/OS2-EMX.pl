@@ -3,29 +3,25 @@
 # OS2-EMX.pl - for EMX GCC on OS/2
 #
 
-$o='/';
-$cp='cp';
+$o='\\';
+$cp='copy';
 $rm='rm -f';
-
-$preamble = "SHELL=sh\n";
 
 # C compiler stuff
 
 $cc='gcc';
-$cflags="-DL_ENDIAN -O3 -fomit-frame-pointer -m486 -Zmtd -Wall ";
-$cflags.="-Zomf " if $shlib;
-$shl_cflag="-Zdll";
+$cflags="-DL_ENDIAN -O3 -fomit-frame-pointer -m486 -Zmt -Wall ";
 
 if ($debug) { 
 	$cflags.="-g "; 
 }
 
-$obj=$shlib ? '.obj' : '.o';
+$obj='.o';
 $ofile='-o ';
 
 # EXE linking stuff
 $link='${CC}';
-$lflags='${CFLAGS} -Zbsd-signals -s';
+$lflags='${CFLAGS} -Zbsd-signals';
 $efile='-o ';
 $exep='.exe';
 $ex_libs="-lsocket";
@@ -34,12 +30,12 @@ $ex_libs="-lsocket";
 $mklib='ar r';
 $mlflags='';
 $ranlib="ar s";
-$plib='';
-$libp=$shlib ? ".lib" : ".a";
-$shlibp=$shlib ? ".dll" : ".a";
+$plib='lib';
+$libp=".a";
+$shlibp=".a";
 $lfile='';
 
-$asm=$shlib ? 'as -Zomf' : 'as';
+$asm='as';
 $afile='-o ';
 $bn_asm_obj="";
 $bn_asm_src="";
@@ -50,33 +46,24 @@ $bf_enc_src="";
 
 if (!$no_asm)
 	{
-	$bn_asm_obj="crypto/bn/asm/bn-os2$obj crypto/bn/asm/co-os2$obj";
-	$bn_asm_src="crypto/bn/asm/bn-os2.asm crypto/bn/asm/co-os2.asm";
-	$des_enc_obj="crypto/des/asm/d-os2$obj crypto/des/asm/y-os2$obj";
-	$des_enc_src="crypto/des/asm/d-os2.asm crypto/des/asm/y-os2.asm";
-	$bf_enc_obj="crypto/bf/asm/b-os2$obj";
-	$bf_enc_src="crypto/bf/asm/b-os2.asm";
-	$cast_enc_obj="crypto/cast/asm/c-os2$obj";
-	$cast_enc_src="crypto/cast/asm/c-os2.asm";
-	$rc4_enc_obj="crypto/rc4/asm/r4-os2$obj";
-	$rc4_enc_src="crypto/rc4/asm/r4-os2.asm";
-	$rc5_enc_obj="crypto/rc5/asm/r5-os2$obj";
-	$rc5_enc_src="crypto/rc5/asm/r5-os2.asm";
-	$md5_asm_obj="crypto/md5/asm/m5-os2$obj";
-	$md5_asm_src="crypto/md5/asm/m5-os2.asm";
-	$sha1_asm_obj="crypto/sha/asm/s1-os2$obj";
-	$sha1_asm_src="crypto/sha/asm/s1-os2.asm";
-	$rmd160_asm_obj="crypto/ripemd/asm/rm-os2$obj";
-	$rmd160_asm_src="crypto/ripemd/asm/rm-os2.asm";
-	$cflags.=" -DBN_ASM -DMD5_ASM -DSHA1_ASM -DOPENSSL_BN_ASM_PART_WORDS";
-	}
-
-if ($shlib)
-	{
-	$mlflags.=" $lflags -Zdll";
-	$lib_cflag=" -D_DLL";
-	$out_def="out_dll";
-	$tmp_def="tmp_dll";
+	$bn_asm_obj='crypto\bn\asm\bn-os2.o crypto\bn\asm\co-os2.o';
+	$bn_asm_src='crypto\bn\asm\bn-os2.asm crypto\bn\asm\co-os2.asm';
+	$des_enc_obj='crypto\des\asm\d-os2.o crypto\des\asm\y-os2.o';
+	$des_enc_src='crypto\des\asm\d-os2.asm crypto\des\asm\y-os2.asm';
+	$bf_enc_obj='crypto\bf\asm\b-os2.o';
+	$bf_enc_src='crypto\bf\asm\b-os2.asm';
+	$cast_enc_obj='crypto\cast\asm\c-os2.o';
+	$cast_enc_src='crypto\cast\asm\c-os2.asm';
+	$rc4_enc_obj='crypto\rc4\asm\r4-os2.o';
+	$rc4_enc_src='crypto\rc4\asm\r4-os2.asm';
+	$rc5_enc_obj='crypto\rc5\asm\r5-os2.o';
+	$rc5_enc_src='crypto\rc5\asm\r5-os2.asm';
+	$md5_asm_obj='crypto\md5\asm\m5-os2.o';
+	$md5_asm_src='crypto\md5\asm\m5-os2.asm';
+	$sha1_asm_obj='crypto\sha\asm\s1-os2.o';
+	$sha1_asm_src='crypto\sha\asm\s1-os2.asm';
+	$rmd160_asm_obj='crypto\ripemd\asm\rm-os2.o';
+	$rmd160_asm_src='crypto\ripemd\asm\rm-os2.asm';
 	}
 
 sub do_lib_rule
@@ -89,20 +76,9 @@ sub do_lib_rule
 	($Name=$name) =~ tr/a-z/A-Z/;
 
 	$ret.="$target: \$(${Name}OBJ)\n";
-	if (!$shlib) 
-		{
-		$ret.="\t\$(RM) $target\n";
-		$ret.="\t\$(MKLIB) $target \$(${Name}OBJ)\n";
-		$ret.="\t\$(RANLIB) $target\n\n";
-		}
-	else
-		{
-		local($ex)=($target =~ /O_SSL/)?' $(L_CRYPTO)':'';
-		$ex.=' -lsocket';
-		$ret.="\t\$(LINK) \$(SHLIB_CFLAGS) \$(MLFLAGS) $efile$target \$(SHLIB_EX_OBJ) \$(${Name}OBJ) $ex os2/${Name}.def\n";
-		$ret.="\temximp -o $out_def/$name.a os2/${Name}.def\n";
-		$ret.="\temximp -o $out_def/$name.lib os2/${Name}.def\n\n";
-		}
+	$ret.="\t\$(RM) $target\n";
+	$ret.="\t\$(MKLIB) $target \$(${Name}OBJ)\n";
+	$ret.="\t\$(RANLIB) $target\n\n";
 	}
 
 sub do_link_rule
@@ -113,7 +89,7 @@ sub do_link_rule
 	$file =~ s/\//$o/g if $o ne '/';
 	$n=&bname($target);
 	$ret.="$target: $files $dep_libs\n";
-	$ret.="\t\$(LINK) ${efile}$target \$(CFLAG) \$(LFLAGS) $files $libs\n\n";
+	$ret.="\t\$(LINK) ${efile}$target \$(LFLAGS) $files $libs\n\n";
 	return($ret);
 	}
 

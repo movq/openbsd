@@ -56,20 +56,22 @@
  * [including the GNU Public Licence.]
  */
 
-#include <openssl/cast.h>
+#include "cast.h"
 #include "cast_lcl.h"
-#include <openssl/opensslv.h>
 
-const char CAST_version[]="CAST" OPENSSL_VERSION_PTEXT;
+char *CAST_version="CAST part of SSLeay 0.9.0b 29-Jun-1998";
 
-void CAST_ecb_encrypt(const unsigned char *in, unsigned char *out,
-		      const CAST_KEY *ks, int enc)
+void CAST_ecb_encrypt(in, out, ks, encrypt)
+unsigned char *in;
+unsigned char *out;
+CAST_KEY *ks;
+int encrypt;
 	{
 	CAST_LONG l,d[2];
 
 	n2l(in,l); d[0]=l;
 	n2l(in,l); d[1]=l;
-	if (enc)
+	if (encrypt)
 		CAST_encrypt(d,ks);
 	else
 		CAST_decrypt(d,ks);
@@ -77,3 +79,4 @@ void CAST_ecb_encrypt(const unsigned char *in, unsigned char *out,
 	l=d[1]; l2n(l,out);
 	l=d[0]=d[1]=0;
 	}
+

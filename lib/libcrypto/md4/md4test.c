@@ -60,16 +60,13 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include "../e_os.h"
-
-#ifdef OPENSSL_NO_MD4
+#ifdef NO_MD4
 int main(int argc, char *argv[])
 {
     printf("No MD4 support\n");
     return(0);
 }
 #else
-#include <openssl/evp.h>
 #include <openssl/md4.h>
 
 static char *test[]={
@@ -97,17 +94,15 @@ static char *pt(unsigned char *md);
 int main(int argc, char *argv[])
 	{
 	int i,err=0;
-	char **P,**R;
+	unsigned char **P,**R;
 	char *p;
-	unsigned char md[MD4_DIGEST_LENGTH];
 
-	P=test;
-	R=ret;
+	P=(unsigned char **)test;
+	R=(unsigned char **)ret;
 	i=1;
 	while (*P != NULL)
 		{
-		EVP_Digest(&(P[0][0]),strlen((char *)*P),md,NULL,EVP_md4(), NULL);
-		p=pt(md);
+		p=pt(MD4(&(P[0][0]),(unsigned long)strlen((char *)*P),NULL));
 		if (strcmp(p,(char *)*R) != 0)
 			{
 			printf("error calculating MD4 on '%s'\n",*P);
@@ -120,7 +115,7 @@ int main(int argc, char *argv[])
 		R++;
 		P++;
 		}
-	EXIT(err);
+	exit(err);
 	return(0);
 	}
 

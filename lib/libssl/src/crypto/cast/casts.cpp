@@ -32,7 +32,7 @@ void GetTSC(unsigned long& tsc)
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <openssl/cast.h>
+#include "cast.h"
 
 void main(int argc,char *argv[])
 	{

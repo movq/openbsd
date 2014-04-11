@@ -57,11 +57,11 @@
  */
 
 #include <stdio.h>
-#include <openssl/rc4.h>
-#ifdef OPENSSL_NO_DES
+#include "rc4.h"
+#ifdef NO_DES
 #include <des.h>
 #else
-#include <openssl/des.h>
+#include "des.h"
 #endif
 
 /* show how stream ciphers are not very good.  The mac has no affect

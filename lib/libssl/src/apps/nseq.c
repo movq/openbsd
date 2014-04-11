@@ -1,5 +1,5 @@
 /* nseq.c */
-/* Written by Dr Stephen N Henson (steve@openssl.org) for the OpenSSL
+/* Written by Dr Stephen N Henson (shenson@bigfoot.com) for the OpenSSL
  * project 1999.
  */
 /* ====================================================================
@@ -58,14 +58,14 @@
 
 #include <stdio.h>
 #include <string.h>
-#include "apps.h"
 #include <openssl/pem.h>
 #include <openssl/err.h>
+#include "apps.h"
 
 #undef PROG
 #define PROG nseq_main
 
-int MAIN(int, char **);
+static int dump_cert_text(BIO *out, X509 *x);
 
 int MAIN(int argc, char **argv)
 {
@@ -102,7 +102,7 @@ int MAIN(int argc, char **argv)
 		BIO_printf (bio_err, "-in file  input file\n");
 		BIO_printf (bio_err, "-out file output file\n");
 		BIO_printf (bio_err, "-toseq    output NS Sequence file\n");
-		OPENSSL_EXIT(1);
+		EXIT(1);
 	}
 
 	if (infile) {
@@ -119,18 +119,11 @@ int MAIN(int argc, char **argv)
 				 "Can't open output file %s\n", outfile);
 			goto end;
 		}
-	} else {
-		out = BIO_new_fp(stdout, BIO_NOCLOSE);
-#ifdef OPENSSL_SYS_VMS
-		{
-		BIO *tmpbio = BIO_new(BIO_f_linebuffer());
-		out = BIO_push(tmpbio, out);
-		}
-#endif
-	}
+	} else out = BIO_new_fp(stdout, BIO_NOCLOSE);
+
 	if (toseq) {
 		seq = NETSCAPE_CERT_SEQUENCE_new();
-		seq->certs = sk_X509_new_null();
+		seq->certs = sk_X509_new(NULL);
 		while((x509 = PEM_read_bio_X509(in, NULL, NULL, NULL))) 
 		    sk_X509_push(seq->certs,x509);
 
@@ -159,9 +152,23 @@ int MAIN(int argc, char **argv)
 	ret = 0;
 end:
 	BIO_free(in);
-	BIO_free_all(out);
+	BIO_free(out);
 	NETSCAPE_CERT_SEQUENCE_free(seq);
 
-	OPENSSL_EXIT(ret);
+	EXIT(ret);
+}
+
+static int dump_cert_text(BIO *out, X509 *x)
+{
+	char buf[256];
+	X509_NAME_oneline(X509_get_subject_name(x),buf,256);
+	BIO_puts(out,"subject=");
+	BIO_puts(out,buf);
+
+	X509_NAME_oneline(X509_get_issuer_name(x),buf,256);
+	BIO_puts(out,"\nissuer= ");
+	BIO_puts(out,buf);
+	BIO_puts(out,"\n");
+	return 0;
 }
 

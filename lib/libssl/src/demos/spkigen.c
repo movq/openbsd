@@ -6,12 +6,12 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
-#include <openssl/err.h>
-#include <openssl/asn1.h>
-#include <openssl/objects.h>
-#include <openssl/evp.h>
-#include <openssl/x509.h>
-#include <openssl/pem.h>
+#include "err.h"
+#include "asn1.h"
+#include "objects.h"
+#include "evp.h"
+#include "x509.h"
+#include "pem.h"
 
 /* The following two don't exist in SSLeay but they are in here as
  * examples */
@@ -65,8 +65,7 @@ char *argv[];
 
 	fprintf(stderr,"please enter challenge string:");
 	fflush(stderr);
-	buf[0]='\0';
-	fgets(buf,sizeof buf,stdin);
+	fgets(buf,120,stdin);
 	i=strlen(buf);
 	if (i > 0) buf[--i]='\0';
 	if (!ASN1_STRING_set((ASN1_STRING *)spki->spkac->challenge,

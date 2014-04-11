@@ -1,5 +1,5 @@
 /* conf_mod.c */
-/* Written by Stephen Henson (steve@openssl.org) for the OpenSSL
+/* Written by Stephen Henson (shenson@bigfoot.com) for the OpenSSL
  * project 2001.
  */
 /* ====================================================================
@@ -126,18 +126,17 @@ int CONF_modules_load(const CONF *cnf, const char *appname,
 	{
 	STACK_OF(CONF_VALUE) *values;
 	CONF_VALUE *vl;
-	char *vsection = NULL;
+	char *vsection;
 
 	int ret, i;
 
 	if (!cnf)
 		return 1;
 
-	if (appname)
-		vsection = NCONF_get_string(cnf, NULL, appname);
+	if (appname == NULL)
+		appname = "openssl_conf";
 
-	if (!appname || (!vsection && (flags & CONF_MFLAGS_DEFAULT_SECTION)))
-		vsection = NCONF_get_string(cnf, NULL, "openssl_conf");
+	vsection = NCONF_get_string(cnf, NULL, appname); 
 
 	if (!vsection)
 		{
@@ -231,9 +230,9 @@ static int module_run(const CONF *cnf, char *name, char *value,
 		{
 		if (!(flags & CONF_MFLAGS_SILENT))
 			{
-			char rcode[DECIMAL_SIZE(ret)+1];
-			CONFerr(CONF_F_MODULE_RUN, CONF_R_MODULE_INITIALIZATION_ERROR);
-			BIO_snprintf(rcode, sizeof rcode, "%-8d", ret);
+			char rcode[10];
+			CONFerr(CONF_F_CONF_MODULES_LOAD, CONF_R_MODULE_INITIALIZATION_ERROR);
+			sprintf(rcode, "%-8d", ret);
 			ERR_add_error_data(6, "module=", name, ", value=", value, ", retcode=", rcode);
 			}
 		}
@@ -255,7 +254,7 @@ static CONF_MODULE *module_load_dso(const CONF *cnf, char *name, char *value,
 	path = NCONF_get_string(cnf, value, "path");
 	if (!path)
 		{
-		ERR_clear_error();
+		ERR_get_error();
 		path = name;
 		}
 	dso = DSO_load(NULL, path, NULL, 0);
@@ -432,7 +431,7 @@ void CONF_modules_unload(int all)
 		if (((md->links > 0) || !md->dso) && !all)
 			continue;
 		/* Since we're working in reverse this is OK */
-		(void)sk_CONF_MODULE_delete(supported_modules, i);
+		sk_CONF_MODULE_delete(supported_modules, i);
 		module_free(md);
 		}
 	if (sk_CONF_MODULE_num(supported_modules) == 0)
@@ -562,11 +561,11 @@ char *CONF_get1_default_config_file(void)
 
 	if (!file)
 		return NULL;
-	BUF_strlcpy(file,X509_get_default_cert_area(),len + 1);
+	strcpy(file,X509_get_default_cert_area());
 #ifndef OPENSSL_SYS_VMS
-	BUF_strlcat(file,"/",len + 1);
+	strcat(file,"/");
 #endif
-	BUF_strlcat(file,OPENSSL_CONF,len + 1);
+	strcat(file,OPENSSL_CONF);
 
 	return file;
 	}
@@ -577,19 +576,13 @@ char *CONF_get1_default_config_file(void)
  * be used to parse comma separated lists for example.
  */
 
-int CONF_parse_list(const char *list_, int sep, int nospc,
+int CONF_parse_list(const char *list, int sep, int nospc,
 	int (*list_cb)(const char *elem, int len, void *usr), void *arg)
 	{
 	int ret;
 	const char *lstart, *tmpend, *p;
+	lstart = list;
 
-	if(list_ == NULL)
-		{
-		CONFerr(CONF_F_CONF_PARSE_LIST, CONF_R_LIST_CANNOT_BE_NULL);
-		return 0;
-		}
-
-	lstart = list_;
 	for(;;)
 		{
 		if (nospc)

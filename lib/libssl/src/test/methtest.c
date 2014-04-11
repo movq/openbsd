@@ -58,10 +58,10 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <openssl/rsa.h>
-#include <openssl/x509.h>
+#include "rsa.h"
+#include "x509.h"
 #include "meth.h"
-#include <openssl/err.h>
+#include "err.h"
 
 int main(argc,argv)
 int argc;
@@ -96,10 +96,10 @@ char *argv[];
 	METH_init(top);
 	METH_control(tmp1,METH_CONTROL_DUMP,stdout);
 	METH_control(tmp2,METH_CONTROL_DUMP,stdout);
-	EXIT(0);
+	exit(0);
 err:
 	ERR_load_crypto_strings();
 	ERR_print_errors_fp(stderr);
-	EXIT(1);
+	exit(1);
 	return(0);
 	}

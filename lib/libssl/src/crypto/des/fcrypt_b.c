@@ -58,7 +58,7 @@
 
 #include <stdio.h>
 
-/* This version of crypt has been developed from my MIT compatible
+/* This version of crypt has been developed from my MIT compatable
  * DES library.
  * The library is available at pub/Crypto/DES at ftp.psy.uq.oz.au
  * Eric Young (eay@cryptsoft.com)
@@ -67,8 +67,6 @@
 #define DES_FCRYPT
 #include "des_locl.h"
 #undef DES_FCRYPT
-
-#ifndef OPENBSD_DES_ASM
 
 #undef PERM_OP
 #define PERM_OP(a,b,t,n,m) ((t)=((((a)>>(n))^(b))&(m)),\
@@ -79,12 +77,15 @@
 #define HPERM_OP(a,t,n,m) ((t)=((((a)<<(16-(n)))^(a))&(m)),\
 	(a)=(a)^(t)^(t>>(16-(n))))\
 
-void fcrypt_body(DES_LONG *out, DES_key_schedule *ks, DES_LONG Eswap0,
-		 DES_LONG Eswap1)
+void fcrypt_body(out, ks, Eswap0, Eswap1)
+DES_LONG *out;
+des_key_schedule ks;
+DES_LONG Eswap0;
+DES_LONG Eswap1;
 	{
 	register DES_LONG l,r,t,u;
 #ifdef DES_PTR
-	register const unsigned char *des_SP=(const unsigned char *)DES_SPtrans;
+	register unsigned char *des_SP=(unsigned char *)des_SPtrans;
 #endif
 	register DES_LONG *s;
 	register int j;
@@ -99,13 +100,15 @@ void fcrypt_body(DES_LONG *out, DES_key_schedule *ks, DES_LONG Eswap0,
 
 	for (j=0; j<25; j++)
 		{
-#ifndef DES_UNROLL
+#ifdef DES_UNROLL
 		register int i;
 
-		for (i=0; i<32; i+=4)
+		for (i=0; i<32; i+=8)
 			{
 			D_ENCRYPT(l,r,i+0); /*  1 */
 			D_ENCRYPT(r,l,i+2); /*  2 */
+			D_ENCRYPT(l,r,i+4); /*  1 */
+			D_ENCRYPT(r,l,i+6); /*  2 */
 			}
 #else
 		D_ENCRYPT(l,r, 0); /*  1 */
@@ -143,4 +146,3 @@ void fcrypt_body(DES_LONG *out, DES_key_schedule *ks, DES_LONG Eswap0,
 	out[1]=l;
 	}
 
-#endif /* OPENBSD_DES_ASM */

@@ -15,7 +15,7 @@ SSL_CTX_get_ex_new_index, SSL_CTX_set_ex_data, SSL_CTX_get_ex_data - internal ap
 
  int SSL_CTX_set_ex_data(SSL_CTX *ctx, int idx, void *arg);
 
- void *SSL_CTX_get_ex_data(const SSL_CTX *ctx, int idx);
+ void *SSL_CTX_get_ex_data(SSL_CTX *ctx, int idx);
 
  typedef int new_func(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
                 int idx, long argl, void *argp);
@@ -40,7 +40,7 @@ SSL_CTX_get_ex_data() is used to retrieve the information for B<idx> from
 B<ctx>.
 
 A detailed description for the B<*_get_ex_new_index()> functionality
-can be found in L<RSA_get_ex_new_index(3)|RSA_get_ex_new_index(3)>.
+can be found in L<RSA_get_ex_new_index.pod(3)|RSA_get_ex_new_index.pod(3)>.
 The B<*_get_ex_data()> and B<*_set_ex_data()> functionality is described in
 L<CRYPTO_set_ex_data(3)|CRYPTO_set_ex_data(3)>.
 

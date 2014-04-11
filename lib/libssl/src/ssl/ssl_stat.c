@@ -55,52 +55,27 @@
  * copied and put under another distribution licence
  * [including the GNU Public Licence.]
  */
-/* ====================================================================
- * Copyright 2005 Nokia. All rights reserved.
- *
- * The portions of the attached software ("Contribution") is developed by
- * Nokia Corporation and is licensed pursuant to the OpenSSL open source
- * license.
- *
- * The Contribution, originally written by Mika Kousa and Pasi Eronen of
- * Nokia Corporation, consists of the "PSK" (Pre-Shared Key) ciphersuites
- * support (see RFC 4279) to OpenSSL.
- *
- * No patent licenses or other rights except those expressly stated in
- * the OpenSSL open source license shall be deemed granted or received
- * expressly, by implication, estoppel, or otherwise.
- *
- * No assurances are provided by Nokia that the Contribution does not
- * infringe the patent or other intellectual property rights of any third
- * party or that the license provides you with all the necessary rights
- * to make use of the Contribution.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND. IN
- * ADDITION TO THE DISCLAIMERS INCLUDED IN THE LICENSE, NOKIA
- * SPECIFICALLY DISCLAIMS ANY LIABILITY FOR CLAIMS BROUGHT BY YOU OR ANY
- * OTHER ENTITY BASED ON INFRINGEMENT OF INTELLECTUAL PROPERTY RIGHTS OR
- * OTHERWISE.
- */
 
 #include <stdio.h>
 #include "ssl_locl.h"
 
-const char *SSL_state_string_long(const SSL *s)
+char *SSL_state_string_long(s)
+SSL *s;
 	{
-	const char *str;
+	char *str;
 
 	switch (s->state)
 		{
-case SSL_ST_BEFORE: str="before SSL initialization"; break;
-case SSL_ST_ACCEPT: str="before accept initialization"; break;
-case SSL_ST_CONNECT: str="before connect initialization"; break;
+case SSL_ST_BEFORE: str="before SSL initalisation"; break;
+case SSL_ST_ACCEPT: str="before accept initalisation"; break;
+case SSL_ST_CONNECT: str="before connect initalisation"; break;
 case SSL_ST_OK: str="SSL negotiation finished successfully"; break;
 case SSL_ST_RENEGOTIATE:	str="SSL renegotiate ciphers"; break;
-case SSL_ST_BEFORE|SSL_ST_CONNECT: str="before/connect initialization"; break;
-case SSL_ST_OK|SSL_ST_CONNECT: str="ok/connect SSL initialization"; break;
-case SSL_ST_BEFORE|SSL_ST_ACCEPT: str="before/accept initialization"; break;
-case SSL_ST_OK|SSL_ST_ACCEPT: str="ok/accept SSL initialization"; break;
-#ifndef OPENSSL_NO_SSL2
+case SSL_ST_BEFORE|SSL_ST_CONNECT: str="before/connect initalisation"; break;
+case SSL_ST_OK|SSL_ST_CONNECT: str="ok/connect SSL initalisation"; break;
+case SSL_ST_BEFORE|SSL_ST_ACCEPT: str="before/accept initalisation"; break;
+case SSL_ST_OK|SSL_ST_ACCEPT: str="ok/accept SSL initalisation"; break;
+#ifndef NO_SSL2
 case SSL2_ST_CLIENT_START_ENCRYPTION: str="SSLv2 client start encryption"; break;
 case SSL2_ST_SERVER_START_ENCRYPTION: str="SSLv2 server start encryption"; break;
 case SSL2_ST_SEND_CLIENT_HELLO_A: str="SSLv2 write client hello A"; break;
@@ -141,7 +116,7 @@ case SSL2_ST_X509_GET_SERVER_CERTIFICATE: str="SSLv2 X509 read server certificat
 case SSL2_ST_X509_GET_CLIENT_CERTIFICATE: str="SSLv2 X509 read client certificate"; break;
 #endif
 
-#ifndef OPENSSL_NO_SSL3
+#ifndef NO_SSL3
 /* SSLv3 additions */
 case SSL3_ST_CW_CLNT_HELLO_A:	str="SSLv3 write client hello A"; break;
 case SSL3_ST_CW_CLNT_HELLO_B:	str="SSLv3 write client hello B"; break;
@@ -153,18 +128,14 @@ case SSL3_ST_CR_KEY_EXCH_A:	str="SSLv3 read server key exchange A"; break;
 case SSL3_ST_CR_KEY_EXCH_B:	str="SSLv3 read server key exchange B"; break;
 case SSL3_ST_CR_CERT_REQ_A:	str="SSLv3 read server certificate request A"; break;
 case SSL3_ST_CR_CERT_REQ_B:	str="SSLv3 read server certificate request B"; break;
-case SSL3_ST_CR_SESSION_TICKET_A: str="SSLv3 read server session ticket A";break;
-case SSL3_ST_CR_SESSION_TICKET_B: str="SSLv3 read server session ticket B";break;
 case SSL3_ST_CR_SRVR_DONE_A:	str="SSLv3 read server done A"; break;
 case SSL3_ST_CR_SRVR_DONE_B:	str="SSLv3 read server done B"; break;
 case SSL3_ST_CW_CERT_A:		str="SSLv3 write client certificate A"; break;
 case SSL3_ST_CW_CERT_B:		str="SSLv3 write client certificate B"; break;
-case SSL3_ST_CW_CERT_C:		str="SSLv3 write client certificate C"; break;
-case SSL3_ST_CW_CERT_D:		str="SSLv3 write client certificate D"; break;
 case SSL3_ST_CW_KEY_EXCH_A:	str="SSLv3 write client key exchange A"; break;
 case SSL3_ST_CW_KEY_EXCH_B:	str="SSLv3 write client key exchange B"; break;
 case SSL3_ST_CW_CERT_VRFY_A:	str="SSLv3 write certificate verify A"; break;
-case SSL3_ST_CW_CERT_VRFY_B:	str="SSLv3 write certificate verify B"; break;
+case SSL3_ST_CW_CERT_VRFY_B:	str="SSLv3 write certificate verify A"; break;
 
 case SSL3_ST_CW_CHANGE_A:
 case SSL3_ST_SW_CHANGE_A:	str="SSLv3 write change cipher spec A"; break;
@@ -173,7 +144,7 @@ case SSL3_ST_SW_CHANGE_B:	str="SSLv3 write change cipher spec B"; break;
 case SSL3_ST_CW_FINISHED_A:	
 case SSL3_ST_SW_FINISHED_A:	str="SSLv3 write finished A"; break;
 case SSL3_ST_CW_FINISHED_B:	
-case SSL3_ST_SW_FINISHED_B:	str="SSLv3 write finished B"; break;
+case SSL3_ST_SW_FINISHED_B:	str="SSLv3 write finished A"; break;
 case SSL3_ST_CR_CHANGE_A:	
 case SSL3_ST_SR_CHANGE_A:	str="SSLv3 read change cipher spec A"; break;
 case SSL3_ST_CR_CHANGE_B:	
@@ -200,8 +171,6 @@ case SSL3_ST_SW_KEY_EXCH_A:	str="SSLv3 write key exchange A"; break;
 case SSL3_ST_SW_KEY_EXCH_B:	str="SSLv3 write key exchange B"; break;
 case SSL3_ST_SW_CERT_REQ_A:	str="SSLv3 write certificate request A"; break;
 case SSL3_ST_SW_CERT_REQ_B:	str="SSLv3 write certificate request B"; break;
-case SSL3_ST_SW_SESSION_TICKET_A: str="SSLv3 write session ticket A"; break;
-case SSL3_ST_SW_SESSION_TICKET_B: str="SSLv3 write session ticket B"; break;
 case SSL3_ST_SW_SRVR_DONE_A:	str="SSLv3 write server done A"; break;
 case SSL3_ST_SW_SRVR_DONE_B:	str="SSLv3 write server done B"; break;
 case SSL3_ST_SR_CERT_A:		str="SSLv3 read client certificate A"; break;
@@ -212,8 +181,8 @@ case SSL3_ST_SR_CERT_VRFY_A:	str="SSLv3 read certificate verify A"; break;
 case SSL3_ST_SR_CERT_VRFY_B:	str="SSLv3 read certificate verify B"; break;
 #endif
 
-#if !defined(OPENSSL_NO_SSL2) && !defined(OPENSSL_NO_SSL3)
-/* SSLv2/v3 compatibility states */
+#if !defined(NO_SSL2) && !defined(NO_SSL3)
+/* SSLv2/v3 compatablitity states */
 /* client */
 case SSL23_ST_CW_CLNT_HELLO_A:	str="SSLv2/v3 write client hello A"; break;
 case SSL23_ST_CW_CLNT_HELLO_B:	str="SSLv2/v3 write client hello B"; break;
@@ -224,20 +193,15 @@ case SSL23_ST_SR_CLNT_HELLO_A:	str="SSLv2/v3 read client hello A"; break;
 case SSL23_ST_SR_CLNT_HELLO_B:	str="SSLv2/v3 read client hello B"; break;
 #endif
 
-/* DTLS */
-case DTLS1_ST_CR_HELLO_VERIFY_REQUEST_A: str="DTLS1 read hello verify request A"; break;
-case DTLS1_ST_CR_HELLO_VERIFY_REQUEST_B: str="DTLS1 read hello verify request B"; break;
-case DTLS1_ST_SW_HELLO_VERIFY_REQUEST_A: str="DTLS1 write hello verify request A"; break;
-case DTLS1_ST_SW_HELLO_VERIFY_REQUEST_B: str="DTLS1 write hello verify request B"; break;
-
 default:	str="unknown state"; break;
 		}
 	return(str);
 	}
 
-const char *SSL_rstate_string_long(const SSL *s)
+char *SSL_rstate_string_long(s)
+SSL *s;
 	{
-	const char *str;
+	char *str;
 
 	switch (s->rstate)
 		{
@@ -249,9 +213,10 @@ const char *SSL_rstate_string_long(const SSL *s)
 	return(str);
 	}
 
-const char *SSL_state_string(const SSL *s)
+char *SSL_state_string(s)
+SSL *s;
 	{
-	const char *str;
+	char *str;
 
 	switch (s->state)
 		{
@@ -259,7 +224,7 @@ case SSL_ST_BEFORE:				str="PINIT "; break;
 case SSL_ST_ACCEPT:				str="AINIT "; break;
 case SSL_ST_CONNECT:				str="CINIT "; break;
 case SSL_ST_OK:			 		str="SSLOK "; break;
-#ifndef OPENSSL_NO_SSL2
+#ifndef NO_SSL2
 case SSL2_ST_CLIENT_START_ENCRYPTION:		str="2CSENC"; break;
 case SSL2_ST_SERVER_START_ENCRYPTION:		str="2SSENC"; break;
 case SSL2_ST_SEND_CLIENT_HELLO_A:		str="2SCH_A"; break;
@@ -300,7 +265,7 @@ case SSL2_ST_X509_GET_SERVER_CERTIFICATE:	str="2X9GSC"; break;
 case SSL2_ST_X509_GET_CLIENT_CERTIFICATE:	str="2X9GCC"; break;
 #endif
 
-#ifndef OPENSSL_NO_SSL3
+#ifndef NO_SSL3
 /* SSLv3 additions */
 case SSL3_ST_SW_FLUSH:
 case SSL3_ST_CW_FLUSH:				str="3FLUSH"; break;
@@ -318,8 +283,6 @@ case SSL3_ST_CR_SRVR_DONE_A:			str="3RSD_A"; break;
 case SSL3_ST_CR_SRVR_DONE_B:			str="3RSD_B"; break;
 case SSL3_ST_CW_CERT_A:				str="3WCC_A"; break;
 case SSL3_ST_CW_CERT_B:				str="3WCC_B"; break;
-case SSL3_ST_CW_CERT_C:				str="3WCC_C"; break;
-case SSL3_ST_CW_CERT_D:				str="3WCC_D"; break;
 case SSL3_ST_CW_KEY_EXCH_A:			str="3WCKEA"; break;
 case SSL3_ST_CW_KEY_EXCH_B:			str="3WCKEB"; break;
 case SSL3_ST_CW_CERT_VRFY_A:			str="3WCV_A"; break;
@@ -366,8 +329,8 @@ case SSL3_ST_SR_CERT_VRFY_A:			str="3RCV_A"; break;
 case SSL3_ST_SR_CERT_VRFY_B:			str="3RCV_B"; break;
 #endif
 
-#if !defined(OPENSSL_NO_SSL2) && !defined(OPENSSL_NO_SSL3)
-/* SSLv2/v3 compatibility states */
+#if !defined(NO_SSL2) && !defined(NO_SSL3)
+/* SSLv2/v3 compatablitity states */
 /* client */
 case SSL23_ST_CW_CLNT_HELLO_A:			str="23WCHA"; break;
 case SSL23_ST_CW_CLNT_HELLO_B:			str="23WCHB"; break;
@@ -377,18 +340,14 @@ case SSL23_ST_CR_SRVR_HELLO_B:			str="23RSHA"; break;
 case SSL23_ST_SR_CLNT_HELLO_A:			str="23RCHA"; break;
 case SSL23_ST_SR_CLNT_HELLO_B:			str="23RCHB"; break;
 #endif
-/* DTLS */
-case DTLS1_ST_CR_HELLO_VERIFY_REQUEST_A: str="DRCHVA"; break;
-case DTLS1_ST_CR_HELLO_VERIFY_REQUEST_B: str="DRCHVB"; break;
-case DTLS1_ST_SW_HELLO_VERIFY_REQUEST_A: str="DWCHVA"; break;
-case DTLS1_ST_SW_HELLO_VERIFY_REQUEST_B: str="DWCHVB"; break;
 
 default:					str="UNKWN "; break;
 		}
 	return(str);
 	}
 
-const char *SSL_alert_type_string_long(int value)
+char *SSL_alert_type_string_long(value)
+int value;
 	{
 	value>>=8;
 	if (value == SSL3_AL_WARNING)
@@ -399,7 +358,8 @@ const char *SSL_alert_type_string_long(int value)
 		return("unknown");
 	}
 
-const char *SSL_alert_type_string(int value)
+char *SSL_alert_type_string(value)
+int value;
 	{
 	value>>=8;
 	if (value == SSL3_AL_WARNING)
@@ -410,9 +370,10 @@ const char *SSL_alert_type_string(int value)
 		return("U");
 	}
 
-const char *SSL_alert_desc_string(int value)
+char *SSL_alert_desc_string(value)
+int value;
 	{
-	const char *str;
+	char *str;
 
 	switch (value & 0xff)
 		{
@@ -428,32 +389,15 @@ const char *SSL_alert_desc_string(int value)
 	case SSL3_AD_CERTIFICATE_EXPIRED:	str="CE"; break;
 	case SSL3_AD_CERTIFICATE_UNKNOWN:	str="CU"; break;
 	case SSL3_AD_ILLEGAL_PARAMETER:		str="IP"; break;
-	case TLS1_AD_DECRYPTION_FAILED:		str="DC"; break;
-	case TLS1_AD_RECORD_OVERFLOW:		str="RO"; break;
-	case TLS1_AD_UNKNOWN_CA:		str="CA"; break;
-	case TLS1_AD_ACCESS_DENIED:		str="AD"; break;
-	case TLS1_AD_DECODE_ERROR:		str="DE"; break;
-	case TLS1_AD_DECRYPT_ERROR:		str="CY"; break;
-	case TLS1_AD_EXPORT_RESTRICTION:	str="ER"; break;
-	case TLS1_AD_PROTOCOL_VERSION:		str="PV"; break;
-	case TLS1_AD_INSUFFICIENT_SECURITY:	str="IS"; break;
-	case TLS1_AD_INTERNAL_ERROR:		str="IE"; break;
-	case TLS1_AD_USER_CANCELLED:		str="US"; break;
-	case TLS1_AD_NO_RENEGOTIATION:		str="NR"; break;
-	case TLS1_AD_UNSUPPORTED_EXTENSION:	str="UE"; break;
-	case TLS1_AD_CERTIFICATE_UNOBTAINABLE:	str="CO"; break;
-	case TLS1_AD_UNRECOGNIZED_NAME:		str="UN"; break;
-	case TLS1_AD_BAD_CERTIFICATE_STATUS_RESPONSE: str="BR"; break;
-	case TLS1_AD_BAD_CERTIFICATE_HASH_VALUE: str="BH"; break;
-	case TLS1_AD_UNKNOWN_PSK_IDENTITY:	str="UP"; break;
 	default:				str="UK"; break;
 		}
 	return(str);
 	}
 
-const char *SSL_alert_desc_string_long(int value)
+char *SSL_alert_desc_string_long(value)
+int value;
 	{
-	const char *str;
+	char *str;
 
 	switch (value & 0xff)
 		{
@@ -461,7 +405,7 @@ const char *SSL_alert_desc_string_long(int value)
 		str="close notify";
 		break;
 	case SSL3_AD_UNEXPECTED_MESSAGE:
-		str="unexpected_message";
+		str="unexected_message";
 		break;
 	case SSL3_AD_BAD_RECORD_MAC:
 		str="bad record mac";
@@ -488,73 +432,20 @@ const char *SSL_alert_desc_string_long(int value)
 		str="certificate expired";
 		break;
 	case SSL3_AD_CERTIFICATE_UNKNOWN:
-		str="certificate unknown";
+		str="certifcate unknown";
 		break;
 	case SSL3_AD_ILLEGAL_PARAMETER:
 		str="illegal parameter";
-		break;
-	case TLS1_AD_DECRYPTION_FAILED:
-		str="decryption failed";
-		break;
-	case TLS1_AD_RECORD_OVERFLOW:
-		str="record overflow";
-		break;
-	case TLS1_AD_UNKNOWN_CA:
-		str="unknown CA";
-		break;
-	case TLS1_AD_ACCESS_DENIED:
-		str="access denied";
-		break;
-	case TLS1_AD_DECODE_ERROR:
-		str="decode error";
-		break;
-	case TLS1_AD_DECRYPT_ERROR:
-		str="decrypt error";
-		break;
-	case TLS1_AD_EXPORT_RESTRICTION:
-		str="export restriction";
-		break;
-	case TLS1_AD_PROTOCOL_VERSION:
-		str="protocol version";
-		break;
-	case TLS1_AD_INSUFFICIENT_SECURITY:
-		str="insufficient security";
-		break;
-	case TLS1_AD_INTERNAL_ERROR:
-		str="internal error";
-		break;
-	case TLS1_AD_USER_CANCELLED:
-		str="user canceled";
-		break;
-	case TLS1_AD_NO_RENEGOTIATION:
-		str="no renegotiation";
-		break;
-	case TLS1_AD_UNSUPPORTED_EXTENSION:
-		str="unsupported extension";
-		break;
-	case TLS1_AD_CERTIFICATE_UNOBTAINABLE:
-		str="certificate unobtainable";
-		break;
-	case TLS1_AD_UNRECOGNIZED_NAME:
-		str="unrecognized name";
-		break;
-	case TLS1_AD_BAD_CERTIFICATE_STATUS_RESPONSE:
-		str="bad certificate status response";
-		break;
-	case TLS1_AD_BAD_CERTIFICATE_HASH_VALUE:
-		str="bad certificate hash value";
-		break;
-	case TLS1_AD_UNKNOWN_PSK_IDENTITY:
-		str="unknown PSK identity";
 		break;
 	default: str="unknown"; break;
 		}
 	return(str);
 	}
 
-const char *SSL_rstate_string(const SSL *s)
+char *SSL_rstate_string(s)
+SSL *s;
 	{
-	const char *str;
+	char *str;
 
 	switch (s->rstate)
 		{

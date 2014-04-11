@@ -59,20 +59,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include "md5.h"
 
-#include "../e_os.h"
-
-#ifdef OPENSSL_NO_MD5
-int main(int argc, char *argv[])
-{
-    printf("No MD5 support\n");
-    return(0);
-}
-#else
-#include <openssl/evp.h>
-#include <openssl/md5.h>
-
-static char *test[]={
+char *test[]={
 	"",
 	"a",
 	"abc",
@@ -83,7 +72,7 @@ static char *test[]={
 	NULL,
 	};
 
-static char *ret[]={
+char *ret[]={
 	"d41d8cd98f00b204e9800998ecf8427e",
 	"0cc175b9c0f1b6a831c399e269772661",
 	"900150983cd24fb0d6963f7d28e17f72",
@@ -93,21 +82,26 @@ static char *ret[]={
 	"57edf4a22be3c955ac49da2e2107b67a",
 	};
 
+#ifndef NOPROTO
 static char *pt(unsigned char *md);
-int main(int argc, char *argv[])
+#else
+static char *pt();
+#endif
+
+int main(argc,argv)
+int argc;
+char *argv[];
 	{
 	int i,err=0;
-	char **P,**R;
+	unsigned char **P,**R;
 	char *p;
-	unsigned char md[MD5_DIGEST_LENGTH];
 
-	P=test;
-	R=ret;
+	P=(unsigned char **)test;
+	R=(unsigned char **)ret;
 	i=1;
 	while (*P != NULL)
 		{
-		EVP_Digest(&(P[0][0]),strlen((char *)*P),md,NULL,EVP_md5(), NULL);
-		p=pt(md);
+		p=pt(MD5(&(P[0][0]),(unsigned long)strlen((char *)*P),NULL));
 		if (strcmp(p,(char *)*R) != 0)
 			{
 			printf("error calculating MD5 on '%s'\n",*P);
@@ -120,15 +114,12 @@ int main(int argc, char *argv[])
 		R++;
 		P++;
 		}
-
-#ifdef OPENSSL_SYS_NETWARE
-    if (err) printf("ERROR: %d\n", err);
-#endif
-	EXIT(err);
+	exit(err);
 	return(0);
 	}
 
-static char *pt(unsigned char *md)
+static char *pt(md)
+unsigned char *md;
 	{
 	int i;
 	static char buf[80];
@@ -137,4 +128,3 @@ static char *pt(unsigned char *md)
 		sprintf(&(buf[i*2]),"%02x",md[i]);
 	return(buf);
 	}
-#endif

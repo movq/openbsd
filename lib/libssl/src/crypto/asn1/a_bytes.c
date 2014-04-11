@@ -58,17 +58,41 @@
 
 #include <stdio.h>
 #include "cryptlib.h"
-#include <openssl/asn1.h>
+#include "asn1_mac.h"
 
-static int asn1_collate_primitive(ASN1_STRING *a, ASN1_const_CTX *c);
-/* type is a 'bitmap' of acceptable string types.
+/* ASN1err(ASN1_F_ASN1_TYPE_NEW,ASN1_R_ERROR_STACK);
+ * ASN1err(ASN1_F_D2I_ASN1_TYPE_BYTES,ASN1_R_ERROR_STACK);
+ * ASN1err(ASN1_F_D2I_ASN1_TYPE_BYTES,ASN1_R_WRONG_TYPE);
+ * ASN1err(ASN1_F_ASN1_COLLATE_PRIMATIVE,ASN1_R_WRONG_TAG);
  */
-ASN1_STRING *d2i_ASN1_type_bytes(ASN1_STRING **a, const unsigned char **pp,
-	     long length, int type)
+
+static unsigned long tag2bit[32]={
+0,	0,	0,	B_ASN1_BIT_STRING,	/* tags  0 -  3 */
+B_ASN1_OCTET_STRING,	0,	0,		B_ASN1_UNKNOWN,/* tags  4- 7 */
+B_ASN1_UNKNOWN,	B_ASN1_UNKNOWN,	B_ASN1_UNKNOWN,	B_ASN1_UNKNOWN,/* tags  8-11 */
+B_ASN1_UNKNOWN,	B_ASN1_UNKNOWN,	B_ASN1_UNKNOWN,	B_ASN1_UNKNOWN,/* tags 12-15 */
+0,	0,	B_ASN1_NUMERICSTRING,B_ASN1_PRINTABLESTRING,
+B_ASN1_T61STRING,B_ASN1_VIDEOTEXSTRING,B_ASN1_IA5STRING,0,
+0,B_ASN1_GRAPHICSTRING,B_ASN1_ISO64STRING,B_ASN1_GENERALSTRING,
+B_ASN1_UNIVERSALSTRING,B_ASN1_UNKNOWN,B_ASN1_BMPSTRING,B_ASN1_UNKNOWN,
+	};
+
+#ifndef NOPROTO
+static int asn1_collate_primative(ASN1_STRING *a, ASN1_CTX *c);
+#else
+static int asn1_collate_primative();
+#endif
+
+/* type is a 'bitmap' of acceptable string types to be accepted.
+ */
+ASN1_STRING *d2i_ASN1_type_bytes(a, pp, length, type)
+ASN1_STRING **a;
+unsigned char **pp;
+long length;
+int type;
 	{
 	ASN1_STRING *ret=NULL;
-	const unsigned char *p;
-	unsigned char *s;
+	unsigned char *p,*s;
 	long len;
 	int inf,tag,xclass;
 	int i=0;
@@ -79,10 +103,10 @@ ASN1_STRING *d2i_ASN1_type_bytes(ASN1_STRING **a, const unsigned char **pp,
 
 	if (tag >= 32)
 		{
-		i=ASN1_R_TAG_VALUE_TOO_HIGH;
+		i=ASN1_R_TAG_VALUE_TOO_HIGH;;
 		goto err;
 		}
-	if (!(ASN1_tag2bit(tag) & type))
+	if (!(tag2bit[tag] & type))
 		{
 		i=ASN1_R_WRONG_TYPE;
 		goto err;
@@ -101,7 +125,7 @@ ASN1_STRING *d2i_ASN1_type_bytes(ASN1_STRING **a, const unsigned char **pp,
 
 	if (len != 0)
 		{
-		s=(unsigned char *)OPENSSL_malloc((int)len+1);
+		s=(unsigned char *)Malloc((int)len+1);
 		if (s == NULL)
 			{
 			i=ERR_R_MALLOC_FAILURE;
@@ -114,7 +138,7 @@ ASN1_STRING *d2i_ASN1_type_bytes(ASN1_STRING **a, const unsigned char **pp,
 	else
 		s=NULL;
 
-	if (ret->data != NULL) OPENSSL_free(ret->data);
+	if (ret->data != NULL) Free((char *)ret->data);
 	ret->length=(int)len;
 	ret->data=s;
 	ret->type=tag;
@@ -128,7 +152,11 @@ err:
 	return(NULL);
 	}
 
-int i2d_ASN1_bytes(ASN1_STRING *a, unsigned char **pp, int tag, int xclass)
+int i2d_ASN1_bytes(a, pp, tag, xclass)
+ASN1_STRING *a;
+unsigned char **pp;
+int tag;
+int xclass;
 	{
 	int ret,r,constructed;
 	unsigned char *p;
@@ -154,12 +182,15 @@ int i2d_ASN1_bytes(ASN1_STRING *a, unsigned char **pp, int tag, int xclass)
 	return(r);
 	}
 
-ASN1_STRING *d2i_ASN1_bytes(ASN1_STRING **a, const unsigned char **pp,
-	     long length, int Ptag, int Pclass)
+ASN1_STRING *d2i_ASN1_bytes(a, pp, length, Ptag, Pclass)
+ASN1_STRING **a;
+unsigned char **pp;
+long length;
+int Ptag;
+int Pclass;
 	{
 	ASN1_STRING *ret=NULL;
-	const unsigned char *p;
-	unsigned char *s;
+	unsigned char *p,*s;
 	long len;
 	int inf,tag,xclass;
 	int i=0;
@@ -187,7 +218,7 @@ ASN1_STRING *d2i_ASN1_bytes(ASN1_STRING **a, const unsigned char **pp,
 
 	if (inf & V_ASN1_CONSTRUCTED)
 		{
-		ASN1_const_CTX c;
+		ASN1_CTX c;
 
 		c.pp=pp;
 		c.p=p;
@@ -196,7 +227,7 @@ ASN1_STRING *d2i_ASN1_bytes(ASN1_STRING **a, const unsigned char **pp,
 		c.tag=Ptag;
 		c.xclass=Pclass;
 		c.max=(length == 0)?0:(p+length);
-		if (!asn1_collate_primitive(ret,&c)) 
+		if (!asn1_collate_primative(ret,&c)) 
 			goto err; 
 		else
 			{
@@ -209,8 +240,8 @@ ASN1_STRING *d2i_ASN1_bytes(ASN1_STRING **a, const unsigned char **pp,
 			{
 			if ((ret->length < len) || (ret->data == NULL))
 				{
-				if (ret->data != NULL) OPENSSL_free(ret->data);
-				s=(unsigned char *)OPENSSL_malloc((int)len + 1);
+				if (ret->data != NULL) Free((char *)ret->data);
+				s=(unsigned char *)Malloc((int)len);
 				if (s == NULL)
 					{
 					i=ERR_R_MALLOC_FAILURE;
@@ -220,13 +251,12 @@ ASN1_STRING *d2i_ASN1_bytes(ASN1_STRING **a, const unsigned char **pp,
 			else
 				s=ret->data;
 			memcpy(s,p,(int)len);
-			s[len] = '\0';
 			p+=len;
 			}
 		else
 			{
 			s=NULL;
-			if (ret->data != NULL) OPENSSL_free(ret->data);
+			if (ret->data != NULL) Free((char *)ret->data);
 			}
 
 		ret->length=(int)len;
@@ -245,11 +275,13 @@ err:
 	}
 
 
-/* We are about to parse 0..n d2i_ASN1_bytes objects, we are to collapse
- * them into the one structure that is then returned */
+/* We are about to parse 0..n d2i_ASN1_bytes objects, we are to collapes
+ * them into the one struture that is then returned */
 /* There have been a few bug fixes for this function from
  * Paul Keogh <paul.keogh@sse.ie>, many thanks to him */
-static int asn1_collate_primitive(ASN1_STRING *a, ASN1_const_CTX *c)
+static int asn1_collate_primative(a,c)
+ASN1_STRING *a;
+ASN1_CTX *c;
 	{
 	ASN1_STRING *os=NULL;
 	BUF_MEM b;
@@ -270,7 +302,7 @@ static int asn1_collate_primitive(ASN1_STRING *a, ASN1_const_CTX *c)
 		{
 		if (c->inf & 1)
 			{
-			c->eos=ASN1_const_check_infinite_end(&c->p,
+			c->eos=ASN1_check_infinite_end(&c->p,
 				(long)(c->max-c->p));
 			if (c->eos) break;
 			}
@@ -287,7 +319,7 @@ static int asn1_collate_primitive(ASN1_STRING *a, ASN1_const_CTX *c)
 			goto err;
 			}
 
-		if (!BUF_MEM_grow_clean(&b,num+os->length))
+		if (!BUF_MEM_grow(&b,num+os->length))
 			{
 			c->error=ERR_R_BUF_LIB;
 			goto err;
@@ -298,17 +330,17 @@ static int asn1_collate_primitive(ASN1_STRING *a, ASN1_const_CTX *c)
 		num+=os->length;
 		}
 
-	if (!asn1_const_Finish(c)) goto err;
+	if (!asn1_Finish(c)) goto err;
 
 	a->length=num;
-	if (a->data != NULL) OPENSSL_free(a->data);
+	if (a->data != NULL) Free(a->data);
 	a->data=(unsigned char *)b.data;
 	if (os != NULL) ASN1_STRING_free(os);
 	return(1);
 err:
-	ASN1err(ASN1_F_ASN1_COLLATE_PRIMITIVE,c->error);
+	ASN1err(ASN1_F_ASN1_COLLATE_PRIMATIVE,c->error);
 	if (os != NULL) ASN1_STRING_free(os);
-	if (b.data != NULL) OPENSSL_free(b.data);
+	if (b.data != NULL) Free(b.data);
 	return(0);
 	}
 

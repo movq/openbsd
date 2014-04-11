@@ -55,11 +55,6 @@
  * Hudson (tjh@cryptsoft.com).
  *
  */
-/* ====================================================================
- * Copyright 2002 Sun Microsystems, Inc. ALL RIGHTS RESERVED.
- * ECDH support in OpenSSL originally developed by 
- * SUN MICROSYSTEMS, INC., and contributed to the OpenSSL project.
- */
 
 
 #include <stdio.h>
@@ -68,17 +63,6 @@
 #include <openssl/engine.h>
 #include <openssl/dso.h>
 #include <openssl/pem.h>
-#include <openssl/evp.h>
-#include <openssl/rand.h>
-#ifndef OPENSSL_NO_RSA
-#include <openssl/rsa.h>
-#endif
-#ifndef OPENSSL_NO_DSA
-#include <openssl/dsa.h>
-#endif
-#ifndef OPENSSL_NO_DH
-#include <openssl/dh.h>
-#endif
 
 /* This testing gunk is implemented (and explained) lower down. It also assumes
  * the application explicitly calls "ENGINE_load_openssl()" because this is no
@@ -93,21 +77,6 @@
 /* #define TEST_ENG_OPENSSL_SHA_P_INIT */
 /* #define TEST_ENG_OPENSSL_SHA_P_UPDATE */
 /* #define TEST_ENG_OPENSSL_SHA_P_FINAL */
-
-/* Now check what of those algorithms are actually enabled */
-#ifdef OPENSSL_NO_RC4
-#undef TEST_ENG_OPENSSL_RC4
-#undef TEST_ENG_OPENSSL_RC4_OTHERS
-#undef TEST_ENG_OPENSSL_RC4_P_INIT
-#undef TEST_ENG_OPENSSL_RC4_P_CIPHER
-#endif
-#if defined(OPENSSL_NO_SHA) || defined(OPENSSL_NO_SHA0) || defined(OPENSSL_NO_SHA1)
-#undef TEST_ENG_OPENSSL_SHA
-#undef TEST_ENG_OPENSSL_SHA_OTHERS
-#undef TEST_ENG_OPENSSL_SHA_P_INIT
-#undef TEST_ENG_OPENSSL_SHA_P_UPDATE
-#undef TEST_ENG_OPENSSL_SHA_P_FINAL 
-#endif
 
 #ifdef TEST_ENG_OPENSSL_RC4
 static int openssl_ciphers(ENGINE *e, const EVP_CIPHER **cipher,
@@ -139,12 +108,6 @@ static int bind_helper(ENGINE *e)
 #endif
 #ifndef OPENSSL_NO_DSA
 			|| !ENGINE_set_DSA(e, DSA_get_default_method())
-#endif
-#ifndef OPENSSL_NO_ECDH
-			|| !ENGINE_set_ECDH(e, ECDH_OpenSSL())
-#endif
-#ifndef OPENSSL_NO_ECDSA
-			|| !ENGINE_set_ECDSA(e, ECDSA_OpenSSL())
 #endif
 #ifndef OPENSSL_NO_DH
 			|| !ENGINE_set_DH(e, DH_get_default_method())
@@ -217,6 +180,7 @@ IMPLEMENT_DYNAMIC_BIND_FN(bind_fn)
  *        the "init_key" handler is called.
  *    TEST_ENG_OPENSSL_RC4_P_CIPHER - ditto for the "cipher" handler.
  */
+#include <openssl/evp.h>
 #include <openssl/rc4.h>
 #define TEST_RC4_KEY_SIZE		16
 static int test_cipher_nids[] = {NID_rc4,NID_rc4_40};
@@ -238,7 +202,7 @@ static int test_rc4_init_key(EVP_CIPHER_CTX *ctx, const unsigned char *key,
 	return 1;
 	}
 static int test_rc4_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
-		      const unsigned char *in, size_t inl)
+		      const unsigned char *in, unsigned int inl)
 	{
 #ifdef TEST_ENG_OPENSSL_RC4_P_CIPHER
 	fprintf(stderr, "(TEST_ENG_OPENSSL_RC4) test_cipher() called\n");
@@ -257,7 +221,6 @@ static const EVP_CIPHER test_r4_cipher=
 	sizeof(TEST_RC4_KEY),
 	NULL,
 	NULL,
-	NULL,
 	NULL
 	};
 static const EVP_CIPHER test_r4_40_cipher=
@@ -270,7 +233,6 @@ static const EVP_CIPHER test_r4_40_cipher=
 	NULL,
 	sizeof(TEST_RC4_KEY),
 	NULL, 
-	NULL,
 	NULL,
 	NULL
 	};
@@ -303,6 +265,7 @@ static int openssl_ciphers(ENGINE *e, const EVP_CIPHER **cipher,
 
 #ifdef TEST_ENG_OPENSSL_SHA
 /* Much the same sort of comment as for TEST_ENG_OPENSSL_RC4 */
+#include <openssl/evp.h>
 #include <openssl/sha.h>
 static int test_digest_nids[] = {NID_sha1};
 static int test_digest_nids_number = 1;
@@ -313,7 +276,7 @@ static int test_sha1_init(EVP_MD_CTX *ctx)
 #endif
 	return SHA1_Init(ctx->md_data);
 	}
-static int test_sha1_update(EVP_MD_CTX *ctx,const void *data,size_t count)
+static int test_sha1_update(EVP_MD_CTX *ctx,const void *data,unsigned long count)
 	{
 #ifdef TEST_ENG_OPENSSL_SHA_P_UPDATE
 	fprintf(stderr, "(TEST_ENG_OPENSSL_SHA) test_sha1_update() called\n");

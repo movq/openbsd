@@ -57,36 +57,34 @@
  */
 
 #include <stdio.h>
+#include "buffer.h"
+#include "rand.h"
+#include "objects.h"
+#include "evp.h"
 #include "ssl_locl.h"
-#include <openssl/buffer.h>
-#include <openssl/rand.h>
-#include <openssl/objects.h>
-#include <openssl/evp.h>
 
-static const SSL_METHOD *tls1_get_client_method(int ver);
-static const SSL_METHOD *tls1_get_client_method(int ver)
+static SSL_METHOD *tls1_get_client_method(ver)
+int ver;
 	{
-	if (ver == TLS1_2_VERSION)
-		return TLSv1_2_client_method();
-	if (ver == TLS1_1_VERSION)
-		return TLSv1_1_client_method();
 	if (ver == TLS1_VERSION)
-		return TLSv1_client_method();
-	return NULL;
+		return(TLSv1_client_method());
+	else
+		return(NULL);
 	}
 
-IMPLEMENT_tls_meth_func(TLS1_2_VERSION, TLSv1_2_client_method,
-			ssl_undefined_function,
-			ssl3_connect,
-			tls1_get_client_method)
+SSL_METHOD *TLSv1_client_method()
+	{
+	static int init=1;
+	static SSL_METHOD TLSv1_client_data;
 
-IMPLEMENT_tls_meth_func(TLS1_1_VERSION, TLSv1_1_client_method,
-			ssl_undefined_function,
-			ssl3_connect,
-			tls1_get_client_method)
-
-IMPLEMENT_tls_meth_func(TLS1_VERSION, TLSv1_client_method,
-			ssl_undefined_function,
-			ssl3_connect,
-			tls1_get_client_method)
+	if (init)
+		{
+		init=0;
+		memcpy((char *)&TLSv1_client_data,(char *)tlsv1_base_method(),
+			sizeof(SSL_METHOD));
+		TLSv1_client_data.ssl_connect=ssl3_connect;
+		TLSv1_client_data.get_ssl_method=tls1_get_client_method;
+		}
+	return(&TLSv1_client_data);
+	}
 

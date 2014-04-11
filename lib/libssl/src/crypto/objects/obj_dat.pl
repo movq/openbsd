@@ -1,8 +1,4 @@
-#!/usr/local/bin/perl
-
-# fixes bug in floating point emulation on sparc64 when
-# this script produces off-by-one output on sparc64
-use integer;
+#!/usr/bin/perl
 
 sub obj_cmp
 	{
@@ -42,36 +38,15 @@ sub expand_obj
 	return(%objn);
 	}
 
-open (IN,"$ARGV[0]") || die "Can't open input file $ARGV[0]";
-open (OUT,">$ARGV[1]") || die "Can't open output file $ARGV[1]";
-
-while (<IN>)
+while (<>)
 	{
 	next unless /^\#define\s+(\S+)\s+(.*)$/;
 	$v=$1;
 	$d=$2;
-	$d =~ s/^\"//;
-	$d =~ s/\"$//;
 	if ($v =~ /^SN_(.*)$/)
-		{
-		if(defined $snames{$d})
-			{
-			print "WARNING: Duplicate short name \"$d\"\n";
-			}
-		else 
-			{ $snames{$d} = "X"; }
-		$sn{$1}=$d;
-		}
+		{ $sn{$1}=$d; }
 	elsif ($v =~ /^LN_(.*)$/)
-		{
-		if(defined $lnames{$d})
-			{
-			print "WARNING: Duplicate long name \"$d\"\n";
-			}
-		else 
-			{ $lnames{$d} = "X"; }
-		$ln{$1}=$d;
-		}
+		{ $ln{$1}=$d; }
 	elsif ($v =~ /^NID_(.*)$/)
 		{ $nid{$d}=$1; }
 	elsif ($v =~ /^OBJ_(.*)$/)
@@ -80,7 +55,6 @@ while (<IN>)
 		$objd{$v}=$d;
 		}
 	}
-close IN;
 
 %ob=&expand_obj(*objd);
 
@@ -94,26 +68,17 @@ for ($i=0; $i<$n; $i++)
 	{
 	if (!defined($nid{$i}))
 		{
-		push(@out,"{NULL,NULL,NID_undef,0,NULL,0},\n");
+		push(@out,"{NULL,NULL,NID_undef,0,NULL},\n");
 		}
 	else
 		{
 		$sn=defined($sn{$nid{$i}})?"$sn{$nid{$i}}":"NULL";
 		$ln=defined($ln{$nid{$i}})?"$ln{$nid{$i}}":"NULL";
-
-		if ($sn eq "NULL") {
-			$sn=$ln;
-			$sn{$nid{$i}} = $ln;
-		}
-
-		if ($ln eq "NULL") {
-			$ln=$sn;
-			$ln{$nid{$i}} = $sn;
-		}
-			
+		$sn=$ln if ($sn eq "NULL");
+		$ln=$sn if ($ln eq "NULL");
 		$out ="{";
-		$out.="\"$sn\"";
-		$out.=","."\"$ln\"";
+		$out.=$sn;
+		$out.=",".$ln;
 		$out.=",NID_$nid{$i},";
 		if (defined($obj{$nid{$i}}))
 			{
@@ -138,7 +103,7 @@ for ($i=0; $i<$n; $i++)
 			}
 		else
 			{
-			$out.="0,NULL,0";
+			$out.="0,NULL";
 			}
 		$out.="},\n";
 		push(@out,$out);
@@ -148,13 +113,13 @@ for ($i=0; $i<$n; $i++)
 @a=grep(defined($sn{$nid{$_}}),0 .. $n);
 foreach (sort { $sn{$nid{$a}} cmp $sn{$nid{$b}} } @a)
 	{
-	push(@sn,sprintf("%2d,\t/* \"$sn{$nid{$_}}\" */\n",$_));
+	push(@sn,sprintf("&(nid_objs[%2d]),/* $sn{$nid{$_}} */\n",$_));
 	}
 
 @a=grep(defined($ln{$nid{$_}}),0 .. $n);
 foreach (sort { $ln{$nid{$a}} cmp $ln{$nid{$b}} } @a)
 	{
-	push(@ln,sprintf("%2d,\t/* \"$ln{$nid{$_}}\" */\n",$_));
+	push(@ln,sprintf("&(nid_objs[%2d]),/* $ln{$nid{$_}} */\n",$_));
 	}
 
 @a=grep(defined($obj{$nid{$_}}),0 .. $n);
@@ -164,17 +129,11 @@ foreach (sort obj_cmp @a)
 	$v=$objd{$m};
 	$v =~ s/L//g;
 	$v =~ s/,/ /g;
-	push(@ob,sprintf("%2d,\t/* %-32s %s */\n",$_,$m,$v));
+	push(@ob,sprintf("&(nid_objs[%2d]),/* %-32s %s */\n",$_,$m,$v));
 	}
 
-print OUT <<'EOF';
-/* crypto/objects/obj_dat.h */
-
-/* THIS FILE IS GENERATED FROM objects.h by obj_dat.pl via the
- * following command:
- * perl obj_dat.pl obj_mac.h obj_dat.h
- */
-
+print <<'EOF';
+/* lib/obj/obj_dat.h */
 /* Copyright (C) 1995-1997 Eric Young (eay@cryptsoft.com)
  * All rights reserved.
  *
@@ -232,18 +191,23 @@ print OUT <<'EOF';
  * [including the GNU Public Licence.]
  */
 
+/* THIS FILE IS GENERATED FROM Objects.h by obj_dat.pl via the
+ * following command:
+ * perl obj_dat.pl < objects.h > obj_dat.h
+ */
+
 EOF
 
-printf OUT "#define NUM_NID %d\n",$n;
-printf OUT "#define NUM_SN %d\n",$#sn+1;
-printf OUT "#define NUM_LN %d\n",$#ln+1;
-printf OUT "#define NUM_OBJ %d\n\n",$#ob+1;
+printf "#define NUM_NID %d\n",$n;
+printf "#define NUM_SN %d\n",$#sn+1;
+printf "#define NUM_LN %d\n",$#ln+1;
+printf "#define NUM_OBJ %d\n\n",$#ob+1;
 
-printf OUT "static const unsigned char lvalues[%d]={\n",$lvalues+1;
-print OUT @lvalues;
-print OUT "};\n\n";
+printf "static unsigned char lvalues[%d]={\n",$lvalues+1;
+print @lvalues;
+print "};\n\n";
 
-printf OUT "static const ASN1_OBJECT nid_objs[NUM_NID]={\n";
+printf "static ASN1_OBJECT nid_objs[NUM_NID]={\n";
 foreach (@out)
 	{
 	if (length($_) > 75)
@@ -254,32 +218,30 @@ foreach (@out)
 			$t=$out.$_.",";
 			if (length($t) > 70)
 				{
-				print OUT "$out\n";
+				print "$out\n";
 				$t="\t$_,";
 				}
 			$out=$t;
 			}
 		chop $out;
-		print OUT "$out";
+		print "$out";
 		}
 	else
-		{ print OUT $_; }
+		{ print $_; }
 	}
-print  OUT "};\n\n";
+print  "};\n\n";
 
-printf OUT "static const unsigned int sn_objs[NUM_SN]={\n";
-print  OUT @sn;
-print  OUT "};\n\n";
+printf "static ASN1_OBJECT *sn_objs[NUM_SN]={\n";
+print  @sn;
+print  "};\n\n";
 
-printf OUT "static const unsigned int ln_objs[NUM_LN]={\n";
-print  OUT @ln;
-print  OUT "};\n\n";
+printf "static ASN1_OBJECT *ln_objs[NUM_LN]={\n";
+print  @ln;
+print  "};\n\n";
 
-printf OUT "static const unsigned int obj_objs[NUM_OBJ]={\n";
-print  OUT @ob;
-print  OUT "};\n\n";
-
-close OUT;
+printf "static ASN1_OBJECT *obj_objs[NUM_OBJ]={\n";
+print  @ob;
+print  "};\n\n";
 
 sub der_it
 	{
@@ -290,7 +252,7 @@ sub der_it
 	$ret.=pack("C*",$a[0]*40+$a[1]);
 	shift @a;
 	shift @a;
-	foreach (@a)
+	while ($_=shift(@a))
 		{
 		@r=();
 		$t=0;
