@@ -1,17 +1,18 @@
-SPACE-BASIC(1)              General Commands Manual             SPACE-BASIC(1)
+SPACE-ZEROWIDTH(1)          General Commands Manual         SPACE-ZEROWIDTH(1)
 
 
 
 NNAAMMEE
-       space-basic - special space characters
+       space-zerowidth - zero width and narrow space characters
 
 DDEESSCCRRIIPPTTIIOONN
-       zero width space \^ between A and B: AB
-       zero width space \% between A and B: AB
+       BEGINTEST
        zero width space \& between A and B: AB
-       zero width space \| between A and B: AB
-       end of test document
+       hyphenation allowed \% between A and B: AB
+       half-narrow (1/12) space \^ between A and B: AB
+       narrow space (1/6) \| between A and B: AB
+       ENDTEST
 
 
 
-OpenBSD                              date                       SPACE-BASIC(1)
+OpenBSD                        October 27, 2014             SPACE-ZEROWIDTH(1)
