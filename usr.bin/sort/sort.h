@@ -1,11 +1,9 @@
-/*	$OpenBSD: sort.h,v 1.8 2015/01/16 06:40:12 deraadt Exp $	*/
+/*	$OpenBSD: sort.h,v 1.9 2015/03/17 17:45:13 millert Exp $	*/
 
 /*-
- * Copyright (c) 1993
- *	The Regents of the University of California.  All rights reserved.
- *
- * This code is derived from software contributed to Berkeley by
- * Peter McIlroy.
+ * Copyright (C) 2009 Gabor Kovesdan <gabor@FreeBSD.org>
+ * Copyright (C) 2012 Oleg Moskalenko <mom040267@gmail.com>
+ * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -15,14 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
  * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
@@ -30,110 +25,85 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- *
- *	@(#)sort.h	8.1 (Berkeley) 6/6/93
  */
 
-#include <db.h>
-#include <err.h>
+#if !defined(__BSD_SORT_H__)
+#define	__BSD_SORT_H__
+
 #include <errno.h>
-#include <fcntl.h>
-#include <limits.h>
+#include <stdbool.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <sysexits.h>
+#include <wchar.h>
 
-#define NBINS 256
-#define MAXMERGE 16
+#include <sys/types.h>
+#include <md5.h>
 
-/* values for masks, weights, and other flags. */
-#define I 1		/* mask out non-printable characters */
-#define D 2		/* sort alphanumeric characters only */
-#define N 4		/* Field is a number */
-#define F 8		/* weight lower and upper case the same */
-#define R 16		/* Field is reversed with respect to the global weight */
-#define BI 32		/* ignore blanks in icol */
-#define BT 64		/* ignore blanks in tcol */
+#define	VERSION	"2.3-OpenBSD"
 
-/* masks for delimiters: blanks, fields, and termination. */
-#define BLANK 1		/* ' ', '\t'; '\n' if -T is invoked */
-#define FLD_D 2		/* ' ', '\t' default; from -t otherwise */
-#define REC_D_F 4	/* '\n' default; from -T otherwise */
-
-#define min(a, b) ((a) < (b) ? (a) : (b))
-#define max(a, b) ((a) > (b) ? (a) : (b))
-
-#define	FCLOSE(file) {							\
-	if (EOF == fclose(file))					\
-		err(2, "fclose");					\
-}
-
-#define	EWRITE(ptr, size, n, f) {					\
-	if (!fwrite(ptr, size, n, f))					\
-		 err(2, "fwrite");					\
-}
-
-/* length of record is currently limited to maximum string length (size_t) */
-typedef size_t length_t;
-
-#define SALIGN(n) ((n+(sizeof(length_t)-1)) & ~(sizeof(length_t)-1))
-
-/* a record is a key/line pair starting at rec.data. It has a total length
- * and an offset to the start of the line half of the pair.
+/*
+ * If true, we output some debug information.
  */
-typedef struct recheader {
-	length_t length;
-	length_t offset;
-	u_char data[1];
-} RECHEADER;
+extern bool debug_sort;
 
-typedef struct trecheader {
-	length_t length;
-	length_t offset;
-} TRECHEADER;
-
-/* This is the column as seen by struct field.  It is used by enterfield.
- * They are matched with corresponding coldescs during initialization.
+/*
+ * MD5 context for random hash function
  */
-struct column {
-	struct coldesc *p;
-	int num;
-	int indent;
+extern MD5_CTX md5_ctx;
+
+/*
+ * sort.c
+ */
+
+/*
+ * This structure holds main sort options which are NOT affecting the sort ordering.
+ */
+struct sort_opts {
+	wint_t		field_sep;
+	int		sort_method;
+	bool		cflag;
+	bool		csilentflag;
+	bool		kflag;
+	bool		mflag;
+	bool		sflag;
+	bool		uflag;
+	bool		zflag;
+	bool		tflag;
+	bool		complex_sort;
 };
 
-/* a coldesc has a number and pointers to the beginning and end of the
- * corresponding column in the current line.  This is determined in enterkey.
+/*
+ * Key value structure forward declaration
  */
-typedef struct coldesc {
-	u_char *start;
-	u_char *end;
-	int num;
-} COLDESC;
+struct key_value;
 
-/* A field has an initial and final column; an omitted final column
- * implies the end of the line.  Flags regulate omission of blanks and
- * numerical sorts; mask determines which characters are ignored (from -i, -d);
- * weights determines the sort weights of a character (from -f, -r).
+/*
+ * Cmp function
  */
-struct field {
-	struct column icol;
-	struct column tcol;
-	u_int flags;
-	u_char *mask;
-	u_char *weights;
+typedef int (*cmpcoll_t)(struct key_value *kv1, struct key_value *kv2, size_t offset);
+
+/*
+ * This structure holds "sort modifiers" - options which are affecting the sort ordering.
+ */
+struct sort_mods {
+	cmpcoll_t	func;
+	bool		bflag;
+	bool		dflag;
+	bool		fflag;
+	bool		gflag;
+	bool		iflag;
+	bool		Mflag;
+	bool		nflag;
+	bool		rflag;
+	bool		Rflag;
+	bool		Vflag;
+	bool		hflag;
 };
 
-union f_handle {
-	int top;
-	char **names;
-};
-extern int PANIC;	/* maximum depth of fsort before fmerge is called */
-extern u_char ascii[NBINS], Rascii[NBINS], Ftable[NBINS], RFtable[NBINS];
-extern u_char alltable[NBINS], dtable[NBINS], itable[NBINS];
-extern u_char d_mask[NBINS];
-extern int SINGL_FLD, SEP_FLAG, UNIQUE, STABLE;
-extern int REC_D;
-extern char *tmpdir;
-extern int ND;		/* limit on number of -k options. */
+extern bool need_hint;
 
-#include "extern.h"
+extern struct sort_opts sort_opts_vals;
+
+extern struct sort_mods * const default_sort_mods;
+
+#endif /* __BSD_SORT_H__ */
