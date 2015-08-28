@@ -1,4 +1,4 @@
-/*	$OpenBSD: kqueue-pipe.c,v 1.6 2015/08/13 10:13:05 uebayasi Exp $	*/
+/*	$OpenBSD: kqueue-pipe.c,v 1.5 2015/08/01 00:04:01 uebayasi Exp $	*/
 /*
  * Copyright 2001 Niels Provos <provos@citi.umich.edu>
  * All rights reserved.
@@ -34,7 +34,6 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <string.h>
 
 int do_pipe(void);
 
@@ -56,7 +55,6 @@ do_pipe(void)
 	if ((kq = kqueue()) == -1)
 		return (1);
 
-	memset(&ev, 0, sizeof(ev));
 	ev.ident = fd[1];
 	ev.filter = EVFILT_WRITE;
 	ev.flags = EV_ADD | EV_ENABLE;
@@ -64,7 +62,6 @@ do_pipe(void)
 	if (n == -1)
 		return (1);
 	
-	memset(buf, 0, sizeof(buf));
 	while ((n = write(fd[1], buf, sizeof(buf))) == sizeof(buf))
 		;
 
@@ -82,7 +79,5 @@ do_pipe(void)
 	if (n == -1 || n == 0)
 		return (1);
 
-	close(fd[0]);
-	close(fd[1]);
 	return (0);
 }
