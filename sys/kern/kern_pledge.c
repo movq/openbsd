@@ -1,4 +1,4 @@
-/*	$OpenBSD: kern_pledge.c,v 1.149 2016/02/17 21:52:06 millert Exp $	*/
+/*	$OpenBSD: kern_pledge.c,v 1.149.2.1 2016/03/16 08:30:01 semarie Exp $	*/
 
 /*
  * Copyright (c) 2015 Nicholas Marriott <nicm@openbsd.org>
@@ -615,7 +615,7 @@ pledge_fail(struct proc *p, int error, uint64_t code)
 int
 pledge_namei(struct proc *p, struct nameidata *ni, char *origpath)
 {
-	char path[PATH_MAX];
+	char path[PATH_MAX + 1];
 	int error;
 
 	if ((p->p_p->ps_flags & PS_PLEDGE) == 0 ||
