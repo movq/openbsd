@@ -1,4 +1,4 @@
-/*	$OpenBSD: uipc_mbuf.c,v 1.219 2016/02/23 01:39:14 dlg Exp $	*/
+/*	$OpenBSD: uipc_mbuf.c,v 1.219.2.1 2016/04/28 22:31:55 sthen Exp $	*/
 /*	$NetBSD: uipc_mbuf.c,v 1.15.4.1 1996/06/13 17:11:44 cgd Exp $	*/
 
 /*
@@ -1223,7 +1223,7 @@ m_dup_pkt(struct mbuf *m0, unsigned int adj, int wait)
 	if (len > MAXMCLBYTES) /* XXX */
 		return (NULL);
 
-	m = m_get(m0->m_type, wait);
+	m = m_get(wait, m0->m_type);
 	if (m == NULL)
 		return (NULL);
 
@@ -1231,7 +1231,7 @@ m_dup_pkt(struct mbuf *m0, unsigned int adj, int wait)
 		goto fail;
 
 	if (len > MHLEN) {
-		MCLGETI(m, len, NULL, wait);
+		MCLGETI(m, wait, NULL, len);
 		if (!ISSET(m->m_flags, M_EXT))
 			goto fail;
 	}
