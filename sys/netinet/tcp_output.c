@@ -1,4 +1,4 @@
-/*	$OpenBSD: tcp_output.c,v 1.113 2015/07/13 23:11:37 bluhm Exp $	*/
+/*	$OpenBSD: tcp_output.c,v 1.113.4.1 2016/07/21 14:31:29 tedu Exp $	*/
 /*	$NetBSD: tcp_output.c,v 1.16 1997/06/03 16:17:09 kml Exp $	*/
 
 /*
@@ -732,6 +732,9 @@ send:
 				goto out;
 			}
 		}
+		if (so->so_snd.sb_mb->m_flags & M_PKTHDR)
+			m->m_pkthdr.ph_loopcnt =
+			    so->so_snd.sb_mb->m_pkthdr.ph_loopcnt;
 #endif
 		/*
 		 * If we're sending everything we've got, set PUSH.
