@@ -1,4 +1,4 @@
-/*	$OpenBSD: mkmakefile.c,v 1.41 2015/01/16 06:40:16 deraadt Exp $	*/
+/*	$OpenBSD: mkmakefile.c,v 1.7 1997/11/13 08:21:55 deraadt Exp $	*/
 /*	$NetBSD: mkmakefile.c,v 1.34 1997/02/02 21:12:36 thorpej Exp $	*/
 
 /*
@@ -22,7 +22,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -41,13 +45,12 @@
  *	from: @(#)mkmakefile.c	8.1 (Berkeley) 6/6/93
  */
 
+#include <sys/param.h>
 #include <ctype.h>
-#include <err.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
 #include "config.h"
 #include "sem.h"
 
@@ -55,29 +58,27 @@
  * Make the Makefile.
  */
 
-static const char *srcpath(struct files *);
+static const char *srcpath __P((struct files *)); 
+                        
+static int emitdefs __P((FILE *));
+static int emitfiles __P((FILE *, int));
 
-static int emitdefs(FILE *);
-static int emitreconfig(FILE *);
-static int emitfiles(FILE *, int);
-
-static int emitobjs(FILE *);
-static int emitcfiles(FILE *);
-static int emitsfiles(FILE *);
-static int emitrules(FILE *);
-static int emitload(FILE *);
+static int emitobjs __P((FILE *));
+static int emitcfiles __P((FILE *));
+static int emitsfiles __P((FILE *));
+static int emitrules __P((FILE *));
+static int emitload __P((FILE *));
 
 int
-mkmakefile(void)
+mkmakefile()
 {
-	FILE *ifp, *ofp;
-	int lineno;
-	int (*fn)(FILE *);
-	char *ifname;
+	register FILE *ifp, *ofp;
+	register int lineno;
+	register int (*fn) __P((FILE *));
+	register char *ifname;
 	char line[BUFSIZ], buf[200];
 
-	(void)snprintf(buf, sizeof buf, "arch/%s/conf/Makefile.%s",
-	    machine, machine);
+	(void)sprintf(buf, "arch/%s/conf/Makefile.%s", machine, machine);
 	ifname = sourcepath(buf);
 	if ((ifp = fopen(ifname, "r")) == NULL) {
 		(void)fprintf(stderr, "config: cannot read %s: %s\n",
@@ -89,7 +90,6 @@ mkmakefile(void)
 		(void)fprintf(stderr, "config: cannot write Makefile: %s\n",
 		    strerror(errno));
 		free(ifname);
-		(void)fclose(ifp);
 		return (1);
 	}
 	if (emitdefs(ofp) != 0)
@@ -120,15 +120,14 @@ mkmakefile(void)
 		if ((*fn)(ofp))
 			goto wrerror;
 	}
-	if (startdir != NULL) {
-		if (emitreconfig(ofp) != 0)
-			goto wrerror;
-	}
 	if (ferror(ifp)) {
 		(void)fprintf(stderr,
 		    "config: error reading %s (at line %d): %s\n",
 		    ifname, lineno, strerror(errno));
 		goto bad;
+		/* (void)unlink("Makefile"); */
+		free(ifname);
+		return (1);
 	}
 	if (fclose(ofp)) {
 		ofp = NULL;
@@ -148,51 +147,6 @@ bad:
 	return (1);
 }
 
-char *
-expandname(const char *_nam)
-{
-	char *ret = NULL, *nam, *n, *s, *e, *expand;
-	const char *var = NULL;
-
-	if ((nam = n = strdup(_nam)) == NULL)
-		errx(1, "out of memory");
-
-	while (*n) {
-		/* Search for a ${name} to expand */
-		if ((s = strchr(n, '$')) == NULL) {
-			if (ret == NULL)
-				break;
-			if (asprintf(&expand, "%s%s", ret, n) == -1)
-				errx(1, "out of memory");
-			free(ret);
-			ret = expand;
-			break;
-		}
-		*s++ = '\0';
-		if (*s != '{')
-			error("{");
-		e = strchr(++s, '}');
-		if (!e)
-			error("}");
-		*e = '\0';
-
-		if (strcmp(s, "MACHINE_ARCH") == 0)
-			var = machinearch ? machinearch : machine;
-		else if (strcmp(s, "MACHINE") == 0)
-			var = machine;
-		else
-			error("variable `%s' not supported", s);
-
-		if (asprintf(&expand, "%s%s", ret ? ret : nam, var) == -1)
-			errx(1, "out of memory");
-		free(ret);
-		ret = expand;
-		n = e + 1;
-	}
-	free(nam);
-	return (ret);
-}
-
 /*
  * Return (possibly in a static buffer) the name of the `source' for a
  * file.  If we have `options source', or if the file is marked `always
@@ -200,54 +154,32 @@ expandname(const char *_nam)
  * get the .o from the obj-directory.
  */
 static const char *
-srcpath(struct files *fi)
+srcpath(fi)
+	register struct files *fi;
 {
+#if 1
 	/* Always have source, don't support object dirs for kernel builds. */
-	struct nvlist *nv, *nv1;
-	char *expand, *source;
+	return (fi->fi_path);
+#else
+	static char buf[MAXPATHLEN];
 
-	/* Search path list for files we will want to use */
-	if (fi->fi_nvpath->nv_next == NULL) {
-		nv = fi->fi_nvpath;
-		goto onlyone;
+	if (have_source || (fi->fi_flags & FI_ALWAYSSRC) != 0)
+		return (fi->fi_path);
+	if (objpath == NULL) {
+		error("obj-directory not set");
+		return (NULL);
 	}
-
-	for (nv = fi->fi_nvpath; nv; nv = nv->nv_next) {
-		expand = expandname(nv->nv_name);
-		source = sourcepath(expand ? expand : nv->nv_name);
-		if (access(source, R_OK) == 0) {
-			/* XXX poolalloc() prevents freeing old nv_name */
-			if (expand)
-				nv->nv_name = intern(expand);
-			break;
-		}
-		free(expand);
-		free(source);
-	}
-	if (nv == NULL)
-		nv = fi->fi_nvpath;
-
-	/*
-	 * Now that we know which path is selected, delete all the
-	 * other paths to skip the access() checks next time.
-	 */
-	while ((nv1 = fi->fi_nvpath)) {
-		nv1 = nv1->nv_next;
-		if (fi->fi_nvpath != nv)
-			nvfree(fi->fi_nvpath);
-		fi->fi_nvpath = nv1;
-	}
-	fi->fi_nvpath = nv;
-	nv->nv_next = NULL;
-onlyone:
-	return (nv->nv_name);
+	(void)snprintf(buf, sizeof buf, "%s/%s.o", objpath, fi->fi_base);
+	return (buf);
+#endif
 }
 
 static int
-emitdefs(FILE *fp)
+emitdefs(fp)
+	register FILE *fp;
 {
-	struct nvlist *nv;
-	char *sp;
+	register struct nvlist *nv;
+	register char *sp;
 
 	if (fputs("IDENT=", fp) < 0)
 		return (1);
@@ -266,12 +198,17 @@ emitdefs(FILE *fp)
 		return (1);
 	if (fprintf(fp, "PARAM=-DMAXUSERS=%d\n", maxusers) < 0)
 		return (1);
-	if (fprintf(fp, "S=\t%s\n", srcdir) < 0)
-		return (1);
-	if (fprintf(fp, "_mach=%s\n", machine) < 0)
-		return (1);
-	if (fprintf(fp, "_arch=%s\n", machinearch ? machinearch : machine) < 0)
-		return (1);
+	if (*srcdir == '/' || *srcdir == '.') {
+		if (fprintf(fp, "S=\t%s\n", srcdir) < 0)
+			return (1);
+	} else {
+		/*
+		 * libkern and libcompat "Makefile.inc"s want relative S
+		 * specification to begin with '.'.
+		 */
+		if (fprintf(fp, "S=\t./%s\n", srcdir) < 0)
+			return (1);
+	}
 	for (nv = mkoptions; nv != NULL; nv = nv->nv_next)
 		if (fprintf(fp, "%s=%s\n", nv->nv_name, nv->nv_str) < 0)
 			return (1);
@@ -279,39 +216,12 @@ emitdefs(FILE *fp)
 }
 
 static int
-emitreconfig(FILE *fp)
+emitobjs(fp)
+	register FILE *fp;
 {
-	if (fputs("\n"
-	    ".PHONY: config\n"
-	    "config:\n", fp) < 0)
-		return (1);
-	if (fprintf(fp, "\tcd %s && config ", startdir) < 0)
-		return (1);
-	if (pflag) {
-		if (fputs("-p ", fp) < 0)
-			return (1);
-	}
-	if (sflag) {
-		if (fprintf(fp, "-s %s ", sflag) < 0)
-			return (1);
-	}
-	if (bflag) {
-		if (fprintf(fp, "-b %s ", bflag) < 0)
-			return (1);
-	}
-	/* other options */
-	if (fprintf(fp, "%s\n", conffile) < 0)
-		return (1);
-	return (0);
-}
-
-static int
-emitobjs(FILE *fp)
-{
-	struct files *fi;
-	struct objects *oi;
-	int lpos, len, sp;
-	const char *fpath;
+	register struct files *fi;
+	register struct objects *oi;
+	register int lpos, len, sp;
 
 	if (fputs("OBJS=", fp) < 0)
 		return (1);
@@ -320,9 +230,7 @@ emitobjs(FILE *fp)
 	for (fi = allfiles; fi != NULL; fi = fi->fi_next) {
 		if ((fi->fi_flags & FI_SEL) == 0)
 			continue;
-		if ((fpath = srcpath(fi)) == NULL)
-			return (1);
-		len = strlen(fi->fi_base) + 3;
+		len = strlen(fi->fi_base) + 2;
 		if (lpos + len > 72) {
 			if (fputs(" \\\n", fp) < 0)
 				return (1);
@@ -335,19 +243,19 @@ emitobjs(FILE *fp)
 		sp = ' ';
 	}
 	for (oi = allobjects; oi != NULL; oi = oi->oi_next) {
-		if ((oi->oi_flags & OI_SEL) == 0)
-			continue;
-		len = strlen(oi->oi_path) + 3;
-		if (lpos + len > 72) {
-			if (fputs(" \\\n", fp) < 0)
-				return (1);
-			sp = '\t';
-			lpos = 7;
-		}
-		if (fprintf(fp, "%c$S/%s", sp, oi->oi_path) < 0)
-			return (1);
-		lpos += len + 1;
-		sp = ' ';
+	        if ((oi->oi_flags & OI_SEL) == 0)
+	                continue;
+	        len = strlen(oi->oi_path) + 3;
+	        if (lpos + len > 72) {
+	                if (fputs(" \\\n", fp) < 0)
+	                        return (1);
+	                sp = '\t';
+	                lpos = 7;
+	        }
+	        if (fprintf(fp, "%c$S/%s", sp, oi->oi_path) < 0)
+	                return (1);
+	        lpos += len + 1;
+	        sp = ' ';
 	}
 	if (putc('\n', fp) < 0)
 		return (1);
@@ -355,28 +263,33 @@ emitobjs(FILE *fp)
 }
 
 static int
-emitcfiles(FILE *fp)
+emitcfiles(fp)
+	FILE *fp;
 {
 
 	return (emitfiles(fp, 'c'));
 }
 
 static int
-emitsfiles(FILE *fp)
+emitsfiles(fp)
+	FILE *fp;
 {
 
 	return (emitfiles(fp, 's'));
 }
 
 static int
-emitfiles(FILE *fp, int suffix)
+emitfiles(fp, suffix)
+	register FILE *fp;
+	int suffix;
 {
-	struct files *fi;
-	int lpos, len, sp;
-	const char *fpath;
-	char uppersuffix = toupper((unsigned char)suffix);
+	register struct files *fi;
+	register struct config *cf;
+	register int lpos, len, sp;
+	register const char *fpath;
+	char swapname[100];
 
-	if (fprintf(fp, "%cFILES=", uppersuffix) < 0)
+	if (fprintf(fp, "%cFILES=", toupper(suffix)) < 0)
 		return (1);
 	sp = '\t';
 	lpos = 7;
@@ -384,9 +297,9 @@ emitfiles(FILE *fp, int suffix)
 		if ((fi->fi_flags & FI_SEL) == 0)
 			continue;
 		if ((fpath = srcpath(fi)) == NULL)
-			return (1);
+                        return (1);
 		len = strlen(fpath);
-		if (fpath[len - 1] != suffix && fpath[len - 1] != uppersuffix)
+		if (fpath[len - 1] != suffix)
 			continue;
 		if (*fpath != '/')
 			len += 3;	/* "$S/" */
@@ -402,6 +315,33 @@ emitfiles(FILE *fp, int suffix)
 		lpos += len + 1;
 		sp = ' ';
 	}
+	/*
+	 * The allfiles list does not include the configuration-specific
+	 * C source files.  These files should be eliminated someday, but
+	 * for now, we have to add them to ${CFILES} (and only ${CFILES}).
+	 */
+	if (suffix == 'c') {
+		for (cf = allcf; cf != NULL; cf = cf->cf_next) {
+			if (cf->cf_root == NULL)
+				(void)sprintf(swapname,
+				    "$S/arch/%s/%s/swapgeneric.c",
+				    machine, machine);
+			else
+				(void)sprintf(swapname, "./swap%s.c",
+				    cf->cf_name);
+			len = strlen(swapname);
+			if (lpos + len > 72) {
+				if (fputs(" \\\n", fp) < 0)
+					return (1);
+				sp = '\t';
+				lpos = 7;
+			}
+			if (fprintf(fp, "%c%s", sp, swapname) < 0)
+				return (1);
+			lpos += len + 1;
+			sp = ' ';
+		}
+	}
 	if (putc('\n', fp) < 0)
 		return (1);
 	return (0);
@@ -411,58 +351,32 @@ emitfiles(FILE *fp, int suffix)
  * Emit the make-rules.
  */
 static int
-emit_1rule(FILE *fp, struct files *fi, const char *fpath, const char *suffix)
+emitrules(fp)
+	register FILE *fp;
 {
-	if (fprintf(fp, "%s%s: %s%s\n", fi->fi_base, suffix,
-	    *fpath != '/' ? "$S/" : "", fpath) < 0)
-		return (1);
-	if (fi->fi_mkrule != NULL) {
-		if (fprintf(fp, "\t%s\n\n", fi->fi_mkrule) < 0)
-			return (1);
-	}
-	return (0);
-}
-
-static int
-emitrules(FILE *fp)
-{
-	struct files *fi;
-	const char *fpath;
-
-	/* write suffixes */
-	if (fprintf(fp,
-	    ".SUFFIXES:\n"
-	    ".SUFFIXES: .s .S .c .o\n\n"
-
-	    ".PHONY: depend all install clean tags\n\n"
-
-	    ".c.o:\n"
-	    "\t${NORMAL_C}\n\n"
-
-	    ".s.o:\n"
-	    "\t${NORMAL_S}\n\n"
-
-	    ".S.o:\n"
-	    "\t${NORMAL_S}\n\n") < 0)
-		return (1);
-
+	register struct files *fi;
+	register const char *cp, *fpath;
+	int ch;
+	char buf[200];
 
 	for (fi = allfiles; fi != NULL; fi = fi->fi_next) {
 		if ((fi->fi_flags & FI_SEL) == 0)
 			continue;
 		if ((fpath = srcpath(fi)) == NULL)
 			return (1);
-		/* special rule: need to emit them independently */
-		if (fi->fi_mkrule) {
-			if (emit_1rule(fp, fi, fpath, ".o"))
-				return (1);
-		/* simple default rule */
-		} else {
-			if (fprintf(fp, "%s.o: %s%s\n", fi->fi_base,
-			    *fpath != '/' ? "$S/" : "", fpath) < 0)
-				return (1);
+		if (fprintf(fp, "%s.o: %s%s\n", fi->fi_base,
+		    *fpath != '/' ? "$S/" : "", fpath) < 0)
+			return (1);
+		if ((cp = fi->fi_mkrule) == NULL) {
+			cp = "NORMAL";
+			ch = fpath[strlen(fpath) - 1];
+			if (islower(ch))
+				ch = toupper(ch);
+			(void)sprintf(buf, "${%s_%c}", cp, ch);
+			cp = buf;
 		}
-
+		if (fprintf(fp, "\t%s\n\n", cp) < 0)
+			return (1);
 	}
 	return (0);
 }
@@ -473,10 +387,11 @@ emitrules(FILE *fp)
  * This function is not to be called `spurt'.
  */
 static int
-emitload(FILE *fp)
+emitload(fp)
+	register FILE *fp;
 {
-	struct config *cf;
-	const char *nm, *swname;
+	register struct config *cf;
+	register const char *nm, *swname;
 	int first;
 
 	if (fputs("all:", fp) < 0)
@@ -494,22 +409,23 @@ emitload(FILE *fp)
 		if (fprintf(fp, "%s: ${SYSTEM_DEP} swap%s.o", nm, swname) < 0)
 			return (1);
 		if (first) {
-			if (fputs(" vers.o", fp) < 0)
+			if (fputs(" newvers", fp) < 0)
 				return (1);
 			first = 0;
 		}
-		if (fprintf(fp, "\n"
-		    "\t${SYSTEM_LD_HEAD}\n"
-		    "\t${SYSTEM_LD} swap%s.o\n"
-		    "\t${SYSTEM_LD_TAIL}\n"
-		    "\n"
-		    "swap%s.o: ", swname, swname) < 0)
+		if (fprintf(fp, "\n\
+\t${SYSTEM_LD_HEAD}\n\
+\t${SYSTEM_LD} swap%s.o\n\
+\t${SYSTEM_LD_TAIL}\n\
+\n\
+swap%s.o: ", swname, swname) < 0)
 			return (1);
 		if (cf->cf_root != NULL) {
 			if (fprintf(fp, "swap%s.c\n", nm) < 0)
 				return (1);
 		} else {
-			if (fprintf(fp, "$S/conf/swapgeneric.c\n") < 0)
+			if (fprintf(fp, "$S/arch/%s/%s/swapgeneric.c\n",
+			    machine, machine) < 0)
 				return (1);
 		}
 		if (fputs("\t${NORMAL_C}\n\n", fp) < 0)

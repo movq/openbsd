@@ -1,5 +1,5 @@
 #!/bin/sh
-#	$Id: ypinit.sh,v 1.13 2009/04/04 12:49:10 schwarze Exp $
+#	$Id: ypinit.sh,v 1.7 1998/01/18 20:48:48 maja Exp $
 #
 # ypinit.sh - setup an master or slave server.
 #
@@ -88,7 +88,7 @@ fi
 if [ -z "${DOMAIN}" ]; then
 	cat << \__no_domain 1>&2
 The local host's YP domain name has not been set.  Please set it with
-the domainname(1) command or pass the domain as an argument to ypinit(8).
+the domainname(8) command or pass the domain as an argument to ypinit(8).
 __no_domain
 
 	exit 1
@@ -99,7 +99,7 @@ HOST=`${HOSTNAME}`
 if [ -z "${HOST}" ]; then
 	cat << \__no_hostname 1>&2
 The local host's hostname has not been set.  Please set it with the
-hostname(1) command.
+hostname(8) command.
 __no_hostname
 
 	exit 1
@@ -163,7 +163,7 @@ __notice1
 	esac
 
 	if [ -d "${YP_DIR}/${DOMAIN}" ]; then
-		echo ""
+		echo ""	
 		echo -n "Can we destroy the existing ${YP_DIR}/${DOMAIN} and its contents? [y/n: n]  "
 		read KILL
 
@@ -186,6 +186,7 @@ __notice1
 			echo "OK, please clean it up by hand and start again.  Bye"
 			exit 0
 		fi
+	
 	fi
 
 	if ! mkdir "${YP_DIR}/${DOMAIN}"; then
@@ -208,7 +209,7 @@ then
 	fi
 
 	SUBDIR=`grep "^SUBDIR=" ${YP_DIR}/Makefile`
-
+	
 	if [ -z "${SUBDIR}" ]
 	then
 		echo "Can't find line starting with 'SUBDIR=' in ${YP_DIR}/Makefile. " 1>&2
@@ -223,7 +224,7 @@ then
 	done
 	NEWSUBDIR="${NEWSUBDIR} ${DOMAIN}"
 
-	if [ -f ${YP_DIR}/Makefile.tmp ]; then
+	if [ -f ${YP_DIR}/Makefile.tmp ]; then 
 		rm ${YP_DIR}/Makefile.tmp
 	fi
 
@@ -249,7 +250,7 @@ then
 
 	for MAP in `${YPWHICH} -d ${DOMAIN} -h ${MASTER} -m | cut -d\  -f1`
 	do
-		echo "Transferring ${MAP}..."
+		echo "Transfering ${MAP}..."
 		if ! ${YPXFR} -h ${MASTER} -c -d ${DOMAIN} ${MAP}; then
 			echo "Can't transfer map ${MAP}." 1>&2
 			ERROR_EXISTS="YES"
@@ -261,10 +262,10 @@ then
 
 	echo ""
 	if [ "${ERROR_EXISTS}" = "YES"  ]; then
-		echo "${HOST} has been set up as a YP slave server with errors. " 1>&2
-		echo "Please remember to fix any problems that occurred." 1>&2
+		echo "${HOST} has been setup as an YP slave server with errors. " 1>&2
+		echo "Please remember fix any problem that occurred." 1>&2
 	else
-		echo "${HOST} has been set up as a YP slave server without any errors. "
+		echo "${HOST} has been setup as an YP slave server without any errors. "
 	fi
 
 	echo "Don't forget to update map ypservers on ${MASTER}."
@@ -275,11 +276,12 @@ LIST_OK="NO"
 
 while [ "${LIST_OK}" = "NO" ];
 do
+	
 	if [ "${SERVERTYPE}" = "MASTER" ];
 	then
 		HOST_LIST="${HOST}"
 		echo ""
-		echo "At this point, we have to construct a list of this domain's YP servers."
+		echo "At this point, we have to construct a list of this domains YP servers."
 		echo "${HOST} is already known as master server."
 		echo "Please continue to add any slave servers, one per line. When you are"
 		echo "done with the list, type a <control D>."
@@ -313,8 +315,8 @@ do
 		echo "Update the list of hosts running YP servers in domain ${DOMAIN}."
 		echo "Master for this domain is ${MASTER_NAME}."
 		echo ""
-		echo "First verify old servers, type \\\\ to remove a server."
-		echo "Then add new servers, one per line. When done type a <control D>."
+		echo "First verify old servers, type \\ to remove a server." 
+		echo "Then add new servers, one per line. When done type a <control D>." 
 		echo ""
 		echo "	master server   :  ${HOST}"
 		if [ "${NEW_LIST}" != "" ]; then
@@ -367,13 +369,33 @@ if [ $? -ne 0 ]; then
 	echo "" 1>&2
 	echo "Couldn't build yp data base ${YP_DIR}/${DOMAIN}/ypservers." 1>&2
 	ERROR_EXISTS="YES"
-	if [ "${ERROR_EXIT}" = "YES" ]; then
+	if [ "${ERROR_EXIT}" = "YES" ]; then 
 		exit 1
 	fi
 fi
 
 if [ "${SERVERTYPE}" = "MASTER" ]; then
-	echo "${HOST} has been set up as a YP master server."
-	echo "Edit ${YP_DIR}/${DOMAIN}/Makefile to suit your needs."
-	echo "After that, run \`make' in ${YP_DIR}."
+	
+	CUR_PWD=`pwd`
+	cd ${YP_DIR}/${DOMAIN}
+	echo "Running ${YP_DIR}/${DOMAIN}/Makefile..."
+	if ! make NOPUSH=1; then
+		echo "" 1>&2
+		echo "Error running Makefile." 1>&2
+		ERROR_EXISTS="YES"
+		if [ "${ERROR_EXIT}" = "YES" ]; then 
+			exit 1
+		fi
+	fi
+
+	cd ${CUR_PWD}
+
+	echo ""
+	if [ "${ERROR_EXISTS}" = "YES" ]; then
+		echo "${HOST} has been setup as an YP master server with errors. " 1>&2
+		echo "Please remember fix any problem that occurred." 1>&2
+	else
+		echo "${HOST} has been setup as an YP master server without any errors. "
+	fi
+
 fi

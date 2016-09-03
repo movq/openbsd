@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,6 +36,11 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+/*static char sccsid[] = "from: @(#)restart.c	8.1 (Berkeley) 6/6/93";*/
+static char *rcsid = "$Id: restart.c,v 1.1.1.1 1995/10/18 08:47:12 deraadt Exp $";
+#endif /* not lint */
+
 #include "am.h"
 
 /*
@@ -46,8 +55,7 @@
  * This module relies on internal details of other components.  If
  * you change something else make *sure* restart() still works.
  */
-void
-restart()
+void restart()
 {
 	/*
 	 * Read the existing mount table
@@ -61,12 +69,12 @@ restart()
 	for (mlp = ml = read_mtab("restart"); mlp; mlp = mlp->mnext) {
 		struct mntent *me = mlp->mnt;
 		am_ops *fs_ops = 0;
-		if (STREQ(me->mnt_type, "ffs")) {
+		if (STREQ(me->mnt_type, MTAB_TYPE_UFS)) {
 			/*
 			 * UFS entry
 			 */
 			fs_ops = &ufs_ops;
-		} else if (STREQ(me->mnt_type, "nfs")) {
+		} else if (STREQ(me->mnt_type, MTAB_TYPE_NFS)) {
 			/*
 			 * NFS entry, or possibly an Amd entry...
 			 */
@@ -78,11 +86,13 @@ restart()
 			} else {
 				fs_ops = &nfs_ops;
 			}
-		} else if (STREQ(me->mnt_type, "mfs")) {
+#ifdef MTAB_TYPE_MFS
+		} else if (STREQ(me->mnt_type, MTAB_TYPE_MFS)) {
 			/*
 			 * MFS entry.  Fake with a symlink.
 			 */
 			fs_ops = &sfs_ops;
+#endif /* MTAB_TYPE_MFS */
 		} else {
 			/*
 			 * Catch everything else with symlinks to
@@ -110,7 +120,7 @@ restart()
 				mo.opt_rfs = strdup(cp+1);
 				*cp = ':';
 			} else if (fs_ops->ffserver == find_nfs_srvr) {
-				/*
+				/* 
 				 * Prototype 4.4 BSD used to end up here -
 				 * might as well keep the workaround for now
 				 */
@@ -155,8 +165,10 @@ restart()
 			/*
 			 * Clean up mo
 			 */
-			free(mo.opt_rhost);
-			free(mo.opt_rfs);
+			if (mo.opt_rhost)
+				free(mo.opt_rhost);
+			if (mo.opt_rfs)
+				free(mo.opt_rfs);
 		}
 	}
 

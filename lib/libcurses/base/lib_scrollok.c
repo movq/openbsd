@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_scrollok.c,v 1.3 2010/01/12 23:22:06 nicm Exp $ */
+/*	$OpenBSD: lib_scrollok.c,v 1.1 1999/01/18 19:09:58 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998,2000 Free Software Foundation, Inc.                   *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -33,6 +33,7 @@
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
  ****************************************************************************/
 
+
 /*
 **	lib_scrollok.c
 **
@@ -42,16 +43,16 @@
 
 #include <curses.priv.h>
 
-MODULE_ID("$Id: lib_scrollok.c,v 1.3 2010/01/12 23:22:06 nicm Exp $")
+MODULE_ID("$From: lib_scrollok.c,v 1.2 1998/02/11 12:14:01 tom Exp $")
 
-NCURSES_EXPORT(int)
-scrollok(WINDOW *win, bool flag)
+int scrollok(WINDOW *win, bool flag)
 {
-    T((T_CALLED("scrollok(%p,%d)"), win, flag));
+	T((T_CALLED("scrollok(%p,%d)"), win, flag));
 
-    if (win) {
-	win->_scroll = flag;
-	returnCode(OK);
-    } else
-	returnCode(ERR);
+	if (win) {
+	  win->_scroll = flag;
+	  returnCode(OK);
+	}
+	else
+	  returnCode(ERR);
 }

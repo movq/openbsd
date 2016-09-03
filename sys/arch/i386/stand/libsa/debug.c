@@ -1,4 +1,4 @@
-/*	$OpenBSD: debug.c,v 1.16 2010/12/06 22:51:46 jasper Exp $	*/
+/*	$OpenBSD: debug.c,v 1.7 1998/06/09 13:45:07 mickey Exp $	*/
 
 /*
  * Copyright (c) 1997 Michael Shalayeff
@@ -12,9 +12,14 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR 
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
  * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
@@ -27,7 +32,6 @@
  *
  */
 
-#include <sys/param.h>
 #include <lib/libsa/stand.h>
 #include <debug.h>
 #include <dev/cons.h>
@@ -35,12 +39,12 @@
 #define	VBASE	(0xb8000)
 
 char *const reg_names[] = { REG_NAMES };
-const int nreg = nitems(reg_names);
+const int nreg = NENTS(reg_names);
 struct reg reg;
 u_int32_t *const reg_values[] = { REG_VALUES(reg) };
 char *const trap_names[] = { TRAP_NAMES };
 
-void d_putc(dev_t, int);
+void d_putc __P((dev_t, int));
 
 #ifdef DEBUG_DEBUG
 #define	CKPT(c)	(*(u_short volatile *)(VBASE+160) = (0x1700 | (c)))
@@ -48,14 +52,16 @@ void d_putc(dev_t, int);
 #define	CKPT(c)	/* c */
 #endif
 
-void
-debug_init(void)
+int
+debug_init()
 {
+	return 0;
 }
 
 
 void
-dump_regs(u_int trapno, u_int arg)
+dump_regs(trapno, arg)
+	u_int trapno, arg;
 {
 	register int i;
 	/* make it local, so it won't rely on .data/.bss corruption */
@@ -69,15 +75,15 @@ dump_regs(u_int trapno, u_int arg)
 
 	/* Trap info */
 	printf("\ftrap: %u(%x): %s\ncn_tab=%p\n",
-	    trapno, arg, trap_names[trapno], save_cons);
+		trapno, arg, trap_names[trapno], save_cons);
 
 	/* Register dump */
-	for (i = 1; i <= nreg; i++)
+	for(i = 1; i <= nreg; i++)
 		printf("%s\t%x%c", reg_names[i-1], *reg_values[i-1],
-		    ((i%4)? ' ': '\n'));
+			((i%4)? ' ': '\n'));
 
 	dump_mem("Code dump", (void *)*reg_values[8], 8);
-	/* %ebx (void *)((*reg_values[3] + 15) & ~0x0F) */
+	/* %ebx (void*)((*reg_values[3] + 15) & ~0x0F) */
 	dump_mem("Memory dump", (void *)0x1a000, 48);
 	dump_mem("Stack trace", (void *)(*reg_values[4]), 48);
 
@@ -86,22 +92,26 @@ dump_regs(u_int trapno, u_int arg)
 }
 
 void
-dump_mem(char *l, void *p, size_t n)
+dump_mem(l, p, n)
+	char *l;
+	void *p;
+	size_t n;
 {
 	register int i;
-
 	printf("%s [%p]:%s", l, p, (n > 6? "\n":" "));
-	for (i = 1; i <= n; i++)
+	for(i = 1; i <= n; i++)
 		printf("%x%c", *(u_int32_t *)p++, ((i%8)? ' ': '\n'));
 	if (n % 8)
-		printf("\n");
+		printf ("\n");
 }
 
 
 u_int d_pos;
 
 void
-d_putc(dev_t d, int c)
+d_putc(d, c)
+	dev_t d;
+	int c;
 {
 	switch (c) {
 	case '\n':	d_pos += 80;					break;

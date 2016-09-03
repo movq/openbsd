@@ -1,4 +1,4 @@
-/*	$OpenBSD: db_var.h,v 1.11 2011/04/03 16:46:19 drahn Exp $	*/
+/*	$OpenBSD: db_var.h,v 1.4 1998/02/05 16:49:23 deraadt Exp $	*/
 
 /*
  * Copyright (c) 1996 Michael Shalayeff.  All rights reserved.
@@ -11,6 +11,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -41,9 +46,7 @@
 #define DBCTL_TABSTOP	4
 #define DBCTL_PANIC	5
 #define DBCTL_CONSOLE	6
-#define DBCTL_LOG	7
-#define DBCTL_TRIGGER	8
-#define DBCTL_MAXID	9
+#define DBCTL_MAXID	7
 
 #define	CTL_DDB_NAMES { \
 	{ NULL, 0 }, \
@@ -53,22 +56,20 @@
 	{ "tab_stop_width", CTLTYPE_INT },\
 	{ "panic", CTLTYPE_INT }, \
 	{ "console", CTLTYPE_INT }, \
-	{ "log", CTLTYPE_INT }, \
-	{ "trigger", CTLTYPE_INT }, \
 }
 
 #ifdef	_KERNEL
+extern u_int	db_maxoff;
 extern int	db_radix;
 extern int	db_max_width;
 extern int	db_tab_stop_width;
 extern int	db_max_line;
 extern int	db_panic;
 extern int	db_console;
-extern int	db_log;
-extern int	db_is_active;
 
-int	ddb_sysctl(int *, u_int, void *, size_t *, void *, size_t,
-		       struct proc *);
+int	ddb_sysctl __P((int *, u_int, void *, size_t *, void *, size_t,
+		       struct proc *));
 #endif
 
 #endif /* _DDB_DB_VAR_H_ */
+

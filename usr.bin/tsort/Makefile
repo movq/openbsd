@@ -1,10 +1,5 @@
-#	$OpenBSD: Makefile,v 1.6 2014/05/12 19:11:20 espie Exp $
+#	$OpenBSD: Makefile,v 1.3 1997/09/21 11:51:25 deraadt Exp $
 
-PROG =	tsort
-SRCS = tsort.c
-
-CDIAGFLAGS = -Wall -Wno-char-subscripts -Wstrict-prototypes -pedantic -W
-DPADD += ${LIBUTIL}
-LDADD += -lutil
+PROG=	tsort
 
 .include <bsd.prog.mk>

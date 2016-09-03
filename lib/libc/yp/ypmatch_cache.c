@@ -1,4 +1,3 @@
-/*	$OpenBSD: ypmatch_cache.c,v 1.17 2015/09/13 20:57:28 guenther Exp $ */
 /*
  * Copyright (c) 1992, 1993 Theo de Raadt <deraadt@theos.com>
  * All rights reserved.
@@ -11,6 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Theo de Raadt.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
  * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -25,88 +29,100 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: ypmatch_cache.c,v 1.7 1998/01/20 18:40:27 deraadt Exp $";
+#endif /* LIBC_SCCS and not lint */
+
+#include <sys/param.h>
 #include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/file.h>
+#include <sys/uio.h>
+#include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <limits.h>
+#include <unistd.h>
 #include <rpc/rpc.h>
 #include <rpc/xdr.h>
 #include <rpcsvc/yp.h>
 #include <rpcsvc/ypclnt.h>
+#define YPMATCHCACHE
 #include "ypinternal.h"
-
-#ifdef YPMATCHCACHE
-static bool_t ypmatch_add(const char *, const char *, u_int, char *, u_int);
-static bool_t ypmatch_find(const char *, const char *, u_int, char **, u_int *);
-
-static struct ypmatch_ent {
-	struct ypmatch_ent	*next;
-	char			*map, *key;
-	char			*val;
-	int			 keylen, vallen;
-	time_t			 expire_t;
-} *ypmc;
 
 int _yplib_cache = 5;
 
 static bool_t
-ypmatch_add(const char *map, const char *key, u_int keylen, char *val,
-    u_int vallen)
+ypmatch_add(map, key, keylen, val, vallen)
+	const char     *map;
+	const char     *key;
+	u_int           keylen;
+	char           *val;
+	u_int           vallen;
 {
 	struct ypmatch_ent *ep;
-	char *newmap = NULL, *newkey = NULL, *newval = NULL;
 	time_t t;
 
-	if (keylen == 0 || vallen == 0)
-		return (0);
-
 	(void)time(&t);
-
-	/* Allocate all required memory first. */
-	if ((newmap = strdup(map)) == NULL ||
-	    (newkey = malloc(keylen)) == NULL ||
-	    (newval = malloc(vallen)) == NULL) {
-		free(newkey);
-		free(newmap);
-		return 0;
-	}
 
 	for (ep = ypmc; ep; ep = ep->next)
 		if (ep->expire_t < t)
 			break;
-
 	if (ep == NULL) {
-		/* No expired node, create a new one. */
-		if ((ep = malloc(sizeof *ep)) == NULL) {
-			free(newval);
-			free(newkey);
-			free(newmap);
+		if ((ep = malloc(sizeof *ep)) == NULL)
 			return 0;
-		}
-		ep->next = ypmc;
+		(void)memset(ep, 0, sizeof *ep);
+		if (ypmc)
+			ep->next = ypmc;
 		ypmc = ep;
-	} else {
-		/* Reuse the first expired node from the list. */
-		free(ep->val);
-		free(ep->key);
-		free(ep->map);
 	}
 
-	/* Now we have all the memory we need, copy the data in. */
-	(void)memcpy(newkey, key, keylen);
-	(void)memcpy(newval, val, vallen);
-	ep->map = newmap;
-	ep->key = newkey;
-	ep->val = newval;
+	if (ep->key) {
+		free(ep->key);
+		ep->key = NULL;
+	}
+	if (ep->val) {
+		free(ep->val);
+		ep->val = NULL;
+	}
+
+	if ((ep->key = malloc(keylen)) == NULL)
+		return 0;
+
+	if ((ep->val = malloc(vallen)) == NULL) {
+		free(ep->key);
+		ep->key = NULL;
+		return 0;
+	}
+
 	ep->keylen = keylen;
 	ep->vallen = vallen;
+
+	(void)memcpy(ep->key, key, ep->keylen);
+	(void)memcpy(ep->val, val, ep->vallen);
+
+	if (ep->map) {
+		if (strcmp(ep->map, map)) {
+			free(ep->map);
+			if ((ep->map = strdup(map)) == NULL)
+				return 0;
+		}
+	} else {
+		if ((ep->map = strdup(map)) == NULL)
+			return 0;
+	}
+
 	ep->expire_t = t + _yplib_cache;
 	return 1;
 }
 
 static bool_t
-ypmatch_find(const char *map, const char *key, u_int keylen, char **val,
-    u_int *vallen)
+ypmatch_find(map, key, keylen, val, vallen)
+	const char     *map;
+	const char     *key;
+	u_int           keylen;
+	char          **val;
+	u_int          *vallen;
 {
 	struct ypmatch_ent *ep;
 	time_t          t;
@@ -132,11 +148,15 @@ ypmatch_find(const char *map, const char *key, u_int keylen, char **val,
 	}
 	return 0;
 }
-#endif
 
 int
-yp_match(const char *indomain, const char *inmap, const char *inkey,
-    int inkeylen, char **outval, int *outvallen)
+yp_match(indomain, inmap, inkey, inkeylen, outval, outvallen)
+	const char     *indomain;
+	const char     *inmap;
+	const char     *inkey;
+	int             inkeylen;
+	char          **outval;
+	int            *outvallen;
 {
 	struct dom_binding *ysd;
 	struct ypresp_val yprv;
@@ -144,7 +164,7 @@ yp_match(const char *indomain, const char *inmap, const char *inkey,
 	struct ypreq_key yprk;
 	int tries = 0, r;
 
-	if (indomain == NULL || *indomain == '\0' ||
+	if (indomain == NULL || *indomain == '\0' || 
 	    strlen(indomain) > YPMAXDOMAIN || inmap == NULL ||
 	    *inmap == '\0' || strlen(inmap) > YPMAXMAP ||
 	    inkey == NULL || inkeylen == 0 || inkeylen >= YPMAXRECORD)
@@ -163,7 +183,7 @@ again:
 		*outvallen = yprv.val.valdat_len;
 		if ((*outval = malloc(*outvallen + 1)) == NULL) {
 			_yp_unbind(ysd);
-			return YPERR_RESRC;
+			return YPERR_YPERR;
 		}
 		(void)memcpy(*outval, yprv.val.valdat_val, *outvallen);
 		(*outval)[*outvallen] = '\0';
@@ -193,15 +213,16 @@ again:
 	if (!(r = ypprot_err(yprv.stat))) {
 		*outvallen = yprv.val.valdat_len;
 		if ((*outval = malloc(*outvallen + 1)) == NULL) {
-			r = YPERR_RESRC;
+			r = YPERR_YPERR;
 			goto out;
 		}
 		(void)memcpy(*outval, yprv.val.valdat_val, *outvallen);
 		(*outval)[*outvallen] = '\0';
 #ifdef YPMATCHCACHE
 		if (strcmp(_yp_domain, indomain) == 0)
-			(void)ypmatch_add(inmap, inkey, inkeylen,
-			    *outval, *outvallen);
+			if (!ypmatch_add(inmap, inkey, inkeylen,
+			    *outval, *outvallen))
+				r = YPERR_RESRC;
 #endif
 	}
 out:
@@ -209,11 +230,17 @@ out:
 	_yp_unbind(ysd);
 	return r;
 }
-DEF_WEAK(yp_match);
 
 int
-yp_next(const char *indomain, const char *inmap, const char *inkey,
-    int inkeylen, char **outkey, int *outkeylen, char **outval, int *outvallen)
+yp_next(indomain, inmap, inkey, inkeylen, outkey, outkeylen, outval, outvallen)
+	const char     *indomain;
+	const char     *inmap;
+	const char     *inkey;
+	int             inkeylen;
+	char          **outkey;
+	int            *outkeylen;
+	char          **outval;
+	int            *outvallen;
 {
 	struct ypresp_key_val yprkv;
 	struct ypreq_key yprk;
@@ -253,14 +280,16 @@ again:
 	}
 	if (!(r = ypprot_err(yprkv.stat))) {
 		*outkeylen = yprkv.key.keydat_len;
-		*outvallen = yprkv.val.valdat_len;
-		if ((*outkey = malloc(*outkeylen + 1)) == NULL ||
-		    (*outval = malloc(*outvallen + 1)) == NULL) {
-			free(*outkey);
+		if ((*outkey = malloc(*outkeylen + 1)) == NULL)
 			r = YPERR_RESRC;
-		} else {
+		else {
 			(void)memcpy(*outkey, yprkv.key.keydat_val, *outkeylen);
 			(*outkey)[*outkeylen] = '\0';
+		}
+		*outvallen = yprkv.val.valdat_len;
+		if ((*outval = malloc(*outvallen + 1)) == NULL)
+			r = YPERR_RESRC;
+		else {
 			(void)memcpy(*outval, yprkv.val.valdat_val, *outvallen);
 			(*outval)[*outvallen] = '\0';
 		}
@@ -269,4 +298,3 @@ again:
 	_yp_unbind(ysd);
 	return r;
 }
-DEF_WEAK(yp_next);

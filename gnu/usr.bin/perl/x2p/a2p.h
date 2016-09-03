@@ -1,25 +1,26 @@
-/*    a2p.h
+/* $RCSfile: a2p.h,v $$Revision: 4.1 $$Date: 92/08/07 18:29:09 $
  *
- *    Copyright (C) 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
- *    2000, 2001, 2002, by Larry Wall and others
+ *    Copyright (c) 1991-1997, Larry Wall
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
+ *
+ * $Log:	a2p.h,v $
  */
+
+#define VOIDUSED 1
 
 #ifdef WIN32
 #define _INC_WIN32_PERL5	/* kludge around win32 stdio layer */
 #endif
 
-#ifdef __VMS
+#ifdef VMS
 #  include "config.h"
-#elif defined(NETWARE)
-#  include "../NetWare/config.h"
 #else
 #  include "../config.h"
 #endif
 
-#if defined(__STDC__) || defined(_AIX) || defined(__stdc__) || defined(__cplusplus)
+#if defined(__STDC__) || defined(vax11c) || defined(_AIX) || defined(__stdc__) || defined(__cplusplus)
 # define STANDARD_C 1
 #endif
 
@@ -27,6 +28,19 @@
 #undef USE_STDIO_PTR		/* XXX fast gets won't work, must investigate */
 #  ifndef STANDARD_C
 #    define STANDARD_C
+#  endif
+#  if defined(__BORLANDC__)
+#    pragma warn -ccc
+#    pragma warn -rch
+#    pragma warn -sig
+#    pragma warn -pia
+#    pragma warn -par
+#    pragma warn -aus
+#    pragma warn -use
+#    pragma warn -csu
+#    pragma warn -pro
+#  elif defined(_MSC_VER)
+#  elif defined(__MINGW32__)
 #  endif
 #endif
 
@@ -58,16 +72,14 @@
 #endif /* USE_NEXT_CTYPE */
 
 #define MEM_SIZE Size_t
-#ifdef PERL_MEM_LOG
-  typedef IVTYPE IV;
-  typedef UVTYPE UV;
-#endif
 
-#ifndef STANDARD_C
-    Malloc_t malloc (MEM_SIZE nbytes);
-    Malloc_t calloc (MEM_SIZE elements, MEM_SIZE size);
-    Malloc_t realloc (Malloc_t where, MEM_SIZE nbytes);
-    Free_t   free (Malloc_t where);
+#ifdef STANDARD_C
+#   include <stdlib.h>
+#else
+    Malloc_t malloc _((MEM_SIZE nbytes));
+    Malloc_t calloc _((MEM_SIZE elements, MEM_SIZE size));
+    Malloc_t realloc _((Malloc_t where, MEM_SIZE nbytes));
+    Free_t   free _((Malloc_t where));
 #endif
 
 #if defined(I_STRING) || defined(__cplusplus)
@@ -76,10 +88,18 @@
 #   include <strings.h>
 #endif
 
+#if !defined(HAS_BCOPY) || defined(__cplusplus)
+#   define bcopy(s1,s2,l) memcpy(s2,s1,l)
+#endif
+#if !defined(HAS_BZERO) || defined(__cplusplus)
+#   define bzero(s,l) memset(s,0,l)
+#endif
+
 #if !defined(HAS_STRCHR) && defined(HAS_INDEX) && !defined(strchr)
 #define strchr index
 #define strrchr rindex
 #endif
+
 
 #ifdef I_TIME
 #   include <time.h>
@@ -103,7 +123,6 @@
 
 #ifdef DOSISH
 # if defined(OS2)
-#   define PTHX_UNUSED
 #   include "../os2ish.h"
 # else
 #   include "../dosish.h"
@@ -119,26 +138,18 @@
 /* All of these are in stdlib.h or time.h for ANSI C */
 Time_t time();
 struct tm *gmtime(), *localtime();
-#if defined(OEMVS)
-char *(strchr)(), *(strrchr)();
-char *(strcpy)(), *(strcat)();
-#else
 char *strchr(), *strrchr();
 char *strcpy(), *strcat();
-#endif
 #endif /* ! STANDARD_C */
-
-#ifdef __cplusplus
-#  define PERL_EXPORT_C extern "C"
-#else
-#  define PERL_EXPORT_C extern
-#endif
 
 #ifdef VMS
 #  include "handy.h"
 #else 
 #  include "../handy.h"
 #endif
+
+#undef Nullfp
+#define Nullfp Null(FILE*)
 
 #define Nullop 0
 
@@ -232,7 +243,7 @@ char *strcpy(), *strcat();
 #define OSTAR		88
 
 #ifdef DOINIT
-const char *opname[] = {
+char *opname[] = {
     "0",
     "PROG",
     "JUNK",
@@ -325,7 +336,7 @@ const char *opname[] = {
     "89"
 };
 #else
-extern const char *opname[];
+extern char *opname[];
 #endif
 
 EXT int mop INIT(1);
@@ -334,7 +345,11 @@ union u_ops {
     int ival;
     char *cval;
 };
+#if defined(iAPX286) || defined(M_I286) || defined(I80286) 	/* 80286 hack */
+#define OPSMAX (64000/sizeof(union u_ops))	/* approx. max segment size */
+#else
 #define OPSMAX 50000
+#endif						 	/* 80286 hack */
 EXT union u_ops ops[OPSMAX];
 
 typedef struct string STR;
@@ -346,36 +361,40 @@ typedef struct htbl HASH;
 
 /* A string is TRUE if not "" or "0". */
 #define True(val) (tmps = (val), (*tmps && !(*tmps == '0' && !tmps[1])))
-EXT const char *Yes INIT("1");
-EXT const char *No INIT("");
+EXT char *Yes INIT("1");
+EXT char *No INIT("");
 
+#define str_true(str) (Str = (str), (Str->str_pok ? True(Str->str_ptr) : (Str->str_nok ? (Str->str_nval != 0.0) : 0 )))
+
+#define str_peek(str) (Str = (str), (Str->str_pok ? Str->str_ptr : (Str->str_nok ? (sprintf(buf,"num(%g)",Str->str_nval),buf) : "" )))
 #define str_get(str) (Str = (str), (Str->str_pok ? Str->str_ptr : str_2ptr(Str)))
+#define str_gnum(str) (Str = (str), (Str->str_nok ? Str->str_nval : str_2num(Str)))
 EXT STR *Str;
 
 #define GROWSTR(pp,lp,len) if (*(lp) < (len)) growstr(pp,lp,len)
 
 /* Prototypes for things in a2p.c */
-int aryrefarg ( int arg );
-int bl ( int arg, int maybe );
-void dump ( int branch );
-int fixfargs ( int name, int arg, int prevargs );
-int fixrargs ( char *name, int arg, int prevargs );
-void fixup ( STR *str );
-int numary ( int arg );
-int oper0 ( int type );
-int oper1 ( int type, int arg1 );
-int oper2 ( int type, int arg1, int arg2 );
-int oper3 ( int type, int arg1, int arg2, int arg3 );
-int oper4 ( int type, int arg1, int arg2, int arg3, int arg4 );
-int oper5 ( int type, int arg1, int arg2, int arg3, int arg4, int arg5 );
-void putlines ( STR *str );
-void putone ( void );
-int rememberargs ( int arg );
-char * scannum ( char *s );
-char * scanpat ( char *s );
-int string ( const char *ptr, int len );
-void yyerror ( const char *s );
-int yylex ( void );
+int aryrefarg _(( int arg ));
+int bl _(( int arg, int maybe ));
+void dump _(( int branch ));
+int fixfargs _(( int name, int arg, int prevargs ));
+int fixrargs _(( char *name, int arg, int prevargs ));
+void fixup _(( STR *str ));
+int numary _(( int arg ));
+int oper0 _(( int type ));
+int oper1 _(( int type, int arg1 ));
+int oper2 _(( int type, int arg1, int arg2 ));
+int oper3 _(( int type, int arg1, int arg2, int arg3 ));
+int oper4 _(( int type, int arg1, int arg2, int arg3, int arg4 ));
+int oper5 _(( int type, int arg1, int arg2, int arg3, int arg4, int arg5 ));
+void putlines _(( STR *str ));
+void putone _(( void ));
+int rememberargs _(( int arg ));
+char * scannum _(( char *s ));
+char * scanpat _(( char *s ));
+int string _(( char *ptr, int len ));
+void yyerror _(( char *s ));
+int yylex _(( void ));
 
 EXT int line INIT(0);
 
@@ -383,7 +402,7 @@ EXT FILE *rsfp;
 EXT char buf[2048];
 EXT char *bufptr INIT(buf);
 
-EXT STR *linestr INIT(NULL);
+EXT STR *linestr INIT(Nullstr);
 
 EXT char tokenbuf[2048];
 EXT int expectterm INIT(TRUE);
@@ -399,13 +418,14 @@ extern int yydebug;
 # endif
 #endif
 
-EXT STR *freestrroot INIT(NULL);
+EXT STR *freestrroot INIT(Nullstr);
 
 EXT STR str_no;
 EXT STR str_yes;
 
 EXT bool do_split INIT(FALSE);
 EXT bool split_to_array INIT(FALSE);
+EXT bool set_array_base INIT(FALSE);
 EXT bool saw_RS INIT(FALSE);
 EXT bool saw_OFS INIT(FALSE);
 EXT bool saw_ORS INIT(FALSE);
@@ -422,7 +442,7 @@ EXT bool saw_altinput INIT(FALSE);
 EXT bool nomemok INIT(FALSE);
 
 EXT char const_FS INIT(0);
-EXT char *namelist INIT(NULL);
+EXT char *namelist INIT(Nullch);
 EXT char fswitch INIT(0);
 EXT bool old_awk INIT(0);
 

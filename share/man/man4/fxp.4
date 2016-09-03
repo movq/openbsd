@@ -1,4 +1,4 @@
-.\"	$OpenBSD: fxp.4,v 1.45 2015/01/15 20:37:36 schwarze Exp $
+.\"	$OpenBSD: fxp.4,v 1.11 1999/07/08 17:48:24 aaron Exp $
 .\"
 .\" Copyright (c) 1997 David E. O'Brien
 .\"
@@ -24,50 +24,49 @@
 .\" (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 .\" THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: January 15 2015 $
+.Dd April 28, 1998
 .Dt FXP 4
 .Os
 .Sh NAME
 .Nm fxp
-.Nd Intel EtherExpress PRO/100 10/100 Ethernet device
+.Nd
+Intel EtherExpress PRO/100 Ethernet device driver
 .Sh SYNOPSIS
 .Cd "fxp* at pci?"
-.Cd "fxp* at cardbus?"
-.Cd "icsphy* at mii?"
-.Cd "inphy* at mii?"
-.Cd "iophy* at mii?"
-.Cd "nsphy* at mii?"
 .Sh DESCRIPTION
 The
 .Nm
 device driver supports the Intel EtherExpress 100 family of Ethernet cards
-based on various revisions of the i82557, i82558, i82559, i82559S,
-i82550, i82551, and i82562 chipsets, including the following:
+based on the i82557, i82558, and i82559 chipsets. These come in several
+different varieties, including dual-port cards, and as built-in Ethernet
+solutions on certain motherboards. This includes, among others, the following
+models:
 .Pp
 .Bl -item -offset indent -compact
 .It
-Intel EtherExpress PRO/100 PCI
+Intel EtherExpress PRO/100
 .It
-Intel EtherExpress PRO/100B PCI
+Intel EtherExpress PRO/100B
 .It
-Intel EtherExpress PRO/100+ PCI
+Intel EtherExpress PRO/100+
 .It
-Intel EtherExpress PRO/100 Dual-Port PCI
-.It
-Intel PRO/100 CardBus II PC Card
-.It
-Intel PRO/100 VE
-.It
-Intel PRO/100 VM
-.It
-Intel PRO/100 M
-.It
-Intel PRO/100 S
+Intel EtherExpress PRO/100 Dual-Port
 .El
+.Pp
+Other models of Intel network cards are supported by the
+.Xr ie 4
+and
+.Xr iy 4
+drivers.
+This list is not exhaustive. In particular, the
+.Nm
+driver should support any card by any manufacturer which is based on one of the
+aforementioned chipsets.
 .Pp
 The following media types and options (as given to
 .Xr ifconfig 8 )
 are supported:
+.Pp
 .Bl -tag -width xxx -offset indent
 .It Cm media No autoselect
 Enable autoselection of the media type and options (default).
@@ -84,50 +83,34 @@ Set 10Mbps operation and force half-duplex.
 If no media options are present, the
 .Nm
 driver places the card into autoselect mode.
-.Sh FILES
-Some devices are able to do interrupt coalescing but it requires firmware
-updating.
-The following firmware files are potentially loaded on demand when an
-interface is brought up:
 .Pp
-.Bl -tag -width Ds -offset indent -compact
-.It Pa /etc/firmware/fxp-d101a
-.It Pa /etc/firmware/fxp-d101b0
-.It Pa /etc/firmware/fxp-d101ma
-.It Pa /etc/firmware/fxp-d101s
-.It Pa /etc/firmware/fxp-d102
-.It Pa /etc/firmware/fxp-d102c
-.It Pa /etc/firmware/fxp-d102e
-.El
-.Pp
-If a file is missing, the driver attempts to operate anyway.
+These cards also come with a variety of PHYs. Models exist with PHYs supported
+by both the
+.Xr inphy 4
+and
+.Xr nsphy 4
+drivers.
 .Sh DIAGNOSTICS
 .Bl -diag
-.It "fxp0: couldn't map memory"
+.It "fxp%d: couldn't map memory"
 A fatal initialization error has occurred.
-.It "fxp0: couldn't map interrupt"
+.It "fxp%d: couldn't map interrupt"
 A fatal initialization error has occurred.
-.It "fxp0: Failed to malloc memory"
-There are not enough mbufs available for allocation.
-.It "fxp0: device timeout"
+.It "fxp%d: Failed to malloc memory"
+There are not enough mbuf's available for allocation.
+.It "fxp%d: device timeout"
 The device has stopped responding to the network, or there is a problem with
 the network connection (cable).
-.It "fxp0: error N, could not read firmware ..."
-The device is able to do interrupt coalescing but required firmware file
-is missing.
 .El
 .Sh SEE ALSO
 .Xr arp 4 ,
-.Xr cardbus 4 ,
-.Xr icsphy 4 ,
+.Xr ie 4 ,
 .Xr ifmedia 4 ,
 .Xr inphy 4 ,
-.Xr intro 4 ,
-.Xr iophy 4 ,
-.Xr netintro 4 ,
+.Xr iy 4 ,
+.Xr intro 4 , 
+.Xr netintro 4 , 
 .Xr nsphy 4 ,
-.Xr pci 4 ,
-.Xr hostname.if 5 ,
 .Xr ifconfig 8
 .Sh HISTORY
 The
@@ -135,10 +118,7 @@ The
 device driver first appeared in
 .Ox 2.2 .
 .Sh AUTHORS
-.An -nosplit
 The
 .Nm
-device driver was written by
-.An David Greenman .
-This manual page was written by
-.An David E. O'Brien .
+device driver was written by David Greenman.
+This manual page was written by David E. O'Brien.

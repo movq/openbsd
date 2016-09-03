@@ -87,16 +87,13 @@ getgrnam (char *name)
 char *
 getlogin ()
 {
-  /* This is how a windows user would override their login name. */
-  if (!login)
-    login = lookup_env (login_strings);
-
-  /* In the absence of user override, ask the operating system. */
   if (!login)
      login = win32getlogin();
 
-  /* If all else fails, fall back on Old Faithful. */
-  if (!login)
+  if (!login)			/* have we been called before? */
+    login = lookup_env (login_strings);
+
+  if (!login)			/* have we been successful? */
     login = anonymous;
 
   return login;

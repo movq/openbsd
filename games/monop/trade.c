@@ -1,4 +1,4 @@
-/*	$OpenBSD: trade.c,v 1.8 2016/01/08 18:20:33 mestre Exp $	*/
+/*	$OpenBSD: trade.c,v 1.2 1998/09/20 23:36:56 pjanzen Exp $	*/
 /*	$NetBSD: trade.c,v 1.3 1995/03/23 08:35:19 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,10 +34,15 @@
  * SUCH DAMAGE.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)trade.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: trade.c,v 1.2 1998/09/20 23:36:56 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
-#include "monop.ext"
+#include	"monop.ext"
 
 struct trd_st {			/* how much to give to other player	*/
 	int	trader;			/* trader number		*/
@@ -50,14 +59,14 @@ static int	used[MAX_PRP];
 
 static TRADE	trades[2];
 
-static void	get_list(int, int );
-static int	set_list(OWN *);
-static void	summate(void);
-static void	do_trade(void);
-static void	move_em(TRADE *, TRADE *);
+static void	get_list __P((int, int ));
+static int	set_list __P((OWN *));
+static void	summate __P((void));
+static void	do_trade __P((void));
+static void	move_em __P((TRADE *, TRADE *));
 
 void
-trade(void)
+trade()
 {
 	int	tradee, i;
 
@@ -96,7 +105,8 @@ over:
  * player, and puts in the structure given.
  */
 static void
-get_list(int struct_no, int play_no)
+get_list(struct_no, play_no)
+	int	struct_no, play_no;
 {
 	int	sn, pn;
 	PLAY	*pp;
@@ -147,7 +157,8 @@ once_more:
  *	This routine sets up the list of tradable property.
  */
 static int
-set_list(OWN *the_list)
+set_list(the_list)
+	OWN	*the_list;
 {
 	int	i;
 	OWN	*op;
@@ -164,7 +175,7 @@ set_list(OWN *the_list)
  *	This routine summates the trade.
  */
 static void
-summate(void)
+summate()
 {
 	bool	some;
 	int	i;
@@ -194,7 +205,7 @@ summate(void)
  *	This routine actually executes the trade.
  */
 static void
-do_trade(void)
+do_trade()
 {
 	move_em(&trades[0], &trades[1]);
 	move_em(&trades[1], &trades[0]);
@@ -203,7 +214,8 @@ do_trade(void)
  *	This routine does a switch from one player to another
  */
 static void
-move_em(TRADE *from, TRADE *to)
+move_em(from, to)
+	TRADE	*from, *to;
 {
 	PLAY	*pl_fr, *pl_to;
 	OWN	*op;
@@ -226,21 +238,18 @@ move_em(TRADE *from, TRADE *to)
  *	This routine lets a player resign
  */
 void
-resign(void)
+resign()
 {
 	int	i, new_own;
 	OWN	*op;
 	SQUARE	*sqp;
 
 	if (cur_p->money <= 0) {
-		switch (board[(int)cur_p->loc].type) {
+		switch (board[cur_p->loc].type) {
 		  case UTIL:
 		  case RR:
 		  case PRPTY:
-			new_own = board[(int)cur_p->loc].owner;
-			/* If you ran out of money by buying current location */
-			if (new_own == player)
-				new_own = num_play;
+			new_own = board[cur_p->loc].owner;
 			break;
 		  default:		/* Chance, taxes, etc */
 			new_own = num_play;
@@ -296,20 +305,16 @@ resign(void)
 		if (cur_p->num_gojf)
 			ret_card(cur_p);
 	}
-	free(name_list[player]);
 	for (i = player; i < num_play; i++) {
 		name_list[i] = name_list[i+1];
 		if (i + 1 < num_play)
 			play[i] = play[i+1];
 	}
-	name_list[num_play--] = NULL;
+	name_list[num_play--] = 0;
 	for (i = 0; i < N_SQRS; i++)
 		if (board[i].owner > player)
 			--board[i].owner;
-	if (player == 0)
-		player = num_play - 1;
-	else
-		player--;
+	player = --player < 0 ? num_play - 1 : player;
 	next_play();
 	if (num_play < 2) {
 		printf("\nThen %s WINS!!!!!\n", play[0].name);

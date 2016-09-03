@@ -1,4 +1,4 @@
-/* $OpenBSD: keynote-main.c,v 1.10 2004/06/25 05:06:49 msf Exp $ */
+/* $OpenBSD: keynote-main.c,v 1.6 1999/10/01 01:08:30 angelos Exp $ */
 /*
  * The author of this code is Angelos D. Keromytis (angelos@dsl.cis.upenn.edu)
  *
@@ -7,7 +7,7 @@
  *
  * Copyright (C) 1998, 1999 by Angelos D. Keromytis.
  *	
- * Permission to use, copy, and modify this software with or without fee
+ * Permission to use, copy, and modify this software without fee
  * is hereby granted, provided that this entire notice is included in
  * all copies of any software which is or includes a copy or
  * modification of this software. 
@@ -19,28 +19,39 @@
  * PURPOSE.
  */
 
+#if HAVE_CONFIG_H
+#include "config.h"
+#endif /* HAVE_CONFIG_H */
+
 #include <sys/types.h>
 #include <sys/stat.h>
-
-#include <ctype.h>
-#include <fcntl.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <ctype.h>
+
+#if STDC_HEADERS
 #include <string.h>
+#endif /* STDC_HEADERS */
+
+#if HAVE_FCNTL_H
+#include <fcntl.h>
+#endif /* HAVE_FCNTL_H */
+#ifdef WIN32
+#include <io.h>
+#else
 #include <unistd.h>
+#endif /* WIN32 */
 
 #include "header.h"
 
-void	mainusage(void);
-
 void
-mainusage(void)
+mainusage()
 {
     fprintf(stderr, "Usage:\n");
-    fprintf(stderr, "\tkeygen ...\n");
     fprintf(stderr, "\tsign ...\n");
     fprintf(stderr, "\tsigver ...\n");
     fprintf(stderr, "\tverify ...\n");
+    fprintf(stderr, "\tkeygen ...\n");
     fprintf(stderr, "Issue one of the commands by itself to get more help, "
 		    "e.g., keynote sign\n");
 }
@@ -51,7 +62,7 @@ main(int argc, char *argv[])
     if (argc < 2)
     {
 	mainusage();
-	exit(1);
+	exit(-1);
     }
 
     if (!strcmp(argv[1], "sign"))
@@ -67,5 +78,5 @@ main(int argc, char *argv[])
 	    keynote_keygen(argc - 1, argv + 1);
 
     mainusage();
-    exit(1);
+    exit(-1);
 }

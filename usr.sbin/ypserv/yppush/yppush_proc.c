@@ -1,4 +1,4 @@
-/*	$OpenBSD: yppush_proc.c,v 1.9 2009/10/27 23:59:58 deraadt Exp $ */
+/*	$OpenBSD: yppush_proc.c,v 1.3 1997/08/21 12:52:08 maja Exp $ */
 
 /*
  * Copyright (c) 1996 Mats O Jansson <moj@stacken.kth.se>
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Mats O Jansson
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
  * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -26,35 +31,43 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/types.h>
-#include <rpcsvc/yp.h>
+#ifndef lint
+static char rcsid[] = "$OpenBSD: yppush_proc.c,v 1.3 1997/08/21 12:52:08 maja Exp $";
+#endif /* not lint */
+
 #include <stdio.h>
 #include "yppush.h"
 
 extern int Verbose;
 
-void *
-yppushproc_null_1_svc(void *argp, struct svc_req *rqstp)
+void * 
+yppushproc_null_1_svc(argp, rqstp)
+	void *argp;
+	struct svc_req *rqstp;
 {
-	static char *result;
+
+	static char* result;
 
 	/*
 	 * insert server code here
 	 */
-	return((void *) &result);
+	return((void*) &result);
 }
 
-yppushresp_xfr *
-yppushproc_xfrresp_1_svc(void *v, struct svc_req *rqstp)
+void * 
+yppushproc_xfrresp_1_svc(argp, rqstp)
+	yppushresp_xfr *argp;
+	struct svc_req *rqstp;
 {
-	yppushresp_xfr *argp = (yppushresp_xfr *)v;
-	static char *result;
+
+	static char* result;
 
 	/*
 	 * insert server code here
 	 */
-	if ((argp->status < YPPUSH_SUCC) || Verbose)
-		fprintf(stderr, "yppush: %s\n",
-		    yppush_err_string(argp->status));
-	return((yppushresp_xfr *) &result);
+	if ((argp->status<YPPUSH_SUCC) || Verbose)
+		fprintf(stderr,"yppush: %s\n",
+				yppush_err_string(argp->status));
+
+	return((void*) &result);
 }

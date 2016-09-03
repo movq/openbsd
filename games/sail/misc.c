@@ -1,4 +1,4 @@
-/*	$OpenBSD: misc.c,v 1.10 2016/03/16 15:00:35 mestre Exp $	*/
+/*	$OpenBSD: misc.c,v 1.2 1999/01/18 06:20:53 pjanzen Exp $	*/
 /*	$NetBSD: misc.c,v 1.3 1995/04/22 10:37:03 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,16 +34,18 @@
  * SUCH DAMAGE.
  */
 
-#include <ctype.h>
-#include <err.h>
-#ifdef LOCK_EX
-#include <fcntl.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)misc.c	8.2 (Berkeley) 4/28/95";
+#else
+static char rcsid[] = "$OpenBSD: misc.c,v 1.2 1999/01/18 06:20:53 pjanzen Exp $";
 #endif
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
+#endif /* not lint */
 
+#include <fcntl.h>
+#include <stdlib.h>
+#include <sys/file.h>
+#include <unistd.h>
 #include "extern.h"
 #include "pathnames.h"
 
@@ -47,7 +53,8 @@
 
 /* XXX */
 int
-range(struct ship *from, struct ship *to)
+range(from, to)
+	struct ship *from, *to;
 {
 	int bow1r, bow1c, bow2r, bow2c;
 	int stern1r, stern1c, stern2c, stern2r;
@@ -74,7 +81,9 @@ range(struct ship *from, struct ship *to)
 }
 
 struct ship *
-closestenemy(struct ship *from, int side, int anyship)
+closestenemy(from, side, anyship)
+	struct ship *from;
+	char side, anyship;
 {
 	struct ship *sp;
 	char a;
@@ -101,7 +110,8 @@ closestenemy(struct ship *from, int side, int anyship)
 }
 
 int
-angle(int dr, int dc)
+angle(dr, dc)
+	int dr, dc;
 {
 	int i;
 
@@ -127,9 +137,9 @@ angle(int dr, int dc)
 	return i % 8 + 1;
 }
 
-/* checks for target bow or stern */
 int
-gunsbear(struct ship *from, struct ship *to)
+gunsbear(from, to)		/* checks for target bow or stern */
+	struct ship *from, *to;
 {
 	int Dr, Dc, i;
 	int ang;
@@ -149,10 +159,11 @@ gunsbear(struct ship *from, struct ship *to)
 	return 0;
 }
 
-/* returns true if fromship is shooting at onship's starboard side */
 int
-portside(struct ship *from, struct ship *on, int quick)
-{
+portside(from, on, quick)
+	struct ship *from, *on;
+	int quick;		/* returns true if fromship is */
+{				/* shooting at onship's starboard side */
 	int ang;
 	int Dr, Dc;
 
@@ -170,7 +181,8 @@ portside(struct ship *from, struct ship *on, int quick)
 }
 
 int
-colours(struct ship *sp)
+colours(sp)
+	struct ship *sp;
 {
 	char flag;
 
@@ -183,11 +195,12 @@ colours(struct ship *sp)
 	if (sp->file->sink)
 		flag = '~';
 	flag = *countryname[capship(sp)->nationality];
-	return sp->file->FS ? flag : tolower((unsigned char)flag);
+	return sp->file->FS ? flag : tolower(flag);
 }
 
 void
-logger(struct ship *s)
+logger(s)
+	struct ship *s;
 {
 	FILE *fp;
 	int persons;
@@ -212,8 +225,7 @@ logger(struct ship *s)
 	for (lp = &log[n]; lp < &log[NLOG]; lp++)
 		lp->l_name[0] = lp->l_uid = lp->l_shipnum
 			= lp->l_gamenum = lp->l_netpoints = 0;
-	if (fseek(fp, 0L, SEEK_SET) == -1)
-		err(1, "fseek");
+	rewind(fp);
 	if (persons < 0)
 		(void) putw(1, fp);
 	else
@@ -223,8 +235,7 @@ logger(struct ship *s)
 		    / scene[lp->l_gamenum].ship[lp->l_shipnum].specs->pts) {
 			(void) fwrite((char *)log,
 				sizeof (struct logs), lp - log, fp);
-			(void) strlcpy(log[NLOG-1].l_name, s->file->captain,
-			    sizeof log[NLOG-1].l_name);
+			(void) strcpy(log[NLOG-1].l_name, s->file->captain);
 			log[NLOG-1].l_uid = getuid();
 			log[NLOG-1].l_shipnum = s->file->index;
 			log[NLOG-1].l_gamenum = game;

@@ -1,8 +1,8 @@
-/*	$OpenBSD: rndvar.h,v 1.38 2016/05/23 15:48:59 deraadt Exp $	*/
+/*	$OpenBSD: rndvar.h,v 1.11 1997/06/28 07:05:23 deraadt Exp $	*/
 
 /*
- * Copyright (c) 1996,2000 Michael Shalayeff.
- *
+ * Copyright (c) 1996 Michael Shalayeff.
+ * 
  * This software derived from one contributed by Theodore Ts'o.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -13,6 +13,12 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Theodore Ts'o.
+ * 4. Neither the name of the University nor of the Laboratory may be used
+ *    to endorse or promote products derived from this software without
+ *    specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -31,31 +37,47 @@
 #ifndef __RNDVAR_H__
 #define __RNDVAR_H__
 
-#define	RND_SRC_TRUE	0
-#define	RND_SRC_TIMER	1
-#define	RND_SRC_MOUSE	2
-#define	RND_SRC_TTY	3
-#define	RND_SRC_DISK	4
-#define	RND_SRC_NET	5
-#define	RND_SRC_AUDIO	6
-#define	RND_SRC_VIDEO	7
-#define	RND_SRC_NUM	8
+#define POOLWORDS 128    /* Power of 2 - note that this is 32-bit words */
+
+#define	RND_RND		0	/* real randomness like nuclear chips */
+#define	RND_SRND	1	/* strong random source */
+#define	RND_URND	2	/* less strong random source */
+#define	RND_PRND	3	/* pseudo random source */
+#define RND_ARND	4	/* aRC4 based random number generator */
+#define RND_NODEV	5	/* First invalid minor device number */
+
+struct rndstats {
+	u_int32_t rnd_total; /* total bits of entropy generated */
+	u_int32_t rnd_used;  /* strong data bits read so far */
+	u_int32_t arc4_reads;/* aRC4 data bytes read so far */
+
+	u_int32_t rnd_timer; /* timer calls */
+	u_int32_t rnd_mouse; /* mouse calls */
+	u_int32_t rnd_tty;   /* tty calls */
+	u_int32_t rnd_disk;  /* block devices calls */
+	u_int32_t rnd_net;   /* net calls */
+
+	u_int32_t rnd_reads; /* strong read calls */
+	u_int32_t rnd_waits; /* sleep for data */
+	u_int32_t rnd_enqs;  /* enqueue calls */
+	u_int32_t rnd_deqs;  /* dequeue calls */
+	u_int32_t rnd_drops; /* queue-full drops */
+	u_int32_t rnd_drople;/* queue low watermark low entropy drops */
+
+	u_int32_t rnd_asleep; /* sleeping for the data */
+	u_int32_t rnd_queued; /* queued for processing */
+};
 
 #ifdef _KERNEL
-#define	add_true_randomness(d)	enqueue_randomness(RND_SRC_TRUE,  (int)(d))
-#define	add_timer_randomness(d)	enqueue_randomness(RND_SRC_TIMER, (int)(d))
-#define	add_mouse_randomness(d)	enqueue_randomness(RND_SRC_MOUSE, (int)(d))
-#define	add_tty_randomness(d)	enqueue_randomness(RND_SRC_TTY,   (int)(d))
-#define	add_disk_randomness(d)	enqueue_randomness(RND_SRC_DISK,  (int)(d))
-#define	add_net_randomness(d)	enqueue_randomness(RND_SRC_NET,   (int)(d))
-#define	add_audio_randomness(d)	enqueue_randomness(RND_SRC_AUDIO, (int)(d))
-#define	add_video_randomness(d)	enqueue_randomness(RND_SRC_VIDEO, (int)(d))
+extern struct rndstats rndstats;
 
-void random_start(void);
+extern void add_mouse_randomness __P((u_int32_t));
+extern void add_net_randomness __P((int));
+extern void add_disk_randomness __P((u_int32_t));
+extern void add_tty_randomness __P((int));
 
-void enqueue_randomness(unsigned int, unsigned int);
-void suspend_randomness(void);
-void resume_randomness(char *, size_t);
+extern void get_random_bytes __P((void *, size_t));
+extern u_int32_t arc4random __P((void));
 
 #endif /* _KERNEL */
 

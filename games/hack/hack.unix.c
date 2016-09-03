@@ -1,65 +1,10 @@
-/*	$OpenBSD: hack.unix.c,v 1.19 2016/03/15 19:56:20 mestre Exp $	*/
-
 /*
- * Copyright (c) 1985, Stichting Centrum voor Wiskunde en Informatica,
- * Amsterdam
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- * - Redistributions of source code must retain the above copyright notice,
- * this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above copyright
- * notice, this list of conditions and the following disclaimer in the
- * documentation and/or other materials provided with the distribution.
- *
- * - Neither the name of the Stichting Centrum voor Wiskunde en
- * Informatica, nor the names of its contributors may be used to endorse or
- * promote products derived from this software without specific prior
- * written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
- * IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
- * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER
- * OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Copyright (c) Stichting Mathematisch Centrum, Amsterdam, 1985.
  */
 
-/*
- * Copyright (c) 1982 Jay Fenlason <hack@gnu.org>
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
- * AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL
- * THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
+#ifndef lint
+static char rcsid[] = "$NetBSD: hack.unix.c,v 1.4 1996/02/06 22:47:25 jtc Exp $";
+#endif /* not lint */
 
 /* This file collects some Unix dependencies; hack.pager.c contains some more */
 
@@ -72,28 +17,28 @@
  *	- determination of what files are "very old"
  */
 
-#include <sys/stat.h>
-
-#include <err.h>
-#include <errno.h>
-#include <limits.h>
-#include <signal.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-
+#include <errno.h>
 #include "hack.h"
 
+#include	<sys/types.h>		/* for time_t and stat */
+#include	<sys/stat.h>
+#ifdef BSD
+#include	<sys/time.h>
+#else
+#include	<time.h>
+#endif BSD
 
-static struct tm *getlt(void);
-static int veryold(int);
-#ifdef MAIL
-static void newmail(void);
-static void mdrush(struct monst *, boolean);
-#endif
+extern char *getenv();
+extern time_t time();
 
-static struct tm *
-getlt(void)
+setrandom()
+{
+ 	(void) srandom((int) time ((time_t *) 0));
+}
+
+struct tm *
+getlt()
 {
 	time_t date;
 	struct tm *localtime();
@@ -102,33 +47,27 @@ getlt(void)
 	return(localtime(&date));
 }
 
-int
-getyear(void)
+getyear()
 {
 	return(1900 + getlt()->tm_year);
 }
 
 char *
-getdate(void)
+getdate()
 {
 	static char datestr[7];
-	struct tm *lt = getlt();
+	register struct tm *lt = getlt();
 
 	(void) snprintf(datestr, sizeof(datestr), "%02d%02d%02d",
 		lt->tm_year % 100, lt->tm_mon + 1, lt->tm_mday);
 	return(datestr);
 }
 
-/*
- * 0-7, with 0: new, 4: full
- * moon period: 29.5306 days
- * year: 365.2422 days
- */
-int
-phase_of_the_moon(void)	
-{
-	struct tm *lt = getlt();
-	int epact, diy, golden;
+phase_of_the_moon()			/* 0-7, with 0: new, 4: full */
+{					/* moon period: 29.5306 days */
+					/* year: 365.2422 days */
+	register struct tm *lt = getlt();
+	register int epact, diy, golden;
 
 	diy = lt->tm_yday;
 	golden = (lt->tm_year % 19) + 1;
@@ -139,56 +78,64 @@ phase_of_the_moon(void)
 	return( (((((diy + epact) * 6) + 11) % 177) / 22) & 7 );
 }
 
-int
-night(void)
+night()
 {
-	int hour = getlt()->tm_hour;
+	register int hour = getlt()->tm_hour;
 
 	return(hour < 6 || hour > 21);
 }
 
-int
-midnight(void)
+midnight()
 {
 	return(getlt()->tm_hour == 0);
 }
 
 struct stat buf, hbuf;
 
-void
-gethdate(char *name)
-{
-	char *p, *np, *path;
-	char filename[PATH_MAX+1];
+gethdate(name) char *name; {
+/* old version - for people short of space */
+/*
+    register char *np;
+  	if(stat(name, &hbuf))
+  		error("Cannot get status of %s.",
+  			(np = strrchr(name, '/')) ? np+1 : name);
+  
+   version using PATH from: seismo!gregc@ucsf-cgl.ARPA (Greg Couch) */
 
-	if (strchr(name, '/') != NULL || (p = getenv("PATH")) == NULL)
-		p = "";
-	np = path = strdup(p);	/* Make a copy for strsep. */
-	if (path == NULL)
-		err(1, NULL);
+
+/*
+ * The problem with   #include	<sys/param.h>   is that this include file
+ * does not exist on all systems, and moreover, that it sometimes includes
+ * <sys/types.h> again, so that the compiler sees these typedefs twice.
+ */
+#define		MAXPATHLEN	1024
+
+register char *np, *path;
+char filename[MAXPATHLEN+1];
+	if (strchr(name, '/') != NULL || (path = getenv("PATH")) == NULL)
+		path = "";
 
 	for (;;) {
-		if ((p = strsep(&np, ":")) == NULL)
-			break;
-		if (*p == '\0')			/* :: */
-			(void) strlcpy(filename, name, sizeof filename);
-		else
-			(void) snprintf(filename, sizeof filename,
-			    "%s/%s", p, name);
-
-		if (stat(filename, &hbuf) == 0) {
-			free(path);
-			return;
+		if ((np = strchr(path, ':')) == NULL)
+			np = path + strlen(path);	/* point to end str */
+		if (np - path <= 1)			/* %% */
+			(void) strcpy(filename, name);
+		else {
+			(void) strncpy(filename, path, np - path);
+			filename[np - path] = '/';
+			(void) strcpy(filename + (np - path) + 1, name);
 		}
+		if (stat(filename, &hbuf) == 0)
+			return;
+		if (*np == '\0')
+			break;
+		path = np + 1;
 	}
 	error("Cannot get status of %s.",
-		(p = strrchr(name, '/')) ? p+1 : name);
-	free(path);
+		(np = strrchr(name, '/')) ? np+1 : name);
 }
 
-int
-uptodate(int fd)
-{
+uptodate(fd) {
 	if(fstat(fd, &buf)) {
 		pline("Cannot get status of saved level? ");
 		return(0);
@@ -201,10 +148,8 @@ uptodate(int fd)
 }
 
 /* see whether we should throw away this xlock file */
-static int
-veryold(int fd)
-{
-	int i;
+veryold(fd) {
+	register int i;
 	time_t date;
 
 	if(fstat(fd, &buf)) return(0);			/* cannot get status */
@@ -234,17 +179,16 @@ veryold(int fd)
 	return(1);					/* success! */
 }
 
-void
-getlock(void)
+getlock()
 {
-	extern int hackpid, locknum;
-	int i = 0, fd;
+      extern int hackpid, locknum;
+	register int i = 0, fd;
 
 	(void) fflush(stdout);
 
 	/* we ignore QUIT and INT at this point */
 	if (link(HLOCK, LLOCK) == -1) {
-		int errnosv = errno;
+		register int errnosv = errno;
 
 		perror(HLOCK);
 		printf("Cannot link %s to %s\n", LLOCK, HLOCK);
@@ -263,6 +207,7 @@ getlock(void)
 		}
 		getret();
 		error("");
+		/*NOTREACHED*/
 	}
 
 	regularize(lock);
@@ -288,7 +233,7 @@ getlock(void)
 	error(locknum ? "Too many hacks running now."
 		      : "There is a game in progress under your name.");
 gotlock:
-	fd = open(lock, O_CREAT | O_TRUNC | O_WRONLY, FMASK);
+	fd = creat(lock, FMASK);
 	if(unlink(LLOCK) == -1)
 		error("Cannot unlink %s.", LLOCK);
 	if(fd == -1) {
@@ -302,7 +247,7 @@ gotlock:
 			error("cannot close lock");
 		}
 	}
-}
+}	
 
 #ifdef MAIL
 
@@ -336,13 +281,12 @@ gotlock:
  *	- Make him lose his mail when a Nymph steals the letter.
  *	- Do something to the text when the scroll is enchanted or cancelled.
  */
+#include	"def.mkroom.h"
 static struct stat omstat,nmstat;
 static char *mailbox;
 static long laststattime;
 
-void
-getmailstatus(void)
-{
+getmailstatus() {
 	if(!(mailbox = getenv("MAIL")))
 		return;
 	if(stat(mailbox, &omstat)){
@@ -351,17 +295,15 @@ getmailstatus(void)
 		mailbox = 0;
 #else
 		omstat.st_mtime = 0;
-#endif /* PERMANENT_MAILBOX */
+#endif PERMANENT_MAILBOX
 	}
 }
 
-void
-ckmailstatus(void)
-{
+ckmailstatus() {
 	if(!mailbox
 #ifdef MAILCKFREQ
 		    || moves < laststattime + MAILCKFREQ
-#endif /* MAILCKFREQ */
+#endif MAILCKFREQ
 							)
 		return;
 	laststattime = moves;
@@ -371,7 +313,7 @@ ckmailstatus(void)
 		mailbox = 0;
 #else
 		nmstat.st_mtime = 0;
-#endif /* PERMANENT_MAILBOX */
+#endif PERMANENT_MAILBOX
 	} else if(nmstat.st_mtime > omstat.st_mtime) {
 		if(nmstat.st_size)
 			newmail();
@@ -379,14 +321,12 @@ ckmailstatus(void)
 	}
 }
 
-static void
-newmail(void)
-{
+newmail() {
 	/* produce a scroll of mail */
-	struct obj *obj;
-	struct monst *md;
+	register struct obj *obj;
+	register struct monst *md;
 	extern char plname[];
-	extern struct obj *mksobj();
+	extern struct obj *mksobj(), *addinv();
 	extern struct monst *makemon();
 	extern struct permonst pm_mail_daemon;
 
@@ -410,14 +350,15 @@ newmail(void)
 }
 
 /* make md run through the cave */
-static void
-mdrush(struct monst *md, boolean away)
+mdrush(md,away)
+register struct monst *md;
+boolean away;
 {
-	int uroom = inroom(u.ux, u.uy);
+	register int uroom = inroom(u.ux, u.uy);
 	if(uroom >= 0) {
-		int tmp = rooms[uroom].fdoor;
-		int cnt = rooms[uroom].doorct;
-		int fx = u.ux, fy = u.uy;
+		register int tmp = rooms[uroom].fdoor;
+		register int cnt = rooms[uroom].doorct;
+		register int fx = u.ux, fy = u.uy;
 		while(cnt--) {
 			if(dist(fx,fy) < dist(doors[tmp].x, doors[tmp].y)){
 				fx = doors[tmp].x;
@@ -432,7 +373,7 @@ mdrush(struct monst *md, boolean away)
 			tmp = fy; fy = md->my; md->my = tmp;
 		}
 		while(fx != md->mx || fy != md->my) {
-			int dx,dy,nfx = fx,nfy = fy,d1,d2;
+			register int dx,dy,nfx = fx,nfy = fy,d1,d2;
 
 			tmp_at(fx,fy);
 			d1 = DIST(fx,fy,md->mx,md->my);
@@ -462,32 +403,29 @@ mdrush(struct monst *md, boolean away)
 		pmon(md);
 }
 
-void
-readmail(void)
-{
+readmail() {
 #ifdef DEF_MAILREADER			/* This implies that UNIX is defined */
-	char *mr = 0;
+	register char *mr = 0;
 	more();
 	if(!(mr = getenv("MAILREADER")))
 		mr = DEF_MAILREADER;
 	if(child(1)){
-		execl(mr, mr, (char *)NULL);
+		execl(mr, mr, (char *) 0);
 		exit(1);
 	}
-#else /* DEF_MAILREADER */
+#else DEF_MAILREADER
 	(void) page_file(mailbox, FALSE);
-#endif /* DEF_MAILREADER */
+#endif DEF_MAILREADER
 	/* get new stat; not entirely correct: there is a small time
 	   window where we do not see new mail */
 	getmailstatus();
 }
-#endif /* MAIL */
+#endif MAIL
 
-/* normalize file name - we don't like ..'s or /'s */
-void
-regularize(char *s)
+regularize(s)	/* normalize file name - we don't like ..'s or /'s */
+register char *s;
 {
-	char *lp;
+	register char *lp;
 
 	while((lp = strchr(s, '.')) || (lp = strchr(s, '/')))
 		*lp = '_';

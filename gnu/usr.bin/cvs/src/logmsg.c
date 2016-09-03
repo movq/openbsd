@@ -182,6 +182,7 @@ do_editor (dir, messagep, repository, changes)
     char *fname;
     struct stat pre_stbuf, post_stbuf;
     int retcode = 0;
+    char *p;
 
     if (noexec || reuse_log_message)
 	return;
@@ -190,10 +191,8 @@ do_editor (dir, messagep, repository, changes)
     if (strcmp (Editor, "") == 0 && !editinfo_editor)
 	error(1, 0, "no editor defined, must use -e or -m");
 
+
     /* Create a temporary file */
-    /* FIXME - It's possible we should be relying on cvs_temp_file to open
-     * the file here - we get race conditions otherwise.
-     */
     fname = cvs_temp_name ();
   again:
     if ((fp = CVS_FOPEN (fname, "w+")) == NULL)
@@ -217,6 +216,7 @@ do_editor (dir, messagep, repository, changes)
     {
 	FILE *tfp;
 	char buf[1024];
+	char *p;
 	size_t n;
 	size_t nwrite;
 
@@ -231,9 +231,9 @@ do_editor (dir, messagep, repository, changes)
 	{
 	    while (!feof (tfp))
 	    {
-		char *p = buf;
 		n = fread (buf, 1, sizeof buf, tfp);
 		nwrite = n;
+		p = buf;
 		while (nwrite > 0)
 		{
 		    n = fwrite (p, 1, nwrite, fp);
@@ -274,7 +274,7 @@ do_editor (dir, messagep, repository, changes)
 	free (editinfo_editor);
     editinfo_editor = (char *) NULL;
 #ifdef CLIENT_SUPPORT
-    if (current_parsed_root->isremote)
+    if (client_active)
 	; /* nothing, leave editinfo_editor NULL */
     else
 #endif
@@ -315,11 +315,10 @@ do_editor (dir, messagep, repository, changes)
 
     if (*messagep)
     {
-	size_t message_len = post_stbuf.st_size + 1;
-	size_t offset = 0;
+	p = *messagep;
 	while (1)
 	{
-	    line_length = get_line (&line, &line_chars_allocated, fp);
+	    line_length = getline (&line, &line_chars_allocated, fp);
 	    if (line_length == -1)
 	    {
 		if (ferror (fp))
@@ -328,11 +327,8 @@ do_editor (dir, messagep, repository, changes)
 	    }
 	    if (strncmp (line, CVSEDITPREFIX, CVSEDITPREFIXLEN) == 0)
 		continue;
-	    if (offset + line_length >= message_len)
-		expand_string (messagep, &message_len,
-				offset + line_length + 1);
-	    (void) strcpy (*messagep + offset, line);
-	    offset += line_length;
+	    (void) strcpy (p, line);
+	    p += line_length;
 	}
     }
     if (fclose (fp) < 0)
@@ -346,9 +342,9 @@ do_editor (dir, messagep, repository, changes)
 	{
 	    (void) printf ("\nLog message unchanged or not specified\n");
 	    (void) printf ("a)bort, c)ontinue, e)dit, !)reuse this message unchanged for remaining dirs\n");
-	    (void) printf ("Action: (abort) ");
+	    (void) printf ("Action: (continue) ");
 	    (void) fflush (stdout);
-	    line_length = get_line (&line, &line_chars_allocated, stdin);
+	    line_length = getline (&line, &line_chars_allocated, stdin);
 	    if (line_length < 0)
 	    {
 		error (0, errno, "cannot read from stdin");
@@ -358,14 +354,14 @@ do_editor (dir, messagep, repository, changes)
 		error (1, 0, "aborting");
 	    }
 	    else if (line_length == 0
-		     || *line == '\n' || *line == 'a' || *line == 'A')
+		     || *line == '\n' || *line == 'c' || *line == 'C')
+		break;
+	    if (*line == 'a' || *line == 'A')
 		{
 		    if (unlink_file (fname) < 0)
 			error (0, errno, "warning: cannot remove temp file %s", fname);
 		    error (1, 0, "aborted by user");
 		}
-	    if (*line == 'c' || *line == 'C')
-		break;	
 	    if (*line == 'e' || *line == 'E')
 		goto again;
 	    if (*line == '!')
@@ -398,7 +394,7 @@ do_verify (message, repository)
     int retcode = 0;
 
 #ifdef CLIENT_SUPPORT
-    if (current_parsed_root->isremote)
+    if (client_active)
 	/* The verification will happen on the server.  */
 	return;
 #endif
@@ -416,10 +412,13 @@ do_verify (message, repository)
 	return;
     }
 
-    /* open a temporary file, write the message to the 
+    /* Get a temp filename, open a temporary file, write the message to the 
        temp file, and close the file.  */
 
-    if ((fp = cvs_temp_file (&fname)) == NULL)
+    fname = cvs_temp_name ();
+
+    fp = fopen (fname, "w");
+    if (fp == NULL)
 	error (1, errno, "cannot create temporary file %s", fname);
     else
     {
@@ -489,7 +488,7 @@ rcsinfo_proc (repository, template)
 	char *line = NULL;
 	size_t line_chars_allocated = 0;
 
-	while (get_line (&line, &line_chars_allocated, tfp) >= 0)
+	while (getline (&line, &line_chars_allocated, tfp) >= 0)
 	    (void) fputs (line, fp);
 	if (ferror (tfp))
 	    error (0, errno, "warning: cannot read %s", template);
@@ -590,15 +589,6 @@ title_proc (p, closure)
 				  strlen (str_list) + strlen (p->key) + 5);
 		    (void) strcat (str_list, p->key);
 		    break;
-		case 't':
-		    str_list =
-			xrealloc (str_list,
-				  (strlen (str_list)
-				   + (li->tag ? strlen (li->tag) : 0)
-				   + 10)
-				  );
-		    (void) strcat (str_list, (li->tag ? li->tag : ""));
-		    break;
 		case 'V':
 		    str_list =
 			xrealloc (str_list,
@@ -678,7 +668,6 @@ logfile_write (repository, filter, message, logfp, changes)
        `}' as separators.  The format characters are:
 
          s = file name
-         t = tag name
 	 V = old version number (pre-checkin)
 	 v = new version number (post-checkin)
 
@@ -688,7 +677,6 @@ logfile_write (repository, filter, message, logfp, changes)
 	 %s
 	 %{s}
 	 %{sVv}
-	 %{Vvts}
 
        There's no reason that more items couldn't be added (like
        modification date or file status [added, modified, updated,
@@ -771,7 +759,7 @@ logfile_write (repository, filter, message, logfp, changes)
 	}
 
 	len = fmt_end - fmt_begin;
-	str_list_format = xmalloc (len + 1);
+	str_list_format = xmalloc (sizeof (char) * (len + 1));
 	strncpy (str_list_format, fmt_begin, len);
 	str_list_format[len] = '\0';
 
@@ -802,16 +790,16 @@ logfile_write (repository, filter, message, logfp, changes)
 
 	srepos = Short_Repository (repository);
 
-	prog = cp = xmalloc ((fmt_percent - filter) + 2 * strlen (srepos)
-			+ 2 * strlen (str_list) + strlen (fmt_continue)
+	prog = xmalloc ((fmt_percent - filter) + strlen (srepos)
+			+ strlen (str_list) + strlen (fmt_continue)
 			+ 10);
-	(void) memcpy (cp, filter, fmt_percent - filter);
-	cp += fmt_percent - filter;
-	*cp++ = '"';
-	cp = shell_escape (cp, srepos);
-	cp = shell_escape (cp, str_list);
-	*cp++ = '"';
-	(void) strcpy (cp, fmt_continue);
+	(void) strncpy (prog, filter, fmt_percent - filter);
+	prog[fmt_percent - filter] = '\0';
+	(void) strcat (prog, "'");
+	(void) strcat (prog, srepos);
+	(void) strcat (prog, str_list);
+	(void) strcat (prog, "'");
+	(void) strcat (prog, fmt_continue);
 	    
 	/* To be nice, free up some memory. */
 

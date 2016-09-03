@@ -1,4 +1,3 @@
-/*	$OpenBSD: fwalk.c,v 1.12 2016/05/23 00:21:48 guenther Exp $ */
 /*-
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,23 +34,26 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: fwalk.c,v 1.2 1996/08/19 08:32:50 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <errno.h>
 #include <stdio.h>
 #include "local.h"
 #include "glue.h"
 
-int
-_fwalk(int (*function)(FILE *))
+_fwalk(function)
+	register int (*function)();
 {
-	FILE *fp;
-	int n, ret;
-	struct glue *g;
+	register FILE *fp;
+	register int n, ret;
+	register struct glue *g;
 
 	ret = 0;
 	for (g = &__sglue; g != NULL; g = g->next)
-		for (fp = g->iobs, n = g->niobs; --n >= 0; fp++) {
-			if ((fp->_flags != 0) && ((fp->_flags & __SIGN) == 0))
+		for (fp = g->iobs, n = g->niobs; --n >= 0; fp++)
+			if (fp->_flags != 0)
 				ret |= (*function)(fp);
-		}
 	return (ret);
 }

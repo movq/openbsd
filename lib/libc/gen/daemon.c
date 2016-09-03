@@ -1,4 +1,3 @@
-/*	$OpenBSD: daemon.c,v 1.7 2010/07/27 22:29:09 marco Exp $ */
 /*-
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,13 +31,17 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: daemon.c,v 1.2 1996/08/19 08:22:13 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <fcntl.h>
 #include <paths.h>
 #include <unistd.h>
-#include <stdlib.h>
 
 int
-daemon(int nochdir, int noclose)
+daemon(nochdir, noclose)
+	int nochdir, noclose;
 {
 	int fd;
 
@@ -58,7 +65,7 @@ daemon(int nochdir, int noclose)
 		(void)dup2(fd, STDOUT_FILENO);
 		(void)dup2(fd, STDERR_FILENO);
 		if (fd > 2)
-			(void)close(fd);
+			(void)close (fd);
 	}
 	return (0);
 }

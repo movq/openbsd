@@ -1,5 +1,5 @@
 /* Disassemble h8500 instructions.
-   Copyright 1993, 1998, 2000, 2001, 2002 Free Software Foundation, Inc.
+   Copyright (C) 1993 Free Software Foundation, Inc.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -20,17 +20,13 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #define DISASSEMBLER_TABLE
 #define DEFINE_TABLE
 
-#include "sysdep.h"
 #include "h8500-opc.h"
 #include "dis-asm.h"
-#include "opintl.h"
 
 /* Maximum length of an instruction.  */
 #define MAXLEN 8
 
 #include <setjmp.h>
-
-static int fetch_data PARAMS ((struct disassemble_info *, bfd_byte *));
 
 struct private
 {
@@ -71,14 +67,15 @@ fetch_data (info, addr)
   return 1;
 }
 
-static char *crname[] = { "sr", "ccr", "*", "br", "ep", "dp", "*", "tp" };
+static char *crname[] =
+{"sr", "ccr", "*", "br", "ep", "dp", "*", "tp"};
 
 int
 print_insn_h8500 (addr, info)
      bfd_vma addr;
      disassemble_info *info;
 {
-  const h8500_opcode_info *opcode;
+  h8500_opcode_info *opcode;
   void *stream = info->stream;
   fprintf_ftype func = info->fprintf_func;
 
@@ -92,36 +89,34 @@ print_insn_h8500 (addr, info)
     /* Error return.  */
     return -1;
 
-  if (0)
-    {
-      static int one;
+if (0)  {
+    static    int one;
+    if (!one ) 
+      {
+	one = 1;
+	for (opcode = h8500_table; opcode->name; opcode++)
+	  {
+	    if ((opcode->bytes[0].contents & 0x8) == 0)
+	      printf("%s\n", opcode->name);
+	  }
+      }
+  }
 
-      if (!one)
-	{
-	  one = 1;
-	  for (opcode = h8500_table; opcode->name; opcode++)
-	    {
-	      if ((opcode->bytes[0].contents & 0x8) == 0)
-		printf ("%s\n", opcode->name);
-	    }
-	}
-    }
 
-  /* Run down the table to find the one which matches.  */
+  /* Run down the table to find the one which matches */
   for (opcode = h8500_table; opcode->name; opcode++)
     {
       int byte;
-      int rn = 0;
-      int rd = 0;
-      int rs = 0;
-      int disp = 0;
-      int abs = 0;
-      int imm = 0;
-      int pcrel = 0;
-      int qim = 0;
+      int rn;
+      int rd;
+      int rs;
+      int disp;
+      int abs;
+      int imm;
+      int pcrel;
+      int qim;
       int i;
-      int cr = 0;
-
+      int cr;
       for (byte = 0; byte < opcode->length; byte++)
 	{
 	  FETCH_DATA (info, buffer + byte + 1);
@@ -132,15 +127,14 @@ print_insn_h8500 (addr, info)
 	    }
 	  else
 	    {
-	      /* Extract any info parts.  */
+	      /* extract any info parts */
 	      switch (opcode->bytes[byte].insert)
 		{
 		case 0:
 		case FP:
 		  break;
 		default:
-		  /* xgettext:c-format */
-		  func (stream, _("can't cope with insert %d\n"),
+		  func (stream, "can't cope with insert %d\n",
 			opcode->bytes[byte].insert);
 		  break;
 		case RN:
@@ -224,8 +218,8 @@ print_insn_h8500 (addr, info)
 		}
 	    }
 	}
-      /* We get here when all the masks have passed so we can output
-	 the operands.  */
+      /* We get here when all the masks have passed so we can output the
+	 operands*/
       FETCH_DATA (info, buffer + opcode->length);
       for (i = 0; i < opcode->length; i++)
 	{
@@ -325,8 +319,7 @@ print_insn_h8500 (addr, info)
 	      func (stream, "#0x%0x:8", imm & 0xff);
 	      break;
 	    case PCREL16:
-	      func (stream, "0x%0x:16",
-		    (pcrel + addr + opcode->length) & 0xffff);
+	      func (stream, "0x%0x:16", (pcrel + addr + opcode->length) & 0xffff);
 	      break;
 	    case PCREL8:
 	      func (stream, "#0x%0x:8",
@@ -341,12 +334,11 @@ print_insn_h8500 (addr, info)
 	    }
 	}
       return opcode->length;
-    next:
-      ;
+    next:;
     }
 
-  /* Couldn't understand anything.  */
-  /* xgettext:c-format */
-  func (stream, _("%02x\t\t*unknown*"), buffer[0]);
+  /* Couldn't understand anything */
+  func (stream, "%02x\t\t*unknown*", buffer[0]);
   return 1;
+
 }

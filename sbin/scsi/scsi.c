@@ -1,4 +1,4 @@
-/*	$OpenBSD: scsi.c,v 1.30 2016/06/07 01:29:38 tedu Exp $	*/
+/*	$OpenBSD: scsi.c,v 1.5 1997/12/10 05:02:02 angelos Exp $	*/
 /*	$FreeBSD: scsi.c,v 1.11 1996/04/06 11:00:28 joerg Exp $	*/
 
 /*
@@ -43,28 +43,32 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/types.h>
-#include <sys/wait.h>
-
-#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
 #include <sys/scsiio.h>
+#include <sys/file.h>
+#include <scsi.h>
 #include <ctype.h>
 #include <signal.h>
-#include <err.h>
-#include <paths.h>
-
-#include "libscsi.h"
 
 int	fd;
 int	debuglevel;
 int	debugflag;
 int commandflag;
+int	reprobe;
+#ifdef SCIOCADDR
+int	probe_all;
+#endif
 int verbose = 0;
+int	bus = -1;	/* all busses */
+int	targ = -1;	/* all targs */
+int	lun = 0;	/* just lun 0 */
+#ifdef SCIOCFREEZE
+int	freeze = 0;	/* Freeze this many seconds */
+#endif
 
 int modeflag;
 int editflag;
@@ -72,22 +76,19 @@ int modepage = 0; /* Read this mode page */
 int pagectl = 0;  /* Mode sense page control */
 int seconds = 2;
 
-void	procargs(int *argc_p, char ***argv_p);
-int	iget(void *hook, char *name);
-char	*cget(void *hook, char *name);
-void	arg_put(void *hook, int letter, void *arg, int count, char *name);
-void	mode_sense(int fd, u_char *data, int len, int pc, int page);
-void	mode_select(int fd, u_char *data, int len, int perm);
-int	editit(const char *pathname);
-
-static void
-usage(void)
+void usage(void)
 {
-	fprintf(stderr,
+	printf(
+
 "Usage:\n"
 "\n"
 "  scsi -f device -d debug_level                    # To set debug level\n"
+#ifdef SCIOCFREEZE
+"  scsi -f device [-v] -z seconds                   # To freeze bus\n"
+#endif
 "  scsi -f device -m page [-P pc]                   # To read mode pages\n"
+"  scsi -f device -p [-b bus] [-l lun]              # To probe all devices\n"
+"  scsi -f device -r [-b bus] [-t targ] [-l lun]    # To reprobe a device\n"
 "  scsi -f device [-v] [-s seconds] -c cmd_fmt [arg0 ... argn] # A command...\n"
 "                 -o count out_fmt [arg0 ... argn]  #   EITHER (data out)\n"
 "                 -i count in_fmt                   #   OR     (data in)\n"
@@ -102,45 +103,73 @@ usage(void)
 	exit (1);
 }
 
-void
-procargs(int *argc_p, char ***argv_p)
+void procargs(int *argc_p, char ***argv_p)
 {
 	int argc = *argc_p;
 	char **argv = *argv_p;
-	int fflag, ch;
+	extern char        *optarg;
+	extern int          optind;
+	int		    fflag,
+	                    ch;
 
 	fflag = 0;
 	commandflag = 0;
 	debugflag = 0;
-	while ((ch = getopt(argc, argv, "cef:d:m:P:s:v")) != -1) {
+	while ((ch = getopt(argc, argv, "ceprvf:d:b:t:l:z:m:P:s:")) != -1) {
 		switch (ch) {
+#ifdef SCIOCADDR
+		case 'p':
+			probe_all = 1;
+			break;
+#endif
+		case 'r':
+			reprobe = 1;
+			break;
 		case 'c':
 			commandflag = 1;
+			break;
+		case 'v':
+			verbose = 1;
 			break;
 		case 'e':
 			editflag = 1;
 			break;
 		case 'f':
-			if ((fd = scsi_open(optarg, O_RDWR)) < 0)
-				err(1, "unable to open device %s", optarg);
+			if ((fd = scsi_open(optarg, O_RDWR)) < 0) {
+				(void) fprintf(stderr,
+					  "%s: unable to open device %s: %s\n",
+					       argv[0], optarg, strerror(errno));
+				exit(errno);
+			}
 			fflag = 1;
 			break;
 		case 'd':
 			debuglevel = strtol(optarg, 0, 0);
 			debugflag = 1;
 			break;
-		case 'm':
-			modeflag = 1;
-			modepage = strtol(optarg, 0, 0);
+		case 'b':
+			bus = strtol(optarg, 0, 0);
 			break;
+		case 't':
+			targ = strtol(optarg, 0, 0);
+			break;
+		case 'l':
+			lun = strtol(optarg, 0, 0);
+			break;
+#ifdef SCIOCFREEZE
+		case 'z':
+			freeze = strtol(optarg, 0, 0);
+			break;
+#endif
 		case 'P':
 			pagectl = strtol(optarg, 0, 0);
 			break;
 		case 's':
 			seconds = strtol(optarg, 0, 0);
 			break;
-		case 'v':
-			verbose = 1;
+		case 'm':
+			modeflag = 1;
+			modepage = strtol(optarg, 0, 0);
 			break;
 		case '?':
 		default:
@@ -164,8 +193,7 @@ struct get_hook
 
 /* iget: Integer argument callback
  */
-int
-iget(void *hook, char *name)
+int iget(void *hook, char *name)
 {
 	struct get_hook *h = (struct get_hook *)hook;
 	int arg;
@@ -186,8 +214,7 @@ iget(void *hook, char *name)
 
 /* cget: char * argument callback
  */
-char *
-cget(void *hook, char *name)
+char *cget(void *hook, char *name)
 {
 	struct get_hook *h = (struct get_hook *)hook;
 	char *arg;
@@ -224,9 +251,6 @@ void arg_put(void *hook, int letter, void *arg, int count, char *name)
 		case 'z':
 		{
 			char *p = malloc(count + 1);
-			if (p == NULL)
-				err(1, NULL);
-
 			p[count] = 0;
 			strncpy(p, (char *)arg, count);
 			if (letter == 'z')
@@ -239,7 +263,6 @@ void arg_put(void *hook, int letter, void *arg, int count, char *name)
 						break;
 			}
 			printf("%s ", p);
-			free(p);
 		}
 
 		break;
@@ -249,6 +272,12 @@ void arg_put(void *hook, int letter, void *arg, int count, char *name)
 	}
 	if (verbose)
 		putchar('\n');
+}
+
+int arg_get (void *hook, char *field_name)
+{
+	printf("get \"%s\".\n", field_name);
+	return 0;
 }
 
 /* data_phase: SCSI bus data phase: DATA IN, DATA OUT, or no data transfer.
@@ -307,25 +336,29 @@ do_cmd(int fd, char *fmt, int argc, char **argv)
 		}
 
 		count = scsireq->datalen = iget(&h, 0);
-		if (count) {
+		if (count)
+		{
 			data_fmt = cget(&h, 0);
 
 			scsireq->databuf = malloc(count);
-			if (scsireq->databuf == NULL)
-				err(1, NULL);
 
-			if (data_phase == out) {
-				if (strcmp(data_fmt, "-") == 0)	{
+			if (data_phase == out)
+			{
+				if (strcmp(data_fmt, "-") == 0)	/* Read data from stdin */
+				{
 					bp = (char *)scsireq->databuf;
-					while (count > 0 &&
-					    (amount = read(STDIN_FILENO,
-					    bp, count)) > 0) {
+					while (count > 0 && (amount = read(0, bp, count)) > 0)
+					{
 						count -= amount;
 						bp += amount;
 					}
 					if (amount == -1)
-						err(1, "read");
-					else if (amount == 0) {
+					{
+						perror("read");
+						exit(errno);
+					}
+					else if (amount == 0)
+					{
 						/* early EOF */
 						fprintf(stderr,
 							"Warning: only read %lu bytes out of %lu.\n",
@@ -349,7 +382,7 @@ do_cmd(int fd, char *fmt, int argc, char **argv)
 	if (scsireq_enter(fd, scsireq) == -1)
 	{
 		scsi_debug(stderr, -1, scsireq);
-		exit(1);
+		exit(errno);
 	}
 
 	if (SCSIREQ_ERROR(scsireq))
@@ -360,18 +393,21 @@ do_cmd(int fd, char *fmt, int argc, char **argv)
 		if (strcmp(data_fmt, "-") == 0)	/* stdout */
 		{
 			bp = (char *)scsireq->databuf;
-			while (count > 0 && (amount = write(STDOUT_FILENO, bp, count)) > 0)
+			while (count > 0 && (amount = write(1, bp, count)) > 0)
 			{
 				count -= amount;
 				bp += amount;
 			}
 			if (amount < 0)
-				err(1, "write");
+			{
+				perror("write");
+				exit(errno);
+			}
 			else if (amount == 0)
-				fprintf(stderr, "Warning: wrote only %lu bytes out of %lu.\n",
+				fprintf(stderr, "Warning: wrote only %d bytes out of %d.\n",
 					scsireq->datalen - count,
 					scsireq->datalen);
-
+			
 		}
 		else
 		{
@@ -380,6 +416,53 @@ do_cmd(int fd, char *fmt, int argc, char **argv)
 		}
 	}
 }
+
+#ifdef SCIOCFREEZE
+static void
+freeze_ioctl(int fd, int op, void *data)
+{
+	if (ioctl(fd, SCIOCFREEZE, 0) == -1) {
+		if (errno == ENODEV) {
+			fprintf(stderr,
+			"Your kernel must be configured with option SCSI_FREEZE.\n");
+		}
+		else
+			perror("SCIOCFREEZE");
+		exit(errno);
+	}
+}
+
+/* do_freeze: Freeze the bus for a given number of seconds.
+ */
+static void do_freeze(int seconds)
+{
+	if (seconds == -1) {
+		printf("Hit return to thaw:  ");
+		fflush(stdout);
+		sync();
+
+		freeze_ioctl(fd, SCIOCFREEZE, 0);
+
+		(void)getchar();
+
+		freeze_ioctl(fd, SCIOCTHAW, 0);
+	}
+	else {
+		sync();
+		freeze_ioctl(fd, SCIOCFREEZETHAW, &seconds);
+		if (verbose) {
+			putchar('\007');
+			fflush(stdout);
+		}
+
+		freeze_ioctl(fd, SCIOCWAITTHAW, 0);
+		if (verbose) {
+			putchar('\007');
+			fflush(stdout);
+		}
+	}
+}
+#endif
 
 void mode_sense(int fd, u_char *data, int len, int pc, int page)
 {
@@ -395,13 +478,13 @@ void mode_sense(int fd, u_char *data, int len, int pc, int page)
 	 pc, page, len)) == -1)	/* Mode sense */
 	{
 		scsi_debug(stderr, -1, scsireq);
-		exit(1);
+		exit(errno);
 	}
 
 	if (SCSIREQ_ERROR(scsireq))
 	{
 		scsi_debug(stderr, 0, scsireq);
-		exit(1);
+		exit(-1);
 	}
 
 	free(scsireq);
@@ -418,13 +501,13 @@ void mode_select(int fd, u_char *data, int len, int perm)
 	 "15 0:7 v:1 {SP} 0 0 v:i1 {Allocation Length} 0", perm, len)) == -1)	/* Mode select */
 	{
 		scsi_debug(stderr, -1, scsireq);
-		exit(1);
+		exit(errno);
 	}
 
 	if (SCSIREQ_ERROR(scsireq))
 	{
 		scsi_debug(stderr, 0, scsireq);
-		exit(1);
+		exit(-1);
 	}
 
 	free(scsireq);
@@ -442,11 +525,11 @@ skipwhite(FILE *f)
 skip_again:
 
 	while (isspace(c = getc(f)))
-		continue;
+		;
 
 	if (c == '#') {
 		while ((c = getc(f)) != '\n' && c != EOF)
-			continue;
+			;
 		goto skip_again;
 	}
 
@@ -469,7 +552,7 @@ static char *mode_lookup(int page)
 		mode_db = new_db;
 
 	modes = fopen(mode_db, "r");
-	if (modes == NULL)
+	if (modes == 0)
 		return 0;
 
 	next = 0;
@@ -487,14 +570,16 @@ static char *mode_lookup(int page)
 
 		skipwhite(modes);
 		if (getc(modes) != START_ENTRY) {
-			errx(1, "Expected %c", START_ENTRY);
+			fprintf(stderr, "Expected %c.\n", START_ENTRY);
+			exit(-1);
 		}
 
 		match = 1;
 		while (match != 0) {
 			c = getc(modes);
-			if (c == EOF)
+			if (c == EOF) {
 				fprintf(stderr, "Expected %c.\n", END_ENTRY);
+			}
 
 			if (c == START_ENTRY) {
 				match++;
@@ -506,14 +591,14 @@ static char *mode_lookup(int page)
 			}
 			if (found && c != '\n') {
 				if (next >= sizeof(fmt)) {
-					errx(1, "Stupid program: Buffer overflow.\n");
+					fprintf(stderr, "Stupid program: Buffer overflow.\n");
+					exit(ENOMEM);
 				}
 
 				fmt[next++] = (u_char)c;
 			}
 		}
 	}
-	fclose(modes);
 	fmt[next] = 0;
 
 	return (found) ? fmt : 0;
@@ -532,7 +617,7 @@ volatile int edit_opened;
 static FILE *edit_file;
 static char edit_name[L_tmpnam];
 
-static void
+static inline void
 edit_rewind(void)
 {
 	editind = 0;
@@ -568,11 +653,15 @@ edit_init(void)
 	int fd;
 
 	edit_rewind();
-	strlcpy(edit_name, "/var/tmp/scXXXXXXXX", sizeof edit_name);
-	if ((fd = mkstemp(edit_name)) == -1)
-		err(1, "mkstemp");
-	if ( (edit_file = fdopen(fd, "w+")) == 0)
-		err(1, "fdopen");
+	strcpy(edit_name, "/var/tmp/scXXXXXXXX");
+	if ((fd = mkstemp(edit_name)) == -1) {
+		perror("mkstemp failed");
+		exit(errno);
+	}
+	if ( (edit_file = fdopen(fd, "w+")) == 0) {
+		perror("fdopen failed");
+		exit(errno);
+	}
 	edit_opened = 1;
 
 	atexit(edit_done);
@@ -582,11 +671,13 @@ static void
 edit_check(void *hook, int letter, void *arg, int count, char *name)
 {
 	if (letter != 'i' && letter != 'b') {
-		errx(1, "Can't edit format %c.\n", letter);
+		fprintf(stderr, "Can't edit format %c.\n", letter);
+		exit(-1);
 	}
 
 	if (editind >= sizeof(editinfo) / sizeof(editinfo[0])) {
-		errx(1, "edit table overflow");
+		fprintf(stderr, "edit table overflow\n");
+		exit(ENOMEM);
 	}
 	editinfo[editind].can_edit = ((long)arg != 0);
 	editind++;
@@ -596,7 +687,8 @@ static void
 edit_defaults(void *hook, int letter, void *arg, int count, char *name)
 {
 	if (letter != 'i' && letter != 'b') {
-		errx(1, "Can't edit format %c.\n", letter);
+		fprintf(stderr, "Can't edit format %c.\n", letter);
+		exit(-1);
 	}
 
 	editinfo[editind].default_value = ((long)arg);
@@ -608,7 +700,8 @@ edit_report(void *hook, int letter, void *arg, int count, char *name)
 {
 	if (editinfo[editind].can_edit) {
 		if (letter != 'i' && letter != 'b') {
-			errx(1, "Can't report format %c.\n", letter);
+			fprintf(stderr, "Can't report format %c.\n", letter);
+			exit(-1);
 		}
 
 		fprintf(edit_file, "%s:  %ld\n", name, (long)arg);
@@ -620,21 +713,22 @@ edit_report(void *hook, int letter, void *arg, int count, char *name)
 static int
 edit_get(void *hook, char *name)
 {
+	struct get_hook *h = (struct get_hook *)hook;
 	int arg = editinfo[editind].default_value;
 
 	if (editinfo[editind].can_edit) {
 		char line[80];
-		size_t len;
-		if (fgets(line, sizeof(line), edit_file) == NULL)
-			err(1, "fgets");
+		if (fgets(line, sizeof(line), edit_file) == 0) {
+			perror("fgets");
+			exit(errno);
+		}
 
-		len = strlen(line);
-		if (len && line[len - 1] == '\n')
-			line[len - 1] = '\0';
+		line[strlen(line) - 1] = 0;
 
 		if (strncmp(name, line, strlen(name)) != 0) {
-			errx(1, "Expected \"%s\" and read \"%s\"\n",
-			    name, line);
+			fprintf(stderr, "Expected \"%s\" and read \"%s\"\n",
+			name, line);
+			exit(-1);
 		}
 
 		arg = strtoul(line + strlen(name) + 2, 0, 0);
@@ -644,61 +738,25 @@ edit_get(void *hook, char *name)
 	return arg;
 }
 
-int
-editit(const char *pathname)
+static void
+edit_edit(void)
 {
-	char *argp[] = {"sh", "-c", NULL, NULL}, *ed, *p;
-	sig_t sighup, sigint, sigquit;
-	pid_t pid;
-	int st;
+	char *system_line;
+	char *editor = getenv("EDITOR");
+	if (!editor)
+		editor = "vi";
 
-	ed = getenv("VISUAL");
-	if (ed == NULL || ed[0] == '\0')
-		ed = getenv("EDITOR");
-	if (ed == NULL || ed[0] == '\0')
-		ed = _PATH_VI;
-	if (asprintf(&p, "%s %s", ed, pathname) == -1)
-		return (-1);
-	argp[2] = p;
+	fclose(edit_file);
 
- top:
-	sighup = signal(SIGHUP, SIG_IGN);
-	sigint = signal(SIGINT, SIG_IGN);
-	sigquit = signal(SIGQUIT, SIG_IGN);
-	if ((pid = fork()) == -1) {
-		int saved_errno = errno;
+	system_line = malloc(strlen(editor) + strlen(edit_name) + 6);
+	sprintf(system_line, "%s %s", editor, edit_name);
+	system(system_line);
+	free(system_line);
 
-		(void)signal(SIGHUP, sighup);
-		(void)signal(SIGINT, sigint);
-		(void)signal(SIGQUIT, sigquit);
-		if (saved_errno == EAGAIN) {
-			sleep(1);
-			goto top;
-		}
-		free(p);
-		errno = saved_errno;
-		return (-1);
+	if ( (edit_file = fopen(edit_name, "r")) == 0) {
+		perror(edit_name);
+		exit(errno);
 	}
-	if (pid == 0) {
-		execv(_PATH_BSHELL, argp);
-		_exit(127);
-	}
-	free(p);
-	for (;;) {
-		if (waitpid(pid, &st, 0) == -1) {
-			if (errno != EINTR)
-				return (-1);
-		} else
-			break;
-	}
-	(void)signal(SIGHUP, sighup);
-	(void)signal(SIGINT, sigint);
-	(void)signal(SIGQUIT, sigquit);
-	if (!WIFEXITED(st) || WEXITSTATUS(st) != 0) {
-		errno = ECHILD;
-		return (-1);
-	}
-	return (0);
 }
 
 static void
@@ -733,12 +791,14 @@ mode_edit(int fd, int page, int edit, int argc, char *argv[])
 
 	if (edit) {
 		if (!fmt) {
-			errx(1, "Sorry: can't edit without a format.\n");
+			fprintf(stderr, "Sorry: can't edit without a format.\n");
+			exit(-1);
 		}
 
 		if (pagectl != 0 && pagectl != 3) {
-			errx(1,
+			fprintf(stderr,
 "It only makes sense to edit page 0 (current) or page 3 (saved values)\n");
+			exit(-1);
 		}
 
 		verbose = 1;
@@ -765,11 +825,7 @@ mode_edit(int fd, int page, int edit, int argc, char *argv[])
 		scsireq_buff_decode_visit(mode_pars, mh->mdl,
 		fmt, edit_report, 0);
 
-		fclose(edit_file);
-		if (editit(edit_name) == -1 && errno != ECHILD)
-			err(1, "edit %s", edit_name);
-		if ((edit_file = fopen(edit_name, "r")) == NULL)
-			err(1, "open %s", edit_name);
+		edit_edit();
 
 		edit_rewind();
 		scsireq_buff_encode_visit(mode_pars, mh->mdl,
@@ -829,17 +885,99 @@ mode_edit(int fd, int page, int edit, int argc, char *argv[])
 	}
 }
 
+#ifdef SCIOCADDR
+/* do_probe_all: Loop over all SCSI IDs and see if something is
+ * there.  This only does BUS 0 LUN 0.
+ */
+void do_probe_all(void)
+{
+	scsireq_t *scsireq;
+
+	char vendor_id[8 + 1], product_id[16 + 1], revision[4 + 1];
+	int id;
+	u_char *inq_buf = malloc(96);
+	struct scsi_addr addr;
+
+	scsireq = scsireq_build(scsireq_new(),
+	96, inq_buf, SCCMD_READ,
+	"12 0 0 0 v 0", 96);
+
+	addr.scbus = (bus == -1) ? 0 : bus;
+	addr.lun = lun;
+
+	if (addr.scbus || addr.lun)
+	{
+		printf("For bus %d lun %d:\n", addr.scbus, addr.lun);
+	}
+
+	for (id = 0; id < 8; id++)
+	{
+		addr.target = id;
+
+		printf("%d: ", id);
+		if (ioctl(fd, SCIOCADDR, &addr) == -1) {
+			if (errno == ENXIO)
+			{
+				errno = 0;
+				printf("nothing.\n");
+			}
+			else
+				printf("SCIOCADDR: %s\n", strerror(errno));
+
+			continue;
+		}
+
+		if (scsireq_enter(fd, scsireq) == -1) {
+			printf("scsireq_enter: %s\n", strerror(errno));
+			continue;
+		}
+
+		vendor_id[sizeof(vendor_id) - 1] = 0;
+		product_id[sizeof(product_id) - 1] = 0;
+		revision[sizeof(revision) - 1] = 0;
+
+		scsireq_decode(scsireq, "s8 c8 c16 c4",
+		vendor_id, product_id, revision);
+
+		printf("%s %s %s\n", vendor_id, product_id, revision);
+	}
+}
+#endif
+
 int
 main(int argc, char **argv)
 {
+	struct scsi_addr scaddr;
+
 	procargs(&argc,&argv);
 
 	/* XXX This has grown to the point that it should be cleaned up.
 	 */
-	if (debugflag) {
+#ifdef SCIOCFREEZE
+	if (freeze) {
+		do_freeze(freeze);
+	} else
+#endif
+#ifdef SCIOCADDR
+	if (probe_all) {
+		do_probe_all();
+	} else
+#endif
+	if(reprobe) {
+		scaddr.scbus = bus;
+		scaddr.target = targ;
+		scaddr.lun = lun;
+
+		if (ioctl(fd,SCIOCREPROBE,&scaddr) == -1)
+			perror("ioctl");
+	} else if(debugflag) {
 		if (ioctl(fd,SCIOCDEBUG,&debuglevel) == -1)
-			err(1, "SCIOCDEBUG");
+		{
+			perror("ioctl [SCIODEBUG]");
+			exit(1);
+		}
 	} else if (commandflag) {
+		int i;
 		char *fmt;
 
 		if (argc < 1) {
@@ -854,8 +992,8 @@ main(int argc, char **argv)
 		argv += 1;
 
 		do_cmd(fd, fmt, argc, argv);
-	} else if (modeflag)
+	} else if (modeflag) {
 		mode_edit(fd, modepage, editflag, argc, argv);
-
+	}
 	exit(0);
 }

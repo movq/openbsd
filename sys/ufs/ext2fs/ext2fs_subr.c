@@ -1,4 +1,4 @@
-/*	$OpenBSD: ext2fs_subr.c,v 1.35 2016/08/10 07:53:02 natano Exp $	*/
+/*	$OpenBSD: ext2fs_subr.c,v 1.3 1997/06/12 21:09:35 downsj Exp $	*/
 /*	$NetBSD: ext2fs_subr.c,v 1.1 1997/06/11 09:34:03 bouyer Exp $	*/
 
 /*
@@ -14,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -36,20 +40,14 @@
 
 #include <sys/param.h>
 #include <sys/systm.h>
-#include <sys/vnode.h>
-#include <sys/mount.h>
-#include <sys/buf.h>
-#include <sys/specdev.h>
-
-#include <ufs/ufs/quota.h>
-#include <ufs/ufs/inode.h>
-#include <ufs/ufs/ufsmount.h>
-
 #include <ufs/ext2fs/ext2fs.h>
 #include <ufs/ext2fs/ext2fs_extern.h>
-#include <ufs/ext2fs/ext2fs_extents.h>
 
 #ifdef _KERNEL
+#include <sys/vnode.h>
+#include <sys/buf.h>
+#include <ufs/ufs/quota.h>
+#include <ufs/ufs/inode.h>
 
 /*
  * Return buffer with the contents of block "offset" from the beginning of
@@ -57,74 +55,55 @@
  * remaining space in the directory.
  */
 int
-ext2fs_bufatoff(struct inode *ip, off_t offset, char **res, struct buf **bpp)
+ext2fs_blkatoff(v)
+	void *v;
 {
-	struct vnode *vp;
-	struct m_ext2fs *fs;
+	struct vop_blkatoff_args /* {
+		struct vnode *a_vp;
+		off_t a_offset;
+		char **a_res;
+		struct buf **a_bpp;
+	} */ *ap = v;
+	struct inode *ip;
+	register struct m_ext2fs *fs;
 	struct buf *bp;
-	daddr_t lbn, pos;
+	daddr_t lbn;
 	int error;
 
-	vp = ITOV(ip);
+	ip = VTOI(ap->a_vp);
 	fs = ip->i_e2fs;
-	lbn = lblkno(fs, offset);
+	lbn = lblkno(fs, ap->a_offset);
 
-	if (ip->i_e2din->e2di_flags & EXT4_EXTENTS) {
-		struct ext4_extent_path path;
-		struct ext4_extent *ep;
-
-		memset(&path, 0, sizeof path);
-		if (ext4_ext_find_extent(fs, ip, lbn, &path) == NULL ||
-		    (ep = path.ep_ext) == NULL)
-			goto normal;
-
-		if (path.ep_bp != NULL) {
-			brelse(path.ep_bp);
-			path.ep_bp = NULL;
-		}
-		pos = lbn - ep->e_blk + (((daddr_t)ep->e_start_hi << 32) | ep->e_start_lo);
-		error = bread(ip->i_devvp, fsbtodb(fs, pos), fs->e2fs_bsize, &bp);
-		if (error) {
-			brelse(bp);
-			return (error);
-		}
-
-		if (res)
-			*res = (char *)bp->b_data + blkoff(fs, offset);
-
-		*bpp = bp;
-
-		return (0);
-	}
-
- normal:
-	*bpp = NULL;
-	if ((error = bread(vp, lbn, fs->e2fs_bsize, &bp)) != 0) {
+	*ap->a_bpp = NULL;
+	if ((error = bread(ap->a_vp, lbn, fs->e2fs_bsize, NOCRED, &bp)) != 0) {
 		brelse(bp);
 		return (error);
 	}
-	if (res)
-		*res = (char *)bp->b_data + blkoff(fs, offset);
-	*bpp = bp;
+	if (ap->a_res)
+		*ap->a_res = (char *)bp->b_data + blkoff(fs, ap->a_offset);
+	*ap->a_bpp = bp;
 	return (0);
 }
 #endif
 
 #if defined(_KERNEL) && defined(DIAGNOSTIC)
 void
-ext2fs_checkoverlap(struct buf *bp, struct inode *ip)
+ext2fs_checkoverlap(bp, ip)
+	struct buf *bp;
+	struct inode *ip;
 {
-	struct buf *ep;
+	register struct buf *ebp, *ep;
+	register daddr_t start, last;
 	struct vnode *vp;
-	daddr_t start, last;
 
+	ebp = &buf[nbuf];
 	start = bp->b_blkno;
 	last = start + btodb(bp->b_bcount) - 1;
-	LIST_FOREACH(ep, &bufhead, b_list) {
+	for (ep = buf; ep < ebp; ep++) {
 		if (ep == bp || (ep->b_flags & B_INVAL) ||
 			ep->b_vp == NULLVP)
 			continue;
-		if (VOP_BMAP(ep->b_vp, 0, &vp, NULL, NULL))
+		if (VOP_BMAP(ep->b_vp, (daddr_t)0, &vp, (daddr_t)0, NULL))
 			continue;
 		if (vp != ip->i_devvp)
 			continue;
@@ -133,77 +112,10 @@ ext2fs_checkoverlap(struct buf *bp, struct inode *ip)
 			ep->b_blkno + btodb(ep->b_bcount) <= start)
 			continue;
 		vprint("Disk overlap", vp);
-		printf("\tstart %lld, end %lld overlap start %lld, end %lld\n",
-			start, last, (long long)ep->b_blkno,
-			(long long)(ep->b_blkno + btodb(ep->b_bcount) - 1));
+		printf("\tstart %d, end %d overlap start %d, end %ld\n",
+			start, last, ep->b_blkno,
+			ep->b_blkno + btodb(ep->b_bcount) - 1);
 		panic("Disk buffer overlap");
 	}
 }
 #endif /* DIAGNOSTIC */
-
-/*
- * Initialize the vnode associated with a new inode, handle aliased vnodes.
- */
-int
-ext2fs_vinit(struct mount *mp, struct vnode **vpp)
-{
-	struct inode *ip;
-	struct vnode *vp, *nvp;
-	struct timeval tv;
-
-	vp = *vpp;
-	ip = VTOI(vp);
-	vp->v_type = IFTOVT(ip->i_e2fs_mode);
-
-	switch(vp->v_type) {
-	case VCHR:
-	case VBLK:
-		vp->v_op = &ext2fs_specvops;
-
-		nvp = checkalias(vp, letoh32(ip->i_e2din->e2di_rdev), mp);
-		if (nvp != NULL) {
-			/*
-			 * Discard unneeded vnode, but save its inode. Note
-			 * that the lock is carried over in the inode to the
-			 * replacement vnode.
-			 */
-			nvp->v_data = vp->v_data;
-			vp->v_data = NULL;
-			vp->v_op = &spec_vops;
-#ifdef VFSLCKDEBUG
-			vp->v_flag &= ~VLOCKSWORK;
-#endif
-			vrele(vp);
-			vgone(vp);
-			/* Reinitialize aliased vnode. */
-			vp = nvp;
-			ip->i_vnode = vp;
-		}
-
-		break;
-
-	case VFIFO:
-#ifdef FIFO
-		vp->v_op = &ext2fs_fifovops;
-		break;
-#else
-		return (EOPNOTSUPP);
-#endif /* FIFO */
-
-	default:
-
-		break;
-	}
-
-	if (ip->i_number == EXT2_ROOTINO)
-		vp->v_flag |= VROOT;
-
-	/* Initialize modrev times */
-	getmicrouptime(&tv);
-	ip->i_modrev = (u_quad_t)tv.tv_sec << 32;
-	ip->i_modrev |= (u_quad_t)tv.tv_usec * 4294;
-
-	*vpp = vp;
-
-	return (0);
-}

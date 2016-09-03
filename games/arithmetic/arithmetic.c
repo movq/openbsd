@@ -1,4 +1,4 @@
-/*	$OpenBSD: arithmetic.c,v 1.26 2016/01/27 13:42:08 gsoares Exp $	*/
+/*	$OpenBSD: arithmetic.c,v 1.8 1998/09/15 05:22:45 pjanzen Exp $	*/
 
 /*
  * Copyright (c) 1989, 1993
@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,6 +35,20 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1989, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)arithmetic.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: arithmetic.c,v 1.8 1998/09/15 05:22:45 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
 /*
  * By Eamonn McManus, Trinity College Dublin <emcmanus@cs.tcd.ie>.
@@ -60,22 +78,23 @@
  * properly.
  */
 
+#include <sys/types.h>
 #include <err.h>
 #include <ctype.h>
-#include <limits.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
-int	getrandom(int, int, int);
-__dead void	intr(int);
-int	opnum(int);
-void	penalise(int, int, int);
-int	problem(void);
-void	showstats(void);
-__dead void	usage(void);
+int	getrandom __P((int, int, int));
+void	intr __P((int));
+int	opnum __P((int));
+void	penalise __P((int, int, int));
+int	problem __P((void));
+void	showstats __P((void));
+void	usage __P((void));
 
 const char keylist[] = "+-x/";
 const char defaultkeys[] = "+-";
@@ -94,13 +113,17 @@ time_t qtime;
  * so far are printed.
  */
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
+	extern char *optarg;
+	extern int optind;
 	int ch, cnt;
-	const char *errstr;
 
-	if (pledge("stdio", NULL) == -1)
-		err(1, "pledge");
+	/* revoke privs */
+	setegid(getgid());
+	setgid(getgid());
 
 	while ((ch = getopt(argc, argv, "hr:o:")) != -1)
 		switch(ch) {
@@ -114,16 +137,19 @@ main(int argc, char *argv[])
 			break;
 		}
 		case 'r':
-			rangemax = strtonum(optarg, 1, INT_MAX, &errstr);
-			if (errstr)
-				errx(1, "invalid range, %s: %s", errstr, optarg);
+			if ((rangemax = atoi(optarg)) <= 0)
+				errx(1, "invalid range.");
 			break;
+		case '?':
 		case 'h':
 		default:
 			usage();
 		}
 	if (argc -= optind)
 		usage();
+
+	/* Seed the random-number generator. */
+	srandom((int)time((time_t *)NULL));
 
 	(void)signal(SIGINT, intr);
 
@@ -134,19 +160,21 @@ main(int argc, char *argv[])
 				intr(0);   /* Print score and exit */
 		showstats();
 	}
+	/* NOTREACHED */
 }
 
 /* Handle interrupt character.  Print score and exit. */
 void
-intr(int dummy)
+intr(dummy)
+	int dummy;
 {
 	showstats();
-	_exit(0);
+	exit(0);
 }
 
 /* Print score.  Original `arithmetic' had a delay after printing it. */
 void
-showstats(void)
+showstats()
 {
 	if (nright + nwrong > 0) {
 		(void)printf("\n\nRights %d; Wrongs %d; Score %d%%",
@@ -167,14 +195,14 @@ showstats(void)
  * more likely to appear in subsequent problems.
  */
 int
-problem(void)
+problem()
 {
-	char *p;
+	register char *p;
 	time_t start, finish;
 	int left, op, right, result;
 	char line[80];
 
-	op = keys[arc4random_uniform(nkeys)];
+	op = keys[random() % nkeys];
 	if (op != '/')
 		right = getrandom(rangemax + 1, op, 1);
 retry:
@@ -195,7 +223,7 @@ retry:
 	case '/':
 		right = getrandom(rangemax, op, 1) + 1;
 		result = getrandom(rangemax + 1, op, 0);
-		left = right * result + arc4random_uniform(right);
+		left = right * result + random() % right;
 		break;
 	}
 
@@ -219,8 +247,8 @@ retry:
 			(void)printf("\n");
 			return(EOF);
 		}
-		for (p = line; isspace((unsigned char)*p); ++p);
-		if (!isdigit((unsigned char)*p)) {
+		for (p = line; *p && isspace(*p); ++p);
+		if (!isdigit(*p)) {
 			(void)printf("Please type a number.\n");
 			continue;
 		}
@@ -279,12 +307,13 @@ struct penalty {
  * forget about the penalty (how likely is this, anyway?).
  */
 void
-penalise(int value, int op, int operand)
+penalise(value, op, operand)
+	int value, op, operand;
 {
 	struct penalty *p;
 
 	op = opnum(op);
-	if ((p = malloc(sizeof(*p))) == NULL)
+	if ((p = (struct penalty *)malloc((u_int)sizeof(*p))) == NULL)
 		return;
 	p->next = penlist[op][operand];
 	penlist[op][operand] = p;
@@ -299,13 +328,14 @@ penalise(int value, int op, int operand)
  * we find the corresponding value and return that, decreasing its penalty.
  */
 int
-getrandom(int maxval, int op, int operand)
+getrandom(maxval, op, operand)
+	int maxval, op, operand;
 {
 	int value;
-	struct penalty **pp, *p;
+	register struct penalty **pp, *p;
 
 	op = opnum(op);
-	value = arc4random_uniform(maxval + penalty[op][operand]);
+	value = random() % (maxval + penalty[op][operand]);
 
 	/*
 	 * 0 to maxval - 1 is a number to be used directly; bigger values
@@ -337,25 +367,26 @@ getrandom(int maxval, int op, int operand)
 	 * correspond to the actual sum of penalties in the list.  Provide an
 	 * obscure message.
 	 */
-	errx(1, "bug: inconsistent penalties.");
+	errx(1, "bug: inconsistent penalties\n");
+	/* NOTREACHED */
 }
 
 /* Return an index for the character op, which is one of [+-x/]. */
 int
-opnum(int op)
+opnum(op)
+	int op;
 {
 	char *p;
 
 	if (op == 0 || (p = strchr(keylist, op)) == NULL)
-		errx(1, "bug: op %c not in keylist %s.", op, keylist);
+		errx(1, "bug: op %c not in keylist %s\n", op, keylist);
 	return(p - keylist);
 }
 
 /* Print usage message and quit. */
 void
-usage(void)
+usage()
 {
-	extern char *__progname;
-	(void)fprintf(stderr, "usage: %s [-o +-x/] [-r range]\n",  __progname);
+	(void)fprintf(stderr, "usage: arithmetic [-o +-x/] [-r range]\n");
 	exit(1);
 }

@@ -1,5 +1,3 @@
-.\"	$OpenBSD: ref.so,v 1.5 2004/01/12 18:13:23 millert Exp $
-.\"
 .\" Copyright (c) 1994
 .\"     The Regents of the University of California.  All rights reserved.
 .\" Copyright (c) 1994, 1995, 1996
@@ -50,11 +48,7 @@
 ..
 .\" typewriter font
 .de LI
-.if n \{\
-\&\fR\\$1\fP\\$2
-.el
 \&\fC\\$1\fP\\$2
-.\}
 ..
 .\" ex/vi names in command font
 .de EV
@@ -74,11 +68,7 @@
 ..
 .\" paren quoted (typewriter font)
 .de PQ
-.if n \{\
-(\*(lq\fR\\$1\fP\*(rq)\\$2
-.el
 (\*(lq\fC\\$1\fP\*(rq)\\$2
-.\}
 ..
 .\" quoted bold
 .de QB
@@ -98,11 +88,7 @@
 ..
 .\" quoted (typewriter font)
 .de QT
-.if n \{\
-\*(lq\fB\\$1\fP\*(rq\\$2
-.el
 \*(lq\fC\\$1\fP\*(rq\\$2
-.\}
 ..
 .\" section macro to build TOC
 .de SH

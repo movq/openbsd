@@ -1,4 +1,3 @@
-.\"	$OpenBSD: atanh.3,v 1.18 2016/04/27 06:44:54 jmc Exp $
 .\" Copyright (c) 1985, 1991 Regents of the University of California.
 .\" All rights reserved.
 .\"
@@ -10,7 +9,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -27,52 +30,44 @@
 .\" SUCH DAMAGE.
 .\"
 .\"     from: @(#)atanh.3	5.2 (Berkeley) 5/6/91
+.\"	$Id: atanh.3,v 1.6 1999/07/07 10:50:05 aaron Exp $
 .\"
-.Dd $Mdocdate: April 27 2016 $
+.Dd May 6, 1991
 .Dt ATANH 3
 .Os
 .Sh NAME
 .Nm atanh ,
-.Nm atanhf ,
-.Nm atanhl
+.Nm atanhf
 .Nd inverse hyperbolic tangent functions
 .Sh SYNOPSIS
-.In math.h
+.Fd #include <math.h>
 .Ft double
 .Fn atanh "double x"
 .Ft float
 .Fn atanhf "float x"
-.Ft long double
-.Fn atanhl "long double x"
 .Sh DESCRIPTION
 The
 .Fn atanh
-function computes the inverse hyperbolic tangent
+and
+.Fn atanhf
+functions compute the inverse hyperbolic tangent
 of the real
 argument
 .Ar x .
-The
-.Fn atanhf
-function is a single precision version of
-.Fn atanh .
-The
-.Fn atanhl
-function is an extended precision version of
-.Fn atanh .
 .Sh RETURN VALUES
 If |x|>=1,
-.Fn atanh "x" ,
-.Fn atanhf "x"
+.Fn atanh "x"
 and
-.Fn atanhl "x"
-return +infinity, -infinity or NaN, and set the global variable
+.Fn atanhf "x"
+return +inf, -inf or NaN, and sets the global variable
 .Va errno
 to EDOM.
 .Sh SEE ALSO
 .Xr acosh 3 ,
 .Xr asinh 3 ,
 .Xr exp 3 ,
-.Xr fpclassify 3
+.Xr infnan 3 ,
+.Xr math 3
 .Sh HISTORY
 The
 .Fn atanh

@@ -1,7 +1,6 @@
 /* This file is output-file.h
 
-   Copyright 1987, 1988, 1989, 1990, 1991, 1992
-   Free Software Foundation, Inc.
+   Copyright (C) 1987-1992 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -19,8 +18,8 @@
    along with GAS; see the file COPYING.  If not, write to
    the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
-void output_file_append (char *where, long length, char *filename);
-void output_file_close (char *filename);
-void output_file_create (char *name);
+void output_file_append PARAMS ((char *where, long length, char *filename));
+void output_file_close PARAMS ((char *filename));
+void output_file_create PARAMS ((char *name));
 
 /* end of output-file.h */

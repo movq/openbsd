@@ -1,17 +1,5 @@
-#	$OpenBSD: Makefile,v 1.10 2015/08/29 16:48:22 deraadt Exp $
+#	$OpenBSD: Makefile,v 1.4 1997/09/17 14:19:04 deraadt Exp $
 
-SUBDIR= bsd.rd miniroot floppy floppyB floppyC cdfs
-
-.if	make(obj) || make(cleandir) || make(clean)
-SUBDIR+= iso
-.endif
-
-unconfig:
-	cd bsd.rd; ${MAKE} unconfig
-	cd miniroot; ${MAKE} unconfig
-	cd floppy; ${MAKE} unconfig
-	cd floppyB; ${MAKE} unconfig
-	cd floppyC; ${MAKE} unconfig
-	cd cdfs; ${MAKE} unconfig
+SUBDIR= ramdisk
 
 .include <bsd.subdir.mk>

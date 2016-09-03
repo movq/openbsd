@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-#	$OpenBSD: updatedb.sh,v 1.13 2015/08/14 03:02:07 rzalamena Exp $
+#	$OpenBSD: updatedb.sh,v 1.10 1997/12/13 20:06:14 deraadt Exp $
 #
 # Copyright (c) September 1995 Wolfram Schneider <wosch@FreeBSD.org>. Berlin.
 # All rights reserved.
@@ -28,7 +28,7 @@
 #
 # updatedb - update locate database for local mounted filesystems
 #
-# $Id: updatedb.sh,v 1.13 2015/08/14 03:02:07 rzalamena Exp $
+# $Id: updatedb.sh,v 1.10 1997/12/13 20:06:14 deraadt Exp $
 
 LOCATE_CONFIG="/etc/locate.rc"
 if [ -f "$LOCATE_CONFIG" -a -r "$LOCATE_CONFIG" ]; then
@@ -41,12 +41,12 @@ TMPDIR=${TMPDIR:-/tmp}; export TMPDIR;
 
 PATH=$LIBEXECDIR:/bin:/usr/bin:$PATH; export PATH
 
-USAGE="usage: $0 [--fcodes=dbfile] [--filesystems='type ...'] [--prunepaths='dir ...'] [--searchpaths='dir ...'] [--tmpdir=dir]"
+USAGE="Usage: $0 [--tmpdir=dir] [--fcodes=dbfile] [--searchpaths='dir1 dir2...'] [--prunepaths='dir1 dir2...'] [--filesystems='type1 type2...']"
 
 : ${mklocatedb=locate.mklocatedb}	 # make locate database program
 : ${FCODES=/var/db/locate.database}	 # the database
 : ${SEARCHPATHS="/"}			 # directories to be put in the database
-: ${PRUNEPATHS="/tmp /var/tmp"}		 # unwanted directories
+: ${PRUNEPATHS="/tmp /usr/tmp /var/tmp"} # unwanted directories
 : ${FILESYSTEMS="ffs ufs"}		 # allowed filesystems 
 : ${find=find}
 
@@ -95,7 +95,7 @@ esac
 
 tmp=`mktemp ${TMPDIR=/tmp}/_updatedb.XXXXXXXXXX` || exit 1
 trap 'rm -rf $tmp' 0 1 2 3 5 10 15
-
+		
 # search locally
 # echo $find $SEARCHPATHS $excludes -or -print && exit
 if $find $SEARCHPATHS $excludes -or -print 2>/dev/null | 

@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_visual.c,v 1.10 2016/01/06 22:28:52 millert Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)ex_visual.c	10.13 (Berkeley) 6/28/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -29,10 +31,12 @@
  * ex_visual -- :[line] vi[sual] [^-.+] [window_size] [flags]
  *	Switch to visual mode.
  *
- * PUBLIC: int ex_visual(SCR *, EXCMD *);
+ * PUBLIC: int ex_visual __P((SCR *, EXCMD *));
  */
 int
-ex_visual(SCR *sp, EXCMD *cmdp)
+ex_visual(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	SCR *tsp;
 	size_t len;
@@ -42,7 +46,7 @@ ex_visual(SCR *sp, EXCMD *cmdp)
 	/* If open option off, disallow visual command. */
 	if (!O_ISSET(sp, O_OPEN)) {
 		msgq(sp, M_ERR,
-	    "The visual command requires that the open option be set");
+	    "175|The visual command requires that the open option be set");
 		return (1);
 	}
 
@@ -77,9 +81,9 @@ ex_visual(SCR *sp, EXCMD *cmdp)
 
 	if (FL_ISSET(cmdp->iflags, E_C_COUNT))
 		len = snprintf(buf, sizeof(buf),
-		     "%luz%c%lu", (ulong)sp->lno, pos, cmdp->count);
+		     "%luz%c%lu", sp->lno, pos, cmdp->count);
 	else
-		len = snprintf(buf, sizeof(buf), "%luz%c", (ulong)sp->lno, pos);
+		len = snprintf(buf, sizeof(buf), "%luz%c", sp->lno, pos);
 	if (len >= sizeof(buf))
 		len = sizeof(buf) - 1;
 	(void)v_event_push(sp, NULL, buf, len, CH_NOMAP | CH_QUOTED);

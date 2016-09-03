@@ -1,78 +1,57 @@
-# $Id: Makefile.am,v 1.6 2006/08/04 10:40:02 jmc Exp $
-# Makefile.am for texinfo/doc.
-# Run automake in .. to produce Makefile.in from this.
-#
-# This file is free software; as a special exception the author gives
-# unlimited permission to copy and/or distribute it, with or without
-# modifications, as long as this notice is preserved.
-#
-# This program is distributed in the hope that it will be useful, but
-# WITHOUT ANY WARRANTY, to the extent permitted by law; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+## Makefile.am for texinfo/emacs.
+## $Id: Makefile.am,v 1.2 1999/01/11 16:38:02 espie Exp $
+## Run automake in .. to produce Makefile.in from this.
 
-# Put texinfo.txi first because that's the most important.
-info_TEXINFOS = texinfo.txi info-stnd.texi info.texi
-DISTCLEANFILES = texinfo texinfo-* info*.info*
+info_TEXINFOS = info-stnd.texi info.texi texinfo.txi
 
-man_MANS = info.1 infokey.1 install-info.1 makeinfo.1 texindex.1 texi2dvi.1 \
-           info.5 texinfo.5
-
-# Use the programs built in our distribution, taking account of possible
-# cross-compiling.
-MAKEINFO = $(top_builddir)/$(native_tools)/makeinfo/makeinfo
-INSTALL_INFO = $(top_builddir)/$(native_tools)/util/install-info
-
-TXI_XLATE = txi-cs.tex txi-de.tex txi-en.tex txi-es.tex txi-fr.tex \
-	    txi-it.tex txi-nl.tex txi-no.tex txi-pl.tex txi-pt.tex txi-tr.tex
+# Use the programs built in our distribution.
+MAKEINFO = ../makeinfo/makeinfo
+INSTALL_INFO = ../util/install-info
 
 # Include our texinfo.tex, not Automake's.
-EXTRA_DIST = epsf.tex pdfcolor.tex texinfo.tex \
-             fdl.texi \
-	     $(man_MANS) $(TXI_XLATE)
+EXTRA_DIST = macro.texi userdoc.texi epsf.tex texinfo.tex
 
-if INSTALL_WARNINGS
+# We try to discover this via configure just to give a better help message.
+TEXMF = @TEXMF@
+
 install-data-local:
-	@echo
-	@echo "WARNING: If your texmf tree does not already contain"
-	@echo "         up-to-date versions, you must install"
-	@echo "             texinfo.tex and txi-??.tex manually,"
-	@echo "         perhaps in TEXMF/tex/texinfo/,"
-	@echo "         where TEXMF is a root of your TeX tree."
-	@echo "         See doc/README for some considerations."
-	@echo "         You can run make TEXMF=/your/texmf install-tex to do this."
-	@echo
-	@echo "         You may also need to install epsf.tex and (if you"
-	@echo "         use pdftex) pdfcolor.tex in TEXMF/tex/generic/dvips"
-	@echo "         and TEXMF/pdftex/plain/misc/pdfcolor.tex respectively,"
-	@echo "         if your TeX installation did not include them."
-endif
-
-texmf_texinfo = $(TEXMF)/tex/texinfo
-texmf_dvips = $(TEXMF)/tex/generic/dvips
-texmf_pdftex_misc = $(TEXMF)/pdftex/plain/misc
-install-tex:
-	test -n "$(TEXMF)" || (echo "TEXMF must be set." >&2; exit 1)
-	$(mkinstalldirs) $(DESTDIR)$(texmf_texinfo) $(DESTDIR)$(texmf_dvips) $(DESTDIR)$(texmf_pdftex_misc)
-	$(INSTALL_DATA) $(srcdir)/texinfo.tex $(DESTDIR)$(texmf_texinfo)/texinfo.tex
-	$(INSTALL_DATA) $(srcdir)/epsf.tex $(DESTDIR)$(texmf_dvips)/epsf.tex
-	$(INSTALL_DATA) $(srcdir)/pdfcolor.tex $(DESTDIR)$(texmf_pdftex_misc)/pdfcolor.tex
-	for f in $(TXI_XLATE); do \
-	  $(INSTALL_DATA) $(srcdir)/$$f $(DESTDIR)$(texmf_texinfo)/$$f; done
-
-# The man pages depend on the --help strings and the version number.
-if MAINTAINER_MODE
-common_mandeps = $(top_srcdir)/configure.ac
-info.1: $(top_srcdir)/info/info.c $(common_mandeps)
-	$(HELP2MAN) --name="read Info documents" `basename $@ .1` >$@
-install-info.1: $(top_srcdir)/util/install-info.c $(common_mandeps)
-	$(HELP2MAN) --name="update info/dir entries" `basename $@ .1` >$@
-makeinfo.1: $(top_srcdir)/makeinfo/makeinfo.c $(common_mandeps)
-	$(HELP2MAN) --name="translate Texinfo documents" `basename $@ .1` >$@
-texi2dvi.1: $(top_srcdir)/util/texi2dvi $(common_mandeps)
-	$(HELP2MAN) --name="print Texinfo documents" `basename $@ .1` >$@
-texindex.1: $(top_srcdir)/util/texindex.c $(common_mandeps)
-	$(HELP2MAN) --name="sort Texinfo index files" `basename $@ .1` >$@
-endif
+	@echo "WARNING: You must install texinfo.tex and epsf.tex manually,"
+	@echo "WARNING: perhaps in $(TEXMF)/tex/texinfo/"
+	@echo "WARNING: and $(TEXMF)/tex/generic/dvips/ respectively."
+	@echo "WARNING: See doc/README for some considerations."
 
 # Do not create info files for distribution.
 dist-info:
+
+# Do not try to build the info files in $(srcdir),
+# since we don't distribute them.
+.texi.info:
+	$(MAKEINFO) -I$(srcdir) `echo $< | sed 's,.*/,,'`
+texinfo: $(srcdir)/texinfo.txi
+	$(MAKEINFO) -I$(srcdir) texinfo.txi
+
+# Similarly, Do not try to install the info files from $(srcdir).
+install-info-am: $(INFO_DEPS)
+	@$(NORMAL_INSTALL)
+	$(mkinstalldirs) $(infodir)
+	@for file in $(INFO_DEPS); do \
+	  d=.; \
+	  for ifile in `cd $$d && echo $$file $$file-[0-9] $$file-[0-9][0-9]`; do \
+	    if test -f $$d/$$ifile; then \
+	      echo " $(INSTALL_DATA) $$d/$$ifile $(infodir)/$$ifile"; \
+	      $(INSTALL_DATA) $$d/$$ifile $(infodir)/$$ifile; \
+	    else : ; fi; \
+	  done; \
+	done
+	@$(POST_INSTALL)
+	@if $(SHELL) -c '$(INSTALL_INFO) --version | sed 1q | fgrep -s -v -i debian' >/dev/null 2>&1; then \
+	  for file in $(INFO_DEPS); do \
+	    echo " $(INSTALL_INFO) --info-dir=$(infodir) $(infodir)/$$file";\
+	    $(INSTALL_INFO) --info-dir=$(infodir) $(infodir)/$$file || :;\
+	  done; \
+	else : ; fi
+
+
+# Remove the info files at make distclean.
+distclean-aminfo:
+	rm -f texinfo texinfo-* info*.info*

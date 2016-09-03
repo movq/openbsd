@@ -1,4 +1,3 @@
-/*	$OpenBSD: rbootd.c,v 1.31 2016/05/29 02:19:02 guenther Exp $	*/
 /*	$NetBSD: rbootd.c,v 1.5 1995/10/06 05:12:17 thorpej Exp $	*/
 
 /*
@@ -21,7 +20,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -43,61 +46,67 @@
  * Author: Jeff Forys, University of Utah CSS
  */
 
-#include <sys/time.h>
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1992, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
 
+#ifndef lint
+/*static char sccsid[] = "@(#)rbootd.c	8.1 (Berkeley) 6/4/93";*/
+static char rcsid[] = "$NetBSD: rbootd.c,v 1.5 1995/10/06 05:12:17 thorpej Exp $";
+#endif /* not lint */
+
+#include <sys/param.h>
+#include <sys/time.h>
+#include <ctype.h>
 #include <err.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
 #include <unistd.h>
-#include <limits.h>
-#include <pwd.h>
-#include <poll.h>
-
 #include "defs.h"
 
 extern	char *__progname;	/* from crt0.o */
 
-volatile sig_atomic_t	dodebugoff;
-volatile sig_atomic_t	dodebugon;
-volatile sig_atomic_t	doreconfig;
-
-void DebugOff(int);
-void DebugOn(int);
-void ReConfig(int);
-void Exit(int);
-
-void DoDebugOff(void);
-void DoDebugOn(void);
-void DoReConfig(void);
-
-void DoTimeout(void);
-CLIENT *FindClient(RMPCONN *);
-
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
-	int c, fd;
-	struct passwd *pw;
-	struct pollfd pfd[1];
+	int c, fd, omask, maxfds;
+	fd_set rset;
 
-	closefrom(STDERR_FILENO + 1);
+	/*
+	 *  Close any open file descriptors.
+	 *  Temporarily leave stdin & stdout open for `-d',
+	 *  and stderr open for any pre-syslog error messages.
+	 */
+	{
+		int i, nfds = getdtablesize();
 
-	if ((pw = getpwnam("_rbootd")) == NULL)
-		err(1, "getpwnam");
+		for (i = 0; i < nfds; i++)
+			if (i != fileno(stdin) && i != fileno(stdout) &&
+			    i != fileno(stderr))
+				(void) close(i);
+	}
 
+	/*
+	 *  Parse any arguments.
+	 */
 	while ((c = getopt(argc, argv, "adi:")) != -1)
-		switch (c) {
-		case 'a':
+		switch(c) {
+		    case 'a':
 			BootAny++;
 			break;
-		case 'd':
+		    case 'd':
 			DebugFlg++;
 			break;
-		case 'i':
+		    case 'i':
 			IntfName = optarg;
 			break;
 		}
@@ -127,6 +136,8 @@ main(int argc, char *argv[])
 		(void) signal(SIGUSR2, DebugOff);
 	}
 
+	openlog(__progname, LOG_PID, LOG_DAEMON);
+
 	/*
 	 *  If no interface was specified, get one now.
 	 *
@@ -139,21 +150,42 @@ main(int argc, char *argv[])
 		char *errmsg;
 
 		if ((IntfName = BpfGetIntfName(&errmsg)) == NULL) {
-			/* BpfGetIntfName() returns safe names, using %m */
-			syslog(LOG_ERR, "%s", errmsg);
-			DoExit();
+			syslog(LOG_NOTICE, "restarted (??)");
+			syslog(LOG_ERR, errmsg);
+			Exit(0);
 		}
 	}
 
-	openlog(__progname, LOG_PID, LOG_DAEMON);
-	fd = BpfOpen();
 	syslog(LOG_NOTICE, "restarted (%s)", IntfName);
 
 	(void) signal(SIGHUP, ReConfig);
 	(void) signal(SIGINT, Exit);
 	(void) signal(SIGTERM, Exit);
 
-	gethostname(MyHost, HOST_NAME_MAX+1);
+	/*
+	 *  Grab our host name and pid.
+	 */
+	if (gethostname(MyHost, MAXHOSTNAMELEN) < 0) {
+		syslog(LOG_ERR, "gethostname: %m");
+		Exit(0);
+	}
+	MyHost[MAXHOSTNAMELEN] = '\0';
+
+	MyPid = getpid();
+
+	/*
+	 *  Write proc's pid to a file.
+	 */
+	{
+		FILE *fp;
+
+		if ((fp = fopen(PidFile, "w")) != NULL) {
+			(void) fprintf(fp, "%d\n", (int) MyPid);
+			(void) fclose(fp);
+		} else {
+			syslog(LOG_WARNING, "fopen: failed (%s)", PidFile);
+		}
+	}
 
 	/*
 	 *  All boot files are relative to the boot directory, we might
@@ -161,73 +193,62 @@ main(int argc, char *argv[])
 	 */
 	if (chdir(BootDir) < 0) {
 		syslog(LOG_ERR, "chdir: %m (%s)", BootDir);
-		DoExit();
+		Exit(0);
 	}
 
 	/*
 	 *  Initial configuration.
 	 */
+	omask = sigblock(sigmask(SIGHUP));	/* prevent reconfig's */
 	if (GetBootFiles() == 0)		/* get list of boot files */
-		DoExit();
+		Exit(0);
 	if (ParseConfig() == 0)			/* parse config file */
-		DoExit();
+		Exit(0);
 
-	if (chroot(BootDir) == -1) {
-		syslog(LOG_CRIT, "chroot %s: %m", BootDir);
-		exit(1);
-	}
-	if (chdir("/") == -1) {
-		syslog(LOG_CRIT, "chdir(\"/\"): %m");
-		exit(1);
-	}
-	if (setgroups(1, &pw->pw_gid) ||
-	    setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) ||
-	    setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid)) {
-		syslog(LOG_CRIT, "can't drop privileges: %m");
-		exit(1);
-	}
-	endpwent();
+	/*
+	 *  Open and initialize a BPF device for the appropriate interface.
+	 *  If an error is encountered, a message is displayed and Exit()
+	 *  is called.
+	 */
+	fd = BpfOpen();
+
+	(void) sigsetmask(omask);		/* allow reconfig's */
 
 	/*
 	 *  Main loop: receive a packet, determine where it came from,
 	 *  and if we service this host, call routine to handle request.
 	 */
-	pfd[0].fd = fd;
-	pfd[0].events = POLLIN;
+	maxfds = fd + 1;
+	FD_ZERO(&rset);
+	FD_SET(fd, &rset);
 	for (;;) {
+		struct timeval timeout;
+		fd_set r;
 		int nsel;
 
-		/*
-		 * Check pending actions
-		 */
-		if (dodebugoff) {
-			DoDebugOff();
-			dodebugoff = 0;
-		}
-		if (dodebugon) {
-			DoDebugOn();
-			dodebugon = 0;
-		}
-		if (doreconfig) {
-			DoReConfig();
-			doreconfig = 0;
-		}
+		r = rset;
 
-		nsel = poll(pfd, 1, RmpConns ? RMP_TIMEOUT * 100 : -1);
+		if (RmpConns == NULL) {		/* timeout isnt necessary */
+			nsel = select(maxfds, &r, NULL, NULL, NULL);
+		} else {
+			timeout.tv_sec = RMP_TIMEOUT;
+			timeout.tv_usec = 0;
+			nsel = select(maxfds, &r, NULL, NULL, &timeout);
+		}
 
 		if (nsel < 0) {
 			if (errno == EINTR)
 				continue;
-			syslog(LOG_ERR, "poll: %m");
-			DoExit();
+			syslog(LOG_ERR, "select: %m");
+			Exit(0);
 		} else if (nsel == 0) {		/* timeout */
-			DoTimeout();		/* clear stale conns */
+			DoTimeout();			/* clear stale conns */
 			continue;
 		}
 
-		if (pfd[0].revents & POLLIN) {
+		if (FD_ISSET(fd, &r)) {
 			RMPCONN rconn;
-			CLIENT *client;
+			CLIENT *client, *FindClient();
 			int doread = 1;
 
 			while (BpfRead(&rconn, doread)) {
@@ -235,6 +256,8 @@ main(int argc, char *argv[])
 
 				if (DbgFp != NULL)	/* display packet */
 					DispPkt(&rconn,DIR_RCVD);
+
+				omask = sigblock(sigmask(SIGHUP));
 
 				/*
 				 *  If we do not restrict service, set the
@@ -247,12 +270,15 @@ main(int argc, char *argv[])
 					client = NULL;
 				} else if ((client=FindClient(&rconn))==NULL) {
 					syslog(LOG_INFO,
-					    "%s: boot packet ignored",
-					    EnetStr(&rconn));
+					       "%s: boot packet ignored",
+					       EnetStr(&rconn));
+					(void) sigsetmask(omask);
 					continue;
 				}
 
 				ProcessPacket(&rconn,client);
+
+				(void) sigsetmask(omask);
 			}
 		}
 	}
@@ -271,12 +297,12 @@ main(int argc, char *argv[])
 **		- Timed out connections in `RmpConns' will be freed.
 */
 void
-DoTimeout(void)
+DoTimeout()
 {
-	RMPCONN *rtmp;
+	register RMPCONN *rtmp;
 	struct timeval now;
 
-	(void) gettimeofday(&now, NULL);
+	(void) gettimeofday(&now, (struct timezone *)0);
 
 	/*
 	 *  For each active connection, if RMP_TIMEOUT seconds have passed
@@ -285,7 +311,7 @@ DoTimeout(void)
 	for (rtmp = RmpConns; rtmp != NULL; rtmp = rtmp->next)
 		if ((rtmp->tstamp.tv_sec + RMP_TIMEOUT) < now.tv_sec) {
 			syslog(LOG_WARNING, "%s: connection timed out (%u)",
-			    EnetStr(rtmp), rtmp->rmp.r_type);
+			       EnetStr(rtmp), rtmp->rmp.r_type);
 			RemoveConn(rtmp);
 		}
 }
@@ -294,7 +320,7 @@ DoTimeout(void)
 **  FindClient -- Find client associated with a packet.
 **
 **	Parameters:
-**		rconn - the new packet.
+**		rconn - the new packet. 
 **
 **	Returns:
 **		Pointer to client info if found, NULL otherwise.
@@ -306,14 +332,16 @@ DoTimeout(void)
 **		- This routine must be called with SIGHUP blocked since
 **		  a reconfigure can invalidate the information returned.
 */
+
 CLIENT *
-FindClient(RMPCONN *rconn)
+FindClient(rconn)
+	register RMPCONN *rconn;
 {
-	CLIENT *ctmp;
+	register CLIENT *ctmp;
 
 	for (ctmp = Clients; ctmp != NULL; ctmp = ctmp->next)
 		if (bcmp((char *)&rconn->rmp.hp_hdr.saddr[0],
-		    (char *)&ctmp->addr[0], RMP_ADDRLEN) == 0)
+		         (char *)&ctmp->addr[0], RMP_ADDRLEN) == 0)
 			break;
 
 	return(ctmp);
@@ -332,18 +360,14 @@ FindClient(RMPCONN *rconn)
 **		- This process ceases to exist.
 */
 void
-Exit(int sig)
+Exit(sig)
+	int sig;
 {
-	struct syslog_data sdata = SYSLOG_DATA_INIT;
-
-	syslog_r(LOG_ERR, &sdata, "going down on signal %d", sig);
-	_exit(1);
-}
-
-void
-DoExit(void)
-{
-	syslog(LOG_ERR, "going down on fatal error");
+	if (sig > 0)
+		syslog(LOG_ERR, "going down on signal %d", sig);
+	else
+		syslog(LOG_ERR, "going down with fatal error");
+	BpfClose();
 	exit(1);
 }
 
@@ -358,30 +382,25 @@ DoExit(void)
 **
 **	Side Effects:
 **		- All active connections are dropped.
-**		- List of bootable files is changed.
+**		- List of boot-able files is changed.
 **		- List of clients is changed.
 **
 **	Warnings:
 **		- This routine must be called with SIGHUP blocked.
 */
 void
-ReConfig(int signo)
-{
-	doreconfig = 1;
-}
-
-void
-DoReConfig(void)
+ReConfig(signo)
+	int signo;
 {
 	syslog(LOG_NOTICE, "reconfiguring boot server");
 
 	FreeConns();
 
 	if (GetBootFiles() == 0)
-		DoExit();
+		Exit(0);
 
 	if (ParseConfig() == 0)
-		DoExit();
+		Exit(0);
 }
 
 /*
@@ -397,13 +416,8 @@ DoReConfig(void)
 **		- Debug file is closed.
 */
 void
-DebugOff(int signo)
-{
-	dodebugoff = 1;
-}
-
-void
-DoDebugOff(void)
+DebugOff(signo)
+	int signo;
 {
 	if (DbgFp != NULL)
 		(void) fclose(DbgFp);
@@ -425,13 +439,8 @@ DoDebugOff(void)
 **		  otherwise do nothing.
 */
 void
-DebugOn(int signo)
-{
-	dodebugon = 1;
-}
-
-void
-DoDebugOn(void)
+DebugOn(signo)
+	int signo;
 {
 	if (DbgFp == NULL) {
 		if ((DbgFp = fopen(DbgFile, "w")) == NULL)

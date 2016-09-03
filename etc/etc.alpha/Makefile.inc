@@ -1,16 +1,26 @@
-#	$OpenBSD: Makefile.inc,v 1.25 2015/08/29 17:22:41 deraadt Exp $
+#	$OpenBSD: Makefile.inc,v 1.10 1997/10/31 22:20:45 deraadt Exp $
+#	etc.alpha/Makefile.inc -- alpha-specific etc Makefile targets
 
-KERNELS += GENERIC.MP bsd.mp
+.ifdef DESTDIR
 
-KERNELS += GENERIC.MP bsd.mp
+snap_md: binutils bsd distrib boot
 
-bootblocks:
-	cp ${DESTDIR}/usr/mdec/boot ${RELEASEDIR}
-	cp ${DESTDIR}/usr/mdec/bootxx ${RELEASEDIR}
-	cp ${DESTDIR}/usr/mdec/netboot ${RELEASEDIR}
-	cp ${DESTDIR}/usr/mdec/netboot.mop ${RELEASEDIR}
+binutils:
+	cd ${DESTDIR} && tar cf - usr/*openbsd* \
+	    | ${GZIP} ${GZIPFLAGS} > snapshot/usr.binutils.tar${GZIPEXT}
 
-MDEXT=	bsd.rd cd${OSrev}.iso \
-	miniroot${OSrev}.fs \
-	floppy${OSrev}.fs floppyB${OSrev}.fs floppyC${OSrev}.fs \
-	boot bootxx netboot netboot.mop
+bsd:
+	cd ${.CURDIR}/../sys/arch/alpha/conf && config GENERIC
+	cd ${.CURDIR}/../sys/arch/alpha/compile/GENERIC && \
+	    make clean && make depend && make
+	cp ${.CURDIR}/../sys/arch/alpha/compile/GENERIC/bsd \
+	    ${DESTDIR}/snapshot/bsd
+
+distrib:
+	cd ${.CURDIR}/../distrib && \
+	    make cleandir && make && make install
+
+boot:
+	cp ${DESTDIR}/usr/mdec/boot ${DESTDIR}/snapshot
+
+.endif	# DESTDIR check

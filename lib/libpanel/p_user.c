@@ -1,7 +1,7 @@
-/* $OpenBSD: p_user.c,v 1.4 2010/01/12 23:22:08 nicm Exp $ */
+/*	$OpenBSD: p_user.c,v 1.2 1998/07/24 17:08:18 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2000,2005 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -38,21 +38,20 @@
  */
 #include "panel.priv.h"
 
-MODULE_ID("$Id: p_user.c,v 1.4 2010/01/12 23:22:08 nicm Exp $")
+MODULE_ID("$From: p_user.c,v 1.3 1998/02/11 12:14:01 tom Exp $")
 
-NCURSES_EXPORT(int)
-set_panel_userptr(PANEL * pan, NCURSES_CONST void *uptr)
+int
+set_panel_userptr(PANEL *pan, NCURSES_CONST void *uptr)
 {
-  T((T_CALLED("set_panel_userptr(%p,%p)"), pan, uptr));
-  if (!pan)
-    returnCode(ERR);
+  if(!pan)
+    return(ERR);
   pan->user = uptr;
-  returnCode(OK);
+  return(OK);
 }
 
-NCURSES_EXPORT(NCURSES_CONST void *)
-panel_userptr(const PANEL * pan)
+NCURSES_CONST void*
+panel_userptr(const PANEL *pan)
 {
-  T((T_CALLED("panel_userptr(%p)"), pan));
-  returnCVoidPtr(pan ? pan->user : (NCURSES_CONST void *)0);
+  return(pan ? pan->user : (NCURSES_CONST void *)0);
 }
+

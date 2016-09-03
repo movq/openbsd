@@ -1,5 +1,3 @@
-/*	$OpenBSD: v_status.c,v 1.6 2014/11/12 04:28:41 bentley Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)v_status.c	10.9 (Berkeley) 5/15/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -27,10 +29,12 @@
  * v_status -- ^G
  *	Show the file status.
  *
- * PUBLIC: int v_status(SCR *, VICMD *);
+ * PUBLIC: int v_status __P((SCR *, VICMD *));
  */
 int
-v_status(SCR *sp, VICMD *vp)
+v_status(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	(void)msgq_status(sp, vp->m_start.lno, MSTAT_SHOWLAST);
 	return (0);

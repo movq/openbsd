@@ -1,4 +1,4 @@
-/*	$OpenBSD: nfsv2.h,v 1.6 2014/07/13 15:31:20 mpi Exp $	*/
+/*	$OpenBSD: nfsv2.h,v 1.4 1997/11/07 15:57:44 niklas Exp $	*/
 /*	$NetBSD: nfsv2.h,v 1.2 1996/02/26 23:05:23 gwr Exp $	*/
 
 /*
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -121,43 +125,43 @@ typedef enum {
 
 /* Structs for common parts of the rpc's */
 struct nfsv2_time {
-	u_int32_t	nfs_sec;
-	u_int32_t	nfs_usec;
+	n_long	nfs_sec;
+	n_long	nfs_usec;
 };
 
 /*
  * File attributes and setable attributes.
  */
 struct nfsv2_fattr {
-	u_int32_t	fa_type;
-	u_int32_t	fa_mode;
-	u_int32_t	fa_nlink;
-	u_int32_t	fa_uid;
-	u_int32_t	fa_gid;
-	u_int32_t	fa_size;
-	u_int32_t	fa_blocksize;
-	u_int32_t	fa_rdev;
-	u_int32_t	fa_blocks;
-	u_int32_t	fa_fsid;
-	u_int32_t	fa_fileid;
+	n_long	fa_type;
+	n_long	fa_mode;
+	n_long	fa_nlink;
+	n_long	fa_uid;
+	n_long	fa_gid;
+	n_long	fa_size;
+	n_long	fa_blocksize;
+	n_long	fa_rdev;
+	n_long	fa_blocks;
+	n_long	fa_fsid;
+	n_long	fa_fileid;
 	struct nfsv2_time fa_atime;
 	struct nfsv2_time fa_mtime;
 	struct nfsv2_time fa_ctime;
 };
 
 struct nfsv2_sattr {
-	u_int32_t	sa_mode;
-	u_int32_t	sa_uid;
-	u_int32_t	sa_gid;
-	u_int32_t	sa_size;
+	n_long	sa_mode;
+	n_long	sa_uid;
+	n_long	sa_gid;
+	n_long	sa_size;
 	struct nfsv2_time sa_atime;
 	struct nfsv2_time sa_mtime;
 };
 
 struct nfsv2_statfs {
-	u_int32_t	sf_tsize;
-	u_int32_t	sf_bsize;
-	u_int32_t	sf_blocks;
-	u_int32_t	sf_bfree;
-	u_int32_t	sf_bavail;
+	n_long	sf_tsize;
+	n_long	sf_bsize;
+	n_long	sf_blocks;
+	n_long	sf_bfree;
+	n_long	sf_bavail;
 };

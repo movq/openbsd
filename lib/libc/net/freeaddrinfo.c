@@ -1,5 +1,3 @@
-/*	$OpenBSD: freeaddrinfo.c,v 1.8 2015/12/28 22:08:18 mmcc Exp $	*/
-
 /*
  * Copyright (c) 1996, 1997, 1998, 1999, Craig Metz, All rights reserved.
  *
@@ -36,15 +34,14 @@
 #include <netdb.h>
 
 void
-freeaddrinfo(struct addrinfo *ai)
+freeaddrinfo(ai)
+	struct addrinfo *ai;
 {
 	struct addrinfo *p;
 
-	do {
+	while (ai) {
 		p = ai;
 		ai = ai->ai_next;
-		free(p->ai_canonname);
 		free((void *)p);
-	} while (ai);
+	}
 }
-DEF_WEAK(freeaddrinfo);

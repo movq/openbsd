@@ -1,4 +1,4 @@
-/*	$OpenBSD: ctl_transact.c,v 1.13 2016/02/01 07:29:25 mestre Exp $	*/
+/*	$OpenBSD: ctl_transact.c,v 1.6 1999/03/03 20:43:30 millert Exp $	*/
 /*	$NetBSD: ctl_transact.c,v 1.3 1994/12/09 02:14:12 jtc Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,13 +34,17 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/socket.h>
-#include <netinet/in.h>
-
-#include <errno.h>
-#include <poll.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)ctl_transact.c	8.1 (Berkeley) 6/6/93";
+#endif
+static char rcsid[] = "$OpenBSD: ctl_transact.c,v 1.6 1999/03/03 20:43:30 millert Exp $";
+#endif /* not lint */
 
 #include "talk.h"
+#include <sys/time.h>
+#include <errno.h>
+#include <unistd.h>
 #include "talk_ctl.h"
 
 #define CTL_WAIT 2	/* time to wait for a response, in seconds */
@@ -47,22 +55,29 @@
  * of time
  */
 void
-ctl_transact(struct in_addr target, CTL_MSG msg, int type, CTL_RESPONSE *rp)
+ctl_transact(target, msg, type, rp)
+	struct in_addr target;
+	CTL_MSG msg;
+	int type;
+	CTL_RESPONSE *rp;
 {
-	struct pollfd pfd[1];
+	fd_set read_mask, ctl_mask;
 	int nready, cc;
+	struct timeval wait;
 
 	msg.type = type;
 	daemon_addr.sin_addr = target;
 	daemon_addr.sin_port = daemon_port;
-	pfd[0].fd = ctl_sockt;
-	pfd[0].events = POLLIN;
+	FD_ZERO(&ctl_mask);
+	FD_SET(ctl_sockt, &ctl_mask);
 
 	/*
 	 * Keep sending the message until a response of
 	 * the proper type is obtained.
 	 */
 	do {
+		wait.tv_sec = CTL_WAIT;
+		wait.tv_usec = 0;
 		/* resend message until a response is obtained */
 		do {
 			cc = sendto(ctl_sockt, (char *)&msg, sizeof (msg), 0,
@@ -73,7 +88,8 @@ ctl_transact(struct in_addr target, CTL_MSG msg, int type, CTL_RESPONSE *rp)
 					continue;
 				quit("Error on write to talk daemon", 1);
 			}
-			nready = poll(pfd, 1, CTL_WAIT * 1000);
+			read_mask = ctl_mask;
+			nready = select(32, &read_mask, 0, 0, &wait);
 			if (nready < 0) {
 				if (errno == EINTR)
 					continue;
@@ -92,7 +108,10 @@ ctl_transact(struct in_addr target, CTL_MSG msg, int type, CTL_RESPONSE *rp)
 					continue;
 				quit("Error on read from talk daemon", 1);
 			}
-			nready = poll(pfd, 1, 0);
+			read_mask = ctl_mask;
+			/* an immediate poll */
+			timerclear(&wait);
+			nready = select(32, &read_mask, 0, 0, &wait);
 		} while (nready > 0 && (rp->vers != TALK_VERSION ||
 		    rp->type != type));
 	} while (rp->vers != TALK_VERSION || rp->type != type);

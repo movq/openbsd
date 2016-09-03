@@ -1,5 +1,3 @@
-/*	$OpenBSD: vs_smap.c,v 1.9 2016/01/06 22:28:52 millert Exp $	*/
-
 /*-
  * Copyright (c) 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)vs_smap.c	10.25 (Berkeley) 7/12/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -24,23 +26,26 @@
 #include "../common/common.h"
 #include "vi.h"
 
-static int	vs_deleteln(SCR *, int);
-static int	vs_insertln(SCR *, int);
-static int	vs_sm_delete(SCR *, recno_t);
-static int	vs_sm_down(SCR *, MARK *, recno_t, scroll_t, SMAP *);
-static int	vs_sm_erase(SCR *);
-static int	vs_sm_insert(SCR *, recno_t);
-static int	vs_sm_reset(SCR *, recno_t);
-static int	vs_sm_up(SCR *, MARK *, recno_t, scroll_t, SMAP *);
+static int	vs_deleteln __P((SCR *, int));
+static int	vs_insertln __P((SCR *, int));
+static int	vs_sm_delete __P((SCR *, recno_t));
+static int	vs_sm_down __P((SCR *, MARK *, recno_t, scroll_t, SMAP *));
+static int	vs_sm_erase __P((SCR *));
+static int	vs_sm_insert __P((SCR *, recno_t));
+static int	vs_sm_reset __P((SCR *, recno_t));
+static int	vs_sm_up __P((SCR *, MARK *, recno_t, scroll_t, SMAP *));
 
 /*
  * vs_change --
  *	Make a change to the screen.
  *
- * PUBLIC: int vs_change(SCR *, recno_t, lnop_t);
+ * PUBLIC: int vs_change __P((SCR *, recno_t, lnop_t));
  */
 int
-vs_change(SCR *sp, recno_t lno, lnop_t op)
+vs_change(sp, lno, op)
+	SCR *sp;
+	recno_t lno;
+	lnop_t op;
 {
 	VI_PRIVATE *vip;
 	SMAP *p;
@@ -59,7 +64,7 @@ vs_change(SCR *sp, recno_t lno, lnop_t op)
 	 *
 	 * Check for line #2 before going to the end of the file.
 	 */
-	if (((op == LINE_APPEND && lno == 0) || (op == LINE_INSERT && lno == 1)) &&
+	if ((op == LINE_APPEND && lno == 0 || op == LINE_INSERT && lno == 1) &&
 	    !db_exist(sp, 2)) {
 		lno = 1;
 		op = LINE_RESET;
@@ -164,10 +169,13 @@ vs_change(SCR *sp, recno_t lno, lnop_t op)
  * slot is already filled in, P_BOTTOM means that the TMAP slot is
  * already filled in, and we just finish up the job.
  *
- * PUBLIC: int vs_sm_fill(SCR *, recno_t, pos_t);
+ * PUBLIC: int vs_sm_fill __P((SCR *, recno_t, pos_t));
  */
 int
-vs_sm_fill(SCR *sp, recno_t lno, pos_t pos)
+vs_sm_fill(sp, lno, pos)
+	SCR *sp;
+	recno_t lno;
+	pos_t pos;
 {
 	SMAP *p, tmp;
 	size_t cnt;
@@ -280,7 +288,7 @@ err:	HMAP->lno = 1;
  * is amazingly slow, but it's not clear that anyone will care.
  */
 #define	HANDLE_WEIRDNESS(cnt) {						\
-	if ((cnt) >= sp->t_rows) {					\
+	if (cnt >= sp->t_rows) {					\
 		F_SET(sp, SC_SCR_REFORMAT);				\
 		return (0);						\
 	}								\
@@ -291,7 +299,9 @@ err:	HMAP->lno = 1;
  *	Delete a line out of the SMAP.
  */
 static int
-vs_sm_delete(SCR *sp, recno_t lno)
+vs_sm_delete(sp, lno)
+	SCR *sp;
+	recno_t lno;
 {
 	SMAP *p, *t;
 	size_t cnt_orig;
@@ -339,7 +349,9 @@ vs_sm_delete(SCR *sp, recno_t lno)
  *	Insert a line into the SMAP.
  */
 static int
-vs_sm_insert(SCR *sp, recno_t lno)
+vs_sm_insert(sp, lno)
+	SCR *sp;
+	recno_t lno;
 {
 	SMAP *p, *t;
 	size_t cnt_orig, cnt, coff;
@@ -393,7 +405,9 @@ vs_sm_insert(SCR *sp, recno_t lno)
  *	Reset a line in the SMAP.
  */
 static int
-vs_sm_reset(SCR *sp, recno_t lno)
+vs_sm_reset(sp, lno)
+	SCR *sp;
+	recno_t lno;
 {
 	SMAP *p, *t;
 	size_t cnt_orig, cnt_new, cnt, diff;
@@ -495,10 +509,14 @@ vs_sm_reset(SCR *sp, recno_t lno)
  *	Scroll the SMAP up/down count logical lines.  Different
  *	semantics based on the vi command, *sigh*.
  *
- * PUBLIC: int vs_sm_scroll(SCR *, MARK *, recno_t, scroll_t);
+ * PUBLIC: int vs_sm_scroll __P((SCR *, MARK *, recno_t, scroll_t));
  */
 int
-vs_sm_scroll(SCR *sp, MARK *rp, recno_t count, scroll_t scmd)
+vs_sm_scroll(sp, rp, count, scmd)
+	SCR *sp;
+	MARK *rp;
+	recno_t count;
+	scroll_t scmd;
 {
 	SMAP *smp;
 
@@ -555,7 +573,12 @@ vs_sm_scroll(SCR *sp, MARK *rp, recno_t count, scroll_t scmd)
  *	Scroll the SMAP up count logical lines.
  */
 static int
-vs_sm_up(SCR *sp, MARK *rp, recno_t count, scroll_t scmd, SMAP *smp)
+vs_sm_up(sp, rp, count, scmd, smp)
+	SCR *sp;
+	MARK *rp;
+	scroll_t scmd;
+	recno_t count;
+	SMAP *smp;
 {
 	int cursor_set, echanged, zset;
 	SMAP *ssmp, s1, s2;
@@ -728,10 +751,11 @@ vs_sm_up(SCR *sp, MARK *rp, recno_t count, scroll_t scmd, SMAP *smp)
  * vs_sm_1up --
  *	Scroll the SMAP up one.
  *
- * PUBLIC: int vs_sm_1up(SCR *);
+ * PUBLIC: int vs_sm_1up __P((SCR *));
  */
 int
-vs_sm_1up(SCR *sp)
+vs_sm_1up(sp)
+	SCR *sp;
 {
 	/*
 	 * Delete the top line of the screen.  Shift the screen map
@@ -760,7 +784,9 @@ vs_sm_1up(SCR *sp)
  *	line and other screens back.
  */
 static int
-vs_deleteln(SCR *sp, int cnt)
+vs_deleteln(sp, cnt)
+	SCR *sp;
+	int cnt;
 {
 	GS *gp;
 	size_t oldy, oldx;
@@ -785,7 +811,12 @@ vs_deleteln(SCR *sp, int cnt)
  *	Scroll the SMAP down count logical lines.
  */
 static int
-vs_sm_down(SCR *sp, MARK *rp, recno_t count, scroll_t scmd, SMAP *smp)
+vs_sm_down(sp, rp, count, scmd, smp)
+	SCR *sp;
+	MARK *rp;
+	recno_t count;
+	SMAP *smp;
+	scroll_t scmd;
 {
 	SMAP *ssmp, s1, s2;
 	int cursor_set, ychanged, zset;
@@ -936,7 +967,8 @@ vs_sm_down(SCR *sp, MARK *rp, recno_t count, scroll_t scmd, SMAP *smp)
  *	Erase the small screen area for the scrolling functions.
  */
 static int
-vs_sm_erase(SCR *sp)
+vs_sm_erase(sp)
+	SCR *sp;
 {
 	GS *gp;
 
@@ -954,10 +986,11 @@ vs_sm_erase(SCR *sp)
  * vs_sm_1down --
  *	Scroll the SMAP down one.
  *
- * PUBLIC: int vs_sm_1down(SCR *);
+ * PUBLIC: int vs_sm_1down __P((SCR *));
  */
 int
-vs_sm_1down(SCR *sp)
+vs_sm_1down(sp)
+	SCR *sp;
 {
 	/*
 	 * Insert a line at the top of the screen.  Shift the screen map
@@ -986,7 +1019,9 @@ vs_sm_1down(SCR *sp)
  *	line and other screens back.
  */
 static int
-vs_insertln(SCR *sp, int cnt)
+vs_insertln(sp, cnt)
+	SCR *sp;
+	int cnt;
 {
 	GS *gp;
 	size_t oldy, oldx;
@@ -1011,10 +1046,12 @@ vs_insertln(SCR *sp, int cnt)
  * vs_sm_next --
  *	Fill in the next entry in the SMAP.
  *
- * PUBLIC: int vs_sm_next(SCR *, SMAP *, SMAP *);
+ * PUBLIC: int vs_sm_next __P((SCR *, SMAP *, SMAP *));
  */
 int
-vs_sm_next(SCR *sp, SMAP *p, SMAP *t)
+vs_sm_next(sp, p, t)
+	SCR *sp;
+	SMAP *p, *t;
 {
 	size_t lcnt;
 
@@ -1039,10 +1076,12 @@ vs_sm_next(SCR *sp, SMAP *p, SMAP *t)
  * vs_sm_prev --
  *	Fill in the previous entry in the SMAP.
  *
- * PUBLIC: int vs_sm_prev(SCR *, SMAP *, SMAP *);
+ * PUBLIC: int vs_sm_prev __P((SCR *, SMAP *, SMAP *));
  */
 int
-vs_sm_prev(SCR *sp, SMAP *p, SMAP *t)
+vs_sm_prev(sp, p, t)
+	SCR *sp;
+	SMAP *p, *t;
 {
 	SMAP_FLUSH(t);
 	if (O_ISSET(sp, O_LEFTRIGHT)) {
@@ -1064,10 +1103,12 @@ vs_sm_prev(SCR *sp, SMAP *p, SMAP *t)
  * vs_sm_cursor --
  *	Return the SMAP entry referenced by the cursor.
  *
- * PUBLIC: int vs_sm_cursor(SCR *, SMAP **);
+ * PUBLIC: int vs_sm_cursor __P((SCR *, SMAP **));
  */
 int
-vs_sm_cursor(SCR *sp, SMAP **smpp)
+vs_sm_cursor(sp, smpp)
+	SCR *sp;
+	SMAP **smpp;
 {
 	SMAP *p;
 
@@ -1075,7 +1116,7 @@ vs_sm_cursor(SCR *sp, SMAP **smpp)
 	if (sp->lno < HMAP->lno || sp->lno > TMAP->lno)
 		return (1);
 
-	/* Find the first occurrence of the line. */
+	/* Find the first occurence of the line. */
 	for (p = HMAP; p->lno != sp->lno; ++p);
 
 	/* Fill in the map information until we find the right line. */
@@ -1103,10 +1144,14 @@ vs_sm_cursor(SCR *sp, SMAP **smpp)
  *	(The vi H, M and L commands.)  Here because only the screen routines
  *	know what's really out there.
  *
- * PUBLIC: int vs_sm_position(SCR *, MARK *, u_long, pos_t);
+ * PUBLIC: int vs_sm_position __P((SCR *, MARK *, u_long, pos_t));
  */
 int
-vs_sm_position(SCR *sp, MARK *rp, u_long cnt, pos_t pos)
+vs_sm_position(sp, rp, cnt, pos)
+	SCR *sp;
+	MARK *rp;
+	u_long cnt;
+	pos_t pos;
 {
 	SMAP *smp;
 	recno_t last;
@@ -1123,7 +1168,7 @@ vs_sm_position(SCR *sp, MARK *rp, u_long cnt, pos_t pos)
 			goto sof;
 		smp = HMAP + cnt;
 		if (cnt && !db_exist(sp, smp->lno)) {
-sof:			msgq(sp, M_BERR, "Movement past the end-of-screen");
+sof:			msgq(sp, M_BERR, "220|Movement past the end-of-screen");
 			return (1);
 		}
 		break;
@@ -1159,7 +1204,7 @@ sof:			msgq(sp, M_BERR, "Movement past the end-of-screen");
 			for (; smp->lno > last && smp > HMAP; --smp);
 			if (cnt > smp - HMAP) {
 eof:				msgq(sp, M_BERR,
-			    "Movement past the beginning-of-screen");
+			    "221|Movement past the beginning-of-screen");
 				return (1);
 			}
 			smp -= cnt;
@@ -1183,10 +1228,14 @@ eof:				msgq(sp, M_BERR,
  *	Return the number of screen lines from an SMAP entry to the
  *	start of some file line, less than a maximum value.
  *
- * PUBLIC: recno_t vs_sm_nlines(SCR *, SMAP *, recno_t, size_t);
+ * PUBLIC: recno_t vs_sm_nlines __P((SCR *, SMAP *, recno_t, size_t));
  */
 recno_t
-vs_sm_nlines(SCR *sp, SMAP *from_sp, recno_t to_lno, size_t max)
+vs_sm_nlines(sp, from_sp, to_lno, max)
+	SCR *sp;
+	SMAP *from_sp;
+	recno_t to_lno;
+	size_t max;
 {
 	recno_t lno, lcnt;
 

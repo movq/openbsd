@@ -1,4 +1,4 @@
-/*	$OpenBSD: uha_eisa.c,v 1.13 2014/09/14 14:17:24 jsg Exp $	*/
+/*	$OpenBSD: uha_eisa.c,v 1.2 1997/04/13 20:22:38 mickey Exp $	*/
 /*	$NetBSD: uha_eisa.c,v 1.5 1996/10/21 22:31:07 thorpej Exp $	*/
 
 /*
@@ -35,7 +35,8 @@
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/kernel.h>
-#include <uvm/uvm_extern.h>
+#include <sys/proc.h>
+#include <sys/user.h>
 
 #include <machine/bus.h>
 #include <machine/intr.h>
@@ -52,24 +53,28 @@
 #define	UHA_EISA_SLOT_OFFSET	0xc80
 #define	UHA_EISA_IOSIZE		0x020
 
-int	uha_eisa_match(struct device *, void *, void *);
-void	uha_eisa_attach(struct device *, struct device *, void *);
+#ifndef DDB
+#define	Debugger() panic("should call debugger here (uha_eisa.c)")
+#endif
+
+int	uha_eisa_match __P((struct device *, void *, void *));
+void	uha_eisa_attach __P((struct device *, struct device *, void *));
 
 struct cfattach uha_eisa_ca = {
 	sizeof(struct uha_softc), uha_eisa_match, uha_eisa_attach
 };
 
-#define KVTOPHYS(x)	vtophys((vaddr_t)(x))
+#define KVTOPHYS(x)	vtophys(x)
 
-int u24_find(bus_space_tag_t, bus_space_handle_t, struct uha_softc *);
-void u24_start_mbox(struct uha_softc *, struct uha_mscp *);
-int u24_poll(struct uha_softc *, struct scsi_xfer *, int);
-int u24_intr(void *);
-void u24_init(struct uha_softc *);
+int u24_find __P((bus_space_tag_t, bus_space_handle_t, struct uha_softc *));
+void u24_start_mbox __P((struct uha_softc *, struct uha_mscp *));
+int u24_poll __P((struct uha_softc *, struct scsi_xfer *, int));
+int u24_intr __P((void *));
+void u24_init __P((struct uha_softc *));
 
 /*
  * Check the slots looking for a board we recognise
- * If we find one, note its address (slot) and call
+ * If we find one, note it's address (slot) and call
  * the actual probe routine to check it out.
  */
 int
@@ -121,7 +126,7 @@ uha_eisa_attach(parent, self, aux)
 
 	if (bus_space_map(iot, EISA_SLOT_ADDR(ea->ea_slot) +
 	    UHA_EISA_SLOT_OFFSET, UHA_EISA_IOSIZE, 0, &ioh))
-		panic("uha_attach: can't map I/O addresses");
+		panic("uha_attach: could not map I/O addresses");
 
 	sc->sc_iot = iot;
 	sc->sc_ioh = ioh;
@@ -228,9 +233,11 @@ u24_start_mbox(sc, mscp)
 			break;
 		delay(100);
 	}
-	if (!spincount)
-		panic("%s: uha_start_mbox, board not responding",
+	if (!spincount) {
+		printf("%s: uha_start_mbox, board not responding\n",
 		    sc->sc_dev.dv_xname);
+		Debugger();
+	}
 
 	bus_space_write_4(iot, ioh, U24_OGMPTR, KVTOPHYS(mscp));
 	if (mscp->flags & MSCP_ABORT)
@@ -240,7 +247,7 @@ u24_start_mbox(sc, mscp)
 	bus_space_write_1(iot, ioh, U24_LINT, U24_OGMFULL);
 
 	if ((mscp->xs->flags & SCSI_POLL) == 0)
-		timeout_add_msec(&mscp->xs->stimeout, mscp->timeout);
+		timeout(uha_timeout, mscp, (mscp->timeout * hz) / 1000);
 }
 
 int
@@ -251,18 +258,14 @@ u24_poll(sc, xs, count)
 {
 	bus_space_tag_t iot = sc->sc_iot;
 	bus_space_handle_t ioh = sc->sc_ioh;
-	int s;
 
 	while (count) {
 		/*
 		 * If we had interrupts enabled, would we
 		 * have got an interrupt?
 		 */
-		if (bus_space_read_1(iot, ioh, U24_SINT) & U24_SDIP) {
-			s = splbio();
+		if (bus_space_read_1(iot, ioh, U24_SINT) & U24_SDIP)
 			u24_intr(sc);
-			splx(s);
-		}
 		if (xs->flags & ITSDONE)
 			return (0);
 		delay(1000);
@@ -312,7 +315,7 @@ u24_intr(arg)
 			    sc->sc_dev.dv_xname);
 			continue;	/* whatever it was, it'll timeout */
 		}
-		timeout_del(&mscp->xs->stimeout);
+		untimeout(uha_timeout, mscp);
 		uha_done(sc, mscp);
 
 		if ((bus_space_read_1(iot, ioh, U24_SINT) & U24_SDIP) == 0)

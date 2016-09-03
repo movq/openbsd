@@ -1,5 +1,5 @@
-/*	$OpenBSD: pciidereg.h,v 1.10 2013/11/26 20:33:17 deraadt Exp $	*/
-/*	$NetBSD: pciidereg.h,v 1.6 2000/11/14 18:42:58 thorpej Exp $	*/
+/*	$OpenBSD: pciidereg.h,v 1.2 1999/07/18 21:25:20 csapuntz Exp $	*/
+/*	$NetBSD: pciidereg.h,v 1.4 1999/02/02 16:14:00 bouyer Exp $	*/
 
 /*
  * Copyright (c) 1998 Christopher G. Demetriou.  All rights reserved.
@@ -31,9 +31,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _DEV_PCI_PCIIDEREG_H_
-#define _DEV_PCI_PCIIDEREG_H_
-
 /*
  * PCI IDE controller register definitions.
  *
@@ -60,7 +57,7 @@
 /*
  * Bits in the PCI Programming Interface register (some are per-channel).
  * Bits 6-4 are defined as read-only in PCI 2.1 specification.
- * Microsoft proposed to use these bits for independent channels
+ * Microsoft proposed to use these bits for independant channels
  * enable/disable. This feature is enabled based on the value of bit 6.
  */
 #define PCIIDE_CHANSTATUS_EN		0x40
@@ -78,31 +75,28 @@
 #define	PCIIDE_COMPAT_CTL_SIZE		1
 #define	PCIIDE_COMPAT_IRQ(chan)		((chan) == 0 ? 14 : 15)
 
-#define	PCIIDE_CHANNEL_NAME(chan)	((chan) == 0 ? "channel 0" : "channel 1")
-
 /*
- * definitions for IDE DMA
+ * definitions for IDE DMA 
  * XXX maybe this should go elsewhere
  */
 
 /* secondary channel registers offset */
 #define IDEDMA_SCH_OFFSET 0x08
-#define IDEDMA_NREGS 8
 
-/* Bus master command register (per channel) */
-#define IDEDMA_CMD(chan) (0x00 + IDEDMA_SCH_OFFSET * (chan))
+/* Bus master command register */
+#define IDEDMA_CMD 0x00
 #define IDEDMA_CMD_WRITE 0x08
 #define IDEDMA_CMD_START 0x01
 
-/* Bus master status register (per channel) */
-#define IDEDMA_CTL(chan) (0x02 + IDEDMA_SCH_OFFSET * (chan))
+/* Bus master status register */
+#define IDEDMA_CTL 0x02
 #define IDEDMA_CTL_DRV_DMA(d)	(0x20 << (d))
 #define IDEDMA_CTL_INTR		0x04
 #define IDEDMA_CTL_ERR		0x02
 #define IDEDMA_CTL_ACT		0x01
 
-/* Bus master table pointer register (per channel) */
-#define IDEDMA_TBL(chan) (0x04 + IDEDMA_SCH_OFFSET * (chan))
+/* Bus master table pointer register */
+#define IDEDMA_TBL 0x04
 #define IDEDMA_TBL_MASK 0xfffffffc
 #define IDEDMA_TBL_ALIGN 0x00010000
 
@@ -118,16 +112,4 @@ struct idedma_table {
 #define IDEDMA_BYTE_COUNT_ALIGN 0x00010000
 
 /* Number of idedma table needed */
-#define NIDEDMA_TABLES (MAXPHYS/PAGE_SIZE + 1)
-
-/* Intel SCH */
-#define SCH_D0TIM	0x80
-#define SCH_D1TIM	0x84
-#define SCH_TIM_UDMA	0x70000
-#define SCH_TIM_MDMA	0x00300
-#define SCH_TIM_PIO	0x00007
-#define SCH_TIM_SYNCDMA	(1U << 31)
-
-#define SCH_TIM_MASK	(SCH_TIM_UDMA | SCH_TIM_MDMA | SCH_TIM_PIO)
-
-#endif	/* !_DEV_PCI_PCIIDEREG_H_ */
+#define NIDEDMA_TABLES (MAXPHYS/NBPG + 1)

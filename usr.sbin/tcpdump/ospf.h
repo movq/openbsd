@@ -1,5 +1,3 @@
-/*	$OpenBSD: ospf.h,v 1.10 2010/08/04 16:47:01 sthen Exp $	*/
-
 /*
  * Copyright (c) 1991, 1993, 1994, 1995, 1996, 1997
  *	The Regents of the University of California.  All rights reserved.
@@ -141,7 +139,7 @@ struct lsa {
 	    struct aslametric {
 		u_int32_t asla_tosmetric;
 		struct in_addr asla_forward;
-		u_int32_t asla_tag;
+		struct in_addr asla_tag;
 	    } asla_metric[1];		/* may repeat	*/
 	} un_asla;
 
@@ -193,7 +191,7 @@ struct ospfhdr {
 
 	/* Database Description packet */
 	struct {
-	    u_int16_t db_mtu;
+	    u_char db_zero[2];
 	    u_char db_options;
 	    u_char db_flags;
 	    u_int32_t db_seq;

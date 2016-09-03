@@ -1,4 +1,4 @@
-/*	$OpenBSD: pio.h,v 1.9 2002/09/15 09:01:59 deraadt Exp $ */
+/*	$OpenBSD: pio.h,v 1.3 1998/08/25 07:45:28 pefo Exp $ */
 
 /*
  * Copyright (c) 1997 Per Fogelstrom, Opsycon AB and RTMX Inc, USA.
@@ -32,102 +32,115 @@
  *
  */
 
-#ifndef _POWERPC_PIO_H_
-#define _POWERPC_PIO_H_
+#ifndef _MACHINE_PIO_H_
+#define _MACHINE_PIO_H_
 /*
  * I/O macros.
  */
-void *mapiodev(paddr_t pa, psize_t len);
-void unmapiodev(void * va, psize_t len);
 
 static __inline void
-__outb(volatile u_int8_t *a, int v)
+__outb(a,v)
+	volatile u_int8_t *a;
+	int v;
 {
 	*a = v;
-	__asm__ volatile("eieio");
+	__asm__ volatile("eieio\n  sync");
 }
 
 static __inline void
-__outw(volatile u_int16_t *a, u_int16_t v)
+__outw(a,v)
+	volatile u_int16_t *a;
+	u_int16_t v;
 {
 	*a = v;
-	__asm__ volatile("eieio");
+	__asm__ volatile("eieio\n  sync");
 }
 
 static __inline void
-__outl(volatile u_int32_t *a, int v)
+__outl(a,v)
+	volatile u_int32_t *a;
+	int v;
 {
 	*a = v;
-	__asm__ volatile("eieio");
+	__asm__ volatile("eieio\n  sync");
 }
 
 static __inline void
-__outwrb(volatile u_int16_t *a, u_int16_t v)
+__outwrb(a,v)
+	volatile u_int16_t *a;
+	u_int16_t v;
 {
 	u_int32_t _p_ = (u_int32_t)a;
 
-	__asm__ volatile("sthbrx %0, 0, %1" :: "r"(v), "r"(_p_));
-	__asm__ volatile("eieio");
+	__asm__ volatile("sthbrx %0, 0, %1\n" :: "r"(v), "r"(_p_));
+	__asm__ volatile("eieio\n  sync");
 }
 
 static __inline void
-__outlrb(volatile u_int32_t *a, u_int32_t v)
+__outlrb(a,v)
+	volatile u_int32_t *a;
+	u_int32_t v;
 {
 	u_int32_t _p_ = (u_int32_t)a;
 
-	__asm__ volatile("stwbrx %0, 0, %1" :: "r"(v), "r"(_p_));
-	__asm__ volatile("eieio");
+	__asm__ volatile("stwbrx %0, 0, %1\n" :: "r"(v), "r"(_p_));
+	__asm__ volatile("eieio\n  sync");
 }
 
 static __inline u_int8_t
-__inb(volatile u_int8_t *a)
+__inb(a)
+	volatile u_int8_t *a;
 {
 	u_int8_t _v_;
 
-	__asm__ volatile("eieio");
 	_v_ = *a;
+	__asm__ volatile("eieio\n  sync");
 	return _v_;
 }
 
 static __inline u_int16_t
-__inw(volatile u_int16_t *a)
+__inw(a)
+	volatile u_int16_t *a;
 {
 	u_int16_t _v_;
 
-	__asm__ volatile("eieio");
 	_v_ = *a;
+	__asm__ volatile("eieio\n  sync");
 	return _v_;
 }
 
 static __inline u_int32_t
-__inl(volatile u_int32_t *a)
+__inl(a)
+	volatile u_int32_t *a;
 {
 	u_int32_t _v_;
 
-	__asm__ volatile("eieio");
 	_v_ = *a;
+	__asm__ volatile("eieio\n  sync");
 	return _v_;
 }
 
 static __inline u_int16_t
-__inwrb(volatile u_int16_t *a)
+__inwrb(a)
+	volatile u_int16_t *a;
 {
 	u_int16_t _v_;
 	u_int32_t _p_ = (u_int32_t)a;
 
-	__asm__ volatile("eieio");
-	__asm__ volatile("lhbrx %0, 0, %1" : "=r"(_v_) : "r"(_p_));
+	__asm__ volatile("lhbrx %0, 0, %1\n" : "=r"(_v_) : "r"(_p_));
+	__asm__ volatile("eieio\n  sync");
 	return _v_;
 }
 
 static __inline u_int32_t
-__inlrb(volatile u_int32_t *a)
+__inlrb(a)
+	volatile u_int32_t *a;
 {
 	u_int32_t _v_;
 	u_int32_t _p_ = (u_int32_t)a;
 
-	__asm__ volatile("eieio");
-	__asm__ volatile("lwbrx %0, 0, %1" : "=r"(_v_) : "r"(_p_));
+	__asm__ volatile("lwbrx %0, 0, %1\n" : "=r"(_v_) : "r"(_p_));
+	__asm__ volatile("eieio\n  sync");
 	return _v_;
 }
 
@@ -178,4 +191,4 @@ __flash_led(bits, count)
 }
 #endif /* DEBUG */
 
-#endif /*_POWERPC_PIO_H_*/
+#endif /*_MACHINE_PIO_H_*/

@@ -1,4 +1,4 @@
-/*	$OpenBSD: table.h,v 1.11 2015/10/10 07:35:16 nicm Exp $	*/
+/*	$OpenBSD: table.h,v 1.5 1999/06/15 01:18:36 millert Exp $	*/
 
 /* $From: table.h,v 1.3 1994/05/31 13:34:34 michael Exp $ */
 
@@ -8,19 +8,19 @@
 
 struct table {
 	Area   *areap;		/* area to allocate entries */
-	int	size, nfree;	/* hash size (always 2^^n), free entries */
+	short	size, nfree;	/* hash size (always 2^^n), free entries */
 	struct	tbl **tbls;	/* hashed table items */
 };
 
 struct tbl {			/* table item */
-	int	flag;		/* flags */
+	Tflag	flag;		/* flags */
 	int	type;		/* command type (see below), base (if INTEGER),
 				 * or offset from val.s of value (if EXPORT) */
 	Area	*areap;		/* area to allocate from */
 	union {
 		char *s;	/* string */
 		long i;		/* integer */
-		int (*f)(char **);	/* int function */
+		int (*f) ARGS((char **));	/* int function */
 		struct op *t;	/* "function" tree */
 	} val;			/* value */
 	int	index;		/* index for an array */
@@ -129,22 +129,23 @@ struct block {
 #define BF_DOGETOPTS	BIT(0)	/* save/restore getopts state */
 
 /*
- * Used by ktwalk() and ktnext() routines.
+ * Used by twalk() and tnext() routines.
  */
 struct tstate {
 	int left;
 	struct tbl **next;
 };
 
-extern	struct table taliases;	/* tracked aliases */
-extern	struct table builtins;	/* built-in commands */
-extern	struct table aliases;	/* aliases */
-extern	struct table keywords;	/* keywords */
-extern	struct table homedirs;	/* homedir() cache */
+
+EXTERN	struct table taliases;	/* tracked aliases */
+EXTERN	struct table builtins;	/* built-in commands */
+EXTERN	struct table aliases;	/* aliases */
+EXTERN	struct table keywords;	/* keywords */
+EXTERN	struct table homedirs;	/* homedir() cache */
 
 struct builtin {
 	const char   *name;
-	int  (*func)(char **);
+	int  (*func) ARGS((char **));
 };
 
 /* these really are externs! Look in table.c for them */
@@ -174,18 +175,9 @@ extern const struct builtin shbuiltins [], kshbuiltins [];
 #define PS1	0		/* command */
 #define PS2	1		/* command continuation */
 
-extern char *path;		/* copy of either PATH or def_path */
-extern const char *def_path;	/* path to use if PATH not set */
-extern char *tmpdir;		/* TMPDIR value */
-extern const char *prompt;
-extern int cur_prompt;		/* PS1 or PS2 */
-extern int current_lineno;	/* LINENO value */
-
-unsigned int	hash(const char *);
-void		ktinit(struct table *, Area *, int);
-struct tbl *	ktsearch(struct table *, const char *, unsigned int);
-struct tbl *	ktenter(struct table *, const char *, unsigned int);
-void		ktdelete(struct tbl *);
-void		ktwalk(struct tstate *, struct table *);
-struct tbl *	ktnext(struct tstate *);
-struct tbl **	ktsort(struct table *);
+EXTERN char *path;		/* copy of either PATH or def_path */
+EXTERN const char *def_path;	/* path to use if PATH not set */
+EXTERN char *tmpdir;		/* TMPDIR value */
+EXTERN const char *prompt;
+EXTERN int cur_prompt;		/* PS1 or PS2 */
+EXTERN int current_lineno;	/* LINENO value */

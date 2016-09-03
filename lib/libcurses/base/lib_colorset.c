@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_colorset.c,v 1.5 2010/01/12 23:22:05 nicm Exp $ */
+/*	$OpenBSD: lib_colorset.c,v 1.2 1999/05/17 03:03:58 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2003,2005 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -29,8 +29,7 @@
  ****************************************************************************/
 
 /****************************************************************************
- *  Author: Juergen Pfeifer,  1998                                          *
- *     and: Thomas E. Dickey, 2005                                          *
+ *  Author: Juergen Pfeifer <juergen.pfeifer@gmx.net> 1998                  *
  ****************************************************************************/
 
 /*
@@ -43,20 +42,17 @@
 #include <curses.priv.h>
 #include <ctype.h>
 
-MODULE_ID("$Id: lib_colorset.c,v 1.5 2010/01/12 23:22:05 nicm Exp $")
+MODULE_ID("$From: lib_colorset.c,v 1.5 1999/05/16 17:13:43 juergen Exp $")
 
-NCURSES_EXPORT(int)
-wcolor_set(WINDOW *win, short color_pair_number, void *opts)
+int wcolor_set(WINDOW *win, short color_pair_number, void *opts)
 {
-    T((T_CALLED("wcolor_set(%p,%d)"), win, color_pair_number));
-    if (win
-	&& !opts
-	&& (color_pair_number >= 0)
-	&& (color_pair_number < COLOR_PAIRS)) {
-	TR(TRACE_ATTRS, ("... current %ld", (long) GET_WINDOW_PAIR(win)));
-	SET_WINDOW_PAIR(win, color_pair_number);
-	if_EXT_COLORS(win->_color = color_pair_number);
-	returnCode(OK);
-    } else
-	returnCode(ERR);
+	T((T_CALLED("wcolor_set(%p,%d)"), win, color_pair_number));
+	if (win && !opts && (color_pair_number >= 0) && (color_pair_number < COLOR_PAIRS)) {
+		T(("... current %ld", (long) PAIR_NUMBER(win->_attrs)));
+		toggle_attr_on(win->_attrs,COLOR_PAIR(color_pair_number));
+		returnCode(OK);
+	} else
+		returnCode(ERR);
 }
+
+

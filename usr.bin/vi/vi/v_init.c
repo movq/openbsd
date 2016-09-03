@@ -1,5 +1,3 @@
-/*	$OpenBSD: v_init.c,v 1.7 2015/12/07 20:39:19 mmcc Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)v_init.c	10.8 (Berkeley) 3/30/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -29,15 +31,16 @@
  * v_screen_copy --
  *	Copy vi screen.
  *
- * PUBLIC: int v_screen_copy(SCR *, SCR *);
+ * PUBLIC: int v_screen_copy __P((SCR *, SCR *));
  */
 int
-v_screen_copy(SCR *orig, SCR *sp)
+v_screen_copy(orig, sp)
+	SCR *orig, *sp;
 {
 	VI_PRIVATE *ovip, *nvip;
 
 	/* Create the private vi structure. */
-	CALLOC_RET(orig, nvip, 1, sizeof(VI_PRIVATE));
+	CALLOC_RET(orig, nvip, VI_PRIVATE *, 1, sizeof(VI_PRIVATE));
 	sp->vi_private = nvip;
 
 	/* Invalidate the line size cache. */
@@ -50,7 +53,7 @@ v_screen_copy(SCR *orig, SCR *sp)
 
 		/* User can replay the last input, but nothing else. */
 		if (ovip->rep_len != 0) {
-			MALLOC_RET(orig, nvip->rep, ovip->rep_len);
+			MALLOC_RET(orig, nvip->rep, EVENT *, ovip->rep_len);
 			memmove(nvip->rep, ovip->rep, ovip->rep_len);
 			nvip->rep_len = ovip->rep_len;
 		}
@@ -72,10 +75,11 @@ v_screen_copy(SCR *orig, SCR *sp)
  * v_screen_end --
  *	End a vi screen.
  *
- * PUBLIC: int v_screen_end(SCR *);
+ * PUBLIC: int v_screen_end __P((SCR *));
  */
 int
-v_screen_end(SCR *sp)
+v_screen_end(sp)
+	SCR *sp;
 {
 	VI_PRIVATE *vip;
 
@@ -101,10 +105,14 @@ v_screen_end(SCR *sp)
  * v_optchange --
  *	Handle change of options for vi.
  *
- * PUBLIC: int v_optchange(SCR *, int, char *, u_long *);
+ * PUBLIC: int v_optchange __P((SCR *, int, char *, u_long *));
  */
 int
-v_optchange(SCR *sp, int offset, char *str, u_long *valp)
+v_optchange(sp, offset, str, valp)
+	SCR *sp;
+	int offset;
+	char *str;
+	u_long *valp;
 {
 	switch (offset) {
 	case O_PARAGRAPHS:

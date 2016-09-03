@@ -1,4 +1,4 @@
-/*	$OpenBSD: fpgetround.c,v 1.5 2016/07/26 19:07:09 guenther Exp $	*/
+/*	$OpenBSD: fpgetround.c,v 1.3 1996/11/13 21:20:13 niklas Exp $	*/
 /*	$NetBSD: fpgetround.c,v 1.1 1995/04/29 05:09:55 cgd Exp $	*/
 
 /*
@@ -32,11 +32,15 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: fpgetround.c,v 1.3 1996/11/13 21:20:13 niklas Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
 #include <ieeefp.h>
 
 fp_rnd
-fpgetround(void)
+fpgetround()
 {
 	double fpcrval;
 	u_int64_t old;
@@ -48,4 +52,3 @@ fpgetround(void)
 
 	return ((old >> 58) & 0x3);
 }
-DEF_WEAK(fpgetround);

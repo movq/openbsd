@@ -1,13 +1,14 @@
-#	$OpenBSD: Makefile,v 1.11 2015/11/21 19:35:20 jmc Exp $
+#	$OpenBSD: Makefile,v 1.9 1997/04/27 20:56:47 millert Exp $
 #
 #	@(#)Makefile	8.1 (Berkeley) 6/6/93
-# $Id: Makefile,v 1.11 2015/11/21 19:35:20 jmc Exp $
+# $Id: Makefile,v 1.9 1997/04/27 20:56:47 millert Exp $
 
 PROG=	locate
 SRCS=	util.c locate.c
-CFLAGS+= -I${.CURDIR}
+CFLAGS+= -I${.CURDIR} -DMMAP # -DDEBUG (print time) -O2 (10% faster)
 MAN=	locate.1	locate.updatedb.8
 SCRIPTS= updatedb mklocatedb concatdb
+MLINKS+= locate.updatedb.8 updatedb.8
 
 
 beforeinstall:

@@ -1,4 +1,4 @@
-/*	$OpenBSD: dev_net.c,v 1.4 2014/07/13 15:31:20 mpi Exp $	*/
+/*	$OpenBSD: dev_net.c,v 1.2 1997/05/05 06:02:00 millert Exp $	*/
 /*	$NetBSD: dev_net.c,v 1.4 1997/04/06 08:41:24 cgd Exp $	*/
 
 /*
@@ -55,6 +55,7 @@
 #include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
+#include <netinet/in_systm.h>
 
 #include <lib/libsa/stand.h>
 #include <lib/libsa/net.h>
@@ -77,7 +78,7 @@ u_char bcea[6] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 struct	in_addr myip;		/* my ip address */
 struct	in_addr rootip;		/* root ip address */
 struct	in_addr gateip;		/* swap ip address */
-u_int32_t	netmask;		/* subnet or net mask */
+n_long	netmask;		/* subnet or net mask */
 
 char rootpath[FNAME_SIZE];
 
@@ -106,7 +107,7 @@ net_open(struct open_file *f, ...)
 	int error = 0;
 
 	va_start(ap, f);
-	devname = va_arg(ap, char *);
+	devname = va_arg(ap, char*);
 	va_end(ap);
 
 #ifdef	NETIF_DEBUG

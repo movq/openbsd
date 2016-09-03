@@ -33,8 +33,7 @@ static int ign_size;			/* This many slots available (plus
 static int ign_hold = -1;		/* Index where first "temporary" item
 					 * is held */
 
-const char *ign_default = ". .. RCSLOG tags TAGS RCS SCCS .make.state\
- .*.swp *.core .git\
+const char *ign_default = ". .. core RCSLOG tags TAGS RCS SCCS .make.state\
  .nse_depinfo #* .#* cvslog.* ,* CVS CVS.adm .del-* *.a *.olb *.o *.obj\
  *.so *.Z *~ *.old *.elc *.ln *.bak *.BAK *.orig *.rej *.exe _$* *$ *.depend";
 
@@ -69,13 +68,13 @@ ign_setup ()
        processing, and only if !ign_inhibit_server), letting the server
        know about the files and letting it decide whether to ignore
        them based on CVSROOOTADM_IGNORE.  */
-    if (!current_parsed_root->isremote)
+    if (!client_active)
 #endif
     {
-	char *file = xmalloc (strlen (current_parsed_root->directory) + sizeof (CVSROOTADM)
+	char *file = xmalloc (strlen (CVSroot_directory) + sizeof (CVSROOTADM)
 			      + sizeof (CVSROOTADM_IGNORE) + 10);
 	/* Then add entries found in repository, if it exists */
-	(void) sprintf (file, "%s/%s/%s", current_parsed_root->directory,
+	(void) sprintf (file, "%s/%s/%s", CVSroot_directory,
 			CVSROOTADM, CVSROOTADM_IGNORE);
 	ign_add_file (file, 0);
 	free (file);
@@ -158,7 +157,7 @@ ign_add_file (file, hold)
 	    error (0, errno, "cannot open %s", file);
 	return;
     }
-    while (get_line (&line, &line_allocated, fp) >= 0)
+    while (getline (&line, &line_allocated, fp) >= 0)
 	ign_add (line, hold);
     if (ferror (fp))
 	error (0, errno, "cannot read %s", file);
@@ -334,7 +333,9 @@ ign_dir_add (name)
 				(dir_ign_max + 1) * sizeof (char *));
     }
 
-    dir_ign_list[dir_ign_current++] = xstrdup (name);
+    dir_ign_list[dir_ign_current] = name;
+
+    dir_ign_current += 1 ;
 }
 
 
@@ -380,8 +381,6 @@ ignore_files (ilist, entries, update_dir, proc)
     struct stat sb;
     char *file;
     char *xdir;
-    List *files;
-    Node *p;
 
     /* Set SUBDIRS if we have subdirectory information in ENTRIES.  */
     if (entries == NULL)
@@ -410,10 +409,8 @@ ignore_files (ilist, entries, update_dir, proc)
     ign_add_file (CVSDOTIGNORE, 1);
     wrap_add_file (CVSDOTWRAPPER, 1);
 
-    /* Make a list for the files.  */
-    files = getlist ();
-
-    while (errno = 0, (dp = CVS_READDIR (dirp)) != NULL)
+    errno = 0;
+    while ((dp = readdir (dirp)) != NULL)
     {
 	file = dp->d_name;
 	if (strcmp (file, ".") == 0 || strcmp (file, "..") == 0)
@@ -458,12 +455,9 @@ ignore_files (ilist, entries, update_dir, proc)
 
 	    if (
 #ifdef DT_DIR
-		dp->d_type == DT_DIR
-		|| (dp->d_type == DT_UNKNOWN && S_ISDIR (sb.st_mode))
-#else
-		S_ISDIR (sb.st_mode)
+		dp->d_type == DT_DIR || dp->d_type == DT_UNKNOWN &&
 #endif
-		)
+		S_ISDIR(sb.st_mode))
 	    {
 		if (! subdirs)
 		{
@@ -482,29 +476,19 @@ ignore_files (ilist, entries, update_dir, proc)
 #ifdef S_ISLNK
 	    else if (
 #ifdef DT_DIR
-		     dp->d_type == DT_LNK
-		     || (dp->d_type == DT_UNKNOWN && S_ISLNK(sb.st_mode))
-#else
-		     S_ISLNK (sb.st_mode)
+		dp->d_type == DT_LNK || dp->d_type == DT_UNKNOWN && 
 #endif
-		     )
+		S_ISLNK(sb.st_mode))
 	    {
 		continue;
 	    }
 #endif
-	}
+    	}
 
-	p = getnode ();
-	p->type = FILES;
-	p->key = xstrdup (file);
-	(void) addnode (files, p);
+	(*proc) (file, xdir);
+	errno = 0;
     }
     if (errno != 0)
 	error (0, errno, "error reading current directory");
-    (void) CVS_CLOSEDIR (dirp);
-
-    sortlist (files, fsortcmp);
-    for (p = files->list->next; p != files->list; p = p->next)
-	(*proc) (p->key, xdir);
-    dellist (&files);
+    (void) closedir (dirp);
 }

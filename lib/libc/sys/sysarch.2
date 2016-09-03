@@ -1,4 +1,4 @@
-.\"	$OpenBSD: sysarch.2,v 1.11 2015/09/10 17:55:21 schwarze Exp $
+.\"	$OpenBSD: sysarch.2,v 1.4 1999/07/02 20:58:01 aaron Exp $
 .\"	$NetBSD: sysarch.2,v 1.4 1995/02/27 12:38:47 cgd Exp $
 .\"
 .\" Copyright (c) 1980, 1991 Regents of the University of California.
@@ -12,7 +12,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -30,33 +34,37 @@
 .\"
 .\"     from: @(#)syscall.2	6.3 (Berkeley) 3/10/91
 .\"
-.Dd $Mdocdate: September 10 2015 $
+.Dd October 11, 1993
 .Dt SYSARCH 2
 .Os
 .Sh NAME
 .Nm sysarch
-.Nd architecture-dependent system call
+.Nd architecture-depenent system call
 .Sh SYNOPSIS
-.In machine/sysarch.h
+.Fd #include <machine/sysarch.h>
 .Ft int
-.Fn sysarch "int number" "void *args"
+.Fn sysarch "int number" "char *args"
 .Sh DESCRIPTION
 .Fn sysarch
-performs the architecture-dependent function specified by
+performs the architecture-dependent function
+specified by
 .Fa number
 with the arguments specified by the
 .Fa args
 pointer.
 .Fa args
-is a pointer to a structure defining the actual arguments of the function.
-Symbolic constants and argument structures for the architecture-dependent
+is a pointer to a structure defining the actual
+arguments of the function.
+Symbolic constants and argument structures
+for the architecture-dependent
 functions can be found in the header file
-.In machine/sysarch.h .
+.Ao Pa machine/sysarch.h Ac .
 .Pp
 The
 .Fn sysarch
-system call should never be called directly by user programs.
-Instead, they should access its functions using the architecture-dependent
+system call should never be called directly by
+user programs.  Instead, they should access
+its functions using the architecture-dependent
 library.
 .Sh RETURN VALUES
 See the manual pages for specific architecture-dependent function calls

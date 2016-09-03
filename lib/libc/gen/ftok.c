@@ -1,4 +1,3 @@
-/*	$OpenBSD: ftok.c,v 1.8 2014/11/15 22:38:47 guenther Exp $ */
 /*
  * Copyright (c) 1994 SigmaSoft, Th. Lockert <tholo@sigmasoft.com>
  * All rights reserved.
@@ -26,11 +25,18 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: ftok.c,v 1.5 1998/11/15 19:19:55 deraadt Exp $";
+#endif /* LIBC_SCCS and not lint */
+
+#include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/ipc.h>
 
 key_t
-ftok(const char *path, int id)
+ftok(path, id)
+	const char *path;
+	int id;
 {
 	struct stat st;
 

@@ -1,7 +1,7 @@
-/* $OpenBSD: p_bottom.c,v 1.6 2010/01/12 23:22:08 nicm Exp $ */
+/*	$OpenBSD: p_bottom.c,v 1.2 1998/07/24 17:08:07 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2000,2005 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -38,37 +38,18 @@
  */
 #include "panel.priv.h"
 
-MODULE_ID("$Id: p_bottom.c,v 1.6 2010/01/12 23:22:08 nicm Exp $")
+MODULE_ID("$From: p_bottom.c,v 1.2 1998/02/11 12:14:01 tom Exp $")
 
-NCURSES_EXPORT(int)
-bottom_panel(PANEL * pan)
+int
+bottom_panel(PANEL *pan)
 {
-  int err = OK;
-
-  T((T_CALLED("bottom_panel(%p)"), pan));
-  if (pan)
-    {
-      if (!Is_Bottom(pan))
-	{
-
-	  dBug(("--> bottom_panel %s", USER_PTR(pan->user)));
-
-	  HIDE_PANEL(pan, err, OK);
-	  assert(_nc_bottom_panel == _nc_stdscr_pseudo_panel);
-
-	  dStack("<lb%d>", 1, pan);
-
-	  pan->below = _nc_bottom_panel;
-	  pan->above = _nc_bottom_panel->above;
-	  if (pan->above)
-	    pan->above->below = pan;
-	  _nc_bottom_panel->above = pan;
-
-	  dStack("<lb%d>", 9, pan);
-	}
-    }
-  else
-    err = ERR;
-
-  returnCode(err);
+  if(!pan)
+    return(ERR);
+  if(pan == _nc_bottom_panel)
+    return(OK);
+  dBug(("--> bottom_panel %s", USER_PTR(pan->user)));
+  if(_nc_panel_is_linked(pan))
+    (void)hide_panel(pan);
+  _nc_panel_link_bottom(pan);
+  return(OK);
 }

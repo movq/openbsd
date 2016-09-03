@@ -1,4 +1,4 @@
-.\"	$OpenBSD: getcap.3,v 1.38 2015/11/10 23:48:18 jmc Exp $
+.\"	$OpenBSD: getcap.3,v 1.16 1999/07/09 13:35:16 aaron Exp $
 .\"
 .\" Copyright (c) 1992, 1993
 .\"	The Regents of the University of California.  All rights reserved.
@@ -14,7 +14,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -30,8 +34,8 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: November 10 2015 $
-.Dt CGETENT 3
+.Dd April 19, 1994
+.Dt GETCAP 3
 .Os
 .Sh NAME
 .Nm cgetent ,
@@ -43,11 +47,10 @@
 .Nm cgetustr ,
 .Nm cgetfirst ,
 .Nm cgetnext ,
-.Nm cgetclose ,
-.Nm cgetusedb
+.Nm cgetclose
 .Nd capability database access routines
 .Sh SYNOPSIS
-.In stdlib.h
+.Fd #include <stdlib.h>
 .Ft int
 .Fn cgetent "char **buf" "char **db_array" "const char *name"
 .Ft int
@@ -68,12 +71,11 @@
 .Fn cgetnext "char **buf" "char **db_array"
 .Ft int
 .Fn cgetclose "void"
-.Ft int
-.Fn cgetusedb "int usedb"
 .Sh DESCRIPTION
 The
 .Fn cgetent
-function extracts the capability record
+function
+extracts the capability record
 .Fa name
 from the database specified by the null-terminated
 file array
@@ -98,7 +100,7 @@ must be retained through all subsequent calls to
 and
 .Fn cgetustr ,
 but may then be
-.Xr free 3 Ns \&'d.
+.Xr free Ns \&'d.
 On success 0 is returned, 1 if the returned
 record contains an unresolved
 .Ic tc
@@ -129,15 +131,14 @@ is
 .Dv NULL ,
 the current entry is removed from the database.
 .Fn cgetset
-must precede the database traversal.
-It must be called before
+must precede the database traversal.  It must be called before
 .Fn cgetent .
 If a sequential access is being performed (see below), it must be called
-before the first sequential access call
-.Pf ( Fn cgetfirst
+before the first sequential access call (
+.Fn cgetfirst
 or
-.Fn cgetnext ) ,
-or be directly preceded by a
+.Fn cgetnext
+), or be directly preceded by a
 .Fn cgetclose
 call.
 On success 0 is returned and \-1 on failure.
@@ -159,21 +160,18 @@ with type
 .Fa type .
 A
 .Fa type
-is specified using any single character.
-If a colon
+is specified using any single character.  If a colon
 .Pq Sq \&:
 is used, an
 untyped capability will be searched for (see below for explanation of
-types).
-A pointer to the value of
+types).  A pointer to the value of
 .Fa cap
 in
 .Fa buf
 is returned on success or
 .Dv NULL
 if the requested capability couldn't be
-found.
-The end of the capability value is signaled by a
+found.  The end of the capability value is signaled by a
 .Sq \&:
 or
 .Tn ASCII
@@ -197,8 +195,8 @@ retrieves the value of the string capability
 .Fa cap
 from the capability record pointed to by
 .Fa buf .
-A pointer to a decoded, NUL-terminated,
-.Xr malloc 3 Ns \&'d
+A pointer to a decoded, null-terminated,
+.Xr malloc Ns \&'d
 copy of the string is returned in the
 .Ft char *
 pointed to by
@@ -218,7 +216,8 @@ character of the capability string literally.
 and
 .Fn cgetnext
 comprise a function group that provides for sequential
-access of the null-terminated array of file names,
+access of the null-terminated
+array of file names,
 .Fa db_array .
 .Fn cgetfirst
 returns the first record in the database and resets the access
@@ -229,102 +228,70 @@ record returned by the previous
 .Fn cgetfirst
 or
 .Fn cgetnext
-call.
-If there is no such previous call, the first record in the database is
+call.  If there is no such previous call, the first record in the database is
 returned.
 Each record is returned in a
-.Xr malloc 3 Ns \&'d
+.Xr malloc Ns \&'d
 copy pointed to by
 .Fa buf .
 .Ic tc
 expansion is done (see
 .Ic tc=
 comments below).
-Upon completion of the database 0 is returned; 1 is returned upon successful
-return of a record with possibly more remaining (the end of the database has
-not been reached yet); 2 is returned if the record contains an unresolved
+Upon completion of the database 0 is returned,  1 is returned upon successful
+return of record with possibly more remaining (we haven't reached the end of
+the database yet), 2 is returned if the record contains an unresolved
 .Ic tc
-expansion; \-1 is returned if an system error occurred; and \-2
+expansion, \-1 is returned if an system error occurred, and \-2
 is returned if a potential reference loop is detected (see
 .Ic tc=
 comments below).
-Upon completion of database (0 return), the database is closed.
+Upon completion of database (0 return) the database is closed.
 .Pp
 .Fn cgetclose
-closes the file descriptor and resets state used for sequential access.
-If neither the
-.Fn cgetfirst
-nor the
-.Fn cgetnext
-functions have been called,
-.Fn cgetclose
-has no effect.
-Note that it does not erase the buffer pushed by a call to
-.Fn cgetset ,
-nor does it free the buffer allocated by
-.Fn cgetent .
-.Pp
-.Fn cgetusedb
-allows the user to specify whether to use or ignore database files ending in
-.Dq .db .
-If
-.Ar usedb
-is zero, files ending in
-.Dq .db
-will be ignored.
-If
-.Ar usedb
-is non-zero, files ending in
-.Dq .db
-will be used in preference to the text version.
-The default is to process
-.Dq .db
-files.
-.Fn cgetusedb
-returns the previous setting.
+closes the sequential access and frees any memory and file descriptors
+being used.  Note that it does not erase the buffer pushed by a call to
+.Fn cgetset .
 .Ss Capability database syntax
 Capability databases are normally
 .Tn ASCII
 and may be edited with standard
-text editors.
-Blank lines and lines beginning with a
+text editors.  Blank lines and lines beginning with a
 .Sq \&#
-are comments and are ignored.
-Lines ending with a
+are comments
+and ignored.  Lines ending with a
 .Sq \|\e
-indicate that the next line is a continuation of the current line; the
+indicate that the next line
+is a continuation of the current line; the
 .Sq \|\e
-and following newline are ignored.
-Long lines are usually continued onto several physical
+and following newline
+are ignored.  Long lines are usually continued onto several physical
 lines by ending each line except the last with a
 .Sq \|\e .
 .Pp
 Capability databases consist of a series of records, one per logical
-line.
-Each record contains a variable number of colon-separated fields
-(capabilities).
-Empty fields consisting entirely of whitespace
+line.  Each record contains a variable number of
+colon-separated fields
+(capabilities).  Empty fields consisting entirely of white space
 characters (spaces and tabs) are ignored.
 .Pp
 The first capability of each record specifies its names, separated by
 .Sq \&|
-characters.
-These names are used to reference records in the database.
+characters.  These names are used to reference records in the database.
 By convention, the last name is usually a comment and is not intended as
-a lookup tag.
-For example, the
-.Dq vt220
+a lookup tag.  For example, the
+.Dq vt100
 record from the
 .Nm termcap
-database begins with
+database begins:
 .Pp
-.Dl "vt220\||\|vt200\||\|dec vt220:"
+.Dl "d0\||\|vt100\||\|vt100-am\||\|vt100am\||\|dec vt100:"
 .Pp
-giving two names that can be used to access this record.
+giving four names that can be used to access the record.
 .Pp
 The remaining non-empty capabilities describe a set of (name, value)
-bindings, consisting of a name optionally followed by a typed value:
-.Bl -column "nameTvalue" -offset indent
+bindings, consisting of a names optionally followed by a typed values:
+.Bl -column "nameTvalue"
 .It name Ta "typeless [boolean] capability"
 .Em name No "is present [true]"
 .It name Ns Em \&T Ns value Ta capability
@@ -337,8 +304,8 @@ has value
 does not exist
 .El
 .Pp
-Names consist of one or more characters.
-Names may contain any character except
+Names consist of one or more characters.  Names may contain any character
+except
 .Sq \&: ,
 but it's usually best to restrict them to the printable
 characters and avoid use of graphics like
@@ -346,22 +313,21 @@ characters and avoid use of graphics like
 .Sq \&= ,
 .Sq \&% ,
 .Sq \&@ ,
-etc.
-Types are single characters used to separate capability names from their
-associated typed values.
-Types may be any character except a
+etc.  Types
+are single characters used to separate capability names from their
+associated typed values.  Types may be any character except a
 .Sq \&: .
 Typically, graphics like
 .Sq \&# ,
 .Sq \&= ,
 .Sq \&% ,
-etc. are used.
-Values may be any number of characters and may contain any character except
+etc. are used.  Values may be any
+number of characters and may contain any character except
 .Sq \&: .
 .Ss Capability database semantics
-Capability records describe a set of (name, value) bindings.
-Names may have multiple values bound to them.
-Different values for a name are distinguished by their
+Capability records describe a set of (name, value) bindings.  Names may
+have multiple values bound to them.  Different values for a name are
+distinguished by their
 .Fa types .
 .Fn cgetcap
 will return a pointer to a value of a name given the capability name and
@@ -372,8 +338,8 @@ The types
 and
 .Sq \&=
 are conventionally used to denote numeric and
-string typed values, but no restriction on those types is enforced.
-The functions
+string typed values, but no restriction on those types is enforced.  The
+functions
 .Fn cgetnum
 and
 .Fn cgetstr
@@ -385,7 +351,7 @@ Typeless capabilities are typically used to denote boolean objects with
 presence or absence indicating truth and false values respectively.
 This interpretation is conveniently represented by:
 .Pp
-.Dl "(cgetcap(buf, name, ':') != NULL)"
+.Dl "(getcap(buf, name, ':') != NULL)"
 .Pp
 A special capability,
 .Ic tc= name ,
@@ -399,8 +365,7 @@ capabilities may interpolate records which also contain
 .Ic tc
 capabilities and more than one
 .Ic tc
-capability may be used in a record.
-A
+capability may be used in a record.  A
 .Ic tc
 expansion scope (i.e., where the argument is searched for) contains the
 file in which the
@@ -408,8 +373,7 @@ file in which the
 is declared and all subsequent files in the file array.
 .Pp
 When a database is searched for a capability record, the first matching
-record in the search is returned.
-When a record is scanned for a
+record in the search is returned.  When a record is scanned for a
 capability, the first matching capability is returned; the capability
 .Ic :nameT@:
 will hide any following definition of a value of type
@@ -434,20 +398,21 @@ Two types are predefined by
 .Fn cgetnum
 and
 .Fn cgetstr :
-.Bl -column "nameXnumber" -offset indent
-.It Em name Ns \&# Ns Em number Ta numeric
+.Bl -column "nameXnumber"
+.Sm off
+.It Em name No \&# Em number Ta numeric
 capability
 .Em name
 has value
 .Em number
-.It Em name Ns = Ns Em string Ta "string capability"
+.It Em name No = Em string Ta "string capability"
 .Em name
 has value
 .Em string
-.It Em name Ns \&#@ Ta "the numeric capability"
+.It Em name No \&#@ Ta "the numeric capability"
 .Em name
 does not exist
-.It Em name Ns \&=@ Ta "the string capability"
+.It Em name No \&=@ Ta "the string capability"
 .Em name
 does not exist
 .El
@@ -464,30 +429,28 @@ Otherwise, if the number starts with a
 it is interpreted as an octal number.
 Otherwise the number is interpreted as a decimal number.
 .Pp
-String capability values may contain any character.
-Non-printable
+String capability values may contain any character.  Non-printable
 .Dv ASCII
 codes, new lines, and colons may be conveniently represented by the use
 of escape sequences:
-.Bl -column "\e\|X,X\e\|X" "(ASCII octal nnn)" -offset indent
-.It ^X	('\fIX\fP'\~&\~037)	control-\fIX\fP
-.It \e\|b,\~\e\|B	(ASCII\~010)	backspace
-.It \e\|t,\~\e\|T	(ASCII\~011)	tab
-.It \e\|n,\~\e\|N	(ASCII\~012)	line\~feed\~(newline)
-.It \e\|f,\~\e\|F	(ASCII\~014)	form\~feed
-.It \e\|r,\~\e\|R	(ASCII\~015)	carriage\~return
-.It \e\|e,\~\e\|E	(ASCII\~027)	escape
-.It \e\|c,\~\e\|C	(:)	colon
-.It \e\|\e	(\e\|)	backslash
-.It \e\|^	(^)	caret
-.It \e\|\fInnn\fP	(ASCII\~octal\~\fInnn\fP)
+.Bl -column "\e\|X,X\e\|X" "(ASCII octal nnn)"
+^X	('\fIX\fP' & 037)	control-\fIX\fP
+\e\|b, \e\|B	(ASCII 010)	backspace
+\e\|t, \e\|T	(ASCII 011)	tab
+\e\|n, \e\|N	(ASCII 012)	line feed (newline)
+\e\|f, \e\|F	(ASCII 014)	form feed
+\e\|r, \e\|R	(ASCII 015)	carriage return
+\e\|e, \e\|E	(ASCII 027)	escape
+\e\|c, \e\|C	(:)	colon
+\e\|\e	(\e\|)	back slash
+\e\|^	(^)	caret
+\e\|\fInnn\fP	(ASCII octal \fInnn\fP)
 .El
 .Pp
 A
 .Sq \|\e
-followed by up to three octal digits directly specifies
-the numeric code for a character.
-The use of
+may be followed by up to three octal digits directly specifies
+the numeric code for a character.  The use of
 .Tn ASCII
 NULs, while easily
 encoded, causes all sorts of problems and must be used with care since
@@ -508,11 +471,12 @@ The capability foo has two values bound to it (bar of type
 and blah of
 type
 .Sq \&^ )
-and any other value bindings are hidden.
-The capability abc also has two values bound but only a value of type
+and any other value bindings are hidden.  The capability abc
+also has two values bound but only a value of type
 .Sq \&$
 is prevented from
 being defined in the capability record more.
+.Pp
 .Bd -unfilled -offset indent
 file1:
  	new\||\|new_record\||\|a modification of "old":\e
@@ -531,8 +495,8 @@ who-cares@ prevents the definition of any who-cares definitions in old
 from being seen, glork#200 is inherited from old, and blah and anything
 defined by the record extensions is added to those definitions in old.
 Note that the position of the fript=bar and who-cares@ definitions before
-tc=old is important here.
-If they were after, the definitions in old would take precedence.
+tc=old is important here.  If they were after, the definitions in old
+would take precedence.
 .Sh DIAGNOSTICS
 .Fn cgetent ,
 .Fn cgetset ,
@@ -580,10 +544,7 @@ No memory to allocate.
 .Sh BUGS
 Colon
 .Pq Sq \&:
-characters
-or vertical bar
-.Pq Sq |
-characters cannot be used in names.
+characters cannot be used in names, types, or values.
 .Pp
 There are no checks for
 .Ic tc= name

@@ -1,5 +1,5 @@
-/*	$OpenBSD: modes.c,v 1.8 2015/01/16 06:40:18 deraadt Exp $	*/
-/*	$NetBSD: modes.c,v 1.3 1997/10/20 08:08:31 scottr Exp $	*/
+/*	$OpenBSD: modes.c,v 1.3 1997/01/17 16:12:42 millert Exp $	*/
+/*	$NetBSD: modes.c,v 1.1 1995/10/03 15:02:45 hpeyerl Exp $	*/
 
 /*-
  * Copyright (c) 1991, 1993, 1994
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +34,15 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)modes.c	8.3 (Berkeley) 4/2/94";
+#else
+static char rcsid[] = "$OpenBSD: modes.c,v 1.3 1997/01/17 16:12:42 millert Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/types.h>
 #include <stddef.h>
 #include <string.h>
@@ -46,7 +59,7 @@ struct modes {
  * The code in optlist() depends on minus options following regular
  * options, i.e. "foo" must immediately precede "-foo".
  */
-const struct modes cmodes[] = {
+struct modes cmodes[] = {
 	{ "cs5",	CS5, CSIZE },
 	{ "cs6",	CS6, CSIZE },
 	{ "cs7",	CS7, CSIZE },
@@ -80,7 +93,7 @@ const struct modes cmodes[] = {
 	{ NULL },
 };
 
-const struct modes imodes[] = {
+struct modes imodes[] = {
 	{ "ignbrk",	IGNBRK, 0 },
 	{ "-ignbrk",	0, IGNBRK },
 	{ "brkint",	BRKINT, 0 },
@@ -118,7 +131,7 @@ const struct modes imodes[] = {
 	{ NULL },
 };
 
-const struct modes lmodes[] = {
+struct modes lmodes[] = {
 	{ "echo",	ECHO, 0 },
 	{ "-echo",	0, ECHO },
 	{ "echoe",	ECHOE, 0 },
@@ -172,7 +185,7 @@ const struct modes lmodes[] = {
 	{ NULL },
 };
 
-const struct modes omodes[] = {
+struct modes omodes[] = {
 	{ "opost",	OPOST, 0 },
 	{ "-opost",	0, OPOST },
 	{ "litout",	0, OPOST },
@@ -197,9 +210,11 @@ const struct modes omodes[] = {
 #define	CHK(s)	(*name == s[0] && !strcmp(name, s))
 
 int
-msearch(char ***argvp, struct info *ip)
+msearch(argvp, ip)
+	char ***argvp;
+	struct info *ip;
 {
-	const struct modes *mp;
+	struct modes *mp;
 	char *name;
 
 	name = **argvp;

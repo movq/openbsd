@@ -1,4 +1,4 @@
-/*	$OpenBSD: stdlib.h,v 1.65 2015/07/14 19:05:11 millert Exp $	*/
+/*	$OpenBSD: stdlib.h,v 1.10 1999/06/11 22:47:48 espie Exp $	*/
 /*	$NetBSD: stdlib.h,v 1.25 1995/12/27 21:19:08 jtc Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -34,22 +38,20 @@
 
 #ifndef _STDLIB_H_
 #define _STDLIB_H_
+#include <machine/ansi.h>
 
-#include <sys/cdefs.h>
-#include <machine/_types.h>
-#if __BSD_VISIBLE	/* for quad_t, etc. (XXX - use protected types) */
+#if !defined(_ANSI_SOURCE)	/* for quad_t, etc. */
 #include <sys/types.h>
 #endif
 
-#ifndef	_SIZE_T_DEFINED_
-#define	_SIZE_T_DEFINED_
-typedef	__size_t	size_t;
+#ifdef	_BSD_SIZE_T_
+typedef	_BSD_SIZE_T_	size_t;
+#undef	_BSD_SIZE_T_
 #endif
 
-/* in C++, wchar_t is a built-in type */
-#if !defined(_WCHAR_T_DEFINED_) && !defined(__cplusplus)
-#define _WCHAR_T_DEFINED_
-typedef	__wchar_t	wchar_t;
+#ifdef	_BSD_WCHAR_T_
+typedef	_BSD_WCHAR_T_	wchar_t;
+#undef	_BSD_WCHAR_T_
 #endif
 
 typedef struct {
@@ -62,14 +64,7 @@ typedef struct {
 	long rem;		/* remainder */
 } ldiv_t;
 
-#if __ISO_C_VISIBLE >= 1999
-typedef struct {
-	long long quot;		/* quotient */
-	long long rem;		/* remainder */
-} lldiv_t;
-#endif
-
-#if __BSD_VISIBLE
+#if !defined(_ANSI_SOURCE)
 typedef struct {
 	quad_t quot;		/* quotient */
 	quad_t rem;		/* remainder */
@@ -80,10 +75,8 @@ typedef struct {
 #ifndef	NULL
 #ifdef 	__GNUG__
 #define NULL	__null
-#elif defined(__cplusplus)
-#define	NULL	0L
 #else
-#define	NULL	((void *)0)
+#define	NULL	0
 #endif
 #endif
 
@@ -92,234 +85,122 @@ typedef struct {
 
 #define	RAND_MAX	0x7fffffff
 
-extern size_t	__mb_cur_max;
-#define	MB_CUR_MAX	__mb_cur_max
+#define	MB_CUR_MAX	1	/* XXX */
 
 #include <sys/cdefs.h>
 
-/*
- * Some header files may define an abs macro.
- * If defined, undef it to prevent a syntax error and issue a warning.
- */
-#ifdef abs
-#undef abs
-#warning abs macro collides with abs() prototype, undefining
-#endif
-
 __BEGIN_DECLS
-__dead void	 abort(void);
-int	 abs(int);
-int	 atexit(void (*)(void));
-double	 atof(const char *);
-int	 atoi(const char *);
-long	 atol(const char *);
-void	*bsearch(const void *, const void *, size_t, size_t,
-	    int (*)(const void *, const void *));
-void	*calloc(size_t, size_t);
-div_t	 div(int, int);
-__dead void	 exit(int);
-__dead void	 _Exit(int);
-void	 free(void *);
-char	*getenv(const char *);
-long	 labs(long);
-ldiv_t	 ldiv(long, long);
-void	*malloc(size_t);
-#if __BSD_VISIBLE
-void	*reallocarray(void *, size_t, size_t);
-#endif /* __BSD_VISIBLE */
-void	 qsort(void *, size_t, size_t, int (*)(const void *, const void *));
-int	 rand(void);
-void	*realloc(void *, size_t);
-void	 srand(unsigned);
-void	 srand_deterministic(unsigned);
-double	 strtod(const char *__restrict, char **__restrict);
-float	 strtof(const char *__restrict, char **__restrict);
-long	 strtol(const char *__restrict, char **__restrict, int);
-long double
-	 strtold(const char *__restrict, char **__restrict);
+__dead void	 abort __P((void));
+int	 abs __P((int));
+int	 atexit __P((void (*)(void)));
+double	 atof __P((const char *));
+int	 atoi __P((const char *));
+long	 atol __P((const char *));
+void	*bsearch __P((const void *, const void *, size_t,
+	    size_t, int (*)(const void *, const void *)));
+void	*calloc __P((size_t, size_t));
+div_t	 div __P((int, int));
+__dead void	 exit __P((int));
+void	 free __P((void *));
+char	*getenv __P((const char *));
+long	 labs __P((long));
+ldiv_t	 ldiv __P((long, long));
+void	*malloc __P((size_t));
+void	 qsort __P((void *, size_t, size_t,
+	    int (*)(const void *, const void *)));
+int	 rand __P((void));
+int	 rand_r __P((unsigned int *));
+void	*realloc __P((void *, size_t));
+void	 srand __P((unsigned));
+double	 strtod __P((const char *, char **));
+long	 strtol __P((const char *, char **, int));
 unsigned long
-	 strtoul(const char *__restrict, char **__restrict, int);
-int	 system(const char *);
+	 strtoul __P((const char *, char **, int));
+int	 system __P((const char *));
 
 /* these are currently just stubs */
-int	 mblen(const char *, size_t);
-size_t	 mbstowcs(wchar_t *, const char *, size_t);
-int	 wctomb(char *, wchar_t);
-int	 mbtowc(wchar_t *, const char *, size_t);
-size_t	 wcstombs(char *, const wchar_t *, size_t);
+int	 mblen __P((const char *, size_t));
+size_t	 mbstowcs __P((wchar_t *, const char *, size_t));
+int	 wctomb __P((char *, wchar_t));
+int	 mbtowc __P((wchar_t *, const char *, size_t));
+size_t	 wcstombs __P((char *, const wchar_t *, size_t));
 
-/*
- * IEEE Std 1003.1c-95, also adopted by X/Open CAE Spec Issue 5 Version 2
- */
-#if __BSD_VISIBLE || __POSIX_VISIBLE >= 199506 || defined(_REENTRANT)
-int	 rand_r(unsigned int *);
-#endif
+#if !defined(_ANSI_SOURCE) && !defined(_POSIX_SOURCE)
+#if defined(alloca) && (alloca == __builtin_alloca) && (__GNUC__ < 2)
+void  *alloca __P((int));     /* built-in for gcc */ 
+#else 
+void  *alloca __P((size_t)); 
+#endif /* __GNUC__ */ 
 
-#if __BSD_VISIBLE || __XPG_VISIBLE >= 400
-double	 drand48(void);
-double	 erand48(unsigned short[3]);
-long	 jrand48(unsigned short[3]);
-void	 lcong48(unsigned short[7]);
-void	 lcong48_deterministic(unsigned short[7]);
-long	 lrand48(void);
-long	 mrand48(void);
-long	 nrand48(unsigned short[3]);
-unsigned short *seed48(unsigned short[3]);
-unsigned short *seed48_deterministic(unsigned short[3]);
-void	 srand48(long);
-void	 srand48_deterministic(long);
+char	*getbsize __P((int *, long *));
+char	*cgetcap __P((char *, const char *, int));
+int	 cgetclose __P((void));
+int	 cgetent __P((char **, char **, const char *));
+int	 cgetfirst __P((char **, char **));
+int	 cgetmatch __P((char *, const char *));
+int	 cgetnext __P((char **, char **));
+int	 cgetnum __P((char *, const char *, long *));
+int	 cgetset __P((const char *));
+int	 cgetstr __P((char *, const char *, char **));
+int	 cgetustr __P((char *, const char *, char **));
 
-int	 putenv(char *);
-#endif
+int	 daemon __P((int, int));
+char	*devname __P((int, int));
+int	 getloadavg __P((double [], int));
 
-/*
- * XSI functions marked LEGACY in IEEE Std 1003.1-2001 (POSIX) and
- * removed in IEEE Std 1003.1-2008
- */
-#if __BSD_VISIBLE || __XPG_VISIBLE < 700
-char	*ecvt(double, int, int *, int *);
-char	*fcvt(double, int, int *, int *);
-char	*gcvt(double, int, char *);
-#if __BSD_VISIBLE || __XPG_VISIBLE >= 420
-char	*mktemp(char *);
-#endif
-#endif	/* __BSD_VISIBLE || __XPG_VISIBLE < 700 */
+long	 a64l __P((const char *));
+char	*l64a __P((long));
 
-#if __BSD_VISIBLE || __XPG_VISIBLE >= 420
-long	 a64l(const char *);
-char	*l64a(long);
+void	 cfree __P((void *));
 
-char	*initstate(unsigned int, char *, size_t)
-		__attribute__((__bounded__ (__string__,2,3)));
-long	 random(void);
-char	*setstate(char *);
-void	 srandom(unsigned int);
-void	 srandom_deterministic(unsigned int);
-
-char	*realpath(const char *, char *)
-		__attribute__((__bounded__ (__minbytes__,2,1024)));
-
-/*
- * XSI functions marked LEGACY in XPG5 and removed in IEEE Std 1003.1-2001
- */
-#if __BSD_VISIBLE || __XPG_VISIBLE < 600
-int	 ttyslot(void);
-void	*valloc(size_t);		/* obsoleted by malloc() */
-#endif
-#endif /* __BSD_VISIBLE || __XPG_VISIBLE >= 420 */
-
-/*
- * 4.4BSD, then XSI in XPG4.2, then added to POSIX base in IEEE Std 1003.1-2008
- */
-#if __BSD_VISIBLE || __XPG_VISIBLE >= 420 || __POSIX_VISIBLE >= 200809
-int	 mkstemp(char *);
-#endif
-
-/*
- * ISO C99
- */
-#if __ISO_C_VISIBLE >= 1999
-long long
-	 atoll(const char *);
-long long
-	 llabs(long long);
-lldiv_t
-	 lldiv(long long, long long);
-long long
-	 strtoll(const char *__restrict, char **__restrict, int);
-unsigned long long
-	 strtoull(const char *__restrict, char **__restrict, int);
-#endif
-
-/*
- * The Open Group Base Specifications, Issue 6; IEEE Std 1003.1-2001 (POSIX)
- */
-#if __BSD_VISIBLE || __POSIX_VISIBLE >= 200112
-int	 posix_memalign(void **, size_t, size_t);
-int	 setenv(const char *, const char *, int);
-int	 unsetenv(const char *);
-#endif
-#if __XPG_VISIBLE >= 420 || __POSIX_VISIBLE >= 200112
-char	*ptsname(int);
-int	 grantpt(int);
-int	 unlockpt(int);
-#endif
-#if __POSIX_VISIBLE >= 200112
-int	 posix_openpt(int);
-#endif
-
-/*
- * The Open Group Base Specifications, Issue 7; IEEE Std 1003.1-2008 (POSIX)
- */
-#if __BSD_VISIBLE || __POSIX_VISIBLE >= 200809
-char	*mkdtemp(char *);
-#endif
-
-#if __XPG_VISIBLE >= 420 || __POSIX_VISIBLE >= 200809
-int     getsubopt(char **, char * const *, char **);
-#endif
-
-/*
- * The Open Group Base Specifications, post-Issue 7
- */
-#if __BSD_VISIBLE
-int	mkostemp(char *, int);
-#endif
-
-#if __BSD_VISIBLE
-#define alloca(n) __builtin_alloca(n)
-
-char	*getbsize(int *, long *);
-char	*cgetcap(char *, const char *, int);
-int	 cgetclose(void);
-int	 cgetent(char **, char **, const char *);
-int	 cgetfirst(char **, char **);
-int	 cgetmatch(char *, const char *);
-int	 cgetnext(char **, char **);
-int	 cgetnum(char *, const char *, long *);
-int	 cgetset(const char *);
-int	 cgetusedb(int);
-int	 cgetstr(char *, const char *, char **);
-int	 cgetustr(char *, const char *, char **);
-
-int	 daemon(int, int);
-char	*devname(dev_t, mode_t);
-int	 getloadavg(double [], int);
-
-const char *
-	getprogname(void);
-void	setprogname(const char *);
-
+int	 getopt __P((int, char * const *, const char *));
+extern	 char *optarg;			/* getopt(3) external variables */
+extern	 int opterr;
+extern	 int optind;
+extern	 int optopt;
+extern	 int optreset;
+int	 getsubopt __P((char **, char * const *, char **));
 extern	 char *suboptarg;		/* getsubopt(3) external variable */
 
-int	 mkstemps(char *, int);
-int	 mkostemps(char *, int, int);
+int	 heapsort __P((void *, size_t, size_t,
+	    int (*)(const void *, const void *)));
+int	 mergesort __P((void *, size_t, size_t,
+	    int (*)(const void *, const void *)));
+int	 radixsort __P((const unsigned char **, int, const unsigned char *,
+	    unsigned));
+int	 sradixsort __P((const unsigned char **, int, const unsigned char *,
+	    unsigned));
 
-int	 heapsort(void *, size_t, size_t, int (*)(const void *, const void *));
-int	 mergesort(void *, size_t, size_t, int (*)(const void *, const void *));
-int	 radixsort(const unsigned char **, int, const unsigned char *,
-	    unsigned);
-int	 sradixsort(const unsigned char **, int, const unsigned char *,
-	    unsigned);
+char	*initstate __P((unsigned int, char *, size_t));
+long	 random __P((void));
+char	*realpath __P((const char *, char *));
+char	*setstate __P((const char *));
+void	 srandom __P((unsigned int));
 
-void	 srandomdev(void);
-long long
-	 strtonum(const char *, long long, long long, const char **);
+int	 putenv __P((const char *));
+int	 setenv __P((const char *, const char *, int));
+void	 unsetenv __P((const char *));
+void	 setproctitle __P((const char *, ...));
 
-void	 setproctitle(const char *, ...)
-	__attribute__((__format__ (__printf__, 1, 2)));
+quad_t	 qabs __P((quad_t));
+qdiv_t	 qdiv __P((quad_t, quad_t));
+quad_t	 strtoq __P((const char *, char **, int));
+u_quad_t strtouq __P((const char *, char **, int));
 
-quad_t	 qabs(quad_t);
-qdiv_t	 qdiv(quad_t, quad_t);
-quad_t	 strtoq(const char *__restrict, char **__restrict, int);
-u_quad_t strtouq(const char *__restrict, char **__restrict, int);
+double	 drand48 __P((void));
+double	 erand48 __P((unsigned short[3]));
+long	 jrand48 __P((unsigned short[3]));
+void	 lcong48 __P((unsigned short[7]));
+long	 lrand48 __P((void));
+long	 mrand48 __P((void));
+long	 nrand48 __P((unsigned short[3]));
+unsigned short *seed48 __P((unsigned short[3]));
+void	 srand48 __P((long));
 
-uint32_t arc4random(void);
-uint32_t arc4random_uniform(uint32_t);
-void arc4random_buf(void *, size_t)
-	__attribute__((__bounded__ (__string__,1,2)));
-
-#endif /* __BSD_VISIBLE */
+u_int32_t arc4random __P((void));
+void	arc4random_stir __P((void));
+void	arc4random_addrandom __P((unsigned char *, int));
+#endif /* !_ANSI_SOURCE && !_POSIX_SOURCE */
 
 __END_DECLS
 

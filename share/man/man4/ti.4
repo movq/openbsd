@@ -1,4 +1,4 @@
-.\"	$OpenBSD: ti.4,v 1.44 2014/09/14 00:17:09 brad Exp $
+.\"	$OpenBSD: ti.4,v 1.2 1999/08/04 17:18:45 deraadt Exp $
 .\"
 .\" Copyright (c) 1997, 1998, 1999
 .\"	Bill Paul <wpaul@ctr.columbia.edu>. All rights reserved.
@@ -30,87 +30,85 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 .\" THE POSSIBILITY OF SUCH DAMAGE.
 .\"
-.\"	$FreeBSD: src/share/man/man4/ti.4,v 1.11 2000/08/10 19:47:32 billf Exp $
+.\"	$FreeBSD: ti.4,v 1.1 1999/04/06 17:08:29 wpaul Exp $
 .\"
-.Dd $Mdocdate: September 14 2014 $
+.Dd March 4, 1999
 .Dt TI 4
 .Os
 .Sh NAME
 .Nm ti
-.Nd Alteon Networks Tigon I and II Gigabit Ethernet device
+.Nd "Alteon Networks Tigon I and Tigon II gigabit ethernet driver"
 .Sh SYNOPSIS
-.Cd "ti* at pci?"
-.Cd "ti* at sbus?"
+.Cd "ti* at pci? dev ? function ?"
 .Sh DESCRIPTION
 The
-.Nm
-driver provides support for Gigabit Ethernet adapters based on the
-Alteon Networks Tigon Gigabit Ethernet controller chip, including
-the following:
+.Nm ti
+driver provides support for PCI gigabit ethernet adapters based on
+the Alteon Networks Tigon gigabit ethernet controller chip. The Tigon
+contains an embedded R4000 CPU, gigabit MAC, dual DMA channels and
+a PCI interface unit. The Tigon II contains two R4000 CPUs and other
+refinements. Either chip can be used in either a 32-bit or 64-bit PCI
+slot. Communication with the chip is achieved via PCI shared memory
+and bus master DMA. The Tigon I and II support hardware multicast
+address filtering, VLAN tag extraction and insertion, and jumbo
+ethernet frames sizes up to 9000 bytes. Note that the Tigon I chipset
+is no longer in active production: all new adapters should come equipped
+with Tigon II chipsets.
 .Pp
-.Bl -bullet -compact -offset indent
+There are several PCI boards available from both Alteon and other
+vendors that use the Tigon chipset under OEM contract. The
+.Nm
+driver has been tested with the following Tigon-based adapters:
+.Bl -bullet -offset indent
 .It
-3Com 3C985-SX Gigabit Ethernet (1000baseSX)
+The Alteon AceNIC V gigabit ethernet adapter
 .It
-3Com 3C985B-SX Gigabit Ethernet (1000baseSX)
+The 3Com 3C985-SX gigabit ethernet adapter
 .It
-Alteon AceNIC V Gigabit Ethernet (1000baseSX)
-.It
-Alteon AceNIC V Gigabit Ethernet (1000baseT)
-.It
-Digital EtherWORKS 1000SX PCI Gigabit Ethernet (1000baseSX)
-.It
-Farallon PN9000SX Gigabit Ethernet (1000baseSX)
-.It
-Netgear GA620 Gigabit Ethernet (1000baseSX)
-.It
-Netgear GA620T Gigabit Ethernet (1000baseT)
-.It
-Silicon Graphics Gigabit Ethernet (1000baseSX)
-.It
-Silicon Graphics Gigabit Ethernet (1000baseT)
-.It
-Sun Vector Gigabit Ethernet (1000baseSX)
+The Netgear GA620 gigabit ethernet adapter
 .El
 .Pp
-The Tigon contains an embedded R4000 CPU, Gigabit MAC, dual DMA channels and
-a PCI interface unit.
-The Tigon II contains two R4000 CPUs and other refinements.
-Either chip can be used in either a 32-bit or 64-bit PCI slot.
-Communication with the chip is achieved via PCI shared memory and
-bus master DMA.
-SBus cards are also available and use a special bridge chip.
-The Tigon I and II support hardware multicast address filtering,
-VLAN tag insertion and stripping, and jumbo frames.
+The following should also be supported but have not yet been tested:
+.Bl -bullet -offset indent
+.It
+The Digital EtherWORKS 1000SX PCI Gigabit Adapter
+.It
+Silicon Graphics PCI gigabit ethernet adapter
+.El
 .Pp
 While the Tigon chipset supports 10, 100 and 1000Mbps speeds, support for
 10 and 100Mbps speeds is only available on boards with the proper
-transceivers.
-Most adapters are only designed to work at 1000Mbps, however the driver
-should support those NICs that work at lower speeds as well.
+transceivers. Most adapters are only designed to work at 1000Mbps,
+however the driver should support those NICs that work at lower speeds
+as well.
+.Pp
+Support for jumbo frames is provided via the interface MTU setting.
+Selecting an MTU larger than 1500 bytes with the
+.Xr ifconfig 8
+utility configures the adapter to receive and transmit jumbo frames.
+Using jumbo frames can greatly improve performance for certain tasks,
+such as file transfers and data streaming.
 .Pp
 The
 .Nm
 driver supports the following media types:
-.Bl -tag -width full-duplex
+.Pp
+.Bl -tag -width xxxxxxxxxxxxxxxxxxxx
 .It autoselect
 Enable autoselection of the media type and options.
 The user can manually override
 the autoselected mode by adding media options to the appropriate
-.Xr hostname.if 5
+.Pa /etc/hostname.tiX
 file.
-.It 10baseT
-Set 10Mbps operation
-The
+.It 10baseT/UTP
+Set 10Mbps operation. The
 .Ar mediaopt
 option can also be used to select either
 .Ar full-duplex
 or
-.Ar half-duplex
-modes.
+.Ar half-duplex modes.
 .It 100baseTX
-Set 100Mbps (Fast Ethernet) operation.
-The
+Set 100Mbps (fast ethernet) operation. The
 .Ar mediaopt
 option can also be used to select either
 .Ar full-duplex
@@ -118,78 +116,65 @@ or
 .Ar half-duplex
 modes.
 .It 1000baseSX
-Set 1000Mbps (Gigabit Ethernet) on fiber operation.
-Only
+Set 1000Mbps (gigabit ethernet) operation. Only full
 .Ar full-duplex
 mode is supported at this speed.
-.It 1000baseT
-Set 1000Mbps (Gigabit Ethernet) on copper operation.
 .El
 .Pp
 The
 .Nm
 driver supports the following media options:
-.Bl -tag -width full-duplex
+.Pp
+.Bl -tag -width xxxxxxxxxxxxxxxxxxxx
 .It full-duplex
 Force full duplex operation
 .It half-duplex
-Force half duplex operation
+Force half duplex operation.
 .El
 .Pp
 For more information on configuring this device, see
 .Xr ifconfig 8 .
-.Sh FILES
-Two firmware files are necessary, for Tigon 1 and Tigon 2 devices.
-These are loaded on demand
-when the device is attached:
-.Pp
-.Bl -tag -width Ds -offset indent -compact
-.It Pa /etc/firmware/tigon1
-.It Pa /etc/firmware/tigon2
-.El
 .Sh DIAGNOSTICS
 .Bl -diag
-.It "ti0: couldn't map memory"
+.It "ti%d: couldn't map memory"
 A fatal initialization error has occurred.
-.It "ti0: couldn't map interrupt"
+.It "ti%d: couldn't map interrupt"
 A fatal initialization error has occurred.
-.It "ti0: no memory for softc struct!"
+.It "ti%d: no memory for softc struct!"
 The driver failed to allocate memory for per-device instance information
 during initialization.
-.It "ti0: failed to enable memory mapping!"
-The driver failed to initialize PCI shared memory mapping.
-This might happen if the card is not in a bus-master slot.
-.It "ti0: no memory for jumbo buffers!"
+.It "ti%d: failed to enable memory mapping!"
+The driver failed to initialize PCI shared memory mapping. This might
+happen if the card is not in a bus-master slot.
+.It "ti%d: no memory for jumbo buffers!"
 The driver failed to allocate memory for jumbo frames during
 initialization.
-.It "ti0: bios thinks we're in a 64 bit slot, but we aren't"
+.It "ti%d: bios thinks we're in a 64 bit slot, but we aren't"
 The BIOS has programmed the NIC as though it had been installed in
-a 64-bit PCI slot, but in fact the NIC is in a 32-bit slot.
-This happens as a result of a bug in some BIOSes.
-This can be worked around on the Tigon II, but
-on the Tigon I initialization will fail.
-.It "ti0: board self-diagnostics failed!"
+a 64-bit PCI slot, but in fact the NIC is in a 32-bit slot. This happens
+as a result of a bug in some BIOSes. This can be worked around on the
+Tigon II, but on the Tigon I initialization will fail.
+.It "ti%d: board self-diagnostics failed!"
 The ROMFAIL bit in the CPU state register was set after system
 startup, indicating that the on-board NIC diagnostics failed.
-.It "ti0: unknown hwrev"
-The driver detected a board with an unsupported hardware revision.
-The
+.It "ti%d: unknown hwrev"
+The driver detected a board with an unsupported hardware revision. The
 .Nm
 driver supports revision 4 (Tigon 1) and revision 6 (Tigon 2) chips
 and has firmware only for those devices.
-.It "ti0: watchdog timeout -- resetting"
+.It "ti%d: watchdog timeout"
 The device has stopped responding to the network, or there is a problem with
 the network connection (cable).
 .El
 .Sh SEE ALSO
 .Xr arp 4 ,
 .Xr ifmedia 4 ,
-.Xr intro 4 ,
-.Xr netintro 4 ,
-.Xr pci 4 ,
-.Xr sbus 4 ,
-.Xr hostname.if 5 ,
+.Xr netintro 4 , 
 .Xr ifconfig 8
+.Rs
+.%T Alteon Gigabit Ethernet/PCI NIC manuals
+.%O http://www.alteon.com/support/openkits
+.Re
 .Sh HISTORY
 The
 .Nm
@@ -198,13 +183,8 @@ device driver first appeared in
 .Ox
 support first appeared in
 .Ox 2.6 .
-SBus support was added in
-.Ox 4.7 .
-.Sh AUTHORS
-.An -nosplit
+.Sh AUTHOR
 The
 .Nm
 driver was written by
-.An Bill Paul Aq Mt wpaul@bsdi.com .
-SBus support was added by
-.An Mark Kettenis Aq Mt kettenis@openbsd.org .
+.An Bill Paul Aq wpaul@ctr.columbia.edu .

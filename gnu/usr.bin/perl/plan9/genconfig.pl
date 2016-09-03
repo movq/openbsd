@@ -118,17 +118,9 @@ EndOfIntro
 
 # Plan 9 compiler stuff
 print OUT "cc='pcc'\n";
-print OUT "d_attribute_format='undef'\n";
-print OUT "d_attribute_malloc='undef'\n";
-print OUT "d_attribute_nonnull='undef'\n";
-print OUT "d_attribute_noreturn='undef'\n";
-print OUT "d_attribute_pure='undef'\n";
-print OUT "d_attribute_unused='undef'\n";
-print OUT "d_attribute_warn_unused_result='undef'\n";
+print OUT "d_attribut='undef'\n";
 print OUT "d_socket='define'\n";
 print OUT "d_sockpair='define'\n";
-print OUT "d_static_inline='undef'\n";
-print OUT "perl_static_inline='static'\n";
 print OUT "d_sigsetjmp='define'\n";
 print OUT "sigjmp_buf='sigjmp_buf'\n";
 print OUT "sigsetjmp='sigsetjmp(buf,save_mask)'\n";
@@ -205,7 +197,7 @@ while (<IN>) {  # roll through the comment header in config.h
 
 while (<IN>) {
   chop;
-  while (/\\\s*$/) {  # pick up continuation lines
+  while (/\\\s*$/) {  # pick up contination lines
     my $line = $_;
     $line =~ s/\\\s*$//;
     $_ = <IN>;
@@ -269,18 +261,12 @@ foreach (sort keys %val_vars) {
 
 if (open(PL,"${outdir}patchlevel.h")) {
   while (<PL>) {
-    if    (/^#define PERL_VERSION\s+(\S+)/) {
-      print OUT "PERL_VERSION='$1'\n";
-      print OUT "PATCHLEVEL='$1'\n";		# XXX compat
-    }
-    elsif (/^#define PERL_SUBVERSION\s+(\S+)/) {
-      print OUT "PERL_SUBVERSION='$1'\n";
-      print OUT "SUBVERSION='$1'\n";		# XXX compat
-    }
+    if    (/^#define PATCHLEVEL\s+(\S+)/) { print OUT "PATCHLEVEL='$1'\n"; }
+    elsif (/^#define SUBVERSION\s+(\S+)/) { print OUT "SUBVERSION='$1'\n"; }
   }
   close PL;
 }
-else { warn "Can't read ${outdir}patchlevel.h - skipping 'PERL_VERSION'"; }
+else { warn "Can't read ${outdir}patchlevel.h - skipping 'PATCHLEVEL'"; }
 
 print OUT "pager='/bin/p'\n";
 

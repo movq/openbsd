@@ -1,4 +1,4 @@
-/*	$OpenBSD: print.c,v 1.8 2016/01/08 18:20:33 mestre Exp $	*/
+/*	$OpenBSD: print.c,v 1.2 1998/09/20 23:36:55 pjanzen Exp $	*/
 /*	$NetBSD: print.c,v 1.3 1995/03/23 08:35:05 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,19 +34,25 @@
  * SUCH DAMAGE.
  */
 
-#include <stdio.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)print.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: print.c,v 1.2 1998/09/20 23:36:55 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
-#include "monop.ext"
+#include	"monop.ext"
 
-static const char	*header	= "Name      Own      Price Mg # Rent";
+static char	*header	= "Name      Own      Price Mg # Rent";
 
-static void	printmorg(SQUARE *);
+static void	printmorg __P((SQUARE *));
 
 /*
  *	This routine prints out the current board
  */
 void
-printboard(void)
+printboard()
 {
 	int	i;
 
@@ -57,7 +67,7 @@ printboard(void)
  *	This routine lists where each player is.
  */
 void
-where(void)
+where()
 {
 	int	i;
 
@@ -74,7 +84,9 @@ where(void)
  *	This routine prints out an individual square
  */
 void
-printsq(int sqn, bool eoln)
+printsq(sqn, eoln)
+	int	sqn;
+	bool	eoln;
 {
 	int	rnt;
 	PROP	*pp;
@@ -108,7 +120,7 @@ printsq(int sqn, bool eoln)
 			if (pp->houses < 5) {
 				if (pp->houses > 0)
 					printf("%d %4d", pp->houses,
-						pp->rent[(int)pp->houses]);
+						pp->rent[pp->houses]);
 				else
 					printf("0 %4d", pp->rent[0] * 2);
 			} else
@@ -125,7 +137,7 @@ printsq(int sqn, bool eoln)
 		}
 		printf(" %d          150", sqp->owner+1);
 		printmorg(sqp);
-		printf("%d", play[(int)sqp->owner].num_util);
+		printf("%d", play[sqp->owner].num_util);
 		if (!eoln)
 			printf("    ");
 		break;
@@ -139,12 +151,8 @@ printsq(int sqn, bool eoln)
 		printf(" %d Railroad 200", sqp->owner+1);
 		printmorg(sqp);
 		rnt = 25;
-		rnt <<= play[(int)sqp->owner].num_rr - 1;
-		printf("%d %4d", play[(int)sqp->owner].num_rr,
-		    25 << (play[(int)sqp->owner].num_rr - 1));
-		break;
-	default:
-		printf("Warning: printsq() switch %d\n", sqp->type);
+		rnt <<= play[sqp->owner].num_rr - 1;
+		printf("%d %4d", play[sqp->owner].num_rr, 25 << (play[sqp->owner].num_rr - 1));
 		break;
 	}
 	if (eoln)
@@ -154,7 +162,8 @@ printsq(int sqn, bool eoln)
  *	This routine prints out the mortgage flag.
  */
 static void
-printmorg(SQUARE *sqp)
+printmorg(sqp)
+	SQUARE	*sqp;
 {
 	if (sqp->desc->morg)
 		printf(" * ");
@@ -165,7 +174,8 @@ printmorg(SQUARE *sqp)
  *	This routine lists the holdings of the player given
  */
 void
-printhold(int pl)
+printhold(pl)
+	int	pl;
 {
 	OWN	*op;
 	PLAY	*pp;

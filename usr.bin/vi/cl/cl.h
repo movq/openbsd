@@ -1,5 +1,3 @@
-/*	$OpenBSD: cl.h,v 1.10 2016/05/27 09:18:11 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -54,7 +52,7 @@ typedef struct _cl_private {
 } CL_PRIVATE;
 
 #define	CLP(sp)		((CL_PRIVATE *)((sp)->gp->cl_private))
-#define	GCLP(gp)	((CL_PRIVATE *)(gp)->cl_private)
+#define	GCLP(gp)	((CL_PRIVATE *)gp->cl_private)
 
 /* Return possibilities from the keyboard read routine. */
 typedef enum { INP_OK=0, INP_EOF, INP_ERR, INP_INTR, INP_TIMEOUT } input_t;
@@ -64,5 +62,17 @@ typedef enum { INP_OK=0, INP_EOF, INP_ERR, INP_INTR, INP_TIMEOUT } input_t;
 
 /* X11 xterm escape sequence to rename the icon/window. */
 #define	XTERM_RENAME	"\033]0;%s\007"
+
+/*
+ * XXX
+ * Some implementations of curses.h don't define these for us.  Used for
+ * compatibility only.
+ */
+#ifndef TRUE
+#define	TRUE	1
+#endif
+#ifndef FALSE
+#define	FALSE	0
+#endif
 
 #include "cl_extern.h"

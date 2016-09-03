@@ -1,4 +1,3 @@
-/*	$OpenBSD: rec_utils.c,v 1.9 2015/01/16 16:48:51 deraadt Exp $ */
 /*-
  * Copyright (c) 1990, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -27,6 +30,12 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: rec_utils.c,v 1.3 1996/08/19 08:21:12 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
+#include <sys/param.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,13 +53,17 @@
  *	e:	key/data pair to be returned
  *   nrec:	record number
  *    key:	user's key structure
- *   data:	user's data structure
+ *	data:	user's data structure
  *
  * Returns:
  *	RET_SUCCESS, RET_ERROR.
  */
 int
-__rec_ret(BTREE *t, EPG *e, recno_t nrec, DBT *key, DBT *data)
+__rec_ret(t, e, nrec, key, data)
+	BTREE *t;
+	EPG *e;
+	recno_t nrec;
+	DBT *key, *data;
 {
 	RLEAF *rl;
 	void *p;
@@ -60,7 +73,9 @@ __rec_ret(BTREE *t, EPG *e, recno_t nrec, DBT *key, DBT *data)
 
 	/* We have to copy the key, it's not on the page. */
 	if (sizeof(recno_t) > t->bt_rkey.size) {
-		p = realloc(t->bt_rkey.data, sizeof(recno_t));
+		p = (void *)(t->bt_rkey.data == NULL ?
+		    malloc(sizeof(recno_t)) :
+		    realloc(t->bt_rkey.data, sizeof(recno_t)));
 		if (p == NULL)
 			return (RET_ERROR);
 		t->bt_rkey.data = p;
@@ -88,7 +103,9 @@ dataonly:
 	} else if (F_ISSET(t, B_DB_LOCK)) {
 		/* Use +1 in case the first record retrieved is 0 length. */
 		if (rl->dsize + 1 > t->bt_rdata.size) {
-			p = realloc(t->bt_rdata.data, rl->dsize + 1);
+			p = (void *)(t->bt_rdata.data == NULL ?
+			    malloc(rl->dsize + 1) :
+			    realloc(t->bt_rdata.data, rl->dsize + 1));
 			if (p == NULL)
 				return (RET_ERROR);
 			t->bt_rdata.data = p;

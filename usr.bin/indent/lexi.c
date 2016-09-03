@@ -1,10 +1,9 @@
-/*	$OpenBSD: lexi.c,v 1.20 2016/06/06 06:43:03 tobiasu Exp $	*/
+/*	$OpenBSD: lexi.c,v 1.6 1998/05/22 05:15:12 deraadt Exp $	*/
 
 /*
- * Copyright (c) 1980, 1993
- *	The Regents of the University of California.
- * Copyright (c) 1976 Board of Trustees of the University of Illinois.
  * Copyright (c) 1985 Sun Microsystems, Inc.
+ * Copyright (c) 1980 The Regents of the University of California.
+ * Copyright (c) 1976 Board of Trustees of the University of Illinois.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -15,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,6 +35,11 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+/*static char sccsid[] = "from: @(#)lexi.c	5.16 (Berkeley) 2/26/91";*/
+static char rcsid[] = "$OpenBSD: lexi.c,v 1.6 1998/05/22 05:15:12 deraadt Exp $";
+#endif /* not lint */
+
 /*
  * Here we have the token scanner for indent.  It scans off one token and puts
  * it in the global variable "token".  It returns a code, indicating the type
@@ -42,7 +50,6 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
-#include <err.h>
 #include "indent_globs.h"
 #include "indent_codes.h"
 
@@ -68,7 +75,7 @@ struct templ specialsinit[] = {
 	{ "double", 4 },
 	{ "long", 4 },
 	{ "short", 4 },
-	{ "typedef", 4 },
+	{ "typdef", 4 },
 	{ "unsigned", 4 },
 	{ "register", 4 },
 	{ "static", 4 },
@@ -115,9 +122,10 @@ char        chartype[128] =
 
 
 int
-lexi(void)
+lexi()
 {
     int         unary_delim;	/* this is set to 1 if the current token
+				 * 
 				 * forces a following operator to be unary */
     static int  last_code;	/* the last token type returned */
     static int  l_struct;	/* set to 1 if the last token was 'struct' */
@@ -139,15 +147,15 @@ lexi(void)
     }
 
     /* Scan an alphanumeric token */
-    if (chartype[(int)*buf_ptr] == alphanum ||
-	(buf_ptr[0] == '.' && isdigit((unsigned char)buf_ptr[1]))) {
+    if (chartype[*buf_ptr] == alphanum ||
+	(buf_ptr[0] == '.' && isdigit(buf_ptr[1]))) {
 	/*
 	 * we have a character or number
 	 */
-	char *j;	/* used for searching thru list of
-			 * reserved words */
-	if (isdigit((unsigned char)*buf_ptr) ||
-	    (buf_ptr[0] == '.' && isdigit((unsigned char)buf_ptr[1]))) {
+	register char *j;	/* used for searching thru list of
+				 * 
+				 * reserved words */
+	if (isdigit(*buf_ptr) || (buf_ptr[0] == '.' && isdigit(buf_ptr[1]))) {
 	    int         seendot = 0,
 	                seenexp = 0,
 			seensfx = 0;
@@ -162,15 +170,14 @@ lexi(void)
 	    }
 	    else
 		while (1) {
-		    if (*buf_ptr == '.') {
+		    if (*buf_ptr == '.')
 			if (seendot)
 			    break;
 			else
 			    seendot++;
-		    }
 		    CHECK_SIZE_TOKEN;
 		    *e_token++ = *buf_ptr++;
-		    if (!isdigit((unsigned char)*buf_ptr) && *buf_ptr != '.') {
+		    if (!isdigit(*buf_ptr) && *buf_ptr != '.')
 			if ((*buf_ptr != 'E' && *buf_ptr != 'e') || seenexp)
 			    break;
 			else {
@@ -181,7 +188,6 @@ lexi(void)
 			    if (*buf_ptr == '+' || *buf_ptr == '-')
 				*e_token++ = *buf_ptr++;
 			}
-		    }
 		}
 	    while (1) {
 		if (!(seensfx & 1) &&
@@ -202,15 +208,9 @@ lexi(void)
 		}
 		break;
 	    }
-	    if (!(seensfx & 1) &&    
-	        (*buf_ptr == 'F' || *buf_ptr == 'f')) {
-		CHECK_SIZE_TOKEN;
-		*e_token++ = *buf_ptr++;
-		seensfx |= 1;
-	    }
 	}
 	else
-	    while (chartype[(int)*buf_ptr] == alphanum) {	/* copy it over */
+	    while (chartype[*buf_ptr] == alphanum) {	/* copy it over */
 		CHECK_SIZE_TOKEN;
 		*e_token++ = *buf_ptr++;
 		if (buf_ptr >= buf_end)
@@ -230,7 +230,7 @@ lexi(void)
 	    ps.last_u_d = true;
 	    return (decl);
 	}
-	ps.last_u_d = false;	/* Operator after identifier is binary */
+	ps.last_u_d = false;	/* Operator after indentifier is binary */
 	last_code = ident;	/* Remember that this is the code we will
 				 * return */
 
@@ -238,7 +238,7 @@ lexi(void)
 	 * This loop will check if the token is a keyword.
 	 */
 	for (i = 0; i < nspecials; i++) {
-	    char *p = s_token;	/* point at scanned token */
+	    register char *p = s_token;	/* point at scanned token */
 	    j = specials[i].rwd;
 	    if (*j++ != *p++ || *j++ != *p++)
 		continue;	/* This test depends on the fact that
@@ -293,11 +293,11 @@ lexi(void)
 	    }			/* end of switch */
 	}			/* end of if (found_it) */
 	if (*buf_ptr == '(' && ps.tos <= 1 && ps.ind_level == 0) {
-	    char *tp = buf_ptr;
+	    register char *tp = buf_ptr;
 	    while (tp < buf_end)
 		if (*tp++ == ')' && (*tp == ';' || *tp == ','))
 		    goto not_proc;
-	    strlcpy(ps.procname, token, sizeof ps.procname);
+	    strncpy(ps.procname, token, sizeof ps.procname - 1);
 	    ps.in_parameter_declaration = 1;
 	    rparen_count = 1;
     not_proc:;
@@ -307,8 +307,7 @@ lexi(void)
 	 * token is in fact a declaration keyword -- one that has been
 	 * typedefd
 	 */
-	if (((*buf_ptr == '*' && buf_ptr[1] != '=') ||
-	    isalpha((unsigned char)*buf_ptr) || *buf_ptr == '_')
+	if (((*buf_ptr == '*' && buf_ptr[1] != '=') || isalpha(*buf_ptr) || *buf_ptr == '_')
 		&& !ps.p_l_follow
 	        && !ps.block_init
 		&& (ps.last_token == rparen || ps.last_token == semicolon ||
@@ -565,15 +564,19 @@ stop_lit:
  * Add the given keyword to the keyword table, using val as the keyword type
  */
 void
-addkey(char *key, int val)
+addkey(key, val)
+    char       *key;
+    int		val;
 {
-    struct templ *p;
-    int i;
+    register struct templ *p;
+    int i = 0;
 
-    for (i = 0; i < nspecials; i++) {
+    while (i < nspecials) {
 	p = &specials[i];
 	if (p->rwd[0] == key[0] && strcmp(p->rwd, key) == 0)
 	    return;
+	else
+	    i++;
     }
 
     if (specials == specialsinit) {
@@ -581,23 +584,20 @@ addkey(char *key, int val)
 	 * Whoa. Must reallocate special table.
 	 */
 	nspecials = sizeof (specialsinit) / sizeof (specialsinit[0]);
-	maxspecials = nspecials + (nspecials >> 2);
-	specials = calloc(maxspecials, sizeof specials[0]);
+	maxspecials = nspecials;
+	maxspecials += maxspecials >> 2;
+	specials = (struct templ *)malloc(maxspecials * sizeof specials[0]);
 	if (specials == NULL)
-	    err(1, NULL);
-	memcpy(specials, specialsinit, sizeof specialsinit);
+	    errx(1, "indent: out of memory");
+	memmove(specials, specialsinit, sizeof specialsinit);
     } else if (nspecials >= maxspecials) {
-	int newspecials = maxspecials + (maxspecials >> 2);
-	struct templ *specials2;
-
-	specials2 = reallocarray(specials, newspecials, sizeof(specials[0]));
-	if (specials2 == NULL)
-	    err(1, NULL);
-	specials = specials2;
-	maxspecials = newspecials;
+	maxspecials += maxspecials >> 2;
+	specials = realloc(specials, maxspecials * sizeof specials[0]);
+	if (specials == NULL)
+	    errx(1, "indent: out of memory");
     }
-
-    p = &specials[nspecials];
+    
+    p = &specials[i];
     p->rwd = key;
     p->rwcode = val;
     nspecials++;

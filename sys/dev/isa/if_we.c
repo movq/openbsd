@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_we.c,v 1.26 2015/11/24 17:11:39 mpi Exp $	*/
+/*	$OpenBSD: if_we.c,v 1.7 1998/12/23 07:58:26 aaron Exp $	*/
 /*	$NetBSD: if_we.c,v 1.11 1998/07/05 06:49:14 jonathan Exp $	*/
 
 /*-
@@ -17,6 +17,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the NetBSD
+ *	Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -60,13 +67,34 @@
 #include <sys/syslog.h>
 
 #include <net/if.h>
+#include <net/if_dl.h>
+#include <net/if_types.h>
 #include <net/if_media.h>
 
+#ifdef __NetBSD__
+#include <net/if_ether.h>
+#endif
+
+#ifdef INET
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
+#include <netinet/in_var.h> 
+#include <netinet/ip.h>
+#ifdef __NetBSD__
+#include <netinet/if_inarp.h> 
+#else
 #include <netinet/if_ether.h>
+#endif
+#endif 
+
+#ifdef NS
+#include <netns/ns.h>
+#include <netns/ns_if.h>
+#endif
 
 #if NBPFILTER > 0
 #include <net/bpf.h>
+#include <net/bpfdesc.h>
 #endif
 
 #include <machine/bus.h>
@@ -102,9 +130,8 @@ struct we_softc {
 	void *sc_ih;			/* interrupt handle */
 };
 
-int	we_probe(struct device *, void *, void *);
-int	we_match(struct device *, void *, void *);
-void	we_attach(struct device *, struct device *, void *);
+int	we_probe __P((struct device *, void *, void *));
+void	we_attach __P((struct device *, struct device *, void *));
 
 struct cfattach we_isa_ca = {
 	sizeof(struct we_softc), we_probe, we_attach
@@ -112,29 +139,33 @@ struct cfattach we_isa_ca = {
 
 #if NWE_ISAPNP
 struct cfattach we_isapnp_ca = {
-	sizeof(struct we_softc), we_match, we_attach
+	sizeof(struct we_softc), we_probe, we_attach
 };
 #endif /* NWE_ISAPNP */
 
+#ifdef __NetBSD__
+extern struct cfdriver we_cd;
+#else
 struct cfdriver we_cd = {
 	NULL, "we", DV_IFNET
 };
+#endif
 
-const char *we_params(bus_space_tag_t, bus_space_handle_t, u_int8_t *,
-	    bus_size_t *, int *, int *);
+const char *we_params __P((bus_space_tag_t, bus_space_handle_t, u_int8_t *,
+	    bus_size_t *, int *, int *));
+void	we_set_media __P((struct we_softc *, int));
 
-void	we_media_init(struct dp8390_softc *);
+int	we_mediachange __P((struct dp8390_softc *));
+void	we_mediastatus __P((struct dp8390_softc *, struct ifmediareq *));
 
-int	we_mediachange(struct dp8390_softc *);
-void	we_mediastatus(struct dp8390_softc *, struct ifmediareq *);
+void	we_recv_int __P((struct dp8390_softc *));
+void	we_init_card __P((struct dp8390_softc *));
+int	we_write_mbuf __P((struct dp8390_softc *, struct mbuf *, int));
+int	we_ring_copy __P((struct dp8390_softc *, int, caddr_t, u_short));
+void	we_read_hdr __P((struct dp8390_softc *, int, struct dp8390_ring *));
+int	we_test_mem __P((struct dp8390_softc *));
 
-void	we_recv_int(struct dp8390_softc *);
-int	we_write_mbuf(struct dp8390_softc *, struct mbuf *, int);
-int	we_ring_copy(struct dp8390_softc *, int, caddr_t, u_short);
-void	we_read_hdr(struct dp8390_softc *, int, struct dp8390_ring *);
-int	we_test_mem(struct dp8390_softc *);
-
-__inline void we_readmem(struct we_softc *, int, u_int8_t *, int);
+__inline void we_readmem __P((struct we_softc *, int, u_int8_t *, int));
 
 static const int we_584_irq[] = {
 	9, 3, 5, 7, 10, 11, 15, 4,
@@ -145,6 +176,12 @@ static const int we_790_irq[] = {
 	IRQUNK, 9, 3, 5, 7, 10, 11, 15,
 };
 #define	NWE_790_IRQ	(sizeof(we_790_irq) / sizeof(we_790_irq[0]))
+
+int we_media[] = {
+	IFM_ETHER|IFM_10_2,
+	IFM_ETHER|IFM_10_5,
+};
+#define	NWE_MEDIA	(sizeof(we_media) / sizeof(we_media[0]))
 
 /*
  * Delay needed when switching 16-bit access to shared memory.
@@ -178,15 +215,9 @@ do { \
 } while (0)
 
 int
-we_probe(struct device *parent, void *match, void *aux)
-{
-	struct cfdata *cf = ((struct device *)match)->dv_cfdata;
-
-	return (we_match(parent, cf, aux));
-}
-
-int
-we_match(struct device *parent, void *match, void *aux)
+we_probe(parent, match, aux)
+	struct device *parent;
+	void *match, *aux;
 {
 	struct isa_attach_args *ia = aux;
 	struct cfdata *cf = match;
@@ -257,7 +288,7 @@ we_match(struct device *parent, void *match, void *aux)
 	bus_space_write_1(asict, asich, WE_MSR,
 	    bus_space_read_1(asict, asich, WE_MSR) & ~WE_MSR_RST);
 
-	/* Wait in case the card is reading its EEPROM. */
+	/* Wait in case the card is reading it's EEPROM. */
 	delay(5000);
 
 	/*
@@ -298,7 +329,7 @@ we_match(struct device *parent, void *match, void *aux)
 		    hwr & ~WE790_HWR_SWH);
 
 		if (ia->ia_irq != IRQUNK && ia->ia_irq != we_790_irq[i])
-			printf("%s%d: changing IRQ %d to %d\n",
+			printf("%s%d: overriding IRQ %d to %d\n",
 			    we_cd.cd_name, cf->cf_unit, ia->ia_irq,
 			    we_790_irq[i]);
 		ia->ia_irq = we_790_irq[i];
@@ -309,7 +340,7 @@ we_match(struct device *parent, void *match, void *aux)
 		      (WE_IRR_IR0 | WE_IRR_IR1)) >> 5);
 
 		if (ia->ia_irq != IRQUNK && ia->ia_irq != we_584_irq[i])
-			printf("%s%d: changing IRQ %d to %d\n",
+			printf("%s%d: overriding IRQ %d to %d\n",
 			    we_cd.cd_name, cf->cf_unit, ia->ia_irq,
 			    we_584_irq[i]);
 		ia->ia_irq = we_584_irq[i];
@@ -329,7 +360,9 @@ we_match(struct device *parent, void *match, void *aux)
 }
 
 void
-we_attach(struct device *parent, struct device *self, void *aux)
+we_attach(parent, self, aux)
+	struct device *parent, *self;
+	void *aux;
 {
 	struct we_softc *wsc = (struct we_softc *)self;
 	struct dp8390_softc *sc = &wsc->sc_dp8390;
@@ -340,8 +373,6 @@ we_attach(struct device *parent, struct device *self, void *aux)
 	u_int8_t x;
 	int i;
 
-	printf("\n");
-
 	nict = asict = ia->ia_iot;
 	memt = ia->ia_memt;
 
@@ -349,23 +380,20 @@ we_attach(struct device *parent, struct device *self, void *aux)
 	if (!strcmp(parent->dv_cfdata->cf_driver->cd_name, "isapnp") && ia->ia_ioh)
 		asich = ia->ia_ioh;
 	else if (bus_space_map(asict, ia->ia_iobase, WE_NPORTS, 0, &asich)) {
-		printf("%s: can't map nic i/o space\n",
-		    sc->sc_dev.dv_xname);
+		printf(": can't map nic i/o space\n");
 		return;
 	}
 
 	if (bus_space_subregion(asict, asich, WE_NIC_OFFSET, WE_NIC_NPORTS,
 	    &nich)) {
-		printf("%s: can't subregion i/o space\n",
-		    sc->sc_dev.dv_xname);
+		printf(": can't subregion i/o space\n");
 		return;
 	}
 
 	typestr = we_params(asict, asich, &wsc->sc_type, NULL,
 	    &wsc->sc_16bitp, &sc->is790);
 	if (typestr == NULL) {
-		printf("%s: where did the card go?\n",
-		    sc->sc_dev.dv_xname);
+		printf(": where did the card go?\n");
 		return;
 	}
 
@@ -376,8 +404,7 @@ we_attach(struct device *parent, struct device *self, void *aux)
 	if (!strcmp(parent->dv_cfdata->cf_driver->cd_name, "isapnp") && ia->ia_memh)
 		memh = ia->ia_memh;
 	else if (bus_space_map(memt, ia->ia_maddr, ia->ia_msize, 0, &memh)) {
-		printf("%s: can't map shared memory\n",
-		    sc->sc_dev.dv_xname);
+		printf(": can't map shared memory\n");
 		return;
 	}
 
@@ -407,13 +434,16 @@ we_attach(struct device *parent, struct device *self, void *aux)
 
 	/* Now we can use the NIC_{GET,PUT}() macros. */
 
-	printf("%s: %s (%s-bit)", sc->sc_dev.dv_xname, typestr,
-	    wsc->sc_16bitp ? "16" : "8");
+	printf(": %s (%s-bit)\n", typestr, wsc->sc_16bitp ? "16" : "8");
 
 	/* Get station address from EEPROM. */
 	for (i = 0; i < ETHER_ADDR_LEN; i++)
+#ifdef __NetBSD__
+		sc->sc_enaddr[i] = bus_space_read_1(asict, asich, WE_PROM + i);
+#else
 		sc->sc_arpcom.ac_enaddr[i] =
 		    bus_space_read_1(asict, asich, WE_PROM + i);
+#endif
 
 	/*
 	 * Set upper address bits and 8/16 bit access to shared memory.
@@ -498,12 +528,32 @@ we_attach(struct device *parent, struct device *self, void *aux)
 	sc->sc_flags = self->dv_cfdata->cf_flags;
 
 	/* Do generic parts of attach. */
-	if (wsc->sc_type & WE_SOFTCONFIG)
-		sc->sc_media_init = we_media_init;
-	else
-		sc->sc_media_init = dp8390_media_init;
-	if (dp8390_config(sc)) {
-		printf(": configuration failed\n");
+	if (wsc->sc_type & WE_SOFTCONFIG) {
+		int defmedia = IFM_ETHER;
+
+		if (sc->is790) {
+			x = bus_space_read_1(asict, asich, WE790_HWR);
+			bus_space_write_1(asict, asich, WE790_HWR,
+			    x | WE790_HWR_SWH);
+			if (bus_space_read_1(asict, asich, WE790_GCR) &
+			    WE790_GCR_GPOUT)
+				defmedia |= IFM_10_2;
+			else
+				defmedia |= IFM_10_5;
+			bus_space_write_1(asict, asich, WE790_HWR,
+			    x & ~WE790_HWR_SWH);
+		} else {
+			x = bus_space_read_1(asict, asich, WE_IRR);
+			if (x & WE_IRR_OUT2)
+				defmedia |= IFM_10_2;
+			else
+				defmedia |= IFM_10_5;
+		}
+		i = dp8390_config(sc, we_media, NWE_MEDIA, defmedia);
+	} else
+		i = dp8390_config(sc, NULL, 0, 0);
+	if (i) {
+		printf("%s: configuration failed\n", sc->sc_dev.dv_xname);
 		return;
 	}
 
@@ -545,7 +595,8 @@ we_attach(struct device *parent, struct device *self, void *aux)
 }
 
 int
-we_test_mem(struct dp8390_softc *sc)
+we_test_mem(sc)
+	struct dp8390_softc *sc;
 {
 	struct we_softc *wsc = (struct we_softc *)sc;
 	bus_space_tag_t memt = sc->sc_buft;
@@ -585,7 +636,11 @@ we_test_mem(struct dp8390_softc *sc)
  * up to a word - ok as long as mbufs are word-sized.
  */
 __inline void
-we_readmem(struct we_softc *wsc, int from, u_int8_t *to, int len)
+we_readmem(wsc, from, to, len)
+	struct we_softc *wsc;
+	int from;
+	u_int8_t *to;
+	int len;
 {
 	bus_space_tag_t memt = wsc->sc_dp8390.sc_buft;
 	bus_space_handle_t memh = wsc->sc_dp8390.sc_bufh;
@@ -602,7 +657,10 @@ we_readmem(struct we_softc *wsc, int from, u_int8_t *to, int len)
 }
 
 int
-we_write_mbuf(struct dp8390_softc *sc, struct mbuf *m, int buf)
+we_write_mbuf(sc, m, buf)
+	struct dp8390_softc *sc;
+	struct mbuf *m;
+	int buf;
 {
 	struct we_softc *wsc = (struct we_softc *)sc;
 	bus_space_tag_t memt = wsc->sc_dp8390.sc_buft;
@@ -652,6 +710,12 @@ we_write_mbuf(struct dp8390_softc *sc, struct mbuf *m, int buf)
 				    *(u_int16_t *)savebyte);
 				buf += 2;
 				leftover = 0;
+#ifdef i386
+#define ALIGNED_POINTER(p,t)	1
+#endif
+#ifdef alpha
+#define ALIGNED_POINTER(p,t)	((((u_long)(p)) & (sizeof(t)-1)) == 0)
+#endif
 			} else if (ALIGNED_POINTER(data, u_int16_t) == 0) {
 				/*
 				 * Unaligned dta; buffer the next byte.
@@ -696,7 +760,11 @@ we_write_mbuf(struct dp8390_softc *sc, struct mbuf *m, int buf)
 }
 
 int
-we_ring_copy(struct dp8390_softc *sc, int src, caddr_t dst, u_short amount)
+we_ring_copy(sc, src, dst, amount)
+	struct dp8390_softc *sc;
+	int src;
+	caddr_t dst;
+	u_short amount;
 {
 	struct we_softc *wsc = (struct we_softc *)sc;
 	u_short tmp_amount;
@@ -719,8 +787,10 @@ we_ring_copy(struct dp8390_softc *sc, int src, caddr_t dst, u_short amount)
 }
 
 void
-we_read_hdr(struct dp8390_softc *sc, int packet_ptr,
-    struct dp8390_ring *packet_hdrp)
+we_read_hdr(sc, packet_ptr, packet_hdrp)
+	struct dp8390_softc *sc;
+	int packet_ptr;
+	struct dp8390_ring *packet_hdrp;
 {
 	struct we_softc *wsc = (struct we_softc *)sc;
 
@@ -732,7 +802,8 @@ we_read_hdr(struct dp8390_softc *sc, int packet_ptr,
 }
 
 void
-we_recv_int(struct dp8390_softc *sc)
+we_recv_int(sc)
+	struct dp8390_softc *sc;
 {
 	struct we_softc *wsc = (struct we_softc *)sc;
 
@@ -741,53 +812,24 @@ we_recv_int(struct dp8390_softc *sc)
 	WE_MEM_DISABLE(wsc);
 }
 
-void
-we_media_init(struct dp8390_softc *sc)
-{
-	struct we_softc *wsc = (void *)sc;
-	uint64_t defmedia = IFM_ETHER;
-	u_int8_t x;
-
-	if (sc->is790) {
-		x = bus_space_read_1(wsc->sc_asict, wsc->sc_asich, WE790_HWR);
-		bus_space_write_1(wsc->sc_asict, wsc->sc_asich, WE790_HWR,
-		    x | WE790_HWR_SWH);
-		if (bus_space_read_1(wsc->sc_asict, wsc->sc_asich, WE790_GCR) &
-		    WE790_GCR_GPOUT)
-			defmedia |= IFM_10_2;
-		else
-			defmedia |= IFM_10_5;
-		bus_space_write_1(wsc->sc_asict, wsc->sc_asich, WE790_HWR,
-		    x &~ WE790_HWR_SWH);
-	} else {
-		x = bus_space_read_1(wsc->sc_asict, wsc->sc_asich, WE_IRR);
-		if (x & WE_IRR_OUT2)
-			defmedia |= IFM_10_2;
-		else
-			defmedia |= IFM_10_5;
-	}
-
-	ifmedia_init(&sc->sc_media, 0, dp8390_mediachange, dp8390_mediastatus);
-	ifmedia_add(&sc->sc_media, IFM_ETHER|IFM_10_2, 0, NULL);
-	ifmedia_add(&sc->sc_media, IFM_ETHER|IFM_10_5, 0, NULL);
-	ifmedia_set(&sc->sc_media, defmedia);
-}
-
 int
-we_mediachange(struct dp8390_softc *sc)
+we_mediachange(sc)
+	struct dp8390_softc *sc;
 {
 
 	/*
 	 * Current media is already set up.  Just reset the interface
 	 * to let the new value take hold.  The new media will be
-	 * set up in dp8390_init().
+	 * set up in we_init_card() called via dp8390_init().
 	 */
 	dp8390_reset(sc);
 	return (0);
 }
 
 void
-we_mediastatus(struct dp8390_softc *sc, struct ifmediareq *ifmr)
+we_mediastatus(sc, ifmr)
+	struct dp8390_softc *sc;
+	struct ifmediareq *ifmr;
 {
 	struct ifmedia *ifm = &sc->sc_media;
 
@@ -797,10 +839,57 @@ we_mediastatus(struct dp8390_softc *sc, struct ifmediareq *ifmr)
 	ifmr->ifm_active = ifm->ifm_cur->ifm_media;
 }
 
+void
+we_init_card(sc)
+	struct dp8390_softc *sc;
+{
+	struct we_softc *wsc = (struct we_softc *)sc;
+	struct ifmedia *ifm = &sc->sc_media;
+
+	we_set_media(wsc, ifm->ifm_cur->ifm_media);
+}
+
+void
+we_set_media(wsc, media)
+	struct we_softc *wsc;
+	int media;
+{
+	struct dp8390_softc *sc = &wsc->sc_dp8390;
+	bus_space_tag_t asict = wsc->sc_asict;
+	bus_space_handle_t asich = wsc->sc_asich;
+	u_int8_t hwr, gcr, irr;
+
+	if (sc->is790) {
+		hwr = bus_space_read_1(asict, asich, WE790_HWR);
+		bus_space_write_1(asict, asich, WE790_HWR,
+		    hwr | WE790_HWR_SWH);
+		gcr = bus_space_read_1(asict, asich, WE790_GCR);
+		if (IFM_SUBTYPE(media) == IFM_10_2)
+			gcr |= WE790_GCR_GPOUT;
+		else
+			gcr &= ~WE790_GCR_GPOUT;
+		bus_space_write_1(asict, asich, WE790_GCR,
+		    gcr | WE790_GCR_LIT);
+		bus_space_write_1(asict, asich, WE790_HWR,
+		    hwr & ~WE790_HWR_SWH);
+		return;
+	}
+
+	irr = bus_space_read_1(wsc->sc_asict, wsc->sc_asich, WE_IRR);
+	if (IFM_SUBTYPE(media) == IFM_10_2)
+		irr |= WE_IRR_OUT2;
+	else
+		irr &= ~WE_IRR_OUT2;
+	bus_space_write_1(wsc->sc_asict, wsc->sc_asich, WE_IRR, irr);
+}
+
 const char *
-we_params(bus_space_tag_t asict, bus_space_handle_t asich,
-    u_int8_t *typep, bus_size_t *memsizep, int *is16bitp,
-    int *is790p)
+we_params(asict, asich, typep, memsizep, is16bitp, is790p)
+	bus_space_tag_t asict;
+	bus_space_handle_t asich;
+	u_int8_t *typep;
+	bus_size_t *memsizep;
+	int *is16bitp, *is790p;
 {
 	const char *typestr;
 	bus_size_t memsize;

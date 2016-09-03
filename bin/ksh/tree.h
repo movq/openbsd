@@ -1,10 +1,14 @@
-/*	$OpenBSD: tree.h,v 1.12 2015/10/15 22:53:50 mmcc Exp $	*/
+/*	$OpenBSD: tree.h,v 1.7 1999/07/14 13:37:24 millert Exp $	*/
 
 /*
  * command trees for compile/execute
  */
 
 /* $From: tree.h,v 1.3 1994/05/31 13:34:34 michael Exp $ */
+
+#define	NOBLOCK	((struct op *)NULL)
+#define	NOWORD	((char *)NULL)
+#define	NOWORDS	((char **)NULL)
 
 /*
  * Description of a command or an operation on commands.
@@ -18,7 +22,7 @@ struct op {
 	char  **args;			/* arguments to a command */
 	char  **vars;			/* variable assignments */
 	struct ioword	**ioact;	/* IO actions (eg, < > >>) */
-	struct op *left, *right;	/* descendents */
+	struct op *left, *right; 	/* descendents */
 	char   *str;			/* word for case; identifier for for,
 					 * select, and functions;
 					 * path to execute for TEXEC;
@@ -105,7 +109,8 @@ struct ioword {
 #define	XCCLOSE	BIT(7)		/* exchild: close close_fd in child */
 #define XERROK	BIT(8)		/* non-zero exit ok (for set -e) */
 #define XCOPROC BIT(9)		/* starting a co-process */
-#define XTIME	BIT(10)		/* timing TCOM command */
+#define XTIME	BIT(10)		/* timeing TCOM command */
+#define XINTACT BIT(11)		/* OS2: proc started from interactive session */
 
 /*
  * flags to control expansion of words (assumed by t->evalflags to fit
@@ -135,11 +140,3 @@ struct ioword {
 #define DB_AND	3		/* && -> -a conversion */
 #define DB_BE	4		/* an inserted -BE */
 #define DB_PAT	5		/* a pattern argument */
-
-void	fptreef(struct shf *, int, const char *, ...);
-char *	snptreef(char *, int, const char *, ...);
-struct op *	tcopy(struct op *, Area *);
-char *	wdcopy(const char *, Area *);
-char *	wdscan(const char *, int);
-char *	wdstrip(const char *);
-void	tfree(struct op *, Area *);

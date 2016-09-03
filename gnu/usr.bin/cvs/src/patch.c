@@ -12,7 +12,6 @@
  * release as either a date or a revision number.
  */
 
-#include <assert.h>
 #include "cvs.h"
 #include "getline.h"
 
@@ -21,7 +20,7 @@ static Dtype patch_dirproc PROTO ((void *callerdat, char *dir,
 				   char *repos, char *update_dir,
 				   List *entries));
 static int patch_fileproc PROTO ((void *callerdat, struct file_info *finfo));
-static int patch_proc PROTO((int argc, char **argv, char *xwhere,
+static int patch_proc PROTO((int *pargc, char **argv, char *xwhere,
 		       char *mwhere, char *mfile, int shorten,
 		       int local_specified, char *mname, char *msg));
 
@@ -190,7 +189,7 @@ patch (argc, argv)
 	options = xstrdup ("");
 
 #ifdef CLIENT_SUPPORT
-    if (current_parsed_root->isremote)
+    if (client_active)
     {
 	/* We're the client side.  Fire up the remote server.  */
 	start_server ();
@@ -231,9 +230,6 @@ patch (argc, argv)
 #endif
 
     /* clean up if we get a signal */
-#ifdef SIGABRT
-    (void) SIG_register (SIGABRT, patch_cleanup);
-#endif
 #ifdef SIGHUP
     (void) SIG_register (SIGHUP, patch_cleanup);
 #endif
@@ -253,7 +249,7 @@ patch (argc, argv)
     db = open_module ();
     for (i = 0; i < argc; i++)
 	err += do_module (db, argv[i], PATCH, "Patching", patch_proc,
-			  (char *) NULL, 0, 0, 0, 0, (char *) NULL);
+			  (char *) NULL, 0, 0, 0, (char *) NULL);
     close_module (db);
     free (options);
     patch_cleanup ();
@@ -265,9 +261,9 @@ patch (argc, argv)
  */
 /* ARGSUSED */
 static int
-patch_proc (argc, argv, xwhere, mwhere, mfile, shorten, local_specified,
+patch_proc (pargc, argv, xwhere, mwhere, mfile, shorten, local_specified,
 	    mname, msg)
-    int argc;
+    int *pargc;
     char **argv;
     char *xwhere;
     char *mwhere;
@@ -277,17 +273,16 @@ patch_proc (argc, argv, xwhere, mwhere, mfile, shorten, local_specified,
     char *mname;
     char *msg;
 {
-    char *myargv[2];
     int err = 0;
     int which;
     char *repository;
     char *where;
 
-    repository = xmalloc (strlen (current_parsed_root->directory) + strlen (argv[0])
-			  + (mfile == NULL ? 0 : strlen (mfile) + 1) + 2);
-    (void) sprintf (repository, "%s/%s", current_parsed_root->directory, argv[0]);
-    where = xmalloc (strlen (argv[0]) + (mfile == NULL ? 0 : strlen (mfile) + 1)
-		     + 1);
+    repository = xmalloc (strlen (CVSroot_directory) + strlen (argv[0])
+			  + (mfile == NULL ? 0 : strlen (mfile)) + 30);
+    (void) sprintf (repository, "%s/%s", CVSroot_directory, argv[0]);
+    where = xmalloc (strlen (argv[0]) + (mfile == NULL ? 0 : strlen (mfile))
+		     + 10);
     (void) strcpy (where, argv[0]);
 
     /* if mfile isn't null, we need to set up to do only part of the module */
@@ -308,7 +303,7 @@ patch_proc (argc, argv, xwhere, mwhere, mfile, shorten, local_specified,
 	}
 
 	/* take care of the rest */
-	path = xmalloc (strlen (repository) + strlen (mfile) + 2);
+	path = xmalloc (strlen (repository) + strlen (mfile) + 5);
 	(void) sprintf (path, "%s/%s", repository, mfile);
 	if (isdir (path))
 	{
@@ -319,10 +314,13 @@ patch_proc (argc, argv, xwhere, mwhere, mfile, shorten, local_specified,
 	}
 	else
 	{
-	    myargv[0] = argv[0];
-	    myargv[1] = mfile;
-	    argc = 2;
-	    argv = myargv;
+	    int i;
+
+	    /* a file means muck argv */
+	    for (i = 1; i < *pargc; i++)
+		free (argv[i]);
+	    argv[1] = xstrdup (mfile);
+	    (*pargc) = 2;
 	}
 	free (path);
     }
@@ -343,19 +341,19 @@ patch_proc (argc, argv, xwhere, mwhere, mfile, shorten, local_specified,
 
     if (rev1 != NULL && !rev1_validated)
     {
-	tag_check_valid (rev1, argc - 1, argv + 1, local, 0, NULL);
+	tag_check_valid (rev1, *pargc - 1, argv + 1, local, 0, NULL);
 	rev1_validated = 1;
     }
     if (rev2 != NULL && !rev2_validated)
     {
-	tag_check_valid (rev2, argc - 1, argv + 1, local, 0, NULL);
+	tag_check_valid (rev2, *pargc - 1, argv + 1, local, 0, NULL);
 	rev2_validated = 1;
     }
 
     /* start the recursion processor */
     err = start_recursion (patch_fileproc, (FILESDONEPROC) NULL, patch_dirproc,
 			   (DIRLEAVEPROC) NULL, NULL,
-			   argc - 1, argv + 1, local,
+			   *pargc - 1, argv + 1, local,
 			   which, 0, 1, where, 1);
     free (where);
 
@@ -375,7 +373,6 @@ patch_fileproc (callerdat, finfo)
     struct utimbuf t;
     char *vers_tag, *vers_head;
     char *rcs = NULL;
-    char *rcs_orig = NULL;
     RCSNode *rcsfile;
     FILE *fp1, *fp2, *fp3;
     int ret = 0;
@@ -405,7 +402,7 @@ patch_fileproc (callerdat, finfo)
     if ((rcsfile->flags & VALID) && (rcsfile->flags & INATTIC))
 	isattic = 1;
 
-    rcs_orig = rcs = xmalloc (strlen (finfo->file) + sizeof (RCSEXT) + 5);
+    rcs = xmalloc (strlen (finfo->file) + sizeof (RCSEXT) + 5);
     (void) sprintf (rcs, "%s%s", finfo->file, RCSEXT);
 
     /* if vers_head is NULL, may have been removed from the release */
@@ -504,15 +501,10 @@ patch_fileproc (callerdat, finfo)
     }
 
     /* Create 3 empty files.  I'm not really sure there is any advantage
-     * to doing so now rather than just waiting until later.
-     *
-     * There is - cvs_temp_file opens the file so that it can guarantee that
-     * we have exclusive write access to the file.  Unfortunately we spoil that
-     * by closing it and reopening it again.  Of course any better solution
-     * requires that the RCS functions accept open file pointers rather than
-     * simple file names.
-     */
-    if ((fp1 = cvs_temp_file (&tmpfile1)) == NULL)
+       to doing so now rather than just waiting until later.  */
+    tmpfile1 = cvs_temp_name ();
+    fp1 = CVS_FOPEN (tmpfile1, "w+");
+    if (fp1 == NULL)
     {
 	error (0, errno, "cannot create temporary file %s", tmpfile1);
 	ret = 1;
@@ -521,7 +513,9 @@ patch_fileproc (callerdat, finfo)
     else
 	if (fclose (fp1) < 0)
 	    error (0, errno, "warning: cannot close %s", tmpfile1);
-    if ((fp2 = cvs_temp_file (&tmpfile2)) == NULL)
+    tmpfile2 = cvs_temp_name ();
+    fp2 = CVS_FOPEN (tmpfile2, "w+");
+    if (fp2 == NULL)
     {
 	error (0, errno, "cannot create temporary file %s", tmpfile2);
 	ret = 1;
@@ -530,7 +524,9 @@ patch_fileproc (callerdat, finfo)
     else
 	if (fclose (fp2) < 0)
 	    error (0, errno, "warning: cannot close %s", tmpfile2);
-    if ((fp3 = cvs_temp_file (&tmpfile3)) == NULL)
+    tmpfile3 = cvs_temp_name ();
+    fp3 = CVS_FOPEN (tmpfile3, "w+");
+    if (fp3 == NULL)
     {
 	error (0, errno, "cannot create temporary file %s", tmpfile3);
 	ret = 1;
@@ -583,7 +579,7 @@ patch_fileproc (callerdat, finfo)
 	    (void) utime (tmpfile2, &t);
     }
 
-    switch (diff_exec (tmpfile1, tmpfile2, NULL, NULL, unidiff ? "-u" : "-c", tmpfile3))
+    switch (diff_exec (tmpfile1, tmpfile2, unidiff ? "-u" : "-c", tmpfile3))
     {
 	case -1:			/* fork/wait failure */
 	    error (1, errno, "fork for diff failed on %s", rcs);
@@ -603,8 +599,8 @@ patch_fileproc (callerdat, finfo)
 	    cvs_output ("\n", 1);
 
 	    fp = open_file (tmpfile3, "r");
-	    if (get_line (&line1, &line1_chars_allocated, fp) < 0 ||
-		get_line (&line2, &line2_chars_allocated, fp) < 0)
+	    if (getline (&line1, &line1_chars_allocated, fp) < 0 ||
+		getline (&line2, &line2_chars_allocated, fp) < 0)
 	    {
 		if (feof (fp))
 		    error (0, 0, "\
@@ -646,14 +642,13 @@ failed to read diff file header %s for %s: end of file", tmpfile3, rcs);
 		    goto out;
 		}
 	    }
-	    assert (current_parsed_root != NULL);
-	    assert (current_parsed_root->directory != NULL);
+	    if (CVSroot_directory != NULL)
 	    {
-		strippath = xmalloc (strlen (current_parsed_root->directory) + 2);
-		(void) sprintf (strippath, "%s/", current_parsed_root->directory);
+		strippath = xmalloc (strlen (CVSroot_directory) + 10);
+		(void) sprintf (strippath, "%s/", CVSroot_directory);
 	    }
-	    /*else
-		strippath = xstrdup (REPOS_STRIP); */
+	    else
+		strippath = xstrdup (REPOS_STRIP);
 	    if (strncmp (rcs, strippath, strlen (strippath)) == 0)
 		rcs += strlen (strippath);
 	    free (strippath);
@@ -709,7 +704,7 @@ failed to read diff file header %s for %s: end of file", tmpfile3, rcs);
 
 	    /* spew the rest of the diff out */
 	    while ((line_length
-		    = get_line (&line1, &line1_chars_allocated, fp))
+		    = getline (&line1, &line1_chars_allocated, fp))
 		   >= 0)
 		cvs_output (line1, 0);
 	    if (line_length < 0 && !feof (fp))
@@ -740,12 +735,8 @@ failed to read diff file header %s for %s: end of file", tmpfile3, rcs);
     tmpfile1 = tmpfile2 = tmpfile3 = NULL;
 
  out2:
-    if (vers_tag != NULL)
-	free (vers_tag);
-    if (vers_head != NULL)
-	free (vers_head);
-    if (rcs_orig)
-	free (rcs_orig);
+    if (rcs != NULL)
+	free (rcs);
     return (ret);
 }
 

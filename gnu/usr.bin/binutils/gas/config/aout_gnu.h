@@ -1,7 +1,6 @@
 /* This file is aout_gnu.h
 
-   Copyright 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 2000
-   Free Software Foundation, Inc.
+   Copyright (C) 1987-1992 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -64,6 +63,7 @@ enum reloc_type
 
 #endif /* TC_SPARC or TC_A29K */
 
+
 #define __GNU_EXEC_MACROS__
 
 #ifndef __STRUCT_EXEC_OVERRIDE__
@@ -119,8 +119,6 @@ enum machine_type
     M_386 = 100,
     M_29K = 101,
     M_RS6000 = 102,		/* IBM RS/6000 */
-    M_VAX4K_NETBSD = 150,
-    M_88K_OPENBSD = 153,
     /* HP/BSD formats */
     M_HP200 = 200,		/* hp200 (68010) BSD binary */
     M_HP300 = 300,		/* hp300 (68020+68881) BSD binary */
@@ -184,6 +182,7 @@ enum machine_type
 			 _N_HDROFF((x)) + sizeof (struct exec) :	\
 			 sizeof (struct exec))
 #endif
+
 
 #ifndef N_DATOFF
 #define N_DATOFF(x)	( N_TXTOFF(x) + (x).a_text )
@@ -318,6 +317,7 @@ struct reloc_ext_bytes
     unsigned char r_addend[4];
   };
 
+
 #define	RELOC_EXT_BITS_EXTERN_BIG	0x80
 #define	RELOC_EXT_BITS_EXTERN_LITTLE	0x01
 
@@ -345,6 +345,8 @@ struct reloc_info_extended
 
 /* The standard, old-fashioned, Berkeley compatible relocation struct */
 
+
+
 #ifdef TC_I860
 /* NOTE: three bits max, see struct reloc_info_i860.r_type */
 enum i860_reloc_type
@@ -359,6 +361,7 @@ enum highlow_type
   {
     NO_SPEC = 0, PAIR, HIGH, HIGHADJ,
   };
+
 
 struct reloc_info_i860
 {
@@ -377,6 +380,7 @@ struct reloc_info_i860
 };
 
 #endif /* TC_I860 */
+
 
 struct reloc_std_bytes
   {

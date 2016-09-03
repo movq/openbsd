@@ -1,73 +1,13 @@
-/*	$OpenBSD: hack.main.c,v 1.22 2016/01/09 21:54:11 mestre Exp $	*/
-
 /*
- * Copyright (c) 1985, Stichting Centrum voor Wiskunde en Informatica,
- * Amsterdam
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- * - Redistributions of source code must retain the above copyright notice,
- * this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above copyright
- * notice, this list of conditions and the following disclaimer in the
- * documentation and/or other materials provided with the distribution.
- *
- * - Neither the name of the Stichting Centrum voor Wiskunde en
- * Informatica, nor the names of its contributors may be used to endorse or
- * promote products derived from this software without specific prior
- * written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
- * IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
- * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER
- * OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Copyright (c) Stichting Mathematisch Centrum, Amsterdam, 1985.
  */
 
-/*
- * Copyright (c) 1982 Jay Fenlason <hack@gnu.org>
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
- * AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL
- * THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
-
-#include <sys/stat.h>
+#ifndef lint
+static char rcsid[] = "$NetBSD: hack.main.c,v 1.3 1995/03/23 08:30:35 cgd Exp $";
+#endif /* not lint */
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <signal.h>
-#include <unistd.h>
-
 #include "hack.h"
 
 #ifdef QUEST
@@ -76,13 +16,17 @@
 #define	gamename	"hack"
 #endif
 
+extern char *getlogin(), *getenv();
 extern char plname[PL_NSIZ], pl_character[PL_CSIZ];
 extern struct permonst mons[CMNUM+2];
-extern char genocided[60], fut_geno[60];
+extern char genocided[], fut_geno[];
 
-void (*afternmv)(void);
-int (*occupation)(void);
+int (*afternmv)();
+int (*occupation)();
 char *occtxt;			/* defined when occupation != NULL */
+
+void done1();
+void hangup();
 
 int hackpid;				/* current pid */
 int locknum;				/* max num of players */
@@ -90,24 +34,26 @@ int locknum;				/* max num of players */
 char *catmore;				/* default pager */
 #endif
 char SAVEF[PL_NSIZ + 11] = "save/";	/* save/99999player */
+char *hname;		/* name of the game (argv[0] of call) */
 char obuf[BUFSIZ];	/* BUFSIZ is defined in stdio.h */
 
 extern char *nomovemsg;
 extern long wailmsg;
 
 #ifdef CHDIR
-static void chdirx(char *, boolean);
+static void chdirx();
 #endif
 
-int
-main(int argc, char **argv)
+main(argc,argv)
+int argc;
+char *argv[];
 {
-	extern char *__progname;
-	int fd;
+	register int fd;
 #ifdef CHDIR
-	char *dir;
+	register char *dir;
 #endif
 
+	hname = argv[0];
 	hackpid = getpid();
 
 #ifdef CHDIR			/* otherwise no chdir() */
@@ -146,15 +92,17 @@ main(int argc, char **argv)
 	 * Note that we trust him here; it is possible to play under
 	 * somebody else's name.
 	 */
-	{ char *s;
+	{ register char *s;
 
 	  initoptions();
 	  if(!*plname && (s = getenv("LOGNAME")))
-		(void) strlcpy(plname, s, sizeof(plname));
+		(void) strncpy(plname, s, sizeof(plname)-1);
 	  if(!*plname && (s = getenv("USER")))
-		(void) strlcpy(plname, s, sizeof(plname));
+		(void) strncpy(plname, s, sizeof(plname)-1);
 	  if(!*plname && (s = getlogin()))
-		(void) strlcpy(plname, s, sizeof(plname));
+		(void) strncpy(plname, s, sizeof(plname)-1);
+	  if(*plname)
+		plname[sizeof(plname)-1] = '\0';
 	}
 
 	/*
@@ -166,7 +114,7 @@ main(int argc, char **argv)
 		chdirx(dir,0);
 #endif
 		prscore(argc, argv);
-		return 0;
+		exit(0);
 	}
 
 	/*
@@ -174,19 +122,20 @@ main(int argc, char **argv)
 	 * Remember tty modes, to be restored on exit.
 	 */
 	gettty();
-	setvbuf(stdout, obuf, _IOFBF, sizeof obuf);
+	setbuf(stdout,obuf);
 	umask(007);
+	setrandom();
 	startup();
 	cls();
 	u.uhp = 1;	/* prevent RIP on early quits */
 	u.ux = FAR;	/* prevent nscr() */
-	(void) signal(SIGHUP, hackhangup);
+	(void) signal(SIGHUP, hangup);
 
 	/*
 	 * Find the creation date of this game,
 	 * so as to avoid restoring outdated savefiles.
 	 */
-	gethdate(__progname);
+	gethdate(hname);
 
 	/*
 	 * We cannot do chdir earlier, otherwise gethdate will fail.
@@ -217,17 +166,22 @@ main(int argc, char **argv)
 #endif
 		case 'u':
 			if(argv[0][2]) {
-			  (void) strlcpy(plname, argv[0]+2, sizeof(plname));
+			  (void) strncpy(plname, argv[0]+2, sizeof(plname)-1);
+			  plname[sizeof(plname)-1] = '\0';
 			} else if(argc > 1) {
 			  argc--;
 			  argv++;
-			  (void) strlcpy(plname, argv[0], sizeof(plname));
+			  (void) strncpy(plname, argv[0], sizeof(plname)-1);
+			  plname[sizeof(plname)-1] = '\0';
 			} else
 				printf("Player name expected after -u\n");
 			break;
 		default:
 			/* allow -T for Tourist, etc. */
-			(void) strlcpy(pl_character, argv[0]+1, sizeof(pl_character));
+			(void) strncpy(pl_character, argv[0]+1,
+				sizeof(pl_character)-1);
+			plname[sizeof(pl_character)-1] = '\0';
+
 			/* printf("Unknown option: %s\n", *argv); */
 		}
 	}
@@ -246,7 +200,7 @@ main(int argc, char **argv)
 	getmailstatus();
 #endif
 #ifdef WIZARD
-	if(wizard) (void) strlcpy(plname, "wizard", sizeof plname); else
+	if(wizard) (void) strcpy(plname, "wizard"); else
 #endif
 	if(!*plname || !strncmp(plname, "player", 4)
 		    || !strncmp(plname, "games", 4))
@@ -264,23 +218,23 @@ main(int argc, char **argv)
 		(void) signal(SIGQUIT,SIG_IGN);
 		(void) signal(SIGINT,SIG_IGN);
 		if(!locknum)
-			(void) strlcpy(lock,plname,sizeof lock);
+			(void) strcpy(lock,plname);
 		getlock();	/* sets lock if locknum != 0 */
 #ifdef WIZARD
 	} else {
-		char *sfoo;
-		(void) strlcpy(lock,plname,sizeof lock);
-		if ((sfoo = getenv("MAGIC")))
+		register char *sfoo;
+		(void) strcpy(lock,plname);
+		if(sfoo = getenv("MAGIC"))
 			while(*sfoo) {
 				switch(*sfoo++) {
-				case 'n': (void) srandom_deterministic(*sfoo++);
+				case 'n': (void) srandom(*sfoo++);
 					break;
 				}
 			}
-		if ((sfoo = getenv("GENOCIDED"))) {
+		if(sfoo = getenv("GENOCIDED")){
 			if(*sfoo == '!'){
-				struct permonst *pm = mons;
-				char *gp = genocided;
+				register struct permonst *pm = mons;
+				register char *gp = genocided;
 
 				while(pm < mons+CMNUM+2){
 					if(!strchr(sfoo, pm->mlet))
@@ -289,13 +243,13 @@ main(int argc, char **argv)
 				}
 				*gp = 0;
 			} else
-				strlcpy(genocided, sfoo, sizeof genocided);
-			strlcpy(fut_geno, genocided, sizeof fut_geno);
+				(void) strcpy(genocided, sfoo);
+			(void) strcpy(fut_geno, genocided);
 		}
 	}
 #endif
 	setftty();
-	(void) snprintf(SAVEF, sizeof SAVEF, "save/%u%s", getuid(), plname);
+	(void) sprintf(SAVEF, "save/%d%s", getuid(), plname);
 	regularize(SAVEF+5);		/* avoid . or / in name */
 	if((fd = open(SAVEF, O_RDONLY)) >= 0 &&
 	   (uptodate(fd) || unlink(SAVEF) == 666)) {
@@ -324,9 +278,8 @@ not_recovered:
 		setsee();
 		flags.botlx = 1;
 		makedog();
-		{ struct monst *mtmp;
-		  if ((mtmp = m_at(u.ux, u.uy)))
-			  mnexto(mtmp);	/* riv05!a3 */
+		{ register struct monst *mtmp;
+		  if(mtmp = m_at(u.ux, u.uy)) mnexto(mtmp);	/* riv05!a3 */
 		}
 		seemons();
 #ifdef NEWS
@@ -366,7 +319,7 @@ not_recovered:
 				    (void) makemon((struct permonst *)0, 0, 0);
 			}
 			if(Glib) glibr();
-			hacktimeout();
+			timeout();
 			++moves;
 			if(flags.time) flags.botl = 1;
 			if(u.uhp < 1) {
@@ -402,7 +355,7 @@ not_recovered:
 		}
 		if(multi < 0) {
 			if(!++multi){
-				pline("%s", nomovemsg ? nomovemsg :
+				pline(nomovemsg ? nomovemsg :
 					"You can move again.");
 				nomovemsg = 0;
 				if(afternmv) (*afternmv)();
@@ -452,22 +405,22 @@ not_recovered:
 #ifdef MAIL
 			ckmailstatus();
 #endif
-			rhack(NULL);
+			rhack((char *) 0);
 		}
 		if(multi && multi%7 == 0)
 			(void) fflush(stdout);
 	}
 }
 
-void
-glo(int foo)
+glo(foo)
+register foo;
 {
 	/* construct the string  xlock.n  */
-	char *tf;
+	register char *tf;
 
 	tf = lock;
 	while(*tf && *tf != '.') tf++;
-	(void) snprintf(tf, lock + sizeof lock - tf, ".%d", foo);
+	(void) sprintf(tf, ".%d", foo);
 }
 
 /*
@@ -475,11 +428,8 @@ glo(int foo)
  * explicitly (-w implies wizard) or by askname.
  * It may still contain a suffix denoting pl_character.
  */
-void
-askname(void)
-{
-	int c,ct;
-
+askname(){
+register int c,ct;
 	printf("\nWho are you? ");
 	(void) fflush(stdout);
 	ct = 0;
@@ -498,22 +448,20 @@ askname(void)
 	if(ct == 0) askname();
 }
 
-void
-impossible(const char *s, ...)
+/*VARARGS1*/
+impossible(s,x1,x2)
+register char *s;
 {
-	va_list ap;
-
-	va_start(ap, s);
-	vpline(s, ap);
-	va_end(ap);
+	pline(s,x1,x2);
 	pline("Program in disorder - perhaps you'd better Quit.");
 }
 
 #ifdef CHDIR
 static void
-chdirx(char *dir, boolean wr)
+chdirx(dir, wr)
+char *dir;
+boolean wr;
 {
-	gid_t gid;
 
 #ifdef SECURE
 	if(dir					/* User specified directory? */
@@ -521,9 +469,9 @@ chdirx(char *dir, boolean wr)
 	       && strcmp(dir, HACKDIR)		/* and not the default? */
 #endif
 		) {
-		/* revoke privs */
-		gid = getgid();
-		setresgid(gid, gid, gid);
+		/* revoke */
+		setegid(getgid());
+		setgid(getgid());
 	}
 #endif
 
@@ -541,7 +489,7 @@ chdirx(char *dir, boolean wr)
 	/* perhaps we should also test whether . is writable */
 	/* unfortunately the access systemcall is worthless */
 	if(wr) {
-	    int fd;
+	    register fd;
 
 	    if(dir == NULL)
 		dir = ".";
@@ -554,8 +502,7 @@ chdirx(char *dir, boolean wr)
 }
 #endif
 
-void
-stop_occupation(void)
+stop_occupation()
 {
 	if(occupation) {
 		pline("You stop %s.", occtxt);

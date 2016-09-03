@@ -1,6 +1,7 @@
-/*	$OpenBSD: fld_move.c,v 1.6 2015/01/23 22:48:51 krw Exp $	*/
+/*	$OpenBSD: fld_move.c,v 1.3 1999/05/17 03:04:14 millert Exp $	*/
+
 /****************************************************************************
- * Copyright (c) 1998-2003,2004 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -28,12 +29,12 @@
  ****************************************************************************/
 
 /****************************************************************************
- *   Author:  Juergen Pfeifer, 1995,1997                                    *
+ *   Author: Juergen Pfeifer <juergen.pfeifer@gmx.net> 1995,1997            *
  ****************************************************************************/
 
 #include "form.priv.h"
 
-MODULE_ID("$Id: fld_move.c,v 1.6 2015/01/23 22:48:51 krw Exp $")
+MODULE_ID("$From: fld_move.c,v 1.4 1999/05/16 17:38:51 juergen Exp $")
 
 /*---------------------------------------------------------------------------
 |   Facility      :  libnform  
@@ -46,15 +47,12 @@ MODULE_ID("$Id: fld_move.c,v 1.6 2015/01/23 22:48:51 krw Exp $")
 |                    E_BAD_ARGUMENT  - invalid argument passed
 |                    E_CONNECTED     - field is connected
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(int)
-move_field(FIELD *field, int frow, int fcol)
+int move_field(FIELD *field, int frow, int fcol)
 {
-  T((T_CALLED("move_field(%p,%d,%d)"), field, frow, fcol));
-
-  if (!field || (frow < 0) || (fcol < 0))
+  if ( !field || (frow<0) || (fcol<0) ) 
     RETURN(E_BAD_ARGUMENT);
 
-  if (field->form)
+  if (field->form) 
     RETURN(E_CONNECTED);
 
   field->frow = frow;
@@ -63,3 +61,4 @@ move_field(FIELD *field, int frow, int fcol)
 }
 
 /* fld_move.c ends here */
+

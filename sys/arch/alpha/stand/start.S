@@ -1,4 +1,4 @@
-/*	$OpenBSD: start.S,v 1.6 2011/06/05 21:49:36 miod Exp $	*/
+/*	$OpenBSD: start.S,v 1.3 1996/10/30 22:40:36 niklas Exp $	*/
 /*	$NetBSD: start.S,v 1.4 1996/10/17 02:50:40 cgd Exp $	*/
 
 /*  
@@ -49,19 +49,19 @@ NESTED(start, 1, ENTRY_FRAME, ra, 0, 0)
 Lstartgp:
 	LDGP(pv)
 
-	lda	sp,start
-#ifdef PRIMARY_BOOTBLOCK
-	lda	sp,0x30000-ENTRY_FRAME(sp)
-#else
-	lda	sp,-ENTRY_FRAME(sp)	/* start stack below text */
+#ifndef PRIMARY_BOOTBLOCK
+	lda	sp,start		/* start stack below text */
+	lda	sp,-ENTRY_FRAME(sp)
 #endif
 
-	or	a0,zero,s0
+#ifdef ECOFF_COMPAT
+	lda	a0,_EDATA
+#else
 	lda	a0,_edata
+#endif
 	lda	a1,_end
 	subq	a1,a0,a1
 	CALL(bzero)
-	or	s0,zero,a0
 
 	CALL(main)			/* transfer to C */
 

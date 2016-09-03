@@ -1,4 +1,4 @@
-/*	$OpenBSD: pl_5.c,v 1.9 2016/01/08 20:26:33 mestre Exp $	*/
+/*	$OpenBSD: pl_5.c,v 1.2 1999/01/18 06:20:53 pjanzen Exp $	*/
 /*	$NetBSD: pl_5.c,v 1.4 1995/04/24 12:25:21 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,18 +34,20 @@
  * SUCH DAMAGE.
  */
 
-#include <ctype.h>
-#include <signal.h>
-#include <string.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)pl_5.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: pl_5.c,v 1.2 1999/01/18 06:20:53 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
-#include "extern.h"
-#include "machdep.h"
 #include "player.h"
 
 #define turnfirst(x) (*x == 'r' || *x == 'l')
 
 void
-acceptmove(void)
+acceptmove()
 {
 	int ta;
 	int ma;
@@ -59,8 +65,7 @@ acceptmove(void)
 
 	ta = maxturns(ms, &af);
 	ma = maxmove(ms, mf->dir, 0);
-	(void) snprintf(prompt, sizeof prompt,
-		"move (%d,%c%d): ", ma, af ? '\'' : ' ', ta);
+	(void) sprintf(prompt, "move (%d,%c%d): ", ma, af ? '\'' : ' ', ta);
 	sgetstr(prompt, buf, sizeof buf);
 	dir = mf->dir;
 	vma = ma;
@@ -112,7 +117,7 @@ acceptmove(void)
 				*p-- = '\0';
 			break;
 		default:
-			if (!isspace((unsigned char)*p)) {
+			if (!isspace(*p)) {
 				Msg("Input error.");
 				*p-- = '\0';
 			}
@@ -135,15 +140,15 @@ acceptmove(void)
 		}
 	}
 	if (*buf)
-		(void) strlcpy(movebuf, buf, sizeof movebuf);
+		(void) strcpy(movebuf, buf);
 	else
-		(void) strlcpy(movebuf, "d", sizeof movebuf);
+		(void) strcpy(movebuf, "d");
 	Writestr(W_MOVE, ms, movebuf);
 	Msg("Helm: %s.", movebuf);
 }
 
 void
-acceptboard(void)
+acceptboard()
 {
 	struct ship *sp;
 	int n;
@@ -196,7 +201,11 @@ acceptboard(void)
 }
 
 void
-parties(int crew[3], struct ship *to, int isdefense, int buf)
+parties(crew, to, isdefense, buf)
+	struct ship *to;
+	int crew[3];
+	char isdefense;
+	char buf;
 {
 	int k, j, men; 
 	struct BP *ptr;
@@ -204,11 +213,11 @@ parties(int crew[3], struct ship *to, int isdefense, int buf)
 
 	for (k = 0; k < 3; k++)
 		temp[k] = crew[k];
-	if (isdigit((unsigned char)buf)) {
+	if (isdigit(buf)) {
 		ptr = isdefense ? to->file->DBP : to->file->OBP; 
 		for (j = 0; j < NBP && ptr[j].turnsent; j++)
 			;
-		if (j < NBP && buf > '0') {
+		if (!ptr[j].turnsent && buf > '0') {
 			men = 0;
 			for (k = 0; k < 3 && buf > '0'; k++) {
 				men += crew[k]

@@ -1,4 +1,4 @@
-/*	$OpenBSD: flt_rounds.c,v 1.7 2015/10/27 05:54:49 guenther Exp $	*/
+/*	$OpenBSD: flt_rounds.c,v 1.4 1997/08/01 21:36:25 deraadt Exp $	*/
 /*	$NetBSD: flt_rounds.c,v 1.1 1995/04/29 05:09:53 cgd Exp $	*/
 
 /*
@@ -32,8 +32,12 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: flt_rounds.c,v 1.4 1997/08/01 21:36:25 deraadt Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
-#include <float.h>
+#include <machine/float.h>
 
 static const int map[] = {
 	0,	/* round to zero */
@@ -55,4 +59,3 @@ __flt_rounds()
 
 	return map[(old >> 58) & 0x3];
 }
-DEF_STRONG(__flt_rounds);

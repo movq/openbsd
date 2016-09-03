@@ -1,4 +1,4 @@
-/*	$OpenBSD: exec_i386.c,v 1.42 2015/09/18 13:30:56 miod Exp $	*/
+/*	$OpenBSD: exec_i386.c,v 1.24 1998/09/27 17:41:18 mickey Exp $	*/
 
 /*
  * Copyright (c) 1997-1998 Michael Shalayeff
@@ -13,9 +13,15 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Michael Shalayeff.
+ *	This product includes software developed by Tobias Weingartner.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHORS ``AS IS'' AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHORS ``AS IS'' AND ANY EXPRESS OR 
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
  * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
@@ -29,117 +35,52 @@
  */
 
 #include <sys/param.h>
-#include <sys/disklabel.h>
 #include <dev/cons.h>
-#include <lib/libsa/loadfile.h>
-#include <machine/biosvar.h>
 #include <stand/boot/bootarg.h>
-
+#include <machine/biosvar.h>
+#include <sys/disklabel.h>
 #include "disk.h"
 #include "libsa.h"
-
-#ifdef SOFTRAID
-#include <dev/softraidvar.h>
-#include "softraid.h"
-#endif
-
-#ifdef EFIBOOT
-#include "efiboot.h"
-#endif
+#include <lib/libsa/exec.h>
 
 typedef void (*startfuncp)(int, int, int, int, int, int, int, int)
-    __attribute__ ((noreturn));
-
-char *bootmac = NULL;
+	__attribute__ ((noreturn));
 
 void
-run_loadfile(u_long *marks, int howto)
+machdep_exec(xp, howto, loadaddr)
+	struct x_param *xp;
+	int howto;
+	void *loadaddr;
 {
-	u_long entry;
+#ifndef _TEST
 #ifdef EXEC_DEBUG
 	extern int debug;
 #endif
 	dev_t bootdev = bootdev_dip->bootdev;
 	size_t ac = BOOTARG_LEN;
 	caddr_t av = (caddr_t)BOOTARG_OFF;
-	bios_consdev_t cd;
-	extern int com_speed; /* from bioscons.c */
-	extern int com_addr;
-	bios_ddb_t ddb;
-	extern int db_console;
-	bios_bootduid_t bootduid;
-#ifdef SOFTRAID
-	bios_bootsr_t bootsr;
-	struct sr_boot_volume *bv;
-#endif
 
-#ifdef EFIBOOT
-	if ((av = alloc(ac)) == NULL)
-		panic("alloc for bootarg");
-	efi_makebootargs();
-#endif
-	if (sa_cleanup != NULL)
-		(*sa_cleanup)();
-
-	cd.consdev = cn_tab->cn_dev;
-	cd.conspeed = com_speed;
-	cd.consaddr = com_addr;
-	cd.consfreq = 0;
-	addbootarg(BOOTARG_CONSDEV, sizeof(cd), &cd);
-
-	if (bootmac != NULL)
-		addbootarg(BOOTARG_BOOTMAC, sizeof(bios_bootmac_t), bootmac);
-
-	if (db_console != -1) {
-		ddb.db_console = db_console;
-		addbootarg(BOOTARG_DDB, sizeof(ddb), &ddb);
-	}
-
-	bcopy(bootdev_dip->disklabel.d_uid, &bootduid.duid, sizeof(bootduid));
-	addbootarg(BOOTARG_BOOTDUID, sizeof(bootduid), &bootduid);
-
-#ifdef SOFTRAID
-	if (bootdev_dip->sr_vol != NULL) {
-		bv = bootdev_dip->sr_vol;
-		bzero(&bootsr, sizeof(bootsr));
-		bcopy(&bv->sbv_uuid, &bootsr.uuid, sizeof(bootsr.uuid));
-		if (bv->sbv_maskkey != NULL)
-			bcopy(bv->sbv_maskkey, &bootsr.maskkey,
-			    sizeof(bootsr.maskkey));
-		addbootarg(BOOTARG_BOOTSR, sizeof(bios_bootsr_t), &bootsr);
-		explicit_bzero(&bootsr, sizeof(bootsr));
-	}
-
-	sr_clear_keys();
-#endif
-
-	/* Pass memory map to the kernel */
-	mem_pass();
-
-#ifdef __amd64__
-	/*
-	 * This code may be used both for 64bit and 32bit.  Make sure the
-	 * bootarg is 32bit always on even on amd64.
-	 */
-	makebootargs32(av, &ac);
-#else
 	makebootargs(av, &ac);
+
+#ifdef EXEC_DEBUG
+	if (debug) {
+		struct exec *x = (void *)loadaddr;
+		printf("exec {\n\ta_midmag = %x\n\ta_text = %x\n\ta_data = %x\n"
+		       "\ta_bss = %x\n\ta_syms = %x\n\ta_entry = %x\n"
+		       "\ta_trsize = %x\n\ta_drsize = %x\n}\n",
+		       x->a_midmag, x->a_text, x->a_data, x->a_bss, x->a_syms,
+		       x->a_entry, x->a_trsize, x->a_drsize);
+
+		printf("/bsd(%x,%u,%p)\n", BOOTARG_APIVER, ac, av);
+		getchar();
+	}
 #endif
+	xp->xp_entry &= 0xffffff;
 
-	entry = marks[MARK_ENTRY] & 0x0fffffff;
-
-	printf("entry point at 0x%x\n", (int)entry);
-
-#if defined(EFIBOOT)
-	efi_cleanup();
-#endif
-#if defined(EFIBOOT) && defined(__amd64__)
-	(*run_i386)((u_long)run_i386, entry, howto, bootdev, BOOTARG_APIVER,
-	    marks[MARK_END], extmem, cnvmem, ac, (intptr_t)av);
-#else
+	printf("entry point at 0x%x\n", xp->xp_entry);
 	/* stack and the gung is ok at this point, so, no need for asm setup */
-	(*(startfuncp)entry)(howto, bootdev, BOOTARG_APIVER, marks[MARK_END],
-	    extmem, cnvmem, ac, (int)av);
+	(*(startfuncp)xp->xp_entry)(howto, bootdev, BOOTARG_APIVER,
+		xp->xp_end, extmem, cnvmem, ac, (int)av);
 	/* not reached */
 #endif
 }

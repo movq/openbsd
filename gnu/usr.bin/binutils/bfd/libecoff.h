@@ -1,6 +1,5 @@
 /* BFD ECOFF object file private structure.
-   Copyright 1993, 1994, 1995, 1996, 1999, 2001, 2002, 2003
-   Free Software Foundation, Inc.
+   Copyright (C) 1993, 1994, 1995, 1996 Free Software Foundation, Inc.
    Written by Ian Lance Taylor, Cygnus Support.
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -44,10 +43,10 @@ struct ecoff_backend_data
   /* The page boundary used to align sections in a demand-paged
      executable file.  E.g., 0x1000.  */
   bfd_vma round;
-  /* TRUE if the .rdata section is part of the text segment, as on the
-     Alpha.  FALSE if .rdata is part of the data segment, as on the
+  /* True if the .rdata section is part of the text segment, as on the
+     Alpha.  False if .rdata is part of the data segment, as on the
      MIPS.  */
-  bfd_boolean rdata_in_text;
+  boolean rdata_in_text;
   /* Bitsize of constructor entries.  */
   unsigned int constructor_bitsize;
   /* Reloc to use for constructor entries.  */
@@ -60,18 +59,18 @@ struct ecoff_backend_data
   void (*swap_reloc_in) PARAMS ((bfd *, PTR, struct internal_reloc *));
   void (*swap_reloc_out) PARAMS ((bfd *, const struct internal_reloc *, PTR));
   /* Backend reloc tweaking.  */
-  void (*adjust_reloc_in)
-    PARAMS ((bfd *, const struct internal_reloc *, arelent *));
-  void (*adjust_reloc_out)
-    PARAMS ((bfd *, const arelent *, struct internal_reloc *));
+  void (*adjust_reloc_in) PARAMS ((bfd *, const struct internal_reloc *,
+				   arelent *));
+  void (*adjust_reloc_out) PARAMS ((bfd *, const arelent *,
+				    struct internal_reloc *));
   /* Relocate section contents while linking.  */
-  bfd_boolean (*relocate_section)
-    PARAMS ((bfd *output_bfd, struct bfd_link_info *, bfd *input_bfd,
-	     asection *input_section, bfd_byte *contents,
-	     PTR external_relocs));
+  boolean (*relocate_section) PARAMS ((bfd *output_bfd, struct bfd_link_info *,
+				       bfd *input_bfd, asection *input_section,
+				       bfd_byte *contents,
+				       PTR external_relocs));
   /* Do final adjustments to filehdr and aouthdr.  */
-  bfd_boolean (*adjust_headers)
-    PARAMS ((bfd *, struct internal_filehdr *, struct internal_aouthdr *));
+  boolean (*adjust_headers) PARAMS ((bfd *, struct internal_filehdr *,
+				     struct internal_aouthdr *));
   /* Read an element from an archive at a given file position.  This
      is needed because OSF/1 3.2 uses a weird archive format.  */
   bfd *(*get_elt_at_filepos) PARAMS ((bfd *, file_ptr));
@@ -128,12 +127,12 @@ typedef struct ecoff_tdata
      linking.  */
   asection **symndx_to_section;
 
-  /* TRUE if this BFD was written by the backend linker.  */
-  bfd_boolean linker;
+  /* True if this BFD was written by the backend linker.  */
+  boolean linker;
 
-  /* TRUE if a warning that multiple global pointer values are
+  /* True if a warning that multiple global pointer values are
      needed in the output binary was issued already.  */
-  bfd_boolean issued_multiple_gp_warning;
+  boolean issued_multiple_gp_warning;
 
   /* Used by find_nearest_line entry point.  The structure could be
      included directly in this one, but there's no point to wasting
@@ -143,7 +142,7 @@ typedef struct ecoff_tdata
   /* Whether the .rdata section is in the text segment for this
      particular ECOFF file.  This is not valid until
      ecoff_compute_section_file_positions is called.  */
-  bfd_boolean rdata_in_text;
+  boolean rdata_in_text;
 
 } ecoff_data_type;
 
@@ -157,8 +156,8 @@ typedef struct ecoff_symbol_struct
   /* The fdr for this symbol.  */
   FDR *fdr;
 
-  /* TRUE if this is a local symbol rather than an external one.  */
-  bfd_boolean local;
+  /* true if this is a local symbol rather than an external one.  */
+  boolean local;
 
   /* A pointer to the unswapped hidden information for this symbol.
      This is either a struct sym_ext or a struct ext_ext, depending on
@@ -166,7 +165,7 @@ typedef struct ecoff_symbol_struct
   PTR native;
 } ecoff_symbol_type;
 
-/* We take the address of the first element of an asymbol to ensure that the
+/* We take the address of the first element of a asymbol to ensure that the
    macro is only ever applied to an asymbol.  */
 #define ecoffsymbol(asymbol) ((ecoff_symbol_type *) (&((asymbol)->the_bfd)))
 
@@ -249,28 +248,27 @@ struct ecoff_link_hash_table
 };
 
 /* Make an ECOFF object.  */
-extern bfd_boolean _bfd_ecoff_mkobject PARAMS ((bfd *));
+extern boolean _bfd_ecoff_mkobject PARAMS ((bfd *));
 
 /* Read in the ECOFF symbolic debugging information.  */
-extern bfd_boolean _bfd_ecoff_slurp_symbolic_info
+extern boolean _bfd_ecoff_slurp_symbolic_info
   PARAMS ((bfd *, asection *, struct ecoff_debug_info *));
 
 /* Generic ECOFF BFD backend vectors.  */
 
-extern bfd_boolean _bfd_ecoff_write_object_contents PARAMS ((bfd *abfd));
+extern boolean _bfd_ecoff_write_object_contents PARAMS ((bfd *abfd));
 extern const bfd_target *_bfd_ecoff_archive_p PARAMS ((bfd *abfd));
 
 #define	_bfd_ecoff_close_and_cleanup _bfd_generic_close_and_cleanup
 #define _bfd_ecoff_bfd_free_cached_info _bfd_generic_bfd_free_cached_info
-extern bfd_boolean _bfd_ecoff_new_section_hook
+extern boolean _bfd_ecoff_new_section_hook
   PARAMS ((bfd *, asection *));
-extern bfd_boolean _bfd_ecoff_get_section_contents
+extern boolean _bfd_ecoff_get_section_contents
   PARAMS ((bfd *, asection *, PTR location, file_ptr, bfd_size_type));
 
 #define _bfd_ecoff_bfd_link_split_section _bfd_generic_link_split_section
 
-extern bfd_boolean _bfd_ecoff_bfd_copy_private_bfd_data
-  PARAMS ((bfd *, bfd *));
+extern boolean _bfd_ecoff_bfd_copy_private_bfd_data PARAMS ((bfd *, bfd *));
 #define _bfd_ecoff_bfd_copy_private_section_data \
   _bfd_generic_bfd_copy_private_section_data
 
@@ -284,12 +282,12 @@ extern bfd_boolean _bfd_ecoff_bfd_copy_private_bfd_data
   _bfd_generic_bfd_merge_private_bfd_data
 
 #define _bfd_ecoff_bfd_set_private_flags _bfd_generic_bfd_set_private_flags
-extern bfd_boolean _bfd_ecoff_slurp_armap PARAMS ((bfd *abfd));
+extern boolean _bfd_ecoff_slurp_armap PARAMS ((bfd *abfd));
 #define _bfd_ecoff_slurp_extended_name_table _bfd_slurp_extended_name_table
 #define _bfd_ecoff_construct_extended_name_table \
   _bfd_archive_bsd_construct_extended_name_table
 #define _bfd_ecoff_truncate_arname bfd_dont_truncate_arname
-extern bfd_boolean _bfd_ecoff_write_armap
+extern boolean _bfd_ecoff_write_armap
   PARAMS ((bfd *, unsigned int, struct orl *, unsigned int, int));
 #define _bfd_ecoff_read_ar_hdr _bfd_generic_read_ar_hdr
 #define _bfd_ecoff_openr_next_archived_file \
@@ -299,16 +297,16 @@ extern bfd_boolean _bfd_ecoff_write_armap
 #define _bfd_ecoff_update_armap_timestamp bfd_true
 
 extern long _bfd_ecoff_get_symtab_upper_bound PARAMS ((bfd *abfd));
-extern long _bfd_ecoff_canonicalize_symtab PARAMS ((bfd *abfd, asymbol **alocation));
+extern long _bfd_ecoff_get_symtab PARAMS ((bfd *abfd, asymbol **alocation));
 extern asymbol *_bfd_ecoff_make_empty_symbol PARAMS ((bfd *abfd));
 extern void _bfd_ecoff_print_symbol
   PARAMS ((bfd *, PTR filep, asymbol *, bfd_print_symbol_type));
 extern void _bfd_ecoff_get_symbol_info
   PARAMS ((bfd *, asymbol *, symbol_info *));
-extern bfd_boolean _bfd_ecoff_bfd_is_local_label_name
-  PARAMS ((bfd *, const char *));
+extern boolean _bfd_ecoff_bfd_is_local_label
+  PARAMS ((bfd *, asymbol *));
 #define _bfd_ecoff_get_lineno _bfd_nosymbols_get_lineno
-extern bfd_boolean _bfd_ecoff_find_nearest_line
+extern boolean _bfd_ecoff_find_nearest_line
   PARAMS ((bfd *, asection *, asymbol **, bfd_vma offset,
 	   const char **filename_ptr, const char **fnname_ptr,
 	   unsigned int *retline_ptr));
@@ -321,21 +319,19 @@ extern long _bfd_ecoff_canonicalize_reloc
   PARAMS ((bfd *, asection *, arelent **, asymbol **symbols));
 /* ecoff_bfd_reloc_type_lookup defined by backend. */
 
-extern bfd_boolean _bfd_ecoff_set_arch_mach
-  PARAMS ((bfd *, enum bfd_architecture, unsigned long));
-extern bfd_boolean _bfd_ecoff_set_section_contents
-  PARAMS ((bfd *, asection *, const PTR location, file_ptr, bfd_size_type));
+extern boolean _bfd_ecoff_set_arch_mach
+  PARAMS ((bfd *, enum bfd_architecture, unsigned long machine));
+extern boolean _bfd_ecoff_set_section_contents
+  PARAMS ((bfd *, asection *, PTR location, file_ptr, bfd_size_type));
 
-extern int _bfd_ecoff_sizeof_headers PARAMS ((bfd *abfd, bfd_boolean reloc));
+extern int _bfd_ecoff_sizeof_headers PARAMS ((bfd *abfd, boolean reloc));
 /* ecoff_bfd_get_relocated_section_contents defined by backend.  */
 /* ecoff_bfd_relax_section defined by backend.  */
 extern struct bfd_link_hash_table *_bfd_ecoff_bfd_link_hash_table_create
   PARAMS ((bfd *));
-#define _bfd_ecoff_bfd_link_hash_table_free _bfd_generic_link_hash_table_free
-extern bfd_boolean _bfd_ecoff_bfd_link_add_symbols
+extern boolean _bfd_ecoff_bfd_link_add_symbols
   PARAMS ((bfd *, struct bfd_link_info *));
-#define _bfd_ecoff_bfd_link_just_syms _bfd_generic_link_just_syms
-extern bfd_boolean _bfd_ecoff_bfd_final_link
+extern boolean _bfd_ecoff_bfd_final_link
   PARAMS ((bfd *, struct bfd_link_info *));
 
 /* Hook functions for the generic COFF section reading code.  */
@@ -343,11 +339,10 @@ extern bfd_boolean _bfd_ecoff_bfd_final_link
 extern PTR _bfd_ecoff_mkobject_hook PARAMS ((bfd *, PTR filehdr, PTR aouthdr));
 #define _bfd_ecoff_set_alignment_hook \
   ((void (*) PARAMS ((bfd *, asection *, PTR))) bfd_void)
-extern bfd_boolean _bfd_ecoff_set_arch_mach_hook
-  PARAMS ((bfd *abfd, PTR filehdr));
-extern bfd_boolean _bfd_ecoff_styp_to_sec_flags
-  PARAMS ((bfd *, PTR, const char *, asection *, flagword *));
-extern bfd_boolean _bfd_ecoff_slurp_symbol_table PARAMS ((bfd *abfd));
+extern boolean _bfd_ecoff_set_arch_mach_hook PARAMS ((bfd *abfd, PTR filehdr));
+extern flagword _bfd_ecoff_styp_to_sec_flags
+  PARAMS ((bfd *abfd, PTR hdr, const char *name));
+extern boolean _bfd_ecoff_slurp_symbol_table PARAMS ((bfd *abfd));
 
 /* ECOFF auxiliary information swapping routines.  These are the same
    for all ECOFF targets, so they are defined in ecofflink.c.  */

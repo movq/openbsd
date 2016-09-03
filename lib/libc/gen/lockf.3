@@ -1,4 +1,4 @@
-.\"	$OpenBSD: lockf.3,v 1.13 2013/06/05 03:39:22 tedu Exp $
+.\"	$OpenBSD: lockf.3,v 1.8 1999/06/05 03:44:54 aaron Exp $
 .\"	$NetBSD: lockf.3,v 1.1 1997/12/20 20:23:17 kleink Exp $
 .\"
 .\" Copyright (c) 1997 The NetBSD Foundation, Inc.
@@ -15,6 +15,13 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"        This product includes software developed by the NetBSD
+.\"        Foundation, Inc. and its contributors.
+.\" 4. Neither the name of The NetBSD Foundation nor the names of its
+.\"    contributors may be used to endorse or promote products derived
+.\"    from this software without specific prior written permission.
 .\"
 .\" THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
 .\" ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -28,14 +35,14 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: June 5 2013 $
+.Dd December 19, 1997
 .Dt LOCKF 3
 .Os
 .Sh NAME
 .Nm lockf
 .Nd record locking on files
 .Sh SYNOPSIS
-.In unistd.h
+.Fd #include <unistd.h>
 .Ft int
 .Fn lockf "int filedes" "int function" "off_t size"
 .Sh DESCRIPTION
@@ -89,12 +96,11 @@ detects if a lock by another process is present on the specified section.
 .Pp
 The
 .Fa size
-argument is the number of contiguous bytes to be locked or unlocked.
-The section to be locked or unlocked starts at the current
+argument is the number of contiguous bytes to be locked or
+unlocked. The section to be locked or unlocked starts at the current
 offset in the file and extends forward for a positive size or backward
 for a negative size (the preceding bytes up to but not including the
-current offset).
-However, it is not permitted to lock a section that
+current offset). However, it is not permitted to lock a section that
 starts or extends before the beginning of the file.
 If
 .Fa size
@@ -107,11 +113,9 @@ The sections locked with
 or
 .Dv F_TLOCK
 may, in whole or in part, contain or be contained by a previously
-locked section for the same process.
-When this occurs, or if adjacent
+locked section for the same process. When this occurs, or if adjacent
 locked sections would occur, the sections are combined into a single
-locked section.
-If the request would cause the number of locks to
+locked section. If the request would cause the number of locks to
 exceed a system-imposed limit, the request will fail.
 .Pp
 The
@@ -131,49 +135,39 @@ file descriptor for the file.
 .Pp
 .Dv F_ULOCK
 requests release (wholly or in part) of one or more locked sections
-controlled by the process.
-Locked sections will be unlocked starting
+controlled by the process. Locked sections will be unlocked starting
 at the current file offset through
 .Fa size
-bytes or to the end of the file if
-.Fa size
-is 0.
-When all of a locked section
+bytes or to the end of the file if size is 0. When all of a locked section
 is not released (that is, when the beginning or end of the area to be
 unlocked falls within a locked section), the remaining portions of
-that section are still locked by the process.
-Releasing the center
+that section are still locked by the process. Releasing the center
 portion of a locked section will cause the remaining locked beginning
-and end portions to become two separate locked sections.
-If the
+and end portions to become two separate locked sections. If the
 request would cause the number of locks in the system to exceed a
 system-imposed limit, the request will fail.
 .Pp
 An
 .Dv F_ULOCK
-request in which
-.Fa size
-is non-zero and the offset of the last byte of
+request in which size is non-zero and the offset of the last byte of
 the requested section is the maximum value for an object of type
 .Li off_t ,
 when the process has an existing lock in which size is 0 and
 which includes the last byte of the requested section, will be treated
 as a request to unlock from the start of the requested section with a
-size equal to 0.
-Otherwise an
+size equal to 0. Otherwise an
 .Dv F_ULOCK
 request will attempt to unlock only the requested section.
 .Pp
 A potential for deadlock occurs if a process controlling a locked
 region is put to sleep by attempting to lock the locked region of
-another process.
-This implementation detects that sleeping until a
+another process.  This implementation detects that sleeping until a
 locked region is unlocked would cause a deadlock and fails with an
 .Er EDEADLK
 error.
 .Pp
 .Fn lockf ,
-.Xr fcntl 2 ,
+.Xr fcntl 2
 and
 .Xr flock 2
 locks may be safely used concurrently.
@@ -231,7 +225,7 @@ The argument
 is not one of
 .Dv F_ULOCK ,
 .Dv F_LOCK ,
-.Dv F_TLOCK ,
+.Dv F_TLOCK
 or
 .Dv F_TEST .
 .Pp
@@ -243,7 +237,7 @@ The argument
 .Fa function
 is
 .Dv F_ULOCK ,
-.Dv F_LOCK ,
+.Dv F_LOCK
 or
 .Dv F_TLOCK ,
 and satisfying the lock or unlock request would result in the number

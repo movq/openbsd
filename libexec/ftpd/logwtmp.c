@@ -1,4 +1,3 @@
-/*	$OpenBSD: logwtmp.c,v 1.11 2009/10/27 23:59:31 deraadt Exp $	*/
 /*	$NetBSD: logwtmp.c,v 1.4 1995/04/11 02:44:58 cgd Exp $	*/
 
 /*
@@ -13,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,6 +34,14 @@
  *
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)logwtmp.c	8.1 (Berkeley) 6/4/93";
+#else
+static char rcsid[] = "$NetBSD: logwtmp.c,v 1.4 1995/04/11 02:44:58 cgd Exp $";
+#endif
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/stat.h>
@@ -40,10 +51,6 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
-
-#include <netinet/in.h>
-
-#include "monitor.h"
 #include "extern.h"
 
 static int fd = -1;
@@ -54,11 +61,11 @@ static int fd = -1;
  * after login, but before logout).
  */
 void
-ftpdlogwtmp(char *line, char *name, char *host)
+ftpdlogwtmp(line, name, host)
+	char *line, *name, *host;
 {
-	struct timeval tv;
-	struct stat buf;
 	struct utmp ut;
+	struct stat buf;
 
 	if (fd < 0 && (fd = open(_PATH_WTMP, O_WRONLY|O_APPEND, 0)) < 0)
 		return;
@@ -66,8 +73,7 @@ ftpdlogwtmp(char *line, char *name, char *host)
 		(void)strncpy(ut.ut_line, line, sizeof(ut.ut_line));
 		(void)strncpy(ut.ut_name, name, sizeof(ut.ut_name));
 		(void)strncpy(ut.ut_host, host, sizeof(ut.ut_host));
-		gettimeofday(&tv, NULL);
-		ut.ut_time = tv.tv_sec;
+		(void)time(&ut.ut_time);
 		if (write(fd, (char *)&ut, sizeof(struct utmp)) !=
 		    sizeof(struct utmp))
 			(void)ftruncate(fd, buf.st_size);

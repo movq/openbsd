@@ -1,4 +1,4 @@
-/*	$OpenBSD: score.c,v 1.14 2016/01/04 17:33:24 mestre Exp $	*/
+/*	$OpenBSD: score.c,v 1.5 1998/08/22 08:56:01 pjanzen Exp $	*/
 /*	$NetBSD: score.c,v 1.3 1995/04/22 10:09:12 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,14 +34,18 @@
  * SUCH DAMAGE.
  */
 
-#include <fcntl.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)score.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: score.c,v 1.5 1998/08/22 08:56:01 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
-#include "robots.h"
+#include	"robots.h"
+#include	"pathnames.h"
 
-char	Scorefile[PATH_MAX];
+char	*Scorefile = _PATH_SCORE;
 
 #ifndef MAX_PER_UID
 #define MAX_PER_UID	5
@@ -53,12 +61,13 @@ static SCORE	Top[MAXSCORES];
  *	top list.
  */
 void
-score(int score_wfd)
+score(score_wfd)
+     int score_wfd;
 {
-	int	inf = score_wfd;
-	SCORE	*scp;
+	register int	inf = score_wfd;
+	register SCORE	*scp;
 	uid_t	uid;
-	bool	done_show = FALSE;
+	register bool	done_show = FALSE;
 	static int	numscores, max_uid;
 
 	Newscore = FALSE;
@@ -132,19 +141,14 @@ score(int score_wfd)
 }
 
 void
-set_name(SCORE *scp)
+set_name(scp)
+	SCORE	*scp;
 {
-	const char	*name;
+	PASSWD	*pp;
 
-	name = getenv("LOGNAME");
-	if (name == NULL || *name == '\0')
-		name = getenv("USER");
-	if (name == NULL || *name == '\0')
-		name = getlogin();
-	if (name == NULL || *name == '\0')
-		name = "  ???";
-
-	strlcpy(scp->s_name, name, LOGIN_NAME_MAX);
+	if ((pp = getpwuid(scp->s_uid)) == NULL)
+		pp->pw_name = "???";
+	strncpy(scp->s_name, pp->pw_name, MAXNAME);
 }
 
 /*
@@ -152,7 +156,8 @@ set_name(SCORE *scp)
  *	Compare two scores.
  */
 int
-cmp_sc(const void *s1, const void *s2)
+cmp_sc(s1, s2)
+	const void	*s1, *s2;
 {
 	return ((SCORE *)s2)->s_score - ((SCORE *)s1)->s_score;
 }
@@ -162,10 +167,10 @@ cmp_sc(const void *s1, const void *s2)
  *	Show the score list for the '-s' option.
  */
 void
-show_score(void)
+show_score()
 {
-	SCORE	*scp;
-	int	inf;
+	register SCORE	*scp;
+	register int	inf;
 	static int	max_score;
 
 	if ((inf = open(Scorefile, O_RDONLY)) < 0) {

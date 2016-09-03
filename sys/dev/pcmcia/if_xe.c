@@ -1,7 +1,7 @@
-/*	$OpenBSD: if_xe.c,v 1.58 2016/04/13 10:49:26 mpi Exp $	*/
+/*	$OpenBSD: if_xe.c,v 1.9 1999/09/16 11:28:42 niklas Exp $	*/
 
 /*
- * Copyright (c) 1999 Niklas Hallqvist, Brandon Creighton, Job de Haas
+ * Copyright (c) 1999 Niklas Hallqvist, C Stone, Job de Haas
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -57,14 +57,35 @@
 #include <sys/syslog.h>
 
 #include <net/if.h>
+#include <net/if_dl.h>
 #include <net/if_media.h>
+#include <net/if_types.h>
 
+#ifdef INET
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
+#include <netinet/in_var.h>
+#include <netinet/ip.h>
 #include <netinet/if_ether.h>
+#endif
+
+#ifdef IPX
+#include <netipx/ipx.h>
+#include <netipx/ipx_if.h>
+#endif
+
+#ifdef NS
+#include <netns/ns.h>
+#include <netns/ns_if.h>
+#endif
 
 #if NBPFILTER > 0
 #include <net/bpf.h>
+#include <net/bpfdesc.h>
 #endif
+
+#define ETHER_MIN_LEN 64
+#define ETHER_CRC_LEN 4
 
 /*
  * Maximum number of bytes to read per interrupt.  Linux recommends
@@ -105,10 +126,10 @@ int xedebug = XEDEBUG_DEF;
 #define DPRINTF(cat, x) (void)0
 #endif	/* XEDEBUG */
 
-int	xe_pcmcia_match(struct device *, void *, void *);
-void	xe_pcmcia_attach(struct device *, struct device *, void *);
-int	xe_pcmcia_detach(struct device *, int);
-int	xe_pcmcia_activate(struct device *, int);
+int	xe_pcmcia_match __P((struct device *, void *, void *));
+void	xe_pcmcia_attach __P((struct device *, struct device *, void *));
+int	xe_pcmcia_detach __P((struct device *, int));
+int	xe_pcmcia_activate __P((struct device *, enum devact));
 
 /*
  * In case this chipset ever turns up out of pcmcia attachments (very
@@ -124,7 +145,7 @@ struct xe_softc {
 	int	sc_all_mcasts;			/* Receive all multicasts */
 	bus_space_tag_t sc_bst;			/* Bus cookie */
 	bus_space_handle_t	sc_bsh;		/* Bus I/O handle */
-	bus_size_t	sc_offset;		/* Offset of registers */
+	bus_addr_t	sc_offset;		/* Offset of registers */
 	u_int8_t	sc_rev;			/* Chip revision */
 };
 
@@ -157,28 +178,29 @@ struct cfattach xe_pcmcia_ca = {
 	xe_pcmcia_detach, xe_pcmcia_activate
 };
 
-void	xe_cycle_power(struct xe_softc *);
-void	xe_full_reset(struct xe_softc *);
-void	xe_init(struct xe_softc *);
-int	xe_intr(void *);
-int	xe_ioctl(struct ifnet *, u_long, caddr_t);
-int	xe_mdi_read(struct device *, int, int);
-void	xe_mdi_write(struct device *, int, int, int);
-int	xe_mediachange(struct ifnet *);
-void	xe_mediastatus(struct ifnet *, struct ifmediareq *);
-int	xe_pcmcia_funce_enaddr(struct device *, u_int8_t *);
-u_int32_t xe_pcmcia_interpret_manfid(struct device *);
-int	xe_pcmcia_lan_nid_ciscallback(struct pcmcia_tuple *, void *);
-int	xe_pcmcia_manfid_ciscallback(struct pcmcia_tuple *, void *);
-u_int16_t xe_get(struct xe_softc *);
-void	xe_reset(struct xe_softc *);
-void	xe_set_address(struct xe_softc *);
-void	xe_start(struct ifnet *);
-void	xe_statchg(struct device *);
-void	xe_stop(struct xe_softc *);
-void	xe_watchdog(struct ifnet *);
+void	xe_cycle_power __P((struct xe_softc *));
+int	xe_ether_ioctl __P((struct ifnet *, u_long cmd, caddr_t));
+void	xe_full_reset __P((struct xe_softc *));
+void	xe_init __P((struct xe_softc *));
+int	xe_intr __P((void *));
+int	xe_ioctl __P((struct ifnet *, u_long, caddr_t));
+int	xe_mdi_read __P((struct device *, int, int));
+void	xe_mdi_write __P((struct device *, int, int, int));
+int	xe_mediachange __P((struct ifnet *));
+void	xe_mediastatus __P((struct ifnet *, struct ifmediareq *));
+int	xe_pcmcia_funce_enaddr __P((struct device *, u_int8_t *));
+u_int32_t xe_pcmcia_interpret_manfid __P((struct device *));
+int	xe_pcmcia_lan_nid_ciscallback __P((struct pcmcia_tuple *, void *));
+int	xe_pcmcia_manfid_ciscallback __P((struct pcmcia_tuple *, void *));
+u_int16_t xe_get __P((struct xe_softc *));
+void	xe_reset __P((struct xe_softc *));
+void	xe_set_address __P((struct xe_softc *));
+void	xe_start __P((struct ifnet *));
+void	xe_statchg __P((struct device *));
+void	xe_stop __P((struct xe_softc *));
+void	xe_watchdog __P((struct ifnet *));
 #ifdef XEDEBUG
-void	xe_reg_dump(struct xe_softc *);
+void	xe_reg_dump __P((struct xe_softc *));
 #endif	/* XEDEBUG */
 
 int
@@ -194,9 +216,9 @@ xe_pcmcia_match(parent, match, aux)
 	switch (pa->manufacturer) {
 	case PCMCIA_VENDOR_COMPAQ:
 	case PCMCIA_VENDOR_COMPAQ2:
+	case PCMCIA_VENDOR_INTEL:
 		return (0);
 
-	case PCMCIA_VENDOR_INTEL:
 	case PCMCIA_VENDOR_XIRCOM:
 		/* XXX Per-productid checking here. */
 		return (1);
@@ -215,14 +237,14 @@ xe_pcmcia_attach(parent, self, aux)
 	struct xe_softc *sc = &psc->sc_xe;
 	struct pcmcia_attach_args *pa = aux;
 	struct pcmcia_function *pf = pa->pf;
-	struct pcmcia_config_entry *cfe = NULL;
+	struct pcmcia_config_entry *cfe;
 	struct ifnet *ifp;
 	u_int8_t myla[ETHER_ADDR_LEN], *enaddr = NULL;
 	int state = 0;
 	struct pcmcia_mem_handle pcmh;
 	int ccr_window;
-	bus_size_t ccr_offset;
-	const char *intrstr;
+	bus_addr_t ccr_offset;
+
 
 	psc->sc_pf = pf;
 
@@ -241,11 +263,12 @@ xe_pcmcia_attach(parent, self, aux)
 
 	/* Fake a cfe. */
 	SIMPLEQ_FIRST(&pa->pf->cfe_head) = cfe = (struct pcmcia_config_entry *)
-	    malloc(sizeof *cfe, M_DEVBUF, M_NOWAIT | M_ZERO);
+	    malloc(sizeof *cfe, M_DEVBUF, M_NOWAIT);
 	if (!cfe) {
 		printf(": function enable failed\n");
 		return;
 	}
+	bzero(cfe, sizeof *cfe);
 
 	/*
 	 * XXX Use preprocessor symbols instead.
@@ -307,7 +330,7 @@ xe_pcmcia_attach(parent, self, aux)
 	sc->sc_flags = xe_pcmcia_interpret_manfid(parent);
 
 	/*
-	 * Configuration as advised by DINGO documentation.
+	 * Configuration as adviced by DINGO documentation.
 	 * We only know about this flag after the manfid interpretation.
 	 * Dingo has some extra configuration registers in the CCR space.
 	 */
@@ -358,21 +381,20 @@ xe_pcmcia_attach(parent, self, aux)
 	bcopy(sc->sc_dev.dv_xname, ifp->if_xname, IFNAMSIZ);
 	ifp->if_softc = sc;
 	ifp->if_flags =
-	    IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
+	    IFF_BROADCAST | IFF_NOTRAILERS | IFF_SIMPLEX | IFF_MULTICAST;
 	ifp->if_ioctl = xe_ioctl;
 	ifp->if_start = xe_start;
 	ifp->if_watchdog = xe_watchdog;
+	ifp->if_snd.ifq_maxlen = IFQ_MAXLEN;
 
 	/* Establish the interrupt. */
-	sc->sc_ih = pcmcia_intr_establish(pa->pf, IPL_NET, xe_intr, sc,
-	    sc->sc_dev.dv_xname);
+	sc->sc_ih = pcmcia_intr_establish(pa->pf, IPL_NET, xe_intr, sc);
 	if (sc->sc_ih == NULL) {
 		printf(", couldn't establish interrupt\n");
 		goto bad;
 	}
-	intrstr = pcmcia_intr_string(psc->sc_pf, sc->sc_ih);
-	printf("%s%s: address %s\n", *intrstr ? ", " : "", intrstr,
-	    ether_sprintf(sc->sc_arpcom.ac_enaddr));
+
+	printf(": address %s\n", ether_sprintf(sc->sc_arpcom.ac_enaddr));
 
 	/* Reset and initialize the card. */
 	xe_full_reset(sc);
@@ -382,12 +404,11 @@ xe_pcmcia_attach(parent, self, aux)
 	sc->sc_mii.mii_readreg = xe_mdi_read;
 	sc->sc_mii.mii_writereg = xe_mdi_write;
 	sc->sc_mii.mii_statchg = xe_statchg;
-	ifmedia_init(&sc->sc_mii.mii_media, IFM_IMASK, xe_mediachange,
+	ifmedia_init(&sc->sc_mii.mii_media, 0, xe_mediachange,
 	    xe_mediastatus);
 	DPRINTF(XED_MII | XED_CONFIG,
 	    ("bmsr %x\n", xe_mdi_read(&sc->sc_dev, 0, 1)));
-	mii_attach(self, &sc->sc_mii, 0xffffffff, MII_PHY_ANY, MII_OFFSET_ANY,
-	    0);
+	mii_phy_probe(self, &sc->sc_mii, 0xffffffff);
 	if (LIST_FIRST(&sc->sc_mii.mii_phys) == NULL)
 		ifmedia_add(&sc->sc_mii.mii_media, IFM_ETHER | IFM_AUTO, 0,
 		    NULL);
@@ -398,6 +419,10 @@ xe_pcmcia_attach(parent, self, aux)
 	 */
 	if_attach(ifp);
 	ether_ifattach(ifp);
+#if NBPFILTER > 0
+	bpfattach(&sc->sc_arpcom.ac_if.if_bpf, ifp, DLT_EN10MB,
+	    sizeof(struct ether_header));
+#endif	/* NBPFILTER > 0 */
 
 	/*
 	 * Reset and initialize the card again for DINGO (as found in Linux
@@ -412,6 +437,11 @@ xe_pcmcia_attach(parent, self, aux)
 		ifmedia_set(&sc->sc_mii.mii_media, IFM_ETHER | IFM_NONE);
 		xe_stop(sc);
 	}
+
+#ifdef notyet
+	pcmcia_function_disable(pa->pf);
+#endif	/* notyet */
+
 	return;
 
 bad:
@@ -421,7 +451,7 @@ bad:
 		pcmcia_io_free(pf, &psc->sc_pcioh);
 	if (state > 0)
 		pcmcia_function_disable(pa->pf);
-	free(cfe, M_DEVBUF, 0);
+	free(cfe, M_DEVBUF);
 }
 
 int
@@ -432,10 +462,14 @@ xe_pcmcia_detach(dev, flags)
 	struct xe_pcmcia_softc *psc = (struct xe_pcmcia_softc *)dev;
 	struct xe_softc *sc = &psc->sc_xe;
 	struct ifnet *ifp = &sc->sc_arpcom.ac_if;
+	struct mii_softc *msc;
 	int rv = 0;
 
-	mii_detach(&sc->sc_mii, MII_PHY_ANY, MII_OFFSET_ANY);
-	ifmedia_delete_instance(&sc->sc_mii.mii_media, IFM_INST_ANY);
+	for (msc = LIST_FIRST(&sc->sc_mii.mii_phys); msc;
+	    msc = LIST_FIRST(&sc->sc_mii.mii_phys)) {
+		LIST_REMOVE(msc, mii_list);
+		rv |= config_detach(&msc->mii_dev, flags);
+	}
 
 	pcmcia_io_unmap(psc->sc_pf, psc->sc_io_window);
 	pcmcia_io_free(psc->sc_pf, &psc->sc_pcioh);
@@ -449,39 +483,25 @@ xe_pcmcia_detach(dev, flags)
 int
 xe_pcmcia_activate(dev, act)
 	struct device *dev;
-	int act;
+	enum devact act;
 {
 	struct xe_pcmcia_softc *sc = (struct xe_pcmcia_softc *)dev;
-	struct ifnet *ifp = &sc->sc_xe.sc_arpcom.ac_if;
+	int s;
 
+	s = splnet();
 	switch (act) {
-	case DVACT_SUSPEND:
-		if (ifp->if_flags & IFF_RUNNING)
-			xe_stop(&sc->sc_xe);
-		ifp->if_flags &= ~IFF_RUNNING;
-		if (sc->sc_xe.sc_ih)
-			pcmcia_intr_disestablish(sc->sc_pf, sc->sc_xe.sc_ih);
-		sc->sc_xe.sc_ih = NULL;
-		pcmcia_function_disable(sc->sc_pf);
-		break;
-	case DVACT_RESUME:
+	case DVACT_ACTIVATE:
 		pcmcia_function_enable(sc->sc_pf);
-		sc->sc_xe.sc_ih = pcmcia_intr_establish(sc->sc_pf, IPL_NET,
-		    xe_intr, sc, sc->sc_xe.sc_dev.dv_xname);
-		/* XXX this is a ridiculous */
-		xe_reset(&sc->sc_xe);
-		if ((ifp->if_flags & IFF_UP) == 0)
-			xe_stop(&sc->sc_xe);
+		sc->sc_xe.sc_ih =
+		    pcmcia_intr_establish(sc->sc_pf, IPL_NET, xe_intr, sc);
 		break;
+
 	case DVACT_DEACTIVATE:
-		ifp->if_timer = 0;
-		ifp->if_flags &= ~IFF_RUNNING;
-		if (sc->sc_xe.sc_ih)
-			pcmcia_intr_disestablish(sc->sc_pf, sc->sc_xe.sc_ih);
-		sc->sc_xe.sc_ih = NULL;
 		pcmcia_function_disable(sc->sc_pf);
+		pcmcia_intr_disestablish(sc->sc_pf, sc->sc_xe.sc_ih);
 		break;
 	}
+	splx(s);
 	return (0);
 }
 
@@ -683,6 +703,7 @@ xe_intr(arg)
 		}
 		tempint = xe_get(sc);
 		recvcount += tempint;
+		ifp->if_ibytes += tempint;
 		esr = bus_space_read_1(sc->sc_bst, sc->sc_bsh,
 		    sc->sc_offset + ESR);
 		rsr = bus_space_read_1(sc->sc_bst, sc->sc_bsh,
@@ -718,7 +739,7 @@ xe_intr(arg)
 	}
 			
 	/* Try to start more packets transmitting. */
-	if (IFQ_IS_EMPTY(&ifp->if_snd) == 0)
+	if (ifp->if_snd.ifq_head)
 		xe_start(ifp);
 
 	/* Detected excessive collisions? */
@@ -748,10 +769,10 @@ xe_get(sc)
 {
 	u_int8_t rsr;
 	struct mbuf *top, **mp, *m;
-	struct mbuf_list ml = MBUF_LIST_INITIALIZER();
 	struct ifnet *ifp = &sc->sc_arpcom.ac_if;
 	u_int16_t pktlen, len, recvcount = 0;
 	u_int8_t *data;
+	struct ether_header *eh;
 	
 	PAGE(sc, 0);
 	rsr = bus_space_read_1(sc->sc_bst, sc->sc_bsh, sc->sc_offset + RSR);
@@ -769,8 +790,9 @@ xe_get(sc)
 	recvcount += pktlen;
 
 	MGETHDR(m, M_DONTWAIT, MT_DATA);
-	if (m == NULL)
+	if (m == 0)
 		return (recvcount);
+	m->m_pkthdr.rcvif = ifp;
 	m->m_pkthdr.len = pktlen;
 	len = MHLEN;
 	top = 0;
@@ -779,7 +801,7 @@ xe_get(sc)
 	while (pktlen > 0) {
 		if (top) {
 			MGET(m, M_DONTWAIT, MT_DATA);
-			if (m == NULL) {
+			if (m == 0) {
 				m_freem(top);
 				return (recvcount);
 			}
@@ -820,10 +842,18 @@ xe_get(sc)
 	/* Skip Rx packet. */
 	bus_space_write_2(sc->sc_bst, sc->sc_bsh, sc->sc_offset + DO0,
 	    DO_SKIP_RX_PKT);
-
-	ml_enqueue(&ml, top);
-	if_input(ifp, &ml);
-
+	
+	ifp->if_ipackets++;
+	
+	eh = mtod(top, struct ether_header *);
+	
+#if NBPFILTER > 0
+	if (ifp->if_bpf)
+		bpf_mtap(ifp->if_bpf, top);
+#endif
+	
+	m_adj(top, sizeof(struct ether_header));
+	ether_input(ifp, eh, top);
 	return (recvcount);
 }
 
@@ -836,14 +866,14 @@ xe_get(sc)
  */
 
 /* Let the MII serial management be idle for one period. */
-static INLINE void xe_mdi_idle(struct xe_softc *);
+static INLINE void xe_mdi_idle __P((struct xe_softc *));
 static INLINE void
 xe_mdi_idle(sc)
 	struct xe_softc *sc;
 {
 	bus_space_tag_t bst = sc->sc_bst;
 	bus_space_handle_t bsh = sc->sc_bsh;
-	bus_size_t offset = sc->sc_offset;
+	bus_addr_t offset = sc->sc_offset;
 
 	/* Drive MDC low... */
 	bus_space_write_1(bst, bsh, offset + GP2, MDC_LOW);
@@ -855,7 +885,7 @@ xe_mdi_idle(sc)
 }
 
 /* Pulse out one bit of data. */
-static INLINE void xe_mdi_pulse(struct xe_softc *, int);
+static INLINE void xe_mdi_pulse __P((struct xe_softc *, int));
 static INLINE void
 xe_mdi_pulse(sc, data)
 	struct xe_softc *sc;
@@ -863,7 +893,7 @@ xe_mdi_pulse(sc, data)
 {
 	bus_space_tag_t bst = sc->sc_bst;
 	bus_space_handle_t bsh = sc->sc_bsh;
-	bus_size_t offset = sc->sc_offset;
+	bus_addr_t offset = sc->sc_offset;
 	u_int8_t bit = data ? MDIO_HIGH : MDIO_LOW;
 
 	/* First latch the data bit MDIO with clock bit MDC low...*/
@@ -876,14 +906,14 @@ xe_mdi_pulse(sc, data)
 }
 
 /* Probe one bit of data. */
-static INLINE int xe_mdi_probe(struct xe_softc *sc);
+static INLINE int xe_mdi_probe __P((struct xe_softc *sc));
 static INLINE int
 xe_mdi_probe(sc)
 	struct xe_softc *sc;
 {
 	bus_space_tag_t bst = sc->sc_bst;
 	bus_space_handle_t bsh = sc->sc_bsh;
-	bus_size_t offset = sc->sc_offset;
+	bus_addr_t offset = sc->sc_offset;
 	u_int8_t x;
 
 	/* Pull clock bit MDCK low... */
@@ -899,7 +929,7 @@ xe_mdi_probe(sc)
 }
 
 /* Pulse out a sequence of data bits. */
-static INLINE void xe_mdi_pulse_bits(struct xe_softc *, u_int32_t, int);
+static INLINE void xe_mdi_pulse_bits __P((struct xe_softc *, u_int32_t, int));
 static INLINE void
 xe_mdi_pulse_bits(sc, data, len)
 	struct xe_softc *sc;
@@ -909,7 +939,7 @@ xe_mdi_pulse_bits(sc, data, len)
 	u_int32_t mask;
 
 	for (mask = 1 << (len - 1); mask; mask >>= 1)
-		xe_mdi_pulse(sc, data & mask);
+		xe_mdi_pulse (sc, data & mask);
 }
 
 /* Read a PHY register. */
@@ -972,6 +1002,7 @@ void
 xe_statchg(self)
 	struct device *self;
 {
+	/* XXX Update ifp->if_baudrate */
 }
 
 /*
@@ -1055,7 +1086,7 @@ xe_init(sc)
 
 	DPRINTF(XED_CONFIG, ("xe_init\n"));
 
-	s = splnet();
+	s = splimp();
 
 	xe_set_address(sc);
 
@@ -1063,7 +1094,7 @@ xe_init(sc)
 	mii_mediachg(&sc->sc_mii);
 
 	ifp->if_flags |= IFF_RUNNING;
-	ifq_clr_oactive(&ifp->if_snd);
+	ifp->if_flags &= ~IFF_OACTIVE;
 	splx(s);
 }
 
@@ -1078,18 +1109,18 @@ xe_start(ifp)
 	struct xe_softc *sc = ifp->if_softc;
 	bus_space_tag_t bst = sc->sc_bst;
 	bus_space_handle_t bsh = sc->sc_bsh;
-	bus_size_t offset = sc->sc_offset;
+	bus_addr_t offset = sc->sc_offset;
 	unsigned int s, len, pad = 0;
 	struct mbuf *m0, *m;
 	u_int16_t space;
 
 	/* Don't transmit if interface is busy or not running. */
-	if (!(ifp->if_flags & IFF_RUNNING) || ifq_is_oactive(&ifp->if_snd))
+	if ((ifp->if_flags & (IFF_RUNNING | IFF_OACTIVE)) != IFF_RUNNING)
 		return;
 
 	/* Peek at the next packet. */
-	m0 = ifq_deq_begin(&ifp->if_snd);
-	if (m0 == NULL)
+	m0 = ifp->if_snd.ifq_head;
+	if (m0 == 0)
 		return;
 
 	/* We need to use m->m_pkthdr.len, so require the header. */
@@ -1102,21 +1133,19 @@ xe_start(ifp)
 	if (len < ETHER_MIN_LEN - ETHER_CRC_LEN)
 		pad = ETHER_MIN_LEN - ETHER_CRC_LEN - len;
 
-	PAGE(sc, 0);
 	space = bus_space_read_2(bst, bsh, offset + TSO0) & 0x7fff;
 	if (len + pad + 2 > space) {
-		ifq_deq_rollback(&ifp->if_snd, m0);
 		DPRINTF(XED_FIFO,
 		    ("%s: not enough space in output FIFO (%d > %d)\n",
 		    sc->sc_dev.dv_xname, len + pad + 2, space));
 		return;
 	}
 
-	ifq_deq_commit(&ifp->if_snd, m0);
+	IF_DEQUEUE(&ifp->if_snd, m0);
 
 #if NBPFILTER > 0
 	if (ifp->if_bpf)
-		bpf_mtap(ifp->if_bpf, m0, BPF_DIRECTION_OUT);
+		bpf_mtap(ifp->if_bpf, m0);
 #endif
 
 	/*
@@ -1125,6 +1154,7 @@ xe_start(ifp)
 	 */
 	s = splhigh();
 
+	PAGE(sc, 0);
 	bus_space_write_2(bst, bsh, offset + TSO2, (u_int16_t)len + pad + 2);
 	bus_space_write_2(bst, bsh, offset + EDP, (u_int16_t)len + pad);
 	for (m = m0; m; ) {
@@ -1134,7 +1164,7 @@ xe_start(ifp)
 		if (m->m_len & 1)
 			bus_space_write_1(bst, bsh, offset + EDP,
 			    *(mtod(m, u_int8_t *) + m->m_len - 1));
-		m0 = m_free(m);
+		MFREE(m, m0);
 		m = m0;
 	}
 	if (sc->sc_flags & XEF_MOHAWK)
@@ -1153,6 +1183,58 @@ xe_start(ifp)
 }
 
 int
+xe_ether_ioctl(ifp, cmd, data)
+	struct ifnet *ifp;
+	u_long cmd;
+	caddr_t data;
+{
+	struct ifaddr *ifa = (struct ifaddr *)data;
+	struct xe_softc *sc = ifp->if_softc;
+#ifdef NS
+	struct ns_addr *ina;
+#endif	/* NS */
+
+	switch (cmd) {
+	case SIOCSIFADDR:
+		ifp->if_flags |= IFF_UP;
+
+		switch (ifa->ifa_addr->sa_family) {
+#ifdef INET
+		case AF_INET:
+			xe_init(sc);
+			arp_ifinit(&sc->sc_arpcom, ifa);
+			break;
+#endif	/* INET */
+
+#ifdef NS
+		case AF_NS:
+			ina = &IA_SNS(ifa)->sns_addr;
+
+			if (ns_nullhost(*ina))
+				ina->x_host =
+				    *(union ns_host *)sc->sc_arpcom.ac_enaddr;
+			else
+				bcopy(ina->x_host.c_host,
+				    sc->sc_arpcom.ac_enaddr, ifp->if_addrlen);
+			/* Set new address. */
+			xe_init(sc);
+			break;
+#endif	/* NS */
+
+		default:
+			xe_init(sc);
+			break;
+		}
+		break;
+
+	default:
+		return (EINVAL);
+	}
+
+	return (0);
+}
+
+int
 xe_ioctl(ifp, command, data)
 	struct ifnet *ifp;
 	u_long command;
@@ -1162,12 +1244,11 @@ xe_ioctl(ifp, command, data)
 	struct ifreq *ifr = (struct ifreq *)data;
 	int s, error = 0;
 
-	s = splnet();
+	s = splimp();
 
 	switch (command) {
 	case SIOCSIFADDR:
-		ifp->if_flags |= IFF_UP;
-		xe_init(sc);
+		error = xe_ether_ioctl(ifp, command, data);
 		break;
 
 	case SIOCSIFFLAGS:
@@ -1190,6 +1271,7 @@ xe_ioctl(ifp, command, data)
 		 * such as IFF_PROMISC are handled.
 		 */
 		if (ifp->if_flags & IFF_UP) {
+			xe_full_reset(sc);
 			xe_init(sc);
 		} else {
 			if (ifp->if_flags & IFF_RUNNING)
@@ -1230,9 +1312,8 @@ xe_ioctl(ifp, command, data)
 		break;
 
 	default:
-		error = ENOTTY;
+		error = EINVAL;
 	}
-
 	splx(s);
 	return (error);
 }
@@ -1243,7 +1324,7 @@ xe_set_address(sc)
 {
 	bus_space_tag_t bst = sc->sc_bst;
 	bus_space_handle_t bsh = sc->sc_bsh;
-	bus_size_t offset = sc->sc_offset;
+	bus_addr_t offset = sc->sc_offset;
 	struct arpcom *arp = &sc->sc_arpcom;
 	struct ether_multi *enm;
 	struct ether_multistep step;
@@ -1256,11 +1337,8 @@ xe_set_address(sc)
 		    sc->sc_arpcom.ac_enaddr[(sc->sc_flags & XEF_MOHAWK) ?
 		    5 - i : i]);
 	}
-
-	if (arp->ac_multirangecnt > 0) {
-		ifp->if_flags |= IFF_ALLMULTI;
-		sc->sc_all_mcasts=1;
-	} else if (arp->ac_multicnt > 0) {
+		
+	if (arp->ac_multicnt > 0) {
 		if (arp->ac_multicnt > 9) {
 			PAGE(sc, 0x42);
 			bus_space_write_1(sc->sc_bst, sc->sc_bsh,
@@ -1274,6 +1352,18 @@ xe_set_address(sc)
 		pos = IA + 6;
 		for (page = 0x50, num = arp->ac_multicnt; num > 0 && enm;
 		    num--) {
+			if (bcmp(enm->enm_addrlo, enm->enm_addrhi,
+			    sizeof (enm->enm_addrlo)) != 0) {
+				/*
+				 * The multicast address is really a range;
+				 * it's easier just to accept all multicasts.
+				 * XXX should we be setting IFF_ALLMULTI here?
+				 */
+				ifp->if_flags |= IFF_ALLMULTI;
+				sc->sc_all_mcasts=1;
+				break;
+			}
+
 			for (i = 0; i < 6; i++) {
 				bus_space_write_1(bst, bsh, offset + pos,
 				    enm->enm_addrlo[
@@ -1290,12 +1380,12 @@ xe_set_address(sc)
 }
 
 void
-xe_cycle_power(sc)
+xe_cycle_power (sc)
 	struct xe_softc *sc;
 {
 	bus_space_tag_t bst = sc->sc_bst;
 	bus_space_handle_t bsh = sc->sc_bsh;
-	bus_size_t offset = sc->sc_offset;
+	bus_addr_t offset = sc->sc_offset;
 
 	PAGE(sc, 4);
 	DELAY(1);
@@ -1310,15 +1400,15 @@ xe_cycle_power(sc)
 }
 
 void
-xe_full_reset(sc)
+xe_full_reset (sc)
 	struct xe_softc *sc;
 {
 	bus_space_tag_t bst = sc->sc_bst;
 	bus_space_handle_t bsh = sc->sc_bsh;
-	bus_size_t offset = sc->sc_offset;
+	bus_addr_t offset = sc->sc_offset;
 
 	/* Do an as extensive reset as possible on all functions. */
-	xe_cycle_power(sc);
+	xe_cycle_power (sc);
 	bus_space_write_1(bst, bsh, offset + CR, SOFT_RESET);
 	DELAY(20000);
 	bus_space_write_1(bst, bsh, offset + CR, 0);
@@ -1327,7 +1417,7 @@ xe_full_reset(sc)
 		PAGE(sc, 4);
 		/*
 		 * Drive GP1 low to power up ML6692 and GP2 high to power up
-		 * the 10MHz chip.  XXX What chip is that?  The phy?
+		 * the 10Mhz chip.  XXX What chip is that?  The phy?
 		 */
 		bus_space_write_1(bst, bsh, offset + GP0,
 		    GP1_OUT | GP2_OUT | GP2_WR);
@@ -1462,13 +1552,13 @@ xe_full_reset(sc)
 
 #ifdef XEDEBUG
 void
-xe_reg_dump(sc)
+xe_reg_dump (sc)
 	struct xe_softc *sc;
 {
 	int page, i;
 	bus_space_tag_t bst = sc->sc_bst;
 	bus_space_handle_t bsh = sc->sc_bsh;
-	bus_size_t offset = sc->sc_offset;
+	bus_addr_t offset = sc->sc_offset;
 
 	printf("%x: Common registers: ", sc->sc_dev.dv_xname);
 	for (i = 0; i < 8; i++) {

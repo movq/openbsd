@@ -8,11 +8,7 @@
  */
 
 #include "config.h"
-#ifdef __CYGWIN__
-# define EXTCONST extern const
-#else
-# include "EXTERN.h"
-#endif
+#include "EXTERN.h"
 #include "sdbm.h"
 #include "tune.h"
 #include "pair.h"
@@ -22,7 +18,7 @@
 /* 
  * forward 
  */
-static int seepair proto((char *, int, const char *, int));
+static int seepair proto((char *, int, char *, int));
 
 /*
  * page format:
@@ -47,10 +43,10 @@ static int seepair proto((char *, int, const char *, int));
 int
 fitpair(char *pag, int need)
 {
-	int n;
-	int off;
-	int free;
-	short *ino = (short *) pag;
+	register int n;
+	register int off;
+	register int free;
+	register short *ino = (short *) pag;
 
 	off = ((n = ino[0]) > 0) ? ino[n] : PBLKSIZ;
 	free = off - (n + 1) * sizeof(short);
@@ -64,9 +60,9 @@ fitpair(char *pag, int need)
 void
 putpair(char *pag, datum key, datum val)
 {
-	int n;
-	int off;
-	short *ino = (short *) pag;
+	register int n;
+	register int off;
+	register short *ino = (short *) pag;
 
 	off = ((n = ino[0]) > 0) ? ino[n] : PBLKSIZ;
 /*
@@ -90,10 +86,10 @@ putpair(char *pag, datum key, datum val)
 datum
 getpair(char *pag, datum key)
 {
-	int i;
-	int n;
+	register int i;
+	register int n;
 	datum val;
-	short *ino = (short *) pag;
+	register short *ino = (short *) pag;
 
 	if ((n = ino[0]) == 0)
 		return nullitem;
@@ -106,22 +102,11 @@ getpair(char *pag, datum key)
 	return val;
 }
 
-int
-exipair(char *pag, datum key)
-{
-	short *ino = (short *) pag;
-
-	if (ino[0] == 0)
-		return 0;
-
-	return (seepair(pag, ino[0], key.dptr, key.dsize) != 0);
-}
-
 #ifdef SEEDUPS
 int
 duppair(char *pag, datum key)
 {
-	short *ino = (short *) pag;
+	register short *ino = (short *) pag;
 	return ino[0] > 0 && seepair(pag, ino[0], key.dptr, key.dsize) > 0;
 }
 #endif
@@ -130,8 +115,8 @@ datum
 getnkey(char *pag, int num)
 {
 	datum key;
-	int off;
-	short *ino = (short *) pag;
+	register int off;
+	register short *ino = (short *) pag;
 
 	num = num * 2 - 1;
 	if (ino[0] == 0 || num > ino[0])
@@ -148,9 +133,9 @@ getnkey(char *pag, int num)
 int
 delpair(char *pag, datum key)
 {
-	int n;
-	int i;
-	short *ino = (short *) pag;
+	register int n;
+	register int i;
+	register short *ino = (short *) pag;
 
 	if ((n = ino[0]) == 0)
 		return 0;
@@ -165,10 +150,10 @@ delpair(char *pag, datum key)
  * [note: 0 < i < n]
  */
 	if (i < n - 1) {
-		int m;
-		char *dst = pag + (i == 1 ? PBLKSIZ : ino[i - 1]);
-		char *src = pag + ino[i + 1];
-		int   zoo = dst - src;
+		register int m;
+		register char *dst = pag + (i == 1 ? PBLKSIZ : ino[i - 1]);
+		register char *src = pag + ino[i + 1];
+		register int   zoo = dst - src;
 
 		debug(("free-up %d ", zoo));
 /*
@@ -179,7 +164,7 @@ delpair(char *pag, datum key)
 #define MOVB 	*--dst = *--src
 
 		if (m > 0) {
-			int loop = (m + 8 - 1) >> 3;
+			register int loop = (m + 8 - 1) >> 3;
 
 			switch (m & (8 - 1)) {
 			case 0:	do {
@@ -218,11 +203,11 @@ delpair(char *pag, datum key)
  * return 0 if not found.
  */
 static int
-seepair(char *pag, int n, const char *key, int siz)
+seepair(char *pag, register int n, register char *key, register int siz)
 {
-	int i;
-	int off = PBLKSIZ;
-	short *ino = (short *) pag;
+	register int i;
+	register int off = PBLKSIZ;
+	register short *ino = (short *) pag;
 
 	for (i = 1; i < n; i += 2) {
 		if (siz == off - ino[i] &&
@@ -239,10 +224,10 @@ splpage(char *pag, char *New, long int sbit)
 	datum key;
 	datum val;
 
-	int n;
-	int off = PBLKSIZ;
+	register int n;
+	register int off = PBLKSIZ;
 	char cur[PBLKSIZ];
-	short *ino = (short *) cur;
+	register short *ino = (short *) cur;
 
 	(void) memcpy(cur, pag, PBLKSIZ);
 	(void) memset(pag, 0, PBLKSIZ);
@@ -277,11 +262,11 @@ splpage(char *pag, char *New, long int sbit)
 int
 chkpage(char *pag)
 {
-	int n;
-	int off;
-	short *ino = (short *) pag;
+	register int n;
+	register int off;
+	register short *ino = (short *) pag;
 
-	if ((n = ino[0]) < 0 || n > (int)(PBLKSIZ / sizeof(short)))
+	if ((n = ino[0]) < 0 || n > PBLKSIZ / sizeof(short))
 		return 0;
 
 	if (n > 0) {

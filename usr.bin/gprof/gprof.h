@@ -1,4 +1,4 @@
-/*	$OpenBSD: gprof.h,v 1.16 2015/12/06 23:22:51 guenther Exp $	*/
+/*	$OpenBSD: gprof.h,v 1.4 1996/12/22 20:24:24 rahnds Exp $	*/
 /*	$NetBSD: gprof.h,v 1.13 1996/04/01 21:54:06 mark Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -39,10 +43,46 @@
 #include <a.out.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <err.h>
-#include <unistd.h>
 
-#include MD_INCLUDE
+#if alpha
+#   include "alpha.h"
+#endif
+#if arm32
+#   include "arm32.h"
+#endif
+#if i386
+#   include "i386.h"
+#endif
+#if m68k
+#   include "m68k.h"
+#endif
+#if mips
+#   include "mips.h"
+#endif
+#if ns32k
+#   include "ns32k.h"
+#endif
+#if powerpc
+#   include "powerpc.h"
+#endif
+#if pmax
+#   include "pmax.h"
+#endif
+#if sparc
+#   include "sparc.h"
+#endif
+#if tahoe
+#   include "tahoe.h"
+#endif
+#if vax
+#   include "vax.h"
+#endif
+
+
+    /*
+     *	who am i, for error messages.
+     */
+char	*whoami;
 
     /*
      * booleans
@@ -97,7 +137,7 @@ typedef struct arcstruct	arctype;
      * its address, the number of calls and compute its share of cpu time.
      */
 struct nl {
-    const char		*name;		/* the name */
+    char		*name;		/* the name */
     unsigned long	value;		/* the pc entry point */
     unsigned long	svalue;		/* entry point aligned to histograms */
     double		time;		/* ticks in this routine */
@@ -185,7 +225,7 @@ UNIT	*samples;
 
 unsigned long	s_lowpc;	/* lowpc from the profile file */
 unsigned long	s_highpc;	/* highpc from the profile file */
-unsigned long	lowpc, highpc;	/* range profiled, in UNIT's */
+unsigned lowpc, highpc;		/* range profiled, in UNIT's */
 unsigned sampbytes;		/* number of bytes of samples */
 int	nsamples;		/* number of samples */
 double	actime;			/* accumulated time thus far for putprofline */
@@ -193,6 +233,9 @@ double	totime;			/* total time for all routines */
 double	printtime;		/* total of time being printed */
 double	scale;			/* scale factor converting samples to pc
 				   values: each sample covers scale bytes */
+char	*strtab;		/* string table in core */
+long	ssiz;			/* size of the string table */
+struct	exec xbuf;		/* exec header of a.out */
 unsigned char	*textspace;	/* text space of a.out in core */
 int	cyclethreshold;		/* with -C, minimum cycle size to ignore */
 
@@ -229,63 +272,76 @@ struct stringlist	*ktolist;
     /*
      *	function declarations
      */
-void		addarc(nltype *, nltype *, long);
-int		addcycle(arctype **, arctype **);
-void		addlist(struct stringlist *, char *);
-int		arccmp(arctype *, arctype *);
-arctype		*arclookup(nltype *, nltype *);
-void		asgnsamples(void);
-void		alignentries(void);
-void		printblurb(const char *);
-int		cycleanalyze(void);
-void		cyclelink(void);
-void		cycletime(void);
-void		compresslist(void);
-int		descend(nltype *, arctype **, arctype **);
-void		dfn(nltype *);
-bool		dfn_busy(nltype *);
-void		dfn_findcycle(nltype *);
-void		dfn_init(void);
-bool		dfn_numbered(nltype *);
-void		dfn_post_visit(nltype *);
-void		dfn_pre_visit(nltype *);
-void		dfn_self_cycle(nltype *);
-nltype		**doarcs(void);
-void		doflags(void);
-void		dotime(void);
-void		dumpsum(const char *);
-void		findcall(nltype *, unsigned long, unsigned long);
-void		flatprofheader(void);
-void		flatprofline(nltype *);
-int		getnfile(const char *, char ***);
-void		getpfile(const char *);
-void		gprofheader(void);
-void		gprofline(nltype *);
-int		hertz(void);
-void		inheritflags(nltype *);
-unsigned long	max(unsigned long, unsigned long);
-int		membercmp(nltype *, nltype *);
-unsigned long	min(unsigned long, unsigned long);
-nltype		*nllookup(unsigned long);
-bool		onlist(struct stringlist *, const char *);
-FILE		*openpfile(const char *);
-void		printchildren(nltype *);
-void		printcycle(nltype *);
-void		printgprof(nltype **);
-void		printindex(void);
-void		printmembers(nltype *);
-void		printname(nltype *);
-void		printparents(nltype *);
-void		printprof(void);
-void		readsamples(FILE *);
-void		sortchildren(nltype *);
-void		sortmembers(nltype *);
-void		sortparents(nltype *);
-void		tally(struct rawarc *);
-int		timecmp(const void *, const void *);
-void		timepropagate(nltype *);
-int		topcmp(const void *, const void *);
-int		totalcmp(const void *, const void *);
+/*
+		addarc();
+*/
+int		arccmp();
+arctype		*arclookup();
+/*
+		asgnsamples();
+		printblurb();
+		cyclelink();
+		dfn();
+*/
+bool		dfn_busy();
+/*
+		dfn_findcycle();
+*/
+bool		dfn_numbered();
+/*
+		dfn_post_visit();
+		dfn_pre_visit();
+		dfn_self_cycle();
+*/
+nltype		**doarcs();
+/*
+		done();
+		findcalls();
+		flatprofheader();
+		flatprofline();
+*/
+bool		funcsymbol();
+/*
+		getnfile();
+		getpfile();
+		getstrtab();
+		getsymtab();
+		gettextspace();
+		gprofheader();
+		gprofline();
+		main();
+*/
+unsigned long	max();
+int		membercmp();
+unsigned long	min();
+nltype		*nllookup();
+FILE		*openpfile();
+long		operandlength();
+operandenum	operandmode();
+char		*operandname();
+/*
+		printchildren();
+		printcycle();
+		printgprof();
+		printmembers();
+		printname();
+		printparents();
+		printprof();
+		readsamples();
+*/
+unsigned long	reladdr();
+/*
+		sortchildren();
+		sortmembers();
+		sortparents();
+		tally();
+		timecmp();
+		topcmp();
+*/
+int		totalcmp();
+/*
+		valcmp();
+*/
 
 #define	LESSTHAN	-1
 #define	EQUALTO		0
@@ -297,7 +353,7 @@ int		totalcmp(const void *, const void *);
 #define	TALLYDEBUG	8
 #define	TIMEDEBUG	16
 #define	SAMPLEDEBUG	32
-#define	ELFDEBUG	64
+#define	AOUTDEBUG	64
 #define	CALLDEBUG	128
 #define	LOOKUPDEBUG	256
 #define	PROPDEBUG	512

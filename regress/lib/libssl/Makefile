@@ -1,13 +1,11 @@
-#	$OpenBSD: Makefile,v 1.23 2015/09/01 17:02:17 jsing Exp $
 
-SUBDIR= \
-	asn1 \
-	bytestring \
-	ciphers \
-	client \
-	ssl \
-	unit
+CLEANFILES+= testdsa.key testdsa.pem rsakey.pem rsacert.pem dsa512.pem
 
 install:
 
-.include <bsd.subdir.mk>
+regress:
+	sh ${.CURDIR}/testenc.sh ${.OBJDIR} ${.CURDIR}
+	sh ${.CURDIR}/testdsa.sh ${.OBJDIR} ${.CURDIR}
+#	sh ${.CURDIR}/testrsa.sh ${.OBJDIR} ${.CURDIR}
+
+.include <bsd.prog.mk>

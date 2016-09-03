@@ -1,7 +1,7 @@
-/* $OpenBSD: safe_sprintf.c,v 1.6 2010/10/18 18:22:35 nicm Exp $ */
+/*	$OpenBSD: safe_sprintf.c,v 1.2 1999/03/02 06:23:27 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2003,2007 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -35,13 +35,11 @@
 #include <curses.priv.h>
 #include <ctype.h>
 
-MODULE_ID("$Id: safe_sprintf.c,v 1.6 2010/10/18 18:22:35 nicm Exp $")
+MODULE_ID("$From: safe_sprintf.c,v 1.10 1999/02/27 19:56:37 tom Exp $")
 
 #if USE_SAFE_SPRINTF
 
-typedef enum {
-    Flags, Width, Prec, Type, Format
-} PRINTF;
+typedef enum { Flags, Width, Prec, Type, Format } PRINTF;
 
 #define VA_INTGR(type) ival = va_arg(ap, type)
 #define VA_FLOAT(type) fval = va_arg(ap, type)
@@ -54,217 +52,194 @@ typedef enum {
 static int
 _nc_printf_length(const char *fmt, va_list ap)
 {
-    size_t length = BUFSIZ;
-    char *buffer;
-    char *format;
-    char *tmp_format;
-    int len = 0;
-    size_t fmt_len;
-    char fmt_arg[BUFSIZ];
+	size_t length = BUFSIZ;
+	char *buffer;
+	char *format;
+	int len = 0;
 
-    if (fmt == 0 || *fmt == '\0')
-	return 0;
-    fmt_len = strlen(fmt) + 1;
-    if ((format = typeMalloc(char, fmt_len)) == 0)
-	  return -1;
-    if ((buffer = typeMalloc(char, length)) == 0) {
-	free(format);
-	return -1;
-    }
-
-    while (*fmt != '\0') {
-	if (*fmt == '%') {
-	    static char dummy[] = "";
-	    PRINTF state = Flags;
-	    char *pval = dummy;	/* avoid const-cast */
-	    double fval = 0.0;
-	    int done = FALSE;
-	    int ival = 0;
-	    int prec = -1;
-	    int type = 0;
-	    int used = 0;
-	    int width = -1;
-	    size_t f = 0;
-
-	    format[f++] = *fmt;
-	    while (*++fmt != '\0' && len >= 0 && !done) {
-		format[f++] = *fmt;
-
-		if (isdigit(UChar(*fmt))) {
-		    int num = *fmt - '0';
-		    if (state == Flags && num != 0)
-			state = Width;
-		    if (state == Width) {
-			if (width < 0)
-			    width = 0;
-			width = (width * 10) + num;
-		    } else if (state == Prec) {
-			if (prec < 0)
-			    prec = 0;
-			prec = (prec * 10) + num;
-		    }
-		} else if (*fmt == '*') {
-		    VA_INTGR(int);
-		    if (state == Flags)
-			state = Width;
-		    if (state == Width) {
-			width = ival;
-		    } else if (state == Prec) {
-			prec = ival;
-		    }
-		    sprintf(fmt_arg, "%d", ival);
-		    fmt_len += strlen(fmt_arg);
-		    if ((tmp_format = realloc(format, fmt_len)) == 0) {
-			free(buffer);
-			free(format);
-			return -1;
-		    }
-		    format = tmp_format;
-		    strcpy(&format[--f], fmt_arg);
-		    f = strlen(format);
-		} else if (isalpha(UChar(*fmt))) {
-		    done = TRUE;
-		    switch (*fmt) {
-		    case 'Z':	/* FALLTHRU */
-		    case 'h':	/* FALLTHRU */
-		    case 'l':	/* FALLTHRU */
-			done = FALSE;
-			type = *fmt;
-			break;
-		    case 'i':	/* FALLTHRU */
-		    case 'd':	/* FALLTHRU */
-		    case 'u':	/* FALLTHRU */
-		    case 'x':	/* FALLTHRU */
-		    case 'X':	/* FALLTHRU */
-			if (type == 'l')
-			    VA_INTGR(long);
-			else if (type == 'Z')
-			    VA_INTGR(size_t);
-			else
-			    VA_INTGR(int);
-			used = 'i';
-			break;
-		    case 'f':	/* FALLTHRU */
-		    case 'e':	/* FALLTHRU */
-		    case 'E':	/* FALLTHRU */
-		    case 'g':	/* FALLTHRU */
-		    case 'G':	/* FALLTHRU */
-			VA_FLOAT(double);
-			used = 'f';
-			break;
-		    case 'c':
-			VA_INTGR(int);
-			used = 'i';
-			break;
-		    case 's':
-			VA_POINT(char *);
-			if (prec < 0)
-			    prec = strlen(pval);
-			if (prec > (int) length) {
-			    length = length + prec;
-			    buffer = typeRealloc(char, length, buffer);
-			    if (buffer == 0) {
-				free(format);
-				return -1;
-			    }
-			}
-			used = 'p';
-			break;
-		    case 'p':
-			VA_POINT(void *);
-			used = 'p';
-			break;
-		    case 'n':
-			VA_POINT(int *);
-			used = 0;
-			break;
-		    default:
-			break;
-		    }
-		} else if (*fmt == '.') {
-		    state = Prec;
-		} else if (*fmt == '%') {
-		    done = TRUE;
-		    used = 'p';
-		}
-	    }
-	    format[f] = '\0';
-	    switch (used) {
-	    case 'i':
-		sprintf(buffer, format, ival);
-		break;
-	    case 'f':
-		sprintf(buffer, format, fval);
-		break;
-	    default:
-		sprintf(buffer, format, pval);
-		break;
-	    }
-	    len += (int) strlen(buffer);
-	} else {
-	    fmt++;
-	    len++;
+	if (fmt == 0 || *fmt == '\0')
+		return -1;
+	if ((format = typeMalloc(char, strlen(fmt)+1)) == 0)
+		return -1;
+	if ((buffer = typeMalloc(char, length)) == 0) {
+		free(format);
+		return -1;
 	}
-    }
 
-    free(buffer);
-    free(format);
-    return len;
+	while (*fmt != '\0') {
+		if (*fmt == '%') {
+			static char dummy[] = "";
+			PRINTF state = Flags;
+			char *pval   = dummy;	/* avoid const-cast */
+			double fval  = 0.0;
+			int done     = FALSE;
+			int ival     = 0;
+			int prec     = -1;
+			int type     = 0;
+			int used     = 0;
+			int width    = -1;
+			size_t f     = 0;
+
+			format[f++] = *fmt;
+			while (*++fmt != '\0' && len >= 0 && !done) {
+				format[f++] = *fmt;
+
+				if (isdigit(*fmt)) {
+					int num = *fmt - '0';
+					if (state == Flags && num != 0)
+						state = Width;
+					if (state == Width) {
+						if (width < 0)
+							width = 0;
+						width = (width * 10) + num;
+					} else if (state == Prec) {
+						if (prec < 0)
+							prec = 0;
+						prec = (prec * 10) + num;
+					}
+				} else if (*fmt == '*') {
+					VA_INTGR(int);
+					if (state == Flags)
+						state = Width;
+					if (state == Width) {
+						width = ival;
+					} else if (state == Prec) {
+						prec = ival;
+					}
+					sprintf(&format[--f], "%d", ival);
+					f = strlen(format);
+				} else if (isalpha(*fmt)) {
+					done = TRUE;
+					switch (*fmt) {
+					case 'Z': /* FALLTHRU */
+					case 'h': /* FALLTHRU */
+					case 'l': /* FALLTHRU */
+					case 'L': /* FALLTHRU */
+						done = FALSE;
+						type = *fmt;
+						break;
+					case 'i': /* FALLTHRU */
+					case 'd': /* FALLTHRU */
+					case 'u': /* FALLTHRU */
+					case 'x': /* FALLTHRU */
+					case 'X': /* FALLTHRU */
+						if (type == 'l')
+							VA_INTGR(long);
+						else if (type == 'Z')
+							VA_INTGR(size_t);
+						else
+							VA_INTGR(int);
+						used = 'i';
+						break;
+					case 'f': /* FALLTHRU */
+					case 'e': /* FALLTHRU */
+					case 'E': /* FALLTHRU */
+					case 'g': /* FALLTHRU */
+					case 'G': /* FALLTHRU */
+						if (type == 'L')
+							VA_FLOAT(long double);
+						else
+							VA_FLOAT(double);
+						used = 'f';
+						break;
+					case 'c':
+						VA_INTGR(int);
+						used = 'i';
+						break;
+					case 's':
+						VA_POINT(char *);
+						if (prec < 0)
+							prec = strlen(pval);
+						if (prec > (int)length) {
+							length = length + prec;
+							buffer = typeRealloc(char, length, buffer);
+							if (buffer == 0) {
+								free(format);
+								return -1;
+							}
+						}
+						used = 'p';
+						break;
+					case 'p':
+						VA_POINT(void *);
+						used = 'p';
+						break;
+					case 'n':
+						VA_POINT(int *);
+						used = 0;
+						break;
+					default:
+						break;
+					}
+				} else if (*fmt == '.') {
+					state = Prec;
+				} else if (*fmt == '%') {
+					done = TRUE;
+					used = 'p';
+				}
+			}
+			format[f] = '\0';
+			switch (used) {
+			case 'i':
+				sprintf(buffer, format, ival);
+				break;
+			case 'f':
+				sprintf(buffer, format, fval);
+				break;
+			default:
+				sprintf(buffer, format, pval);
+				break;
+			}
+			len += (int)strlen(buffer);
+		} else {
+			fmt++;
+			len++;
+		}
+	}
+
+	free(buffer);
+	free(format);
+	return len;
 }
 #endif
-
-#define my_buffer _nc_globals.safeprint_buf
-#define my_length _nc_globals.safeprint_used
 
 /*
  * Wrapper for vsprintf that allocates a buffer big enough to hold the result.
  */
-NCURSES_EXPORT(char *)
+char *
 _nc_printf_string(const char *fmt, va_list ap)
 {
-    char *result = 0;
-
-    if (fmt != 0) {
 #if USE_SAFE_SPRINTF
+	char *buf = 0;
 	int len = _nc_printf_length(fmt, ap);
 
-	if ((int) my_length < len + 1) {
-	    my_length = 2 * (len + 1);
-	    my_buffer = typeRealloc(char, my_length, my_buffer);
-	}
-	if (my_buffer != 0) {
-	    *my_buffer = '\0';
-	    if (len >= 0) {
-		vsprintf(my_buffer, fmt, ap);
-	    }
-	    result = my_buffer;
+	if (len > 0) {
+		if ((buf = typeMalloc(char, len+1)) == 0)
+			return(0);
+		vsprintf(buf, fmt, ap);
 	}
 #else
-#define MyCols _nc_globals.safeprint_cols
-#define MyRows _nc_globals.safeprint_rows
+	static int rows, cols;
+	static char *buf;
+	static size_t len;
 
-	if (screen_lines > MyRows || screen_columns > MyCols) {
-	    if (screen_lines > MyRows)
-		MyRows = screen_lines;
-	    if (screen_columns > MyCols)
-		MyCols = screen_columns;
-	    my_length = (MyRows * (MyCols + 1)) + 1;
-	    my_buffer = typeRealloc(char, my_length, my_buffer);
+	if (screen_lines > rows || screen_columns > cols) {
+		if (screen_lines   > rows) rows = screen_lines;
+		if (screen_columns > cols) cols = screen_columns;
+		len = (rows * (cols + 1)) + 1;
+		buf = typeRealloc(char, len, buf);
+		if (buf == 0) {
+			return(0);
+		}
 	}
 
-	if (my_buffer != 0) {
+	if (buf != 0) {
 # if HAVE_VSNPRINTF
-	    vsnprintf(my_buffer, my_length, fmt, ap);	/* GNU extension */
+		vsnprintf(buf, len, fmt, ap);	/* GNU extension */
 # else
-	    vsprintf(my_buffer, fmt, ap);	/* ANSI */
+		vsprintf(buf, fmt, ap);		/* ANSI */
 # endif
-	    result = my_buffer;
 	}
 #endif
-    } else if (my_buffer != 0) {	/* see _nc_freeall() */
-	free(my_buffer);
-	my_buffer = 0;
-	my_length = 0;
-    }
-    return result;
+	return buf;
 }

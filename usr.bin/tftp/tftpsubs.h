@@ -1,4 +1,4 @@
-/*	$OpenBSD: tftpsubs.h,v 1.6 2006/07/20 09:42:44 mglocker Exp $	*/
+/*	$OpenBSD: tftpsubs.h,v 1.2 1996/06/26 05:40:37 deraadt Exp $	*/
 /*	$NetBSD: tftpsubs.h,v 1.2 1994/12/08 09:51:32 jtc Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -36,12 +40,12 @@
  * Prototypes for read-ahead/write-behind subroutines for tftp user and
  * server.
  */
-struct tftphdr	*r_init(void);
-void		 read_ahead(FILE *, int, int);
-int		 readit(FILE *, struct tftphdr **, int, int);
+struct tftphdr *r_init __P((void));
+void	read_ahead __P((FILE *, int));
+int	readit __P((FILE *, struct tftphdr **, int));
 
-int		synchnet(int);
+int	synchnet __P((int));
 
-struct tftphdr	*w_init(void);
-int		 write_behind(FILE *, int);
-int		 writeit(FILE *, struct tftphdr **, int, int);
+struct tftphdr *w_init __P((void));
+int	write_behind __P((FILE *, int));
+int	writeit __P((FILE *, struct tftphdr **, int, int));

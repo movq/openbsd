@@ -1,13 +1,12 @@
-/*	$OpenBSD: usb_mem.h,v 1.14 2013/04/15 09:23:02 mglocker Exp $ */
-/*	$NetBSD: usb_mem.h,v 1.20 2003/05/03 18:11:42 wiz Exp $	*/
-/*	$FreeBSD: src/sys/dev/usb/usb_mem.h,v 1.9 1999/11/17 22:33:47 n_hibma Exp $	*/
+/*	$OpenBSD: usb_mem.h,v 1.3 1999/09/27 18:03:56 fgsch Exp $	*/
+/*	$NetBSD: usb_mem.h,v 1.8 1999/09/13 19:18:17 augustss Exp $	*/
 
 /*
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
- * by Lennart Augustsson (lennart@augustsson.net) at
+ * by Lennart Augustsson (augustss@carlstedt.se) at
  * Carlstedt Research & Technology.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -18,6 +17,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -32,7 +38,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-struct usb_dma_block {
+#if defined(__NetBSD__) || defined(__OpenBSD__)
+typedef struct usb_dma_block {
 	bus_dma_tag_t tag;
 	bus_dmamap_t map;
         caddr_t kaddr;
@@ -42,12 +49,39 @@ struct usb_dma_block {
         size_t align;
 	int fullblock;
 	LIST_ENTRY(usb_dma_block) next;
-};
+} usb_dma_block_t;
 
-#define DMAADDR(dma, o) ((dma)->block->map->dm_segs[0].ds_addr + (dma)->offs + (o))
-#define KERNADDR(dma, o) \
-	((void *)((char *)((dma)->block->kaddr + (dma)->offs) + (o)))
+#define DMAADDR(dma) ((dma)->block->segs[0].ds_addr + (dma)->offs)
+#define KERNADDR(dma) ((void *)((dma)->block->kaddr + (dma)->offs))
 
-usbd_status	usb_allocmem(struct usbd_bus *,size_t,size_t, struct usb_dma *);
-void		usb_freemem(struct usbd_bus *, struct usb_dma *);
-void		usb_syncmem(struct usb_dma *, bus_addr_t, bus_size_t, int);
+usbd_status	usb_allocmem __P((usbd_bus_handle,size_t,size_t, usb_dma_t *));
+void		usb_freemem  __P((usbd_bus_handle, usb_dma_t *));
+
+#elif defined(__FreeBSD__)
+
+/* 
+ * FreeBSD does not have special functions for dma memory, so let's keep it
+ * simple for now.
+ */
+
+#include <sys/param.h>
+#include <sys/systm.h>
+#include <sys/queue.h>
+#include <sys/proc.h>
+#include <sys/buf.h>
+#include <sys/malloc.h>
+#include <sys/kernel.h>
+#include <vm/vm.h>
+#include <vm/pmap.h>
+
+#include <machine/pmap.h>       /* for vtophys */
+
+typedef void * usb_dma_t;
+
+#define		usb_allocmem(t,s,a,p)	(*(p) = malloc(s, M_USB, M_NOWAIT), (*(p) == NULL? USBD_NOMEM: USBD_NORMAL_COMPLETION))
+#define		usb_freemem(t,p)	(free(*(p), M_USB))
+
+#define DMAADDR(dma)	(vtophys(*(dma)))
+#define KERNADDR(dma)	((void *) *(dma))
+#endif
+

@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_txt.c,v 1.16 2016/05/27 09:18:12 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)ex_txt.c	10.17 (Berkeley) 10/10/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -22,7 +24,6 @@
 #include <string.h>
 
 #include "../common/common.h"
-#include "../vi/vi.h"
 
 /*
  * !!!
@@ -41,17 +42,21 @@
  * characters remaining when failure occurred.
  */
 
-static int	txt_dent(SCR *, TEXT *);
-static void	txt_prompt(SCR *, TEXT *, CHAR_T, u_int32_t);
+static int	txt_dent __P((SCR *, TEXT *));
+static void	txt_prompt __P((SCR *, TEXT *, ARG_CHAR_T, u_int32_t));
 
 /*
  * ex_txt --
  *	Get lines from the terminal for ex.
  *
- * PUBLIC: int ex_txt(SCR *, TEXTH *, CHAR_T, u_int32_t);
+ * PUBLIC: int ex_txt __P((SCR *, TEXTH *, ARG_CHAR_T, u_int32_t));
  */
 int
-ex_txt(SCR *sp, TEXTH *tiqh, CHAR_T prompt, u_int32_t flags)
+ex_txt(sp, tiqh, prompt, flags)
+	SCR *sp;
+	TEXTH *tiqh;
+	ARG_CHAR_T prompt;
+	u_int32_t flags;
 {
 	EVENT ev;
 	GS *gp;
@@ -67,9 +72,9 @@ ex_txt(SCR *sp, TEXTH *tiqh, CHAR_T prompt, u_int32_t flags)
 	 * last one if it's big enough.  (All TEXT bookkeeping fields default
 	 * to 0 -- text_init() handles this.)
 	 */
-	if (!TAILQ_EMPTY(tiqh)) {
-		tp = TAILQ_FIRST(tiqh);
-		if (TAILQ_NEXT(tp, q) || tp->lb_len < 32) {
+	if (tiqh->cqh_first != (void *)tiqh) {
+		tp = tiqh->cqh_first;
+		if (tp->q.cqe_next != (void *)tiqh || tp->lb_len < 32) {
 			text_lfree(tiqh);
 			goto newtp;
 		}
@@ -77,7 +82,7 @@ ex_txt(SCR *sp, TEXTH *tiqh, CHAR_T prompt, u_int32_t flags)
 	} else {
 newtp:		if ((tp = text_init(sp, NULL, 0, 32)) == NULL)
 			goto err;
-		TAILQ_INSERT_HEAD(tiqh, tp, q);
+		CIRCLEQ_INSERT_HEAD(tiqh, tp, q);
 	}
 
 	/* Set the starting line number. */
@@ -184,7 +189,7 @@ newtp:		if ((tp = text_init(sp, NULL, 0, 32)) == NULL)
 			 */
 			if (LF_ISSET(TXT_DOTTERM) && tp->len == tp->ai + 1 &&
 			    tp->lb[tp->len - 1] == '.') {
-notlast:			TAILQ_REMOVE(tiqh, tp, q);
+notlast:			CIRCLEQ_REMOVE(tiqh, tp, q);
 				text_free(tp);
 				goto done;
 			}
@@ -221,7 +226,7 @@ notlast:			TAILQ_REMOVE(tiqh, tp, q);
 			 * into the queue.
 			 */
 			tp = ntp;
-			TAILQ_INSERT_TAIL(tiqh, tp, q);
+			CIRCLEQ_INSERT_TAIL(tiqh, tp, q);
 			break;
 		case K_CARAT:			/* Delete autoindent chars. */
 			if (tp->len <= tp->ai && LF_ISSET(TXT_AUTOINDENT))
@@ -347,7 +352,11 @@ alloc_err:
  *	not ours.
  */
 static void
-txt_prompt(SCR *sp, TEXT *tp, CHAR_T prompt, u_int32_t flags)
+txt_prompt(sp, tp, prompt, flags)
+	SCR *sp;
+	TEXT *tp;
+	ARG_CHAR_T prompt;
+	u_int32_t flags;
 {
 	/* Display the prompt. */
 	if (LF_ISSET(TXT_PROMPT))
@@ -371,7 +380,9 @@ txt_prompt(SCR *sp, TEXT *tp, CHAR_T prompt, u_int32_t flags)
  * ranting and raving.  This is a fair bit simpler as ^T isn't special.
  */
 static int
-txt_dent(SCR *sp, TEXT *tp)
+txt_dent(sp, tp)
+	SCR *sp;
+	TEXT *tp;
 {
 	u_long sw, ts;
 	size_t cno, off, scno, spaces, tabs;
@@ -387,8 +398,8 @@ txt_dent(SCR *sp, TEXT *tp)
 			++scno;
 
 	/* Get the previous shiftwidth column. */
-	cno = scno--;
-	scno -= scno % sw;
+	cno = scno;
+	scno -= --scno % sw;
 
 	/*
 	 * Since we don't know what comes before the character(s) being

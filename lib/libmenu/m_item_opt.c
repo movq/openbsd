@@ -1,7 +1,7 @@
-/* $OpenBSD: m_item_opt.c,v 1.9 2010/01/12 23:22:08 nicm Exp $ */
+/*	$OpenBSD: m_item_opt.c,v 1.7 1999/05/17 03:04:24 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2003,2004 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -29,7 +29,7 @@
  ****************************************************************************/
 
 /****************************************************************************
- *   Author:  Juergen Pfeifer, 1995,1997                                    *
+ *   Author: Juergen Pfeifer <juergen.pfeifer@gmx.net> 1995,1997            *
  ****************************************************************************/
 
 /***************************************************************************
@@ -39,7 +39,7 @@
 
 #include "menu.priv.h"
 
-MODULE_ID("$Id: m_item_opt.c,v 1.9 2010/01/12 23:22:08 nicm Exp $")
+MODULE_ID("$From: m_item_opt.c,v 1.10 1999/05/16 17:25:52 juergen Exp $")
 
 /*---------------------------------------------------------------------------
 |   Facility      :  libnmenu  
@@ -52,37 +52,34 @@ MODULE_ID("$Id: m_item_opt.c,v 1.9 2010/01/12 23:22:08 nicm Exp $")
 |   Return Values :  E_OK            - success
 |                    E_BAD_ARGUMENT  - invalid item options
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(int)
-set_item_opts(ITEM * item, Item_Options opts)
-{
-  T((T_CALLED("set_menu_opts(%p,%d)"), item, opts));
-
+int set_item_opts(ITEM *item, Item_Options opts)
+{ 
   opts &= ALL_ITEM_OPTS;
 
   if (opts & ~ALL_ITEM_OPTS)
     RETURN(E_BAD_ARGUMENT);
-
+  
   if (item)
     {
       if (item->opt != opts)
-	{
+	{		
 	  MENU *menu = item->imenu;
-
+	  
 	  item->opt = opts;
-
+	  
 	  if ((!(opts & O_SELECTABLE)) && item->value)
 	    item->value = FALSE;
-
+	  
 	  if (menu && (menu->status & _POSTED))
 	    {
-	      Move_And_Post_Item(menu, item);
+	      Move_And_Post_Item( menu, item );
 	      _nc_Show_Menu(menu);
 	    }
 	}
     }
   else
     _nc_Default_Item.opt = opts;
-
+  
   RETURN(E_OK);
 }
 
@@ -95,22 +92,18 @@ set_item_opts(ITEM * item, Item_Options opts)
 |   Return Values :  E_OK            - success
 |                    E_BAD_ARGUMENT  - invalid options
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(int)
-item_opts_off(ITEM * item, Item_Options opts)
-{
-  ITEM *citem = item;		/* use a copy because set_item_opts must detect
-
-				   NULL item itself to adjust its behavior */
-
-  T((T_CALLED("item_opts_off(%p,%d)"), item, opts));
+int item_opts_off(ITEM *item, Item_Options  opts)
+{ 
+  ITEM *citem = item; /* use a copy because set_item_opts must detect
+                         NULL item itself to adjust its behaviour */
 
   if (opts & ~ALL_ITEM_OPTS)
     RETURN(E_BAD_ARGUMENT);
   else
     {
-      Normalize_Item(citem);
+      Normalize_Item(citem);    
       opts = citem->opt & ~(opts & ALL_ITEM_OPTS);
-      returnCode(set_item_opts(item, opts));
+      return set_item_opts( item, opts );
     }
 }
 
@@ -123,15 +116,11 @@ item_opts_off(ITEM * item, Item_Options opts)
 |   Return Values :  E_OK            - success
 |                    E_BAD_ARGUMENT  - invalid options
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(int)
-item_opts_on(ITEM * item, Item_Options opts)
+int item_opts_on(ITEM *item, Item_Options opts)
 {
-  ITEM *citem = item;		/* use a copy because set_item_opts must detect
-
-				   NULL item itself to adjust its behavior */
-
-  T((T_CALLED("item_opts_on(%p,%d)"), item, opts));
-
+  ITEM *citem = item; /* use a copy because set_item_opts must detect
+                         NULL item itself to adjust its behaviour */
+  
   opts &= ALL_ITEM_OPTS;
   if (opts & ~ALL_ITEM_OPTS)
     RETURN(E_BAD_ARGUMENT);
@@ -139,7 +128,7 @@ item_opts_on(ITEM * item, Item_Options opts)
     {
       Normalize_Item(citem);
       opts = citem->opt | opts;
-      returnCode(set_item_opts(item, opts));
+      return set_item_opts( item, opts );
     }
 }
 
@@ -151,11 +140,9 @@ item_opts_on(ITEM * item, Item_Options opts)
 |
 |   Return Values :  Items options
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(Item_Options)
-item_opts(const ITEM * item)
+Item_Options item_opts(const ITEM * item)
 {
-  T((T_CALLED("item_opts(%p)"), item));
-  returnItemOpts(ALL_ITEM_OPTS & Normalize_Item(item)->opt);
+  return (ALL_ITEM_OPTS & Normalize_Item(item)->opt);
 }
 
 /* m_item_opt.c ends here */

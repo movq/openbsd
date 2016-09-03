@@ -9,9 +9,6 @@
 
 #include "INTERN.h"
 #include "config.h"
-#ifdef WIN32
-#include "io.h"
-#endif
 #include "sdbm.h"
 #include "tune.h"
 #include "pair.h"
@@ -24,9 +21,7 @@
 #endif
 
 #ifdef I_STRING
-# ifndef __ultrix__
-#  include <string.h>
-# endif
+# include <string.h>
 #else
 # include <strings.h>
 #endif
@@ -34,18 +29,14 @@
 /*
  * externals
  */
-
-#include <errno.h> /* See notes in perl.h about avoiding
-			extern int errno; */
-#ifdef __cplusplus
-extern "C" {
+#ifndef WIN32
+#ifndef sun
+extern int errno;
 #endif
 
 extern Malloc_t malloc proto((MEM_SIZE));
 extern Free_t free proto((Malloc_t));
-
-#ifdef __cplusplus
-}
+extern Off_t lseek(int, Off_t, int);
 #endif
 
 /*
@@ -67,7 +58,7 @@ static int makroom proto((DBM *, long, int));
 #define OFF_PAG(off)	(long) (off) * PBLKSIZ
 #define OFF_DIR(off)	(long) (off) * DBLKSIZ
 
-static const long masks[] = {
+static long masks[] = {
 	000000000000, 000000000001, 000000000003, 000000000007,
 	000000000017, 000000000037, 000000000077, 000000000177,
 	000000000377, 000000000777, 000000001777, 000000003777,
@@ -79,33 +70,28 @@ static const long masks[] = {
 };
 
 DBM *
-sdbm_open(char *file, int flags, int mode)
+sdbm_open(register char *file, register int flags, register int mode)
 {
-	DBM *db;
-	char *dirname;
-	char *pagname;
-	size_t filelen;
-	const size_t dirfext_size = sizeof(DIRFEXT "");
-	const size_t pagfext_size = sizeof(PAGFEXT "");
+	register DBM *db;
+	register char *dirname;
+	register char *pagname;
+	register int n;
 
 	if (file == NULL || !*file)
 		return errno = EINVAL, (DBM *) NULL;
 /*
- * need space for two separate filenames
+ * need space for two seperate filenames
  */
-	filelen = strlen(file);
+	n = strlen(file) * 2 + strlen(DIRFEXT) + strlen(PAGFEXT) + 2;
 
-	if ((dirname = (char *) malloc(filelen + dirfext_size
-				       + filelen + pagfext_size)) == NULL)
+	if ((dirname = (char *) malloc((unsigned) n)) == NULL)
 		return errno = ENOMEM, (DBM *) NULL;
 /*
  * build the file names
  */
-	memcpy(dirname, file, filelen);
-	memcpy(dirname + filelen, DIRFEXT, dirfext_size);
-	pagname = dirname + filelen + dirfext_size;
-	memcpy(pagname, file, filelen);
-	memcpy(pagname + filelen, PAGFEXT, pagfext_size);
+	dirname = strcat(strcpy(dirname, file), DIRFEXT);
+	pagname = strcpy(dirname + strlen(dirname) + 1, file);
+	pagname = strcat(pagname, PAGFEXT);
 
 	db = sdbm_prep(dirname, pagname, flags, mode);
 	free((char *) dirname);
@@ -115,7 +101,7 @@ sdbm_open(char *file, int flags, int mode)
 DBM *
 sdbm_prep(char *dirname, char *pagname, int flags, int mode)
 {
-	DBM *db;
+	register DBM *db;
 	struct stat dstat;
 
 	if ((db = (DBM *) malloc(sizeof(DBM))) == NULL)
@@ -139,7 +125,7 @@ sdbm_prep(char *dirname, char *pagname, int flags, int mode)
  * open the files in sequence, and stat the dirfile.
  * If we fail anywhere, undo everything, return NULL.
  */
-#if defined(OS2) || defined(MSDOS) || defined(WIN32) || defined(__CYGWIN__)
+#if defined(OS2) || defined(MSDOS) || defined(WIN32)
 	flags |= O_BINARY;
 #	endif
 	if ((db->pagf = open(pagname, flags, mode)) > -1) {
@@ -172,7 +158,7 @@ sdbm_prep(char *dirname, char *pagname, int flags, int mode)
 }
 
 void
-sdbm_close(DBM *db)
+sdbm_close(register DBM *db)
 {
 	if (db == NULL)
 		errno = EINVAL;
@@ -184,7 +170,7 @@ sdbm_close(DBM *db)
 }
 
 datum
-sdbm_fetch(DBM *db, datum key)
+sdbm_fetch(register DBM *db, datum key)
 {
 	if (db == NULL || bad(key))
 		return errno = EINVAL, nullitem;
@@ -196,19 +182,7 @@ sdbm_fetch(DBM *db, datum key)
 }
 
 int
-sdbm_exists(DBM *db, datum key)
-{
-	if (db == NULL || bad(key))
-		return errno = EINVAL, -1;
-
-	if (getpage(db, exhash(key)))
-		return exipair(db->pagbuf, key);
-
-	return ioerr(db), -1;
-}
-
-int
-sdbm_delete(DBM *db, datum key)
+sdbm_delete(register DBM *db, datum key)
 {
 	if (db == NULL || bad(key))
 		return errno = EINVAL, -1;
@@ -232,10 +206,10 @@ sdbm_delete(DBM *db, datum key)
 }
 
 int
-sdbm_store(DBM *db, datum key, datum val, int flags)
+sdbm_store(register DBM *db, datum key, datum val, int flags)
 {
 	int need;
-	long hash;
+	register long hash;
 
 	if (db == NULL || bad(key))
 		return errno = EINVAL, -1;
@@ -290,20 +264,13 @@ sdbm_store(DBM *db, datum key, datum val, int flags)
  * giving up.
  */
 static int
-makroom(DBM *db, long int hash, int need)
+makroom(register DBM *db, long int hash, int need)
 {
 	long newp;
 	char twin[PBLKSIZ];
-#if defined(DOSISH) || defined(WIN32)
-	char zer[PBLKSIZ];
-	long oldtail;
-#endif
 	char *pag = db->pagbuf;
 	char *New = twin;
-	int smax = SPLTMAX;
-#ifdef BADMESS
-	int rc;
-#endif
+	register int smax = SPLTMAX;
 
 	do {
 /*
@@ -316,30 +283,13 @@ makroom(DBM *db, long int hash, int need)
 		newp = (hash & db->hmask) | (db->hmask + 1);
 
 /*
- * write delay, read avoidance/cache shuffle:
+ * write delay, read avoidence/cache shuffle:
  * select the page for incoming pair: if key is to go to the new page,
  * write out the previous one, and copy the new one over, thus making
  * it the current page. If not, simply write the new page, and we are
  * still looking at the page of interest. current page is not updated
  * here, as sdbm_store will do so, after it inserts the incoming pair.
  */
-
-#if defined(DOSISH) || defined(WIN32)
-		/*
-		 * Fill hole with 0 if made it.
-		 * (hole is NOT read as 0)
-		 */
-		oldtail = lseek(db->pagf, 0L, SEEK_END);
-		memset(zer, 0, PBLKSIZ);
-		while (OFF_PAG(newp) > oldtail) {
-			if (lseek(db->pagf, 0L, SEEK_END) < 0 ||
-			    write(db->pagf, zer, PBLKSIZ) < 0) {
-
-				return 0;
-			}
-			oldtail += PBLKSIZ;
-		}
-#endif
 		if (hash & (db->hmask + 1)) {
 			if (lseek(db->pagf, OFF_PAG(db->pagbno), SEEK_SET) < 0
 			    || write(db->pagf, db->pagbuf, PBLKSIZ) < 0)
@@ -378,10 +328,7 @@ makroom(DBM *db, long int hash, int need)
  * we still cannot fit the key. say goodnight.
  */
 #ifdef BADMESS
-	rc = write(2, "sdbm: cannot insert after SPLTMAX attempts.\n", 44);
-	/* PERL_UNUSED_VAR() or PERL_UNUSED_RESULT() would be
-	 * useful here but that would mean pulling in perl.h */
-	(void)rc;
+	(void) write(2, "sdbm: cannot insert after SPLTMAX attempts.\n", 44);
 #endif
 	return 0;
 
@@ -392,7 +339,7 @@ makroom(DBM *db, long int hash, int need)
  * deletions aren't taken into account. (ndbm bug)
  */
 datum
-sdbm_firstkey(DBM *db)
+sdbm_firstkey(register DBM *db)
 {
 	if (db == NULL)
 		return errno = EINVAL, nullitem;
@@ -410,7 +357,7 @@ sdbm_firstkey(DBM *db)
 }
 
 datum
-sdbm_nextkey(DBM *db)
+sdbm_nextkey(register DBM *db)
 {
 	if (db == NULL)
 		return errno = EINVAL, nullitem;
@@ -421,11 +368,11 @@ sdbm_nextkey(DBM *db)
  * all important binary trie traversal
  */
 static int
-getpage(DBM *db, long int hash)
+getpage(register DBM *db, register long int hash)
 {
-	int hbit;
-	long dbit;
-	long pagb;
+	register int hbit;
+	register long dbit;
+	register long pagb;
 
 	dbit = 0;
 	hbit = 0;
@@ -460,21 +407,18 @@ getpage(DBM *db, long int hash)
 }
 
 static int
-getdbit(DBM *db, long int dbit)
+getdbit(register DBM *db, register long int dbit)
 {
-	long c;
-	long dirb;
+	register long c;
+	register long dirb;
 
 	c = dbit / BYTESIZ;
 	dirb = c / DBLKSIZ;
 
 	if (dirb != db->dirbno) {
-		int got;
 		if (lseek(db->dirf, OFF_DIR(dirb), SEEK_SET) < 0
-		    || (got=read(db->dirf, db->dirbuf, DBLKSIZ)) < 0)
+		    || read(db->dirf, db->dirbuf, DBLKSIZ) < 0)
 			return 0;
-		if (got==0) 
-			memset(db->dirbuf,0,DBLKSIZ);
 		db->dirbno = dirb;
 
 		debug(("dir read: %d\n", dirb));
@@ -484,21 +428,19 @@ getdbit(DBM *db, long int dbit)
 }
 
 static int
-setdbit(DBM *db, long int dbit)
+setdbit(register DBM *db, register long int dbit)
 {
-	long c;
-	long dirb;
+	register long c;
+	register long dirb;
 
 	c = dbit / BYTESIZ;
 	dirb = c / DBLKSIZ;
 
 	if (dirb != db->dirbno) {
-		int got;
+		(void) memset(db->dirbuf, 0, DBLKSIZ);
 		if (lseek(db->dirf, OFF_DIR(dirb), SEEK_SET) < 0
-		    || (got=read(db->dirf, db->dirbuf, DBLKSIZ)) < 0)
+		    || read(db->dirf, db->dirbuf, DBLKSIZ) < 0)
 			return 0;
-		if (got==0) 
-			memset(db->dirbuf,0,DBLKSIZ);
 		db->dirbno = dirb;
 
 		debug(("dir read: %d\n", dirb));
@@ -506,13 +448,8 @@ setdbit(DBM *db, long int dbit)
 
 	db->dirbuf[c % DBLKSIZ] |= (1 << dbit % BYTESIZ);
 
-#if 0
 	if (dbit >= db->maxbno)
 		db->maxbno += DBLKSIZ * BYTESIZ;
-#else
-	if (OFF_DIR((dirb+1))*BYTESIZ > db->maxbno) 
-		db->maxbno=OFF_DIR((dirb+1))*BYTESIZ;
-#endif
 
 	if (lseek(db->dirf, OFF_DIR(dirb), SEEK_SET) < 0
 	    || write(db->dirf, db->dirbuf, DBLKSIZ) < 0)
@@ -526,7 +463,7 @@ setdbit(DBM *db, long int dbit)
  * the page, try the next page in sequence
  */
 static datum
-getnext(DBM *db)
+getnext(register DBM *db)
 {
 	datum key;
 

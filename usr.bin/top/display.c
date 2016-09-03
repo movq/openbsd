@@ -1,31 +1,14 @@
-/* $OpenBSD: display.c,v 1.51 2016/08/27 04:07:42 guenther Exp $	 */
+/*	$OpenBSD: display.c,v 1.4 1999/03/06 20:27:42 millert Exp $	*/
 
 /*
  *  Top users/processes display for Unix
  *  Version 3
  *
- * Copyright (c) 1984, 1989, William LeFebvre, Rice University
- * Copyright (c) 1989, 1990, 1992, William LeFebvre, Northwestern University
+ *  This program may be freely redistributed,
+ *  but this entire comment MUST remain intact.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHOR OR HIS EMPLOYER BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *  Copyright (c) 1984, 1989, William LeFebvre, Rice University
+ *  Copyright (c) 1989, 1990, 1992, William LeFebvre, Northwestern University
  */
 
 /*
@@ -38,7 +21,7 @@
  *  ASSUMPTIONS:
  *        None of the "i_" routines use any of the termcap capabilities.
  *        In this way, those routines can be safely used on terminals that
- *        have minimal (or nonexistent) terminal capabilities.
+ *        have minimal (or nonexistant) terminal capabilities.
  *
  *        The routines are called in this order:  *_loadave, i_timeofday,
  *        *_procstates, *_cpustates, *_memory, *_message, *_header,
@@ -46,442 +29,522 @@
  */
 
 #include <sys/types.h>
-#include <sys/time.h>
-#include <sys/sched.h>
-#include <curses.h>
-#include <errno.h>
 #include <stdio.h>
 #include <ctype.h>
-#include <err.h>
-#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
+#include <term.h>
+#include <time.h>
 #include <unistd.h>
-#include <sys/sysctl.h>
 
 #include "screen.h"		/* interface to screen package */
 #include "layout.h"		/* defines for screen position layout */
 #include "display.h"
 #include "top.h"
+#include "top.local.h"
 #include "boolean.h"
 #include "machine.h"		/* we should eliminate this!!! */
 #include "utils.h"
 
 #ifdef DEBUG
-FILE           *debug;
+FILE *debug;
 #endif
 
-static int      display_width = MAX_COLS;
+static int lmpid = 0;
+static int last_hi = 0;		/* used in u_process and u_endscreen */
+static int lastline = 0;
+static int display_width = MAX_COLS;
 
-static char    *cpustates_tag(int);
-static int      string_count(char **);
-static void     summary_format(char *, size_t, int *, char **);
-static int	readlinedumb(char *, int);
+static char *cpustates_tag __P((void));
+static int string_count __P((char **));
+static void summary_format __P((char *, int *, char **));
+static void line_update __P((char *, char *, int, int));
 
 #define lineindex(l) ((l)*display_width)
 
-/* things initialized by display_init and used throughout */
+/* things initialized by display_init and used thruout */
 
 /* buffer of proc information lines for display updating */
-char           *screenbuf = NULL;
+char *screenbuf = NULL;
 
-static char   **procstate_names;
-static char   **cpustate_names;
-static char   **memory_names;
+static char **procstate_names;
+static char **cpustate_names;
+static char **memory_names;
 
-static int      num_cpustates;
+static int num_procstates;
+static int num_cpustates;
+static int num_memory;
 
-static int     *cpustate_columns;
-static int      cpustate_total_length;
+static int *lprocstates;
+static int *lcpustates;
+static int *lmemory;
 
-/* display ips */
-int y_mem;
-int y_message;
-int y_header;
-int y_idlecursor;
-int y_procs;
-extern int ncpu;
-extern int combine_cpus;
-extern struct process_select ps;
+static int *cpustate_columns;
+static int cpustate_total_length;
 
-int header_status = Yes;
+static enum { OFF, ON, ERASE } header_status = ON;
 
-static int
-empty(void)
+static int string_count();
+static void summary_format();
+static void line_update();
+
+int display_resize()
+
 {
-	return OK;
+    register int display_lines;
+
+    /* first, deallocate any previous buffer that may have been there */
+    if (screenbuf != NULL)
+    {
+	free(screenbuf);
+    }
+
+    /* calculate the current dimensions */
+    /* if operating in "dumb" mode, we only need one line */
+    display_lines = smart_terminal ? screen_length - Header_lines : 1;
+
+    /* we don't want more than MAX_COLS columns, since the machine-dependent
+       modules make static allocations based on MAX_COLS and we don't want
+       to run off the end of their buffers */
+    display_width = screen_width;
+    if (display_width >= MAX_COLS)
+    {
+	display_width = MAX_COLS - 1;
+    }
+
+    /* now, allocate space for the screen buffer */
+    screenbuf = (char *)malloc(display_lines * display_width);
+    if (screenbuf == (char *)NULL)
+    {
+	/* oops! */
+	return(-1);
+    }
+
+    /* return number of lines available */
+    /* for dumb terminals, pretend like we can show any amount */
+    return(smart_terminal ? display_lines : Largest);
 }
 
-static int
-myfputs(const char *s)
+int display_init(statics)
+
+struct statics *statics;
+
 {
-	return fputs(s, stdout);
-}
+    register int display_lines;
+    register char **pp;
+    register int *ip;
+    register int i;
 
-static int (*addstrp)(const char *);
-static int (*printwp)(const char *, ...);
-static int (*standoutp)(void);
-static int (*standendp)(void);
+    /* call resize to do the dirty work */
+    display_lines = display_resize();
 
-int
-display_resize(void)
-{
-	int display_lines;
-	int cpu_lines = (combine_cpus ? 1 : ncpu);
-
-	y_mem = 2 + cpu_lines;
-	y_header = 4 + cpu_lines;
-	y_procs = 5 + cpu_lines;
-
-	/* calculate the current dimensions */
-	/* if operating in "dumb" mode, we only need one line */
-	display_lines = smart_terminal ? screen_length - y_procs : 1;
-
-	y_idlecursor = y_message = 3 + (combine_cpus ? 1 : ncpu);
-	if (screen_length <= y_message)
-		y_idlecursor = y_message = screen_length - 1;
-
-	/*
-	 * we don't want more than MAX_COLS columns, since the
-	 * machine-dependent modules make static allocations based on
-	 * MAX_COLS and we don't want to run off the end of their buffers
-	 */
-	display_width = screen_width;
-	if (display_width >= MAX_COLS)
-		display_width = MAX_COLS - 1;
-
-	if (display_lines < 0)
-		display_lines = 0;
-
-	/* return number of lines available */
-	/* for dumb terminals, pretend like we can show any amount */
-	return (smart_terminal ? display_lines : Largest);
-}
-
-int
-display_init(struct statics * statics)
-{
-	int display_lines, *ip, i;
-	char **pp;
-
-	if (smart_terminal) {
-		addstrp = addstr;
-		printwp = printw;
-		standoutp = standout;
-		standendp = standend;
-	} else {
-		addstrp = myfputs;
-		printwp = printf;
-		standoutp = empty;
-		standendp = empty;
-	}
-
-	/* call resize to do the dirty work */
-	display_lines = display_resize();
-
-	/* only do the rest if we need to */
+    /* only do the rest if we need to */
+    if (display_lines > -1)
+    {
 	/* save pointers and allocate space for names */
 	procstate_names = statics->procstate_names;
+	num_procstates = string_count(procstate_names);
+	lprocstates = (int *)malloc(num_procstates * sizeof(int));
 
 	cpustate_names = statics->cpustate_names;
 	num_cpustates = string_count(cpustate_names);
-	
-	cpustate_columns = calloc(num_cpustates, sizeof(int));
-	if (cpustate_columns == NULL)
-		err(1, NULL);
+	lcpustates = (int *)malloc(num_cpustates * sizeof(int));
+	cpustate_columns = (int *)malloc(num_cpustates * sizeof(int));
 
 	memory_names = statics->memory_names;
+	num_memory = string_count(memory_names);
+	lmemory = (int *)malloc(num_memory * sizeof(int));
 
 	/* calculate starting columns where needed */
 	cpustate_total_length = 0;
 	pp = cpustate_names;
 	ip = cpustate_columns;
-	while (*pp != NULL) {
-		if ((i = strlen(*pp++)) > 0) {
-			*ip++ = cpustate_total_length;
-			cpustate_total_length += i + 8;
-		}
+	while (*pp != NULL)
+	{
+	    if ((i = strlen(*pp++)) > 0)
+	    {
+		*ip++ = cpustate_total_length;
+		cpustate_total_length += i + 8;
+	    }
 	}
+    }
 
-	/* return number of lines available */
-	return (display_lines);
-}
-static void
-format_uptime(char *buf, size_t buflen)
-{
-	time_t now, uptime;
-	int days, hrs, mins;
-	int mib[2];
-	size_t size;
-	struct timeval boottime;
-
-	now = time(NULL);
-	/*
-	 * Print how long system has been up.
-	 * (Found by getting "boottime" from the kernel)
-	 */
-	mib[0] = CTL_KERN;
-	mib[1] = KERN_BOOTTIME;
-	size = sizeof(boottime);
-	if (sysctl(mib, 2, &boottime, &size, NULL, 0) != -1) {
-		uptime = now - boottime.tv_sec;
-		uptime += 30;
-		days = uptime / (3600 * 24);
-		uptime %= (3600 * 24);
-		hrs = uptime / 3600;
-		uptime %= 3600;
-		mins = uptime / 60;
-		if (days > 0)
-			snprintf(buf, buflen, "up %d day%s, %2d:%02d",
-			    days, days > 1 ? "s" : "", hrs, mins);
-		else
-			snprintf(buf, buflen, "up %2d:%02d",
-			    hrs, mins);
-	}
+    /* return number of lines available */
+    return(display_lines);
 }
 
+void i_loadave(mpid, avenrun)
 
-void
-i_loadave(pid_t mpid, double *avenrun)
+int mpid;
+double *avenrun;
+
 {
-	if (screen_length > 1 || !smart_terminal) {
-		int i;
+    register int i;
 
-		move(0, 0);
-		clrtoeol();
+    /* i_loadave also clears the screen, since it is first */
+    clear();
 
-		addstrp("load averages");
-		/* mpid == -1 implies this system doesn't have an _mpid */
-		if (mpid != -1)
-			printwp("last pid: %5ld;  ", (long) mpid);
+    /* mpid == -1 implies this system doesn't have an _mpid */
+    if (mpid != -1)
+    {
+	printf("last pid: %5d;  ", mpid);
+    }
 
-		for (i = 0; i < 3; i++)
-			printwp("%c %5.2f", i == 0 ? ':' : ',', avenrun[i]);
-	}
+    printf("load averages");
 
+    for (i = 0; i < 3; i++)
+    {
+	printf("%c %5.2f",
+	    i == 0 ? ':' : ',',
+	    avenrun[i]);
+    }
+    lmpid = mpid;
 }
 
-/*
- *  Display the current time.
- *  "ctime" always returns a string that looks like this:
- *
- *	Sun Sep 16 01:03:52 1973
- *      012345678901234567890123
- *	          1         2
- *
- *  We want indices 11 thru 18 (length 8).
- */
+void u_loadave(mpid, avenrun)
 
-void
-i_timeofday(time_t * tod)
+int mpid;
+double *avenrun;
+
 {
-	static char buf[30];
+    register int i;
 
-	if (buf[0] == '\0')
-		gethostname(buf, sizeof(buf));
+    if (mpid != -1)
+    {
+	/* change screen only when value has really changed */
+	if (mpid != lmpid)
+	{
+	    Move_to(x_lastpid, y_lastpid);
+	    printf("%5d", mpid);
+	    lmpid = mpid;
+	}
 
-	if (screen_length > 1 || !smart_terminal) {
-		if (smart_terminal) {
-			move(0, screen_width - 8 - strlen(buf) - 1);
-		} else {
-			if (fputs("    ", stdout) == EOF)
-				exit(1);
-		}
+	/* i remembers x coordinate to move to */
+	i = x_loadave;
+    }
+    else
+    {
+	i = x_loadave_nompid;
+    }
+
+    /* move into position for load averages */
+    Move_to(i, y_loadave);
+
+    /* display new load averages */
+    /* we should optimize this and only display changes */
+    for (i = 0; i < 3; i++)
+    {
+	printf("%s%5.2f",
+	    i == 0 ? "" : ", ",
+	    avenrun[i]);
+    }
+}
+
+void i_timeofday(tod)
+
+time_t *tod;
+
+{
+    /*
+     *  Display the current time.
+     *  "ctime" always returns a string that looks like this:
+     *  
+     *	Sun Sep 16 01:03:52 1973
+     *      012345678901234567890123
+     *	          1         2
+     *
+     *  We want indices 11 thru 18 (length 8).
+     */
+
+    if (smart_terminal)
+    {
+	Move_to(screen_width - 8, 0);
+    }
+    else
+    {
+	fputs("    ", stdout);
+    }
 #ifdef DEBUG
-		{
-			char *foo;
-			foo = ctime(tod);
-			addstrp(foo);
-		}
+    {
+	char *foo;
+	foo = ctime(tod);
+	fputs(foo, stdout);
+    }
 #endif
-		printwp("%s %-8.8s", buf, &(ctime(tod)[11]));
-		putn();
-	}
+    printf("%-8.8s\n", &(ctime(tod)[11]));
+    lastline = 1;
 }
 
+static int ltotal = 0;
+static char procstates_buffer[128];
+
 /*
- *  *_procstates(total, states, threads) - print the process/thread summary line
+ *  *_procstates(total, brkdn, names) - print the process summary line
  *
  *  Assumptions:  cursor is at the beginning of the line on entry
+ *		  lastline is valid
  */
-void
-i_procstates(int total, int *states, int threads)
+
+void i_procstates(total, brkdn)
+
+int total;
+int *brkdn;
+
 {
-	if (screen_length > 2 || !smart_terminal) {
-		char procstates_buffer[MAX_COLS];
-		char uptime[40];
+    register int i;
 
-		move(1, 0);
-		clrtoeol();
-		/* write current number of procs and remember the value */
-		if (threads == Yes)
-			printwp("%d threads: ", total);
-		else
-			printwp("%d processes: ", total);
+    /* write current number of processes and remember the value */
+    printf("%d processes:", total);
+    ltotal = total;
 
-		/* format and print the process state summary */
-		summary_format(procstates_buffer, sizeof(procstates_buffer),
-		    states, procstate_names);
+    /* put out enough spaces to get to column 15 */
+    i = digits(total);
+    while (i++ < 4)
+    {
+	putchar(' ');
+    }
 
-		addstrp(procstates_buffer);
+    /* format and print the process state summary */
+    summary_format(procstates_buffer, brkdn, procstate_names);
+    fputs(procstates_buffer, stdout);
 
-		format_uptime(uptime, sizeof(uptime));
-		if (smart_terminal)
-			move(1, screen_width - strlen(uptime));
-		else
-			printwp("  ");
-		printwp("%s", uptime);
-		putn();
+    /* save the numbers for next time */
+    memcpy(lprocstates, brkdn, num_procstates * sizeof(int));
+}
+
+void u_procstates(total, brkdn)
+
+int total;
+int *brkdn;
+
+{
+    static char new[128];
+    register int i;
+
+    /* update number of processes only if it has changed */
+    if (ltotal != total)
+    {
+	/* move and overwrite */
+#if (x_procstate == 0)
+	Move_to(x_procstate, y_procstate);
+#else
+	/* cursor is already there...no motion needed */
+	/* assert(lastline == 1); */
+#endif
+	printf("%d", total);
+
+	/* if number of digits differs, rewrite the label */
+	if (digits(total) != digits(ltotal))
+	{
+	    fputs(" processes:", stdout);
+	    /* put out enough spaces to get to column 15 */
+	    i = digits(total);
+	    while (i++ < 4)
+	    {
+		putchar(' ');
+	    }
+	    /* cursor may end up right where we want it!!! */
 	}
+
+	/* save new total */
+	ltotal = total;
+    }
+
+    /* see if any of the state numbers has changed */
+    if (memcmp(lprocstates, brkdn, num_procstates * sizeof(int)) != 0)
+    {
+	/* format and update the line */
+	summary_format(new, brkdn, procstate_names);
+	line_update(procstates_buffer, new, x_brkdn, y_brkdn);
+	memcpy(lprocstates, brkdn, num_procstates * sizeof(int));
+    }
 }
 
 /*
- *  *_cpustates(states) - print the cpu state percentages
+ *  *_cpustates(states, names) - print the cpu state percentages
  *
  *  Assumptions:  cursor is on the PREVIOUS line
  */
 
+static int cpustates_column;
+
 /* cpustates_tag() calculates the correct tag to use to label the line */
 
-static char *
-cpustates_tag(int cpu)
+static char *cpustates_tag()
+
 {
-	if (screen_length > 3 || !smart_terminal) {
-		static char *tag;
-		static int cpulen, old_width;
-		int i;
+    register char *use;
 
-		if (cpulen == 0 && ncpu > 1) {
-			/* compute length of the cpu string */
-			for (i = ncpu; i > 0; cpulen++, i /= 10)
-				continue;
-		}
+    static char *short_tag = "CPU: ";
+    static char *long_tag = "CPU states: ";
 
-		if (old_width == screen_width) {
-			if (ncpu > 1) {
-				/* just store the cpu number in the tag */
-				i = tag[3 + cpulen];
-				snprintf(tag + 3, cpulen + 1, "%.*d", cpulen, cpu);
-				tag[3 + cpulen] = i;
-			}
-		} else {
-			/*
-			 * use a long tag if it will fit, otherwise use short one.
-			 */
-			free(tag);
-			if (cpustate_total_length + 10 + cpulen >= screen_width)
-				i = asprintf(&tag, "CPU%.*d: ", cpulen, cpu);
-			else
-				i = asprintf(&tag, "CPU%.*d states: ", cpulen, cpu);
-			if (i == -1)
-				tag = NULL;
-			else
-				old_width = screen_width;
-		}
-		return (tag);
-	} else
-		return ("\0");
+    /* if length + strlen(long_tag) >= screen_width, then we have to
+       use the shorter tag (we subtract 2 to account for ": ") */
+    if (cpustate_total_length + (int)strlen(long_tag) - 2 >= screen_width)
+    {
+	use = short_tag;
+    }
+    else
+    {
+	use = long_tag;
+    }
+
+    /* set cpustates_column accordingly then return result */
+    cpustates_column = strlen(use);
+    return(use);
 }
 
-void
-i_cpustates(int64_t *ostates)
+void i_cpustates(states)
+
+register int *states;
+
 {
-	int i, first, cpu;
-	double value;
-	int64_t *states;
-	char **names, *thisname;
+    register int i = 0;
+    register int value;
+    register char **names = cpustate_names;
+    register char *thisname;
 
-	if (combine_cpus) {
-		static double *values;
-		if (!values) {
-			values = calloc(num_cpustates, sizeof(*values));
-			if (!values)
-				err(1, NULL);
-		}
-		memset(values, 0, num_cpustates * sizeof(*values));
-		for (cpu = 0; cpu < ncpu; cpu++) {
-			names = cpustate_names;
-			states = ostates + (CPUSTATES * cpu);
-			i = 0;
-			while ((thisname = *names++) != NULL) {
-				if (*thisname != '\0') {
-					/* retrieve the value and remember it */
-					values[i++] += *states++;
-				}
-			}
-		}
-		if (screen_length > 2 || !smart_terminal) {
-			names = cpustate_names;
-			i = 0;
-			first = 0;
-			move(2, 0);
-			clrtoeol();
-			printwp("%-3d CPUs: ", ncpu);
+    /* print tag and bump lastline */
+    printf("\n%s", cpustates_tag());
+    lastline++;
 
-			while ((thisname = *names++) != NULL) {
-				if (*thisname != '\0') {
-					value = values[i++] / ncpu;
-					/* if percentage is >= 1000, print it as 100% */
-					printwp((value >= 1000 ? "%s%4.0f%% %s" :
-					    "%s%4.1f%% %s"), first++ == 0 ? "" : ", ",
-					    value / 10., thisname);
-				}
-			}
-			putn();
-		}
-		return;
+    /* now walk thru the names and print the line */
+    while ((thisname = *names++) != NULL)
+    {
+	if (*thisname != '\0')
+	{
+	    /* retrieve the value and remember it */
+	    value = *states++;
+
+	    /* if percentage is >= 1000, print it as 100% */
+	    printf((value >= 1000 ? "%s%4.0f%% %s" : "%s%4.1f%% %s"),
+		   i++ == 0 ? "" : ", ",
+		   ((float)value)/10.,
+		   thisname);
 	}
-	for (cpu = 0; cpu < ncpu; cpu++) {
-		/* now walk thru the names and print the line */
-		names = cpustate_names;
-		first = 0;
-		states = ostates + (CPUSTATES * cpu);
+    }
 
-		if (screen_length > 2 + cpu || !smart_terminal) {
-			move(2 + cpu, 0);
-			clrtoeol();
-			addstrp(cpustates_tag(cpu));
+    /* copy over values into "last" array */
+    memcpy(lcpustates, states, num_cpustates * sizeof(int));
+}
 
-			while ((thisname = *names++) != NULL) {
-				if (*thisname != '\0') {
-					/* retrieve the value and remember it */
-					value = *states++;
+void u_cpustates(states)
 
-					/* if percentage is >= 1000, print it as 100% */
-					printwp((value >= 1000 ? "%s%4.0f%% %s" :
-					    "%s%4.1f%% %s"), first++ == 0 ? "" : ", ",
-					    value / 10., thisname);
-				}
-			}
-			putn();
-		}
+register int *states;
+
+{
+    register int value;
+    register char **names = cpustate_names;
+    register char *thisname;
+    register int *lp;
+    register int *colp;
+
+    Move_to(cpustates_column, y_cpustates);
+    lastline = y_cpustates;
+    lp = lcpustates;
+    colp = cpustate_columns;
+
+    /* we could be much more optimal about this */
+    while ((thisname = *names++) != NULL)
+    {
+	if (*thisname != '\0')
+	{
+	    /* did the value change since last time? */
+	    if (*lp != *states)
+	    {
+		/* yes, move and change */
+		Move_to(cpustates_column + *colp, y_cpustates);
+		lastline = y_cpustates;
+
+		/* retrieve value and remember it */
+		value = *states;
+
+		/* if percentage is >= 1000, print it as 100% */
+		printf((value >= 1000 ? "%4.0f" : "%4.1f"),
+		       ((double)value)/10.);
+
+		/* remember it for next time */
+		*lp = *states;
+	    }
 	}
+
+	/* increment and move on */
+	lp++;
+	states++;
+	colp++;
+    }
+}
+
+void z_cpustates()
+
+{
+    register int i = 0;
+    register char **names = cpustate_names;
+    register char *thisname;
+    register int *lp;
+
+    /* show tag and bump lastline */
+    printf("\n%s", cpustates_tag());
+    lastline++;
+
+    while ((thisname = *names++) != NULL)
+    {
+	if (*thisname != '\0')
+	{
+	    printf("%s    %% %s", i++ == 0 ? "" : ", ", thisname);
+	}
+    }
+
+    /* fill the "last" array with all -1s, to insure correct updating */
+    lp = lcpustates;
+    i = num_cpustates;
+    while (--i >= 0)
+    {
+	*lp++ = -1;
+    }
 }
 
 /*
  *  *_memory(stats) - print "Memory: " followed by the memory summary string
+ *
+ *  Assumptions:  cursor is on "lastline"
+ *                for i_memory ONLY: cursor is on the previous line
  */
-void
-i_memory(int *stats)
+
+static char memory_buffer[MAX_COLS];
+
+void i_memory(stats)
+
+int *stats;
+
 {
-	if (screen_length > y_mem || !smart_terminal) {
-		char memory_buffer[MAX_COLS];
+    fputs("\nMemory: ", stdout);
+    lastline++;
 
-		move(y_mem, 0);
-		clrtoeol();
-		addstrp("Memory: ");
+    /* format and print the memory summary */
+    summary_format(memory_buffer, stats, memory_names);
+    fputs(memory_buffer, stdout);
+}
 
-		/* format and print the memory summary */
-		summary_format(memory_buffer, sizeof(memory_buffer), stats,
-		    memory_names);
-		addstrp(memory_buffer);
-		putn();
-	}
+void u_memory(stats)
+
+int *stats;
+
+{
+    static char new[MAX_COLS];
+
+    /* format the new line */
+    summary_format(new, stats, memory_names);
+    line_update(memory_buffer, new, x_mem, y_mem);
 }
 
 /*
  *  *_message() - print the next pending message line, or erase the one
  *                that is there.
+ *
+ *  Note that u_message is (currently) the same as i_message.
+ *
+ *  Assumptions:  lastline is consistent
  */
 
 /*
@@ -489,283 +552,559 @@ i_memory(int *stats)
  *	respect to screen updates).
  */
 
-static char     next_msg[MAX_COLS + 5];
-static int      msgon = 0;
+static char next_msg[MAX_COLS + 5];
+static int msglen = 0;
+/* Invariant: msglen is always the length of the message currently displayed
+   on the screen (even when next_msg doesn't contain that message). */
 
-void
-i_message(void)
+void i_message()
+
 {
-	move(y_message, 0);
-	if (next_msg[0] != '\0') {
-		standoutp();
-		addstrp(next_msg);
-		standendp();
-		clrtoeol();
-		msgon = TRUE;
-		next_msg[0] = '\0';
-	} else if (msgon) {
-		clrtoeol();
-		msgon = FALSE;
-	}
+    while (lastline < y_message)
+    {
+	fputc('\n', stdout);
+	lastline++;
+    }
+    if (next_msg[0] != '\0')
+    {
+	standout(next_msg);
+	msglen = strlen(next_msg);
+	next_msg[0] = '\0';
+    }
+    else if (msglen > 0)
+    {
+	(void) clear_eol(msglen);
+	msglen = 0;
+    }
 }
+
+void u_message()
+
+{
+    i_message();
+}
+
+static int header_length;
 
 /*
  *  *_header(text) - print the header for the process area
+ *
+ *  Assumptions:  cursor is on the previous line and lastline is consistent
  */
 
-void
-i_header(char *text)
+void i_header(text)
+
+char *text;
+
 {
-	if (header_status == Yes && (screen_length > y_header
-              || !smart_terminal)) {
-		if (!smart_terminal) {
-			putn();
-			if (fputs(text, stdout) == EOF)
-				exit(1);
-			putn();
-		} else {
-			move(y_header, 0);
-			clrtoeol();
-			addstrp(text);
-		}
-	}
+    header_length = strlen(text);
+    if (header_status == ON)
+    {
+	putchar('\n');
+	fputs(text, stdout);
+	lastline++;
+    }
+    else if (header_status == ERASE)
+    {
+	header_status = OFF;
+    }
+}
+
+/*ARGSUSED*/
+void u_header(text)
+
+char *text;		/* ignored */
+
+{
+    if (header_status == ERASE)
+    {
+	putchar('\n');
+	lastline++;
+	clear_eol(header_length);
+	header_status = OFF;
+    }
 }
 
 /*
  *  *_process(line, thisline) - print one process line
+ *
+ *  Assumptions:  lastline is consistent
  */
 
-void
-i_process(int line, char *thisline, int hl)
+void i_process(line, thisline)
+
+int line;
+char *thisline;
+
 {
-	/* make sure we are on the correct line */
-	move(y_procs + line, 0);
+    register char *p;
+    register char *base;
 
-	/* truncate the line to conform to our current screen width */
-	thisline[display_width] = '\0';
+    /* make sure we are on the correct line */
+    while (lastline < y_procs + line)
+    {
+	putchar('\n');
+	lastline++;
+    }
 
-	/* write the line out */
-	if (hl && smart_terminal)
-		standoutp();
-	addstrp(thisline);
-	if (hl && smart_terminal)
-		standendp();
-	putn();
-	clrtoeol();
+    /* truncate the line to conform to our current screen width */
+    thisline[display_width] = '\0';
+
+    /* write the line out */
+    fputs(thisline, stdout);
+
+    /* copy it in to our buffer */
+    base = smart_terminal ? screenbuf + lineindex(line) : screenbuf;
+    p = strecpy(base, thisline);
+
+    /* zero fill the rest of it */
+    memset(p, 0, display_width - (p - base));
 }
 
-void
-u_endscreen(void)
+void u_process(linenum, linebuf)
+
+int linenum;
+char *linebuf;
+
 {
-	if (smart_terminal) {
-		clrtobot();
-		/* move the cursor to a pleasant place */
-		move(y_idlecursor, x_idlecursor);
-	} else {
-		/*
-		 * separate this display from the next with some vertical
-		 * room
-		 */
-		if (fputs("\n\n", stdout) == EOF)
-			exit(1);
+    register char *optr;
+    register int screen_line = linenum + Header_lines;
+    register char *bufferline;
+
+    /* remember a pointer to the current line in the screen buffer */
+    bufferline = &screenbuf[lineindex(linenum)];
+
+    /* truncate the line to conform to our current screen width */
+    linebuf[display_width] = '\0';
+
+    /* is line higher than we went on the last display? */
+    if (linenum >= last_hi)
+    {
+	/* yes, just ignore screenbuf and write it out directly */
+	/* get positioned on the correct line */
+	if (screen_line - lastline == 1)
+	{
+	    putchar('\n');
+	    lastline++;
 	}
-}
-
-void
-display_header(int status)
-{
-	header_status = status;
-}
-
-void
-new_message(int type, const char *msgfmt,...)
-{
-	va_list ap;
-
-	va_start(ap, msgfmt);
-	/* first, format the message */
-	vsnprintf(next_msg, sizeof(next_msg), msgfmt, ap);
-	va_end(ap);
-
-	if (next_msg[0] != '\0') {
-		/* message there already -- can we clear it? */
-		/* yes -- write it and clear to end */
-		if ((type & MT_delayed) == 0) {
-			move(y_message, 0);
-			if (type & MT_standout)
-				standoutp();
-			addstrp(next_msg);
-			if (type & MT_standout)
-				standendp();
-			clrtoeol();
-			msgon = TRUE;
-			next_msg[0] = '\0';
-			if (smart_terminal)
-				refresh();
-		}
-	}
-}
-
-void
-clear_message(void)
-{
-	move(y_message, 0);
-	clrtoeol();
-}
-
-
-static int
-readlinedumb(char *buffer, int size)
-{
-	char *ptr = buffer, ch, cnt = 0, maxcnt = 0;
-	extern volatile sig_atomic_t leaveflag;
-	ssize_t len;
-
-	/* allow room for null terminator */
-	size -= 1;
-
-	/* read loop */
-	while ((fflush(stdout), (len = read(STDIN_FILENO, ptr, 1)) > 0)) {
-
-		if (len == 0 || leaveflag) {
-			end_screen();
-			exit(0);
-		}
-
-		/* newline means we are done */
-		if ((ch = *ptr) == '\n')
-			break;
-
-		/* handle special editing characters */
-		if (ch == ch_kill) {
-			/* return null string */
-			*buffer = '\0';
-			putr();
-			return (-1);
-		} else if (ch == ch_erase) {
-			/* erase previous character */
-			if (cnt <= 0) {
-				/* none to erase! */
-				if (putchar('\7') == EOF)
-					exit(1);
-			} else {
-				if (fputs("\b \b", stdout) == EOF)
-					exit(1);
-				ptr--;
-				cnt--;
-			}
-		}
-		/* check for character validity and buffer overflow */
-		else if (cnt == size || !isprint((unsigned char)ch)) {
-			/* not legal */
-			if (putchar('\7') == EOF)
-				exit(1);
-		} else {
-			/* echo it and store it in the buffer */
-			if (putchar(ch) == EOF)
-				exit(1);
-			ptr++;
-			cnt++;
-			if (cnt > maxcnt)
-				maxcnt = cnt;
-		}
+	else
+	{
+	    Move_to(0, screen_line);
+	    lastline = screen_line;
 	}
 
-	/* all done -- null terminate the string */
-	*ptr = '\0';
+	/* now write the line */
+	fputs(linebuf, stdout);
 
-	/* return either inputted number or string length */
-	putr();
-	return (cnt == 0 ? -1 : cnt);
+	/* copy it in to the buffer */
+	optr = strecpy(bufferline, linebuf);
+
+	/* zero fill the rest of it */
+	memset(optr, 0, display_width - (optr - bufferline));
+    }
+    else
+    {
+	line_update(bufferline, linebuf, 0, linenum + Header_lines);
+    }
 }
 
-int
-readline(char *buffer, int size)
+void u_endscreen(hi)
+
+register int hi;
+
 {
-	size_t cnt;
+    register int screen_line = hi + Header_lines;
+    register int i;
 
-	/* allow room for null terminator */
-	size -= 1;
+    if (smart_terminal)
+    {
+	if (hi < last_hi)
+	{
+	    /* need to blank the remainder of the screen */
+	    /* but only if there is any screen left below this line */
+	    if (lastline + 1 < screen_length)
+	    {
+		/* efficiently move to the end of currently displayed info */
+		if (screen_line - lastline < 5)
+		{
+		    while (lastline < screen_line)
+		    {
+			putchar('\n');
+			lastline++;
+		    }
+		}
+		else
+		{
+		    Move_to(0, screen_line);
+		    lastline = screen_line;
+		}
 
-	if (smart_terminal) {
-		int y, x;
-		getyx(stdscr, y, x);
-		while (getnstr(buffer, size) == KEY_RESIZE)
-			move(y, x);
-	} else
-		return readlinedumb(buffer, size);
+		if (clear_to_end)
+		{
+		    /* we can do this the easy way */
+		    putcap(clear_to_end);
+		}
+		else
+		{
+		    /* use clear_eol on each line */
+		    i = hi;
+		    while ((void) clear_eol(strlen(&screenbuf[lineindex(i++)])), i < last_hi)
+		    {
+			putchar('\n');
+		    }
+		}
+	    }
+	}
+	last_hi = hi;
 
-	cnt = strlen(buffer);
-	if (cnt > 0 && buffer[cnt - 1] == '\n')
-		buffer[cnt - 1] = '\0';
-	return (cnt == 0 ? -1 : cnt);
+	/* move the cursor to a pleasant place */
+	Move_to(x_idlecursor, y_idlecursor);
+	lastline = y_idlecursor;
+    }
+    else
+    {
+	/* separate this display from the next with some vertical room */
+	fputs("\n\n", stdout);
+    }
+}
+
+void display_header(t)
+
+int t;
+
+{
+    if (t)
+    {
+	header_status = ON;
+    }
+    else if (header_status == ON)
+    {
+	header_status = ERASE;
+    }
+}
+
+/*VARARGS2*/
+void new_message(type, msgfmt, a1, a2, a3)
+
+int type;
+char *msgfmt;
+caddr_t a1, a2, a3;
+
+{
+    register int i;
+
+    /* first, format the message */
+    (void) snprintf(next_msg, sizeof(next_msg), msgfmt, a1, a2, a3);
+
+    if (msglen > 0)
+    {
+	/* message there already -- can we clear it? */
+	if (!overstrike)
+	{
+	    /* yes -- write it and clear to end */
+	    i = strlen(next_msg);
+	    if ((type & MT_delayed) == 0)
+	    {
+		type & MT_standout ? standout(next_msg) :
+		                     fputs(next_msg, stdout);
+		(void) clear_eol(msglen - i);
+		msglen = i;
+		next_msg[0] = '\0';
+	    }
+	}
+    }
+    else
+    {
+	if ((type & MT_delayed) == 0)
+	{
+	    type & MT_standout ? standout(next_msg) : fputs(next_msg, stdout);
+	    msglen = strlen(next_msg);
+	    next_msg[0] = '\0';
+	}
+    }
+}
+
+void clear_message()
+
+{
+    if (clear_eol(msglen) == 1)
+    {
+	putchar('\r');
+    }
+}
+
+int readline(buffer, size, numeric)
+
+char *buffer;
+int  size;
+int  numeric;
+
+{
+    register char *ptr = buffer;
+    register char ch;
+    register char cnt = 0;
+    register char maxcnt = 0;
+
+    /* allow room for null terminator */
+    size -= 1;
+
+    /* read loop */
+    while ((fflush(stdout), read(0, ptr, 1) > 0))
+    {
+	/* newline means we are done */
+	if ((ch = *ptr) == '\n')
+	{
+	    break;
+	}
+
+	/* handle special editing characters */
+	if (ch == ch_kill)
+	{
+	    /* kill line -- account for overstriking */
+	    if (overstrike)
+	    {
+		msglen += maxcnt;
+	    }
+
+	    /* return null string */
+	    *buffer = '\0';
+	    putchar('\r');
+	    return(-1);
+	}
+	else if (ch == ch_erase)
+	{
+	    /* erase previous character */
+	    if (cnt <= 0)
+	    {
+		/* none to erase! */
+		putchar('\7');
+	    }
+	    else
+	    {
+		fputs("\b \b", stdout);
+		ptr--;
+		cnt--;
+	    }
+	}
+	/* check for character validity and buffer overflow */
+	else if (cnt == size || (numeric && !isdigit(ch)) ||
+		!isprint(ch))
+	{
+	    /* not legal */
+	    putchar('\7');
+	}
+	else
+	{
+	    /* echo it and store it in the buffer */
+	    putchar(ch);
+	    ptr++;
+	    cnt++;
+	    if (cnt > maxcnt)
+	    {
+		maxcnt = cnt;
+	    }
+	}
+    }
+
+    /* all done -- null terminate the string */
+    *ptr = '\0';
+
+    /* account for the extra characters in the message area */
+    /* (if terminal overstrikes, remember the furthest they went) */
+    msglen += overstrike ? maxcnt : cnt;
+
+    /* return either inputted number or string length */
+    putchar('\r');
+    return(cnt == 0 ? -1 : numeric ? atoi(buffer) : cnt);
 }
 
 /* internal support routines */
-static int
-string_count(char **pp)
-{
-	int cnt;
 
-	cnt = 0;
-	while (*pp++ != NULL)
-		cnt++;
-	return (cnt);
+static int string_count(pp)
+
+register char **pp;
+
+{
+    register int cnt;
+
+    cnt = 0;
+    while (*pp++ != NULL)
+    {
+	cnt++;
+    }
+    return(cnt);
 }
 
-#define	COPYLEFT(to, from)				\
-	do {						\
-		len = strlcpy((to), (from), left);	\
-		if (len >= left)			\
-			return;				\
-		p += len;				\
-		left -= len;				\
-	} while (0)
+static void summary_format(str, numbers, names)
 
-static void
-summary_format(char *buf, size_t left, int *numbers, char **names)
+char *str;
+int *numbers;
+register char **names;
+
 {
-	char *p, *thisname;
-	size_t len;
-	int num;
+    register char *p;
+    register int num;
+    register char *thisname;
 
-	/* format each number followed by its string */
-	p = buf;
-	while ((thisname = *names++) != NULL) {
-		/* get the number to format */
-		num = *numbers++;
+    /* format each number followed by its string */
+    p = str;
+    while ((thisname = *names++) != NULL)
+    {
+	/* get the number to format */
+	num = *numbers++;
 
-		if (num >= 0) {
-			/* is this number in kilobytes? */
-			if (thisname[0] == 'K') {
-				/* yes: format it as a memory value */
-				COPYLEFT(p, format_k(num));
+	/* display only non-zero numbers */
+	if (num > 0)
+	{
+	    /* is this number in kilobytes? */
+	    if (thisname[0] == 'K')
+	    {
+		/* yes: format it as a memory value */
+		p = strecpy(p, format_k(num));
 
-				/*
-				 * skip over the K, since it was included by
-				 * format_k
-				 */
-				COPYLEFT(p, thisname + 1);
-			} else if (num > 0) {
-				len = snprintf(p, left, "%d%s", num, thisname);
-				if (len == (size_t)-1 || len >= left)
-					return;
-				p += len;
-				left -= len;
-			}
-		} else {
-			/*
-			 * Ignore negative numbers, but display corresponding
-			 * string.
-			 */
-			COPYLEFT(p, thisname);
-		}
+		/* skip over the K, since it was included by format_k */
+		p = strecpy(p, thisname+1);
+	    }
+	    else
+	    {
+		p = strecpy(p, itoa(num));
+		p = strecpy(p, thisname);
+	    }
 	}
 
-	/* if the last two characters in the string are ", ", delete them */
-	p -= 2;
-	if (p >= buf && p[0] == ',' && p[1] == ' ')
-		*p = '\0';
+	/* ignore negative numbers, but display corresponding string */
+	else if (num < 0)
+	{
+	    p = strecpy(p, thisname);
+	}
+    }
+
+    /* if the last two characters in the string are ", ", delete them */
+    p -= 2;
+    if (p >= str && p[0] == ',' && p[1] == ' ')
+    {
+	*p = '\0';
+    }
+}
+
+static void line_update(old, new, start, line)
+
+register char *old;
+register char *new;
+int start;
+int line;
+
+{
+    register int ch;
+    register int diff;
+    register int newcol = start + 1;
+    register int lastcol = start;
+    char cursor_on_line = No;
+    char *current;
+
+    /* compare the two strings and only rewrite what has changed */
+    current = old;
+#ifdef DEBUG
+    fprintf(debug, "line_update, starting at %d\n", start);
+    fputs(old, debug);
+    fputc('\n', debug);
+    fputs(new, debug);
+    fputs("\n-\n", debug);
+#endif
+
+    /* start things off on the right foot		    */
+    /* this is to make sure the invariants get set up right */
+    if ((ch = *new++) != *old)
+    {
+	if (line - lastline == 1 && start == 0)
+	{
+	    putchar('\n');
+	}
+	else
+	{
+	    Move_to(start, line);
+	}
+	cursor_on_line = Yes;
+	putchar(ch);
+	*old = ch;
+	lastcol = 1;
+    }
+    old++;
+	
+    /*
+     *  main loop -- check each character.  If the old and new aren't the
+     *	same, then update the display.  When the distance from the
+     *	current cursor position to the new change is small enough,
+     *	the characters that belong there are written to move the
+     *	cursor over.
+     *
+     *	Invariants:
+     *	    lastcol is the column where the cursor currently is sitting
+     *		(always one beyond the end of the last mismatch).
+     */
+    do		/* yes, a do...while */
+    {
+	if ((ch = *new++) != *old)
+	{
+	    /* new character is different from old	  */
+	    /* make sure the cursor is on top of this character */
+	    diff = newcol - lastcol;
+	    if (diff > 0)
+	    {
+		/* some motion is required--figure out which is shorter */
+		if (diff < 6 && cursor_on_line)
+		{
+		    /* overwrite old stuff--get it out of the old buffer */
+		    printf("%.*s", diff, &current[lastcol-start]);
+		}
+		else
+		{
+		    /* use cursor addressing */
+		    Move_to(newcol, line);
+		    cursor_on_line = Yes;
+		}
+		/* remember where the cursor is */
+		lastcol = newcol + 1;
+	    }
+	    else
+	    {
+		/* already there, update position */
+		lastcol++;
+	    }
+		
+	    /* write what we need to */
+	    if (ch == '\0')
+	    {
+		/* at the end--terminate with a clear-to-end-of-line */
+		(void) clear_eol(strlen(old));
+	    }
+	    else
+	    {
+		/* write the new character */
+		putchar(ch);
+	    }
+	    /* put the new character in the screen buffer */
+	    *old = ch;
+	}
+	    
+	/* update working column and screen buffer pointer */
+	newcol++;
+	old++;
+	    
+    } while (ch != '\0');
+
+    /* zero out the rest of the line buffer -- MUST BE DONE! */
+    diff = display_width - newcol;
+    if (diff > 0)
+    {
+	memset(old, 0, diff);
+    }
+
+    /* remember where the current line is */
+    if (cursor_on_line)
+    {
+	lastline = line;
+    }
 }
 
 /*
@@ -774,108 +1113,23 @@ summary_format(char *buf, size_t left, int *numbers, char **names)
  *	characters into '?'.  Replacements are done in place and a pointer
  *	to the original buffer is returned.
  */
-char *
-printable(char *str)
+
+char *printable(str)
+
+char *str;
+
 {
-	char *ptr, ch;
+    register char *ptr;
+    register char ch;
 
-	ptr = str;
-	while ((ch = *ptr) != '\0') {
-		if (!isprint((unsigned char)ch))
-			*ptr = '?';
-		ptr++;
+    ptr = str;
+    while ((ch = *ptr) != '\0')
+    {
+	if (!isprint(ch))
+	{
+	    *ptr = '?';
 	}
-	return (str);
-}
-
-
-/*
- *  show_help() - display the help screen; invoked in response to
- *		either 'h' or '?'.
- */
-void
-show_help(void)
-{
-	if (smart_terminal) {
-		clear();
-		nl();
-	}
-	printwp("These single-character commands are available:\n"
-	    "\n"
-	    "^L           - redraw screen\n"
-	    "<space>      - update screen\n"
-	    "+            - reset any g, p, or u filters\n"
-	    "1            - display CPU statistics on a single line\n"
-	    "C            - toggle the display of command line arguments\n"
-	    "d count      - show `count' displays, then exit\n"
-	    "e            - list errors generated by last \"kill\" or \"renice\" command\n"
-	    "g string     - filter on command name (g+ selects all commands)\n"
-	    "h | ?        - help; show this text\n"
-	    "H            - toggle the display of threads\n"
-	    "I | i        - toggle the display of idle processes\n"
-	    "k [-sig] pid - send signal `-sig' to process `pid'\n"
-	    "n|# count    - show `count' processes\n"
-	    "o field      - specify sort order (size, res, cpu, time, pri, pid, command)\n"
-	    "P pid        - highlight process `pid' (P+ switches highlighting off)\n"
-	    "p pid        - display process by `pid' (p+ selects all processes)\n"
-	    "q            - quit\n"
-	    "r count pid  - renice process `pid' to nice value `count'\n"
-	    "S            - toggle the display of system processes\n"
-	    "s time       - change delay between displays to `time' seconds\n"
-	    "u [-]user    - show processes for `user' (u+ shows all, u -user hides user)\n"
-	    "\n");
-
-	if (smart_terminal) {
-		nonl();
-		refresh();
-	}
-}
-
-/*
- *  show_errors() - display on stdout the current log of errors.
- */
-void
-show_errors(void)
-{
-	struct errs *errp = errs;
-	int cnt = 0;
-
-	if (smart_terminal) {
-		clear();
-		nl();
-	}
-	printwp("%d error%s:\n\n", errcnt, errcnt == 1 ? "" : "s");
-	while (cnt++ < errcnt) {
-		printwp("%5s: %s\n", errp->arg,
-		    errp->err == 0 ? "Not a number" : strerror(errp->err));
-		errp++;
-	}
-	printwp("\n");
-	if (smart_terminal) {
-		nonl();
-		refresh();
-	}
-}
-
-void
-anykey(void)
-{
-	int ch;
-	ssize_t len;
-
-	standoutp();
-	addstrp("Hit any key to continue: ");
-	standendp();
-	if (smart_terminal)
-		refresh();
-	else 
-		fflush(stdout);
-	while (1) {
-		len = read(STDIN_FILENO, &ch, 1);
-		if (len == -1 && errno == EINTR)
-			continue;
-		if (len == 0)
-			exit(1);
-		break;
-	}
+	ptr++;
+    }
+    return(str);
 }

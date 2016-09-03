@@ -1,4 +1,3 @@
-/*	$OpenBSD: ftell.c,v 1.11 2015/08/31 02:53:57 guenther Exp $ */
 /*-
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,37 +34,39 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: ftell.c,v 1.2 1996/08/19 08:32:47 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <stdio.h>
 #include <errno.h>
-#include <limits.h>
 #include "local.h"
 
 /*
- * ftello: return current offset.
+ * ftell: return current offset.
  */
-off_t
-ftello(FILE *fp)
+long
+ftell(fp)
+	register FILE *fp;
 {
-	fpos_t pos;
+	register fpos_t pos;
 
 	if (fp->_seek == NULL) {
 		errno = ESPIPE;			/* historic practice */
-		pos = -1;
-		goto out;
+		return (-1L);
 	}
 
 	/*
 	 * Find offset of underlying I/O object, then
 	 * adjust for buffered bytes.
 	 */
-	FLOCKFILE(fp);
 	__sflush(fp);		/* may adjust seek offset on append stream */
 	if (fp->_flags & __SOFF)
 		pos = fp->_offset;
 	else {
 		pos = (*fp->_seek)(fp->_cookie, (fpos_t)0, SEEK_CUR);
-		if (pos == -1)
-			goto out;
+		if (pos == -1L)
+			return (pos);
 	}
 	if (fp->_flags & __SRD) {
 		/*
@@ -80,19 +85,5 @@ ftello(FILE *fp)
 		 */
 		pos += fp->_p - fp->_bf._base;
 	}
-out:	FUNLOCKFILE(fp);
 	return (pos);
 }
-DEF_WEAK(ftello);
-
-long
-ftell(FILE *fp)
-{
-	off_t offset = ftello(fp);
-	if (offset > LONG_MAX) {
-		errno = EOVERFLOW;
-		return (-1);
-	}
-	return ((long)offset);
-}
-DEF_STRONG(ftell);

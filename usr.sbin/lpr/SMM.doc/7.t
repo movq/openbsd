@@ -1,4 +1,4 @@
-.\" $OpenBSD: 7.t,v 1.6 2015/10/28 13:25:55 millert Exp $
+.\" $OpenBSD: 7.t,v 1.2 1997/01/17 15:54:18 millert Exp $
 .\"
 .\" Copyright (c) 1983, 1993
 .\"	The Regents of the University of California.  All rights reserved.
@@ -11,7 +11,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -62,7 +66,7 @@ The connection to
 on the local machine failed. 
 This usually means the printer server started at
 boot time has died or is hung.  Check the local socket
-/var/run/printer to be sure it still exists (if it does not exist,
+/dev/printer to be sure it still exists (if it does not exist,
 there is no 
 .I lpd
 process running). 
@@ -70,19 +74,19 @@ Usually it is enough to get a super-user to type the following to
 restart
 .IR lpd .
 .DS
-% /usr/sbin/lpd
+% /usr/lib/lpd
 .DE
 You can also check the state of the master printer daemon with the following.
 .DS
-% pgrep -l lpd
+% ps l`cat /usr/spool/lpd.lock`
 .DE
 .IP
 Another possibility is that the
 .I lpr
-program is not set-user-id to \fIdaemon\fP, set-group-id to group \fIdaemon\fP.
+program is not set-user-id to \fIroot\fP, set-group-id to group \fIdaemon\fP.
 This can be checked with
 .DS
-% ls \-l /usr/bin/lpr
+% ls \-lg /usr/ucb/lpr
 .DE
 .SH
 lpr: \fIprinter\fP\|: printer queue is disabled

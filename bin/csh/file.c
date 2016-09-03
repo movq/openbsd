@@ -1,4 +1,4 @@
-/*	$OpenBSD: file.c,v 1.23 2015/12/26 13:48:38 mestre Exp $	*/
+/*	$OpenBSD: file.c,v 1.6 1998/05/18 20:38:20 deraadt Exp $	*/
 /*	$NetBSD: file.c,v 1.11 1996/11/08 19:34:37 christos Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,8 +34,17 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)file.c	8.2 (Berkeley) 3/19/94";
+#else
+static char rcsid[] = "$OpenBSD: file.c,v 1.6 1998/05/18 20:38:20 deraadt Exp $";
+#endif
+#endif /* not lint */
 
-#include <sys/types.h>
+#ifdef FILEC
+
+#include <sys/param.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <termios.h>
@@ -39,8 +52,14 @@
 #include <pwd.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <limits.h>
-#include <stdarg.h>
+#ifndef SHORT_STRINGS
+#include <string.h>
+#endif /* SHORT_STRINGS */
+#ifdef __STDC__
+# include <stdarg.h>
+#else
+# include <varargs.h>
+#endif
 
 #include "csh.h"
 #include "extern.h"
@@ -67,25 +86,25 @@ typedef enum {
     LIST, RECOGNIZE
 }       COMMAND;
 
-static void	 setup_tty(int);
-static void	 back_to_col_1(void);
-static void	 pushback(Char *);
-static void	 catn(Char *, Char *, int);
-static void	 copyn(Char *, Char *, int);
-static Char	 filetype(Char *, Char *);
-static void	 print_by_column(Char *, Char *[], int);
-static Char	*tilde(Char *, Char *);
-static void	 retype(void);
-static void	 beep(void);
-static void	 print_recognized_stuff(Char *);
-static void	 extract_dir_and_name(Char *, Char *, Char *);
-static Char	*getentry(DIR *, int);
-static void	 free_items(Char **, int);
-static int	 tsearch(Char *, COMMAND, int);
-static int	 recognize(Char *, Char *, int, int);
-static int	 is_prefix(Char *, Char *);
-static int	 is_suffix(Char *, Char *);
-static int	 ignored(Char *);
+static void	 setup_tty __P((int));
+static void	 back_to_col_1 __P((void));
+static void	 pushback __P((Char *));
+static void	 catn __P((Char *, Char *, int));
+static void	 copyn __P((Char *, Char *, int));
+static Char	 filetype __P((Char *, Char *));
+static void	 print_by_column __P((Char *, Char *[], int));
+static Char	*tilde __P((Char *, Char *));
+static void	 retype __P((void));
+static void	 beep __P((void));
+static void	 print_recognized_stuff __P((Char *));
+static void	 extract_dir_and_name __P((Char *, Char *, Char *));
+static Char	*getentry __P((DIR *, int));
+static void	 free_items __P((Char **));
+static int	 tsearch __P((Char *, COMMAND, int));
+static int	 recognize __P((Char *, Char *, int, int));
+static int	 is_prefix __P((Char *, Char *));
+static int	 is_suffix __P((Char *, Char *));
+static int	 ignored __P((Char *));
 
 /*
  * Put this here so the binary can be patched with adb to enable file
@@ -95,7 +114,8 @@ static int	 ignored(Char *);
 bool    filec = 0;
 
 static void
-setup_tty(int on)
+setup_tty(on)
+    int     on;
 {
     struct termios tchars;
 
@@ -122,7 +142,7 @@ setup_tty(int on)
  * Move back to beginning of current line
  */
 static void
-back_to_col_1(void)
+back_to_col_1()
 {
     struct termios tty, tty_normal;
     sigset_t sigset, osigset;
@@ -144,9 +164,10 @@ back_to_col_1(void)
  * Push string contents back into tty queue
  */
 static void
-pushback(Char *string)
+pushback(string)
+    Char   *string;
 {
-    Char *p;
+    register Char *p;
     struct termios tty, tty_normal;
     sigset_t sigset, osigset;
     char    c;
@@ -171,7 +192,9 @@ pushback(Char *string)
  * Always null terminate.
  */
 static void
-catn(Char *des, Char *src, int count)
+catn(des, src, count)
+    register Char *des, *src;
+    register int count;
 {
     while (--count >= 0 && *des)
 	des++;
@@ -182,10 +205,13 @@ catn(Char *des, Char *src, int count)
 }
 
 /*
- * Places Char's like strlcpy, but no special return value.
+ * Like strncpy but always leave room for trailing \0
+ * and always null terminate.
  */
 static void
-copyn(Char *des, Char *src, int count)
+copyn(des, src, count)
+    register Char *des, *src;
+    register int count;
 {
     while (--count >= 0)
 	if ((*des++ = *src++) == 0)
@@ -194,13 +220,13 @@ copyn(Char *des, Char *src, int count)
 }
 
 static  Char
-filetype(Char *dir, Char *file)
+filetype(dir, file)
+    Char   *dir, *file;
 {
-    Char    path[PATH_MAX];
+    Char    path[MAXPATHLEN];
     struct stat statb;
 
-    Strlcpy(path, dir, sizeof path/sizeof(Char));
-    catn(path, file, sizeof(path) / sizeof(Char));
+    catn(Strcpy(path, dir), file, sizeof(path) / sizeof(Char));
     if (lstat(short2str(path), &statb) == 0) {
 	switch (statb.st_mode & S_IFMT) {
 	case S_IFDIR:
@@ -230,9 +256,11 @@ static struct winsize win;
  * Print sorted down columns
  */
 static void
-print_by_column(Char *dir, Char *items[], int count)
+print_by_column(dir, items, count)
+    Char   *dir, *items[];
+    int     count;
 {
-    int i, rows, r, c, maxwidth = 0, columns;
+    register int i, rows, r, c, maxwidth = 0, columns;
 
     if (ioctl(SHOUT, TIOCGWINSZ, (ioctl_t) & win) < 0 || win.ws_col == 0)
 	win.ws_col = 80;
@@ -247,7 +275,7 @@ print_by_column(Char *dir, Char *items[], int count)
 	for (c = 0; c < columns; c++) {
 	    i = c * rows + r;
 	    if (i < count) {
-		int w;
+		register int w;
 
 		(void) fprintf(cshout, "%s", vis_str(items[i]));
 		(void) fputc(dir ? filetype(dir, items[i]) : ' ', cshout);
@@ -270,29 +298,28 @@ print_by_column(Char *dir, Char *items[], int count)
  *	home_directory_of_person/mumble
  */
 static Char *
-tilde(Char *new, Char *old)
+tilde(new, old)
+    Char   *new, *old;
 {
-    Char *o, *p;
-    struct passwd *pw;
+    register Char *o, *p;
+    register struct passwd *pw;
     static Char person[40];
 
-    if (old[0] != '~') {
-	Strlcpy(new, old, PATH_MAX);
-	return new;
-    }
+    if (old[0] != '~')
+	return (Strcpy(new, old));
 
     for (p = person, o = &old[1]; *o && *o != '/'; *p++ = *o++)
 	continue;
     *p = '\0';
     if (person[0] == '\0')
-	(void) Strlcpy(new, value(STRhome), PATH_MAX);
+	(void) Strcpy(new, value(STRhome));
     else {
 	pw = getpwnam(short2str(person));
 	if (pw == NULL)
 	    return (NULL);
-	(void) Strlcpy(new, str2short(pw->pw_dir), PATH_MAX);
+	(void) Strcpy(new, str2short(pw->pw_dir));
     }
-    (void) Strlcat(new, o, PATH_MAX);
+    (void) Strcat(new, o);
     return (new);
 }
 
@@ -300,7 +327,7 @@ tilde(Char *new, Char *old)
  * Cause pending line to be printed
  */
 static void
-retype(void)
+retype()
 {
     struct termios tty;
 
@@ -310,7 +337,7 @@ retype(void)
 }
 
 static void
-beep(void)
+beep()
 {
     if (adrof(STRnobeep) == 0)
 	(void) write(SHOUT, "\007", 1);
@@ -321,7 +348,8 @@ beep(void)
  * print the recognized part of the string
  */
 static void
-print_recognized_stuff(Char *recognized_part)
+print_recognized_stuff(recognized_part)
+    Char   *recognized_part;
 {
     /* An optimized erasing of that silly ^[ */
     (void) fputc('\b', cshout);
@@ -353,9 +381,10 @@ print_recognized_stuff(Char *recognized_part)
  * Should leave final slash (/) at end of dir.
  */
 static void
-extract_dir_and_name(Char *path, Char *dir, Char *name)
+extract_dir_and_name(path, dir, name)
+    Char   *path, *dir, *name;
 {
-    Char *p;
+    register Char *p;
 
     p = Strrchr(path, '/');
     if (p == NULL) {
@@ -369,10 +398,12 @@ extract_dir_and_name(Char *path, Char *dir, Char *name)
 }
 
 static Char *
-getentry(DIR *dir_fd, int looking_for_lognames)
+getentry(dir_fd, looking_for_lognames)
+    DIR    *dir_fd;
+    int     looking_for_lognames;
 {
-    struct passwd *pw;
-    struct dirent *dirp;
+    register struct passwd *pw;
+    register struct dirent *dirp;
 
     if (looking_for_lognames) {
 	if ((pw = getpwent()) == NULL)
@@ -385,13 +416,14 @@ getentry(DIR *dir_fd, int looking_for_lognames)
 }
 
 static void
-free_items(Char **items, int numitems)
+free_items(items)
+    register Char **items;
 {
-    int i;
+    register int i;
 
-    for (i = 0; i < numitems; i++)
-	free(items[i]);
-    free(items);
+    for (i = 0; items[i]; i++)
+	xfree((ptr_t) items[i]);
+    xfree((ptr_t) items);
 }
 
 #define FREE_ITEMS(items) { \
@@ -400,7 +432,8 @@ free_items(Char **items, int numitems)
 	sigemptyset(&sigset);\
 	sigaddset(&sigset, SIGINT);\
 	sigprocmask(SIG_BLOCK, &sigset, &osigset);\
-	free_items(items, numitems);\
+	free_items(items);\
+	items = NULL;\
 	sigprocmask(SIG_SETMASK, &osigset, NULL);\
 }
 
@@ -408,16 +441,23 @@ free_items(Char **items, int numitems)
  * Perform a RECOGNIZE or LIST command on string "word".
  */
 static int
-tsearch(Char *word, COMMAND command, int max_word_length)
+tsearch(word, command, max_word_length)
+    Char   *word;
+    COMMAND command;
+    int     max_word_length;
 {
-    DIR *dir_fd;
-    int numitems = 0, ignoring = TRUE, nignored = 0;
-    int name_length, looking_for_lognames;
-    Char    tilded_dir[PATH_MAX], dir[PATH_MAX];
+    static Char **items = NULL;
+    register DIR *dir_fd;
+    register numitems = 0, ignoring = TRUE, nignored = 0;
+    register name_length, looking_for_lognames;
+    Char    tilded_dir[MAXPATHLEN], dir[MAXPATHLEN];
     Char    name[MAXNAMLEN + 1], extended_name[MAXNAMLEN + 1];
     Char   *entry;
-    Char   **items = NULL;
-    size_t  maxitems = 0;
+
+#define MAXITEMS 1024
+
+    if (items != NULL)
+	FREE_ITEMS(items);
 
     looking_for_lognames = (*word == '~') && (Strchr(word, '/') == NULL);
     if (looking_for_lognames) {
@@ -444,11 +484,16 @@ again:				/* search for matches */
 	    !looking_for_lognames)
 	    continue;
 	if (command == LIST) {
-	    if (numitems >= maxitems) {
-		maxitems += 1024;
-		items = xreallocarray(items, maxitems, sizeof(*items));
+	    if (numitems >= MAXITEMS) {
+		(void) fprintf(csherr, "\nYikes!! Too many %s!!\n",
+			       looking_for_lognames ?
+			       "names in password file" : "files");
+		break;
 	    }
-	    items[numitems] = xreallocarray(NULL, (Strlen(entry) + 1), sizeof(Char));
+	    if (items == NULL)
+		items = (Char **) xcalloc(sizeof(items[0]), MAXITEMS);
+	    items[numitems] = (Char *) xmalloc((size_t) (Strlen(entry) + 1) *
+					       sizeof(Char));
 	    copyn(items[numitems], entry, MAXNAMLEN);
 	    numitems++;
 	}
@@ -487,8 +532,8 @@ again:				/* search for matches */
 	return (numitems);
     }
     else {			/* LIST */
-	qsort(items, numitems, sizeof(*items),
-		(int (*)(const void *, const void *)) sortscmp);
+	qsort((ptr_t) items, numitems, sizeof(items[0]), 
+		(int (*) __P((const void *, const void *))) sortscmp);
 	print_by_column(looking_for_lognames ? NULL : tilded_dir,
 			items, numitems);
 	if (items != NULL)
@@ -506,13 +551,15 @@ again:				/* search for matches */
  * If we shorten it back to the prefix length, stop searching.
  */
 static int
-recognize(Char *extended_name, Char *entry, int name_length, int numitems)
+recognize(extended_name, entry, name_length, numitems)
+    Char   *extended_name, *entry;
+    int     name_length, numitems;
 {
     if (numitems == 1)		/* 1st match */
 	copyn(extended_name, entry, MAXNAMLEN);
     else {			/* 2nd & subsequent matches */
-	Char *x, *ent;
-	int len = 0;
+	register Char *x, *ent;
+	register int len = 0;
 
 	x = extended_name;
 	for (ent = entry; *x && *x == *ent++; x++, len++)
@@ -530,7 +577,8 @@ recognize(Char *extended_name, Char *entry, int name_length, int numitems)
  * it matches anything.
  */
 static int
-is_prefix(Char *check, Char *template)
+is_prefix(check, template)
+    register Char *check, *template;
 {
     do
 	if (*check == 0)
@@ -544,9 +592,10 @@ is_prefix(Char *check, Char *template)
  *  end of check, I.e., are it's suffix.
  */
 static int
-is_suffix(Char *check, Char *template)
+is_suffix(check, template)
+    Char   *check, *template;
 {
-    Char *c, *t;
+    register Char *c, *t;
 
     for (c = check; *c++;)
 	continue;
@@ -561,10 +610,13 @@ is_suffix(Char *check, Char *template)
 }
 
 int
-tenex(Char *inputline, int inputline_size)
+tenex(inputline, inputline_size)
+    Char   *inputline;
+    int     inputline_size;
 {
-    int numitems, num_read;
+    register int numitems, num_read;
     char    tinputline[BUFSIZ];
+
 
     setup_tty(ON);
 
@@ -572,8 +624,8 @@ tenex(Char *inputline, int inputline_size)
 	int     i;
 	static Char delims[] = {' ', '\'', '"', '\t', ';', '&', '<',
 	'>', '(', ')', '|', '^', '%', '\0'};
-	Char *str_end, *word_start, last_Char, should_retype;
-	int space_left;
+	register Char *str_end, *word_start, last_Char, should_retype;
+	register int space_left;
 	COMMAND command;
 
 	for (i = 0; i < num_read; i++)
@@ -629,10 +681,11 @@ tenex(Char *inputline, int inputline_size)
 }
 
 static int
-ignored(Char *entry)
+ignored(entry)
+    register Char *entry;
 {
     struct varent *vp;
-    Char **cp;
+    register Char **cp;
 
     if ((vp = adrof(STRfignore)) == NULL || (cp = vp->vec) == NULL)
 	return (FALSE);
@@ -641,3 +694,4 @@ ignored(Char *entry)
 	    return (TRUE);
     return (FALSE);
 }
+#endif				/* FILEC */

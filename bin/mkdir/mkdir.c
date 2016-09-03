@@ -1,4 +1,4 @@
-/*	$OpenBSD: mkdir.c,v 1.29 2015/10/23 01:00:16 deraadt Exp $	*/
+/*	$OpenBSD: mkdir.c,v 1.8 1998/09/26 09:04:43 deraadt Exp $	*/
 /*	$NetBSD: mkdir.c,v 1.14 1995/06/25 21:59:21 mycroft Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +34,20 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1983, 1992, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)mkdir.c	8.2 (Berkeley) 1/25/94";
+#else
+static char rcsid[] = "$OpenBSD: mkdir.c,v 1.8 1998/09/26 09:04:43 deraadt Exp $";
+#endif
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/stat.h>
 
@@ -41,16 +59,16 @@
 #include <string.h>
 #include <unistd.h>
 
-extern char *__progname;
-
-int	mkpath(char *, mode_t, mode_t);
-void	usage(void);
+int	mkpath __P((char *, mode_t, mode_t));
+void	usage __P((void));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
-	int ch, rv, exitval, pflag;
-	void *set;
+	int ch, exitval, pflag;
+	mode_t *set;
 	mode_t mode, dir_mode;
 
 	setlocale(LC_ALL, "");
@@ -82,16 +100,11 @@ main(int argc, char *argv[])
 	argc -= optind;
 	argv += optind;
 
-	if ((mode & (S_ISUID | S_ISGID | S_ISTXT)) == 0) {
-		if (pledge("stdio rpath cpath fattr", NULL) == -1)
-			err(1, "pledge");
-	}
-
 	if (*argv == NULL)
 		usage();
 
 	for (exitval = 0; *argv != NULL; ++argv) {
-		char *slash;
+		register char *slash;
 
 		/* Remove trailing slashes, per POSIX. */
 		slash = strrchr(*argv, '\0');
@@ -99,69 +112,54 @@ main(int argc, char *argv[])
 			*slash = '\0';
 
 		if (pflag) {
-			rv = mkpath(*argv, mode, dir_mode);
+			if (mkpath(*argv, mode, dir_mode) < 0)
+				exitval = 1;
 		} else {
-			rv = mkdir(*argv, mode);
-			/*
-			 * The mkdir() and umask() calls both honor only the
-			 * low nine bits, so if you try to set a mode including
-			 * the sticky, setuid, setgid bits you lose them. Don't
-			 * do this unless the user has specifically requested
-			 * a mode as chmod will (obviously) ignore the umask.
-			 */
-			if (rv == 0 && mode > 0777)
-				rv = chmod(*argv, mode);
-		}
-		if (rv < 0) {
-			warn("%s", *argv);
-			exitval = 1;
+			if (mkdir(*argv, mode) < 0) {
+				warn("%s", *argv);
+				exitval = 1;
+			}
 		}
 	}
 	exit(exitval);
 }
 
 /*
- * mkpath -- create directories.
+ * mkpath -- create directories.  
  *	path     - path
  *	mode     - file mode of terminal directory
  *	dir_mode - file mode of intermediate directories
  */
 int
-mkpath(char *path, mode_t mode, mode_t dir_mode)
+mkpath(path, mode, dir_mode)
+	char *path;
+	mode_t mode;
+	mode_t dir_mode;
 {
 	struct stat sb;
-	char *slash;
-	int done;
+	register char *slash;
+	int done = 0;
 
 	slash = path;
 
-	for (;;) {
+	while (!done) {
 		slash += strspn(slash, "/");
 		slash += strcspn(slash, "/");
 
 		done = (*slash == '\0');
 		*slash = '\0';
 
-		if (mkdir(path, done ? mode : dir_mode) == 0) {
-			if (mode > 0777 && chmod(path, mode) < 0)
-				return (-1);
-		} else {
-			int mkdir_errno = errno;
-
-			if (stat(path, &sb)) {
-				/* Not there; use mkdir()s errno */
-				errno = mkdir_errno;
+		if (stat(path, &sb)) {
+			if (errno != ENOENT ||
+			    (mkdir(path, done ? mode : dir_mode) &&
+			    errno != EEXIST)) {
+				warn("%s", path);
 				return (-1);
 			}
-			if (!S_ISDIR(sb.st_mode)) {
-				/* Is there, but isn't a directory */
-				errno = ENOTDIR;
-				return (-1);
-			}
+		} else if (!S_ISDIR(sb.st_mode)) {
+			warnx("%s: %s", path, strerror(ENOTDIR));
+			return (-1);
 		}
-
-		if (done)
-			break;
 
 		*slash = '/';
 	}
@@ -170,9 +168,9 @@ mkpath(char *path, mode_t mode, mode_t dir_mode)
 }
 
 void
-usage(void)
+usage()
 {
-	(void)fprintf(stderr, "usage: %s [-p] [-m mode] directory ...\n",
-	    __progname);
+
+	(void)fprintf(stderr, "usage: mkdir [-p] [-m mode] dirname ...\n");
 	exit(1);
 }

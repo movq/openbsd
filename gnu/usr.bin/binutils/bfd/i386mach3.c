@@ -1,6 +1,5 @@
 /* BFD back-end for i386 a.out binaries.
-   Copyright 1990, 1991, 1993, 1994, 1995, 1997, 2001, 2002, 2003
-   Free Software Foundation, Inc.
+   Copyright (C) 1990, 1991 Free Software Foundation, Inc.
 
 This file is part of BFD, the Binary File Descriptor library.
 
@@ -28,6 +27,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #define	SEGMENT_SIZE	0x1000
 #define TEXT_START_ADDR	0x10000
 #define ARCH 32
+#define BYTES_IN_WORD 4
 /* This macro is only relevant when N_MAGIC(x) == ZMAGIC.  */
 #define N_HEADER_IN_TEXT(x)	1
 
@@ -42,19 +42,14 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include "libaout.h"           /* BFD a.out internal data structures */
 
 #define DEFAULT_ARCH bfd_arch_i386
-
-/* Do not "beautify" the CONCAT* macro args.  Traditional C will not
-   remove whitespace added here, and thus will fail to concatenate
-   the tokens.  */
-#define MY(OP) CONCAT2 (i386mach3_,OP)
+#define MY(OP) CAT(i386mach3_,OP)
 #define TARGETNAME "a.out-mach3"
 
-static bfd_boolean MY (set_sizes) PARAMS ((bfd *));
+static boolean MY(set_sizes)();
 #define MY_backend_data &MY(backend_data)
-static const struct aout_backend_data MY(backend_data) = {
+static CONST struct aout_backend_data MY(backend_data) = {
   0,				/* zmagic contiguous */
   1,				/* text incl header */
-  0,				/* entry is text address */
   0,				/* exec_hdr_flags */
   0,				/* text vma? */
   MY(set_sizes),

@@ -1,4 +1,4 @@
-/*	$OpenBSD: ioctl.h,v 1.17 2016/02/28 15:46:19 naddy Exp $	*/
+/*	$OpenBSD: ioctl.h,v 1.3 1996/03/03 12:11:50 niklas Exp $	*/
 /*	$NetBSD: ioctl.h,v 1.20 1996/01/30 18:21:47 thorpej Exp $	*/
 
 /*-
@@ -18,7 +18,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -41,6 +45,24 @@
 #define	_SYS_IOCTL_H_
 
 #include <sys/ttycom.h>
+
+/*
+ * Pun for SunOS prior to 3.2.  SunOS 3.2 and later support TIOCGWINSZ
+ * and TIOCSWINSZ (yes, even 3.2-3.5, the fact that it wasn't documented
+ * nonwithstanding).
+ */
+struct ttysize {
+	unsigned short	ts_lines;
+	unsigned short	ts_cols;
+	unsigned short	ts_xxx;
+	unsigned short	ts_yyy;
+};
+#define	TIOCGSIZE	TIOCGWINSZ
+#define	TIOCSSIZE	TIOCSWINSZ
+
+#include <sys/ioccom.h>
+
+#include <sys/dkio.h>
 #include <sys/filio.h>
 #include <sys/sockio.h>
 
@@ -49,7 +71,19 @@
 #include <sys/cdefs.h>
 
 __BEGIN_DECLS
-int	ioctl(int, unsigned long, ...);
+int	ioctl __P((int, unsigned long, ...));
 __END_DECLS
 #endif /* !_KERNEL */
 #endif /* !_SYS_IOCTL_H_ */
+
+/*
+ * Keep outside _SYS_IOCTL_H_
+ * Compatability with old terminal driver
+ *
+ * Source level -> #define USE_OLD_TTY
+ * Kernel level -> options COMPAT_43 or COMPAT_SUNOS or ...
+ */
+#if defined(USE_OLD_TTY) || defined(COMPAT_43) || defined(COMPAT_SUNOS) || \
+    defined(COMPAT_SVR4) || defined(COMPAT_FREEBSD)
+#include <sys/ioctl_compat.h>
+#endif

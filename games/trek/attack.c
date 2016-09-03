@@ -1,4 +1,4 @@
-/*	$OpenBSD: attack.c,v 1.8 2016/01/07 14:37:51 mestre Exp $	*/
+/*	$OpenBSD: attack.c,v 1.2 1998/08/19 07:41:10 pjanzen Exp $	*/
 /*	$NetBSD: attack.c,v 1.3 1995/04/22 10:58:26 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,9 +34,16 @@
  * SUCH DAMAGE.
  */
 
-#include <math.h>
-#include <stdio.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)attack.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: attack.c,v 1.2 1998/08/19 07:41:10 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
+#include <stdio.h>
+#include <math.h>
 #include "trek.h"
 
 /*
@@ -65,16 +76,16 @@
 **	Casualties can also occur.
 */
 
-/* argument is set if attack while resting */
 void
-attack(int resting)
+attack(resting)
+	int	resting;	/* set if attack while resting */
 {
-	int	hit, i, l;
-	int	maxhit, tothit, shldabsb;
-	double	chgfac, propor, extradm;
-	double	dustfac, tothe;
-	int	cas;
-	int	hitflag;
+	register int	hit, i, l;
+	int		maxhit, tothit, shldabsb;
+	double		chgfac, propor, extradm;
+	double		dustfac, tothe;
+	int		cas;
+	int		hitflag;
 
 	if (Move.free)
 		return;
@@ -128,7 +139,7 @@ attack(int resting)
 			Ship.shield -= shldabsb;
 		}
 		/* actually do the hit */
-		printf("\aHIT: %d units", hit);
+		printf("HIT: %d units", hit);
 		if (!damaged(SRSCAN))
 			printf(" from %d,%d", Etc.klingon[i].x, Etc.klingon[i].y);
 		cas = (shldabsb * 100) / hit;
@@ -145,7 +156,7 @@ attack(int resting)
 		/* see if damages occurred */
 		if (hit >= (15 - Game.skill) * (25 - ranf(12)))
 		{
-			printf("\aCRITICAL HIT!!!\a\n");
+			printf("CRITICAL HIT!!!\n");
 			/* select a device from probability vector */
 			cas = ranf(1000);
 			for (l = 0; cas >= 0; l++)

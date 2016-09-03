@@ -1,19 +1,30 @@
-/*	$OpenBSD: ethers.c,v 1.24 2015/09/14 11:01:47 guenther Exp $	*/
+/*	$OpenBSD: ethers.c,v 1.10 1998/11/18 23:28:54 deraadt Exp $	*/
 
 /*
  * Copyright (c) 1998 Todd C. Miller <Todd.Miller@courtesan.com>
+ * All rights reserved.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+ * AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL
+ * THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 /* 
@@ -22,34 +33,43 @@
  * Substantially modified by Todd C. Miller <Todd.Miller@courtesan.com>
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: ethers.c,v 1.10 1998/11/18 23:28:54 deraadt Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
+#include <sys/param.h>
 #include <paths.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <limits.h>
-#ifdef YP
-#include <rpcsvc/ypclnt.h>
-#endif
 
 #ifndef _PATH_ETHERS
 #define _PATH_ETHERS	"/etc/ethers"
 #endif
 
-static char * _ether_aton(const char *, struct ether_addr *);
+static char * _ether_aton __P((char *, struct ether_addr *));
 
 char *
-ether_ntoa(struct ether_addr *e)
+ether_ntoa(e)
+	struct ether_addr *e;
 {
 	static char a[] = "xx:xx:xx:xx:xx:xx";
 
-	(void)snprintf(a, sizeof a, "%02x:%02x:%02x:%02x:%02x:%02x",
+	if (e->ether_addr_octet[0] > 0xFF || e->ether_addr_octet[1] > 0xFF ||
+	    e->ether_addr_octet[2] > 0xFF || e->ether_addr_octet[3] > 0xFF ||
+	    e->ether_addr_octet[4] > 0xFF || e->ether_addr_octet[5] > 0xFF) {
+		errno = EINVAL;
+		return (NULL);
+	}
+
+	(void)sprintf(a, "%02x:%02x:%02x:%02x:%02x:%02x",
 	    e->ether_addr_octet[0], e->ether_addr_octet[1],
 	    e->ether_addr_octet[2], e->ether_addr_octet[3],
 	    e->ether_addr_octet[4], e->ether_addr_octet[5]);
@@ -58,13 +78,15 @@ ether_ntoa(struct ether_addr *e)
 }
 
 static char *
-_ether_aton(const char *s, struct ether_addr *e)
+_ether_aton(s, e)
+	char *s;
+	struct ether_addr *e;
 {
 	int i;
 	long l;
 	char *pp;
 
-	while (isspace((unsigned char)*s))
+	while (isspace(*s))
 		s++;
 
 	/* expect 6 hex octets separated by ':' or space/NUL if last octet */
@@ -72,9 +94,7 @@ _ether_aton(const char *s, struct ether_addr *e)
 		l = strtol(s, &pp, 16);
 		if (pp == s || l > 0xFF || l < 0)
 			return (NULL);
-		if (!(*pp == ':' ||
-		    (i == 5 && (isspace((unsigned char)*pp) ||
-		    *pp == '\0'))))
+		if (!(*pp == ':' || (i == 5 && (isspace(*pp) || *pp == '\0'))))
 			return (NULL);
 		e->ether_addr_octet[i] = (u_char)l;
 		s = pp + 1;
@@ -85,7 +105,8 @@ _ether_aton(const char *s, struct ether_addr *e)
 }
 
 struct ether_addr *
-ether_aton(const char *s)
+ether_aton(s)
+	char *s;
 {
 	static struct ether_addr n;
 
@@ -93,7 +114,9 @@ ether_aton(const char *s)
 }
 
 int
-ether_ntohost(char *hostname, struct ether_addr *e)
+ether_ntohost(hostname, e)
+	char *hostname;
+	struct ether_addr *e;
 {
 	FILE *f; 
 	char buf[BUFSIZ+1], *p;
@@ -104,15 +127,22 @@ ether_ntohost(char *hostname, struct ether_addr *e)
 	int trylen;
 #endif
 
+	if (e->ether_addr_octet[0] > 0xFF || e->ether_addr_octet[1] > 0xFF ||
+	    e->ether_addr_octet[2] > 0xFF || e->ether_addr_octet[3] > 0xFF ||
+	    e->ether_addr_octet[4] > 0xFF || e->ether_addr_octet[5] > 0xFF) {
+		errno = EINVAL;
+		return (-1);
+	}
+
 #ifdef YP
-	snprintf(trybuf, sizeof trybuf, "%x:%x:%x:%x:%x:%x", 
+	sprintf(trybuf, "%x:%x:%x:%x:%x:%x", 
 	    e->ether_addr_octet[0], e->ether_addr_octet[1],
 	    e->ether_addr_octet[2], e->ether_addr_octet[3],
 	    e->ether_addr_octet[4], e->ether_addr_octet[5]);
 	trylen = strlen(trybuf);
 #endif
 
-	f = fopen(_PATH_ETHERS, "re");
+	f = fopen(_PATH_ETHERS, "r");
 	if (f == NULL)
 		return (-1);
 	while ((p = fgetln(f, &len)) != NULL) {
@@ -155,17 +185,19 @@ ether_ntohost(char *hostname, struct ether_addr *e)
 }
 
 int
-ether_hostton(const char *hostname, struct ether_addr *e)
+ether_hostton(hostname, e)
+	char *hostname;
+	struct ether_addr *e;
 {
 	FILE *f;
 	char buf[BUFSIZ+1], *p;
-	char try[HOST_NAME_MAX+1];
+	char try[MAXHOSTNAMELEN];
 	size_t len;
 #ifdef YP
 	int hostlen = strlen(hostname);
 #endif
 
-	f = fopen(_PATH_ETHERS, "re");
+	f = fopen(_PATH_ETHERS, "r");
 	if (f==NULL)
 		return (-1);
 
@@ -208,7 +240,10 @@ ether_hostton(const char *hostname, struct ether_addr *e)
 }
 
 int
-ether_line(const char *line, struct ether_addr *e, char *hostname)
+ether_line(line, e, hostname)
+	char *line;
+	struct ether_addr *e;
+	char *hostname;
 {
 	char *p;
 	size_t n;
@@ -218,18 +253,18 @@ ether_line(const char *line, struct ether_addr *e, char *hostname)
 		goto bad;
 
 	/* Now get the hostname */
-	while (isspace((unsigned char)*p))
+	while (isspace(*p))
 		p++;
 	if (*p == '\0')
 		goto bad;
 	n = strcspn(p, " \t\n");
-	if (n >= HOST_NAME_MAX+1)
+	if (n >= MAXHOSTNAMELEN)
 		goto bad;
-	strlcpy(hostname, p, n + 1);
+	(void)strncpy(hostname, p, n);
+	hostname[n] = '\0';
 	return (0);
 
 bad:
 	errno = EINVAL;
 	return (-1);
 }
-DEF_WEAK(ether_line);

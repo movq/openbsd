@@ -1,23 +1,27 @@
 #!./perl
 
+# $RCSfile: term.t,v $$Revision: 4.1 $$Date: 92/08/07 18:27:07 $
+
 BEGIN {
     chdir 't' if -d 't';
+    @INC = '../lib';
 }
+
+use Config;
 
 print "1..7\n";
 
 # check "" interpretation
 
 $x = "\n";
-# 10 is ASCII/Iso Latin, 13 is Mac OS, 21 is EBCDIC.
-if ($x eq chr(10)) { print "ok 1\n";}
-elsif ($x eq chr(13)) { print "ok 1 # Mac OS\n"; }
-elsif ($x eq chr(21)) { print "ok 1 # EBCDIC\n"; }
+# 10 is ASCII/Iso Latin, 21 is EBCDIC.
+if ($x eq chr(10) ||
+    ($Config{ebcdic} eq 'define' && $x eq chr(21))) {print "ok 1\n";}
 else {print "not ok 1\n";}
 
 # check `` processing
 
-$x = `$^X -le "print 'hi there'"`;
+$x = `echo hi there`;
 if ($x eq "hi there\n") {print "ok 2\n";} else {print "not ok 2\n";}
 
 # check $#array
@@ -39,7 +43,6 @@ if (($x | 1) == 101) {print "ok 5\n";} else {print "not ok 5\n";}
 # check <> pseudoliteral
 
 open(try, "/dev/null") || open(try,"nla0:") || (die "Can't open /dev/null.");
-
 if (<try> eq '') {
     print "ok 6\n";
 }
@@ -48,5 +51,5 @@ else {
     die "/dev/null IS NOT A CHARACTER SPECIAL FILE!!!!\n" unless -c '/dev/null';
 }
 
-open(try, "harness") || (die "Can't open harness.");
+open(try, "../Configure") || (die "Can't open ../Configure.");
 if (<try> ne '') {print "ok 7\n";} else {print "not ok 7\n";}

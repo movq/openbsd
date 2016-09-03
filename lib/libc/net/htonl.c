@@ -1,16 +1,20 @@
-/*	$OpenBSD: htonl.c,v 1.7 2014/07/21 01:51:10 guenther Exp $ */
 /*
  * Written by J.T. Conklin <jtc@netbsd.org>.
  * Public domain.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: htonl.c,v 1.4 1996/12/12 03:19:55 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
-#include <endian.h>
+#include <machine/endian.h>
 
 #undef htonl
 
 u_int32_t
-htonl(u_int32_t x)
+htonl(x)
+	u_int32_t x;
 {
 #if BYTE_ORDER == LITTLE_ENDIAN
 	u_char *s = (u_char *)&x;

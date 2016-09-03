@@ -1,6 +1,5 @@
 /* m68k-parse.h -- header file for m68k assembler
-   Copyright 1987, 1991, 1992, 1993, 1994, 1995, 1996, 1999, 2000,
-   2003 Free Software Foundation, Inc.
+   Copyright (C) 1987, 91, 92, 93, 94, 1995 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -84,11 +83,8 @@ enum m68k_register
   ZPC,				/* Hack for Program space, but 0 addressing */
   SR,				/* Status Reg */
   CCR,				/* Condition code Reg */
-  ACC,				/* Accumulator Reg */
-  MACSR,			/* MAC Status Reg */
-  MASK,				/* Modulus Reg */
 
-  /* These have to be grouped together for the movec instruction to work.  */
+  /* These have to be grouped together for the movec instruction to work. */
   USP,				/*  User Stack Pointer */
   ISP,				/*  Interrupt stack pointer */
   SFC,
@@ -105,23 +101,14 @@ enum m68k_register
   TC,
   SRP,
   URP,
-  BUSCR,			/* 68060 added these.  */
+  BUSCR,			/* 68060 added these */
   PCR,
-  ROMBAR,			/* mcf5200 added these.  */
+  ROMBAR,			/* mcf5200 added these */
   RAMBAR0,
   RAMBAR1,
-  MMUBAR,			/* mcfv4e added these.  */
-  ROMBAR1,			/* mcfv4e added these.  */
-  MPCR, EDRAMBAR, SECMBAR,	/* mcfv4e added these.  */
-  PCR1U0, PCR1L0, PCR1U1, PCR1L1,/* mcfv4e added these.  */
-  PCR2U0, PCR2L0, PCR2U1, PCR2L1,/* mcfv4e added these.  */
-  PCR3U0, PCR3L0, PCR3U1, PCR3L1,/* mcfv4e added these.  */
-  MBAR0, MBAR1,			/* mcfv4e added these.  */
-  ACR0, ACR1, ACR2, ACR3,       /* mcf5200 added these.  */
-  FLASHBAR, RAMBAR,  		/* mcf528x added these.  */
   MBAR,
 #define last_movec_reg MBAR
-  /* End of movec ordering constraints.  */
+  /* end of movec ordering constraints */
 
   FPI,
   FPS,
@@ -178,44 +165,6 @@ enum m68k_register
   ZADDR5,
   ZADDR6,
   ZADDR7,
-
-  /* Upper and lower half of data and address registers.  Order *must*
-     be DATAxL, ADDRxL, DATAxU, ADDRxU.  */
-  DATA0L,			/* lower half of data registers */
-  DATA1L,
-  DATA2L,
-  DATA3L,
-  DATA4L,
-  DATA5L,
-  DATA6L,
-  DATA7L,
-
-  ADDR0L,			/* lower half of address registers */
-  ADDR1L,
-  ADDR2L,
-  ADDR3L,
-  ADDR4L,
-  ADDR5L,
-  ADDR6L,
-  ADDR7L,
-
-  DATA0U,			/* upper half of data registers */
-  DATA1U,
-  DATA2U,
-  DATA3U,
-  DATA4U,
-  DATA5U,
-  DATA6U,
-  DATA7U,
-
-  ADDR0U,			/* upper half of address registers */
-  ADDR1U,
-  ADDR2U,
-  ADDR3U,
-  ADDR4U,
-  ADDR5U,
-  ADDR6U,
-  ADDR7U,
 };
 
 /* Size information.  */

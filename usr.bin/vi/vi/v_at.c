@@ -1,5 +1,3 @@
-/*	$OpenBSD: v_at.c,v 1.11 2016/05/27 09:18:12 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)v_at.c	10.8 (Berkeley) 4/27/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -27,10 +29,12 @@
  * v_at -- @
  *	Execute a buffer.
  *
- * PUBLIC: int v_at(SCR *, VICMD *);
+ * PUBLIC: int v_at __P((SCR *, VICMD *));
  */
 int
-v_at(SCR *sp, VICMD *vp)
+v_at(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	CB *cbp;
 	CHAR_T name;
@@ -83,9 +87,11 @@ v_at(SCR *sp, VICMD *vp)
 	 * together.  We don't get this right; I'm waiting for the new DB
 	 * logging code to be available.
 	 */
-	TAILQ_FOREACH_REVERSE(tp, &cbp->textq, _texth, q)
-		if (((F_ISSET(cbp, CB_LMODE) || TAILQ_NEXT(tp, q)) &&
-		    v_event_push(sp, NULL, "\n", 1, 0)) ||
+	for (tp = cbp->textq.cqh_last;
+	    tp != (void *)&cbp->textq; tp = tp->q.cqe_prev)
+		if ((F_ISSET(cbp, CB_LMODE) ||
+		    tp->q.cqe_next != (void *)&cbp->textq) &&
+		    v_event_push(sp, NULL, "\n", 1, 0) ||
 		    v_event_push(sp, NULL, tp->lb, tp->len, 0))
 			return (1);
 

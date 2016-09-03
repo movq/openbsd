@@ -1,25 +1,16 @@
-#define PERL_NO_GET_CONTEXT
-
 #include "EXTERN.h"
 #include "perl.h"
 #include "XSUB.h"
 
+#ifdef NULL
+#undef NULL  /* XXX Why? */
+#endif
 #ifdef I_DBM
 #  include <dbm.h>
 #else
 #  ifdef I_RPCSVC_DBM
 #    include <rpcsvc/dbm.h>
 #  endif
-#endif
-
-#ifndef HAS_DBMINIT_PROTO
-int	dbminit(char* filename);
-int	dbmclose(void);
-datum	fetch(datum key);
-int	store(datum key, datum dat);
-int	delete(datum key); 
-datum	firstkey(void);
-datum	nextkey(datum key);
 #endif
 
 #ifdef DBM_BUG_DUPLICATE_FREE 
@@ -34,26 +25,12 @@ datum	nextkey(datum key);
  * Set DBM_BUG_DUPLICATE_FREE in the extension hint file.
  */
 /* Close the previous dbm, and fail to open a new dbm */
-#define dbmclose()	((void) dbminit("/non/exist/ent"))
+#define dbmclose()	((void) dbminit("/tmp/x/y/z/z/y"))
 #endif
 
 #include <fcntl.h>
 
-#define fetch_key 0
-#define store_key 1
-#define fetch_value 2
-#define store_value 3
-
-typedef struct {
-	void * 	dbp ;
-	SV *    filter[4];
-	int     filtering ;
-	} ODBM_File_type;
-
-typedef ODBM_File_type * ODBM_File ;
-typedef datum datum_key ;
-typedef datum datum_key_copy ;
-typedef datum datum_value ;
+typedef void* ODBM_File;
 
 #define odbm_FETCH(db,key)			fetch(key)
 #define odbm_STORE(db,key,value,flags)		store(key,value)
@@ -61,15 +38,7 @@ typedef datum datum_value ;
 #define odbm_FIRSTKEY(db)			firstkey()
 #define odbm_NEXTKEY(db,key)			nextkey(key)
 
-#define MY_CXT_KEY "ODBM_File::_guts" XS_VERSION
-
-typedef struct {
-    int		x_dbmrefcnt;
-} my_cxt_t;
-
-START_MY_CXT
-
-#define dbmrefcnt	(MY_CXT.x_dbmrefcnt)
+static int dbmrefcnt;
 
 #ifndef DBM_REPLACE
 #define DBM_REPLACE 0
@@ -77,10 +46,9 @@ START_MY_CXT
 
 MODULE = ODBM_File	PACKAGE = ODBM_File	PREFIX = odbm_
 
-BOOT:
-{
-    MY_CXT_INIT;
-}
+#ifndef NULL
+#  define NULL 0
+#endif
 
 ODBM_File
 odbm_TIEHASH(dbtype, filename, flags, mode)
@@ -91,12 +59,9 @@ odbm_TIEHASH(dbtype, filename, flags, mode)
 	CODE:
 	{
 	    char *tmpbuf;
-	    void * dbp ;
-	    dMY_CXT;
-
 	    if (dbmrefcnt++)
 		croak("Old dbm can only open one database");
-	    Newx(tmpbuf, strlen(filename) + 5, char);
+	    New(0, tmpbuf, strlen(filename) + 5, char);
 	    SAVEFREEPV(tmpbuf);
 	    sprintf(tmpbuf,"%s.dir",filename);
 	    if (stat(tmpbuf, &PL_statbuf) < 0) {
@@ -110,38 +75,28 @@ odbm_TIEHASH(dbtype, filename, flags, mode)
 		else
 		    croak("ODBM_FILE: Can't open %s", filename);
 	    }
-	    dbp = (void*)(dbminit(filename) >= 0 ? &dbmrefcnt : 0);
-	    RETVAL = (ODBM_File)safecalloc(1, sizeof(ODBM_File_type));
-	    RETVAL->dbp = dbp ;
+	    RETVAL = (void*)(dbminit(filename) >= 0 ? &dbmrefcnt : 0);
+	    ST(0) = sv_mortalcopy(&PL_sv_undef);
+	    sv_setptrobj(ST(0), RETVAL, dbtype);
 	}
-	OUTPUT:
-	  RETVAL
 
 void
 DESTROY(db)
 	ODBM_File	db
-	PREINIT:
-	dMY_CXT;
-	int i = store_value;
 	CODE:
 	dbmrefcnt--;
 	dbmclose();
-	do {
-	    if (db->filter[i])
-		SvREFCNT_dec(db->filter[i]);
-	} while (i-- > 0);
-	safefree(db);
 
-datum_value
+datum
 odbm_FETCH(db, key)
 	ODBM_File	db
-	datum_key_copy	key
+	datum		key
 
 int
 odbm_STORE(db, key, value, flags = DBM_REPLACE)
 	ODBM_File	db
-	datum_key	key
-	datum_value	value
+	datum		key
+	datum		value
 	int		flags
     CLEANUP:
 	if (RETVAL) {
@@ -154,46 +109,14 @@ odbm_STORE(db, key, value, flags = DBM_REPLACE)
 int
 odbm_DELETE(db, key)
 	ODBM_File	db
-	datum_key	key
+	datum		key
 
-datum_key
+datum
 odbm_FIRSTKEY(db)
 	ODBM_File	db
 
-datum_key
+datum
 odbm_NEXTKEY(db, key)
 	ODBM_File	db
-	datum_key	key
+	datum		key
 
-
-#define setFilter(type)					\
-	{						\
-	    if (db->type)				\
-	        RETVAL = sv_mortalcopy(db->type) ; 	\
-	    ST(0) = RETVAL ;				\
-	    if (db->type && (code == &PL_sv_undef)) {	\
-                SvREFCNT_dec(db->type) ;		\
-	        db->type = Nullsv ;			\
-	    }						\
-	    else if (code) {				\
-	        if (db->type)				\
-	            sv_setsv(db->type, code) ;		\
-	        else					\
-	            db->type = newSVsv(code) ;		\
-	    }	    					\
-	}
-
-
-
-SV *
-filter_fetch_key(db, code)
-	ODBM_File	db
-	SV *		code
-	SV *		RETVAL = &PL_sv_undef ;
-	ALIAS:
-	ODBM_File::filter_fetch_key = fetch_key
-	ODBM_File::filter_store_key = store_key
-	ODBM_File::filter_fetch_value = fetch_value
-	ODBM_File::filter_store_value = store_value
-	CODE:
-	    DBM_setFilter(db->filter[ix], code);

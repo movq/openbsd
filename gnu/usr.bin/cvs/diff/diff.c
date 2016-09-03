@@ -247,21 +247,11 @@ diff_run (argc, argv, out, callbacks_arg)
 
   /* Do our initializations.  */
   initialize_main (&argc, &argv);
-  optind_old = optind;
-  optind = 0;
-
-  /* Set the jump buffer, so that diff may abort execution without
-     terminating the process. */
-  val = setjmp (diff_abort_buf);
-  if (val != 0)
-    {
-      optind = optind_old;
-      if (opened_file)
-	fclose (outfile);
-      return val;
-    }
 
   /* Decode the options.  */
+
+  optind_old = optind;
+  optind = 0;
   while ((c = getopt_long (argc, argv,
 			   "0123456789abBcC:dD:efF:hHiI:lL:nNpPqrsS:tTuU:vwW:x:X:y",
 			   longopts, 0)) != EOF)
@@ -696,6 +686,17 @@ diff_run (argc, argv, out, callbacks_arg)
 	}
     }
 
+  /* Set the jump buffer, so that diff may abort execution without
+     terminating the process. */
+  val = setjmp (diff_abort_buf);
+  if (val != 0)
+    {
+      optind = optind_old;
+      if (opened_file)
+	fclose (outfile);
+      return val;
+    }
+
   val = compare_files (0, argv[optind], 0, argv[optind + 1], 0);
 
   /* Print any messages that were saved up for last.  */
@@ -775,7 +776,7 @@ static char const * const option_help[] = {
 "-e  --ed  Output an ed script.",
 "-n  --rcs  Output an RCS format diff.",
 "-y  --side-by-side  Output in two columns.",
-"  -W NUM  --width=NUM  Output at most NUM (default 130) characters per line.",
+"  -w NUM  --width=NUM  Output at most NUM (default 130) characters per line.",
 "  --left-column  Output only the left column of common lines.",
 "  --suppress-common-lines  Do not output common lines.",
 "-DNAME  --ifdef=NAME  Output merged file to show `#ifdef NAME' diffs.",
@@ -1146,15 +1147,13 @@ compare_files (dir0, name0, dir1, name1, depth)
 	    failed = 1;
 	  }
       if (inf[1].desc == -2)
-	{
-	  if (same_files)
-	    inf[1].desc = inf[0].desc;
-	  else if ((inf[1].desc = open (inf[1].name, O_RDONLY, 0)) < 0)
-	    {
-	      perror_with_name (inf[1].name);
-	      failed = 1;
-	    }
-	}
+	if (same_files)
+	  inf[1].desc = inf[0].desc;
+	else if ((inf[1].desc = open (inf[1].name, O_RDONLY, 0)) < 0)
+	  {
+	    perror_with_name (inf[1].name);
+	    failed = 1;
+	  }
 
 #if HAVE_SETMODE
       if (binary_I_O)

@@ -1,5 +1,5 @@
-/*	$OpenBSD: if_levar.h,v 1.8 2010/05/23 11:41:22 deraadt Exp $	*/
-/*	$NetBSD: if_levar.h,v 1.4 1997/03/15 18:12:07 is Exp $	*/
+/*	$OpenBSD: if_levar.h,v 1.4 1997/11/07 08:07:51 niklas Exp $	*/
+/*	$NetBSD: if_levar.h,v 1.3 1996/05/07 02:24:58 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1992, 1993
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -39,12 +43,12 @@
 struct lereg1 {
 	volatile u_int16_t	ler1_rdp;	/* data port */
 	int16_t	pad0;
-#if defined(__alpha__)
+#ifdef alpha
 	int32_t	pad1;
 #endif
 	volatile u_int16_t	ler1_rap;	/* register select port */
 	int16_t	pad2;
-#if defined(__alpha__)
+#ifdef alpha
 	int32_t	pad3;
 #endif
 };
@@ -53,7 +57,7 @@ struct lereg1 {
  * Ethernet software status per interface.
  *
  * Each interface is referenced by a network interface structure,
- * ethercom.ec_if, which the routing code uses to locate the interface.
+ * arpcom.ac_if, which the routing code uses to locate the interface.
  * This structure contains the output queue for the interface, its address, ...
  */
 struct le_softc {
@@ -62,4 +66,4 @@ struct le_softc {
 	struct	lereg1 *sc_r1;		/* LANCE registers */
 };
 
-void	dec_le_common_attach(struct am7990_softc *, u_char *);
+void	dec_le_common_attach __P((struct am7990_softc *, u_char *));

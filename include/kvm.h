@@ -1,4 +1,4 @@
-/*	$OpenBSD: kvm.h,v 1.18 2013/10/22 16:40:25 guenther Exp $	*/
+/*	$OpenBSD: kvm.h,v 1.3 1997/09/21 10:45:37 niklas Exp $	*/
 /*	$NetBSD: kvm.h,v 1.7 1996/04/19 12:02:50 leo Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -39,13 +43,8 @@
 #define	VRS_SYM		"_version"
 #define	VRS_KEY		"VERSION"
 
-/*
- * Flag for kvm_open* that disables opening of any files. We're just
- * interested in a handle to run sysctls.
- */
-#define KVM_NO_FILES	0x80000000
-
 #include <nlist.h>
+#include <sys/cdefs.h>
 #include <stdio.h>
 
 __BEGIN_DECLS
@@ -53,26 +52,24 @@ __BEGIN_DECLS
 typedef struct __kvm kvm_t;
 
 struct kinfo_proc;
-int	  kvm_close(kvm_t *);
-int	  kvm_dump_inval(kvm_t *);
-int	  kvm_dump_mkheader(kvm_t *, off_t);
-int	  kvm_dump_wrtheader(kvm_t *, FILE *, int);
-char	**kvm_getargv(kvm_t *, const struct kinfo_proc *, int);
-char	**kvm_getenvv(kvm_t *, const struct kinfo_proc *, int);
-char	 *kvm_geterr(kvm_t *);
-int	  kvm_getloadavg(kvm_t *, double [], int);
-struct kinfo_file *
-	  kvm_getfiles(kvm_t *, int, int, size_t, int *);
+int	  kvm_close __P((kvm_t *));
+int	  kvm_dump_inval __P((kvm_t *));
+int	  kvm_dump_mkheader __P((kvm_t *, off_t));
+int	  kvm_dump_wrtheader __P((kvm_t *, FILE *, int));
+char	**kvm_getargv __P((kvm_t *, const struct kinfo_proc *, int));
+char	**kvm_getenvv __P((kvm_t *, const struct kinfo_proc *, int));
+char	 *kvm_geterr __P((kvm_t *));
+int	  kvm_getloadavg __P((kvm_t *, double [], int));
+char	 *kvm_getfiles __P((kvm_t *, int, int, int *));
 struct kinfo_proc *
-	  kvm_getprocs(kvm_t *, int, int, size_t, int *);
-int	  kvm_nlist(kvm_t *, struct nlist *);
-kvm_t	 *kvm_open(const char *, const char *, const char *, int, const char *);
-kvm_t	 *kvm_openfiles(const char *, const char *, const char *,
-	        int, char *);
-ssize_t	  kvm_read(kvm_t *, unsigned long, void *, size_t)
-		__attribute__((__bounded__(__buffer__,3,4)));
-ssize_t	  kvm_write(kvm_t *, unsigned long, const void *, size_t)
-		__attribute__((__bounded__(__buffer__,3,4)));
+	  kvm_getprocs __P((kvm_t *, int, int, int *));
+int	  kvm_nlist __P((kvm_t *, struct nlist *));
+kvm_t	 *kvm_open
+	    __P((const char *, const char *, const char *, int, const char *));
+kvm_t	 *kvm_openfiles
+	    __P((const char *, const char *, const char *, int, char *));
+ssize_t	  kvm_read __P((kvm_t *, u_long, void *, size_t));
+ssize_t	  kvm_write __P((kvm_t *, u_long, const void *, size_t));
 
 __END_DECLS
 

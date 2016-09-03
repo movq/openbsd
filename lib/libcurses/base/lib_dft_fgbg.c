@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_dft_fgbg.c,v 1.8 2010/01/12 23:22:05 nicm Exp $ */
+/*	$OpenBSD: lib_dft_fgbg.c,v 1.1 1999/01/18 19:09:41 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2004,2005 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -29,49 +29,34 @@
  ****************************************************************************/
 
 /****************************************************************************
- *  Author: Thomas E. Dickey                                                *
+ *  Author: Thomas E. Dickey <dickey@clark.net> 1997                        *
  ****************************************************************************/
-
 #include <curses.priv.h>
 #include <term.h>
 
-MODULE_ID("$Id: lib_dft_fgbg.c,v 1.8 2010/01/12 23:22:05 nicm Exp $")
+MODULE_ID("$From: lib_dft_fgbg.c,v 1.3 1998/02/11 12:13:54 tom Exp $")
 
 /*
  * Modify the behavior of color-pair 0 so that the library doesn't assume that
- * it is white on black.  This is an extension to XSI curses.
+ * it is black on white.  This is an extension to XSI curses.
+ *
+ * Invoke this function after 'start_color()'.
  */
-NCURSES_EXPORT(int)
+int
 use_default_colors(void)
 {
-    T((T_CALLED("use_default_colors()")));
-    returnCode(assume_default_colors(-1, -1));
-}
+	T((T_CALLED("use_default_colors()")));
 
-/*
- * Modify the behavior of color-pair 0 so that the library assumes that it
- * is something specific, possibly not white on black.
- */
-NCURSES_EXPORT(int)
-assume_default_colors(int fg, int bg)
-{
-    T((T_CALLED("assume_default_colors(%d,%d)"), fg, bg));
+	if (!SP->_coloron)
+		returnCode(ERR);
 
-    if (!orig_pair && !orig_colors)
-	returnCode(ERR);
+	if (!orig_pair && !orig_colors)
+		returnCode(ERR);
 
-    if (initialize_pair)	/* don't know how to handle this */
-	returnCode(ERR);
+	if (initialize_pair)	/* don't know how to handle this */
+		returnCode(ERR);
 
-    SP->_default_color = isDefaultColor(fg) || isDefaultColor(bg);
-    SP->_has_sgr_39_49 = (tigetflag("AX") == TRUE);
-    SP->_default_fg = isDefaultColor(fg) ? COLOR_DEFAULT : (fg & C_MASK);
-    SP->_default_bg = isDefaultColor(bg) ? COLOR_DEFAULT : (bg & C_MASK);
-    if (SP->_color_pairs != 0) {
-	bool save = SP->_default_color;
 	SP->_default_color = TRUE;
-	init_pair(0, (short) fg, (short) bg);
-	SP->_default_color = save;
-    }
-    returnCode(OK);
+	SP->_color_pairs[0] = PAIR_OF(C_MASK, C_MASK);
+	returnCode(OK);
 }

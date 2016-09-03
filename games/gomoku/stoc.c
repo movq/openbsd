@@ -1,4 +1,4 @@
-/*	$OpenBSD: stoc.c,v 1.11 2016/01/08 21:38:33 mestre Exp $	*/
+/*	$OpenBSD: stoc.c,v 1.3 1998/03/26 21:16:52 pjanzen Exp $	*/
 /*
  * Copyright (c) 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -14,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,11 +35,17 @@
  * SUCH DAMAGE.
  */
 
-#include <ctype.h>
-#include <stdlib.h>
-#include <string.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)stoc.c	8.1 (Berkeley) 7/24/94";
+#else
+static char rcsid[] = "$OpenBSD: stoc.c,v 1.3 1998/03/26 21:16:52 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
 #include "gomoku.h"
+#include <stdlib.h>
+#include <ctype.h>
 
 char	*letters	= "<ABCDEFGHJKLMNOPQRST>";
 
@@ -54,15 +64,16 @@ static	struct	mvstr	mv[] = {
  * Turn the spot number form of a move into the character form.
  */
 char *
-stoc(int s)
+stoc(s)
+	int s;
 {
 	static char buf[32];
-	int i;
+	register int i;
 
 	for (i = 0; mv[i].m_code >= 0; i++)
 		if (s == mv[i].m_code)
 			return(mv[i].m_text);
-	snprintf(buf, sizeof buf, "%c%d", letters[s % BSZ1], s / BSZ1);
+	sprintf(buf, "%c%d", letters[s % BSZ1], s / BSZ1);
 	return(buf);
 }
 
@@ -70,14 +81,15 @@ stoc(int s)
  * Turn the character form of a move into the spot number form.
  */
 int
-ctos(char *mp)
+ctos(mp)
+	char *mp;
 {
-	int i;
+	register int i;
 
 	for (i = 0; mv[i].m_code >= 0; i++)
 		if (strcmp(mp, mv[i].m_text) == 0)
 			return(mv[i].m_code);
-	if (!isalpha((unsigned char)mp[0]))
+	if (!isalpha(mp[0]))
 		return(ILLEGAL);
 	i = atoi(&mp[1]);
 	if (i < 1 || i > 19)
@@ -89,9 +101,10 @@ ctos(char *mp)
  * Turn a letter into a number.
  */
 int
-lton(int c)
+lton(c)
+	int c;
 {
-	int i;
+	register int i;
 
 	if (islower(c))
 		c = toupper(c);

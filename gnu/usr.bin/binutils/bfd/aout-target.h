@@ -1,7 +1,5 @@
 /* Define a target vector and some small routines for a variant of a.out.
-   Copyright 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
-   2000, 2001, 2002, 2003
-   Free Software Foundation, Inc.
+   Copyright (C) 1990, 91, 92, 93, 94, 95, 1996 Free Software Foundation, Inc.
 
 This file is part of BFD, the Binary File Descriptor library.
 
@@ -24,19 +22,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include "aout/ar.h"
 /*#include "libaout.h"*/
 
-#ifndef SEGMENT_SIZE
-#define SEGMENT_SIZE TARGET_PAGE_SIZE
-#endif
-
-extern reloc_howto_type * NAME(aout,reloc_type_lookup)
-  PARAMS ((bfd *, bfd_reloc_code_real_type));
+extern reloc_howto_type * NAME(aout,reloc_type_lookup) ();
 
 /* Set parameters about this a.out file that are machine-dependent.
    This routine is called from some_aout_object_p just before it returns.  */
 #ifndef MY_callback
-
-static const bfd_target *MY(callback) PARAMS ((bfd *));
-
 static const bfd_target *
 MY(callback) (abfd)
      bfd *abfd;
@@ -53,23 +43,6 @@ MY(callback) (abfd)
   obj_datasec (abfd)->vma = N_DATADDR(*execp);
   obj_bsssec  (abfd)->vma = N_BSSADDR(*execp);
 
-  /* For some targets, if the entry point is not in the same page
-     as the start of the text, then adjust the VMA so that it is.
-     FIXME: Do this with a macro like SET_ARCH_MACH instead?  */
-  if (aout_backend_info (abfd)->entry_is_text_address
-      && execp->a_entry > obj_textsec (abfd)->vma)
-    {
-      bfd_vma adjust;
-
-      adjust = execp->a_entry - obj_textsec (abfd)->vma;
-      /* Adjust only by whole pages.  */
-      adjust &= ~(TARGET_PAGE_SIZE - 1);
-      obj_textsec (abfd)->vma += adjust;
-      obj_datasec (abfd)->vma += adjust;
-      obj_bsssec (abfd)->vma += adjust;
-    }
-
-  /* Set the load addresses to be the same as the virtual addresses.  */
   obj_textsec (abfd)->lma = obj_textsec (abfd)->vma;
   obj_datasec (abfd)->lma = obj_datasec (abfd)->vma;
   obj_bsssec (abfd)->lma = obj_bsssec (abfd)->vma;
@@ -85,12 +58,12 @@ MY(callback) (abfd)
   /* The file offsets of the string table and symbol table.  */
   obj_sym_filepos (abfd) = N_SYMOFF (*execp);
   obj_str_filepos (abfd) = N_STROFF (*execp);
-
+  
   /* Determine the architecture and machine type of the object file.  */
 #ifdef SET_ARCH_MACH
-  SET_ARCH_MACH (abfd, *execp);
+  SET_ARCH_MACH(abfd, *execp);
 #else
-  bfd_default_set_arch_mach (abfd, DEFAULT_ARCH, 0);
+  bfd_default_set_arch_mach(abfd, DEFAULT_ARCH, 0);
 #endif
 
   /* The number of relocation records.  This must be called after
@@ -126,7 +99,11 @@ MY(callback) (abfd)
      Sizes get set in set_sizes callback, later.  */
 #if 0
   adata(abfd).page_size = TARGET_PAGE_SIZE;
+#ifdef SEGMENT_SIZE
   adata(abfd).segment_size = SEGMENT_SIZE;
+#else
+  adata(abfd).segment_size = TARGET_PAGE_SIZE;
+#endif
   adata(abfd).exec_bytes_size = EXEC_BYTES_SIZE;
 #endif
 
@@ -137,8 +114,6 @@ MY(callback) (abfd)
 #ifndef MY_object_p
 /* Finish up the reading of an a.out file header */
 
-static const bfd_target *MY(object_p) PARAMS ((bfd *));
-
 static const bfd_target *
 MY(object_p) (abfd)
      bfd *abfd;
@@ -146,19 +121,18 @@ MY(object_p) (abfd)
   struct external_exec exec_bytes;	/* Raw exec header from file */
   struct internal_exec exec;		/* Cleaned-up exec header */
   const bfd_target *target;
-  bfd_size_type amt = EXEC_BYTES_SIZE;
 
-  if (bfd_bread ((PTR) &exec_bytes, amt, abfd) != amt)
-    {
-      if (bfd_get_error () != bfd_error_system_call)
-	bfd_set_error (bfd_error_wrong_format);
-      return 0;
-    }
+  if (bfd_read ((PTR) &exec_bytes, 1, EXEC_BYTES_SIZE, abfd)
+      != EXEC_BYTES_SIZE) {
+    if (bfd_get_error () != bfd_error_system_call)
+      bfd_set_error (bfd_error_wrong_format);
+    return 0;
+  }
 
 #ifdef SWAP_MAGIC
   exec.a_info = SWAP_MAGIC (exec_bytes.e_info);
 #else
-  exec.a_info = GET_MAGIC (abfd, exec_bytes.e_info);
+  exec.a_info = bfd_h_get_32 (abfd, exec_bytes.e_info);
 #endif /* SWAP_MAGIC */
 
   if (N_BADMAG (exec)) return 0;
@@ -166,7 +140,7 @@ MY(object_p) (abfd)
   if (!(MACHTYPE_OK (N_MACHTYPE (exec)))) return 0;
 #endif
 
-  NAME(aout,swap_exec_header_in) (abfd, &exec_bytes, &exec);
+  NAME(aout,swap_exec_header_in)(abfd, &exec_bytes, &exec);
 
 #ifdef SWAP_MAGIC
   /* swap_exec_header_in read in a_info with the wrong byte order */
@@ -180,7 +154,7 @@ MY(object_p) (abfd)
    * means that it isn't obvious if EXEC_P should be set.
    * All of the following must be true for an executable:
    * There must be no relocations, the bfd can be neither an
-   * archive nor an archive element, and the file must be executable.  */
+   * archive nor an archive element, and the file must be executable. */
 
   if (exec.a_trsize + exec.a_drsize == 0
       && bfd_get_format(abfd) == bfd_object && abfd->my_archive == NULL)
@@ -199,23 +173,25 @@ MY(object_p) (abfd)
 #define MY_object_p MY(object_p)
 #endif
 
+
 #ifndef MY_mkobject
-
-static bfd_boolean MY(mkobject) PARAMS ((bfd *));
-
-static bfd_boolean
+static boolean
 MY(mkobject) (abfd)
      bfd *abfd;
 {
-  if (! NAME(aout,mkobject) (abfd))
-    return FALSE;
+  if (NAME(aout,mkobject)(abfd) == false)
+    return false;
 #if 0 /* Sizes get set in set_sizes callback, later, after we know
 	 the architecture and machine.  */
   adata(abfd).page_size = TARGET_PAGE_SIZE;
+#ifdef SEGMENT_SIZE
   adata(abfd).segment_size = SEGMENT_SIZE;
+#else
+  adata(abfd).segment_size = TARGET_PAGE_SIZE;
+#endif
   adata(abfd).exec_bytes_size = EXEC_BYTES_SIZE;
 #endif
-  return TRUE;
+  return true;
 }
 #define MY_mkobject MY(mkobject)
 #endif
@@ -228,20 +204,18 @@ MY(mkobject) (abfd)
    section contents, and copy_private_bfd_data is not called until
    after the section contents have been set.  */
 
-static bfd_boolean MY_bfd_copy_private_section_data
-  PARAMS ((bfd *, asection *, bfd *, asection *));
-
-static bfd_boolean
+/*ARGSUSED*/
+static boolean
 MY_bfd_copy_private_section_data (ibfd, isec, obfd, osec)
      bfd *ibfd;
-     asection *isec ATTRIBUTE_UNUSED;
+     asection *isec;
      bfd *obfd;
-     asection *osec ATTRIBUTE_UNUSED;
+     asection *osec;
 {
   if (bfd_get_flavour (ibfd) == bfd_target_aout_flavour
       && bfd_get_flavour (obfd) == bfd_target_aout_flavour)
     obj_aout_subformat (obfd) = obj_aout_subformat (ibfd);
-  return TRUE;
+  return true;
 }
 
 #endif
@@ -251,34 +225,38 @@ MY_bfd_copy_private_section_data (ibfd, isec, obfd, osec)
    file header, symbols, and relocation.  */
 
 #ifndef MY_write_object_contents
-static bfd_boolean MY(write_object_contents) PARAMS ((bfd *));
-
-static bfd_boolean
+static boolean
 MY(write_object_contents) (abfd)
      bfd *abfd;
 {
   struct external_exec exec_bytes;
   struct internal_exec *execp = exec_hdr (abfd);
 
+#if CHOOSE_RELOC_SIZE
+  CHOOSE_RELOC_SIZE(abfd);
+#else
   obj_reloc_entry_size (abfd) = RELOC_STD_SIZE;
+#endif
 
   WRITE_HEADERS(abfd, execp);
 
-  return TRUE;
+  return true;
 }
 #define MY_write_object_contents MY(write_object_contents)
 #endif
 
 #ifndef MY_set_sizes
-
-static bfd_boolean MY(set_sizes) PARAMS ((bfd *));
-
-static bfd_boolean
+static boolean
 MY(set_sizes) (abfd)
      bfd *abfd;
 {
   adata(abfd).page_size = TARGET_PAGE_SIZE;
+
+#ifdef SEGMENT_SIZE
   adata(abfd).segment_size = SEGMENT_SIZE;
+#else
+  adata(abfd).segment_size = TARGET_PAGE_SIZE;
+#endif
 
 #ifdef ZMAGIC_DISK_BLOCK_SIZE
   adata(abfd).zmagic_disk_block_size = ZMAGIC_DISK_BLOCK_SIZE;
@@ -287,7 +265,7 @@ MY(set_sizes) (abfd)
 #endif
 
   adata(abfd).exec_bytes_size = EXEC_BYTES_SIZE;
-  return TRUE;
+  return true;
 }
 #define MY_set_sizes MY(set_sizes)
 #endif
@@ -303,9 +281,6 @@ MY(set_sizes) (abfd)
 #endif
 #ifndef MY_text_includes_header
 #define MY_text_includes_header 0
-#endif
-#ifndef MY_entry_is_text_address
-#define MY_entry_is_text_address 0
 #endif
 #ifndef MY_exec_header_not_counted
 #define MY_exec_header_not_counted 0
@@ -329,10 +304,9 @@ MY(set_sizes) (abfd)
 #define MY_finish_dynamic_link 0
 #endif
 
-static const struct aout_backend_data MY(backend_data) = {
+static CONST struct aout_backend_data MY(backend_data) = {
   MY_zmagic_contiguous,
   MY_text_includes_header,
-  MY_entry_is_text_address,
   MY_exec_hdr_flags,
   0,				/* text vma? */
   MY_set_sizes,
@@ -375,9 +349,7 @@ MY_final_link_callback (abfd, ptreloff, pdreloff, psymoff)
 /* Final link routine.  We need to use a call back to get the correct
    offsets in the output file.  */
 
-static bfd_boolean MY_bfd_final_link PARAMS ((bfd *, struct bfd_link_info *));
-
-static bfd_boolean
+static boolean
 MY_bfd_final_link (abfd, info)
      bfd *abfd;
      struct bfd_link_info *info;
@@ -443,7 +415,7 @@ MY_bfd_final_link (abfd, info)
 #endif
 #ifndef MY_bfd_debug_info_accumulate
 #define MY_bfd_debug_info_accumulate	\
-		(void (*) PARAMS ((bfd*, struct bfd_section *))) bfd_void
+			(void (*) PARAMS ((bfd*, struct sec *))) bfd_void
 #endif
 
 #ifndef MY_core_file_failing_command
@@ -470,8 +442,8 @@ MY_bfd_final_link (abfd, info)
 #ifndef MY_get_symtab_upper_bound
 #define MY_get_symtab_upper_bound NAME(aout,get_symtab_upper_bound)
 #endif
-#ifndef MY_canonicalize_symtab
-#define MY_canonicalize_symtab NAME(aout,canonicalize_symtab)
+#ifndef MY_get_symtab
+#define MY_get_symtab NAME(aout,get_symtab)
 #endif
 #ifndef MY_get_reloc_upper_bound
 #define MY_get_reloc_upper_bound NAME(aout,get_reloc_upper_bound)
@@ -507,15 +479,6 @@ MY_bfd_final_link (abfd, info)
 #ifndef MY_bfd_relax_section
 #define MY_bfd_relax_section bfd_generic_relax_section
 #endif
-#ifndef MY_bfd_gc_sections
-#define MY_bfd_gc_sections bfd_generic_gc_sections
-#endif
-#ifndef MY_bfd_merge_sections
-#define MY_bfd_merge_sections bfd_generic_merge_sections
-#endif
-#ifndef MY_bfd_discard_group
-#define MY_bfd_discard_group bfd_generic_discard_group
-#endif
 #ifndef MY_bfd_reloc_type_lookup
 #define MY_bfd_reloc_type_lookup NAME(aout,reloc_type_lookup)
 #endif
@@ -531,18 +494,13 @@ MY_bfd_final_link (abfd, info)
 #ifndef MY_bfd_link_hash_table_create
 #define MY_bfd_link_hash_table_create NAME(aout,link_hash_table_create)
 #endif
-#ifndef MY_bfd_link_hash_table_free
-#define MY_bfd_link_hash_table_free _bfd_generic_link_hash_table_free
-#endif
 #ifndef MY_bfd_link_add_symbols
 #define MY_bfd_link_add_symbols NAME(aout,link_add_symbols)
-#endif
-#ifndef MY_bfd_link_just_syms
-#define MY_bfd_link_just_syms _bfd_generic_link_just_syms
 #endif
 #ifndef MY_bfd_link_split_section
 #define MY_bfd_link_split_section  _bfd_generic_link_split_section
 #endif
+
 
 #ifndef MY_bfd_copy_private_bfd_data
 #define MY_bfd_copy_private_bfd_data _bfd_generic_bfd_copy_private_bfd_data
@@ -564,8 +522,8 @@ MY_bfd_final_link (abfd, info)
 #define MY_bfd_set_private_flags _bfd_generic_bfd_set_private_flags
 #endif
 
-#ifndef MY_bfd_is_local_label_name
-#define MY_bfd_is_local_label_name bfd_generic_is_local_label_name
+#ifndef MY_bfd_is_local_label
+#define MY_bfd_is_local_label bfd_generic_is_local_label
 #endif
 
 #ifndef MY_bfd_free_cached_info
@@ -594,7 +552,7 @@ MY_bfd_final_link (abfd, info)
 #endif
 
 /* Aout symbols normally have leading underscores */
-#ifndef MY_symbol_leading_char
+#ifndef MY_symbol_leading_char 
 #define MY_symbol_leading_char '_'
 #endif
 
@@ -618,7 +576,7 @@ const bfd_target MY(vec) =
   (HAS_RELOC | EXEC_P |		/* object flags */
    HAS_LINENO | HAS_DEBUG |
    HAS_SYMS | HAS_LOCALS | DYNAMIC | WP_TEXT | D_PAGED),
-  (SEC_HAS_CONTENTS | SEC_ALLOC | SEC_LOAD | SEC_RELOC | SEC_CODE | SEC_DATA),
+  (SEC_HAS_CONTENTS | SEC_ALLOC | SEC_LOAD | SEC_RELOC), /* section flags */
   MY_symbol_leading_char,
   AR_PAD_CHAR,			/* ar_pad_char */
   15,				/* ar_max_namelen */
@@ -654,9 +612,6 @@ const bfd_target MY(vec) =
      BFD_JUMP_TABLE_LINK (MY),
      BFD_JUMP_TABLE_DYNAMIC (MY),
 
-  /* Alternative_target */
-  NULL,
-
-  (PTR) MY_backend_data
+  (PTR) MY_backend_data,
 };
 #endif /* MY_BFD_TARGET */

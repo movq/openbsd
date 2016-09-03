@@ -1,4 +1,4 @@
-/*	$OpenBSD: pppstats.c,v 1.12 2015/02/09 23:00:14 deraadt Exp $	*/
+/*	$OpenBSD: pppstats.c,v 1.5 1998/05/08 04:52:37 millert Exp $	*/
 
 /*
  * print PPP statistics:
@@ -15,44 +15,32 @@
  *                display. 11/94
  *      Brad Parker (brad@cayman.com) 6/92
  *
- * from the original "slstats" by Van Jacobson:
+ * from the original "slstats" by Van Jacobson
  *
- * Contributed by Van Jacobson (van@ee.lbl.gov), Dec 31, 1989.
+ * Copyright (c) 1989 Regents of the University of California.
+ * All rights reserved.
  *
- * Copyright (c) 1989, 1990, 1991, 1992 Regents of the University of
- * California. All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
+ * Redistribution and use in source and binary forms are permitted
+ * provided that the above copyright notice and this paragraph are
+ * duplicated in all such forms and that any documentation,
+ * advertising materials, and other materials related to such
+ * distribution and use acknowledge that the software was developed
+ * by the University of California, Berkeley.  The name of the
+ * University may not be used to endorse or promote products derived
+ * from this software without specific prior written permission.
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
+ * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
-#include <sys/types.h>
-#include <sys/ioctl.h>
-#include <sys/socket.h>
-#include <net/ppp_defs.h>
-#include <net/if.h>
-#include <net/if_ppp.h>
+#ifndef lint
+#if 0
+static char rcsid[] = "Id: pppstats.c,v 1.22 1998/03/31 23:48:03 paulus Exp $";
+#else
+static char rcsid[] = "$OpenBSD: pppstats.c,v 1.5 1998/05/08 04:52:37 millert Exp $";
+#endif
+#endif
+
 #include <stdio.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -63,6 +51,13 @@
 #include <fcntl.h>
 #include <err.h>
 #include <unistd.h>
+#include <sys/param.h>
+#include <sys/types.h>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
+#include <net/ppp_defs.h>
+#include <net/if.h>
+#include <net/if_ppp.h>
 
 int	vflag, rflag, zflag;	/* select type of display */
 int	aflag;			/* print absolute values, not deltas */
@@ -74,20 +69,21 @@ int	s;			/* socket file descriptor */
 int	signalled;		/* set if alarm goes off "early" */
 char	interface[IFNAMSIZ];
 
-void usage(void);
-void catchalarm(int);
-void get_ppp_stats(struct ppp_stats *);
-void get_ppp_cstats(struct ppp_comp_stats *);
-void intpr(void);
-int main(int, char *argv[]);
+static void usage __P((void));
+static void catchalarm __P((int));
+static void get_ppp_stats __P((struct ppp_stats *));
+static void get_ppp_cstats __P((struct ppp_comp_stats *));
+static void intpr __P((void));
 
-void
+int main __P((int, char *argv[]));
+
+static void
 usage()
 {
 	extern char *__progname;
 
 	fprintf(stderr,
-	    "usage: %s [-adrvz] [-c count] [-w wait] [interface]\n",
+	    "Usage: %s [-a|-d] [-v|-r|-z] [-c count] [-w wait] [interface]\n",
 	    __progname);
 	exit(1);
 }
@@ -96,21 +92,23 @@ usage()
  * Called if an interval expires before intpr has completed a loop.
  * Sets a flag to not wait for the alarm.
  */
-void
+static void
 catchalarm(arg)
 	int arg;
 {
+
 	signalled = 1;
 }
 
-void
+static void
 get_ppp_stats(curp)
 	struct ppp_stats *curp;
 {
 	struct ifpppstatsreq req;
 
 	memset(&req, 0, sizeof(req));
-	(void)strlcpy(req.ifr_name, interface, sizeof(req.ifr_name));
+	(void)strncpy(req.ifr_name, interface, sizeof(req.ifr_name) - 1);
+	req.ifr_name[sizeof(req.ifr_name) - 1] = '\0';
 
 	if (ioctl(s, SIOCGPPPSTATS, &req) < 0) {
 		if (errno == ENOTTY)
@@ -121,14 +119,15 @@ get_ppp_stats(curp)
 	*curp = req.stats;
 }
 
-void
+static void
 get_ppp_cstats(csp)
 	struct ppp_comp_stats *csp;
 {
 	struct ifpppcstatsreq creq;
 
 	memset(&creq, 0, sizeof(creq));
-	(void)strlcpy(creq.ifr_name, interface, sizeof(creq.ifr_name));
+	(void)strncpy(creq.ifr_name, interface, sizeof(creq.ifr_name) - 1);
+	creq.ifr_name[sizeof(creq.ifr_name) - 1] = '\0';
 
 	if (ioctl(s, SIOCGPPPCSTATS, &creq) < 0) {
 		if (errno == ENOTTY) {
@@ -157,7 +156,7 @@ get_ppp_cstats(csp)
  * collected over that interval.  Assumes that interval is non-zero.
  * First line printed is cumulative.
  */
-void
+static void
 intpr()
 {
 	register int line = 0;
@@ -313,24 +312,24 @@ main(argc, argv)
 	int c;
 	struct ifreq ifr;
 
-	(void)strlcpy(interface, "ppp0", sizeof(interface));
+	(void)strcpy(interface, "ppp0");
 
 	while ((c = getopt(argc, argv, "advrzc:w:")) != -1) {
 		switch (c) {
 		case 'a':
-			aflag = 1;
+			++aflag;
 			break;
 		case 'd':
-			dflag = 1;
+			++dflag;
 			break;
 		case 'v':
-			vflag = 1;
+			++vflag;
 			break;
 		case 'r':
-			rflag = 1;
+			++rflag;
 			break;
 		case 'z':
-			zflag = 1;
+			++zflag;
 			break;
 		case 'c':
 			count = atoi(optarg);
@@ -360,16 +359,17 @@ main(argc, argv)
 
 	if (argc > 1)
 		usage();
-	if (argc > 0)
-		(void)strlcpy(interface, argv[0], sizeof(interface));
-
-	if (sscanf(interface, "ppp%d", &unit) != 1 || unit < 0)
+	if (argc > 0) {
+		(void)strncpy(interface, argv[0], sizeof(interface) - 1);
+		interface[sizeof(interface) - 1] = '\0';
+	}
+	if (sscanf(interface, "ppp%d", &unit) != 1)
 		errx(1, "invalid interface '%s' specified", interface);
 
 	s = socket(AF_INET, SOCK_DGRAM, 0);
 	if (s < 0)
 		err(1, "couldn't create IP socket");
-	(void)strlcpy(ifr.ifr_name, interface, sizeof(ifr.ifr_name));
+	(void)strcpy(ifr.ifr_name, interface);
 	if (ioctl(s, SIOCGIFFLAGS, (caddr_t)&ifr) < 0)
 		errx(1, "nonexistent interface '%s' specified", interface);
 

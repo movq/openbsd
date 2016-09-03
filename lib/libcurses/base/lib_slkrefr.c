@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_slkrefr.c,v 1.5 2010/01/12 23:22:06 nicm Exp $ */
+/*	$OpenBSD: lib_slkrefr.c,v 1.3 1999/03/14 03:10:32 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2006,2008 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -31,8 +31,6 @@
 /****************************************************************************
  *  Author: Zeyd M. Ben-Halim <zmbenhal@netcom.com> 1992,1995               *
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
- *     and: Juergen Pfeifer                         1996-on                 *
- *     and: Thomas E. Dickey                                                *
  ****************************************************************************/
 
 /*
@@ -40,107 +38,91 @@
  *	Write SLK window to the (virtual) screen.
  */
 #include <curses.priv.h>
-#include <term.h>		/* num_labels, label_*, plab_norm */
+#include <term.h>	  /* num_labels, label_*, plab_norm */
 
-MODULE_ID("$Id: lib_slkrefr.c,v 1.5 2010/01/12 23:22:06 nicm Exp $")
-
-/*
- * Paint the info line for the PC style SLK emulation.
- */
-static void
-slk_paint_info(WINDOW *win)
-{
-    SCREEN *sp = _nc_screen_of(win);
-
-    if (win && sp && (sp->slk_format == 4)) {
-	int i;
-
-	mvwhline(win, 0, 0, 0, getmaxx(win));
-	wmove(win, 0, 0);
-
-	for (i = 0; i < sp->_slk->maxlab; i++) {
-	    mvwprintw(win, 0, sp->_slk->ent[i].ent_x, "F%d", i + 1);
-	}
-    }
-}
+MODULE_ID("$From: lib_slkrefr.c,v 1.8 1999/03/14 00:10:27 Alexander.V.Lukyanov Exp $")
 
 /*
  * Write the soft labels to the soft-key window.
  */
 static void
-slk_intern_refresh(SLK * slk)
+slk_intern_refresh(SLK *slk)
 {
-    int i;
-    int fmt = SP->slk_format;
+int i;
+int fmt = SP->slk_format;
 
-    for (i = 0; i < slk->labcnt; i++) {
-	if (slk->dirty || slk->ent[i].dirty) {
-	    if (slk->ent[i].visible) {
-		if (num_labels > 0 && SLK_STDFMT(fmt)) {
-		    if (i < num_labels) {
-			TPUTS_TRACE("plab_norm");
-			putp(TPARM_2(plab_norm, i + 1, slk->ent[i].form_text));
-		    }
-		} else {
-		    if (fmt == 4)
-			slk_paint_info(slk->win);
-		    wmove(slk->win, SLK_LINES(fmt) - 1, slk->ent[i].ent_x);
-		    if (SP->_slk) {
-			wattrset(slk->win, AttrOf(SP->_slk->attr));
-		    }
-		    waddstr(slk->win, slk->ent[i].form_text);
-		    /* if we simulate SLK's, it's looking much more
-		       natural to use the current ATTRIBUTE also
-		       for the label window */
-		    wattrset(slk->win, WINDOW_ATTRS(stdscr));
+	for (i = 0; i < slk->labcnt; i++) {
+		if (slk->dirty || slk->ent[i].dirty) {
+			if (slk->ent[i].visible) {
+				if (num_labels > 0 && SLK_STDFMT(fmt))
+				{
+				  if (i < num_labels) {
+				    TPUTS_TRACE("plab_norm");
+				    putp(tparm(plab_norm, i+1, slk->ent[i].form_text));
+				  }
+				}
+				else
+				{
+					wmove(slk->win,SLK_LINES(fmt)-1,slk->ent[i].x);
+					if (SP && SP->_slk)
+					  wattrset(slk->win,SP->_slk->attr);
+					waddnstr(slk->win,slk->ent[i].form_text,
+						 MAX_SKEY_LEN(fmt));
+					/* if we simulate SLK's, it's looking much more
+					   natural to use the current ATTRIBUTE also
+					   for the label window */
+					wattrset(slk->win,stdscr->_attrs);
+				}
+			}
+			slk->ent[i].dirty = FALSE;
 		}
-	    }
-	    slk->ent[i].dirty = FALSE;
 	}
-    }
-    slk->dirty = FALSE;
+	slk->dirty = FALSE;
 
-    if (num_labels > 0) {
-	if (slk->hidden) {
-	    TPUTS_TRACE("label_off");
-	    putp(label_off);
-	} else {
-	    TPUTS_TRACE("label_on");
-	    putp(label_on);
+	if (num_labels > 0) {
+	    if (slk->hidden)
+	    {
+		TPUTS_TRACE("label_off");
+		putp(label_off);
+	    }
+	    else
+	    {
+		TPUTS_TRACE("label_on");
+		putp(label_on);
+	    }
 	}
-    }
 }
 
 /*
  * Refresh the soft labels.
  */
-NCURSES_EXPORT(int)
+int
 slk_noutrefresh(void)
 {
-    T((T_CALLED("slk_noutrefresh()")));
+	T((T_CALLED("slk_noutrefresh()")));
 
-    if (SP == NULL || SP->_slk == NULL)
-	returnCode(ERR);
-    if (SP->_slk->hidden)
-	returnCode(OK);
-    slk_intern_refresh(SP->_slk);
+	if (SP == NULL || SP->_slk == NULL)
+		returnCode(ERR);
+	if (SP->_slk->hidden)
+		returnCode(OK);
+	slk_intern_refresh(SP->_slk);
 
-    returnCode(wnoutrefresh(SP->_slk->win));
+	returnCode(wnoutrefresh(SP->_slk->win));
 }
 
 /*
  * Refresh the soft labels.
  */
-NCURSES_EXPORT(int)
+int
 slk_refresh(void)
 {
-    T((T_CALLED("slk_refresh()")));
+	T((T_CALLED("slk_refresh()")));
 
-    if (SP == NULL || SP->_slk == NULL)
-	returnCode(ERR);
-    if (SP->_slk->hidden)
-	returnCode(OK);
-    slk_intern_refresh(SP->_slk);
+	if (SP == NULL || SP->_slk == NULL)
+		returnCode(ERR);
+	if (SP->_slk->hidden)
+		returnCode(OK);
+	slk_intern_refresh(SP->_slk);
 
-    returnCode(wrefresh(SP->_slk->win));
+	returnCode(wrefresh(SP->_slk->win));
 }

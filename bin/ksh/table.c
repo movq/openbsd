@@ -1,46 +1,33 @@
-/*	$OpenBSD: table.c,v 1.23 2015/11/01 15:38:53 mmcc Exp $	*/
+/*	$OpenBSD: table.c,v 1.5 1999/01/10 17:55:03 millert Exp $	*/
 
 /*
  * dynamic hashed associative table for commands and variables
  */
 
-#include <limits.h>
-#include <stddef.h>
-#include <string.h>
-
 #include "sh.h"
 
 #define	INIT_TBLS	8	/* initial table size (power of 2) */
 
-struct table taliases;	/* tracked aliases */
-struct table builtins;	/* built-in commands */
-struct table aliases;	/* aliases */
-struct table keywords;	/* keywords */
-struct table homedirs;	/* homedir() cache */
-
-char *path;		/* copy of either PATH or def_path */
-const char *def_path;	/* path to use if PATH not set */
-char *tmpdir;		/* TMPDIR value */
-const char *prompt;
-int cur_prompt;		/* PS1 or PS2 */
-int current_lineno;	/* LINENO value */
-
-static void	texpand(struct table *, int);
-static int	tnamecmp(const void *, const void *);
+static void     texpand     ARGS((struct table *tp, int nsize));
+static int      tnamecmp    ARGS((void *p1, void *p2));
 
 
 unsigned int
-hash(const char *n)
+hash(n)
+	register const char * n;
 {
-	unsigned int h = 0;
+	register unsigned int h = 0;
 
 	while (*n != '\0')
-		h = 33*h + (unsigned char)(*n++);
-	return h;
+		h = 2*h + *n++;
+	return h * 32821;	/* scatter bits */
 }
 
 void
-ktinit(struct table *tp, Area *ap, int tsize)
+tinit(tp, ap, tsize)
+	register struct table *tp;
+	register Area *ap;
+	int tsize;
 {
 	tp->areap = ap;
 	tp->tbls = NULL;
@@ -50,52 +37,55 @@ ktinit(struct table *tp, Area *ap, int tsize)
 }
 
 static void
-texpand(struct table *tp, int nsize)
+texpand(tp, nsize)
+	register struct table *tp;
+	int nsize;
 {
-	int i;
-	struct tbl *tblp, **p;
-	struct tbl **ntblp, **otblp = tp->tbls;
+	register int i;
+	register struct tbl *tblp, **p;
+	register struct tbl **ntblp, **otblp = tp->tbls;
 	int osize = tp->size;
 
-	ntblp = areallocarray(NULL, nsize, sizeof(struct tbl *), tp->areap);
+	ntblp = (struct tbl**) alloc(sizeofN(struct tbl *, nsize), tp->areap);
 	for (i = 0; i < nsize; i++)
 		ntblp[i] = NULL;
 	tp->size = nsize;
-	tp->nfree = 7*nsize/10;	/* table can get 70% full */
+	tp->nfree = 8*nsize/10;	/* table can get 80% full */
 	tp->tbls = ntblp;
 	if (otblp == NULL)
 		return;
 	for (i = 0; i < osize; i++)
 		if ((tblp = otblp[i]) != NULL) {
 			if ((tblp->flag&DEFINED)) {
-				for (p = &ntblp[hash(tblp->name) &
-				    (tp->size-1)]; *p != NULL; p--)
+				for (p = &ntblp[hash(tblp->name)
+					  & (tp->size-1)];
+				     *p != NULL; p--)
 					if (p == ntblp) /* wrap */
 						p += tp->size;
 				*p = tblp;
 				tp->nfree--;
 			} else if (!(tblp->flag & FINUSE)) {
-				afree(tblp, tp->areap);
+				afree((void*)tblp, tp->areap);
 			}
 		}
-	afree(otblp, tp->areap);
+	afree((void*)otblp, tp->areap);
 }
 
-/* table */
-/* name to enter */
-/* hash(n) */
 struct tbl *
-ktsearch(struct table *tp, const char *n, unsigned int h)
+tsearch(tp, n, h)
+	register struct table *tp;	/* table */
+	register const char *n;		/* name to enter */
+	unsigned int h;			/* hash(n) */
 {
-	struct tbl **pp, *p;
+	register struct tbl **pp, *p;
 
 	if (tp->size == 0)
 		return NULL;
 
 	/* search for name in hashed table */
 	for (pp = &tp->tbls[h & (tp->size-1)]; (p = *pp) != NULL; pp--) {
-		if (*p->name == *n && strcmp(p->name, n) == 0 &&
-		    (p->flag&DEFINED))
+		if (*p->name == *n && strcmp(p->name, n) == 0
+		    && (p->flag&DEFINED))
 			return p;
 		if (pp == tp->tbls) /* wrap */
 			pp += tp->size;
@@ -104,14 +94,14 @@ ktsearch(struct table *tp, const char *n, unsigned int h)
 	return NULL;
 }
 
-/* table */
-/* name to enter */
-/* hash(n) */
 struct tbl *
-ktenter(struct table *tp, const char *n, unsigned int h)
+tenter(tp, n, h)
+	register struct table *tp;	/* table */
+	register const char *n;		/* name to enter */
+	unsigned int h;			/* hash(n) */
 {
-	struct tbl **pp, *p;
-	int len;
+	register struct tbl **pp, *p;
+	register int len;
 
 	if (tp->size == 0)
 		texpand(tp, INIT_TBLS);
@@ -119,28 +109,25 @@ ktenter(struct table *tp, const char *n, unsigned int h)
 	/* search for name in hashed table */
 	for (pp = &tp->tbls[h & (tp->size-1)]; (p = *pp) != NULL; pp--) {
 		if (*p->name == *n && strcmp(p->name, n) == 0)
-			return p;	/* found */
+			return p; 	/* found */
 		if (pp == tp->tbls) /* wrap */
 			pp += tp->size;
 	}
 
 	if (tp->nfree <= 0) {	/* too full */
-		if (tp->size <= INT_MAX/2)
-			texpand(tp, 2*tp->size);
-		else
-			internal_errorf(1, "too many vars");
+		texpand(tp, 2*tp->size);
 		goto Search;
 	}
 
 	/* create new tbl entry */
 	len = strlen(n) + 1;
-	p = alloc(offsetof(struct tbl, name[0]) + len,
+	p = (struct tbl *) alloc(offsetof(struct tbl, name[0]) + len,
 				 tp->areap);
 	p->flag = 0;
 	p->type = 0;
 	p->areap = tp->areap;
 	p->u2.field = 0;
-	p->u.array = NULL;
+	p->u.array = (struct tbl *)0;
 	memcpy(p->name, n, len);
 
 	/* enter in tp->tbls */
@@ -150,20 +137,24 @@ ktenter(struct table *tp, const char *n, unsigned int h)
 }
 
 void
-ktdelete(struct tbl *p)
+tdelete(p)
+	register struct tbl *p;
 {
 	p->flag = 0;
 }
 
 void
-ktwalk(struct tstate *ts, struct table *tp)
+twalk(ts, tp)
+	struct tstate *ts;
+	struct table *tp;
 {
 	ts->left = tp->size;
 	ts->next = tp->tbls;
 }
 
 struct tbl *
-ktnext(struct tstate *ts)
+tnext(ts)
+	struct tstate *ts;
 {
 	while (--ts->left >= 0) {
 		struct tbl *p = *ts->next++;
@@ -174,26 +165,25 @@ ktnext(struct tstate *ts)
 }
 
 static int
-tnamecmp(const void *p1, const void *p2)
+tnamecmp(p1, p2)
+	void *p1, *p2;
 {
-	char *name1 = (*(struct tbl **)p1)->name;
-	char *name2 = (*(struct tbl **)p2)->name;
-	return strcmp(name1, name2);
+	return strcmp(((struct tbl *)p1)->name, ((struct tbl *)p2)->name);
 }
 
 struct tbl **
-ktsort(struct table *tp)
+tsort(tp)
+	register struct table *tp;
 {
-	int i;
-	struct tbl **p, **sp, **dp;
+	register int i;
+	register struct tbl **p, **sp, **dp;
 
-	p = areallocarray(NULL, tp->size + 1,
-	    sizeof(struct tbl *), ATEMP);
+	p = (struct tbl **)alloc(sizeofN(struct tbl *, tp->size+1), ATEMP);
 	sp = tp->tbls;		/* source */
 	dp = p;			/* dest */
 	for (i = 0; i < tp->size; i++)
 		if ((*dp = *sp++) != NULL && (((*dp)->flag&DEFINED) ||
-		    ((*dp)->flag&ARRAY)))
+					      ((*dp)->flag&ARRAY)))
 			dp++;
 	i = dp - p;
 	qsortp((void**)p, (size_t)i, tnamecmp);
@@ -203,10 +193,11 @@ ktsort(struct table *tp)
 
 #ifdef PERF_DEBUG /* performance debugging */
 
-void tprintinfo(struct table *tp);
+void tprintinfo ARGS((struct table *tp));
 
 void
-tprintinfo(struct table *tp)
+tprintinfo(tp)
+	struct table *tp;
 {
 	struct tbl *te;
 	char *n;
@@ -218,18 +209,18 @@ tprintinfo(struct table *tp)
 
 	shellf("table size %d, nfree %d\n", tp->size, tp->nfree);
 	shellf("    Ncmp name\n");
-	ktwalk(&ts, tp);
-	while ((te = ktnext(&ts))) {
-		struct tbl **pp, *p;
+	twalk(&ts, tp);
+	while ((te = tnext(&ts))) {
+		register struct tbl **pp, *p;
 
 		h = hash(n = te->name);
 		ncmp = 0;
 
-		/* taken from ktsearch() and added counter */
+		/* taken from tsearch() and added counter */
 		for (pp = &tp->tbls[h & (tp->size-1)]; (p = *pp); pp--) {
 			ncmp++;
-			if (*p->name == *n && strcmp(p->name, n) == 0 &&
-			    (p->flag&DEFINED))
+			if (*p->name == *n && strcmp(p->name, n) == 0
+			    && (p->flag&DEFINED))
 				break; /* return p; */
 			if (pp == tp->tbls) /* wrap */
 				pp += tp->size;
@@ -242,8 +233,8 @@ tprintinfo(struct table *tp)
 	}
 	if (nentries)
 		shellf("  %d entries, worst ncmp %d, avg ncmp %d.%02d\n",
-		    nentries, maxncmp,
-		    totncmp / nentries,
-		    (totncmp % nentries) * 100 / nentries);
+			nentries, maxncmp,
+			totncmp / nentries,
+			(totncmp % nentries) * 100 / nentries);
 }
 #endif /* PERF_DEBUG */

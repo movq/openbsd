@@ -1,4 +1,4 @@
-/*	$OpenBSD: tty_subs.c,v 1.17 2016/08/26 04:22:13 guenther Exp $	*/
+/*	$OpenBSD: tty_subs.c,v 1.6 1999/08/09 22:22:52 pjanzen Exp $	*/
 /*	$NetBSD: tty_subs.c,v 1.5 1995/03/21 09:07:52 cgd Exp $	*/
 
 /*-
@@ -17,7 +17,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -34,16 +38,31 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)tty_subs.c	8.2 (Berkeley) 4/18/94";
+#else
+static char rcsid[] = "$OpenBSD: tty_subs.c,v 1.6 1999/08/09 22:22:52 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
+#include <sys/types.h>
+#include <sys/time.h>
+#include <sys/stat.h>
+#include <sys/param.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <errno.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
 #include "pax.h"
 #include "extern.h"
+#ifdef __STDC__
+#include <stdarg.h>
+#else
+#include <varargs.h>
+#endif
 
 /*
  * routines that deal with I/O to and from the user
@@ -59,12 +78,17 @@ static FILE *ttyinf = NULL;		/* input pointing at control tty */
  *	open fails, future ops that require user input will get an EOF
  */
 
+#ifdef __STDC__
 int
 tty_init(void)
+#else
+int
+tty_init()
+#endif
 {
 	int ttyfd;
 
-	if ((ttyfd = open(DEVTTY, O_RDWR | O_CLOEXEC)) >= 0) {
+	if ((ttyfd = open(DEVTTY, O_RDWR)) >= 0) {
 		if ((ttyoutf = fdopen(ttyfd, "w")) != NULL) {
 			if ((ttyinf = fdopen(ttyfd, "r")) != NULL)
 				return(0);
@@ -86,16 +110,24 @@ tty_init(void)
  *	if there is no controlling terminal, just return.
  */
 
+#ifdef __STDC__
 void
-tty_prnt(const char *fmt, ...)
+tty_prnt(char *fmt, ...)
+#else
+void
+tty_prnt(fmt, va_alist)
+	char *fmt;
+	va_dcl
+#endif
 {
 	va_list ap;
-
+#	ifdef __STDC__
 	va_start(ap, fmt);
-	if (ttyoutf == NULL) {
-		va_end(ap);
+#	else
+	va_start(ap);
+#	endif
+	if (ttyoutf == NULL)
 		return;
-	}
 	(void)vfprintf(ttyoutf, fmt, ap);
 	va_end(ap);
 	(void)fflush(ttyoutf);
@@ -109,16 +141,27 @@ tty_prnt(const char *fmt, ...)
  *	0 if data was read, -1 otherwise.
  */
 
+#ifdef __STDC__
 int
 tty_read(char *str, int len)
+#else
+int
+tty_read(str, len)
+	char *str;
+	int len;
+#endif
 {
-	if (ttyinf == NULL || fgets(str, len, ttyinf) == NULL)
+	register char *pt;
+
+	if ((--len <= 0) || (ttyinf == NULL) || (fgets(str,len,ttyinf) == NULL))
 		return(-1);
+	*(str + len) = '\0';
 
 	/*
 	 * strip off that trailing newline
 	 */
-	str[strcspn(str, "\n")] = '\0';
+	if ((pt = strchr(str, '\n')) != NULL)
+		*pt = '\0';
 	return(0);
 }
 
@@ -128,12 +171,23 @@ tty_read(char *str, int len)
  *	will be non-zero.
  */
 
+#ifdef __STDC__
 void
-paxwarn(int set, const char *fmt, ...)
+paxwarn(int set, char *fmt, ...)
+#else
+void
+paxwarn(set, fmt, va_alist)
+	int set;
+	char *fmt;
+	va_dcl
+#endif
 {
 	va_list ap;
-
+#	ifdef __STDC__
 	va_start(ap, fmt);
+#	else
+	va_start(ap);
+#	endif
 	if (set)
 		exit_val = 1;
 	/*
@@ -157,12 +211,24 @@ paxwarn(int set, const char *fmt, ...)
  *	will be non-zero.
  */
 
+#ifdef __STDC__
 void
-syswarn(int set, int errnum, const char *fmt, ...)
+syswarn(int set, int errnum, char *fmt, ...)
+#else
+void
+syswarn(set, errnum, fmt, va_alist)
+	int set;
+	int errnum;
+	char *fmt;
+	va_dcl
+#endif
 {
 	va_list ap;
-
+#	ifdef __STDC__
 	va_start(ap, fmt);
+#	else
+	va_start(ap);
+#	endif
 	if (set)
 		exit_val = 1;
 	/*
@@ -182,6 +248,6 @@ syswarn(int set, int errnum, const char *fmt, ...)
 	 * format and print the errno
 	 */
 	if (errnum > 0)
-		(void)fprintf(stderr, ": %s", strerror(errnum));
+		(void)fprintf(stderr, " <%s>", strerror(errnum));
 	(void)fputc('\n', stderr);
 }

@@ -1,4 +1,4 @@
-/*	$OpenBSD: dr_main.c,v 1.8 2016/01/08 20:26:33 mestre Exp $	*/
+/*	$OpenBSD: dr_main.c,v 1.2 1999/01/18 06:20:52 pjanzen Exp $	*/
 /*	$NetBSD: dr_main.c,v 1.4 1995/04/22 10:36:52 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,17 +34,21 @@
  * SUCH DAMAGE.
  */
 
-#include <err.h>
-#include <signal.h>
-#include <stdlib.h>
-#include <unistd.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)dr_main.c	8.2 (Berkeley) 4/16/94";
+#else
+static char rcsid[] = "$OpenBSD: dr_main.c,v 1.2 1999/01/18 06:20:52 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
 #include "driver.h"
-#include "extern.h"
-#include "player.h"
+#include <stdlib.h>
+#include <unistd.h>
+#include <err.h>
 
 int
-dr_main(void)
+dr_main()
 {
 	int n;
 	struct ship *sp;
@@ -51,7 +59,7 @@ dr_main(void)
 	(void) signal(SIGQUIT, SIG_IGN);
 	(void) signal(SIGTSTP, SIG_IGN);
 	if (game < 0 || game >= NSCENE)
-		errx(1, "driver: Bad game number %d", game);
+		errx(1, "driver: Bad game number %d\n", game);
 	cc = &scene[game];
 	ls = SHIP(cc->vessels);
 	if (sync_open() < 0)
@@ -60,7 +68,7 @@ dr_main(void)
 		nat[n] = 0;
 	foreachship(sp) {
 		if (sp->file == NULL &&
-		    (sp->file = calloc(1, sizeof (struct File))) == NULL) {
+		    (sp->file = (struct File *)calloc(1, sizeof (struct File))) == NULL) {
 			(void) fprintf(stderr, "DRIVER: Out of memory.\n");
 			exit(1);
 		}

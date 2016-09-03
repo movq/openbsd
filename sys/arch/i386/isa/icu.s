@@ -1,4 +1,4 @@
-/*	$OpenBSD: icu.s,v 1.33 2015/07/16 05:10:14 guenther Exp $	*/
+/*	$OpenBSD: icu.s,v 1.11 1999/05/24 23:09:01 jason Exp $	*/
 /*	$NetBSD: icu.s,v 1.45 1996/01/07 03:59:34 mycroft Exp $	*/
 
 /*-
@@ -30,12 +30,33 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <net/netisr.h>
+
 	.data
-	.globl	_C_LABEL(imen)
-_C_LABEL(imen):
+	.globl	_imen,_cpl,_ipending,_astpending,_netisr
+_imen:
 	.long	0xffff		# interrupt mask enable (all off)
 
 	.text
+
+#if defined(PROF) || defined(GPROF)
+	.globl	_splhigh, _splx
+
+	ALIGN_TEXT
+_splhigh:
+	movl	$-1,%eax
+	xchgl	%eax,_cpl
+	ret
+
+	ALIGN_TEXT
+_splx:
+	movl	4(%esp),%eax
+	movl	%eax,_cpl
+	testl	%eax,%eax
+	jnz	_Xspllower
+	ret
+#endif /* PROF || GPROF */
+	
 /*
  * Process pending interrupts.
  *
@@ -48,22 +69,17 @@ IDTVEC(spllower)
 	pushl	%ebx
 	pushl	%esi
 	pushl	%edi
-	movl	CPL,%ebx		# save priority
+	movl	_cpl,%ebx		# save priority
 	movl	$1f,%esi		# address to resume loop at
-1:	movl	%ebx,%eax		# get cpl
-	shrl	$4,%eax			# find its mask.
-	movl	_C_LABEL(iunmask)(,%eax,4),%eax
-	cli
-	andl	CPUVAR(IPENDING),%eax	# any non-masked bits left?
+1:	movl	%ebx,%eax
+	notl	%eax
+	andl	_ipending,%eax
 	jz	2f
-	sti
 	bsfl	%eax,%eax
-	btrl	%eax,CPUVAR(IPENDING)
+	btrl	%eax,_ipending
 	jnc	1b
-	jmp	*_C_LABEL(Xrecurse)(,%eax,4)
-2:	movl	%ebx,CPL
-	sti
-	popl	%edi
+	jmp	*_Xrecurse(,%eax,4)
+2:	popl	%edi
 	popl	%esi
 	popl	%ebx
 	ret
@@ -78,22 +94,20 @@ IDTVEC(spllower)
  */
 IDTVEC(doreti)
 	popl	%ebx			# get previous priority
+	movl	%ebx,_cpl
 	movl	$1f,%esi		# address to resume loop at
 1:	movl	%ebx,%eax
-	shrl	$4,%eax
-	movl	_C_LABEL(iunmask)(,%eax,4),%eax
-	cli
-	andl	CPUVAR(IPENDING),%eax
+	notl	%eax
+	andl	_ipending,%eax
 	jz	2f
-	sti
 	bsfl    %eax,%eax               # slow, but not worth optimizing
-	btrl    %eax,CPUVAR(IPENDING)
+	btrl    %eax,_ipending
 	jnc     1b			# some intr cleared the in-memory bit
 	cli
-	jmp	*_C_LABEL(Xresume)(,%eax,4)
+	jmp	*_Xresume(,%eax,4)
 2:	/* Check for ASTs on exit to user mode. */
-	CHECK_ASTPENDING(%ecx)
-	movl	%ebx,CPL
+	cli
+	cmpb	$0,_astpending
 	je	3f
 	testb   $SEL_RPL,TF_CS(%esp)
 #ifdef VM86
@@ -101,12 +115,10 @@ IDTVEC(doreti)
 	testl	$PSL_VM,TF_EFLAGS(%esp)
 #endif
 	jz	3f
-4:	CLEAR_ASTPENDING(%ecx)
+4:	movb	$0,_astpending
 	sti
-	pushl	%esp
-	call	_C_LABEL(ast)
-	addl	$4,%esp
-	cli
+	/* Pushed T_ASTFLT into tf_trapno on entry. */
+	call	_trap
 	jmp	2b
 3:	INTRFASTEXIT
 
@@ -115,31 +127,74 @@ IDTVEC(doreti)
  * Soft interrupt handlers
  */
 
+#include "pccom.h"
+
 IDTVEC(softtty)
-	movl	$IPL_SOFTTTY,%eax
-	movl	%eax,CPL
-	sti
-	pushl	$I386_SOFTINTR_SOFTTTY
-	call	_C_LABEL(softintr_dispatch)
-	addl	$4,%esp
-	jmp	*%esi
+#if NPCCOM > 0
+	leal	SIR_TTYMASK(%ebx),%eax
+	movl	%eax,_cpl
+	call	_comsoft
+	movl	%ebx,_cpl
+#endif
+	jmp	%esi
+
+#define DONET(s, c) \
+	.globl  c		;\
+	testl	$(1 << s),%edi	;\
+	jz	1f		;\
+	call	c		;\
+1:
 
 IDTVEC(softnet)
-	movl	$IPL_SOFTNET,%eax
-	movl	%eax,CPL
-	sti
-	pushl	$I386_SOFTINTR_SOFTNET
-	call	_C_LABEL(softintr_dispatch)
-	addl	$4,%esp
-	jmp	*%esi
-#undef DONETISR
+	leal	SIR_NETMASK(%ebx),%eax
+	movl	%eax,_cpl
+	xorl	%edi,%edi
+	xchgl	_netisr,%edi
+#ifdef INET
+#include "ether.h"
+#if NETHER > 0
+	DONET(NETISR_ARP, _arpintr)
+#endif
+	DONET(NETISR_IP, _ipintr)
+#endif
+#ifdef INET6
+	DONET(NETISR_IPV6, _ipv6intr)
+#endif /* INET6 */
+#ifdef NETATALK
+	DONET(NETISR_ATALK, _atintr)
+#endif
+#ifdef IMP
+	DONET(NETISR_IMP, _impintr)
+#endif
+#ifdef IPX
+	DONET(NETISR_IPX, _ipxintr)
+#endif
+#ifdef NS
+	DONET(NETISR_NS, _nsintr)
+#endif
+#ifdef ISO
+	DONET(NETISR_ISO, _clnlintr)
+#endif
+#ifdef CCITT
+	DONET(NETISR_CCITT, _ccittintr)
+#endif
+#ifdef NATM
+	DONET(NETISR_NATM, _natmintr)
+#endif
+#include "ppp.h"
+#if NPPP > 0
+	DONET(NETISR_PPP, _pppintr)
+#endif
+#include "bridge.h"
+#if NBRIDGE > 0
+	DONET(NETISR_BRIDGE, _bridgeintr)
+#endif
+	movl	%ebx,_cpl
+	jmp	%esi
 
 IDTVEC(softclock)
-	movl	$IPL_SOFTCLOCK,%eax
-	movl	%eax,CPL
-	sti
-	pushl	$I386_SOFTINTR_SOFTCLOCK
-	call	_C_LABEL(softintr_dispatch)
-	addl	$4,%esp
-	jmp	*%esi
-
+	leal	SIR_CLOCKMASK(%ebx),%eax
+	movl	%eax,_cpl
+	call	_softclock
+	movl	%ebx,_cpl
+	jmp	%esi

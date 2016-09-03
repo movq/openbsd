@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_ep_pcmcia.c,v 1.48 2015/11/25 11:20:38 mpi Exp $	*/
+/*	$OpenBSD: if_ep_pcmcia.c,v 1.20 1999/08/16 16:51:19 deraadt Exp $	*/
 /*	$NetBSD: if_ep_pcmcia.c,v 1.16 1998/08/17 23:20:40 thorpej Exp $  */
 
 /*-
@@ -17,6 +17,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the NetBSD
+ *	Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -69,45 +76,55 @@
 #include <sys/ioctl.h>
 #include <sys/errno.h>
 #include <sys/syslog.h>
-#include <sys/selinfo.h>
-#include <sys/timeout.h>
+#include <sys/select.h>
 #include <sys/device.h>
 
 #include <net/if.h>
+#include <net/if_dl.h>
+#include <net/if_types.h>
+#include <net/netisr.h>
 #include <net/if_media.h>
 
+#ifdef INET
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
+#include <netinet/in_var.h>
+#include <netinet/ip.h>
 #include <netinet/if_ether.h>
+#endif
+
+#ifdef NS
+#include <netns/ns.h>
+#include <netns/ns_if.h>
+#endif
 
 #if NBPFILTER > 0
 #include <net/bpf.h>
+#include <net/bpfdesc.h>
 #endif
 
 #include <machine/cpu.h>
 #include <machine/bus.h>
-
-#include <dev/mii/mii.h>
-#include <dev/mii/miivar.h>
+#include <machine/intr.h>
 
 #include <dev/ic/elink3var.h>
+#include <dev/ic/elink3reg.h>
 
 #include <dev/pcmcia/pcmciareg.h>
 #include <dev/pcmcia/pcmciavar.h>
 #include <dev/pcmcia/pcmciadevs.h>
 
-int	ep_pcmcia_match(struct device *, void *, void *);
-void	ep_pcmcia_attach(struct device *, struct device *, void *);
-int	ep_pcmcia_detach(struct device *, int);
-int	ep_pcmcia_activate(struct device *, int);
+int	ep_pcmcia_match __P((struct device *, void *, void *));
+void	ep_pcmcia_attach __P((struct device *, struct device *, void *));
+int	ep_pcmcia_detach __P((struct device *, int));
+int	ep_pcmcia_activate __P((struct device *, enum devact));
 
-int	ep_pcmcia_get_enaddr(struct pcmcia_tuple *, void *);
-#ifdef notyet
-int	ep_pcmcia_enable(struct ep_softc *);
-void	ep_pcmcia_disable(struct ep_softc *);
-void	ep_pcmcia_disable1(struct ep_softc *);
-#endif
+int	ep_pcmcia_get_enaddr __P((struct pcmcia_tuple *, void *));
+int	ep_pcmcia_enable __P((struct ep_softc *));
+void	ep_pcmcia_disable __P((struct ep_softc *));
 
-int	ep_pcmcia_enable1(struct ep_softc *);
+int	ep_pcmcia_enable1 __P((struct ep_softc *));
+void	ep_pcmcia_disable1 __P((struct ep_softc *));
 
 struct ep_pcmcia_softc {
 	struct ep_softc sc_ep;			/* real "ep" softc */
@@ -141,17 +158,13 @@ struct ep_pcmcia_product {
 	{ PCMCIA_PRODUCT_3COM_3CXEM556B,EP_CHIPSET_3C509,
 	  0,				0 },
 
-	{ PCMCIA_PRODUCT_3COM_3C1,	EP_CHIPSET_3C509,
-	  0,				0 },
-
-	{ PCMCIA_PRODUCT_3COM_3CCFEM556BI, EP_CHIPSET_ROADRUNNER,
-	  EP_FLAGS_MII,			0 },
-
-	{ PCMCIA_PRODUCT_3COM_3C574,	EP_CHIPSET_ROADRUNNER,
-	  EP_FLAGS_MII,			0 }
+#ifdef notyet
+	{ PCMCIA_PRODUCT_3COM_3C574,	EP_CHIPSET_BOOMERANG,
+	  EP_FLAGS_MII,			0}
+#endif
 };
 
-struct ep_pcmcia_product *ep_pcmcia_lookup(struct pcmcia_attach_args *);
+struct ep_pcmcia_product *ep_pcmcia_lookup __P((struct pcmcia_attach_args *));
 
 struct ep_pcmcia_product *
 ep_pcmcia_lookup(pa)
@@ -159,7 +172,7 @@ ep_pcmcia_lookup(pa)
 {
 	int i;
 
-	for (i = 0; i < nitems(ep_pcmcia_prod); i++)
+	for (i = 0; i < sizeof(ep_pcmcia_prod)/sizeof(ep_pcmcia_prod[0]); i++)
 		if (pa->product == ep_pcmcia_prod[i].epp_product &&
 		    pa->pf->number == ep_pcmcia_prod[i].epp_expfunc)
 			return &ep_pcmcia_prod[i];
@@ -183,7 +196,6 @@ ep_pcmcia_match(parent, match, aux)
 	return (0);
 }
 
-#ifdef notdef
 int
 ep_pcmcia_enable(sc)
 	struct ep_softc *sc;
@@ -192,8 +204,7 @@ ep_pcmcia_enable(sc)
 	struct pcmcia_function *pf = psc->sc_pf;
 
 	/* establish the interrupt. */
-	sc->sc_ih = pcmcia_intr_establish(pf, IPL_NET, epintr,
-	    sc, sc->sc_dev.dv_xname);
+	sc->sc_ih = pcmcia_intr_establish(pf, IPL_NET, epintr, sc);
 	if (sc->sc_ih == NULL) {
 		printf("%s: couldn't establish interrupt\n",
 		    sc->sc_dev.dv_xname);
@@ -202,7 +213,6 @@ ep_pcmcia_enable(sc)
 
 	return (ep_pcmcia_enable1(sc));
 }
-#endif
 
 int
 ep_pcmcia_enable1(sc)
@@ -233,15 +243,14 @@ ep_pcmcia_enable1(sc)
 	return (ret);
 }
 
-#ifdef notyet
 void
 ep_pcmcia_disable(sc)
 	struct ep_softc *sc;
 {
 	struct ep_pcmcia_softc *psc = (struct ep_pcmcia_softc *) sc;
 
-	pcmcia_intr_disestablish(psc->sc_pf, sc->sc_ih);
 	ep_pcmcia_disable1(sc);
+	pcmcia_intr_disestablish(psc->sc_pf, sc->sc_ih);
 }
 
 void
@@ -252,7 +261,6 @@ ep_pcmcia_disable1(sc)
 
 	pcmcia_function_disable(psc->sc_pf);
 }
-#endif
 
 void
 ep_pcmcia_attach(parent, self, aux)
@@ -266,7 +274,6 @@ ep_pcmcia_attach(parent, self, aux)
 	struct ep_pcmcia_product *epp;
 	u_int8_t myla[ETHER_ADDR_LEN];
 	u_int8_t *enaddr = NULL;
-	const char *intrstr;
 	int i;
 
 	psc->sc_pf = pa->pf;
@@ -323,7 +330,7 @@ ep_pcmcia_attach(parent, self, aux)
 		return;
 	}
 
-	printf(" port 0x%lx/%ld", psc->sc_pcioh.addr, psc->sc_pcioh.size);
+	printf(" port 0x%lx/%d", psc->sc_pcioh.addr, cfe->iospace[0].length);
 
 	switch (pa->product) {
 	case PCMCIA_PRODUCT_3COM_3C562:
@@ -334,7 +341,6 @@ ep_pcmcia_attach(parent, self, aux)
 		 */
 		/* FALLTHROUGH */
 	case PCMCIA_PRODUCT_3COM_3C574:
-	case PCMCIA_PRODUCT_3COM_3CCFEM556BI:
 		/*
 		 * Apparently, some 3c574s do it this way, as well.
 		 */
@@ -349,19 +355,15 @@ ep_pcmcia_attach(parent, self, aux)
 	if (epp == NULL)
 		panic("ep_pcmcia_attach: impossible");
 
-	sc->ep_flags = epp->epp_flags;
-
 #ifdef notyet
 	sc->enable = ep_pcmcia_enable;
 	sc->disable = ep_pcmcia_disable;
 #endif
 
 	/* establish the interrupt. */
-	sc->sc_ih = pcmcia_intr_establish(pa->pf, IPL_NET, epintr, sc,
-	    sc->sc_dev.dv_xname);
-	intrstr = pcmcia_intr_string(psc->sc_pf, sc->sc_ih);
-	if (*intrstr)
-		printf(", %s", intrstr);
+	sc->sc_ih = pcmcia_intr_establish(pa->pf, IPL_NET, epintr, sc);
+	if (sc->sc_ih == NULL)
+		printf(", couldn't establish interrupt");
 
 	printf(":");
 
@@ -379,51 +381,42 @@ ep_pcmcia_detach(dev, flags)
 	struct device *dev;
 	int flags;
 {
-	int rv;
 	struct ep_pcmcia_softc *psc = (struct ep_pcmcia_softc *)dev;
-
-	if ((rv = ep_detach(dev)) != 0)
-		return (rv);
+	struct ep_softc *sc = &psc->sc_ep;
+	struct ifnet *ifp = &sc->sc_arpcom.ac_if;
+	int rv = 0;
 
 	pcmcia_io_unmap(psc->sc_pf, psc->sc_io_window);
 	pcmcia_io_free(psc->sc_pf, &psc->sc_pcioh);
 
-	return (0);
+	ether_ifdetach(ifp);
+	if_detach(ifp);
+
+	return (rv);
 }
 
 int
 ep_pcmcia_activate(dev, act)
 	struct device *dev;
-	int act;
+	enum devact act;
 {
 	struct ep_pcmcia_softc *sc = (struct ep_pcmcia_softc *)dev;
-	struct ep_softc *esc = &sc->sc_ep;
-	struct ifnet *ifp = &esc->sc_arpcom.ac_if;
+	int s;
 
+	s = splnet();
 	switch (act) {
-	case DVACT_SUSPEND:
-		ifp->if_timer = 0;
-		if (ifp->if_flags & IFF_RUNNING)
-			epstop(esc);
-		if (sc->sc_ep.sc_ih)
-			pcmcia_intr_disestablish(sc->sc_pf, sc->sc_ep.sc_ih);
-		sc->sc_ep.sc_ih = NULL;
-		pcmcia_function_disable(sc->sc_pf);
-		break;
-	case DVACT_RESUME:
+	case DVACT_ACTIVATE:
 		pcmcia_function_enable(sc->sc_pf);
-		sc->sc_ep.sc_ih = pcmcia_intr_establish(sc->sc_pf, IPL_NET,
-		    epintr, sc, esc->sc_dev.dv_xname);
-		if (ifp->if_flags & IFF_UP)
-			epinit(esc);
+		sc->sc_ep.sc_ih =
+		    pcmcia_intr_establish(sc->sc_pf, IPL_NET, epintr, sc);
 		break;
+
 	case DVACT_DEACTIVATE:
-		if (sc->sc_ep.sc_ih)
-			pcmcia_intr_disestablish(sc->sc_pf, sc->sc_ep.sc_ih);
-		sc->sc_ep.sc_ih = NULL;
 		pcmcia_function_disable(sc->sc_pf);
+		pcmcia_intr_disestablish(sc->sc_pf, sc->sc_ep.sc_ih);
 		break;
 	}
+	splx(s);
 	return (0);
 }
 

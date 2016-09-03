@@ -1,4 +1,4 @@
-/*	$OpenBSD: edit.c,v 1.19 2009/10/27 23:59:40 deraadt Exp $	*/
+/*	$OpenBSD: edit.c,v 1.7 1997/11/14 00:23:45 millert Exp $	*/
 /*	$NetBSD: edit.c,v 1.5 1996/06/08 19:48:20 christos Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,15 +34,17 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/types.h>
-#include <sys/wait.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)edit.c	8.1 (Berkeley) 6/6/93";
+#else
+static char rcsid[] = "$OpenBSD: edit.c,v 1.7 1997/11/14 00:23:45 millert Exp $";
+#endif
+#endif /* not lint */
 
 #include "rcv.h"
-#include <errno.h>
 #include <fcntl.h>
 #include "extern.h"
-
-int editit(const char *, const char *);
 
 /*
  * Mail -- a mail program
@@ -50,7 +56,8 @@ int editit(const char *, const char *);
  * Edit a message list.
  */
 int
-editor(void *v)
+editor(v)
+	void *v;
 {
 	int *msgvec = v;
 
@@ -61,7 +68,8 @@ editor(void *v)
  * Invoke the visual editor on a message list.
  */
 int
-visual(void *v)
+visual(v)
+	void *v;
 {
 	int *msgvec = v;
 
@@ -74,12 +82,12 @@ visual(void *v)
  * We get the editor from the stuff above.
  */
 int
-edit1(int *msgvec, int type)
+edit1(msgvec, type)
+	int *msgvec;
+	int type;
 {
 	int c, i;
 	FILE *fp;
-	struct sigaction oact;
-	sigset_t oset;
 	struct message *mp;
 	off_t size;
 
@@ -87,12 +95,14 @@ edit1(int *msgvec, int type)
 	 * Deal with each message to be edited . . .
 	 */
 	for (i = 0; msgvec[i] && i < msgCount; i++) {
+		sig_t sigint;
+
 		if (i > 0) {
 			char buf[100];
 			char *p;
 
 			printf("Edit message %d [ynq]? ", msgvec[i]);
-			if (fgets(buf, sizeof(buf), stdin) == NULL)
+			if (fgets(buf, sizeof(buf), stdin) == 0)
 				break;
 			for (p = buf; *p == ' ' || *p == '\t'; p++)
 				;
@@ -103,10 +113,10 @@ edit1(int *msgvec, int type)
 		}
 		dot = mp = &message[msgvec[i] - 1];
 		touch(mp);
-		(void)ignoresig(SIGINT, &oact, &oset);
-		fp = run_editor(setinput(mp), (off_t)mp->m_size, type, readonly);
+		sigint = signal(SIGINT, SIG_IGN);
+		fp = run_editor(setinput(mp), mp->m_size, type, readonly);
 		if (fp != NULL) {
-			(void)fseek(otf, 0L, SEEK_END);
+			(void)fseek(otf, 0L, 2);
 			size = ftell(otf);
 			mp->m_block = blockof(size);
 			mp->m_offset = offsetof(size);
@@ -121,11 +131,10 @@ edit1(int *msgvec, int type)
 					break;
 			}
 			if (ferror(otf))
-				warn("%s", tmpdir);
+				warn("/tmp");
 			(void)Fclose(fp);
 		}
-		(void)sigprocmask(SIG_SETMASK, &oset, NULL);
-		(void)sigaction(SIGINT, &oact, NULL);
+		(void)signal(SIGINT, sigint);
 	}
 	return(0);
 }
@@ -137,7 +146,10 @@ edit1(int *msgvec, int type)
  * "Type" is 'e' for _PATH_EX, 'v' for _PATH_VI.
  */
 FILE *
-run_editor(FILE *fp, off_t size, int type, int readonly)
+run_editor(fp, size, type, readonly)
+	FILE *fp;
+	off_t size;
+	int type, readonly;
 {
 	FILE *nf = NULL;
 	int t;
@@ -149,11 +161,11 @@ run_editor(FILE *fp, off_t size, int type, int readonly)
 	    "%s/mail.ReXXXXXXXXXX", tmpdir);
 	if ((t = mkstemp(tempname)) == -1 ||
 	    (nf = Fdopen(t, "w")) == NULL) {
-		warn("%s", tempname);
+		warn(tempname);
 		goto out;
 	}
 	if (readonly && fchmod(t, 0400) == -1) {
-		warn("%s", tempname);
+		warn(tempname);
 		(void)rm(tempname);
 		goto out;
 	}
@@ -170,28 +182,21 @@ run_editor(FILE *fp, off_t size, int type, int readonly)
 		modtime = statb.st_mtime;
 	if (ferror(nf)) {
 		(void)Fclose(nf);
-		warn("%s", tempname);
+		warn(tempname);
 		(void)rm(tempname);
 		nf = NULL;
 		goto out;
 	}
 	if (Fclose(nf) < 0) {
-		warn("%s", tempname);
+		warn(tempname);
 		(void)rm(tempname);
 		nf = NULL;
 		goto out;
 	}
 	nf = NULL;
-	if (type == 'e') {
-		edit = value("EDITOR");
-		if (edit == NULL || edit[0] == '\0')
-			edit = _PATH_EX;
-	} else {
-		edit = value("VISUAL");
-		if (edit == NULL || edit[0] == '\0')
-			edit = _PATH_VI;
-	}
-	if (editit(edit, tempname) == -1) {
+	if ((edit = value(type == 'e' ? "EDITOR" : "VISUAL")) == NULL)
+		edit = type == 'e' ? _PATH_EX : _PATH_VI;
+	if (run_command(edit, 0, -1, -1, tempname, NULL, NULL) < 0) {
 		(void)rm(tempname);
 		goto out;
 	}
@@ -204,7 +209,7 @@ run_editor(FILE *fp, off_t size, int type, int readonly)
 		goto out;
 	}
 	if (stat(tempname, &statb) < 0) {
-		warn("%s", tempname);
+		warn(tempname);
 		goto out;
 	}
 	if (modtime == statb.st_mtime) {
@@ -215,64 +220,11 @@ run_editor(FILE *fp, off_t size, int type, int readonly)
 	 * Now switch to new file.
 	 */
 	if ((nf = Fopen(tempname, "a+")) == NULL) {
-		warn("%s", tempname);
+		warn(tempname);
 		(void)rm(tempname);
 		goto out;
 	}
 	(void)rm(tempname);
 out:
 	return(nf);
-}
-
-/*
- * Execute an editor on the specified pathname, which is interpreted
- * from the shell.  This means flags may be included.
- *
- * Returns -1 on error, or the exit value on success.
- */
-int
-editit(const char *ed, const char *pathname)
-{
-	char *argp[] = {"sh", "-c", NULL, NULL}, *p;
-	sig_t sighup, sigint, sigquit, sigchld;
-	pid_t pid;
-	int saved_errno, st, ret = -1;
-
-	if (ed == NULL)
-		ed = getenv("VISUAL");
-	if (ed == NULL || ed[0] == '\0')
-		ed = getenv("EDITOR");
-	if (ed == NULL || ed[0] == '\0')
-		ed = _PATH_VI;
-	if (asprintf(&p, "%s %s", ed, pathname) == -1)
-		return (-1);
-	argp[2] = p;
-
-	sighup = signal(SIGHUP, SIG_IGN);
-	sigint = signal(SIGINT, SIG_IGN);
-	sigquit = signal(SIGQUIT, SIG_IGN);
-	sigchld = signal(SIGCHLD, SIG_DFL);
-	if ((pid = fork()) == -1)
-		goto fail;
-	if (pid == 0) {
-		execv(_PATH_BSHELL, argp);
-		_exit(127);
-	}
-	while (waitpid(pid, &st, 0) == -1)
-		if (errno != EINTR)
-			goto fail;
-	if (!WIFEXITED(st))
-		errno = EINTR;
-	else
-		ret = WEXITSTATUS(st);
-
- fail:
-	saved_errno = errno;
-	(void)signal(SIGHUP, sighup);
-	(void)signal(SIGINT, sigint);
-	(void)signal(SIGQUIT, sigquit);
-	(void)signal(SIGCHLD, sigchld);
-	free(p);
-	errno = saved_errno;
-	return (ret);
 }

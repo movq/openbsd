@@ -1,4 +1,4 @@
-/*	$OpenBSD: lookup.c,v 1.15 2015/01/20 09:00:16 guenther Exp $	*/
+/*	$OpenBSD: lookup.c,v 1.8 1998/06/26 21:21:14 millert Exp $	*/
 
 /*
  * Copyright (c) 1983 Regents of the University of California.
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,9 +33,23 @@
  * SUCH DAMAGE.
  */
 
-#include <string.h>
+#ifndef lint
+#if 0
+static char RCSid[] = 
+"$From: lookup.c,v 6.8 1996/07/19 16:49:55 michaelc Exp $";
+#else
+static char RCSid[] = 
+"$OpenBSD: lookup.c,v 1.8 1998/06/26 21:21:14 millert Exp $";
+#endif
 
-#include "client.h"
+static char sccsid[] = "@(#)lookup.c	5.1 (Berkeley) 6/6/85";
+
+static char copyright[] =
+"@(#) Copyright (c) 1983 Regents of the University of California.\n\
+ All rights reserved.\n";
+#endif /* not lint */
+
+#include "defs.h"
 
 	/* symbol types */
 #define VAR	1
@@ -50,10 +68,11 @@ static struct syment *hashtab[HASHSIZE];
  * Define a variable from a command line argument.
  */
 void
-define(char *name)
+define(name)
+	char *name;
 {
-	char *cp, *s;
-	struct namelist *nl;
+	register char *cp, *s;
+	register struct namelist *nl;
 	struct namelist *value;
 
 	debugmsg(DM_CALL, "define(%s)", name);
@@ -113,14 +132,17 @@ define(char *name)
  */
 
 struct namelist *
-lookup(char *name, int action, struct namelist *value)
+lookup(name, action, value)	/* %% in name.  Ignore quotas in name */
+	char *name;
+	int action;
+	struct namelist *value;
 {
-	unsigned int n;
-	char *cp;
-	struct syment *s;
+	register unsigned n;
+	register char *cp;
+	register struct syment *s;
 	char ebuf[BUFSIZ];
 
-	debugmsg(DM_CALL, "lookup(%s, %d, %p)", name, action, value);
+	debugmsg(DM_CALL, "lookup(%s, %d, %x)", name, action, value);
 
 	n = 0;
 	for (cp = name; *cp; )
@@ -133,9 +155,7 @@ lookup(char *name, int action, struct namelist *value)
 		if (action != LOOKUP) {
 			if (action != INSERT || s->s_type != CONST) {
 				(void) snprintf(ebuf, sizeof(ebuf),
-					        "%.*s redefined",
-					        (int)(sizeof(ebuf) - 
-					        sizeof(" redefined")), name);
+						"%s redefined", name);
 				yyerror(ebuf);
 			}
 		}
@@ -143,9 +163,7 @@ lookup(char *name, int action, struct namelist *value)
 	}
 
 	if (action == LOOKUP) {
-		(void) snprintf(ebuf, sizeof(ebuf), "%.*s undefined",
-			        (int)(sizeof(ebuf) - sizeof(" undefined")),
-				name);
+		(void) snprintf(ebuf, sizeof(ebuf), "%s undefined", name);
 		yyerror(ebuf);
 		return(NULL);
 	}

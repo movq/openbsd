@@ -1,4 +1,4 @@
-/*	$OpenBSD: sysv_ipc.c,v 1.8 2015/03/14 03:38:50 jsg Exp $	*/
+/*	$OpenBSD: sysv_ipc.c,v 1.3 1998/06/11 18:32:13 deraadt Exp $	*/
 /*	$NetBSD: sysv_ipc.c,v 1.10 1995/06/03 05:53:28 mycroft Exp $	*/
 
 /*
@@ -31,6 +31,8 @@
  */
 
 #include <sys/param.h>
+#include <sys/kernel.h>
+#include <sys/proc.h>
 #include <sys/ipc.h>
 #include <sys/systm.h>
 #include <sys/mount.h>
@@ -41,7 +43,10 @@
  */
 
 int
-ipcperm(struct ucred *cred, struct ipc_perm *perm, int mode)
+ipcperm(cred, perm, mode)
+	struct ucred *cred;
+	struct ipc_perm *perm;
+	int mode;
 {
 
 	if (mode == IPC_M) {
@@ -52,8 +57,37 @@ ipcperm(struct ucred *cred, struct ipc_perm *perm, int mode)
 		return (EPERM);
 	}
 
-	if (vaccess(VNON, perm->mode, perm->uid, perm->gid, mode, cred) == 0 ||
-	    vaccess(VNON, perm->mode, perm->cuid, perm->cgid, mode, cred) == 0)
+	if (vaccess(perm->mode, perm->uid, perm->gid, mode, cred) == 0 ||
+	    vaccess(perm->mode, perm->cuid, perm->cgid, mode, cred) == 0)
 		return (0);
 	return (EACCES);
 }
+
+void
+ipc_n2o(n, o)
+	struct ipc_perm *n;
+	struct oipc_perm *o;
+{
+	o->cuid = n->cuid;		/* XXX */
+	o->cgid = n->cgid;		/* XXX */
+	o->uid = n->uid;		/* XXX */
+	o->gid = n->gid;		/* XXX */
+	o->mode = n->mode;		/* XXX */
+	o->seq = n->seq;
+	o->key = n->key;
+}
+
+void
+ipc_o2n(o, n)
+	struct oipc_perm *o;
+	struct ipc_perm *n;
+{
+	n->cuid = o->cuid;		/* XXX */
+	n->cgid = o->cgid;		/* XXX */
+	n->uid = o->uid;		/* XXX */
+	n->gid = o->gid;		/* XXX */
+	n->mode = o->mode;		/* XXX */
+	n->seq = o->seq;
+	n->key = o->key;
+}
+

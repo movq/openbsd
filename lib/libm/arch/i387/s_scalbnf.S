@@ -1,4 +1,3 @@
-/*	$OpenBSD: s_scalbnf.S,v 1.4 2009/04/21 23:02:23 martynas Exp $ */
 /*
  * Written by J.T. Conklin <jtc@netbsd.org>.
  * Public domain.
@@ -6,8 +5,7 @@
 
 #include <machine/asm.h>
 
-.global ldexpf
-	ldexpf = scalbnf
+RCSID("$NetBSD: s_scalbnf.S,v 1.3 1995/05/09 00:19:59 jtc Exp $")
 
 ENTRY(scalbnf)
 	fildl	8(%esp)

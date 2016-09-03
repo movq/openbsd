@@ -1,4 +1,4 @@
-/*	$OpenBSD: ctl.c,v 1.13 2016/02/01 07:29:25 mestre Exp $	*/
+/*	$OpenBSD: ctl.c,v 1.5 1999/03/03 20:43:30 millert Exp $	*/
 /*	$NetBSD: ctl.c,v 1.3 1994/12/09 02:14:10 jtc Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,16 +34,22 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)ctl.c	8.1 (Berkeley) 6/6/93";
+#endif
+static char rcsid[] = "$OpenBSD: ctl.c,v 1.5 1999/03/03 20:43:30 millert Exp $";
+#endif /* not lint */
+
 /*
  * This file handles haggling with the various talk daemons to
  * get a socket to talk to. sockt is opened and connected in
  * the progress
  */
 
-#include <sys/socket.h>
-#include <arpa/inet.h>
-
 #include "talk.h"
+#include <arpa/inet.h>
+#include "talk_ctl.h"
 
 struct	sockaddr_in daemon_addr = { sizeof(daemon_addr), AF_INET };
 struct	sockaddr_in ctl_addr = { sizeof(ctl_addr), AF_INET };
@@ -53,19 +63,19 @@ u_short daemon_port;	/* port number of the talk daemon */
 
 int	ctl_sockt;
 int	sockt;
-int	invitation_waiting;
+int	invitation_waiting = 0;
 
 CTL_MSG msg;
 
 void
-open_sockt(void)
+open_sockt()
 {
-	socklen_t length;
+	int length;
 
 	my_addr.sin_addr = my_machine_addr;
 	my_addr.sin_port = 0;
 	sockt = socket(AF_INET, SOCK_STREAM, 0);
-	if (sockt == -1)
+	if (sockt <= 0)
 		quit("Bad socket", 1);
 	if (bind(sockt, (struct sockaddr *)&my_addr, sizeof(my_addr)) != 0)
 		quit("Binding local socket", 1);
@@ -76,14 +86,14 @@ open_sockt(void)
 
 /* open the ctl socket */
 void
-open_ctl(void)
+open_ctl()
 {
-	socklen_t length;
+	int length;
 
 	ctl_addr.sin_port = 0;
 	ctl_addr.sin_addr = my_machine_addr;
 	ctl_sockt = socket(AF_INET, SOCK_DGRAM, 0);
-	if (ctl_sockt == -1)
+	if (ctl_sockt <= 0)
 		quit("Bad socket", 1);
 	if (bind(ctl_sockt,
 	    (struct sockaddr *)&ctl_addr, sizeof(ctl_addr)) != 0)
@@ -92,4 +102,18 @@ open_ctl(void)
 	if (getsockname(ctl_sockt,
 	    (struct sockaddr *)&ctl_addr, &length) == -1)
 		quit("Bad address for ctl socket", 1);
+}
+
+/* print_addr is a debug print routine */
+void
+print_addr(addr)
+	struct sockaddr_in addr;
+{
+	int i;
+
+	printf("addr = %s, port = %o, family = %o zero = ",
+		inet_ntoa(addr.sin_addr), addr.sin_port, addr.sin_family);
+	for (i = 0; i<8;i++)
+	printf("%o ", (int)addr.sin_zero[i]);
+	putchar('\n');
 }

@@ -1,4 +1,4 @@
-/*	$OpenBSD: fabs.S,v 1.8 2013/03/28 18:09:38 martynas Exp $	*/
+/*	$OpenBSD: fabs.S,v 1.3 1996/11/13 21:20:10 niklas Exp $	*/
 /*	$NetBSD: fabs.S,v 1.2 1996/10/17 03:08:05 cgd Exp $	*/
 
 /*
@@ -30,7 +30,11 @@
 
 #include <machine/asm.h>
 
-STRONG_ALIAS(fabsl, fabs)
+#if defined(LIBC_SCCS)
+	.text
+	.asciz "$OpenBSD: fabs.S,v 1.3 1996/11/13 21:20:10 niklas Exp $"
+#endif
+
 LEAF(fabs, 1)
 	cpys	fzero, fa0, fv0
 	RET

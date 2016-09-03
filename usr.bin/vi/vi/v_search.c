@@ -1,5 +1,3 @@
-/*	$OpenBSD: v_search.c,v 1.14 2016/01/06 22:28:52 millert Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)v_search.c	10.18 (Berkeley) 9/19/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -26,17 +28,19 @@
 #include "../common/common.h"
 #include "vi.h"
 
-static int v_exaddr(SCR *, VICMD *, dir_t);
-static int v_search(SCR *, VICMD *, char *, size_t, u_int, dir_t);
+static int v_exaddr __P((SCR *, VICMD *, dir_t));
+static int v_search __P((SCR *, VICMD *, char *, size_t, u_int, dir_t));
 
 /*
  * v_srch -- [count]?RE[? offset]
  *	Ex address search backward.
  *
- * PUBLIC: int v_searchb(SCR *, VICMD *);
+ * PUBLIC: int v_searchb __P((SCR *, VICMD *));
  */
 int
-v_searchb(SCR *sp, VICMD *vp)
+v_searchb(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	return (v_exaddr(sp, vp, BACKWARD));
 }
@@ -45,10 +49,12 @@ v_searchb(SCR *sp, VICMD *vp)
  * v_searchf -- [count]/RE[/ offset]
  *	Ex address search forward.
  *
- * PUBLIC: int v_searchf(SCR *, VICMD *);
+ * PUBLIC: int v_searchf __P((SCR *, VICMD *));
  */
 int
-v_searchf(SCR *sp, VICMD *vp)
+v_searchf(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	return (v_exaddr(sp, vp, FORWARD));
 }
@@ -58,7 +64,10 @@ v_searchf(SCR *sp, VICMD *vp)
  *	Do a vi search (which is really an ex address).
  */
 static int
-v_exaddr(SCR *sp, VICMD *vp, dir_t dir)
+v_exaddr(sp, vp, dir)
+	SCR *sp;
+	VICMD *vp;
+	dir_t dir;
 {
 	static EXCMDLIST fake = { "search" };
 	EXCMD *cmdp;
@@ -84,7 +93,7 @@ v_exaddr(SCR *sp, VICMD *vp, dir_t dir)
 	    (O_ISSET(sp, O_SEARCHINCR) ? TXT_SEARCHINCR : 0)))
 		return (1);
 
-	tp = TAILQ_FIRST(&sp->tiq);
+	tp = sp->tiq.cqh_first;
 
 	/* If the user backspaced over the prompt, do nothing. */
 	if (tp->term == TERM_BS)
@@ -264,7 +273,7 @@ v_exaddr(SCR *sp, VICMD *vp, dir_t dir)
 	return (0);
 
 err1:	msgq(sp, M_ERR,
-	    "Characters after search string, line offset and/or z command");
+	    "188|Characters after search string, line offset and/or z command");
 err2:	vp->m_final.lno = s_lno;
 	vp->m_final.cno = s_cno;
 	return (1);
@@ -274,10 +283,12 @@ err2:	vp->m_final.lno = s_lno;
  * v_searchN -- N
  *	Reverse last search.
  *
- * PUBLIC: int v_searchN(SCR *, VICMD *);
+ * PUBLIC: int v_searchN __P((SCR *, VICMD *));
  */
 int
-v_searchN(SCR *sp, VICMD *vp)
+v_searchN(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	dir_t dir;
 
@@ -299,10 +310,12 @@ v_searchN(SCR *sp, VICMD *vp)
  * v_searchn -- n
  *	Repeat last search.
  *
- * PUBLIC: int v_searchn(SCR *, VICMD *);
+ * PUBLIC: int v_searchn __P((SCR *, VICMD *));
  */
 int
-v_searchn(SCR *sp, VICMD *vp)
+v_searchn(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	return (v_search(sp, vp, NULL, 0, SEARCH_PARSE, sp->searchdir));
 }
@@ -311,10 +324,12 @@ v_searchn(SCR *sp, VICMD *vp)
  * v_searchw -- [count]^A
  *	Search for the word under the cursor.
  *
- * PUBLIC: int v_searchw(SCR *, VICMD *);
+ * PUBLIC: int v_searchw __P((SCR *, VICMD *));
  */
 int
-v_searchw(SCR *sp, VICMD *vp)
+v_searchw(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	size_t blen, len;
 	int rval;
@@ -337,7 +352,13 @@ v_searchw(SCR *sp, VICMD *vp)
  *	The search commands.
  */
 static int
-v_search(SCR *sp, VICMD *vp, char *ptrn, size_t plen, u_int flags, dir_t dir)
+v_search(sp, vp, ptrn, plen, flags, dir)
+	SCR *sp;
+	VICMD *vp;
+	u_int flags;
+	char *ptrn;
+	size_t plen;
+	dir_t dir;
 {
 	/* Display messages. */
 	LF_SET(SEARCH_MSG);
@@ -365,7 +386,7 @@ v_search(SCR *sp, VICMD *vp, char *ptrn, size_t plen, u_int flags, dir_t dir)
 			return (1);
 		break;
 	case NOTSET:
-		msgq(sp, M_ERR, "No previous search pattern");
+		msgq(sp, M_ERR, "189|No previous search pattern");
 		return (1);
 	default:
 		abort();
@@ -397,11 +418,15 @@ v_search(SCR *sp, VICMD *vp, char *ptrn, size_t plen, u_int flags, dir_t dir)
  * 'k' and put would no longer work correctly.  In any case, we try to do
  * the right thing, but it's not going to exactly match historic practice.
  *
- * PUBLIC: int v_correct(SCR *, VICMD *, int);
+ * PUBLIC: int v_correct __P((SCR *, VICMD *, int));
  */
 int
-v_correct(SCR *sp, VICMD *vp, int isdelta)
+v_correct(sp, vp, isdelta)
+	SCR *sp;
+	VICMD *vp;
+	int isdelta;
 {
+	dir_t dir;
 	MARK m;
 	size_t len;
 
@@ -420,7 +445,7 @@ v_correct(SCR *sp, VICMD *vp, int isdelta)
 	 */
 	if (vp->m_start.lno == vp->m_stop.lno &&
 	    vp->m_start.cno == vp->m_stop.cno) {
-		msgq(sp, M_BERR, "Search wrapped to original position");
+		msgq(sp, M_BERR, "190|Search wrapped to original position");
 		return (1);
 	}
 
@@ -441,12 +466,14 @@ v_correct(SCR *sp, VICMD *vp, int isdelta)
 	 * because of the wrapscan option.
 	 */
 	if (vp->m_start.lno > vp->m_stop.lno ||
-	    (vp->m_start.lno == vp->m_stop.lno &&
-	    vp->m_start.cno > vp->m_stop.cno)) {
+	    vp->m_start.lno == vp->m_stop.lno &&
+	    vp->m_start.cno > vp->m_stop.cno) {
 		m = vp->m_start;
 		vp->m_start = vp->m_stop;
 		vp->m_stop = m;
-	}
+		dir = BACKWARD;
+	} else
+		dir = FORWARD;
 
 	/*
 	 * BACKWARD:

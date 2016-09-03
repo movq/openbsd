@@ -1,4 +1,4 @@
-/*	$OpenBSD: main.c,v 1.59 2016/08/31 21:00:31 deraadt Exp $	*/
+/*	$OpenBSD: main.c,v 1.26 1999/02/20 21:46:05 deraadt Exp $	*/
 /*	$NetBSD: main.c,v 1.14 1997/06/05 11:13:24 lukem Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,15 +34,33 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/param.h>	/* MAXBSIZE DEV_BSIZE roundup */
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1980, 1991, 1993, 1994\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)main.c	8.4 (Berkeley) 4/15/94";
+#else
+static char rcsid[] = "$NetBSD: main.c,v 1.8 1996/03/15 22:39:32 scottr Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/time.h>
-#include <sys/ioctl.h>
-#include <sys/disklabel.h>
-#include <sys/dkio.h>
+#ifdef sunos
+#include <sys/vnode.h>
+
+#include <ufs/inode.h>
+#include <ufs/fs.h>
+#else
 #include <ufs/ffs/fs.h>
 #include <ufs/ufs/dinode.h>
+#endif
 
 #include <protocols/dumprestore.h>
 
@@ -54,53 +76,50 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
-#include <limits.h>
-#include <util.h>
 
 #include "dump.h"
 #include "pathnames.h"
 
+#ifndef SBOFF
+#define SBOFF (SBLOCK * DEV_BSIZE)
+#endif
+
 int	notify = 0;	/* notify operator flag */
-int64_t	blockswritten = 0;	/* number of blocks written on current tape */
+int	blockswritten = 0;	/* number of blocks written on current tape */
 int	tapeno = 0;	/* current tape number */
 int	density = 0;	/* density in bytes/0.1" */
 int	ntrec = NTREC;	/* # tape blocks in each tape record */
 int	cartridge = 0;	/* Assume non-cartridge tape */
-int64_t	blocksperfile;	/* output blocks per file */
+long	dev_bsize = 1;	/* recalculated below */
+long	blocksperfile;	/* output blocks per file */
 char	*host = NULL;	/* remote host (if any) */
 int	maxbsize = 64*1024;	/* XXX MAXBSIZE from sys/param.h */
 
-struct disklabel lab;
-
-/*
- * Possible superblock locations ordered from most to least likely.
- */
-static int sblock_try[] = SBLOCKSEARCH;
-
-static long long numarg(char *, long long, long long);
-static void obsolete(int *, char **[]);
-static void usage(void);
+static long numarg __P((char *, long, long));
+static void obsolete __P((int *, char **[]));
+static void usage __P((void));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
-	ino_t ino;
-	int dirty;
-	union dinode *dp;
-	struct	fstab *dt;
-	char *map;
-	int ch, mode;
+	register ino_t ino;
+	register int dirty;
+	register struct dinode *dp;
+	register struct	fstab *dt;
+	register char *map;
+	register int ch;
 	struct tm then;
 	struct statfs fsbuf;
 	int i, anydirskipped, bflag = 0, Tflag = 0, honorlevel = 1;
 	ino_t maxino;
-	time_t t;
+	time_t tnow;
 	int dirlist;
-	char *toplevel, *str, *mount_point = NULL, *realpath;
-	int just_estimate = 0;
-	u_int64_t zero_uid = 0;
+	char *toplevel, *str, *mount_point = NULL;
 
-	spcl.c_date = (int64_t)time(NULL);
+	spcl.c_date = 0;
+	(void)time((time_t *)&spcl.c_date);
 
 	tsize = 0;	/* Default later, based on 'c' option for cart tapes */
 	if ((tape = getenv("TAPE")) == NULL)
@@ -115,7 +134,7 @@ main(int argc, char *argv[])
 		usage();
 
 	obsolete(&argc, &argv);
-	while ((ch = getopt(argc, argv, "0123456789aB:b:cd:f:h:ns:ST:uWw")) != -1)
+	while ((ch = getopt(argc, argv, "0123456789aB:b:cd:f:h:ns:T:uWw")) != -1)
 		switch (ch) {
 		/* dump level */
 		case '0': case '1': case '2': case '3': case '4':
@@ -124,11 +143,11 @@ main(int argc, char *argv[])
 			break;
 
 		case 'B':		/* blocks per output file */
-			blocksperfile = numarg("blocks per file", 1, 0);
+			blocksperfile = numarg("blocks per file", 1L, 0L);
 			break;
 
 		case 'b':		/* blocks per tape write */
-			ntrec = numarg("blocks per write", 1, 1000);
+			ntrec = numarg("blocks per write", 1L, 1000L);
 			if (ntrec > maxbsize/1024) {
 				msg("Please choose a blocksize <= %dKB\n",
 				    maxbsize/1024);
@@ -142,7 +161,7 @@ main(int argc, char *argv[])
 			break;
 
 		case 'd':		/* density, in bits per inch */
-			density = numarg("density", 10, 327670) / 10;
+			density = numarg("density", 10L, 327670L) / 10;
 			if (density >= 625 && !bflag)
 				ntrec = HIGHDENSITYTREC;
 			break;
@@ -152,7 +171,7 @@ main(int argc, char *argv[])
 			break;
 
 		case 'h':
-			honorlevel = numarg("honor level", 0, 10);
+			honorlevel = numarg("honor level", 0L, 10L);
 			break;
 
 		case 'n':		/* notify operators */
@@ -160,20 +179,16 @@ main(int argc, char *argv[])
 			break;
 
 		case 's':		/* tape size, feet */
-			tsize = numarg("tape size", 1, 0) * 12 * 10;
-			break;
-
-		case 'S':		/* estimate blocks and # of tapes */
-			just_estimate = 1;
+			tsize = numarg("tape size", 1L, 0L) * 12 * 10;
 			break;
 
 		case 'T':		/* time of last dump */
 			str = strptime(optarg, "%a %b %e %H:%M:%S %Y", &then);
 			then.tm_isdst = -1;
 			if (str == NULL || (*str != '\n' && *str != '\0'))
-				spcl.c_ddate = -1;
+				spcl.c_ddate = (time_t) -1;
 			else
-				spcl.c_ddate = (int64_t)mktime(&then);
+				spcl.c_ddate = mktime(&then);
 			if (spcl.c_ddate < 0) {
 				(void)fprintf(stderr, "bad time \"%s\"\n",
 				    optarg);
@@ -191,7 +206,6 @@ main(int argc, char *argv[])
 		case 'w':
 			lastdump(ch);
 			exit(X_FINOK);	/* do nothing else */
-			break;
 
 		case 'a':		/* `auto-size', Write to EOM. */
 			unlimited = 1;
@@ -216,16 +230,6 @@ main(int argc, char *argv[])
 	for (i = 0; i < argc; i++) {
 		struct stat sb;
 
-		/* Convert potential duid into a device name */
-		if ((diskfd = opendev(argv[i], O_RDONLY | O_NOFOLLOW, 0,
-		    &realpath)) >= 0) {
-			argv[i] = strdup(realpath);
-			if (argv[i] == NULL) {
-				msg("Cannot malloc realpath\n");
-				exit(X_STARTUP);
-			}
-			(void)close(diskfd);
-		}
 		if (lstat(argv[i], &sb) == -1) {
 			msg("Cannot lstat %s: %s\n", argv[i], strerror(errno));
 			exit(X_STARTUP);
@@ -298,7 +302,7 @@ main(int argc, char *argv[])
 		 *         	density				tape size
 		 * 9-track	1600 bpi (160 bytes/.1")	2300 ft.
 		 * 9-track	6250 bpi (625 bytes/.1")	2300 ft.
-		 * cartridge	8000 bpi (800 bytes/.1")	1700 ft.
+		 * cartridge	8000 bpi (100 bytes/.1")	1700 ft.
 		 *						(450*4 - slop)
 		 */
 		if (density == 0)
@@ -322,6 +326,14 @@ main(int argc, char *argv[])
 
 	if (signal(SIGHUP, SIG_IGN) != SIG_IGN)
 		signal(SIGHUP, sig);
+	if (signal(SIGTRAP, SIG_IGN) != SIG_IGN)
+		signal(SIGTRAP, sig);
+	if (signal(SIGFPE, SIG_IGN) != SIG_IGN)
+		signal(SIGFPE, sig);
+	if (signal(SIGBUS, SIG_IGN) != SIG_IGN)
+		signal(SIGBUS, sig);
+	if (signal(SIGSEGV, SIG_IGN) != SIG_IGN)
+		signal(SIGSEGV, sig);
 	if (signal(SIGTERM, SIG_IGN) != SIG_IGN)
 		signal(SIGTERM, sig);
 	if (signal(SIGINT, interrupt) == SIG_IGN)
@@ -338,11 +350,6 @@ main(int argc, char *argv[])
 	if (!statfs(disk, &fsbuf) && !strcmp(fsbuf.f_mntonname, disk)) {
 		/* mounted disk? */
 		disk = rawname(fsbuf.f_mntfromname);
-		if (!disk) {
-			(void)fprintf(stderr, "cannot get raw name for %s\n",
-			    fsbuf.f_mntfromname);
-			exit(X_STARTUP);
-		}
 		mount_point = fsbuf.f_mntonname;
 		(void)strlcpy(spcl.c_dev, fsbuf.f_mntfromname,
 		    sizeof(spcl.c_dev));
@@ -355,13 +362,7 @@ main(int argc, char *argv[])
 		}
 	} else if ((dt = fstabsearch(disk)) != NULL) {
 		/* in fstab? */
-		if (strchr(dt->fs_spec, '/')) {
-			/* fs_spec is a /dev/something */
-			disk = rawname(dt->fs_spec);
-		} else {
-			/* fs_spec is a DUID */
-			disk = rawname(disk);
-		}
+		disk = rawname(dt->fs_spec);
 		mount_point = dt->fs_file;
 		(void)strlcpy(spcl.c_dev, dt->fs_spec, sizeof(spcl.c_dev));
 		if (dirlist != 0) {
@@ -381,33 +382,13 @@ main(int argc, char *argv[])
 	(void)gethostname(spcl.c_host, sizeof(spcl.c_host));
 	spcl.c_level = level - '0';
 	spcl.c_type = TS_TAPE;
-
-	if ((diskfd = open(disk, O_RDONLY)) < 0) {
-		msg("Cannot open %s\n", disk);
-		exit(X_STARTUP);
-	}
-	if (ioctl(diskfd, DIOCGDINFO, (char *)&lab) < 0)
-		err(1, "ioctl (DIOCGDINFO)");
-	
-	if (memcmp(lab.d_uid, &zero_uid, sizeof(lab.d_uid)) != 0) {
-		if (asprintf(&duid,
-		    "%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx.%c",
-		    lab.d_uid[0], lab.d_uid[1], lab.d_uid[2], lab.d_uid[3],
-		    lab.d_uid[4], lab.d_uid[5], lab.d_uid[6], lab.d_uid[7],
-		    disk[strlen(disk)-1]) == -1) {
-			msg("Cannot malloc duid\n");
-			exit(X_STARTUP);
-		}
-	}
 	if (!Tflag)
 	        getdumptime();		/* /etc/dumpdates snarfed */
 
-	t = (time_t)spcl.c_date;
 	msg("Date of this level %c dump: %s", level,
-		t == 0 ? "the epoch\n" : ctime(&t));
-	t = (time_t)spcl.c_ddate;
+		spcl.c_date == 0 ? "the epoch\n" : ctime(&spcl.c_date));
  	msg("Date of last level %c dump: %s", lastlevel,
-		t == 0 ? "the epoch\n" : ctime(&t));
+		spcl.c_ddate == 0 ? "the epoch\n" : ctime(&spcl.c_ddate));
 	msg("Dumping %s ", disk);
 	if (mount_point != NULL)
 		msgtail("(%s) ", mount_point);
@@ -416,35 +397,31 @@ main(int argc, char *argv[])
 	else
 		msgtail("to %s\n", tape);
 
-	if (ioctl(diskfd, DIOCGPDINFO, (char *)&lab) < 0)
-		err(1, "ioctl (DIOCGPDINFO)");
+	if ((diskfd = open(disk, O_RDONLY)) < 0) {
+		msg("Cannot open %s\n", disk);
+		exit(X_STARTUP);
+	}
 	sync();
 	sblock = (struct fs *)sblock_buf;
-	for (i = 0; sblock_try[i] != -1; i++) {
-		ssize_t n = pread(diskfd, sblock, SBLOCKSIZE,
-		    (off_t)sblock_try[i]);
-		if (n == SBLOCKSIZE && (sblock->fs_magic == FS_UFS1_MAGIC ||
-		     (sblock->fs_magic == FS_UFS2_MAGIC &&
-		      sblock->fs_sblockloc == sblock_try[i])) &&
-		    sblock->fs_bsize <= MAXBSIZE &&
-		    sblock->fs_bsize >= sizeof(struct fs))
-			break;
-	}
-	if (sblock_try[i] == -1)
-		quit("Cannot find filesystem superblock\n");
+	bread(SBOFF, (char *) sblock, SBSIZE);
+	if (sblock->fs_magic != FS_MAGIC)
+		quit("bad sblock magic number\n");
+	dev_bsize = sblock->fs_fsize / fsbtodb(sblock, 1);
+	dev_bshift = ffs(dev_bsize) - 1;
+	if (dev_bsize != (1 << dev_bshift))
+		quit("dev_bsize (%d) is not a power of 2\n", dev_bsize);
 	tp_bshift = ffs(TP_BSIZE) - 1;
 	if (TP_BSIZE != (1 << tp_bshift))
 		quit("TP_BSIZE (%d) is not a power of 2\n", TP_BSIZE);
 #ifdef FS_44INODEFMT
-	if (sblock->fs_magic == FS_UFS2_MAGIC ||
-	    sblock->fs_inodefmt >= FS_44INODEFMT)
+	if (sblock->fs_inodefmt >= FS_44INODEFMT)
 		spcl.c_flags |= DR_NEWINODEFMT;
 #endif
 	maxino = sblock->fs_ipg * sblock->fs_ncg;
 	mapsize = roundup(howmany(maxino, NBBY), TP_BSIZE);
-	usedinomap = calloc((unsigned) mapsize, sizeof(char));
-	dumpdirmap = calloc((unsigned) mapsize, sizeof(char));
-	dumpinomap = calloc((unsigned) mapsize, sizeof(char));
+	usedinomap = (char *)calloc((unsigned) mapsize, sizeof(char));
+	dumpdirmap = (char *)calloc((unsigned) mapsize, sizeof(char));
+	dumpinomap = (char *)calloc((unsigned) mapsize, sizeof(char));
 	tapesize = 3 * (howmany(mapsize * sizeof(char), TP_BSIZE) + 1);
 
 	nonodump = spcl.c_level < honorlevel;
@@ -462,7 +439,7 @@ main(int argc, char *argv[])
 
 	if (pipeout || unlimited) {
 		tapesize += 10;	/* 10 trailer blocks */
-		msg("estimated %lld tape blocks.\n", tapesize);
+		msg("estimated %ld tape blocks.\n", tapesize);
 	} else {
 		double fetapes;
 
@@ -502,15 +479,9 @@ main(int argc, char *argv[])
 		tapesize += (etapes - 1) *
 			(howmany(mapsize * sizeof(char), TP_BSIZE) + 1);
 		tapesize += etapes + 10;	/* headers + 10 trailer blks */
-		msg("estimated %lld tape blocks on %3.2f tape(s).\n",
+		msg("estimated %qd tape blocks on %3.2f tape(s).\n",
 		    tapesize, fetapes);
 	}
-
-	/*
-	 * Exit if user wants an estimate of blocks and # of tapes only.
-	 */
-	if (just_estimate)
-		exit(X_FINOK);
 
 	/*
 	 * Allocate tape buffer.
@@ -519,7 +490,7 @@ main(int argc, char *argv[])
 		quit("can't allocate tape buffers - try a smaller blocking factor.\n");
 
 	startnewtape(1);
-	(void)time(&tstart_writing);
+	(void)time((time_t *)&(tstart_writing));
 	xferrate = 0;
 	dumpmap(usedinomap, TS_CLRI, maxino - 1);
 
@@ -535,14 +506,16 @@ main(int argc, char *argv[])
 		/*
 		 * Skip directory inodes deleted and maybe reallocated
 		 */
-		dp = getino(ino, &mode);
-		if (mode != IFDIR)
+		dp = getino(ino);
+		if ((dp->di_mode & IFMT) != IFDIR)
 			continue;
 		(void)dumpino(dp, ino);
 	}
 
 	msg("dumping (Pass IV) [regular files]\n");
 	for (map = dumpinomap, ino = 1; ino < maxino; ino++) {
+		int mode;
+
 		if (((ino - 1) % NBBY) == 0)	/* map is offset by 1 */
 			dirty = *map++;
 		else
@@ -552,7 +525,8 @@ main(int argc, char *argv[])
 		/*
 		 * Skip inodes deleted and reallocated as directories.
 		 */
-		dp = getino(ino, &mode);
+		dp = getino(ino);
+		mode = dp->di_mode & IFMT;
 		if (mode == IFDIR)
 			continue;
 		(void)dumpino(dp, ino);
@@ -562,16 +536,15 @@ main(int argc, char *argv[])
 	for (i = 0; i < ntrec; i++)
 		writeheader(maxino - 1);
 	if (pipeout)
-		msg("%lld tape blocks\n", spcl.c_tapea);
+		msg("%ld tape blocks\n", spcl.c_tapea);
 	else
-		msg("%lld tape blocks on %d volume%s\n",
+		msg("%ld tape blocks on %d volume%s\n",
 		    spcl.c_tapea, spcl.c_volume,
 		    (spcl.c_volume == 1) ? "" : "s");
-	t = (time_t)spcl.c_date;
+	tnow = do_stats();
 	msg("Date of this level %c dump: %s", level,
-	    t == 0 ? "the epoch\n" : ctime(&t));
-	t = do_stats();
-	msg("Date this dump completed:  %s", ctime(&t));
+	    spcl.c_date == 0 ? "the epoch\n" : ctime(&spcl.c_date));
+	msg("Date this dump completed:  %s", ctime(&tnow));
 	msg("Average transfer rate: %ld KB/s\n", xferrate / tapeno);
 	putdumptime();
 	trewind();
@@ -582,15 +555,14 @@ main(int argc, char *argv[])
 }
 
 static void
-usage(void)
+usage()
 {
 	extern char *__progname;
 
-	(void)fprintf(stderr, "usage: %s [-0123456789acnSuWw] [-B records] "
-		      "[-b blocksize] [-d density]\n"
-		      "\t[-f file] [-h level] [-s feet] "
-		      "[-T date] files-to-dump\n",
-		      __progname);
+	(void)fprintf(stderr, "usage: %s [-0123456789acnu] [-B records]"
+		      "[-b blocksize] [-d density] [-f file]\n"
+		      "            [-h level] [-s feet] [-T date] filesystem\n"
+		      "       %s [-W | -w]\n", __progname, __progname);
 	exit(X_STARTUP);
 }
 
@@ -598,30 +570,33 @@ usage(void)
  * Pick up a numeric argument.  It must be nonnegative and in the given
  * range (except that a vmax of 0 means unlimited).
  */
-static long long
-numarg(char *meaning, long long vmin, long long vmax)
+static long
+numarg(meaning, vmin, vmax)
+	char *meaning;
+	long vmin, vmax;
 {
-	long long val;
-	const char *errstr;
+	char *p;
+	long val;
 
-	if (vmax == 0)
-		vmax = LLONG_MAX;
-	val = strtonum(optarg, vmin, vmax, &errstr);
-	if (errstr)
-		errx(X_STARTUP, "%s is %s [%lld - %lld]",
-		    meaning, errstr, vmin, vmax);
-
+	val = strtol(optarg, &p, 10);
+	if (*p)
+		errx(X_STARTUP, "illegal %s -- %s", meaning, optarg);
+	if (val < vmin || (vmax && val > vmax))
+		errx(X_STARTUP, "%s must be between %ld and %ld", meaning, vmin, vmax);
 	return (val);
 }
 
 void
-sig(int signo)
+sig(signo)
+	int signo;
 {
 	switch(signo) {
 	case SIGALRM:
+	case SIGBUS:
+	case SIGFPE:
 	case SIGHUP:
 	case SIGTERM:
-		/* XXX signal race */
+	case SIGTRAP:
 		if (pipeout)
 			quit("Signal on pipe: cannot recover\n");
 		msg("Rewriting attempted as response to unknown signal.\n");
@@ -630,56 +605,27 @@ sig(int signo)
 		close_rewind();
 		exit(X_REWRITE);
 		/* NOTREACHED */
+	case SIGSEGV:
+		msg("SIGSEGV: ABORTING!\n");
+		(void)signal(SIGSEGV, SIG_DFL);
+		(void)kill(0, SIGSEGV);
+		/* NOTREACHED */
 	}
 }
 
 char *
-rawname(char *cp)
+rawname(cp)
+	char *cp;
 {
-	static char rawbuf[PATH_MAX];
+	static char rawbuf[MAXPATHLEN];
 	char *dp = strrchr(cp, '/');
-	char *prefix;
 
 	if (dp == NULL)
 		return (NULL);
-	prefix = dp[1] == 'r' ? "" : "r";
 	*dp = '\0';
-	(void)snprintf(rawbuf, sizeof(rawbuf), "%s/%s%s", cp, prefix, dp + 1);
+	(void)snprintf(rawbuf, sizeof(rawbuf), "%s/r%s", cp, dp + 1);
 	*dp = '/';
 	return (rawbuf);
-}
-
-char *
-getduid(char *path)
-{
-	int fd;
-	struct disklabel lab;
-	u_int64_t zero_uid = 0;
-	char *duid;
-	
-	if ((fd = opendev(path, O_RDONLY | O_NOFOLLOW, 0, NULL)) >= 0) {
-		if (ioctl(fd, DIOCGDINFO, (char *)&lab) < 0) {
-			close(fd);
-			warn("ioctl(DIOCGDINFO)");
-			return (NULL);
-		}
-		close(fd);
-	
-		if (memcmp(lab.d_uid, &zero_uid, sizeof(lab.d_uid)) != 0) {
-			if (asprintf(&duid,
-			    "%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx.%c",
-			    lab.d_uid[0], lab.d_uid[1], lab.d_uid[2],
-			    lab.d_uid[3], lab.d_uid[4], lab.d_uid[5],
-			    lab.d_uid[6], lab.d_uid[7],
-			    path[strlen(path)-1]) == -1) {
-				warn("Cannot malloc duid");
-				return (NULL);
-			}
-			return (duid);
-		}
-	}
-
-	return (NULL);
 }
 
 /*
@@ -688,11 +634,12 @@ getduid(char *path)
  *	getopt(3) will like.
  */
 static void
-obsolete(int *argcp, char **argvp[])
+obsolete(argcp, argvp)
+	int *argcp;
+	char **argvp[];
 {
 	int argc, flags;
 	char *ap, **argv, *flagsp, **nargv, *p;
-	size_t len;
 
 	/* Setup. */
 	argv = *argvp;
@@ -704,7 +651,7 @@ obsolete(int *argcp, char **argvp[])
 		return;
 
 	/* Allocate space for new arguments. */
-	if ((*argvp = nargv = calloc(argc + 1, sizeof(char *))) == NULL ||
+	if ((*argvp = nargv = malloc((argc + 1) * sizeof(char *))) == NULL ||
 	    (p = flagsp = malloc(strlen(ap) + 2)) == NULL)
 		err(1, NULL);
 
@@ -724,12 +671,11 @@ obsolete(int *argcp, char **argvp[])
 				warnx("option requires an argument -- %c", *ap);
 				usage();
 			}
-			len = 2 + strlen(*argv) + 1;
-			if ((nargv[0] = malloc(len)) == NULL)
+			if ((nargv[0] = malloc(strlen(*argv) + 2 + 1)) == NULL)
 				err(1, NULL);
 			nargv[0][0] = '-';
 			nargv[0][1] = *ap;
-			(void)strlcpy(&nargv[0][2], *argv, len - 2);
+			(void)strcpy(&nargv[0][2], *argv);
 			++argv;
 			++nargv;
 			break;
@@ -743,16 +689,15 @@ obsolete(int *argcp, char **argvp[])
 		}
 	}
 
-	/* Terminate flags, or toss the buffer we did not use. */
+	/* Terminate flags. */
 	if (flags) {
 		*p = '\0';
 		*nargv++ = flagsp;
-	} else
-		free(flagsp);
+	}
 
 	/* Copy remaining arguments. */
 	while ((*nargv++ = *argv++))
-		continue;
+		;
 
 	/* Update argument count. */
 	*argcp = nargv - *argvp - 1;

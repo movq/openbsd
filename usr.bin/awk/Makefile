@@ -1,12 +1,13 @@
-#	$OpenBSD: Makefile,v 1.14 2013/08/18 22:06:44 miod Exp $
+#	$OpenBSD: Makefile,v 1.5 1997/08/25 16:17:08 kstailey Exp $
 
 PROG=	awk
+LINKS=	${BINDIR}/awk ${BINDIR}/nawk
 SRCS=	ytab.c lex.c b.c main.c parse.c proctab.c tran.c lib.c run.c
 LDADD=	-lm
 DPADD=	${LIBM}
 CLEANFILES+=proctab.c maketab ytab.c ytab.h
-CFLAGS+=-I. -I${.CURDIR} -DHAS_ISBLANK -DNDEBUG
-HOSTCFLAGS+=-I. -I${.CURDIR} -DHAS_ISBLANK -DNDEBUG
+CFLAGS+=-I. -I${.CURDIR}
+MLINKS=	awk.1 nawk.1
 
 ytab.c ytab.h: awkgram.y
 	${YACC} -d ${.CURDIR}/awkgram.y
@@ -17,6 +18,6 @@ proctab.c: maketab
 	./maketab >proctab.c
 
 maketab: ytab.h maketab.c
-	${HOSTCC} ${HOSTCFLAGS} ${.CURDIR}/maketab.c -o $@
+	${HOSTCC} ${CFLAGS} ${.CURDIR}/maketab.c -o $@
 
 .include <bsd.prog.mk>

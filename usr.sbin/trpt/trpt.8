@@ -1,4 +1,4 @@
-.\"	$OpenBSD: trpt.8,v 1.16 2007/05/31 19:20:30 jmc Exp $
+.\"	$OpenBSD: trpt.8,v 1.9 1999/06/05 22:18:19 aaron Exp $
 .\"
 .\" Copyright (c) 1983, 1991, 1993
 .\"	The Regents of the University of California.  All rights reserved.
@@ -11,7 +11,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -29,7 +33,7 @@
 .\"
 .\"     @(#)trpt.8	8.2 (Berkeley) 12/11/93
 .\"
-.Dd $Mdocdate: May 31 2007 $
+.Dd December 11, 1993
 .Dt TRPT 8
 .Os
 .Sh NAME
@@ -37,10 +41,14 @@
 .Nd transliterate protocol trace
 .Sh SYNOPSIS
 .Nm trpt
-.Op Fl afjst
-.Op Fl M Ar core
-.Op Fl N Ar system
+.Op Fl a
+.Op Fl f
+.Op Fl j
 .Op Fl p Ar hex-address
+.Op Fl s
+.Op Fl t
+.Op Fl N Ar system
+.Op Fl M Ar core
 .Sh DESCRIPTION
 .Nm
 interrogates the buffer of
@@ -59,8 +67,8 @@ grouped according to
 connection protocol control
 block
 .Pq Tn PCB .
-.Pp
-The options are as follows:
+The following options may be used to
+alter this behavior.
 .Bl -tag -width Ds
 .It Fl a
 In addition to the normal output,
@@ -72,15 +80,7 @@ each time the end of the log is reached.
 .It Fl j
 Just give a list of the protocol control block
 addresses for which there are trace records.
-.It Fl M Ar core
-Extract values associated with the name list from
-.Pa core
-instead of the running kernel.
-.It Fl N Ar system
-Extract the name list from
-.Pa system
-instead of the running kernel.
-.It Fl p Ar hex-address
+.It Fl p
 Show only trace records associated with the protocol
 control block at the given address
 .Ar hex-address .
@@ -89,9 +89,19 @@ In addition to the normal output,
 print a detailed description of the packet
 sequencing information.
 .It Fl t
-In addition to the normal output,
+in addition to the normal output,
 print the values for all timers at each
 point in the trace.
+.It Fl M Ar core
+Extract values associated with the name list from
+.Pa core
+instead of the default
+.Pa /dev/kmem .
+.It Fl N Ar system
+Extract the name list from
+.Pa system
+instead of the default
+.Pa /bsd .
 .El
 .Pp
 The recommended use of
@@ -119,6 +129,17 @@ many sockets using the debugging option, the
 option may be useful in checking to see if
 any trace records are present for the socket in
 question.
+.Sh FILES
+.Bl -tag -width /dev/kmem -compact
+.It Pa /dev/kmem
+default kernel memory
+.It Pa /bsd
+default system namelist
+.El
+.Sh SEE ALSO
+.Xr netstat 1 ,
+.Xr setsockopt 2 ,
+.Xr trsp 8
 .Sh DIAGNOSTICS
 .Bl -tag -width Ds
 .It Sy no namelist
@@ -126,17 +147,14 @@ When the system image doesn't
 contain the proper symbols to find the trace buffer;
 others which should be self explanatory.
 .El
-.Sh SEE ALSO
-.Xr netstat 1 ,
-.Xr setsockopt 2
-.Sh HISTORY
-The
-.Nm
-command appeared in
-.Bx 4.2 .
 .Sh BUGS
 Should also print the data for each input or output,
 but this is not saved in the trace record.
 .Pp
 The output format is inscrutable and should be described
 here.
+.Sh HISTORY
+The
+.Nm
+command appeared in
+.Bx 4.2 .

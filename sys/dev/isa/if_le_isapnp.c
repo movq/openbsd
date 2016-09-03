@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_le_isapnp.c,v 1.14 2014/12/22 02:28:51 tedu Exp $	*/
+/*	$OpenBSD: if_le_isapnp.c,v 1.7 1999/03/08 11:17:08 deraadt Exp $	*/
 /*	$NetBSD: if_le_isa.c,v 1.2 1996/05/12 23:52:56 mycroft Exp $	*/
 
 /*-
@@ -17,7 +17,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -49,8 +53,12 @@
 #include <net/if.h>
 #include <net/if_media.h>
 
+#ifdef INET
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
+#endif
+
+#include <vm/vm.h>
 
 #include <machine/cpu.h>
 #include <machine/intr.h>
@@ -59,32 +67,34 @@
 #include <dev/isa/isavar.h>
 #include <dev/isa/isadmavar.h>
 
-#include <dev/ic/lancereg.h>
-#include <dev/ic/lancevar.h>
 #include <dev/ic/am7990reg.h>
 #include <dev/ic/am7990var.h>
 
 #include <dev/isa/if_levar.h>
 
-int	le_isapnp_match(struct device *, void *, void *);
-void	le_isapnp_attach(struct device *, struct device *, void *);
+int le_isapnp_match __P((struct device *, void *, void *));
+void le_isapnp_attach __P((struct device *, struct device *, void *));
 
 struct cfattach le_isapnp_ca = {
 	sizeof(struct le_softc), le_isapnp_match, le_isapnp_attach
 };
 
 int
-le_isapnp_match(struct device *parent, void *match, void *aux)
+le_isapnp_match(parent, match, aux)
+	struct device *parent;
+	void *match, *aux;
 {
 	return 1;
 }
 
 void
-le_isapnp_attach(struct device *parent, struct device *self, void *aux)
+le_isapnp_attach(parent, self, aux)
+	struct device *parent, *self;
+	void *aux;
 {
 	struct le_softc *lesc = (void *)self;
 	struct isa_attach_args *ia = aux;
-	struct lance_softc *sc = &lesc->sc_am7990.lsc;
+	struct am7990_softc *sc = &lesc->sc_am7990;
 	bus_space_tag_t iot = lesc->sc_iot;
 	bus_space_handle_t ioh = lesc->sc_ioh;
 	int i;
@@ -111,18 +121,18 @@ le_isapnp_attach(struct device *parent, struct device *self, void *aux)
 	sc->sc_addr = kvtop(sc->sc_mem);
 	sc->sc_memsize = 16384;
 
-	sc->sc_copytodesc = lance_copytobuf_contig;
-	sc->sc_copyfromdesc = lance_copyfrombuf_contig;
-	sc->sc_copytobuf = lance_copytobuf_contig;
-	sc->sc_copyfrombuf = lance_copyfrombuf_contig;
-	sc->sc_zerobuf = lance_zerobuf_contig;
+	sc->sc_copytodesc = am7990_copytobuf_contig;
+	sc->sc_copyfromdesc = am7990_copyfrombuf_contig;
+	sc->sc_copytobuf = am7990_copytobuf_contig;
+	sc->sc_copyfrombuf = am7990_copyfrombuf_contig;
+	sc->sc_zerobuf = am7990_zerobuf_contig;
 
 	sc->sc_rdcsr = le_isa_rdcsr;
 	sc->sc_wrcsr = le_isa_wrcsr;
 	sc->sc_hwreset = NULL;
 	sc->sc_hwinit = NULL;
 
-	am7990_config(&lesc->sc_am7990);
+	am7990_config(sc);
 
 #if NISADMA > 0
 	if (ia->ia_drq != DRQUNK)

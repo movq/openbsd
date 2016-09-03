@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile.inc,v 1.14 2014/07/16 20:08:25 okan Exp $
+#	$OpenBSD: Makefile.inc,v 1.9 1997/06/20 21:43:16 grr Exp $
 #	$NetBSD: Makefile.inc,v 1.5 1996/09/30 16:01:18 ws Exp $
 #
 #	NOTE: $S must correspond to the top of the 'sys' tree
@@ -13,6 +13,7 @@ SAMAKE= \
 	  CC="${CC}" XCFLAGS="${CFLAGS}" \
 	  AS='${AS}' XAFLAGS='${AFLAGS}' \
 	  LD='${LD}' \
+	  XCPPFLAGS="${CPPFLAGS}" \
 	  SAREL="${SAREL}" \
 	  SADIR="${SADIR}" \
 	  EXTRACFLAGS="${EXTRACFLAGS}"
@@ -22,18 +23,14 @@ SAMAKE+= NO_NET=""
 .if defined(SA_ZLIB)
 SAMAKE+= SA_ZLIB=""
 .endif
-.if defined(USE_LOADFILE)
-SAMAKE+= USE_LOADFILE=""
-.endif
 
 ${SALIB}:		.NOTMAIN __always_make_salib
 	@echo making sure the stand-alone library is up to date...
 	@${SAMAKE} libsa.a
 
-clean::			.NOTMAIN __always_make_salib
+clean::	 		.NOTMAIN __always_make_salib
 	@echo cleaning the stand-alone library objects
 	@${SAMAKE} clean
-	-rmdir -p ${SADST}
 
 depend::		.NOTMAIN __always_make_salib
 	@echo depending the standalone library objects
@@ -41,3 +38,4 @@ depend::		.NOTMAIN __always_make_salib
 
 __always_make_salib:	.NOTMAIN
 	-mkdir -p ${SADST}
+

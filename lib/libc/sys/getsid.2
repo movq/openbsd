@@ -1,4 +1,4 @@
-.\"	$OpenBSD: getsid.2,v 1.12 2015/09/10 17:55:21 schwarze Exp $
+.\"	$OpenBSD: getsid.2,v 1.5 1999/06/29 14:10:01 aaron Exp $
 .\"
 .\" Copyright (c) 1997 Peter Wemm <peter@freebsd.org>
 .\"
@@ -23,15 +23,16 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
+.\"	$Id: getsid.2,v 1.5 1999/06/29 14:10:01 aaron Exp $
 .\"
-.Dd $Mdocdate: September 10 2015 $
+.Dd August 19, 1997
 .Dt GETSID 2
 .Os
 .Sh NAME
 .Nm getsid
 .Nd get process session
 .Sh SYNOPSIS
-.In unistd.h
+.Fd #include <unistd.h>
 .Ft pid_t
 .Fn getsid "pid_t pid"
 .Sh DESCRIPTION
@@ -49,31 +50,24 @@ Upon successful completion, the function
 .Fn getsid
 returns the session ID of
 the specified process; otherwise, it returns a value of \-1 and
-sets
-.Va errno
-to indicate an error.
+sets errno to indicate an error.
 .Sh ERRORS
 .Fn getsid
 will succeed unless:
 .Bl -tag -width Er
-.It Bq Er EPERM
-The current process and the process
-.Fa pid
-are not in the same session.
 .It Bq Er ESRCH
-There is no process with a process ID equal to
+if there is no process with a process ID equal to
 .Fa pid .
 .El
+.Pp
+Note that an implementation may restrict this function call to
+processes within the same session ID as the calling process.
 .Sh SEE ALSO
 .Xr getpgid 2 ,
 .Xr getpgrp 2 ,
 .Xr setpgid 2 ,
 .Xr setsid 2 ,
 .Xr termios 4
-.Sh STANDARDS
-.Fn getsid
-conforms to
-.St -p1003.1-2008 .
 .Sh HISTORY
 The
 .Fn getsid

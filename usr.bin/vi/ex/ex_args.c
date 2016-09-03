@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_args.c,v 1.12 2016/01/06 22:28:52 millert Exp $	*/
-
 /*-
  * Copyright (c) 1991, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)ex_args.c	10.16 (Berkeley) 7/13/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -25,7 +27,7 @@
 #include "../common/common.h"
 #include "../vi/vi.h"
 
-static int ex_N_next(SCR *, EXCMD *);
+static int ex_N_next __P((SCR *, EXCMD *));
 
 /*
  * ex_next -- :next [+cmd] [files]
@@ -37,10 +39,12 @@ static int ex_N_next(SCR *, EXCMD *);
  * idea was that it ignored the force flag if the autowrite flag was
  * set.  This implementation handles them all identically.
  *
- * PUBLIC: int ex_next(SCR *, EXCMD *);
+ * PUBLIC: int ex_next __P((SCR *, EXCMD *));
  */
 int
-ex_next(SCR *sp, EXCMD *cmdp)
+ex_next(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	ARGS **argv;
 	FREF *frp;
@@ -49,7 +53,7 @@ ex_next(SCR *sp, EXCMD *cmdp)
 
 	/* Check for file to move to. */
 	if (cmdp->argc == 0 && (sp->cargv == NULL || sp->cargv[1] == NULL)) {
-		msgq(sp, M_ERR, "No more files to edit");
+		msgq(sp, M_ERR, "111|No more files to edit");
 		return (1);
 	}
 
@@ -82,7 +86,7 @@ ex_next(SCR *sp, EXCMD *cmdp)
 
 		/* Create a new list. */
 		CALLOC_RET(sp,
-		    sp->argv, cmdp->argc + 1, sizeof(char *));
+		    sp->argv, char **, cmdp->argc + 1, sizeof(char *));
 		for (ap = sp->argv,
 		    argv = cmdp->argv; argv[0]->len != 0; ++ap, ++argv)
 			if ((*ap =
@@ -121,7 +125,9 @@ ex_next(SCR *sp, EXCMD *cmdp)
  *	New screen version of ex_next.
  */
 static int
-ex_N_next(SCR *sp, EXCMD *cmdp)
+ex_N_next(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	SCR *new;
 	FREF *frp;
@@ -160,15 +166,17 @@ ex_N_next(SCR *sp, EXCMD *cmdp)
  * ex_prev -- :prev
  *	Edit the previous file.
  *
- * PUBLIC: int ex_prev(SCR *, EXCMD *);
+ * PUBLIC: int ex_prev __P((SCR *, EXCMD *));
  */
 int
-ex_prev(SCR *sp, EXCMD *cmdp)
+ex_prev(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	FREF *frp;
 
 	if (sp->cargv == sp->argv) {
-		msgq(sp, M_ERR, "No previous files to edit");
+		msgq(sp, M_ERR, "112|No previous files to edit");
 		return (1);
 	}
 
@@ -205,10 +213,12 @@ ex_prev(SCR *sp, EXCMD *cmdp)
  * anyone noticing, but if they do, we'll have to put information into the SCR
  * structure so we can keep track of it.
  *
- * PUBLIC: int ex_rew(SCR *, EXCMD *);
+ * PUBLIC: int ex_rew __P((SCR *, EXCMD *));
  */
 int
-ex_rew(SCR *sp, EXCMD *cmdp)
+ex_rew(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	FREF *frp;
 
@@ -217,7 +227,7 @@ ex_rew(SCR *sp, EXCMD *cmdp)
 	 * Historic practice -- you can rewind to the current file.
 	 */
 	if (sp->argv == NULL) {
-		msgq(sp, M_ERR, "No previous files to rewind");
+		msgq(sp, M_ERR, "113|No previous files to rewind");
 		return (1);
 	}
 
@@ -243,19 +253,23 @@ ex_rew(SCR *sp, EXCMD *cmdp)
  * ex_args -- :args
  *	Display the list of files.
  *
- * PUBLIC: int ex_args(SCR *, EXCMD *);
+ * PUBLIC: int ex_args __P((SCR *, EXCMD *));
  */
 int
-ex_args(SCR *sp, EXCMD *cmdp)
+ex_args(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
+	GS *gp;
 	int cnt, col, len, sep;
 	char **ap;
 
 	if (sp->argv == NULL) {
-		(void)msgq(sp, M_ERR, "No file list to display");
+		(void)msgq(sp, M_ERR, "114|No file list to display");
 		return (0);
 	}
 
+	gp = sp->gp;
 	col = len = sep = 0;
 	for (cnt = 1, ap = sp->argv; *ap != NULL; ++ap) {
 		col += len = strlen(*ap) + sep + (ap == sp->cargv ? 2 : 0);
@@ -282,35 +296,32 @@ ex_args(SCR *sp, EXCMD *cmdp)
  * ex_buildargv --
  *	Build a new file argument list.
  *
- * PUBLIC: char **ex_buildargv(SCR *, EXCMD *, char *);
+ * PUBLIC: char **ex_buildargv __P((SCR *, EXCMD *, char *));
  */
 char **
-ex_buildargv(SCR *sp, EXCMD *cmdp, char *name)
+ex_buildargv(sp, cmdp, name)
+	SCR *sp;
+	EXCMD *cmdp;
+	char *name;
 {
 	ARGS **argv;
 	int argc;
 	char **ap, **s_argv;
 
 	argc = cmdp == NULL ? 1 : cmdp->argc;
-	CALLOC(sp, s_argv, argc + 1, sizeof(char *));
+	CALLOC(sp, s_argv, char **, argc + 1, sizeof(char *));
 	if ((ap = s_argv) == NULL)
 		return (NULL);
 
 	if (cmdp == NULL) {
-		if ((*ap = v_strdup(sp, name, strlen(name))) == NULL) {
-			free(s_argv);
+		if ((*ap = v_strdup(sp, name, strlen(name))) == NULL)
 			return (NULL);
-		}
 		++ap;
 	} else
 		for (argv = cmdp->argv; argv[0]->len != 0; ++ap, ++argv)
 			if ((*ap =
-			    v_strdup(sp, argv[0]->bp, argv[0]->len)) == NULL) {
-				while (--ap >= s_argv)
-					free(*ap);
-				free(s_argv);
+			    v_strdup(sp, argv[0]->bp, argv[0]->len)) == NULL)
 				return (NULL);
-			}
 	*ap = NULL;
 	return (s_argv);
 }

@@ -1,10 +1,7 @@
 package AnyDBM_File;
-use warnings;
-use strict;
 
-use 5.006_001;
-our $VERSION = '1.01';
-our @ISA = qw(NDBM_File DB_File GDBM_File SDBM_File ODBM_File) unless @ISA;
+use vars qw(@ISA);
+@ISA = qw(NDBM_File DB_File GDBM_File SDBM_File ODBM_File) unless @ISA;
 
 my $mod;
 for $mod (@ISA) {
@@ -15,12 +12,13 @@ for $mod (@ISA) {
 }
 
 die "No DBM package was successfully found or installed";
-
-__END__
+#return 0;
 
 =head1 NAME
 
 AnyDBM_File - provide framework for multiple DBMs
+
+NDBM_File, DB_File, GDBM_File, SDBM_File, ODBM_File - various DBM implementations
 
 =head1 SYNOPSIS
 
@@ -40,7 +38,7 @@ can still do so, but new ones can reorder @ISA:
 
 Having multiple DBM implementations makes it trivial to copy database formats:
 
-    use Fcntl; use NDBM_File; use DB_File;
+    use POSIX; use NDBM_File; use DB_File;
     tie %newhash,  'DB_File', $new_filename, O_CREAT|O_RDWR;
     tie %oldhash,  'NDBM_File', $old_filename, 1, 0;
     %newhash = %oldhash;
@@ -89,6 +87,6 @@ By default, but can be redefined.
 
 =head1 SEE ALSO
 
-dbm(3), ndbm(3), DB_File(3), L<perldbmfilter>
+dbm(3), ndbm(3), DB_File(3)
 
 =cut

@@ -1,4 +1,4 @@
-/*	$OpenBSD: graphics.c,v 1.12 2016/08/27 02:02:44 guenther Exp $	*/
+/*	$OpenBSD: graphics.c,v 1.4 1999/09/01 00:27:07 pjanzen Exp $	*/
 /*	$NetBSD: graphics.c,v 1.3 1995/03/21 15:04:04 cgd Exp $	*/
 
 /*-
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -42,13 +46,16 @@
  * For more info on this and all of my stuff, mail edjames@berkeley.edu.
  */
 
-#include <sys/time.h>
-#include <curses.h>
-#include <err.h>
-#include <stdlib.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)graphics.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: graphics.c,v 1.4 1999/09/01 00:27:07 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
-#include "def.h"
-#include "extern.h"
+#include <err.h>
+#include "include.h"
 
 #define C_TOPBOTTOM		'-'
 #define C_LEFTRIGHT		'|'
@@ -61,17 +68,21 @@
 WINDOW	*radar, *cleanradar, *credit, *input, *planes;
 
 int
-getAChar(void)
+getAChar()
 {
+#ifdef BSD
+	return (getchar());
+#endif
+#ifdef SYSV
 	int c;
 
-	if ((c = getchar()) == EOF && feof(stdin))
-		quit(0);
-	return (c);
+	while ((c = getchar()) == -1 && errno == EINTR) ;
+	return(c);
+#endif
 }
 
 void
-erase_all(void)
+erase_all()
 {
 	PLANE	*pp;
 
@@ -86,7 +97,7 @@ erase_all(void)
 }
 
 void
-draw_all(void)
+draw_all()
 {
 	PLANE	*pp;
 
@@ -106,7 +117,8 @@ draw_all(void)
 }
 
 void
-setup_screen(const C_SCREEN *scp)
+setup_screen(scp)
+	const C_SCREEN	*scp;
 {
 	static char	buffer[BUFSIZ];
 	int	i, j;
@@ -122,7 +134,7 @@ setup_screen(const C_SCREEN *scp)
 		endwin();
 		errx(1, "screen too small.");
 	}
-	setvbuf(stdout, buffer, _IOFBF, sizeof buffer);
+	setbuf(stdout, buffer);
 	input = newwin(INPUT_LINES, COLS - PLANE_COLS, LINES - INPUT_LINES, 0);
 	credit = newwin(INPUT_LINES, PLANE_COLS, LINES - INPUT_LINES, 
 		COLS - PLANE_COLS);
@@ -214,7 +226,10 @@ setup_screen(const C_SCREEN *scp)
 }
 
 void
-draw_line(WINDOW *w, int x, int y, int lx, int ly, const char *s)
+draw_line(w, x, y, lx, ly, s)
+	WINDOW	*w;
+	int	x, y, lx, ly;
+	const char	*s;
 {
 	int	dx, dy;
 
@@ -231,7 +246,8 @@ draw_line(WINDOW *w, int x, int y, int lx, int ly, const char *s)
 }
 
 void
-ioclrtoeol(int pos)
+ioclrtoeol(pos)
+	int pos;
 {
 	wmove(input, 0, pos);
 	wclrtoeol(input);
@@ -240,7 +256,8 @@ ioclrtoeol(int pos)
 }
 
 void
-iomove(int pos)
+iomove(pos)
+	int pos;
 {
 	wmove(input, 0, pos);
 	wrefresh(input);
@@ -248,7 +265,9 @@ iomove(int pos)
 }
 
 void
-ioaddstr(int pos, const char *str)
+ioaddstr(pos, str)
+	int		pos;
+	const char	*str;
 {
 	wmove(input, 0, pos);
 	waddstr(input, str);
@@ -257,7 +276,7 @@ ioaddstr(int pos, const char *str)
 }
 
 void
-ioclrtobot(void)
+ioclrtobot()
 {
 	wclrtobot(input);
 	wrefresh(input);
@@ -265,7 +284,9 @@ ioclrtobot(void)
 }
 
 void
-ioerror(int pos, int len, const char *str)
+ioerror(pos, len, str)
+	int		pos, len;
+	const char	*str;
 {
 	int	i;
 
@@ -279,10 +300,13 @@ ioerror(int pos, int len, const char *str)
 }
 
 void
-quit(int dummy)
+quit(dummy)
+	int dummy;
 {
 	int			c, y, x;
+#ifdef BSD
 	struct itimerval	itv;
+#endif
 
 	getyx(input, y, x);
 	wmove(input, 2, 0);
@@ -294,9 +318,14 @@ quit(int dummy)
 	c = getchar();
 	if (c == EOF || c == 'y') {
 		/* disable timer */
+#ifdef BSD
 		itv.it_value.tv_sec = 0;
 		itv.it_value.tv_usec = 0;
 		setitimer(ITIMER_REAL, &itv, NULL);
+#endif
+#ifdef SYSV
+		alarm(0);
+#endif
 		fflush(stdout);
 		clear();
 		refresh();
@@ -312,15 +341,20 @@ quit(int dummy)
 }
 
 void
-planewin(void)
+planewin()
 {
 	PLANE	*pp;
 	int	warning = 0;
 
+#ifdef BSD
 	wclear(planes);
+#endif
 
 	wmove(planes, 0,0);
 
+#ifdef SYSV
+	wclrtobot(planes);
+#endif
 	wprintw(planes, "Time: %-4d Safe: %d", clck, safe_planes);
 	wmove(planes, 2, 0);
 
@@ -350,15 +384,24 @@ planewin(void)
 }
 
 void
-loser(const PLANE *p, const char *s)
+loser(p, s)
+	const PLANE	*p;
+	const char	*s;
 {
 	int			c;
+#ifdef BSD
 	struct itimerval	itv;
+#endif
 
 	/* disable timer */
+#ifdef BSD
 	itv.it_value.tv_sec = 0;
 	itv.it_value.tv_usec = 0;
 	setitimer(ITIMER_REAL, &itv, NULL);
+#endif
+#ifdef SYSV
+	alarm(0);
+#endif
 
 	wmove(input, 0, 0);
 	wclrtobot(input);
@@ -379,7 +422,7 @@ loser(const PLANE *p, const char *s)
 }
 
 void
-redraw(void)
+redraw()
 {
 	clear();
 	refresh();
@@ -398,7 +441,7 @@ redraw(void)
 }
 
 void
-done_screen(void)
+done_screen()
 {
 	clear();
 	refresh();

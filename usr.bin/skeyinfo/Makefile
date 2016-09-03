@@ -1,11 +1,9 @@
-#	$OpenBSD: Makefile,v 1.4 2002/05/16 17:26:58 millert Exp $
+#	$OpenBSD: Makefile,v 1.2 1997/09/21 11:50:53 deraadt Exp $
 
 PROG=	skeyinfo
+BINOWN=	root
+BINMODE=4555
 DPADD=	${LIBSKEY}
 LDADD=	-lskey
-
-BINOWN=	root
-BINGRP=	auth
-BINMODE=2555
 
 .include <bsd.prog.mk>

@@ -1,4 +1,4 @@
-/*	$OpenBSD: in_systm.h,v 1.7 2014/07/13 13:57:56 mpi Exp $	*/
+/*	$OpenBSD: in_systm.h,v 1.2 1997/02/24 14:06:35 niklas Exp $	*/
 /*	$NetBSD: in_systm.h,v 1.8 1995/04/13 06:29:22 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,16 +36,24 @@
  *	@(#)in_systm.h	8.1 (Berkeley) 6/10/93
  */
 
-#ifndef _NETINET_IN_SYSTM_H_
-#define _NETINET_IN_SYSTM_H_
+/*
+ * Miscellaneous internetwork
+ * definitions for kernel.
+ */
 
-/* network byte order */
-typedef u_int16_t n_short;
-typedef u_int32_t n_long;
-typedef u_int32_t n_time;		/* ms since 00:00 GMT */
+/*
+ * Network types.
+ *
+ * Internally the system keeps counters in the headers with the bytes
+ * swapped so that VAX instructions will work on them.  It reverses
+ * the bytes before transmission at each protocol level.  The n_ types
+ * represent the types with the bytes in ``high-ender'' order.
+ */
+typedef u_int16_t n_short;		/* short as received from the net */
+typedef u_int32_t n_long;		/* long as received from the net */
+
+typedef u_int32_t n_time;		/* ms since 00:00 GMT, byte rev */
 
 #ifdef _KERNEL
-u_int32_t iptime(void);
-#endif /* _KERNEL */
-
-#endif /* _NETINET_IN_SYSTM_H_ */
+n_time	 iptime __P((void));
+#endif

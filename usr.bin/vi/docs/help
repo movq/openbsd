@@ -129,7 +129,7 @@ EX COMMANDS:
 	  ^D: scroll lines
 	   !: filter lines through commands or run commands
 	   #: display numbered lines
-	   &: repeat the last substitution
+	   &: repeat the last subsitution
 	   *: execute a buffer
 	   <: shift lines left
 	   =: display line number
@@ -143,6 +143,7 @@ EX COMMANDS:
 	  cd: change the current directory
        chdir: change the current directory
 	copy: copy lines elsewhere in the file
+      cscope: create a set of tags using a cscope command
       delete: delete lines from the file
      display: display buffers, screens or tags
      [Ee]dit: begin editing another file
@@ -164,6 +165,8 @@ EX COMMANDS:
       number: change display to number lines
 	open: enter "open" mode (not implemented)
        print: display lines
+	perl: run the perl interpreter with the command
+      perldo: run the perl interpreter with the command, on each line
     preserve: preserve an edit session for recovery
  [Pp]revious: edit the previous file in the file argument list
 	 put: append a cut buffer to the line
@@ -185,6 +188,7 @@ EX COMMANDS:
       tagpop: return to the previous group of tags
      tagprev: move to the previous tag
       tagtop: discard all tags
+	 tcl: run the tcl interpreter with the command
 	undo: undo the most recent change
 unabbreviate: delete an abbreviation
        unmap: delete an input or command map
@@ -202,24 +206,24 @@ unabbreviate: delete an abbreviation
 	   ~: replace previous RE with previous replacement string,
 =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 Edit options:
-noaltwerase     filec=""        nomodeline      nosearchincr    timeout
-autoindent      flash           noprint=""      nosecure        nottywerase
-autoprint       hardtabs=0      nonumber        shiftwidth=8    noverbose
-noautowrite     noiclower       nooctalr        noshowmatch     warn
-backup=""       noignorecase    open            noshowmode      window=35
-nobeautify      keytime=6       optimize        sidescroll=16   nowindowname
-cedit=""        noleftright     print=""        noslowopen      wraplen=0
-columns=80      lines=36        prompt          nosourceany     wrapmargin=0
-comment         nolisp          readonly        tabstop=8       wrapscan
-noedcompatible  nolist          noredraw        taglength=0     nowriteany
-escapetime=1    lock            remap           tags="tags"
-noerrorbells    magic           report=5        term="xterm"
-exrc            matchtime=7     ruler           noterse
-noextended      mesg            scroll=17       notildeop
+noaltwerase     filec=""        nomodeline      scroll=17       notildeop
+autoindent      flash           msgcat="./"     nosearchincr    timeout  
+autoprint       hardtabs=0      noprint=""      nosecure        nottywerase
+noautowrite     noiclower       nonumber        shiftwidth=8    noverbose  
+backup=""       noignorecase    nooctal         noshowmatch     warn
+nobeautify      keytime=6       open            noshowmode      window=35
+cedit=""        noleftright     optimize        sidescroll=16   nowindowname
+columns=80      lines=36        print=""        noslowopen      wraplen=0
+comment         nolisp          prompt          nosourceany     wrapmargin=0
+noedcompatible  nolist          readonly        tabstop=8       wrapscan
+escapetime=1    lock            noredraw        taglength=0     nowriteany
+noerrorbells    magic           remap           tags="tags"
+exrc            matchtime=7     report=5        term="xterm"
+noextended      mesg            ruler           noterse
 cdpath="/usr/src/local/nvi:/tmp"
 directory="/tmp"
 paragraphs="IPLPPPQPP LIpplpipbp"
-recdir="/tmp/vi.recover"
+recdir="/var/tmp/vi.recover"
 sections="NHSHH HUnhsh"
 shell="/bin/csh"
 shellmeta="~{[*?$`'"\"

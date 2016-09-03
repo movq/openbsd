@@ -1,5 +1,5 @@
-/* $OpenBSD: symtab.c,v 1.17 2014/03/13 00:56:39 tedu Exp $	 */
-/* $NetBSD: symtab.c,v 1.4 1996/03/19 03:21:48 jtc Exp $	 */
+/*	$OpenBSD: symtab.c,v 1.3 1996/06/26 05:44:39 deraadt Exp $	*/
+/*	$NetBSD: symtab.c,v 1.4 1996/03/19 03:21:48 jtc Exp $	*/
 
 /*
  * Copyright (c) 1989 The Regents of the University of California.
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,6 +37,14 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)symtab.c	5.3 (Berkeley) 6/1/90";
+#else
+static char rcsid[] = "$OpenBSD: symtab.c,v 1.3 1996/06/26 05:44:39 deraadt Exp $";
+#endif
+#endif /* not lint */
+
 #include "defs.h"
 
 /* TABLE_SIZE is the number of entries in the symbol table. */
@@ -45,107 +57,109 @@ bucket **symbol_table;
 bucket *first_symbol;
 bucket *last_symbol;
 
-int hash(char *);
-
 
 int
-hash(char *name)
+hash(name)
+char *name;
 {
-	char *s;
-	int c, k;
+    register char *s;
+    register int c, k;
 
-	assert(name && *name);
-	s = name;
-	k = *s;
-	while ((c = *++s))
-		k = (31 * k + c) & (TABLE_SIZE - 1);
+    assert(name && *name);
+    s = name;
+    k = *s;
+    while (c = *++s)
+	k = (31*k + c) & (TABLE_SIZE - 1);
 
-	return (k);
+    return (k);
 }
 
 
 bucket *
-make_bucket(char *name)
+make_bucket(name)
+char *name;
 {
-	bucket *bp;
+    register bucket *bp;
 
-	assert(name);
-	bp = malloc(sizeof(bucket));
-	if (bp == NULL)
-		no_space();
-	bp->link = 0;
-	bp->next = 0;
-	bp->name = strdup(name);
-	if (bp->name == NULL)
-		no_space();
-	bp->tag = 0;
-	bp->value = UNDEFINED;
-	bp->index = 0;
-	bp->prec = 0;
-	bp->class = UNKNOWN;
-	bp->assoc = TOKEN;
+    assert(name);
+    bp = (bucket *) MALLOC(sizeof(bucket));
+    if (bp == 0) no_space();
+    bp->link = 0;
+    bp->next = 0;
+    bp->name = MALLOC(strlen(name) + 1);
+    if (bp->name == 0) no_space();
+    bp->tag = 0;
+    bp->value = UNDEFINED;
+    bp->index = 0;
+    bp->prec = 0;
+    bp-> class = UNKNOWN;
+    bp->assoc = TOKEN;
 
-	return (bp);
+    if (bp->name == 0) no_space();
+    strcpy(bp->name, name);
+
+    return (bp);
 }
 
 
 bucket *
-lookup(char *name)
+lookup(name)
+char *name;
 {
-	bucket *bp, **bpp;
+    register bucket *bp, **bpp;
 
-	bpp = symbol_table + hash(name);
+    bpp = symbol_table + hash(name);
+    bp = *bpp;
+
+    while (bp)
+    {
+	if (strcmp(name, bp->name) == 0) return (bp);
+	bpp = &bp->link;
 	bp = *bpp;
+    }
 
-	while (bp) {
-		if (strcmp(name, bp->name) == 0)
-			return (bp);
-		bpp = &bp->link;
-		bp = *bpp;
-	}
+    *bpp = bp = make_bucket(name);
+    last_symbol->next = bp;
+    last_symbol = bp;
 
-	*bpp = bp = make_bucket(name);
-	last_symbol->next = bp;
-	last_symbol = bp;
-
-	return (bp);
+    return (bp);
 }
 
 
-void
-create_symbol_table(void)
+create_symbol_table()
 {
-	bucket *bp;
+    register int i;
+    register bucket *bp;
 
-	symbol_table = calloc(TABLE_SIZE, sizeof(bucket *));
-	if (symbol_table == NULL)
-		no_space();
+    symbol_table = (bucket **) MALLOC(TABLE_SIZE*sizeof(bucket *));
+    if (symbol_table == 0) no_space();
+    for (i = 0; i < TABLE_SIZE; i++)
+	symbol_table[i] = 0;
 
-	bp = make_bucket("error");
-	bp->index = 1;
-	bp->class = TERM;
+    bp = make_bucket("error");
+    bp->index = 1;
+    bp->class = TERM;
 
-	first_symbol = bp;
-	last_symbol = bp;
-	symbol_table[hash("error")] = bp;
+    first_symbol = bp;
+    last_symbol = bp;
+    symbol_table[hash("error")] = bp;
 }
 
 
-void
-free_symbol_table(void)
+free_symbol_table()
 {
-	free(symbol_table);
-	symbol_table = 0;
+    FREE(symbol_table);
+    symbol_table = 0;
 }
 
 
-void
-free_symbols(void)
+free_symbols()
 {
-	bucket *p, *q;
+    register bucket *p, *q;
 
-	for (p = first_symbol; p; p = q) {
-		q = p->next;
-		free(p);
-	}
+    for (p = first_symbol; p; p = q)
+    {
+	q = p->next;
+	FREE(p);
+    }
 }

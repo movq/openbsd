@@ -1,4 +1,4 @@
-/*	$OpenBSD: domainname.c,v 1.10 2016/02/01 22:26:39 gsoares Exp $	*/
+/*	$OpenBSD: domainname.c,v 1.3 1996/08/02 12:40:54 deraadt Exp $	*/
 /*	$NetBSD: domainname.c,v 1.7 1995/03/21 09:04:22 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,22 +34,37 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1988, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)hostname.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: domainname.c,v 1.3 1996/08/02 12:40:54 deraadt Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
+
 #include <err.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <limits.h>
 
-extern	char *__progname;
-
-static void __dead usage(void);
+void usage __P((void));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	int ch;
-	char domainname[HOST_NAME_MAX+1];
+	char domainname[MAXHOSTNAMELEN];
 
 	while ((ch = getopt(argc, argv, "")) != -1)
 		switch (ch) {
@@ -66,12 +85,13 @@ main(int argc, char *argv[])
 			err(1, "getdomainname");
 		(void)printf("%s\n", domainname);
 	}
-	return(0);
+	exit(0);
 }
 
-static void __dead
-usage(void)
+void
+usage()
 {
-	(void)fprintf(stderr, "usage: %s [name-of-domain]\n", __progname);
+
+	(void)fprintf(stderr, "usage: domainname [name-of-domain]\n");
 	exit(1);
 }

@@ -1,4 +1,4 @@
-/*	$OpenBSD: kern_subr.c,v 1.47 2016/03/15 04:19:26 stefan Exp $	*/
+/*	$OpenBSD: kern_subr.c,v 1.9 1999/04/28 09:28:15 art Exp $	*/
 /*	$NetBSD: kern_subr.c,v 1.15 1996/04/09 17:21:56 ragge Exp $	*/
 
 /*
@@ -18,7 +18,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -40,33 +44,29 @@
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/proc.h>
-#include <sys/sched.h>
 #include <sys/malloc.h>
 #include <sys/queue.h>
-#include <sys/resourcevar.h>
 
 int
-uiomove(void *cp, size_t n, struct uio *uio)
+uiomove(cp, n, uio)
+	register caddr_t cp;
+	register int n;
+	register struct uio *uio;
 {
-	struct iovec *iov;
-	size_t cnt;
+	register struct iovec *iov;
+	u_int cnt;
 	int error = 0;
 
 #ifdef DIAGNOSTIC
 	if (uio->uio_rw != UIO_READ && uio->uio_rw != UIO_WRITE)
 		panic("uiomove: mode");
 	if (uio->uio_segflg == UIO_USERSPACE && uio->uio_procp != curproc)
-		panic("uiomove: proc");
+		panic("uiomove proc");
 #endif
-
-	if (n > uio->uio_resid)
-		n = uio->uio_resid;
-
-	while (n > 0) {
+	while (n > 0 && uio->uio_resid) {
 		iov = uio->uio_iov;
 		cnt = iov->iov_len;
 		if (cnt == 0) {
-			KASSERT(uio->uio_iovcnt > 0);
 			uio->uio_iov++;
 			uio->uio_iovcnt--;
 			continue;
@@ -76,9 +76,6 @@ uiomove(void *cp, size_t n, struct uio *uio)
 		switch (uio->uio_segflg) {
 
 		case UIO_USERSPACE:
-			if (curcpu()->ci_schedstate.spc_schedflags &
-			    SPCF_SHOULDYIELD)
-				preempt(NULL);
 			if (uio->uio_rw == UIO_READ)
 				error = copyout(cp, iov->iov_base, cnt);
 			else
@@ -88,18 +85,26 @@ uiomove(void *cp, size_t n, struct uio *uio)
 			break;
 
 		case UIO_SYSSPACE:
+#if defined(UVM)
 			if (uio->uio_rw == UIO_READ)
 				error = kcopy(cp, iov->iov_base, cnt);
 			else
 				error = kcopy(iov->iov_base, cp, cnt);
 			if (error)
 				return(error);
+#else
+			if (uio->uio_rw == UIO_READ)
+				bcopy((caddr_t)cp, iov->iov_base, cnt);
+			else
+				bcopy(iov->iov_base, (caddr_t)cp, cnt);
+			break;
+#endif
 		}
-		iov->iov_base = (caddr_t)iov->iov_base + cnt;
+		iov->iov_base += cnt;
 		iov->iov_len -= cnt;
 		uio->uio_resid -= cnt;
 		uio->uio_offset += cnt;
-		cp = (caddr_t)cp + cnt;
+		cp += cnt;
 		n -= cnt;
 	}
 	return (error);
@@ -109,9 +114,11 @@ uiomove(void *cp, size_t n, struct uio *uio)
  * Give next character to user as result of read.
  */
 int
-ureadc(int c, struct uio *uio)
+ureadc(c, uio)
+	register int c;
+	register struct uio *uio;
 {
-	struct iovec *iov;
+	register struct iovec *iov;
 
 	if (uio->uio_resid == 0)
 #ifdef DIAGNOSTIC
@@ -135,19 +142,15 @@ again:
 	switch (uio->uio_segflg) {
 
 	case UIO_USERSPACE:
-	{
-		char tmp = c;
-
-		if (copyout(&tmp, iov->iov_base, sizeof(char)) != 0)
+		if (subyte(iov->iov_base, c) < 0)
 			return (EFAULT);
-	}
 		break;
 
 	case UIO_SYSSPACE:
 		*(char *)iov->iov_base = c;
 		break;
 	}
-	iov->iov_base = (caddr_t)iov->iov_base + 1;
+	iov->iov_base++;
 	iov->iov_len--;
 	uio->uio_resid--;
 	uio->uio_offset++;
@@ -158,18 +161,20 @@ again:
  * General routine to allocate a hash table.
  */
 void *
-hashinit(int elements, int type, int flags, u_long *hashmask)
+hashinit(elements, type, flags, hashmask)
+	int elements, type, flags;
+	u_long *hashmask;
 {
-	u_long hashsize, i;
+	long hashsize;
 	LIST_HEAD(generic, generic) *hashtbl;
+	int i;
 
 	if (elements <= 0)
 		panic("hashinit: bad cnt");
-	for (hashsize = 1; hashsize < elements; hashsize <<= 1)
+	for (hashsize = 1; hashsize <= elements; hashsize <<= 1)
 		continue;
-	hashtbl = mallocarray(hashsize, sizeof(*hashtbl), type, flags);
-	if (hashtbl == NULL)
-		return NULL;
+	hashsize >>= 1;
+	hashtbl = malloc((u_long)hashsize * sizeof(*hashtbl), type, flags);
 	for (i = 0; i < hashsize; i++)
 		LIST_INIT(&hashtbl[i]);
 	*hashmask = hashsize - 1;
@@ -177,71 +182,70 @@ hashinit(int elements, int type, int flags, u_long *hashmask)
 }
 
 /*
- * "startup hook" types, functions, and variables.
+ * "Shutdown hook" types, functions, and variables.
  */
 
-struct hook_desc_head startuphook_list =
-    TAILQ_HEAD_INITIALIZER(startuphook_list);
+struct shutdownhook_desc {
+	LIST_ENTRY(shutdownhook_desc) sfd_list;
+	void	(*sfd_fn) __P((void *));
+	void	*sfd_arg;
+};
+
+LIST_HEAD(, shutdownhook_desc) shutdownhook_list;
+
+int shutdownhooks_done;
 
 void *
-hook_establish(struct hook_desc_head *head, int tail, void (*fn)(void *),
-    void *arg)
+shutdownhook_establish(fn, arg)
+	void (*fn) __P((void *));
+	void *arg;
 {
-	struct hook_desc *hdp;
+	struct shutdownhook_desc *ndp;
 
-	hdp = malloc(sizeof(*hdp), M_DEVBUF, M_NOWAIT);
-	if (hdp == NULL)
-		return (NULL);
+	ndp = (struct shutdownhook_desc *)
+	    malloc(sizeof (*ndp), M_DEVBUF, M_NOWAIT);
+	if (ndp == NULL)
+		return NULL;
 
-	hdp->hd_fn = fn;
-	hdp->hd_arg = arg;
-	if (tail)
-		TAILQ_INSERT_TAIL(head, hdp, hd_list);
-	else
-		TAILQ_INSERT_HEAD(head, hdp, hd_list);
+	ndp->sfd_fn = fn;
+	ndp->sfd_arg = arg;
+	LIST_INSERT_HEAD(&shutdownhook_list, ndp, sfd_list);
 
-	return (hdp);
+	return (ndp);
 }
 
 void
-hook_disestablish(struct hook_desc_head *head, void *vhook)
+shutdownhook_disestablish(vhook)
+	void *vhook;
 {
-	struct hook_desc *hdp;
-
 #ifdef DIAGNOSTIC
-	for (hdp = TAILQ_FIRST(head); hdp != NULL;
-	    hdp = TAILQ_NEXT(hdp, hd_list))
-                if (hdp == vhook)
+	struct shutdownhook_desc *dp;
+
+	for (dp = shutdownhook_list.lh_first; dp != NULL;
+	    dp = dp->sfd_list.le_next)
+                if (dp == vhook)
 			break;
-	if (hdp == NULL)
-		return;
+	if (dp == NULL)
+		panic("shutdownhook_disestablish: hook not established");
 #endif
-	hdp = vhook;
-	TAILQ_REMOVE(head, hdp, hd_list);
-	free(hdp, M_DEVBUF, sizeof(*hdp));
+
+	LIST_REMOVE((struct shutdownhook_desc *)vhook, sfd_list);
 }
 
 /*
- * Run hooks.  Startup hooks are invoked right after scheduler_start but
- * before root is mounted.  Shutdown hooks are invoked immediately before the
+ * Run shutdown hooks.  Should be invoked immediately before the
  * system is halted or rebooted, i.e. after file systems unmounted,
  * after crash dump done, etc.
  */
 void
-dohooks(struct hook_desc_head *head, int flags)
+doshutdownhooks()
 {
-	struct hook_desc *hdp, *hdp_temp;
+	struct shutdownhook_desc *dp;
 
-	if ((flags & HOOK_REMOVE) == 0) {
-		TAILQ_FOREACH_SAFE(hdp, head, hd_list, hdp_temp) {
-			(*hdp->hd_fn)(hdp->hd_arg);
-		}
-	} else {
-		while ((hdp = TAILQ_FIRST(head)) != NULL) {
-			TAILQ_REMOVE(head, hdp, hd_list);
-			(*hdp->hd_fn)(hdp->hd_arg);
-			if ((flags & HOOK_FREE) != 0)
-				free(hdp, M_DEVBUF, sizeof(*hdp));
-		}
-	}
+	if (shutdownhooks_done)
+		return;
+
+	for (dp = shutdownhook_list.lh_first; dp != NULL; dp =
+	    dp->sfd_list.le_next)
+		(*dp->sfd_fn)(dp->sfd_arg);
 }

@@ -1,4 +1,4 @@
-/*	$OpenBSD: computer.c,v 1.12 2016/01/07 14:37:51 mestre Exp $	*/
+/*	$OpenBSD: computer.c,v 1.4 1999/07/31 18:48:58 pjanzen Exp $	*/
 /*	$NetBSD: computer.c,v 1.4 1995/04/24 12:25:51 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,12 +34,18 @@
  * SUCH DAMAGE.
  */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)computer.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: computer.c,v 1.4 1999/07/31 18:48:58 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
-#include "getpar.h"
+#include <stdio.h>
+#include <math.h>
 #include "trek.h"
+#include "getpar.h"
 
 /*
 **  On-Board Computer
@@ -97,22 +107,23 @@ struct cvntab	Cputab[] =
 	{ NULL,		NULL,			NULL,			0 }
 };
 
-static int kalc(int, int, int, int, double *);
-static void prkalc(int, double);
+static int kalc __P((int, int, int, int, double *));
+static void prkalc __P((int, double));
 
 void
-computer(int v)
+computer(v)
+	int v;
 {
 	int			ix, iy;
-	int			i, j;
+	register int		i, j;
 	int			tqx, tqy;
-	const struct cvntab	*r;
+	const struct cvntab		*r;
 	int			cost;
 	int			course;
 	double			dist, time;
 	double			warpfact;
 	struct quad		*q;
-	struct event		*e;
+	register struct event	*e;
 
 	if (check_out(COMPUTER))
 		return;
@@ -238,7 +249,7 @@ computer(int v)
 				warpfact = Ship.warp;
 			cost = (dist + 0.05) * warpfact * warpfact * warpfact;
 			time = Param.warptime * dist / (warpfact * warpfact);
-			printf("Warp %.2f distance %.2f stardates %.2f cost %d (%d w/ shlds up) units\n",
+			printf("Warp %.2f distance %.2f cost %.2f stardates %d (%d w/ shlds up) units\n",
 				warpfact, dist, time, cost, cost + cost);
 			break;
 
@@ -310,12 +321,17 @@ computer(int v)
 */
 
 static int
-kalc(int tqx, int tqy, int tsx, int tsy, double *dist)
+kalc(tqx, tqy, tsx, tsy, dist)
+	int	tqx;
+	int	tqy;
+	int	tsx;
+	int	tsy;
+	double	*dist;
 {
-	double		dx, dy;
-	double		quadsize;
-	double		angle;
-	int		course;
+	double			dx, dy;
+	double			quadsize;
+	double			angle;
+	register int		course;
 
 	/* normalize to quadrant distances */
 	quadsize = NSECTS;
@@ -335,7 +351,9 @@ kalc(int tqx, int tqy, int tsx, int tsy, double *dist)
 }
 
 static void
-prkalc(int course, double dist)
+prkalc(course, dist)
+	int	course;
+	double	dist;
 {
 	printf(": course %d  dist %.3f\n", course, dist);
 }

@@ -1,7 +1,8 @@
-/*	$OpenBSD: uvm_amap.h,v 1.29 2016/05/26 13:37:26 stefan Exp $	*/
-/*	$NetBSD: uvm_amap.h,v 1.14 2001/02/18 21:19:08 chs Exp $	*/
+/*	$OpenBSD: uvm_amap.h,v 1.2 1999/02/26 05:32:06 art Exp $	*/
+/*	$NetBSD: uvm_amap.h,v 1.10 1999/01/28 14:46:27 chuck Exp $	*/
 
 /*
+ *
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
  * All rights reserved.
  *
@@ -13,6 +14,12 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *      This product includes software developed by Charles D. Cranor and
+ *      Washington University.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -44,8 +51,6 @@
  * amap implementation-specific definitions.
  */
 
-#ifdef _KERNEL
-
 /*
  * part 1: amap interface
  */
@@ -59,40 +64,69 @@
 struct vm_amap;
 
 /*
+ * handle inline options... we allow amap ops to be inline, but we also
+ * provide a hook to turn this off.  macros can also be used.
+ */
+
+#ifdef UVM_AMAP_INLINE			/* defined/undef'd in uvm_amap.c */
+#define AMAP_INLINE static __inline	/* inline enabled */
+#else 
+#define AMAP_INLINE			/* inline disabled */
+#endif /* UVM_AMAP_INLINE */
+
+
+/*
  * prototypes for the amap interface 
  */
 
-					/* ensure amap can store anon */
-void		amap_populate(struct vm_aref *, vaddr_t);
-					/* add an anon to an amap */
-int		amap_add(struct vm_aref *, vaddr_t, struct vm_anon *,
-		    boolean_t);
-					/* allocate a new amap */
-struct vm_amap	*amap_alloc(vaddr_t, int, int);
-					/* clear amap needs-copy flag */
-void		amap_copy(vm_map_t, vm_map_entry_t, int, boolean_t, vaddr_t,
-		    vaddr_t);
-					/* resolve all COW faults now */
-void		amap_cow_now(vm_map_t, vm_map_entry_t);
-					/* free amap */
-void		amap_free(struct vm_amap *);
-					/* init amap module (at boot time) */
-void		amap_init(void);
-					/* lookup an anon @ offset in amap */
-struct vm_anon	*amap_lookup(struct vm_aref *, vaddr_t);
-					/* lookup multiple anons */
-void		amap_lookups(struct vm_aref *, vaddr_t, struct vm_anon **, int);
-					/* add a reference to an amap */
-void		amap_ref(struct vm_amap *, vaddr_t, vsize_t, int);
-					/* split reference to amap into two */
-void		amap_splitref(struct vm_aref *, struct vm_aref *, vaddr_t);
-					/* remove an anon from an amap */
-void		amap_unadd(struct vm_aref *, vaddr_t);
-					/* drop reference to an amap */
-void		amap_unref(struct vm_amap *, vaddr_t, vsize_t, int);
-					/* remove all anons from amap */
-void		amap_wipeout(struct vm_amap *);
-boolean_t	amap_swap_off(int, int);
+AMAP_INLINE
+vaddr_t		amap_add 	/* add an anon to an amap */
+			__P((struct vm_aref *, vaddr_t,
+			     struct vm_anon *, int));
+struct vm_amap	*amap_alloc	/* allocate a new amap */
+			__P((vaddr_t, vaddr_t, int));
+void		amap_copy	/* clear amap needs-copy flag */
+			__P((vm_map_t, vm_map_entry_t, int, 
+			     boolean_t,	vaddr_t, vaddr_t));
+void		amap_cow_now	/* resolve all COW faults now */
+			__P((vm_map_t, vm_map_entry_t));
+void		amap_extend	/* make amap larger */
+			__P((vm_map_entry_t, vsize_t));
+int		amap_flags	/* get amap's flags */
+			__P((struct vm_amap *));
+void		amap_free	/* free amap */
+			__P((struct vm_amap *)); 
+void		amap_init	/* init amap module (at boot time) */
+			__P((void));
+void		amap_lock	/* lock amap */
+			__P((struct vm_amap *));
+AMAP_INLINE
+struct vm_anon	*amap_lookup	/* lookup an anon @ offset in amap */
+			__P((struct vm_aref *, vaddr_t));
+AMAP_INLINE
+void		amap_lookups	/* lookup multiple anons */
+			__P((struct vm_aref *, vaddr_t, 
+			     struct vm_anon **, int));
+AMAP_INLINE
+void		amap_ref	/* add a reference to an amap */
+			__P((vm_map_entry_t, int));
+int		amap_refs	/* get number of references of amap */
+			__P((struct vm_amap *));
+void		amap_share_protect /* protect pages in a shared amap */
+			__P((vm_map_entry_t, vm_prot_t));
+void		amap_splitref	/* split reference to amap into two */
+			__P((struct vm_aref *, struct vm_aref *, 
+			     vaddr_t));
+AMAP_INLINE
+void		amap_unadd	/* remove an anon from an amap */
+			__P((struct vm_amap *, vaddr_t));
+void		amap_unlock	/* unlock amap */
+			__P((struct vm_amap *));
+AMAP_INLINE
+void		amap_unref	/* drop reference to an amap */
+			 __P((vm_map_entry_t, int));
+void		amap_wipeout	/* remove all anons from amap */
+			__P((struct vm_amap *));
 
 /*
  * amap flag values
@@ -100,9 +134,7 @@ boolean_t	amap_swap_off(int, int);
 
 #define AMAP_SHARED	0x1	/* amap is shared */
 #define AMAP_REFALL	0x2	/* amap_ref: reference entire amap */
-#define AMAP_SWAPOFF	0x4	/* amap_swap_off() is in progress */
 
-#endif /* _KERNEL */
 
 /**********************************************************************/
 
@@ -120,71 +152,50 @@ boolean_t	amap_swap_off(int, int);
 #define UVM_AMAP_PPREF		/* track partial references */
 
 /*
- * here is the definition of the vm_amap structure and helper structures for
- * this implementation.
+ * here is the definition of the vm_amap structure for this implementation.
  */
 
-struct vm_amap_chunk {
-	TAILQ_ENTRY(vm_amap_chunk) ac_list;
-	int ac_baseslot;
-	uint16_t ac_usedmap;
-	uint16_t ac_nslot;
-	struct vm_anon *ac_anon[];
-};
-
 struct vm_amap {
+	simple_lock_data_t am_l; /* simple lock [locks all vm_amap fields] */
 	int am_ref;		/* reference count */
 	int am_flags;		/* flags */
-	int am_nslot;		/* # of slots currently in map */
+	int am_maxslot;		/* max # of slots allocated */
+	int am_nslot;		/* # of slots currently in map ( <= maxslot) */
 	int am_nused;		/* # of slots currently in use */
+	int *am_slots;		/* contig array of active slots */
+	int *am_bckptr;		/* back pointer array to am_slots */
+	struct vm_anon **am_anon; /* array of anonymous pages */
 #ifdef UVM_AMAP_PPREF
 	int *am_ppref;		/* per page reference count (if !NULL) */
 #endif
-	LIST_ENTRY(vm_amap) am_list;
-
-	union {
-		struct {
-			struct vm_amap_chunk **amn_buckets;
-			TAILQ_HEAD(, vm_amap_chunk) amn_chunks;
-			int amn_ncused;	/* # of chunkers currently in use */
-			int amn_hashshift; /* shift count to hash slot to bucket */
-		} ami_normal;
-
-		/*
-		 * MUST be last element in vm_amap because it contains a
-		 * variably sized array element.
-		 */
-		struct vm_amap_chunk ami_small;
-	} am_impl;
-
-#define am_buckets	am_impl.ami_normal.amn_buckets
-#define am_chunks	am_impl.ami_normal.amn_chunks
-#define am_ncused	am_impl.ami_normal.amn_ncused
-#define am_hashshift	am_impl.ami_normal.amn_hashshift
-
-#define am_small	am_impl.ami_small
 };
 
 /*
- * The entries in an amap are called slots. For example an amap that
- * covers four pages is said to have four slots.
+ * note that am_slots, am_bckptr, and am_anon are arrays.   this allows
+ * fast lookup of pages based on their virual address at the expense of
+ * some extra memory.   in the future we should be smarter about memory
+ * usage and fall back to a non-array based implementation on systems 
+ * that are short of memory (XXXCDC).
  *
- * The slots of an amap are clustered into chunks of UVM_AMAP_CHUNK
- * slots each. The data structure of a chunk is vm_amap_chunk.
- * Every chunk contains an array of pointers to vm_anon, and a bitmap
- * is used to represent which of the slots are in use.
+ * the entries in the array are called slots... for example an amap that
+ * covers four pages of virtual memory is said to have four slots.   here
+ * is an example of the array usage for a four slot amap.   note that only
+ * slots one and three have anons assigned to them.  "D/C" means that we
+ * "don't care" about the value.
+ * 
+ *            0     1      2     3
+ * am_anon:   NULL, anon0, NULL, anon1		(actual pointers to anons)
+ * am_bckptr: D/C,  1,     D/C,  0		(points to am_slots entry)
  *
- * Small amaps of up to UVM_AMAP_CHUNK slots have the chunk directly
- * embedded in the amap structure.
+ * am_slots:  3, 1, D/C, D/C    		(says slots 3 and 1 are in use)
+ * 
+ * note that am_bckptr is D/C if the slot in am_anon is set to NULL.
+ * to find the entry in am_slots for an anon, look at am_bckptr[slot],
+ * thus the entry for slot 3 in am_slots[] is at am_slots[am_bckptr[3]].
+ * in general, if am_anon[X] is non-NULL, then the following must be
+ * true: am_slots[am_bckptr[X]] == X
  *
- * amaps with more slots are normal amaps and organize chunks in a hash
- * table. The hash table is organized as an array of buckets.
- * All chunks of the amap are additionally stored in a linked list.
- * Chunks that belong to the same hash bucket are stored in the list
- * consecutively. When all slots in a chunk are unused, the chunk is freed.
- *
- * For large amaps, the bucket array can grow large. See the description
- * below how large bucket arrays are avoided.
+ * note that am_slots is always contig-packed.
  */
 
 /*
@@ -227,37 +238,30 @@ struct vm_amap {
 #define UVM_AMAP_LARGE	256	/* # of slots in "large" amap */
 #define UVM_AMAP_CHUNK	16	/* # of slots to chunk large amaps in */
 
-#define UVM_AMAP_SMALL(amap)		((amap)->am_nslot <= UVM_AMAP_CHUNK)
-#define UVM_AMAP_SLOTIDX(slot)		((slot) % UVM_AMAP_CHUNK)
-#define UVM_AMAP_BUCKET(amap, slot)				\
-	(((slot) / UVM_AMAP_CHUNK) >> (amap)->am_hashshift)
-
-#ifdef _KERNEL
 
 /*
  * macros
  */
 
 /* AMAP_B2SLOT: convert byte offset to slot */
-#define AMAP_B2SLOT(S,B) {						\
-	KASSERT(((B) & (PAGE_SIZE - 1)) == 0);				\
-	(S) = (B) >> PAGE_SHIFT;					\
+#ifdef DIAGNOSTIC
+#define AMAP_B2SLOT(S,B) { \
+	if ((B) & (PAGE_SIZE - 1)) \
+		panic("AMAP_B2SLOT: invalid byte count"); \
+	(S) = (B) >> PAGE_SHIFT; \
 }
-
-#define AMAP_CHUNK_FOREACH(chunk, amap)					\
-	for (chunk = (UVM_AMAP_SMALL(amap) ?				\
-	    &(amap)->am_small : TAILQ_FIRST(&(amap)->am_chunks));	\
-	    (chunk) != NULL; (chunk) = TAILQ_NEXT(chunk, ac_list))
-
-#define AMAP_BASE_SLOT(slot)						\
-	(((slot) / UVM_AMAP_CHUNK) * UVM_AMAP_CHUNK)
+#else
+#define AMAP_B2SLOT(S,B) (S) = (B) >> PAGE_SHIFT
+#endif
 
 /*
- * flags macros
+ * lock/unlock/refs/flags macros
  */
 
 #define amap_flags(AMAP)	((AMAP)->am_flags)
+#define amap_lock(AMAP)		simple_lock(&(AMAP)->am_l)
 #define amap_refs(AMAP)		((AMAP)->am_ref)
+#define amap_unlock(AMAP)	simple_unlock(&(AMAP)->am_l)
 
 /*
  * if we enable PPREF, then we have a couple of extra functions that
@@ -268,14 +272,12 @@ struct vm_amap {
 
 #define PPREF_NONE ((int *) -1)	/* not using ppref */
 
-					/* adjust references */
-void		amap_pp_adjref(struct vm_amap *, int, vsize_t, int);
-					/* establish ppref */
-void		amap_pp_establish(struct vm_amap *);
-					/* wipe part of an amap */
-void		amap_wiperange(struct vm_amap *, int, int);
+void		amap_pp_adjref		/* adjust references */
+			 __P((struct vm_amap *, int, vsize_t, int));
+void		amap_pp_establish	/* establish ppref */
+			__P((struct vm_amap *));
+void		amap_wiperange		/* wipe part of an amap */
+			__P((struct vm_amap *, int, int));
 #endif	/* UVM_AMAP_PPREF */
-
-#endif /* _KERNEL */
 
 #endif /* _UVM_UVM_AMAP_H_ */

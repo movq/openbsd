@@ -1,4 +1,4 @@
-/*	$OpenBSD: i82596var.h,v 1.13 2015/09/18 09:54:08 miod Exp $	*/
+/*	$OpenBSD: i82596var.h,v 1.1 1999/08/15 23:49:30 mickey Exp $	*/
 /*	$NetBSD: i82586var.h,v 1.10 1998/08/15 04:42:42 mycroft Exp $	*/
 
 /*-
@@ -16,6 +16,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -91,7 +98,7 @@
  * This sun version based on i386 version 1.30.
  */
 
-/* #define I82596_DEBUG */
+#undef I82596_DEBUG
 
 /* Debug elements */
 #define	IED_RINT	0x01
@@ -104,27 +111,24 @@
 #define IED_CMDS	0x80
 #define	IED_ALL		0xff
 
-#define B_PER_F		6		/* recv buffers per frame */
+#define	ETHER_MIN_LEN	64
+#define	ETHER_MAX_LEN	1518
+
+#define B_PER_F		3		/* recv buffers per frame */
 #define	IE_RBUF_SIZE	256		/* size of each receive buffer;
 						MUST BE POWER OF TWO */
-#define	NTXBUF		4		/* number of transmit commands */
+#define	NTXBUF		2		/* number of transmit commands */
 #define	IE_TBUF_SIZE	ETHER_MAX_LEN	/* length of transmit buffer */
 
 #define IE_MAXMCAST	(IE_TBUF_SIZE/6)/* must fit in transmit buffer */
 
 
-#define	IE_INTR_ENRCV	1		/* receive pkt interrupt */
-#define	IE_INTR_ENSND	2		/* send pkt interrupt */
-#define	IE_INTR_LOOP	3		/* a loop for next one*/
-#define	IE_INTR_EXIT	4		/* done w/ interrupts */
+#define INTR_ENTER	0		/* intr hook called on ISR entry */
+#define INTR_EXIT	1		/* intr hook called on ISR exit */
+#define INTR_LOOP	2		/* intr hook called on ISR loop */
 
-#define	IE_CHIP_PROBE	0		/* reset called from chip probe */
-#define	IE_CARD_RESET	1		/* reset called from card reset */
-
-#define	IE_PORT_RESET	0
-#define	IE_PORT_TEST	1
-#define	IE_PORT_SCP	2
-#define	IE_PORT_DUMP	3
+#define CHIP_PROBE	0		/* reset called from chip probe */
+#define CARD_RESET	1		/* reset called from card reset */
 
 /*
  * Ethernet status, per interface.
@@ -141,7 +145,7 @@
  *
  * The front-end is required to manage the SCP and ISCP structures. i.e.
  * allocate room for them on the board's memory, and arrange to point the
- * chip at the SCB structure, the offset of which is passed to the MI
+ * chip at the SCB stucture, the offset of which is passed to the MI
  * driver in `sc_scb'.
  *
  * The following functions provide the glue necessary to deal with
@@ -179,11 +183,12 @@ struct ie_softc {
 	bus_space_handle_t bh;	/* bus-space handle of card memory */
 
 	const char *sc_type;	/* (MD) hardware type */
-	int	sc_vers;	/* (MD) hardware version */
+	int	sc_vers;	/* (MD) hardvare version */
 	int	sc_irq;		/* (MD) irq in md format */
 	void	*sc_iobase;	/* (MD) KVA of base of 24 bit addr space */
 	u_long	sc_maddr;	/* (MD) base of chip's RAM (16bit addr space) */
 	u_int	sc_msize;	/* (MD) how much RAM we have/use */
+	void	*sc_reg;	/* (MD) KVA of car's register (also iot/ioh) */
 	u_int	sc_flags;	/* (MI/MD) flags */
 #define	IEMD_FLAG0	0x00010000
 #define	IEMD_FLAG1	0x00020000
@@ -197,25 +202,24 @@ struct ie_softc {
 	struct	ifmedia sc_media;	/* supported media information */
 
 	/* Bus glue */
-	void	(*hwreset)(struct ie_softc *, int);
-	void	(*hwinit)(struct ie_softc *);
-	void	(*chan_attn)(struct ie_softc *);
-	void	(*port)(struct ie_softc *, u_int);
-	int	(*intrhook)(struct ie_softc *, int where);
+	void	(*hwreset) __P((struct ie_softc *, int));
+	void	(*hwinit) __P((struct ie_softc *));
+	void	(*chan_attn) __P((struct ie_softc *));
+	int	(*intrhook) __P((struct ie_softc *, int where));
 
-	void	(*memcopyin)(struct ie_softc *, void *, int, size_t);
-	void	(*memcopyout)(struct ie_softc *, const void *,
-				   int, size_t);
-	u_int16_t (*ie_bus_read16)(struct ie_softc *, int offset);
-	void	(*ie_bus_write16)(struct ie_softc *, int offset,
-					u_int16_t value);
-	void	(*ie_bus_write24)(struct ie_softc *, int offset,
-					int addr);
+	void	(*memcopyin) __P((struct ie_softc *, void *, int, size_t));
+	void	(*memcopyout) __P((struct ie_softc *, const void *,
+				   int, size_t));
+	u_int16_t (*ie_bus_read16) __P((struct ie_softc *, int offset));
+	void	(*ie_bus_write16) __P((struct ie_softc *, int offset,
+					u_int16_t value));
+	void	(*ie_bus_write24) __P((struct ie_softc *, int offset,
+					int addr));
 
 	/* Media management */
-        int  (*sc_mediachange)(struct ie_softc *);
+        int  (*sc_mediachange) __P((struct ie_softc *));
 				/* card dependent media change */
-        void (*sc_mediastatus)(struct ie_softc *, struct ifmediareq *);
+        void (*sc_mediastatus) __P((struct ie_softc *, struct ifmediareq *));
 				/* card dependent media status */
 
 
@@ -232,9 +236,6 @@ struct ie_softc {
 	 */
 	int	buf_area;	/* Start of descriptors and buffers */
 	int	buf_area_sz;	/* Size of above */
-
-	/* SYSBUS byte */
-	int	sysbus;
 
 	/*
 	 * The buffers & descriptors (recv and xmit)
@@ -275,12 +276,12 @@ struct ie_softc {
 };
 
 /* Exported functions */
-int 	i82596_intr(void *);
-int 	i82596_probe(struct ie_softc *);
-int 	i82596_proberam(struct ie_softc *);
-void 	i82596_attach(struct ie_softc *, const char *, u_int8_t *, 
-	    uint64_t *, int, uint64_t);
-int 	i82596_start_cmd(struct ie_softc *, int, int, int, int);
+int 	i82596_intr	__P((void *));
+int 	i82596_probe	__P((struct ie_softc *));
+int 	i82596_proberam	__P((struct ie_softc *));
+void 	i82596_attach	__P((struct ie_softc *, const char *, u_int8_t *, 
+			     int*, int, int));
+int 	i82596_start_cmd __P((struct ie_softc *, int, int, int, int));
 
 /*
  * Interrupt Acknowledge.
@@ -288,11 +289,10 @@ int 	i82596_start_cmd(struct ie_softc *, int, int, int, int);
 static __inline__ void
 ie_ack(struct ie_softc *sc, u_int mask) /* in native byte-order */
 {
-	u_int status;
-	int off = IE_SCB_STATUS(sc->scb);
+	register u_int status;
 
-	bus_space_barrier(sc->bt, sc->bh, off, 2, BUS_SPACE_BARRIER_READ);
-	status = (sc->ie_bus_read16)(sc, off);
+	bus_space_barrier(sc->bt, sc->bh, 0, 0, BUS_SPACE_BARRIER_READ);
+	status = (sc->ie_bus_read16)(sc, IE_SCB_STATUS(sc->scb));
 	i82596_start_cmd(sc, status & mask, 0, 0, 0);
 }
 

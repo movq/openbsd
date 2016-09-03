@@ -1,27 +1,23 @@
-/*    a2py.c
+/* $RCSfile: a2py.c,v $$Revision: 4.1 $$Date: 92/08/07 18:29:14 $
  *
- *    Copyright (C) 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
- *    2000, 2001, 2002, by Larry Wall and others
+ *    Copyright (c) 1991-1997, Larry Wall
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
+ *
+ * $Log:	a2py.c,v $
  */
 
-#if defined(OS2) || defined(WIN32) || defined(NETWARE)
+#if defined(OS2) || defined(WIN32)
 #if defined(WIN32)
 #include <io.h>
-#endif
-#if defined(NETWARE)
-#include "../netware/clibstuf.h"
 #endif
 #include "../patchlevel.h"
 #endif
 #include "util.h"
-#include "../unicode_constants.h"
-#define DELETE_CHAR DEL_NATIVE
 
-const char *filename;
-const char *myname;
+char *filename;
+char *myname;
 
 int checkers = 0;
 
@@ -31,19 +27,15 @@ int oper2(int type, int arg1, int arg2);
 int oper3(int type, int arg1, int arg2, int arg3);
 int oper4(int type, int arg1, int arg2, int arg3, int arg4);
 int oper5(int type, int arg1, int arg2, int arg3, int arg4, int arg5);
-STR *walk(int useval, int level, int node, int *numericptr, int minprec);
-#ifdef NETWARE
-char *savestr(char *str);
-char *cpy2(char *to, char *from, int delim);
-#endif
+STR *walk(int useval, int level, register int node, int *numericptr, int minprec);
 
-#if defined(OS2) || defined(WIN32) || defined(NETWARE)
+#if defined(OS2) || defined(WIN32)
 static void usage(void);
 
 static void
 usage()
 {
-    printf("\nThis is the AWK to PERL translator, revision %d.0, version %d\n", PERL_REVISION, PERL_VERSION);
+    printf("\nThis is the AWK to PERL translator, version 5.0, patchlevel %d\n", PATCHLEVEL);
     printf("\nUsage: %s [-D<number>] [-F<char>] [-n<fieldlist>] [-<number>] filename\n", myname);
     printf("\n  -D<number>      sets debugging flags."
            "\n  -F<character>   the awk script to translate is always invoked with"
@@ -57,16 +49,11 @@ usage()
 #endif
 
 int
-main(int argc, const char **argv)
+main(register int argc, register char **argv, register char **env)
 {
-    STR *str;
+    register STR *str;
     int i;
     STR *tmpstr;
-    /* char *namelist;    */
-
-	#ifdef NETWARE
-		fnInitGpfGlobals();	/* For importing the CLIB calls in place of Watcom calls */
-	#endif	/* NETWARE */
 
     myname = argv[0];
     linestr = str_new(80);
@@ -74,6 +61,7 @@ main(int argc, const char **argv)
     for (argc--,argv++; argc; argc--,argv++) {
 	if (argv[0][0] != '-' || !argv[0][1])
 	    break;
+      reswitch:
 	switch (argv[0][1]) {
 #ifdef DEBUGGING
 	case 'D':
@@ -103,7 +91,7 @@ main(int argc, const char **argv)
 	case 0:
 	    break;
 	default:
-#if defined(OS2) || defined(WIN32) || defined(NETWARE)
+#if defined(OS2) || defined(WIN32)
 	    fprintf(stderr, "Unrecognized switch: %s\n",argv[0]);
             usage();
 #else
@@ -115,8 +103,8 @@ main(int argc, const char **argv)
 
     /* open script */
 
-    if (argv[0] == NULL) {
-#if defined(OS2) || defined(WIN32) || defined(NETWARE)
+    if (argv[0] == Nullch) {
+#if defined(OS2) || defined(WIN32)
 	if ( isatty(fileno(stdin)) )
 	    usage();
 #endif
@@ -124,13 +112,14 @@ main(int argc, const char **argv)
     }
     filename = savestr(argv[0]);
 
+    filename = savestr(argv[0]);
     if (strEQ(filename,"-"))
 	argv[0] = "";
     if (!*argv[0])
 	rsfp = stdin;
     else
 	rsfp = fopen(argv[0],"r");
-    if (rsfp == NULL)
+    if (rsfp == Nullfp)
 	fatal("Awk script \"%s\" doesn't seem to exist.\n",filename);
 
     /* init tokener */
@@ -205,8 +194,6 @@ main(int argc, const char **argv)
 	  "The operation I've selected may be wrong for the operand types.\n");
     }
     exit(0);
-    /* by ANSI specs return is needed. This also shuts up VC++ and his warnings */
-    return(0);
 }
 
 #define RETURN(retval) return (bufptr = s,retval)
@@ -219,18 +206,17 @@ int idtype;
 int
 yylex(void)
 {
-    char *s = bufptr;
-    char *d;
-    int tmp;
+    register char *s = bufptr;
+    register char *d;
+    register int tmp;
 
   retry:
 #if YYDEBUG
-    if (yydebug) {
+    if (yydebug)
 	if (strchr(s,'\n'))
 	    fprintf(stderr,"Tokener at %s",s);
 	else
 	    fprintf(stderr,"Tokener at %s\n",s);
-    }
 #endif
     switch (*s) {
     default:
@@ -251,10 +237,10 @@ yylex(void)
 	if (!rsfp)
 	    RETURN(0);
 	line++;
-	if ((s = str_gets(linestr, rsfp)) == NULL) {
+	if ((s = str_gets(linestr, rsfp)) == Nullch) {
 	    if (rsfp != stdin)
 		fclose(rsfp);
-	    rsfp = NULL;
+	    rsfp = Nullfp;
 	    s = str_get(linestr);
 	    RETURN(0);
 	}
@@ -287,11 +273,15 @@ yylex(void)
     case ':':
 	tmp = *s++;
 	XOP(tmp);
-    case DELETE_CHAR:
+#ifdef EBCDIC
+    case 7:
+#else
+    case 127:
+#endif
 	s++;
 	XTERM('}');
     case '}':
-	for (d = s + 1; isSPACE(*d); d++) ;
+	for (d = s + 1; isspace(*d); d++) ;
 	if (!*d)
 	    s = d - 1;
 	*s = 127;
@@ -393,7 +383,7 @@ yylex(void)
 
 #define SNARFWORD \
 	d = tokenbuf; \
-	while (isWORDCHAR(*s)) \
+	while (isalpha(*s) || isdigit(*s) || *s == '_') \
 	    *d++ = *s++; \
 	*d = '\0'; \
 	d = tokenbuf; \
@@ -412,22 +402,15 @@ yylex(void)
 	    ID("0");
 	}
 	do_split = TRUE;
-	if (isDIGIT(*s)) {
-	    for (d = s; isDIGIT(*s); s++) ;
+	if (isdigit(*s)) {
+	    for (d = s; isdigit(*s); s++) ;
 	    yylval = string(d,s-d);
 	    tmp = atoi(d);
 	    if (tmp > maxfld)
 		maxfld = tmp;
 	    XOP(FIELD);
 	}
-	for (d = s; isWORDCHAR(*s); )
-	    s++;
-	split_to_array = TRUE;
-	if (d != s)
-	{
-	    yylval = string(d,s-d);
-	    XTERM(SVFIELD);
-	}
+	split_to_array = set_array_base = TRUE;
 	XOP(VFIELD);
 
     case '/':			/* may either be division or pattern */
@@ -458,6 +441,8 @@ yylex(void)
 
     case 'a': case 'A':
 	SNARFWORD;
+	if (strEQ(d,"ARGC"))
+	    set_array_base = TRUE;
 	if (strEQ(d,"ARGV")) {
 	    yylval=numary(string("ARGV",0));
 	    XOP(VAR);
@@ -488,15 +473,15 @@ yylex(void)
 	    XTERM(FUN1);
 	}
 	if (strEQ(d,"chdir"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"crypt"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"chop"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"chmod"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"chown"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	ID(d);
     case 'd': case 'D':
 	SNARFWORD;
@@ -505,7 +490,7 @@ yylex(void)
 	if (strEQ(d,"delete"))
 	    XTERM(DELETE);
 	if (strEQ(d,"die"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	ID(d);
     case 'e': case 'E':
 	SNARFWORD;
@@ -522,26 +507,26 @@ yylex(void)
 	    XTERM(FUN1);
 	}
 	if (strEQ(d,"elsif"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"eq"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"eval"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"eof"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"each"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"exec"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	ID(d);
     case 'f': case 'F':
 	SNARFWORD;
 	if (strEQ(d,"FS")) {
 	    saw_FS++;
 	    if (saw_FS == 1 && in_begin) {
-		for (d = s; *d && isSPACE(*d); d++) ;
+		for (d = s; *d && isspace(*d); d++) ;
 		if (*d == '=') {
-		    for (d++; *d && isSPACE(*d); d++) ;
+		    for (d++; *d && isspace(*d); d++) ;
 		    if (*d == '"' && d[2] == '"')
 			const_FS = d[1];
 		}
@@ -553,15 +538,15 @@ yylex(void)
 	else if (strEQ(d,"function"))
 	    XTERM(FUNCTION);
 	if (strEQ(d,"FILENAME"))
-	    ID("ARGV");
+	    d = "ARGV";
 	if (strEQ(d,"foreach"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"format"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"fork"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"fh"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	ID(d);
     case 'g': case 'G':
 	SNARFWORD;
@@ -570,18 +555,18 @@ yylex(void)
 	if (strEQ(d,"gsub"))
 	    XTERM(GSUB);
 	if (strEQ(d,"ge"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"gt"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"goto"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"gmtime"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	ID(d);
     case 'h': case 'H':
 	SNARFWORD;
 	if (strEQ(d,"hex"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	ID(d);
     case 'i': case 'I':
 	SNARFWORD;
@@ -590,6 +575,7 @@ yylex(void)
 	if (strEQ(d,"in"))
 	    XTERM(IN);
 	if (strEQ(d,"index")) {
+	    set_array_base = TRUE;
 	    XTERM(INDEX);
 	}
 	if (strEQ(d,"int")) {
@@ -600,14 +586,14 @@ yylex(void)
     case 'j': case 'J':
 	SNARFWORD;
 	if (strEQ(d,"join"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	ID(d);
     case 'k': case 'K':
 	SNARFWORD;
 	if (strEQ(d,"keys"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"kill"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	ID(d);
     case 'l': case 'L':
 	SNARFWORD;
@@ -620,56 +606,57 @@ yylex(void)
 	    XTERM(FUN1);
 	}
 	if (strEQ(d,"last"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"local"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"lt"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"le"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"locatime"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"link"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	ID(d);
     case 'm': case 'M':
 	SNARFWORD;
 	if (strEQ(d,"match")) {
+	    set_array_base = TRUE;
 	    XTERM(MATCH);
 	}
 	if (strEQ(d,"m"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	ID(d);
     case 'n': case 'N':
 	SNARFWORD;
 	if (strEQ(d,"NF"))
-	    do_chop = do_split = split_to_array = TRUE;
+	    do_chop = do_split = split_to_array = set_array_base = TRUE;
 	if (strEQ(d,"next")) {
 	    saw_line_op = TRUE;
 	    XTERM(NEXT);
 	}
 	if (strEQ(d,"ne"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	ID(d);
     case 'o': case 'O':
 	SNARFWORD;
 	if (strEQ(d,"ORS")) {
 	    saw_ORS = TRUE;
-	    ID("\\");
+	    d = "\\";
 	}
 	if (strEQ(d,"OFS")) {
 	    saw_OFS = TRUE;
-	    ID(",");
+	    d = ",";
 	}
 	if (strEQ(d,"OFMT")) {
-	    ID("#");
+	    d = "#";
 	}
 	if (strEQ(d,"open"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"ord"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"oct"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	ID(d);
     case 'p': case 'P':
 	SNARFWORD;
@@ -680,9 +667,9 @@ yylex(void)
 	    XTERM(PRINTF);
 	}
 	if (strEQ(d,"push"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"pop"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	ID(d);
     case 'q': case 'Q':
 	SNARFWORD;
@@ -690,8 +677,8 @@ yylex(void)
     case 'r': case 'R':
 	SNARFWORD;
 	if (strEQ(d,"RS")) {
+	    d = "/";
 	    saw_RS = TRUE;
-	    ID("/");
 	}
 	if (strEQ(d,"rand")) {
 	    yylval = ORAND;
@@ -700,37 +687,32 @@ yylex(void)
 	if (strEQ(d,"return"))
 	    XTERM(RET);
 	if (strEQ(d,"reset"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"redo"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"rename"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	ID(d);
     case 's': case 'S':
 	SNARFWORD;
 	if (strEQ(d,"split")) {
+	    set_array_base = TRUE;
 	    XOP(SPLIT);
 	}
 	if (strEQ(d,"substr")) {
+	    set_array_base = TRUE;
 	    XTERM(SUBSTR);
 	}
 	if (strEQ(d,"sub"))
 	    XTERM(SUB);
-	if (strEQ(d,"sprintf")) {
-            /* In old awk, { print sprintf("str%sg"),"in" } prints
-             * "string"; in new awk, "in" is not considered an argument to
-             * sprintf, so the statement breaks.  To support both, the
-             * grammar treats arguments to SPRINTF_OLD like old awk,
-             * SPRINTF_NEW like new.  Here we return the appropriate one.
-             */
-	    XTERM(old_awk ? SPRINTF_OLD : SPRINTF_NEW);
-        }
+	if (strEQ(d,"sprintf"))
+	    XTERM(SPRINTF);
 	if (strEQ(d,"sqrt")) {
 	    yylval = OSQRT;
 	    XTERM(FUN1);
 	}
 	if (strEQ(d,"SUBSEP")) {
-	    ID(";");
+	    d = ";";
 	}
 	if (strEQ(d,"sin")) {
 	    yylval = OSIN;
@@ -745,73 +727,73 @@ yylex(void)
 	    XTERM(FUN1);
 	}
 	if (strEQ(d,"s"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"shift"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"select"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"seek"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"stat"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"study"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"sleep"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"symlink"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"sort"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	ID(d);
     case 't': case 'T':
 	SNARFWORD;
 	if (strEQ(d,"tr"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"tell"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"time"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"times"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	ID(d);
     case 'u': case 'U':
 	SNARFWORD;
 	if (strEQ(d,"until"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"unless"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"umask"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"unshift"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"unlink"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"utime"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	ID(d);
     case 'v': case 'V':
 	SNARFWORD;
 	if (strEQ(d,"values"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	ID(d);
     case 'w': case 'W':
 	SNARFWORD;
 	if (strEQ(d,"while"))
 	    XTERM(WHILE);
 	if (strEQ(d,"write"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	else if (strEQ(d,"wait"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	ID(d);
     case 'x': case 'X':
 	SNARFWORD;
 	if (strEQ(d,"x"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	ID(d);
     case 'y': case 'Y':
 	SNARFWORD;
 	if (strEQ(d,"y"))
-	    *d = toUPPER(*d);
+	    *d = toupper(*d);
 	ID(d);
     case 'z': case 'Z':
 	SNARFWORD;
@@ -820,9 +802,9 @@ yylex(void)
 }
 
 char *
-scanpat(char *s)
+scanpat(register char *s)
 {
-    char *d;
+    register char *d;
 
     switch (*s++) {
     case '/':
@@ -865,28 +847,28 @@ scanpat(char *s)
 }
 
 void
-yyerror(const char *s)
+yyerror(char *s)
 {
     fprintf(stderr,"%s in file %s at line %d\n",
       s,filename,line);
 }
 
 char *
-scannum(char *s)
+scannum(register char *s)
 {
-    char *d;
+    register char *d;
 
     switch (*s) {
     case '1': case '2': case '3': case '4': case '5':
     case '6': case '7': case '8': case '9': case '0' : case '.':
 	d = tokenbuf;
-	while (isDIGIT(*s)) {
+	while (isdigit(*s)) {
 	    *d++ = *s++;
 	}
 	if (*s == '.') {
-	    if (isDIGIT(s[1])) {
+	    if (isdigit(s[1])) {
 		*d++ = *s++;
-		while (isDIGIT(*s)) {
+		while (isdigit(*s)) {
 		    *d++ = *s++;
 		}
 	    }
@@ -897,7 +879,7 @@ scannum(char *s)
 	    *d++ = *s++;
 	    if (*s == '+' || *s == '-')
 		*d++ = *s++;
-	    while (isDIGIT(*s))
+	    while (isdigit(*s))
 		*d++ = *s++;
 	}
 	*d = '\0';
@@ -908,7 +890,7 @@ scannum(char *s)
 }
 
 int
-string(const char *ptr, int len)
+string(char *ptr, int len)
 {
     int retval = mop;
 
@@ -1021,9 +1003,9 @@ int depth = 0;
 void
 dump(int branch)
 {
-    int type;
-    int len;
-    int i;
+    register int type;
+    register int len;
+    register int i;
 
     type = ops[branch].ival;
     len = type >> 8;
@@ -1061,8 +1043,8 @@ bl(int arg, int maybe)
 void
 fixup(STR *str)
 {
-    char *s;
-    char *t;
+    register char *s;
+    register char *t;
 
     for (s = str->str_ptr; *s; s++) {
 	if (*s == ';' && s[1] == ' ' && s[2] == '\n') {
@@ -1070,9 +1052,9 @@ fixup(STR *str)
 	    s++;
 	}
 	else if (*s == '\n') {
-	    for (t = s+1; isSPACE(*t & 127); t++) ;
+	    for (t = s+1; isspace(*t & 127); t++) ;
 	    t--;
-	    while (isSPACE(*t & 127) && *t != '\n') t--;
+	    while (isspace(*t & 127) && *t != '\n') t--;
 	    if (*t == '\n' && t-s > 1) {
 		if (s[-1] == '{')
 		    s--;
@@ -1086,8 +1068,8 @@ fixup(STR *str)
 void
 putlines(STR *str)
 {
-    char *d, *s, *t, *e;
-    int pos, newpos;
+    register char *d, *s, *t, *e;
+    register int pos, newpos;
 
     d = tokenbuf;
     pos = 0;
@@ -1105,7 +1087,7 @@ putlines(STR *str)
 	if (pos > 78) {		/* split a long line? */
 	    *d-- = '\0';
 	    newpos = 0;
-	    for (t = tokenbuf; isSPACE(*t & 127); t++) {
+	    for (t = tokenbuf; isspace(*t & 127); t++) {
 		if (*t == '\t')
 		    newpos += 8;
 		else
@@ -1162,7 +1144,7 @@ putlines(STR *str)
 void
 putone(void)
 {
-    char *t;
+    register char *t;
 
     for (t = tokenbuf; *t; t++) {
 	*t &= 127;
@@ -1192,6 +1174,7 @@ numary(int arg)
     str_cat(key,"[]");
     hstore(symtab,key->str_ptr,str_make("1"));
     str_free(key);
+    set_array_base = TRUE;
     return arg;
 }
 
@@ -1236,7 +1219,7 @@ fixfargs(int name, int arg, int prevargs)
 {
     int type;
     STR *str;
-    int numargs = 0;
+    int numargs;
 
     if (!arg)
 	return prevargs;

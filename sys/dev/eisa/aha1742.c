@@ -1,4 +1,4 @@
-/*	$OpenBSD: aha1742.c,v 1.44 2014/09/14 14:17:24 jsg Exp $	*/
+/*	$OpenBSD: aha1742.c,v 1.14 1996/11/28 23:27:36 niklas Exp $	*/
 /*	$NetBSD: aha1742.c,v 1.61 1996/05/12 23:40:01 mycroft Exp $	*/
 
 /*
@@ -56,6 +56,8 @@
 #include <sys/device.h>
 #include <sys/malloc.h>
 #include <sys/buf.h>
+#include <sys/proc.h>
+#include <sys/user.h>
 
 #include <machine/bus.h>
 #include <machine/intr.h>
@@ -67,10 +69,14 @@
 #include <scsi/scsi_all.h>
 #include <scsi/scsiconf.h>
 
+#ifndef DDB
+#define Debugger() panic("should call debugger here (aha1742.c)")
+#endif /* ! DDB */
+
 typedef u_long physaddr;
 typedef u_long physlen;
 
-#define KVTOPHYS(x)	kvtop((caddr_t)x)
+#define KVTOPHYS(x)	vtophys(x)
 
 #define AHB_ECB_MAX	32	/* store up to 32 ECBs at one time */
 #define	ECB_HASH_SIZE	32	/* hash table size for phystokv */
@@ -114,7 +120,7 @@ typedef u_long physlen;
 #define	HSCSIID	0x0F		/* our SCSI ID */
 #define	RSTPWR	0x10		/* reset scsi bus on power up or reset */
 /**** bit definitions for BUSDEF ****/
-#define	B0uS	0x00		/* give up bus immediately */
+#define	B0uS	0x00		/* give up bus immediatly */
 #define	B4uS	0x01		/* delay 4uSec. */
 #define	B8uS	0x02
 
@@ -207,9 +213,9 @@ struct ahb_ecb_status {
 struct ahb_ecb {
 	u_char  opcode;
 #define	ECB_SCSI_OP	0x01
-		u_char:4;
+	        u_char:4;
 	u_char  options:3;
-		u_char:1;
+	        u_char:1;
 	short   opt1;
 #define	ECB_CNE	0x0001
 #define	ECB_DI	0x0080
@@ -265,38 +271,33 @@ struct ahb_softc {
 	int sc_irq;
 	void *sc_ih;
 
-	struct ahb_ecb *immed_ecb;	/* an outstanding immediate command */
+	struct ahb_ecb *immed_ecb;	/* an outstanding immediete command */
 	struct ahb_ecb *ecbhash[ECB_HASH_SIZE];
 	TAILQ_HEAD(, ahb_ecb) free_ecb;
 	int numecbs;
 	int ahb_scsi_dev;		/* our scsi id */
 	struct scsi_link sc_link;
-	struct mutex		sc_ecb_mtx;
-	struct scsi_iopool	sc_iopool;
 };
 
-void ahb_send_mbox(struct ahb_softc *, int, struct ahb_ecb *);
-int ahb_poll(struct ahb_softc *, struct scsi_xfer *, int);
-void ahb_send_immed(struct ahb_softc *, int, u_long);
-int ahbintr(void *);
-void ahb_done(struct ahb_softc *, struct ahb_ecb *);
-void ahb_ecb_free(void *, void *);
-void *ahb_ecb_alloc(void *);
-struct ahb_ecb *ahb_ecb_phys_kv(struct ahb_softc *, physaddr);
-int ahb_find(bus_space_tag_t, bus_space_handle_t, struct ahb_softc *);
-void ahb_init(struct ahb_softc *);
-void ahbminphys(struct buf *, struct scsi_link *);
-void ahb_scsi_cmd(struct scsi_xfer *);
-void ahb_timeout(void *);
-void ahb_print_ecb(struct ahb_ecb *);
-void ahb_print_active_ecb(struct ahb_softc *);
-int ahbprint(void *, const char *);
+void ahb_send_mbox __P((struct ahb_softc *, int, struct ahb_ecb *));
+int ahb_poll __P((struct ahb_softc *, struct scsi_xfer *, int));
+void ahb_send_immed __P((struct ahb_softc *, int, u_long));
+int ahbintr __P((void *));
+void ahb_done __P((struct ahb_softc *, struct ahb_ecb *));
+void ahb_free_ecb __P((struct ahb_softc *, struct ahb_ecb *, int));
+struct ahb_ecb *ahb_get_ecb __P((struct ahb_softc *, int));
+struct ahb_ecb *ahb_ecb_phys_kv __P((struct ahb_softc *, physaddr));
+int ahb_find __P((bus_space_tag_t, bus_space_handle_t, struct ahb_softc *));
+void ahb_init __P((struct ahb_softc *));
+void ahbminphys __P((struct buf *));
+int ahb_scsi_cmd __P((struct scsi_xfer *));
+void ahb_timeout __P((void *));
+void ahb_print_ecb __P((struct ahb_ecb *));
+void ahb_print_active_ecb __P((struct ahb_softc *));
+int ahbprint __P((void *, const char *));
 
 #define	MAX_SLOTS	15
-
-#ifdef	AHBDEBUG
 int     ahb_debug = 0;
-#endif /* AHBDEBUG */
 #define AHB_SHOWECBS 0x01
 #define AHB_SHOWINTS 0x02
 #define AHB_SHOWCMDS 0x04
@@ -309,8 +310,16 @@ struct scsi_adapter ahb_switch = {
 	0,
 };
 
-int	ahbmatch(struct device *, void *, void *);
-void	ahbattach(struct device *, struct device *, void *);
+/* the below structure is so we have a default dev struct for our link struct */
+struct scsi_device ahb_dev = {
+	NULL,			/* Use default error handler */
+	NULL,			/* have a queue, served by this */
+	NULL,			/* have no async handler */
+	NULL,			/* Use default 'done' routine */
+};
+
+int	ahbmatch __P((struct device *, void *, void *));
+void	ahbattach __P((struct device *, struct device *, void *));
 
 struct cfattach ahb_ca = {
 	sizeof(struct ahb_softc), ahbmatch, ahbattach
@@ -339,8 +348,10 @@ ahb_send_mbox(sc, opcode, ecb)
 			break;
 		delay(10);
 	}
-	if (!wait)
-		panic("%s: board not responding", sc->sc_dev.dv_xname);
+	if (!wait) {
+		printf("%s: board not responding\n", sc->sc_dev.dv_xname);
+		Debugger();
+	}
 
 	/* don't know this will work */
 	bus_space_write_4(iot, ioh, MBOXOUT0, KVTOPHYS(ecb));
@@ -358,18 +369,14 @@ ahb_poll(sc, xs, count)
 {				/* in msec  */
 	bus_space_tag_t iot = sc->sc_iot;
 	bus_space_handle_t ioh = sc->sc_ioh;
-	int s;
 
 	while (count) {
 		/*
 		 * If we had interrupts enabled, would we
 		 * have got an interrupt?
 		 */
-		if (bus_space_read_1(iot, ioh, G2STAT) & G2STAT_INT_PEND) {
-			s = splbio();
+		if (bus_space_read_1(iot, ioh, G2STAT) & G2STAT_INT_PEND)
 			ahbintr(sc);
-			splx(s);
-		}
 		if (xs->flags & ITSDONE)
 			return 0;
 		delay(1000);
@@ -397,8 +404,10 @@ ahb_send_immed(sc, target, cmd)
 			break;
 		delay(10);
 	}
-	if (!wait)
-		panic("%s: board not responding", sc->sc_dev.dv_xname);
+	if (!wait) {
+		printf("%s: board not responding\n", sc->sc_dev.dv_xname);
+		Debugger();
+	}
 
 	/* don't know this will work */
 	bus_space_write_4(iot, ioh, MBOXOUT0, cmd);
@@ -408,7 +417,7 @@ ahb_send_immed(sc, target, cmd)
 
 /*
  * Check the slots looking for a board we recognise
- * If we find one, note its address (slot) and call
+ * If we find one, note it's address (slot) and call
  * the actual probe routine to check it out.
  */
 int
@@ -466,7 +475,6 @@ ahbattach(parent, self, aux)
 {
 	struct eisa_attach_args *ea = aux;
 	struct ahb_softc *sc = (void *)self;
-	struct scsibus_attach_args saa;
 	bus_space_tag_t iot = ea->ea_iot;
 	bus_space_handle_t ioh;
 	eisa_chipset_tag_t ec = ea->ea_ec;
@@ -478,15 +486,13 @@ ahbattach(parent, self, aux)
 
 	if (bus_space_map(iot, EISA_SLOT_ADDR(ea->ea_slot), EISA_SLOT_SIZE, 0,
 	    &ioh))
-		panic("ahbattach: can't map i/o addresses");
+		panic("ahbattach: could not map I/O addresses");
 	sc->sc_ioh = ioh;
 	if (ahb_find(iot, ioh, sc))
 		panic("ahbattach: ahb_find failed!");
 
 	ahb_init(sc);
 	TAILQ_INIT(&sc->free_ecb);
-	mtx_init(&sc->sc_ecb_mtx, IPL_BIO);
-	scsi_iopool_init(&sc->sc_iopool, sc, ahb_ecb_alloc, ahb_ecb_free);
 
 	/*
 	 * fill in the prototype scsi_link.
@@ -494,8 +500,8 @@ ahbattach(parent, self, aux)
 	sc->sc_link.adapter_softc = sc;
 	sc->sc_link.adapter_target = sc->ahb_scsi_dev;
 	sc->sc_link.adapter = &ahb_switch;
+	sc->sc_link.device = &ahb_dev;
 	sc->sc_link.openings = 2;
-	sc->sc_link.pool = &sc->sc_iopool;
 
 	if (!strcmp(ea->ea_idstring, "ADP0000"))
 		model = EISA_PRODUCT_ADP0000;
@@ -528,13 +534,10 @@ ahbattach(parent, self, aux)
 	if (intrstr != NULL)
 		printf("%s\n", intrstr);
 
-	bzero(&saa, sizeof(saa));
-	saa.saa_sc_link = &sc->sc_link;
-
 	/*
 	 * ask the adapter what subunits are present
 	 */
-	config_found(self, &saa, ahbprint);
+	config_found(self, &sc->sc_link, ahbprint);
 }
 
 /*
@@ -561,7 +564,7 @@ ahbintr(arg)
 	for (;;) {
 		/*
 		 * First get all the information and then
-		 * acknowledge the interrupt
+		 * acknowlege the interrupt
 		 */
 		ahbstat = bus_space_read_1(iot, ioh, G2INTST);
 		mboxval = bus_space_read_4(iot, ioh, MBOXIN0);
@@ -590,7 +593,7 @@ ahbintr(arg)
 			ecb->flags |= ECB_IMMED_FAIL;
 		case AHB_IMMED_OK:
 			ecb = sc->immed_ecb;
-			sc->immed_ecb = NULL;
+			sc->immed_ecb = 0;
 			break;
 
 		default:
@@ -606,7 +609,7 @@ ahbintr(arg)
 			if ((ahb_debug & AHB_SHOWECBS) && ecb)
 				printf("<int ecb(%x)>", ecb);
 #endif /*AHBDEBUG */
-			timeout_del(&ecb->xs->stimeout);
+			untimeout(ahb_timeout, ecb);
 			ahb_done(sc, ecb);
 		}
 
@@ -634,6 +637,10 @@ ahb_done(sc, ecb)
 	 * Otherwise, put the results of the operation
 	 * into the xfer and call whoever started it
 	 */
+	if ((xs->flags & INUSE) == 0) {
+		printf("%s: exiting but not in use!\n", sc->sc_dev.dv_xname);
+		Debugger();
+	}
 	if (ecb->flags & ECB_IMMED) {
 		if (ecb->flags & ECB_IMMED_FAIL)
 			xs->error = XS_DRIVER_STUFFUP;
@@ -678,27 +685,39 @@ ahb_done(sc, ecb)
 			xs->resid = 0;
 	}
 done:
+	xs->flags |= ITSDONE;
+	ahb_free_ecb(sc, ecb, xs->flags);
 	scsi_done(xs);
 }
 
 /*
- * A ecb (and hence a mbx-out) is put onto the free list.
+ * A ecb (and hence a mbx-out is put onto the
+ * free list.
  */
 void
-ahb_ecb_free(xsc, xecb)
-	void *xsc, *xecb;
+ahb_free_ecb(sc, ecb, flags)
+	struct ahb_softc *sc;
+	struct ahb_ecb *ecb;
+	int flags;
 {
-	struct ahb_softc *sc = xsc;
-	struct ahb_ecb *ecb = xecb;
+	int s;
+
+	s = splbio();
 
 	ecb->flags = ECB_FREE;
-
-	mtx_enter(&sc->sc_ecb_mtx);
 	TAILQ_INSERT_HEAD(&sc->free_ecb, ecb, chain);
-	mtx_leave(&sc->sc_ecb_mtx);
+
+	/*
+	 * If there were none, wake anybody waiting for one to come free,
+	 * starting with queued entries.
+	 */
+	if (ecb->chain.tqe_next == 0)
+		wakeup(&sc->free_ecb);
+
+	splx(s);
 }
 
-static inline void ahb_init_ecb(struct ahb_softc *, struct ahb_ecb *);
+static inline void ahb_init_ecb __P((struct ahb_softc *, struct ahb_ecb *));
 
 static inline void
 ahb_init_ecb(sc, ecb)
@@ -718,24 +737,65 @@ ahb_init_ecb(sc, ecb)
 	sc->ecbhash[hashnum] = ecb;
 }
 
+static inline void ahb_reset_ecb __P((struct ahb_softc *, struct ahb_ecb *));
+
+static inline void
+ahb_reset_ecb(sc, ecb)
+	struct ahb_softc *sc;
+	struct ahb_ecb *ecb;
+{
+
+}
+
 /*
  * Get a free ecb
+ *
+ * If there are none, see if we can allocate a new one. If so, put it in the
+ * hash table too otherwise either return an error or sleep.
  */
-void *
-ahb_ecb_alloc(xsc)
-	void *xsc;
+struct ahb_ecb *
+ahb_get_ecb(sc, flags)
+	struct ahb_softc *sc;
+	int flags;
 {
-	struct ahb_softc *sc = xsc;
 	struct ahb_ecb *ecb;
+	int s;
 
-	mtx_enter(&sc->sc_ecb_mtx);
-	ecb = TAILQ_FIRST(&sc->free_ecb);
-	if (ecb) {
-		TAILQ_REMOVE(&sc->free_ecb, ecb, chain);
-		ecb->flags = ECB_ACTIVE;
+	s = splbio();
+
+	/*
+	 * If we can and have to, sleep waiting for one to come free
+	 * but only if we can't allocate a new one.
+	 */
+	for (;;) {
+		ecb = sc->free_ecb.tqh_first;
+		if (ecb) {
+			TAILQ_REMOVE(&sc->free_ecb, ecb, chain);
+			break;
+		}
+		if (sc->numecbs < AHB_ECB_MAX) {
+			ecb = (struct ahb_ecb *) malloc(sizeof(struct ahb_ecb),
+			    M_TEMP, M_NOWAIT);
+			if (ecb) {
+				ahb_init_ecb(sc, ecb);
+				sc->numecbs++;
+			} else {
+				printf("%s: can't malloc ecb\n",
+				    sc->sc_dev.dv_xname);
+				goto out;
+			}
+			break;
+		}
+		if ((flags & SCSI_NOSLEEP) != 0)
+			goto out;
+		tsleep(&sc->free_ecb, PRIBIO, "ahbecb", 0);
 	}
-	mtx_leave(&sc->sc_ecb_mtx);
 
+	ahb_reset_ecb(sc, ecb);
+	ecb->flags = ECB_ACTIVE;
+
+out:
+	splx(s);
 	return ecb;
 }
 
@@ -862,8 +922,10 @@ ahb_init(sc)
 }
 
 void
-ahbminphys(struct buf *bp, struct scsi_link *sl)
+ahbminphys(bp)
+	struct buf *bp;
 {
+
 	if (bp->b_bcount > ((AHB_NSEG - 1) << PGSHIFT))
 		bp->b_bcount = ((AHB_NSEG - 1) << PGSHIFT);
 	minphys(bp);
@@ -873,7 +935,7 @@ ahbminphys(struct buf *bp, struct scsi_link *sl)
  * start a scsi operation given the command and the data address.  Also needs
  * the unit, target and lu.
  */
-void
+int
 ahb_scsi_cmd(xs)
 	struct scsi_xfer *xs;
 {
@@ -884,6 +946,9 @@ ahb_scsi_cmd(xs)
 	int seg;		/* scatter gather seg being worked on */
 	u_long thiskv, thisphys, nextphys;
 	int bytes_this_seg, bytes_this_page, datalen, flags;
+#ifdef TFS
+	struct iovec *iovp;
+#endif
 	int s;
 
 	SC_DEBUG(sc_link, SDEV_DB2, ("ahb_scsi_cmd\n"));
@@ -893,10 +958,16 @@ ahb_scsi_cmd(xs)
 	 * then we can't allow it to sleep
 	 */
 	flags = xs->flags;
-	ecb = xs->io;
-	ecb->flags = ECB_ACTIVE;
+	if ((flags & (ITSDONE|INUSE)) != INUSE) {
+		printf("%s: done or not in use?\n", sc->sc_dev.dv_xname);
+		xs->flags &= ~ITSDONE;
+		xs->flags |= INUSE;
+	}
+	if ((ecb = ahb_get_ecb(sc, flags)) == NULL) {
+		xs->error = XS_DRIVER_STUFFUP;
+		return TRY_AGAIN_LATER;
+	}
 	ecb->xs = xs;
-	timeout_set(&ecb->xs->stimeout, ahb_timeout, ecb);
 
 	/*
 	 * If it's a reset, we need to do an 'immediate'
@@ -906,11 +977,8 @@ ahb_scsi_cmd(xs)
 	 */
 	if (flags & SCSI_RESET) {
 		ecb->flags |= ECB_IMMED;
-		if (sc->immed_ecb) {
-			xs->error = XS_BUSY;
-			scsi_done(xs);
-			return;
-		}
+		if (sc->immed_ecb)
+			return TRY_AGAIN_LATER;
 		sc->immed_ecb = ecb;
 
 		s = splbio();
@@ -918,9 +986,9 @@ ahb_scsi_cmd(xs)
 		ahb_send_immed(sc, sc_link->target, AHB_TARG_RESET);
 
 		if ((flags & SCSI_POLL) == 0) {
+			timeout(ahb_timeout, ecb, (xs->timeout * hz) / 1000);
 			splx(s);
-			timeout_add_msec(&ecb->xs->stimeout, xs->timeout);
-			return;
+			return SUCCESSFULLY_QUEUED;
 		}
 
 		splx(s);
@@ -930,7 +998,7 @@ ahb_scsi_cmd(xs)
 		 */
 		if (ahb_poll(sc, xs, xs->timeout))
 			ahb_timeout(ecb);
-		return;
+		return COMPLETE;
 	}
 
 	/*
@@ -952,56 +1020,76 @@ ahb_scsi_cmd(xs)
 		ecb->data_addr = KVTOPHYS(ecb->ahb_dma);
 		sg = ecb->ahb_dma;
 		seg = 0;
-
-		/*
-		 * Set up the scatter gather block
-		 */
-		SC_DEBUG(sc_link, SDEV_DB4,
-		    ("%d @0x%x:- ", xs->datalen, xs->data));
-		datalen = xs->datalen;
-		thiskv = (long) xs->data;
-		thisphys = KVTOPHYS(thiskv);
-
-		while (datalen && seg < AHB_NSEG) {
-			bytes_this_seg = 0;
-
-			/* put in the base address */
-			sg->seg_addr = thisphys;
-
-			SC_DEBUGN(sc_link, SDEV_DB4, ("0x%x", thisphys));
-
-			/* do it at least once */
-			nextphys = thisphys;
-			while (datalen && thisphys == nextphys) {
-				/*
-				 * This page is contiguous (physically)
-				 * with the last, just extend the
-				 * length
-				 */
-				/* how far to the end of the page */
-				nextphys = (thisphys & ~PGOFSET) + NBPG;
-				bytes_this_page = nextphys - thisphys;
-				/**** or the data ****/
-				bytes_this_page = min(bytes_this_page,
-						      datalen);
-				bytes_this_seg += bytes_this_page;
-				datalen -= bytes_this_page;
-
-				/* get more ready for the next page */
-				thiskv = (thiskv & ~PGOFSET) + NBPG;
-				if (datalen)
-					thisphys = KVTOPHYS(thiskv);
+#ifdef	TFS
+		if (flags & SCSI_DATA_UIO) {
+			iovp = ((struct uio *) xs->data)->uio_iov;
+			datalen = ((struct uio *) xs->data)->uio_iovcnt;
+			xs->datalen = 0;
+			while (datalen && seg < AHB_NSEG) {
+				sg->seg_addr = (physaddr)iovp->iov_base;
+				sg->seg_len = iovp->iov_len;
+				xs->datalen += iovp->iov_len;
+				SC_DEBUGN(sc_link, SDEV_DB4, ("(0x%x@0x%x)",
+				    iovp->iov_len, iovp->iov_base));
+				sg++;
+				iovp++;
+				seg++;
+				datalen--;
 			}
-			/*
-			 * next page isn't contiguous, finish the seg
-			 */
-			SC_DEBUGN(sc_link, SDEV_DB4,
-			    ("(0x%x)", bytes_this_seg));
-			sg->seg_len = bytes_this_seg;
-			sg++;
-			seg++;
 		}
+		else
+#endif /*TFS */
+		{
+			/*
+			 * Set up the scatter gather block
+			 */
+			SC_DEBUG(sc_link, SDEV_DB4,
+			    ("%d @0x%x:- ", xs->datalen, xs->data));
+			datalen = xs->datalen;
+			thiskv = (long) xs->data;
+			thisphys = KVTOPHYS(thiskv);
 
+			while (datalen && seg < AHB_NSEG) {
+				bytes_this_seg = 0;
+
+				/* put in the base address */
+				sg->seg_addr = thisphys;
+
+				SC_DEBUGN(sc_link, SDEV_DB4, ("0x%x", thisphys));
+
+				/* do it at least once */
+				nextphys = thisphys;
+				while (datalen && thisphys == nextphys) {
+					/*
+					 * This page is contiguous (physically)
+					 * with the the last, just extend the
+					 * length
+					 */
+					/* how far to the end of the page */
+					nextphys = (thisphys & ~PGOFSET) + NBPG;
+					bytes_this_page = nextphys - thisphys;
+					/**** or the data ****/
+					bytes_this_page = min(bytes_this_page,
+							      datalen);
+					bytes_this_seg += bytes_this_page;
+					datalen -= bytes_this_page;
+
+					/* get more ready for the next page */
+					thiskv = (thiskv & ~PGOFSET) + NBPG;
+					if (datalen)
+						thisphys = KVTOPHYS(thiskv);
+				}
+				/*
+				 * next page isn't contiguous, finish the seg
+				 */
+				SC_DEBUGN(sc_link, SDEV_DB4,
+				    ("(0x%x)", bytes_this_seg));
+				sg->seg_len = bytes_this_seg;
+				sg++;
+				seg++;
+			}
+		}
+		/*end of iov/kv decision */
 		ecb->data_length = seg * sizeof(struct ahb_dma_seg);
 		SC_DEBUGN(sc_link, SDEV_DB4, ("\n"));
 		if (datalen) {
@@ -1011,8 +1099,8 @@ ahb_scsi_cmd(xs)
 			printf("%s: ahb_scsi_cmd, more than %d dma segs\n",
 			    sc->sc_dev.dv_xname, AHB_NSEG);
 			xs->error = XS_DRIVER_STUFFUP;
-			scsi_done(xs);
-			return;
+			ahb_free_ecb(sc, ecb, flags);
+			return COMPLETE;
 		}
 	} else {	/* No data xfer, use non S/G values */
 		ecb->data_addr = (physaddr)0;
@@ -1034,9 +1122,9 @@ ahb_scsi_cmd(xs)
 	 * Usually return SUCCESSFULLY QUEUED
 	 */
 	if ((flags & SCSI_POLL) == 0) {
+		timeout(ahb_timeout, ecb, (xs->timeout * hz) / 1000);
 		splx(s);
-		timeout_add_msec(&ecb->xs->stimeout, xs->timeout);
-		return;
+		return SUCCESSFULLY_QUEUED;
 	}
 
 	splx(s);
@@ -1049,6 +1137,7 @@ ahb_scsi_cmd(xs)
 		if (ahb_poll(sc, xs, 2000))
 			ahb_timeout(ecb);
 	}
+	return COMPLETE;
 }
 
 void
@@ -1093,7 +1182,7 @@ ahb_timeout(arg)
 		ahb_send_mbox(sc, OP_ABORT_ECB, ecb);
 		/* 2 secs for the abort */
 		if ((xs->flags & SCSI_POLL) == 0)
-			timeout_add_sec(&ecb->xs->stimeout, 2);
+			timeout(ahb_timeout, ecb, 2 * hz);
 	}
 
 	splx(s);

@@ -1,7 +1,7 @@
-/*	$OpenBSD: uvm_pager.c,v 1.71 2014/12/17 19:42:15 tedu Exp $	*/
-/*	$NetBSD: uvm_pager.c,v 1.36 2000/11/27 18:26:41 chs Exp $	*/
+/*	$NetBSD: uvm_pager.c,v 1.15 1999/03/25 18:48:55 mrg Exp $	*/
 
 /*
+ *
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
  * All rights reserved.
  *
@@ -13,6 +13,12 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *      This product includes software developed by Charles D. Cranor and
+ *      Washington University.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -34,14 +40,23 @@
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/proc.h>
 #include <sys/malloc.h>
-#include <sys/pool.h>
-#include <sys/buf.h>
-#include <sys/atomic.h>
 
+#include <vm/vm.h>
+#include <vm/vm_page.h>
+#include <vm/vm_kern.h>
+
+#define UVM_PAGER
 #include <uvm/uvm.h>
 
-struct pool *uvm_aiobuf_pool;
+/*
+ * list of uvm pagers in the system
+ */
+
+extern struct uvm_pagerops aobj_pager;
+extern struct uvm_pagerops uvm_deviceops;
+extern struct uvm_pagerops uvm_vnodeops;
 
 struct uvm_pagerops *uvmpagerops[] = {
 	&aobj_pager,
@@ -51,54 +66,41 @@ struct uvm_pagerops *uvmpagerops[] = {
 
 /*
  * the pager map: provides KVA for I/O
- *
- * Each uvm_pseg has room for MAX_PAGERMAP_SEGS pager io space of
- * MAXBSIZE bytes.
- *
- * The number of uvm_pseg instances is dynamic using an array segs.
- * At most UVM_PSEG_COUNT instances can exist.
- *
- * psegs[0] always exists (so that the pager can always map in pages).
- * psegs[0] element 0 is always reserved for the pagedaemon.
- *
- * Any other pseg is automatically created when no space is available
- * and automatically destroyed when it is no longer in use.
  */
-#define MAX_PAGER_SEGS	16
-#define PSEG_NUMSEGS	(PAGER_MAP_SIZE / MAX_PAGER_SEGS / MAXBSIZE)
-struct uvm_pseg {
-	/* Start of virtual space; 0 if not inited. */
-	vaddr_t	start;
-	/* Bitmap of the segments in use in this pseg. */
-	int	use;
-};
-struct	mutex uvm_pseg_lck;
-struct	uvm_pseg psegs[PSEG_NUMSEGS];
 
-#define UVM_PSEG_FULL(pseg)	((pseg)->use == (1 << MAX_PAGER_SEGS) - 1)
-#define UVM_PSEG_EMPTY(pseg)	((pseg)->use == 0)
-#define UVM_PSEG_INUSE(pseg,id)	(((pseg)->use & (1 << (id))) != 0)
+#define PAGER_MAP_SIZE       (4 * 1024 * 1024)
+vm_map_t pager_map;		/* XXX */
+simple_lock_data_t pager_map_wanted_lock;
+boolean_t pager_map_wanted;	/* locked by pager map */
 
-void		uvm_pseg_init(struct uvm_pseg *);
-vaddr_t		uvm_pseg_get(int);
-void		uvm_pseg_release(vaddr_t);
 
 /*
  * uvm_pager_init: init pagers (at boot time)
  */
+
 void
-uvm_pager_init(void)
+uvm_pager_init()
 {
 	int lcv;
 
-	/* init pager map */
-	uvm_pseg_init(&psegs[0]);
-	mtx_init(&uvm_pseg_lck, IPL_VM);
+	/*
+	 * init pager map
+	 */
 
-	/* init ASYNC I/O queue */
+	 pager_map = uvm_km_suballoc(kernel_map, &uvm.pager_sva, &uvm.pager_eva,
+	 			PAGER_MAP_SIZE, FALSE, FALSE, NULL);
+	 simple_lock_init(&pager_map_wanted_lock);
+	 pager_map_wanted = FALSE;
+
+	/*
+	 * init ASYNC I/O queue
+	 */
+	
 	TAILQ_INIT(&uvm.aio_done);
 
-	/* call pager init functions */
+	/*
+	 * call pager init functions
+	 */
 	for (lcv = 0 ; lcv < sizeof(uvmpagerops)/sizeof(struct uvm_pagerops *);
 	    lcv++) {
 		if (uvmpagerops[lcv]->pgo_init)
@@ -107,173 +109,110 @@ uvm_pager_init(void)
 }
 
 /*
- * Initialize a uvm_pseg.
+ * uvm_pagermapin: map pages into KVA (pager_map) for I/O that needs mappings
  *
- * May fail, in which case seg->start == 0.
- *
- * Caller locks uvm_pseg_lck.
+ * we basically just map in a blank map entry to reserve the space in the
+ * map and then use pmap_enter() to put the mappings in by hand.
  */
-void
-uvm_pseg_init(struct uvm_pseg *pseg)
-{
-	KASSERT(pseg->start == 0);
-	KASSERT(pseg->use == 0);
-	pseg->start = uvm_km_valloc_try(kernel_map, MAX_PAGER_SEGS * MAXBSIZE);
-}
 
-/*
- * Acquire a pager map segment.
- *
- * Returns a vaddr for paging. 0 on failure.
- *
- * Caller does not lock.
- */
 vaddr_t
-uvm_pseg_get(int flags)
+uvm_pagermapin(pps, npages, aiop, waitf)
+	struct vm_page **pps;
+	int npages;
+	struct uvm_aiodesc **aiop;	/* OUT */
+	int waitf;
 {
-	int i;
-	struct uvm_pseg *pseg;
-
-	mtx_enter(&uvm_pseg_lck);
-
-pager_seg_restart:
-	/* Find first pseg that has room. */
-	for (pseg = &psegs[0]; pseg != &psegs[PSEG_NUMSEGS]; pseg++) {
-		if (UVM_PSEG_FULL(pseg))
-			continue;
-
-		if (pseg->start == 0) {
-			/* Need initialization. */
-			uvm_pseg_init(pseg);
-			if (pseg->start == 0)
-				goto pager_seg_fail;
-		}
-
-		/* Keep index 0 reserved for pagedaemon. */
-		if (pseg == &psegs[0] && curproc != uvm.pagedaemon_proc)
-			i = 1;
-		else
-			i = 0;
-
-		for (; i < MAX_PAGER_SEGS; i++) {
-			if (!UVM_PSEG_INUSE(pseg, i)) {
-				pseg->use |= 1 << i;
-				mtx_leave(&uvm_pseg_lck);
-				return pseg->start + i * MAXBSIZE;
-			}
-		}
-	}
-
-pager_seg_fail:
-	if ((flags & UVMPAGER_MAPIN_WAITOK) != 0) {
-		msleep(&psegs, &uvm_pseg_lck, PVM, "pagerseg", 0);
-		goto pager_seg_restart;
-	}
-
-	mtx_leave(&uvm_pseg_lck);
-	return 0;
-}
-
-/*
- * Release a pager map segment.
- *
- * Caller does not lock.
- *
- * Deallocates pseg if it is no longer in use.
- */
-void
-uvm_pseg_release(vaddr_t segaddr)
-{
-	int id;
-	struct uvm_pseg *pseg;
-	vaddr_t va = 0;
-
-	for (pseg = &psegs[0]; pseg != &psegs[PSEG_NUMSEGS]; pseg++) {
-		if (pseg->start <= segaddr &&
-		    segaddr < pseg->start + MAX_PAGER_SEGS * MAXBSIZE)
-			break;
-	}
-	KASSERT(pseg != &psegs[PSEG_NUMSEGS]);
-
-	id = (segaddr - pseg->start) / MAXBSIZE;
-	KASSERT(id >= 0 && id < MAX_PAGER_SEGS);
-
-	/* test for no remainder */
-	KDASSERT(segaddr == pseg->start + id * MAXBSIZE);
-
-	mtx_enter(&uvm_pseg_lck);
-
-	KASSERT(UVM_PSEG_INUSE(pseg, id));
-
-	pseg->use &= ~(1 << id);
-	wakeup(&psegs);
-
-	if (pseg != &psegs[0] && UVM_PSEG_EMPTY(pseg)) {
-		va = pseg->start;
-		pseg->start = 0;
-	}
-
-	mtx_leave(&uvm_pseg_lck);
-
-	if (va)
-		uvm_km_free(kernel_map, va, MAX_PAGER_SEGS * MAXBSIZE);
-}
-
-/*
- * uvm_pagermapin: map pages into KVA for I/O that needs mappings
- *
- * We basically just km_valloc a blank map entry to reserve the space in the
- * kernel map and then use pmap_enter() to put the mappings in by hand.
- */
-vaddr_t
-uvm_pagermapin(struct vm_page **pps, int npages, int flags)
-{
-	vaddr_t kva, cva;
-	vm_prot_t prot;
 	vsize_t size;
+	vaddr_t kva;
+	struct uvm_aiodesc *aio;
+	vaddr_t cva;
 	struct vm_page *pp;
+	UVMHIST_FUNC("uvm_pagermapin"); UVMHIST_CALLED(maphist);
 
-	prot = PROT_READ;
-	if (flags & UVMPAGER_MAPIN_READ)
-		prot |= PROT_WRITE;
-	size = ptoa(npages);
+	UVMHIST_LOG(maphist,"(pps=0x%x, npages=%d, aiop=0x%x, waitf=%d)",
+	      pps, npages, aiop, waitf);
 
-	KASSERT(size <= MAXBSIZE);
+ReStart:
+	if (aiop) {
+		MALLOC(aio, struct uvm_aiodesc *, sizeof(*aio), M_TEMP, waitf);
+		if (aio == NULL)
+			return(0);
+		*aiop = aio;
+	} else {
+		aio = NULL;
+	}
 
-	kva = uvm_pseg_get(flags);
-	if (kva == 0)
-		return 0;
+	size = npages << PAGE_SHIFT;
+	kva = NULL;			/* let system choose VA */
 
+	if (uvm_map(pager_map, &kva, size, NULL, 
+	      UVM_UNKNOWN_OFFSET, UVM_FLAG_NOMERGE) != KERN_SUCCESS) {
+		if (waitf == M_NOWAIT) {
+			if (aio)
+				FREE(aio, M_TEMP);
+			UVMHIST_LOG(maphist,"<- NOWAIT failed", 0,0,0,0);
+			return(NULL);
+		}
+		simple_lock(&pager_map_wanted_lock);
+		pager_map_wanted = TRUE; 
+		UVMHIST_LOG(maphist, "  SLEEPING on pager_map",0,0,0,0);
+		UVM_UNLOCK_AND_WAIT(pager_map, &pager_map_wanted_lock, FALSE, 
+		    "pager_map",0);
+		goto ReStart;
+	}
+
+	/* got it */
 	for (cva = kva ; size != 0 ; size -= PAGE_SIZE, cva += PAGE_SIZE) {
 		pp = *pps++;
-		KASSERT(pp);
-		KASSERT(pp->pg_flags & PG_BUSY);
-		/* Allow pmap_enter to fail. */
-		if (pmap_enter(pmap_kernel(), cva, VM_PAGE_TO_PHYS(pp),
-		    prot, PMAP_WIRED | PMAP_CANFAIL | prot) != 0) {
-			pmap_remove(pmap_kernel(), kva, cva);
-			pmap_update(pmap_kernel());
-			uvm_pseg_release(kva);
-			return 0;
-		}
+#ifdef DEBUG
+		if ((pp->flags & PG_BUSY) == 0)
+			panic("uvm_pagermapin: page not busy");
+#endif
+
+		pmap_enter(vm_map_pmap(pager_map), cva, VM_PAGE_TO_PHYS(pp),
+		    VM_PROT_DEFAULT, TRUE,
+		    VM_PROT_READ | VM_PROT_WRITE);
 	}
-	pmap_update(pmap_kernel());
-	return kva;
+
+	UVMHIST_LOG(maphist, "<- done (KVA=0x%x)", kva,0,0,0);
+	return(kva);
 }
 
 /*
- * uvm_pagermapout: remove KVA mapping
+ * uvm_pagermapout: remove pager_map mapping
  *
- * We remove our mappings by hand and then remove the mapping.
+ * we remove our mappings by hand and then remove the mapping (waking
+ * up anyone wanting space).
  */
+
 void
-uvm_pagermapout(vaddr_t kva, int npages)
+uvm_pagermapout(kva, npages)
+	vaddr_t kva;
+	int npages;
 {
+	vsize_t size = npages << PAGE_SHIFT;
+	vm_map_entry_t entries;
+	UVMHIST_FUNC("uvm_pagermapout"); UVMHIST_CALLED(maphist);
+	
+	UVMHIST_LOG(maphist, " (kva=0x%x, npages=%d)", kva, npages,0,0);
 
-	pmap_remove(pmap_kernel(), kva, kva + ((vsize_t)npages << PAGE_SHIFT));
-	pmap_update(pmap_kernel());
-	uvm_pseg_release(kva);
+	/*
+	 * duplicate uvm_unmap, but add in pager_map_wanted handling.
+	 */
 
+	vm_map_lock(pager_map);
+	(void) uvm_unmap_remove(pager_map, kva, kva + size, &entries);
+	simple_lock(&pager_map_wanted_lock);
+	if (pager_map_wanted) {
+		pager_map_wanted = FALSE;
+		wakeup(pager_map);
+	}
+	simple_unlock(&pager_map_wanted_lock);
+	vm_map_unlock(pager_map);
+	if (entries)
+		uvm_unmap_detach(entries, 0);
+
+	UVMHIST_LOG(maphist,"<- done",0,0,0,0);
 }
 
 /*
@@ -293,20 +232,22 @@ uvm_pagermapout(vaddr_t kva, int npages)
  *      PGO_ALLPAGES:  all pages in object are valid targets
  *      !PGO_ALLPAGES: use "lo" and "hi" to limit range of cluster
  *      PGO_DOACTCLUST: include active pages in cluster.
- *	PGO_FREE: set the PG_RELEASED bits on the cluster so they'll be freed
- *		in async io (caller must clean on error).
  *        NOTE: the caller should clear PG_CLEANCHK bits if PGO_DOACTCLUST.
  *              PG_CLEANCHK is only a hint, but clearing will help reduce
  *		the number of calls we make to the pmap layer.
  */
 
 struct vm_page **
-uvm_mk_pcluster(struct uvm_object *uobj, struct vm_page **pps, int *npages,
-    struct vm_page *center, int flags, voff_t mlo, voff_t mhi)
+uvm_mk_pcluster(uobj, pps, npages, center, flags, mlo, mhi)
+	struct uvm_object *uobj;	/* IN */
+	struct vm_page **pps, *center;  /* IN/OUT, IN */
+	int *npages, flags;		/* IN/OUT, IN */
+	vaddr_t mlo, mhi;		/* IN (if !PGO_ALLPAGES) */
 {
 	struct vm_page **ppsp, *pclust;
-	voff_t lo, hi, curoff;
-	int center_idx, forward, incr;
+	vaddr_t lo, hi, curoff;
+	int center_idx, forward;
+	UVMHIST_FUNC("uvm_mk_pcluster"); UVMHIST_CALLED(maphist);
 
 	/* 
 	 * center page should already be busy and write protected.  XXX:
@@ -315,7 +256,11 @@ uvm_mk_pcluster(struct uvm_object *uobj, struct vm_page **pps, int *npages,
 	 * pages in the middle of an I/O.  (consider an msync()).  let's
 	 * lock it for now (better to delay than corrupt data?).
 	 */
-	/* get cluster boundaries, check sanity, and apply our limits as well.*/
+
+	/*
+	 * get cluster boundaries, check sanity, and apply our limits as well.
+	 */
+
 	uobj->pgops->pgo_cluster(uobj, center->offset, &lo, &hi);
 	if ((flags & PGO_ALLPAGES) == 0) {
 		if (lo < mlo)
@@ -323,18 +268,25 @@ uvm_mk_pcluster(struct uvm_object *uobj, struct vm_page **pps, int *npages,
 		if (hi > mhi)
 			hi = mhi;
 	}
-	if ((hi - lo) >> PAGE_SHIFT > *npages) { /* pps too small, bail out! */
+	if ((hi - lo) >> PAGE_SHIFT > *npages) {  /* pps too small, bail out! */
+#ifdef DIAGNOSTIC
+	    printf("uvm_mk_pcluster: provided page array too small (fixed)\n");
+#endif
 		pps[0] = center;
 		*npages = 1;
 		return(pps);
 	}
 
-	/* now determine the center and attempt to cluster around the edges */
+	/*
+	 * now determine the center and attempt to cluster around the
+	 * edges
+	 */
+
 	center_idx = (center->offset - lo) >> PAGE_SHIFT;
 	pps[center_idx] = center;	/* plug in the center page */
 	ppsp = &pps[center_idx];
 	*npages = 1;
-
+	
 	/*
 	 * attempt to cluster around the left [backward], and then 
 	 * the right side [forward].    
@@ -344,58 +296,43 @@ uvm_mk_pcluster(struct uvm_object *uobj, struct vm_page **pps, int *npages,
 	 * [i.e. there is no need to query the pmap with pmap_is_modified
 	 * since there are no mappings].
 	 */
+
 	for (forward  = 0 ; forward <= 1 ; forward++) {
-		incr = forward ? PAGE_SIZE : -PAGE_SIZE;
-		curoff = center->offset + incr;
+
+		curoff = center->offset + (forward ? PAGE_SIZE : -PAGE_SIZE);
 		for ( ;(forward == 0 && curoff >= lo) ||
 		       (forward && curoff < hi);
-		      curoff += incr) {
+		      curoff += (forward ? 1 : -1) << PAGE_SHIFT) {
 
 			pclust = uvm_pagelookup(uobj, curoff); /* lookup page */
-			if (pclust == NULL) {
+			if (pclust == NULL)
 				break;			/* no page */
-			}
 			/* handle active pages */
 			/* NOTE: inactive pages don't have pmap mappings */
-			if ((pclust->pg_flags & PQ_INACTIVE) == 0) {
-				if ((flags & PGO_DOACTCLUST) == 0) {
+			if ((pclust->pqflags & PQ_INACTIVE) == 0) {
+				if ((flags & PGO_DOACTCLUST) == 0)
 					/* dont want mapped pages at all */
 					break;
-				}
 
 				/* make sure "clean" bit is sync'd */
-				if ((pclust->pg_flags & PG_CLEANCHK) == 0) {
-					if ((pclust->pg_flags & (PG_CLEAN|PG_BUSY))
+				if ((pclust->flags & PG_CLEANCHK) == 0) {
+					if ((pclust->flags & (PG_CLEAN|PG_BUSY))
 					   == PG_CLEAN &&
-					   pmap_is_modified(pclust))
-						atomic_clearbits_int(
-						    &pclust->pg_flags,
-						    PG_CLEAN);
+					   pmap_is_modified(PMAP_PGARG(pclust)))
+					pclust->flags &= ~PG_CLEAN;
 					/* now checked */
-					atomic_setbits_int(&pclust->pg_flags,
-					    PG_CLEANCHK);
+					pclust->flags |= PG_CLEANCHK;
 				}
 			}
-
 			/* is page available for cleaning and does it need it */
-			if ((pclust->pg_flags & (PG_CLEAN|PG_BUSY)) != 0) {
+			if ((pclust->flags & (PG_CLEAN|PG_BUSY)) != 0)
 				break;	/* page is already clean or is busy */
-			}
 
 			/* yes!   enroll the page in our array */
-			atomic_setbits_int(&pclust->pg_flags, PG_BUSY);
+			pclust->flags |= PG_BUSY;		/* busy! */
 			UVM_PAGE_OWN(pclust, "uvm_mk_pcluster");
-
-			/*
-			 * If we want to free after io is done, and we're
-			 * async, set the released flag
-			 */
-			if ((flags & (PGO_FREE|PGO_SYNCIO)) == PGO_FREE)
-				atomic_setbits_int(&pclust->pg_flags,
-				    PG_RELEASED);
-
 			/* XXX: protect wired page?   see above comment. */
-			pmap_page_protect(pclust, PROT_READ);
+			pmap_page_protect(PMAP_PGARG(pclust), VM_PROT_READ);
 			if (!forward) {
 				ppsp--;			/* back up one page */
 				*ppsp = pclust;
@@ -403,14 +340,51 @@ uvm_mk_pcluster(struct uvm_object *uobj, struct vm_page **pps, int *npages,
 				/* move forward one page */
 				ppsp[*npages] = pclust;
 			}
-			(*npages)++;
+			*npages = *npages + 1;
 		}
 	}
 	
 	/*
 	 * done!  return the cluster array to the caller!!!
 	 */
+
+	UVMHIST_LOG(maphist, "<- done",0,0,0,0);
 	return(ppsp);
+}
+
+
+/*
+ * uvm_shareprot: generic share protect routine
+ *
+ * => caller must lock map entry's map
+ * => caller must lock object pointed to by map entry
+ */
+
+void
+uvm_shareprot(entry, prot)
+	vm_map_entry_t entry;
+	vm_prot_t prot;
+{
+	struct uvm_object *uobj = entry->object.uvm_obj;
+	struct vm_page *pp;
+	vaddr_t start, stop;
+	UVMHIST_FUNC("uvm_shareprot"); UVMHIST_CALLED(maphist);
+
+	if (UVM_ET_ISSUBMAP(entry)) 
+		panic("uvm_shareprot: non-object attached");
+
+	start = entry->offset;
+	stop = start + (entry->end - entry->start);
+
+	/*
+	 * traverse list of pages in object.   if page in range, pmap_prot it
+	 */
+
+	for (pp = uobj->memq.tqh_first ; pp != NULL ; pp = pp->listq.tqe_next) {
+		if (pp->offset >= start && pp->offset < stop)
+			pmap_page_protect(PMAP_PGARG(pp), prot);
+	}
+	UVMHIST_LOG(maphist, "<- done",0,0,0,0);
 }
 
 /*
@@ -421,7 +395,7 @@ uvm_mk_pcluster(struct uvm_object *uobj, struct vm_page **pps, int *npages,
  *
  * => page queues must be locked by caller
  * => if page is not swap-backed, then "uobj" points to the object
- *	backing it.
+ *	backing it.   this object should be locked by the caller.
  * => if page is swap-backed, then "uobj" should be NULL.
  * => "pg" should be PG_BUSY (by caller), and !PG_CLEAN
  *    for swap-backed memory, "pg" can be NULL if there is no page
@@ -433,23 +407,33 @@ uvm_mk_pcluster(struct uvm_object *uobj, struct vm_page **pps, int *npages,
  *	PGO_DOACTCLUST: include "PQ_ACTIVE" pages as valid targets
  *	PGO_SYNCIO: do SYNC I/O (no async)
  *	PGO_PDFREECLUST: pagedaemon: drop cluster on successful I/O
- *	PGO_FREE: tell the aio daemon to free pages in the async case.
  * => start/stop: if (uobj && !PGO_ALLPAGES) limit targets to this range
  *		  if (!uobj) start is the (daddr_t) of the starting swapblk
  * => return state:
  *	1. we return the VM_PAGER status code of the pageout
  *	2. we return with the page queues unlocked
- *	3. on errors we always drop the cluster.   thus, if we return
+ *	3. if (uobj != NULL) [!swap_backed] we return with
+ *		uobj locked _only_ if PGO_PDFREECLUST is set 
+ *		AND result != VM_PAGER_PEND.   in all other cases
+ *		we return with uobj unlocked.   [this is a hack
+ *		that allows the pagedaemon to save one lock/unlock
+ *		pair in the !swap_backed case since we have to
+ *		lock the uobj to drop the cluster anyway]
+ *	4. on errors we always drop the cluster.   thus, if we return
  *		!PEND, !OK, then the caller only has to worry about
  *		un-busying the main page (not the cluster pages).
- *	4. on success, if !PGO_PDFREECLUST, we return the cluster
+ *	5. on success, if !PGO_PDFREECLUST, we return the cluster
  *		with all pages busy (caller must un-busy and check
  *		wanted/released flags).
  */
+
 int
-uvm_pager_put(struct uvm_object *uobj, struct vm_page *pg,
-    struct vm_page ***ppsp_ptr, int *npages, int flags,
-    voff_t start, voff_t stop)
+uvm_pager_put(uobj, pg, ppsp_ptr, npages, flags, start, stop)
+	struct uvm_object *uobj;	/* IN */
+	struct vm_page *pg, ***ppsp_ptr;/* IN, IN/OUT */
+	int *npages;			/* IN/OUT */
+	int flags;			/* IN */
+	vaddr_t start, stop;	/* IN, IN */
 {
 	int result;
 	daddr_t swblk;
@@ -460,11 +444,14 @@ uvm_pager_put(struct uvm_object *uobj, struct vm_page *pg,
 	 * note that uobj is !null if we are doing normal object pageout.
 	 * note that the page queues must be locked to cluster.
 	 */
+
 	if (uobj) {	/* if !swap-backed */
+
 		/*
 		 * attempt to build a cluster for pageout using its
 		 * make-put-cluster function (if it has one).
 		 */
+
 		if (uobj->pgops->pgo_mk_pcluster) {
 			ppsp = uobj->pgops->pgo_mk_pcluster(uobj, ppsp,
 			    npages, pg, flags, start, stop);
@@ -472,10 +459,12 @@ uvm_pager_put(struct uvm_object *uobj, struct vm_page *pg,
 		} else {
 			ppsp[0] = pg;
 			*npages = 1;
-		}
-
+		 }
+					  
 		swblk = 0;		/* XXX: keep gcc happy */
+
 	} else {
+
 		/*
 		 * for swap-backed pageout, the caller (the pagedaemon) has
 		 * already built the cluster for us.   the starting swap
@@ -484,7 +473,7 @@ uvm_pager_put(struct uvm_object *uobj, struct vm_page *pg,
 		 * interested in (in which case the whole cluster gets dropped
 		 * in the event of an error or a sync "done").
 		 */
-		swblk = start;
+		swblk = (daddr_t) start;
 		/* ppsp and npages should be ok */
 	}
 
@@ -495,12 +484,17 @@ uvm_pager_put(struct uvm_object *uobj, struct vm_page *pg,
 	 * now attempt the I/O.   if we have a failure and we are
 	 * clustered, we will drop the cluster and try again.
 	 */
+
 ReTry:
 	if (uobj) {
-		result = uobj->pgops->pgo_put(uobj, ppsp, *npages, flags);
+		/* object is locked */
+		result = uobj->pgops->pgo_put(uobj, ppsp, *npages,
+		    flags & PGO_SYNCIO);
+		/* object is now unlocked */
 	} else {
-		/* XXX daddr_t -> int */
-		result = uvm_swap_put(swblk, ppsp, *npages, flags);
+		/* nothing locked */
+		result = uvm_swap_put(swblk, ppsp, *npages, flags & PGO_SYNCIO);
+		/* nothing locked */
 	}
 
 	/*
@@ -515,77 +509,47 @@ ReTry:
 	 * [in this case the async i/o done function must clean up when
 	 *  i/o is done...]
 	 */
+
 	if (result == VM_PAGER_PEND || result == VM_PAGER_OK) {
 		if (result == VM_PAGER_OK && (flags & PGO_PDFREECLUST)) {
-			/* drop cluster */
+			/*
+			 * drop cluster and relock object (only if I/O is
+			 * not pending)
+			 */
+			if (uobj)
+				/* required for dropcluster */
+				simple_lock(&uobj->vmobjlock);
 			if (*npages > 1 || pg == NULL)
 				uvm_pager_dropcluster(uobj, pg, ppsp, npages,
-				    PGO_PDFREECLUST);
+				    PGO_PDFREECLUST, 0);
+			/* if (uobj): object still locked, as per
+			 * return-state item #3 */
 		}
 		return (result);
 	}
 
 	/*
-	 * a pager error occured (even after dropping the cluster, if there
-	 * was one).  give up! the caller only has one page ("pg")
-	 * to worry about.
+	 * a pager error occured.    if we have clustered, we drop the 
+	 * cluster and try again.
 	 */
-	if (*npages > 1 || pg == NULL) {
-		uvm_pager_dropcluster(uobj, pg, ppsp, npages, PGO_REALLOCSWAP);
 
-		/*
-		 * for failed swap-backed pageouts with a "pg",
-		 * we need to reset pg's swslot to either:
-		 * "swblk" (for transient errors, so we can retry),
-		 * or 0 (for hard errors).
-		 */
-		if (uobj == NULL && pg != NULL) {
-			/* XXX daddr_t -> int */
-			int nswblk = (result == VM_PAGER_AGAIN) ? swblk : 0;
-			if (pg->pg_flags & PQ_ANON) {
-				pg->uanon->an_swslot = nswblk;
-			} else {
-				uao_set_swslot(pg->uobject,
-					       pg->offset >> PAGE_SHIFT,
-					       nswblk);
-			}
-		}
-		if (result == VM_PAGER_AGAIN) {
-			/*
-			 * for transient failures, free all the swslots that
-			 * we're not going to retry with.
-			 */
-			if (uobj == NULL) {
-				if (pg) {
-					/* XXX daddr_t -> int */
-					uvm_swap_free(swblk + 1, *npages - 1);
-				} else {
-					/* XXX daddr_t -> int */
-					uvm_swap_free(swblk, *npages);
-				}
-			}
-			if (pg) {
-				ppsp[0] = pg;
-				*npages = 1;
-				goto ReTry;
-			}
-		} else if (uobj == NULL) {
-			/*
-			 * for hard errors on swap-backed pageouts,
-			 * mark the swslots as bad.  note that we do not
-			 * free swslots that we mark bad.
-			 */
-			/* XXX daddr_t -> int */
-			uvm_swap_markbad(swblk, *npages);
-		}
+	if (*npages > 1 || pg == NULL) {
+		if (uobj)
+			simple_lock(&uobj->vmobjlock);
+		uvm_pager_dropcluster(uobj, pg, ppsp, npages, PGO_REALLOCSWAP,
+		    swblk);
+		if (pg != NULL)
+			goto ReTry;
 	}
 
 	/*
-	 * a pager error occurred (even after dropping the cluster, if there
+	 * a pager error occured (even after dropping the cluster, if there
 	 * was one).    give up!   the caller only has one page ("pg")
 	 * to worry about.
 	 */
 	
+	if (uobj && (flags & PGO_PDFREECLUST) != 0)
+		simple_lock(&uobj->vmobjlock);
 	return(result);
 }
 
@@ -594,7 +558,9 @@ ReTry:
  * got an error, or, if PGO_PDFREECLUST we are un-busying the
  * cluster pages on behalf of the pagedaemon).
  *
- * => uobj, if non-null, is a non-swap-backed object
+ * => uobj, if non-null, is a non-swap-backed object that is 
+ *	locked by the caller.   we return with this object still
+ *	locked.
  * => page queues are not locked
  * => pg is our page of interest (the one we clustered around, can be null)
  * => ppsp/npages is our current cluster
@@ -606,29 +572,62 @@ ReTry:
  *		[only meaningful if swap-backed (uobj == NULL)]
  */
 
-void
-uvm_pager_dropcluster(struct uvm_object *uobj, struct vm_page *pg,
-    struct vm_page **ppsp, int *npages, int flags)
+
+void uvm_pager_dropcluster(uobj, pg, ppsp, npages, flags, swblk)
+
+struct uvm_object *uobj;	/* IN */
+struct vm_page *pg, **ppsp;	/* IN, IN/OUT */
+int *npages;			/* IN/OUT */
+int flags;
+int swblk;			/* valid if (uobj == NULL && PGO_REALLOCSWAP) */
+
 {
 	int lcv;
+	boolean_t obj_is_alive; 
+	struct uvm_object *saved_uobj;
 
-	/* drop all pages but "pg" */
+	/*
+	 * if we need to reallocate swap space for the cluster we are dropping
+	 * (true if swap-backed and PGO_REALLOCSWAP) then free the old
+	 * allocation now.   save a block for "pg" if it is non-NULL.
+	 *
+	 * note that we will zap the object's pointer to swap in the "for" loop
+	 * below...
+	 */
+
+	if (uobj == NULL && (flags & PGO_REALLOCSWAP)) {
+		if (pg)
+			uvm_swap_free(swblk + 1, *npages - 1);
+		else
+			uvm_swap_free(swblk, *npages);
+	}
+
+	/*
+	 * drop all pages but "pg"
+	 */
+
 	for (lcv = 0 ; lcv < *npages ; lcv++) {
-		/* skip "pg" or empty slot */
-		if (ppsp[lcv] == pg || ppsp[lcv] == NULL)
+
+		if (ppsp[lcv] == pg)		/* skip "pg" */
 			continue;
 	
 		/*
-		 * Note that PQ_ANON bit can't change as long as we are holding
+		 * if swap-backed, gain lock on object that owns page.  note
+		 * that PQ_ANON bit can't change as long as we are holding
 		 * the PG_BUSY bit (so there is no need to lock the page
 		 * queues to test it).
+		 *
+		 * once we have the lock, dispose of the pointer to swap, if
+		 * requested
 		 */
 		if (!uobj) {
-			if (ppsp[lcv]->pg_flags & PQ_ANON) {
+			if (ppsp[lcv]->pqflags & PQ_ANON) {
+				simple_lock(&ppsp[lcv]->uanon->an_lock);
 				if (flags & PGO_REALLOCSWAP)
 					  /* zap swap block */
 					  ppsp[lcv]->uanon->an_swslot = 0;
 			} else {
+				simple_lock(&ppsp[lcv]->uobject->vmobjlock);
 				if (flags & PGO_REALLOCSWAP)
 					uao_set_swslot(ppsp[lcv]->uobject,
 					    ppsp[lcv]->offset >> PAGE_SHIFT, 0);
@@ -636,29 +635,61 @@ uvm_pager_dropcluster(struct uvm_object *uobj, struct vm_page *pg,
 		}
 
 		/* did someone want the page while we had it busy-locked? */
-		if (ppsp[lcv]->pg_flags & PG_WANTED) {
-			wakeup(ppsp[lcv]);
-		}
+		if (ppsp[lcv]->flags & PG_WANTED)
+			/* still holding obj lock */
+			thread_wakeup(ppsp[lcv]);
 
 		/* if page was released, release it.  otherwise un-busy it */
-		if (ppsp[lcv]->pg_flags & PG_RELEASED &&
-		    ppsp[lcv]->pg_flags & PQ_ANON) {
+		if (ppsp[lcv]->flags & PG_RELEASED) {
+
+			if (ppsp[lcv]->pqflags & PQ_ANON) {
 				/* so that anfree will free */
-				atomic_clearbits_int(&ppsp[lcv]->pg_flags,
-				    PG_BUSY);
+				ppsp[lcv]->flags &= ~(PG_BUSY);
 				UVM_PAGE_OWN(ppsp[lcv], NULL);
 
+				pmap_page_protect(PMAP_PGARG(ppsp[lcv]),
+				    VM_PROT_NONE); /* be safe */
+				simple_unlock(&ppsp[lcv]->uanon->an_lock);
 				/* kills anon and frees pg */
 				uvm_anfree(ppsp[lcv]->uanon);
 
 				continue;
-		} else {
+			}
+
 			/*
-			 * if we were planning on async io then we would
-			 * have PG_RELEASED set, clear that with the others.
+			 * pgo_releasepg will dump the page for us
 			 */
-			atomic_clearbits_int(&ppsp[lcv]->pg_flags,
-			    PG_BUSY|PG_WANTED|PG_FAKE|PG_RELEASED);
+
+#ifdef DIAGNOSTIC
+			if (ppsp[lcv]->uobject->pgops->pgo_releasepg == NULL)
+				panic("uvm_pager_dropcluster: no releasepg "
+				    "function");
+#endif
+			saved_uobj = ppsp[lcv]->uobject;
+			obj_is_alive =
+			    saved_uobj->pgops->pgo_releasepg(ppsp[lcv], NULL);
+			
+#ifdef DIAGNOSTIC
+			/* for normal objects, "pg" is still PG_BUSY by us,
+			 * so obj can't die */
+			if (uobj && !obj_is_alive)
+				panic("uvm_pager_dropcluster: object died "
+				    "with active page");
+#endif
+			/* only unlock the object if it is still alive...  */
+			if (obj_is_alive && saved_uobj != uobj)
+				simple_unlock(&saved_uobj->vmobjlock);
+
+			/*
+			 * XXXCDC: suppose uobj died in the pgo_releasepg?
+			 * how pass that
+			 * info up to caller.  we are currently ignoring it...
+			 */
+
+			continue;		/* next page */
+
+		} else {
+			ppsp[lcv]->flags &= ~(PG_BUSY|PG_WANTED);
 			UVM_PAGE_OWN(ppsp[lcv], NULL);
 		}
 
@@ -667,104 +698,48 @@ uvm_pager_dropcluster(struct uvm_object *uobj, struct vm_page *pg,
 		 * had a successful pageout update the page!
 		 */
 		if (flags & PGO_PDFREECLUST) {
-			pmap_clear_reference(ppsp[lcv]);
-			pmap_clear_modify(ppsp[lcv]);
-			atomic_setbits_int(&ppsp[lcv]->pg_flags, PG_CLEAN);
+			/* XXX: with PMAP_NEW ref should already be clear,
+			 * but don't trust! */
+			pmap_clear_reference(PMAP_PGARG(ppsp[lcv]));
+			pmap_clear_modify(PMAP_PGARG(ppsp[lcv]));
+			ppsp[lcv]->flags |= PG_CLEAN;
 		}
+
+		/* if anonymous cluster, unlock object and move on */
+		if (!uobj) {
+			if (ppsp[lcv]->pqflags & PQ_ANON)
+				simple_unlock(&ppsp[lcv]->uanon->an_lock);
+			else
+				simple_unlock(&ppsp[lcv]->uobject->vmobjlock);
+		}
+
 	}
-}
 
-/*
- * interrupt-context iodone handler for single-buf i/os
- * or the top-level buf of a nested-buf i/o.
- *
- * => must be at splbio().
- */
-
-void
-uvm_aio_biodone(struct buf *bp)
-{
-	splassert(IPL_BIO);
-
-	/* reset b_iodone for when this is a single-buf i/o. */
-	bp->b_iodone = uvm_aio_aiodone;
-
-	mtx_enter(&uvm.aiodoned_lock);
-	TAILQ_INSERT_TAIL(&uvm.aio_done, bp, b_freelist);
-	wakeup(&uvm.aiodoned);
-	mtx_leave(&uvm.aiodoned_lock);
-}
-
-/*
- * uvm_aio_aiodone: do iodone processing for async i/os.
- * this should be called in thread context, not interrupt context.
- */
-void
-uvm_aio_aiodone(struct buf *bp)
-{
-	int npages = bp->b_bufsize >> PAGE_SHIFT;
-	struct vm_page *pg, *pgs[MAXPHYS >> PAGE_SHIFT];
-	struct uvm_object *uobj;
-	int i, error;
-	boolean_t write, swap;
-
-	KASSERT(npages <= MAXPHYS >> PAGE_SHIFT);
-	splassert(IPL_BIO);
-
-	error = (bp->b_flags & B_ERROR) ? (bp->b_error ? bp->b_error : EIO) : 0;
-	write = (bp->b_flags & B_READ) == 0;
-
-	uobj = NULL;
-	for (i = 0; i < npages; i++)
-		pgs[i] = uvm_atopg((vaddr_t)bp->b_data +
-		    ((vsize_t)i << PAGE_SHIFT));
-	uvm_pagermapout((vaddr_t)bp->b_data, npages);
-#ifdef UVM_SWAP_ENCRYPT
 	/*
-	 * XXX - assumes that we only get ASYNC writes. used to be above.
+	 * drop to a cluster of 1 page ("pg") if requested
 	 */
-	if (pgs[0]->pg_flags & PQ_ENCRYPT) {
-		uvm_swap_freepages(pgs, npages);
-		goto freed;
-	}
-#endif /* UVM_SWAP_ENCRYPT */
-	for (i = 0; i < npages; i++) {
-		pg = pgs[i];
 
-		if (i == 0) {
-			swap = (pg->pg_flags & PQ_SWAPBACKED) != 0;
-			if (!swap) {
-				uobj = pg->uobject;
+	if (pg && (flags & PGO_PDFREECLUST) == 0) {
+		/*
+		 * if we are not a successful pageout, we make a 1 page cluster.
+		 */
+		ppsp[0] = pg;
+		*npages = 1;
+
+		/*
+		 * assign new swap block to new cluster, if anon backed
+		 */
+		if (uobj == NULL && (flags & PGO_REALLOCSWAP)) {
+			if (pg->pqflags & PQ_ANON) {
+				simple_lock(&pg->uanon->an_lock);
+				pg->uanon->an_swslot = swblk;	/* reassign */
+				simple_unlock(&pg->uanon->an_lock);
+			} else {
+				simple_lock(&pg->uobject->vmobjlock);
+				uao_set_swslot(pg->uobject,
+				    pg->offset >> PAGE_SHIFT, swblk);
+				simple_unlock(&pg->uobject->vmobjlock);
 			}
 		}
-		KASSERT(swap || pg->uobject == uobj);
-
-		/*
-		 * if this is a read and we got an error, mark the pages
-		 * PG_RELEASED so that uvm_page_unbusy() will free them.
-		 */
-		if (!write && error) {
-			atomic_setbits_int(&pg->pg_flags, PG_RELEASED);
-			continue;
-		}
-		KASSERT(!write || (pgs[i]->pg_flags & PG_FAKE) == 0);
-
-		/*
-		 * if this is a read and the page is PG_FAKE,
-		 * or this was a successful write,
-		 * mark the page PG_CLEAN and not PG_FAKE.
-		 */
-		if ((pgs[i]->pg_flags & PG_FAKE) || (write && error != ENOMEM)) {
-			pmap_clear_reference(pgs[i]);
-			pmap_clear_modify(pgs[i]);
-			atomic_setbits_int(&pgs[i]->pg_flags, PG_CLEAN);
-			atomic_clearbits_int(&pgs[i]->pg_flags, PG_FAKE);
-		}
 	}
-	uvm_page_unbusy(pgs, npages);
-
-#ifdef UVM_SWAP_ENCRYPT
-freed:
-#endif
-	pool_put(&bufpool, bp);
 }

@@ -1,4 +1,4 @@
-/*	$OpenBSD: awkgram.y,v 1.9 2011/09/28 19:27:18 millert Exp $	*/
+/*	$OpenBSD: awkgram.y,v 1.5 1999/04/20 17:31:29 millert Exp $	*/
 /****************************************************************
 Copyright (C) Lucent Technologies 1997
 All Rights Reserved
@@ -51,7 +51,7 @@ Node	*arglist = 0;	/* list of args for current function */
 %token	<i>	NL ',' '{' '(' '|' ';' '/' ')' '}' '[' ']'
 %token	<i>	ARRAY
 %token	<i>	MATCH NOTMATCH MATCHOP
-%token	<i>	FINAL DOT ALL CCL NCCL CHAR OR STAR QUEST PLUS EMPTYRE
+%token	<i>	FINAL DOT ALL CCL NCCL CHAR OR STAR QUEST PLUS
 %token	<i>	AND BOR APPEND EQ GE GT LE LT NE IN
 %token	<i>	ARG BLTIN BREAK CLOSE CONTINUE DELETE DO EXIT FOR FUNC 
 %token	<i>	SUB GSUB IF INDEX LSUBSTR MATCHFCN NEXT NEXTFILE
@@ -98,7 +98,7 @@ Node	*arglist = 0;	/* list of args for current function */
 program:
 	  pas	{ if (errorflag==0)
 			winner = (Node *)stat3(PROGRAM, beginloc, $1, endloc); }
-	| error	{ yyclearin; bracecheck(); SYNTAX("bailing out"); }
+	| error	{ yyclearin; bracecheck(); ERROR "bailing out" SYNTAX; }
 	;
 
 and:
@@ -175,8 +175,8 @@ pa_pat:
 pa_stat:
 	  pa_pat			{ $$ = stat2(PASTAT, $1, stat2(PRINT, rectonode(), NIL)); }
 	| pa_pat lbrace stmtlist '}'	{ $$ = stat2(PASTAT, $1, $3); }
-	| pa_pat ',' opt_nl pa_pat		{ $$ = pa2stat($1, $4, stat2(PRINT, rectonode(), NIL)); }
-	| pa_pat ',' opt_nl pa_pat lbrace stmtlist '}'	{ $$ = pa2stat($1, $4, $6); }
+	| pa_pat ',' pa_pat		{ $$ = pa2stat($1, $3, stat2(PRINT, rectonode(), NIL)); }
+	| pa_pat ',' pa_pat lbrace stmtlist '}'	{ $$ = pa2stat($1, $3, $5); }
 	| lbrace stmtlist '}'		{ $$ = stat2(PASTAT, NIL, $2); }
 	| XBEGIN lbrace stmtlist '}'
 		{ beginloc = linkum(beginloc, $3); $$ = 0; }
@@ -240,10 +240,10 @@ pattern:
 	| pattern IN varname		{ $$ = op2(INTEST, $1, makearr($3)); }
 	| '(' plist ')' IN varname	{ $$ = op2(INTEST, $2, makearr($5)); }
 	| pattern '|' GETLINE var	{ 
-			if (safe) SYNTAX("cmd | getline is unsafe");
+			if (safe) ERROR "cmd | getline is unsafe" SYNTAX;
 			else $$ = op3(GETLINE, $4, itonp($2), $1); }
 	| pattern '|' GETLINE		{ 
-			if (safe) SYNTAX("cmd | getline is unsafe");
+			if (safe) ERROR "cmd | getline is unsafe" SYNTAX;
 			else $$ = op3(GETLINE, (Node*)0, itonp($2), $1); }
 	| pattern term %prec CAT	{ $$ = op2(CAT, $1, $2); }
 	| re
@@ -294,19 +294,19 @@ rparen:
 
 simple_stmt:
 	  print prarg '|' term		{ 
-			if (safe) SYNTAX("print | is unsafe");
+			if (safe) ERROR "print | is unsafe" SYNTAX;
 			else $$ = stat3($1, $2, itonp($3), $4); }
 	| print prarg APPEND term	{
-			if (safe) SYNTAX("print >> is unsafe");
+			if (safe) ERROR "print >> is unsafe" SYNTAX;
 			else $$ = stat3($1, $2, itonp($3), $4); }
 	| print prarg GT term		{
-			if (safe) SYNTAX("print > is unsafe");
+			if (safe) ERROR "print > is unsafe" SYNTAX;
 			else $$ = stat3($1, $2, itonp($3), $4); }
 	| print prarg			{ $$ = stat3($1, $2, NIL, NIL); }
 	| DELETE varname '[' patlist ']' { $$ = stat2(DELETE, makearr($2), $4); }
 	| DELETE varname		 { $$ = stat2(DELETE, makearr($2), 0); }
 	| pattern			{ $$ = exptostat($1); }
-	| error				{ yyclearin; SYNTAX("illegal statement"); }
+	| error				{ yyclearin; ERROR "illegal statement" SYNTAX; }
 	;
 
 st:
@@ -315,9 +315,10 @@ st:
 	;
 
 stmt:
-	  BREAK st		{ if (!inloop) SYNTAX("break illegal outside of loops");
+	  BREAK st		{ if (!inloop) ERROR "break illegal outside of loops" SYNTAX;
 				  $$ = stat1(BREAK, NIL); }
-	| CONTINUE st		{  if (!inloop) SYNTAX("continue illegal outside of loops");
+	| CLOSE pattern st	{ $$ = stat1(CLOSE, $2); }
+	| CONTINUE st		{  if (!inloop) ERROR "continue illegal outside of loops" SYNTAX;
 				  $$ = stat1(CONTINUE, NIL); }
 	| do {inloop++;} stmt {--inloop;} WHILE '(' pattern ')' st
 		{ $$ = stat2(DO, $3, notnull($7)); }
@@ -328,10 +329,10 @@ stmt:
 	| if stmt		{ $$ = stat3(IF, $1, $2, NIL); }
 	| lbrace stmtlist rbrace { $$ = $2; }
 	| NEXT st	{ if (infunc)
-				SYNTAX("next is illegal inside a function");
+				ERROR "next is illegal inside a function" SYNTAX;
 			  $$ = stat1(NEXT, NIL); }
 	| NEXTFILE st	{ if (infunc)
-				SYNTAX("nextfile is illegal inside a function");
+				ERROR "nextfile is illegal inside a function" SYNTAX;
 			  $$ = stat1(NEXTFILE, NIL); }
 	| RETURN pattern st	{ $$ = stat1(RETURN, $2); }
 	| RETURN st		{ $$ = stat1(RETURN, NIL); }
@@ -365,7 +366,6 @@ term:
 	| BLTIN				{ $$ = op2(BLTIN, itonp($1), rectonode()); }
 	| CALL '(' ')'			{ $$ = op2(CALL, celltonode($1,CVAR), NIL); }
 	| CALL '(' patlist ')'		{ $$ = op2(CALL, celltonode($1,CVAR), $3); }
-	| CLOSE term			{ $$ = op1(CLOSE, $2); }
 	| DECR var			{ $$ = op1(PREDECR, $2); }
 	| INCR var			{ $$ = op1(PREINCR, $2); }
 	| var DECR			{ $$ = op1(POSTDECR, $1); }
@@ -377,7 +377,7 @@ term:
 	| INDEX '(' pattern comma pattern ')'
 		{ $$ = op2(INDEX, $3, $5); }
 	| INDEX '(' pattern comma reg_expr ')'
-		{ SYNTAX("index() doesn't permit regular expressions");
+		{ ERROR "index() doesn't permit regular expressions" SYNTAX;
 		  $$ = op2(INDEX, $3, (Node*)$5); }
 	| '(' pattern ')'		{ $$ = $2; }
 	| MATCHFCN '(' pattern comma reg_expr ')'
@@ -448,9 +448,9 @@ while:
 void setfname(Cell *p)
 {
 	if (isarr(p))
-		SYNTAX("%s is an array, not a function", p->nval);
+		ERROR "%s is an array, not a function", p->nval SYNTAX;
 	else if (isfcn(p))
-		SYNTAX("you can't define function %s more than once", p->nval);
+		ERROR "you can't define function %s more than once", p->nval SYNTAX;
 	curfname = p->nval;
 }
 
@@ -480,7 +480,7 @@ void checkdup(Node *vl, Cell *cp)	/* check if name already in list */
 	char *s = cp->nval;
 	for ( ; vl; vl = vl->nnext) {
 		if (strcmp(s, ((Cell *)(vl->narg[0]))->nval) == 0) {
-			SYNTAX("duplicate argument %s", s);
+			ERROR "duplicate argument %s", s SYNTAX;
 			break;
 		}
 	}

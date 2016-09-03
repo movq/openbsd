@@ -1,5 +1,5 @@
-/*	$OpenBSD: lstFindFrom.c,v 1.19 2015/10/14 13:50:22 espie Exp $	*/
-/*	$NetBSD: lstFindFrom.c,v 1.6 1996/11/06 17:59:40 christos Exp $ */
+/*	$OpenBSD: lstFindFrom.c,v 1.4 1998/12/05 00:06:32 espie Exp $	*/
+/*	$NetBSD: lstFindFrom.c,v 1.6 1996/11/06 17:59:40 christos Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,13 +37,20 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)lstFindFrom.c	8.1 (Berkeley) 6/6/93";
+#else
+static char *rcsid = "$OpenBSD: lstFindFrom.c,v 1.4 1998/12/05 00:06:32 espie Exp $";
+#endif
+#endif /* not lint */
+
 /*-
  * LstFindFrom.c --
  *	Find a node on a list from a given starting point. Used by Lst_Find.
  */
 
 #include	"lstInt.h"
-#include	<stddef.h>
 
 /*-
  *-----------------------------------------------------------------------
@@ -49,18 +60,42 @@
  *	determine when it has been found.
  *
  * Results:
- *	The found node or NULL
+ *	The found node or NILLNODE
+ *
+ * Side Effects:
+ *	None.
+ *
  *-----------------------------------------------------------------------
  */
 LstNode
-Lst_FindFrom(LstNode ln, FindProc cProc, void *d)
+Lst_FindFrom (l, ln, d, cProc)
+    Lst		      	l;
+    register LstNode    ln;
+    register ClientData d;
+    register int	(*cProc) __P((ClientData, ClientData));
 {
-	LstNode tln;
+    register ListNode	tln;
+    Boolean		found = FALSE;
 
-	for (tln = ln; tln != NULL; tln = tln->nextPtr)
-		if (!(*cProc)(tln->datum, d))
-			return tln;
+    if (!LstValid (l) || LstIsEmpty (l) || !LstNodeValid (ln, l)) {
+	return (NILLNODE);
+    }
 
-	return NULL;
+    tln = (ListNode)ln;
+
+    do {
+	if ((*cProc) (tln->datum, d) == 0) {
+	    found = TRUE;
+	    break;
+	} else {
+	    tln = tln->nextPtr;
+	}
+    } while (tln != (ListNode)ln && tln != NilListNode);
+
+    if (found) {
+	return ((LstNode)tln);
+    } else {
+	return (NILLNODE);
+    }
 }
 

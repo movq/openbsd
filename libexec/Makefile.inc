@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile.inc,v 1.3 2014/07/11 13:13:04 deraadt Exp $
+#	from: @(#)Makefile.inc	5.1 (Berkeley) 5/11/90
+#	$Id: Makefile.inc,v 1.1.1.1 1995/10/18 08:43:14 deraadt Exp $
 
 BINDIR?=	/usr/libexec
-COPTS+=-Werror-implicit-function-declaration

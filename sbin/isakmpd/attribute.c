@@ -1,5 +1,5 @@
-/* $OpenBSD: attribute.c,v 1.12 2005/04/08 22:32:09 cloder Exp $	 */
-/* $EOM: attribute.c,v 1.10 2000/02/20 19:58:36 niklas Exp $	 */
+/*	$OpenBSD: attribute.c,v 1.7 1999/04/19 19:54:53 niklas Exp $	*/
+/*	$EOM: attribute.c,v 1.9 1999/04/02 00:57:28 niklas Exp $	*/
 
 /*
  * Copyright (c) 1998, 1999 Niklas Hallqvist.  All rights reserved.
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Ericsson Radio Systems.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -32,6 +37,8 @@
 #include <sys/types.h>
 #include <string.h>
 
+#include "sysdep.h"
+
 #include "attribute.h"
 #include "conf.h"
 #include "log.h"
@@ -39,21 +46,21 @@
 #include "util.h"
 
 u_int8_t *
-attribute_set_basic(u_int8_t *buf, u_int16_t type, u_int16_t value)
+attribute_set_basic (u_int8_t *buf, u_int16_t type, u_int16_t value)
 {
-	SET_ISAKMP_ATTR_TYPE(buf, ISAKMP_ATTR_MAKE(1, type));
-	SET_ISAKMP_ATTR_LENGTH_VALUE(buf, value);
-	return buf + ISAKMP_ATTR_VALUE_OFF;
+  SET_ISAKMP_ATTR_TYPE (buf, ISAKMP_ATTR_MAKE (1, type));
+  SET_ISAKMP_ATTR_LENGTH_VALUE (buf, value);
+  return buf + ISAKMP_ATTR_VALUE_OFF;
 }
 
 u_int8_t *
-attribute_set_var(u_int8_t *buf, u_int16_t type, u_int8_t *value,
-    u_int16_t len)
+attribute_set_var (u_int8_t *buf, u_int16_t type, u_int8_t *value,
+		   u_int16_t len)
 {
-	SET_ISAKMP_ATTR_TYPE(buf, ISAKMP_ATTR_MAKE(0, type));
-	SET_ISAKMP_ATTR_LENGTH_VALUE(buf, len);
-	memcpy(buf + ISAKMP_ATTR_VALUE_OFF, value, len);
-	return buf + ISAKMP_ATTR_VALUE_OFF + len;
+  SET_ISAKMP_ATTR_TYPE (buf, ISAKMP_ATTR_MAKE (0, type));
+  SET_ISAKMP_ATTR_LENGTH_VALUE (buf, len);
+  memcpy (buf + ISAKMP_ATTR_VALUE_OFF, value, len);
+  return buf + ISAKMP_ATTR_VALUE_OFF + len;
 }
 
 /*
@@ -63,48 +70,51 @@ attribute_set_var(u_int8_t *buf, u_int16_t type, u_int8_t *value,
  * -1 return value.  If all goes well return zero.
  */
 int
-attribute_map(u_int8_t *buf, size_t sz, int (*func)(u_int16_t, u_int8_t *,
-    u_int16_t, void *), void *arg)
+attribute_map (u_int8_t *buf, size_t sz,
+	       int (*func) (u_int16_t, u_int8_t *, u_int16_t, void *),
+	       void *arg)
 {
-	u_int8_t       *attr;
-	int             fmt;
-	u_int16_t       type;
-	u_int8_t       *value;
-	u_int16_t       len;
+  u_int8_t *attr;
+  int fmt;
+  u_int16_t type;
+  u_int8_t *value;
+  u_int16_t len;
 
-	for (attr = buf; attr < buf + sz; attr = value + len) {
-		if (attr + ISAKMP_ATTR_VALUE_OFF > buf + sz)
-			return -1;
-		type = GET_ISAKMP_ATTR_TYPE(attr);
-		fmt = ISAKMP_ATTR_FORMAT(type);
-		type = ISAKMP_ATTR_TYPE(type);
-		value = attr + (fmt ? ISAKMP_ATTR_LENGTH_VALUE_OFF
-		    : ISAKMP_ATTR_VALUE_OFF);
-		len = (fmt ? ISAKMP_ATTR_LENGTH_VALUE_LEN
-		    : GET_ISAKMP_ATTR_LENGTH_VALUE(attr));
-		if (value + len > buf + sz)
-			return -1;
-		if (func(type, value, len, arg))
-			return -1;
-	}
-	return 0;
+  for (attr = buf; attr < buf + sz; attr = value + len)
+    {
+      if (attr + ISAKMP_ATTR_VALUE_OFF > buf + sz)
+	return -1;
+      type = GET_ISAKMP_ATTR_TYPE (attr);
+      fmt = ISAKMP_ATTR_FORMAT (type);
+      type = ISAKMP_ATTR_TYPE (type);
+      value
+	= attr + (fmt ? ISAKMP_ATTR_LENGTH_VALUE_OFF : ISAKMP_ATTR_VALUE_OFF);
+      len = (fmt ? ISAKMP_ATTR_LENGTH_VALUE_LEN
+	     : GET_ISAKMP_ATTR_LENGTH_VALUE (attr));
+      if (value + len > buf + sz)
+	return -1;
+      if (func (type, value, len, arg))
+	return -1;
+    }
+  return 0;
 }
 
 int
-attribute_set_constant(char *section, char *tag, struct constant_map *map,
-    int attr_class, u_int8_t **attr)
+attribute_set_constant (char *section, char *tag, struct constant_map *map,
+			int attr_class, u_int8_t **attr)
 {
-	char	*name;
-	int	 value;
+  char *name;
+  int value;
 
-	name = conf_get_str(section, tag);
-	if (!name) {
-		LOG_DBG((LOG_MISC, 70,
-		    "attribute_set_constant: no %s in the %s section", tag,
-		    section));
-		return -1;
-	}
-	value = constant_value(map, name);
-	*attr = attribute_set_basic(*attr, attr_class, value);
-	return 0;
+  name = conf_get_str (section, tag);
+  if (!name)
+    {
+      log_debug (LOG_MISC, 70,
+		 "attribute_set_constant: no %s in the %s section", tag,
+		 section);
+      return -1;
+    }
+  value = constant_value (map, name);
+  *attr = attribute_set_basic (*attr, attr_class, value);
+  return 0;
 }

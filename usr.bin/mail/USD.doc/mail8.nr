@@ -1,4 +1,4 @@
-.\"	$OpenBSD: mail8.nr,v 1.5 2004/06/04 00:04:54 jmc Exp $
+.\"	$OpenBSD: mail8.nr,v 1.3 1997/07/13 23:35:51 millert Exp $
 .\"
 .\" Copyright (c) 1980, 1993
 .\"	The Regents of the University of California.  All rights reserved.
@@ -11,7 +11,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -55,7 +59,7 @@ A collection of messages.  Often used in the phrase,
 .q "Have you read your mail?"
 .ip "\fImailbox\fP"
 The place where your mail is stored, typically in the directory
-/var/mail.
+/usr/spool/mail.
 .ip "\fImessage\fP"
 A single letter from someone, initially stored in your
 .i mailbox .

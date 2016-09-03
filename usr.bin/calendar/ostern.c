@@ -1,4 +1,4 @@
-/*	$OpenBSD: ostern.c,v 1.8 2015/03/15 00:41:28 millert Exp $	*/
+/*	$OpenBSD: ostern.c,v 1.3 1998/12/13 07:31:08 pjanzen Exp $	*/
 
 /*
  * Copyright (c) 1996 Wolfram Schneider <wosch@FreeBSD.org>. Berlin.
@@ -25,52 +25,56 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * 	$Id: ostern.c,v 1.8 2015/03/15 00:41:28 millert Exp $
+ * 	$Id: ostern.c,v 1.3 1998/12/13 07:31:08 pjanzen Exp $
  */
 
-#include <stdio.h>
-#include <time.h>
+#ifndef lint
+static char rcsid[] = "$OpenBSD: ostern.c,v 1.3 1998/12/13 07:31:08 pjanzen Exp $";
+#endif /* not lint */
 
-#include "calendar.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <tzfile.h>
 
 /* return year day for Easter */
 
-int
-easter(int year)	/* 0 ... abcd, NOT since 1900 */
+int easter (year)
+    int year;            /* 0 ... abcd, NOT since 1900 */
 {
-	int	e_a, e_b, e_c, e_d, e_e,e_f, e_g, e_h, e_i, e_k;
-	int	e_l, e_m, e_n, e_p, e_q;
 
-	/* silly, but it works */
-	e_a = year % 19;
-	e_b = year / 100;
-	e_c = year % 100;
+    int e_a, e_b, e_c, e_d, e_e,e_f, e_g, e_h, e_i, e_k,
+        e_l, e_m, e_n, e_p, e_q;
 
-	e_d = e_b / 4;
-	e_e = e_b % 4;
-	e_f = (e_b + 8) / 25;
-	e_g = (e_b + 1 - e_f) / 3;
-	e_h = ((19 * e_a) + 15 + e_b - (e_d + e_g)) % 30;
-	e_i = e_c / 4;
-	e_k = e_c % 4;
-	e_l = (32 + 2 * e_e + 2 * e_i - (e_h + e_k)) % 7;
-	e_m = (e_a + 11 * e_h + 22 * e_l) / 451;
-	e_n = (e_h + e_l + 114 - (7 * e_m)) / 31;
-	e_p = (e_h + e_l + 114 - (7 * e_m)) % 31;
-	e_p = e_p + 1;
+    /* silly, but it works */
+    e_a = year % 19;
+    e_b = year / 100;
+    e_c = year % 100;
 
-	e_q = 31 + 28 + e_p;
-	if (isleap(year))
-		e_q++;
+    e_d = e_b / 4;
+    e_e = e_b % 4;
+    e_f = (e_b + 8) / 25;
+    e_g = (e_b + 1 - e_f) / 3;
+    e_h = ((19 * e_a) + 15 + e_b - (e_d + e_g)) % 30;
+    e_i = e_c / 4;
+    e_k = e_c % 4;
+    e_l = (32 + 2 * e_e + 2 * e_i - (e_h + e_k)) % 7;
+    e_m = (e_a + 11 * e_h + 22 * e_l) / 451;
+    e_n = (e_h + e_l + 114 - (7 * e_m)) / 31;
+    e_p = (e_h + e_l + 114 - (7 * e_m)) % 31;
+    e_p = e_p + 1;
 
-	if (e_n == 4)
+    e_q = 31 + 28 + e_p;
+    if (isleap(year))
+	    e_q++;
+
+    if (e_n == 4)
 	e_q += 31;
 
 #if DEBUG
-	printf("%d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n",
-	    e_a, e_b, e_c, e_d, e_e, e_f, e_g, e_h,
-	    e_i, e_k, e_l, e_m, e_n, e_p, e_q);
+    printf("%d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n", e_a , e_b , e_c , e_d , e_e , e_f , e_g , e_h , e_i , e_k , e_l , e_m , e_n  , e_p , e_q);
 #endif
 
-	return (e_q);
+    return (e_q);
 }

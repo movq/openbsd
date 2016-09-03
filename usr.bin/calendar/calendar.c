@@ -1,4 +1,4 @@
-/*	$OpenBSD: calendar.c,v 1.35 2015/12/07 18:46:35 espie Exp $	*/
+/*	$OpenBSD: calendar.c,v 1.12 1998/12/13 07:31:07 pjanzen Exp $	*/
 
 /*
  * Copyright (c) 1989, 1993, 1994
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,63 +33,60 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <sys/wait.h>
+#ifndef lint
+static const char copyright[] =
+"@(#) Copyright (c) 1989, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static const char sccsid[] = "@(#)calendar.c  8.3 (Berkeley) 3/25/94";
+#else
+static char rcsid[] = "$OpenBSD: calendar.c,v 1.12 1998/12/13 07:31:07 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
 #include <err.h>
 #include <errno.h>
 #include <locale.h>
-#include <login_cap.h>
 #include <pwd.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <limits.h>
 #include <time.h>
+#include <tzfile.h>
 #include <unistd.h>
 
 #include "pathnames.h"
 #include "calendar.h"
 
-char *calendarFile = "calendar";  /* default calendar file */
-char *calendarHome = ".calendar"; /* HOME */
-char *calendarNoMail = "nomail";  /* don't sent mail if this file exists */
-
 struct passwd *pw;
 int doall = 0;
-int daynames = 0;
 time_t f_time = 0;
-int bodun_always = 0;
 
 int f_dayAfter = 0; /* days after current date */
 int f_dayBefore = 0; /* days before current date */
-int f_SetdayAfter = 0; /* calendar invoked with -A */
 
 struct specialev spev[NUMEV];
 
-void childsig(int);
-
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
-	int ch;
-	const char *errstr;
+	int ch, i;
 	char *caldir;
 
 	(void)setlocale(LC_ALL, "");
 
-	while ((ch = getopt(argc, argv, "abwf:t:A:B:-")) != -1)
+	while ((ch = getopt(argc, argv, "-af:t:A:B:")) != -1)
 		switch (ch) {
 		case '-':		/* backward contemptible */
 		case 'a':
 			if (getuid())
-				errx(1, "%s", strerror(EPERM));
+				errx(1, strerror(EPERM));
 			doall = 1;
-			break;
-
-		case 'b':
-			bodun_always = 1;
 			break;
 
 		case 'f': /* other calendar file */
@@ -98,20 +99,11 @@ main(int argc, char *argv[])
 			break;
 
 		case 'A': /* days after current date */
-			f_dayAfter = strtonum(optarg, 0, INT_MAX, &errstr);
-			if (errstr)
-				errx(1, "-A %s: %s", optarg, errstr);
-			f_SetdayAfter = 1;
+			f_dayAfter = atoi(optarg);
 			break;
 
 		case 'B': /* days before current date */
-			f_dayBefore = strtonum(optarg, 0, INT_MAX, &errstr);
-			if (errstr)
-				errx(1, "-B %s: %s", optarg, errstr);
-			break;
-
-		case 'w':
-			daynames = 1;
+			f_dayBefore = atoi(optarg);
 			break;
 
 		default:
@@ -122,15 +114,6 @@ main(int argc, char *argv[])
 
 	if (argc)
 		usage();
-
-	if (doall) {
-		if (pledge("stdio rpath tmppath fattr getpw id proc exec", NULL)
-		    == -1)
-			err(1, "pledge");
-	} else {
-		if (pledge("stdio rpath proc exec", NULL) == -1)
-			err(1, "pledge");
-	}
 
 	/* use current time */
 	if (f_time <= 0)
@@ -145,116 +128,22 @@ main(int argc, char *argv[])
 	settime(&f_time);
 
 	if (doall) {
-		pid_t kid, deadkid;
-		int kidstat, kidreaped, runningkids;
-		int acstat;
-		struct stat sbuf;
-		time_t t;
-		unsigned int sleeptime;
-
-		signal(SIGCHLD, childsig);
-		runningkids = 0;
-		t = time(NULL);
 		while ((pw = getpwent()) != NULL) {
-			acstat = 0;
-			/* Avoid unnecessary forks.  The calendar file is only
-			 * opened as the user later; if it can't be opened,
-			 * it's no big deal.  Also, get to correct directory.
-			 * Note that in an NFS environment root may get EACCES
-			 * on a chdir(), in which case we have to fork.  As long as
-			 * we can chdir() we can stat(), unless the user is
-			 * modifying permissions while this is running.
-			 */
-			if (chdir(pw->pw_dir)) {
-				if (errno == EACCES)
-					acstat = 1;
-				else
-					continue;
-			}
-			if (stat(calendarFile, &sbuf) != 0) {
-				if (chdir(calendarHome)) {
-					if (errno == EACCES)
-						acstat = 1;
-					else
-						continue;
-				}
-				if (stat(calendarNoMail, &sbuf) == 0 ||
-				    stat(calendarFile, &sbuf) != 0)
-					continue;
-			}
-			sleeptime = USERTIMEOUT;
-			switch ((kid = fork())) {
-			case -1:	/* error */
-				warn("fork");
-				continue;
-			case 0:	/* child */
-				(void)setpgid(getpid(), getpid());
-				(void)setlocale(LC_ALL, "");
-				if (setusercontext(NULL, pw, pw->pw_uid,
-				    LOGIN_SETALL ^ LOGIN_SETLOGIN))
-					err(1, "unable to set user context (uid %u)",
-					    pw->pw_uid);
-				if (acstat) {
-					if (chdir(pw->pw_dir) ||
-					    stat(calendarFile, &sbuf) != 0 ||
-					    chdir(calendarHome) ||
-					    stat(calendarNoMail, &sbuf) == 0 ||
-					    stat(calendarFile, &sbuf) != 0)
-						exit(0);
-				}
+			(void)setlocale(LC_ALL, "");
+			(void)setegid(pw->pw_gid);
+			(void)initgroups(pw->pw_name, pw->pw_gid);
+			(void)seteuid(pw->pw_uid);
+			if (!chdir(pw->pw_dir)) {
 				cal();
-				exit(0);
+				/* Keep user settings from propogating */
+				for (i = 0; i < NUMEV; i++)
+					if (spev[i].uname != NULL)
+						free(spev[i].uname);
 			}
-			/* parent: wait a reasonable time, then kill child if
-			 * necessary.
-			 */
-			runningkids++;
-			kidreaped = 0;
-			do {
-				sleeptime = sleep(sleeptime);
-				/* Note that there is the possibility, if the sleep
-				 * stops early due to some other signal, of the child
-				 * terminating and not getting detected during the next
-				 * sleep.  In that unlikely worst case, we just sleep
-				 * too long for that user.
-				 */
-				for (;;) {
-					deadkid = waitpid(-1, &kidstat, WNOHANG);
-					if (deadkid <= 0)
-						break;
-					runningkids--;
-					if (deadkid == kid) {
-						kidreaped = 1;
-						sleeptime = 0;
-					}
-				}
-			} while (sleeptime);
-
-			if (!kidreaped) {
-				/* It doesn't _really_ matter if the kill fails, e.g.
-				 * if there's only a zombie now.
-				 */
-				if (getpgid(kid) != getpgrp())
-					(void)killpg(getpgid(kid), SIGTERM);
-				else
-					(void)kill(kid, SIGTERM);
-				warnx("uid %u did not finish in time", pw->pw_uid);
-			}
-			if (time(NULL) - t >= SECSPERDAY)
-				errx(2, "'calendar -a' took more than a day; "
-				    "stopped at uid %u",
-				    pw->pw_uid);
+			(void)seteuid(0);
 		}
-		for (;;) {
-			deadkid = waitpid(-1, &kidstat, WNOHANG);
-			if (deadkid <= 0)
-				break;
-			runningkids--;
-		}
-		if (runningkids)
-			warnx("%d child processes still running when "
-			    "'calendar -a' finished", runningkids);
-	} else if ((caldir = getenv("CALENDAR_DIR")) != NULL) {
+	}
+	else if ((caldir = getenv("CALENDAR_DIR")) != NULL) {
 		if(!chdir(caldir))
 			cal();
 	} else
@@ -265,16 +154,9 @@ main(int argc, char *argv[])
 
 
 void
-usage(void)
+usage()
 {
 	(void)fprintf(stderr,
-	    "usage: calendar [-abw] [-A num] [-B num] [-f calendarfile] "
-	    "[-t [[[cc]yy]mm]dd]\n");
+	    "usage: calendar [-a] [-A days] [-B days] [-f calendarfile] [-t [[[yy]yy][mm]]dd]\n");
 	exit(1);
-}
-
-
-void
-childsig(int signo)
-{
 }

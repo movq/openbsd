@@ -1,4 +1,4 @@
-/*	$OpenBSD: asm.h,v 1.12 2015/08/30 10:19:49 guenther Exp $	*/
+/*	$OpenBSD: asm.h,v 1.4 1999/03/12 04:56:44 rahnds Exp $	*/
 /*	$NetBSD: asm.h,v 1.1 1996/09/30 16:34:20 ws Exp $	*/
 
 /*
@@ -32,13 +32,13 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _POWERPC_ASM_H_
-#define _POWERPC_ASM_H_
+#ifndef _PPC_ASM_H_
+#define _PPC_ASM_H_
 
 /* XXX */
 #define TARGET_ELF
 
-#ifdef __PIC__
+#ifdef PIC
 #define PIC_PROLOGUE	XXX
 #define PIC_EPILOGUE	XXX
 #ifdef	__STDC__
@@ -56,6 +56,14 @@
 #define PIC_PLT(x)	x
 #define PIC_GOT(x)	x
 #define PIC_GOTOFF(x)	x
+#endif
+
+#ifdef TARGET_AOUT
+#ifdef __STDC__
+# define _C_LABEL(x)	_ ## x
+#else
+# define _C_LABEL(x)	_/**/x
+#endif
 #endif
 
 #ifdef TARGET_ELF
@@ -90,15 +98,9 @@ _TMP_LABEL(y):; \
 
 #define	ENTRY(y)	_ENTRY(_C_LABEL(y)); _PROF_PROLOGUE(y)
 #define	ASENTRY(y)	_ENTRY(_ASM_LABEL(y)); _PROF_PROLOGUE(y)
-#define	END(y)		.size y, . - y
 
 #define	ASMSTR		.asciz
 
 #define RCSID(x)	.text; .asciz x
 
-#define STRONG_ALIAS(alias,sym) \
-	.global alias; .set alias,sym
-#define WEAK_ALIAS(alias,sym) \
-	.weak alias; .set alias,sym
-
-#endif /* !_POWERPC_ASM_H_ */
+#endif /* !_PPC_ASM_H_ */

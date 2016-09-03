@@ -1,4 +1,4 @@
-.\"	$OpenBSD: pwd.1,v 1.21 2014/05/28 14:16:27 jmc Exp $
+.\"	$OpenBSD: pwd.1,v 1.8 1999/08/17 14:04:01 aaron Exp $
 .\"	$NetBSD: pwd.1,v 1.10 1995/09/07 06:47:30 jtc Exp $
 .\"
 .\" Copyright (c) 1990, 1993
@@ -15,7 +15,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -33,7 +37,7 @@
 .\"
 .\"     @(#)pwd.1	8.2 (Berkeley) 4/28/95
 .\"
-.Dd $Mdocdate: May 28 2014 $
+.Dd April 28, 1995
 .Dt PWD 1
 .Os
 .Sh NAME
@@ -41,75 +45,38 @@
 .Nd return working directory name
 .Sh SYNOPSIS
 .Nm pwd
-.Op Fl LP
 .Sh DESCRIPTION
 The
 .Nm
 utility prints the absolute pathname of the current working directory to
 the standard output.
-.Pp
-The options are as follows:
-.Bl -tag -width Ds
-.It Fl L
-If the
-.Ev PWD
-environment variable is an absolute pathname that references the
-current directory and doesn't contain path components of "." or "..",
-then
-.Ev PWD
-is printed as the name of the current directory.
-Otherwise, act as if the
-.Fl P
-option was given.
-.It Fl P
-Print the physical path to the current working directory, with symbolic
-links in the path resolved.
-.El
+Both the Bourne shell
+.Pq Xr sh 1
+and Korn shell
+.Pq Xr ksh 1
+have their own built-in version of
+.Nm pwd .
 .Pp
 The
-.Fl L
-and
-.Fl P
-options override each other and the command's actions are determined
-by the last one specified.
-The default if no options are given is
-.Fl P .
-.Pp
-For an explanation of the directory hierarchy,
-see
-.Xr hier 7 .
-.Sh ENVIRONMENT
-.Bl -tag -width PWD
-.It Ev PWD
-The presumptive logical path to the current working directory.
-.El
-.Sh EXIT STATUS
-.Ex -std pwd
-.Sh SEE ALSO
-.Xr ksh 1 ,
-.Xr getcwd 3 ,
-.Xr hier 7
+.Nm
+utility exits 0 on success or >0 if an error occurred.
 .Sh STANDARDS
 The
 .Nm
-utility is compliant with the
-.St -p1003.1-2008
-specification,
-except the standard says the default if no options are given
-should be to behave as if
-.Fl L
-had been specified.
-.Sh HISTORY
-An
-.Nm
-utility appeared in
-.At v5 .
-Support for the
-.Fl L
-option was added in
-.Ox 5.6 .
-.Sh CAVEATS
-.Nm
-also exists as a built-in to
+utility is expected to be
+.St -p1003.2
+compatible.
+.Sh SEE ALSO
+.Xr cd 1 ,
+.Xr csh 1 ,
 .Xr ksh 1 ,
-which may have a different default behavior.
+.Xr sh 1 ,
+.Xr getcwd 3
+.Sh BUGS
+In
+.Xr csh 1 ,
+the command
+.Ic dirs
+is always faster (although it can give a different answer in the rare case
+that the current directory or a containing directory was moved after
+the shell descended into it).

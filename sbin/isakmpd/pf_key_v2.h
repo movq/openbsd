@@ -1,5 +1,5 @@
-/* $OpenBSD: pf_key_v2.h,v 1.13 2006/05/29 10:17:59 markus Exp $	 */
-/* $EOM: pf_key_v2.h,v 1.4 2000/12/04 04:46:35 angelos Exp $	 */
+/*	$OpenBSD: pf_key_v2.h,v 1.3 1999/05/01 20:43:44 niklas Exp $	*/
+/*	$EOM: pf_key_v2.h,v 1.3 1999/05/01 20:21:15 niklas Exp $	*/
 
 /*
  * Copyright (c) 1999 Niklas Hallqvist.  All rights reserved.
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Ericsson Radio Systems.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -38,25 +43,18 @@
 struct proto;
 struct sa;
 struct sockaddr;
-struct kernel_sa;
 
-extern int	pf_key_v2_socket;
+extern void pf_key_v2_connection_check (char *);
+extern int pf_key_v2_delete_spi (struct sa *, struct proto *, int);
+extern int pf_key_v2_enable_sa (struct sa *);
+extern int pf_key_v2_enable_spi (in_addr_t, in_addr_t, in_addr_t, in_addr_t,
+				 u_int8_t *, u_int8_t, in_addr_t);
+extern u_int8_t *pf_key_v2_get_spi (size_t *, u_int8_t, struct sockaddr *, int,
+				    struct sockaddr *, int);
+extern int pf_key_v2_group_spis (struct sa *, struct proto *, struct proto *,
+				 int);
+extern void pf_key_v2_handler (int);
+extern int pf_key_v2_open (void);
+extern int pf_key_v2_set_spi (struct sa *, struct proto *, int);
 
-extern void     pf_key_v2_connection_check(char *);
-extern int      pf_key_v2_delete_spi(struct sa *, struct proto *, int);
-extern int      pf_key_v2_enable_sa(struct sa *, struct sa *);
-extern int	pf_key_v2_disable_sa(struct sa *, int);
-extern int	pf_key_v2_enable_spi(in_addr_t, in_addr_t, in_addr_t,
-    in_addr_t, u_int8_t *, u_int8_t, in_addr_t);
-extern struct sa_kinfo *pf_key_v2_get_kernel_sa(u_int8_t *, size_t, u_int8_t,
-    struct sockaddr *);
-extern u_int8_t *pf_key_v2_get_spi(size_t *, u_int8_t, struct sockaddr *,
-    struct sockaddr *, u_int32_t);
-extern int	pf_key_v2_group_spis(struct sa *, struct proto *,
-    struct proto *, int);
-extern void     pf_key_v2_handler(int);
-extern int      pf_key_v2_open(void);
-extern int      pf_key_v2_set_spi(struct sa *, struct proto *, int,
-    struct sa *);
-
-#endif				/* _PF_KEY_V2_H_ */
+#endif /* _PF_KEY_V2_H_ */

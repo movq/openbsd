@@ -1,4 +1,4 @@
-/*	$OpenBSD: db.c,v 1.9 2015/01/16 06:40:23 deraadt Exp $ */
+/*	$OpenBSD: db.c,v 1.1 1997/07/22 10:52:59 maja Exp $ */
 
 /*
  * Copyright (c) 1997 Mats O Jansson <moj@stacken.kth.se>
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Mats O Jansson
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
  * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -26,10 +31,15 @@
  * SUCH DAMAGE.
  */
 
+#ifndef LINT
+static char rcsid[] = "$OpenBSD: db.c,v 1.1 1997/07/22 10:52:59 maja Exp $";
+#endif
+
 #include <sys/types.h>
 #include <db.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <sys/param.h>
 #include "db.h"
 #include "ypdb.h"
 
@@ -38,13 +48,13 @@
  * by sendmail -bi.
  */
 
-int
-db_hash_list_database(char *database)
+int db_hash_list_database(database)
+char *database;
 {
 	DB *db;
 	int  status;
 	DBT key, val;
-	char path[PATH_MAX];
+	char path[MAXPATHLEN];
 
 	snprintf(path, sizeof(path), "%s%s", database, ".db");
 
@@ -53,8 +63,8 @@ db_hash_list_database(char *database)
 		status = db->seq(db, &key, &val, R_FIRST);
 		while (status == 0) {
 			printf("%*.*s %*.*s\n",
-			    (int)key.size-1, (int)key.size-1, (char *)key.data,
-			    (int)val.size-1, (int)val.size-1, (char *)val.data);
+			       key.size-1, key.size-1, key.data,
+			       val.size-1, val.size-1, val.data);
 			status = db->seq(db, &key, &val, R_NEXT);
 		}
 		db->close(db);
@@ -62,3 +72,4 @@ db_hash_list_database(char *database)
 	}
 	return(0);
 }
+

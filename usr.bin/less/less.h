@@ -1,45 +1,100 @@
 /*
- * Copyright (C) 1984-2012  Mark Nudelman
- * Modified for use with illumos by Garrett D'Amore.
- * Copyright 2014 Garrett D'Amore <garrett@damore.org>
+ * Copyright (c) 1984,1985,1989,1994,1995  Mark Nudelman
+ * All rights reserved.
  *
- * You may distribute under the terms of either the GNU General Public
- * License or the Less License, as specified in the README file.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice in the documentation and/or other materials provided with 
+ *    the distribution.
  *
- * For more information, see the README file.
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY
+ * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR 
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR 
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT 
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR 
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE 
+ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN 
+ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
 
 /*
  * Standard include file for "less".
  */
 
-#include "defines.h"
+/*
+ * Include the file of compile-time options.
+ * The <> make cc search for it in -I., not srcdir.
+ */
+#include <defines.h>
 
-#include <sys/types.h>
-
-#include <ctype.h>
-#include <fcntl.h>
-#include <libgen.h>
-#include <limits.h>
-#include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <wctype.h>
+#ifdef _SEQUENT_
+/*
+ * Kludge for Sequent Dynix systems that have sigsetmask, but
+ * it's not compatible with the way less calls it.
+ * {{ Do other systems need this? }}
+ */
+#undef HAVE_SIGSETMASK
+#endif
 
 /*
- * Simple lowercase test which can be used during option processing
- * (before options are parsed which might tell us what charset to use).
+ * Language details.
  */
+#if HAVE_VOID
+#define	VOID_POINTER	void *
+#else
+#define	VOID_POINTER	char *
+#define	void  int
+#endif
 
-#undef IS_SPACE
-#undef IS_DIGIT
+#define	public		/* PUBLIC FUNCTION */
 
-#define	IS_SPACE(c)	isspace((unsigned char)(c))
-#define	IS_DIGIT(c)	isdigit((unsigned char)(c))
+/* Library function declarations */
 
-#define	IS_CSI_START(c)	(((LWCHAR)(c)) == ESC || (((LWCHAR)(c)) == CSI))
+#if HAVE_SYS_TYPES_H
+#include <sys/types.h>
+#endif
+#if HAVE_STDIO_H
+#include <stdio.h>
+#endif
+#if HAVE_FCNTL_H
+#include <fcntl.h>
+#endif
+#if HAVE_UNISTD_H
+#include <unistd.h>
+#endif
+#if HAVE_CTYPE_H
+#include <ctype.h>
+#endif
+#if STDC_HEADERS
+#include <stdlib.h>
+#include <string.h>
+#endif
+
+#if !STDC_HEADERS
+char *getenv();
+off_t lseek();
+VOID_POINTER calloc();
+void free();
+#endif
+
+#if !HAVE_UPPER_LOWER
+#define	isupper(c)	((c) >= 'A' && (c) <= 'Z')
+#define	islower(c)	((c) >= 'a' && (c) <= 'z')
+#define	toupper(c)	((c) - 'a' + 'A')
+#define	tolower(c)	((c) - 'A' + 'a')
+#endif
+
+#ifndef NULL
+#define	NULL	0
+#endif
 
 #ifndef TRUE
 #define	TRUE		1
@@ -52,19 +107,51 @@
 #define	OPT_ON		1
 #define	OPT_ONPLUS	2
 
+#ifndef HAVE_MEMCPY
+#ifndef memcpy
+#define	memcpy(to,from,len)	bcopy((from),(to),(len))
+#endif
+#endif
+
+#define	BAD_LSEEK	((off_t)-1)
+
 /*
  * Special types and constants.
  */
-typedef unsigned long LWCHAR;
-#define	MIN_LINENUM_WIDTH  7	/* Min printing width of a line number */
-#define	MAX_UTF_CHAR_LEN   6	/* Max bytes in one UTF-8 char */
+typedef off_t		POSITION;
+/*
+ * {{ Warning: if POSITION is changed to other than "long",
+ *    you may have to change some of the printfs which use "%ld"
+ *    to print a variable of type POSITION. }}
+ */
 
-#define	SHELL_META_QUEST 1
+#define	NULL_POSITION	((POSITION)(-1))
+
+/*
+ * Flags for open()
+ */
+#if MSOFTC || OS2
+#define	OPEN_READ	(O_RDONLY|O_BINARY)
+#else
+#define	OPEN_READ	(0)
+#endif
+#if MSOFTC || OS2
+#define	OPEN_APPEND	(O_APPEND|O_WRONLY)
+#else
+#define	OPEN_APPEND	(1)
+#endif
+
+#if MSOFTC || OS2
+#define	OPEN_TTYIN()	open("CON", O_BINARY|O_RDONLY)
+#else
+#define	OPEN_TTYIN()	open("/dev/tty", 0)
+#endif
 
 /*
  * An IFILE represents an input file.
  */
-#define	IFILE		void *
+#define	IFILE		VOID_POINTER
+#define	NULL_IFILE	((IFILE)NULL)
 
 /*
  * The structure used to represent a "screen position".
@@ -73,18 +160,22 @@ typedef unsigned long LWCHAR;
  * position is displayed on the ln-th line of the screen.
  * (Screen lines before ln are empty.)
  */
-struct scrpos {
-	off_t pos;
+struct scrpos
+{
+	POSITION pos;
 	int ln;
 };
 
-typedef union parg {
+typedef union parg
+{
 	char *p_string;
 	int p_int;
-	off_t p_linenum;
 } PARG;
 
-struct textlist {
+#define	NULL_PARG	((PARG *)NULL)
+
+struct textlist
+{
 	char *string;
 	char *endstring;
 };
@@ -92,10 +183,6 @@ struct textlist {
 #define	EOI		(-1)
 
 #define	READ_INTR	(-2)
-
-/* A fraction is represented by an int n; the fraction is n/NUM_FRAC_DENOM */
-#define	NUM_FRAC_DENOM			1000000
-#define	NUM_LOG_FRAC_DENOM		6
 
 /* How quiet should we be? */
 #define	NOT_QUIET	0	/* Ring bell at eof and for errors */
@@ -113,16 +200,12 @@ struct textlist {
 #define	BS_CONTROL	2	/* \b treated as control char; prints as ^H */
 
 /* How should we search? */
-#define	SRCH_FORW	(1 << 0)  /* Search forward from current position */
-#define	SRCH_BACK	(1 << 1)  /* Search backward from current position */
-#define	SRCH_NO_MOVE	(1 << 2)  /* Highlight, but don't move */
-#define	SRCH_FIND_ALL	(1 << 4)  /* Find and highlight all matches */
-#define	SRCH_NO_MATCH	(1 << 8)  /* Search for non-matching lines */
-#define	SRCH_PAST_EOF	(1 << 9)  /* Search past end-of-file, into next file */
-#define	SRCH_FIRST_FILE	(1 << 10) /* Search starting at the first file */
-#define	SRCH_NO_REGEX	(1 << 12) /* Don't use regular expressions */
-#define	SRCH_FILTER	(1 << 13) /* Search is for '&' (filter) command */
-#define	SRCH_AFTER_TARGET (1 << 14) /* Start search after the target line */
+#define	SRCH_FORW	0001	/* Search forward from current position */
+#define	SRCH_BACK	0002	/* Search backward from current position */
+#define	SRCH_FIND_ALL	0010	/* Find and highlight all matches */
+#define	SRCH_NOMATCH	0100	/* Search for non-matching lines */
+#define	SRCH_PAST_EOF	0200	/* Search past end-of-file, into next file */
+#define	SRCH_FIRST_FILE	0400	/* Search starting at the first file */
 
 #define	SRCH_REVERSE(t)	(((t) & SRCH_FORW) ? \
 				(((t) & ~SRCH_FORW) | SRCH_BACK) : \
@@ -138,57 +221,33 @@ struct textlist {
 #define	CC_ERROR	2	/* Char could not be accepted due to error */
 #define	CC_PASS		3	/* Char was rejected (internal) */
 
-#define	CF_QUIT_ON_ERASE 0001   /* Abort cmd if its entirely erased */
-
-/* Special char bit-flags used to tell put_line() to do something special */
+/* Special chars used to tell put_line() to do something special */
 #define	AT_NORMAL	(0)
-#define	AT_UNDERLINE	(1 << 0)
-#define	AT_BOLD		(1 << 1)
-#define	AT_BLINK	(1 << 2)
-#define	AT_STANDOUT	(1 << 3)
-#define	AT_ANSI		(1 << 4)  /* Content-supplied "ANSI" escape sequence */
-#define	AT_BINARY	(1 << 5)  /* LESS*BINFMT representation */
-#define	AT_HILITE	(1 << 6)  /* Internal highlights (e.g., for search) */
-#define	AT_INDET	(1 << 7)  /* Indeterminate: either bold or underline */
+#define	AT_UNDERLINE	(1)
+#define	AT_BOLD		(2)
+#define	AT_BLINK	(3)
+#define	AT_INVIS	(4)
+#define	AT_STANDOUT	(5)
 
 #define	CONTROL(c)	((c)&037)
-
 #define	ESC		CONTROL('[')
-#define	CSI		((unsigned char)'\233')
+
+#define	SIGNAL(sig,func)	signal(sig,func)
 
 #define	S_INTERRUPT	01
 #define	S_STOP		02
-#define	S_WINCH		04
+#define S_WINCH		04
 #define	ABORT_SIGS()	(sigs & (S_INTERRUPT|S_STOP))
 
 #define	QUIT_OK		0
 #define	QUIT_ERROR	1
-#define	QUIT_INTERRUPT	2
 #define	QUIT_SAVED_STATUS (-1)
-
-#define	FOLLOW_DESC	0
-#define	FOLLOW_NAME	1
 
 /* filestate flags */
 #define	CH_CANSEEK	001
 #define	CH_KEEPOPEN	002
 #define	CH_POPENED	004
-#define	CH_HELPFILE	010
-#define	CH_NODATA	020	/* Special case for zero length files */
 
-
-#define	ch_zero()	(0)
-
-#define	FAKE_EMPTYFILE	"@/\\less/\\empty/\\file/\\@"
-
-/* Flags for cvt_text */
-#define	CVT_TO_LC	01	/* Convert upper-case to lower-case */
-#define	CVT_BS		02	/* Do backspace processing */
-#define	CVT_CRLF	04	/* Remove CR after LF */
-#define	CVT_ANSI	010	/* Remove ANSI escape sequences */
+#define	ch_zero()	((POSITION)0)
 
 #include "funcs.h"
-
-/* Functions not included in funcs.h */
-void postoa(off_t, char *, size_t);
-void inttoa(int, char *, size_t);

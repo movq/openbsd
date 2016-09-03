@@ -1,5 +1,3 @@
-/*	$OpenBSD: screen.h,v 1.10 2016/05/27 09:18:11 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -34,7 +32,7 @@
  */
 struct _scr {
 /* INITIALIZED AT SCREEN CREATE. */
-	TAILQ_ENTRY(_scr) q;		/* Screens. */
+	CIRCLEQ_ENTRY(_scr) q;		/* Screens. */
 
 	int	 id;			/* Screen id #. */
 	int	 refcnt;		/* Reference count. */
@@ -91,6 +89,7 @@ struct _scr {
 
 	void	*ex_private;		/* Ex private area. */
 	void	*vi_private;		/* Vi private area. */
+	void	*perl_private;		/* Perl private area. */
 
 /* PARTIALLY OR COMPLETELY COPIED FROM PREVIOUS SCREEN. */
 	char	*alt_name;		/* Ex/vi: alternate file name. */
@@ -98,6 +97,7 @@ struct _scr {
 	CHAR_T	 at_lbuf;		/* Ex/vi: Last executed at buffer. */
 
 					/* Ex/vi: re_compile flags. */
+#define	RE_C_CSCOPE	0x0001		/* Compile cscope pattern. */
 #define	RE_C_SEARCH	0x0002		/* Compile search replacement. */
 #define	RE_C_SILENT	0x0004		/* No error messages. */
 #define	RE_C_SUBST	0x0008		/* Compile substitute replacement. */
@@ -106,6 +106,7 @@ struct _scr {
 #define	RE_WSTART	"[[:<:]]"	/* Ex/vi: not-in-word search pattern. */
 #define	RE_WSTOP	"[[:>:]]"
 					/* Ex/vi: flags to search routines. */
+#define	SEARCH_CSCOPE	0x0001		/* Search for a cscope pattern. */
 #define	SEARCH_EOL	0x0002		/* Offset past EOL is okay. */
 #define	SEARCH_FILE	0x0004		/* Search the entire file. */
 #define	SEARCH_INCR	0x0008		/* Search incrementally. */

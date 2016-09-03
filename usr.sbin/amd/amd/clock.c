@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,7 +36,7 @@
  * SUCH DAMAGE.
  *
  *	from: @(#)clock.c	8.1 (Berkeley) 6/6/93
- *	$Id: clock.c,v 1.7 2014/10/26 03:08:21 guenther Exp $
+ *	$Id: clock.c,v 1.1.1.1 1995/10/18 08:47:10 deraadt Exp $
  */
 
 /*
@@ -51,8 +55,8 @@
 typedef struct callout callout;
 struct callout {
 	callout	*c_next;		/* List of callouts */
-	void	(*c_fn)(void *);	/* Function to call */
-	void	*c_closure;		/* Closure to pass to call */
+	void	(*c_fn)();		/* Function to call */
+	voidp	c_closure;		/* Closure to pass to call */
 	time_t	c_time;			/* Time of call */
 	int	c_id;			/* Unique identifier */
 };
@@ -74,8 +78,8 @@ time_t next_softclock;			/* Time of next call to softclock() */
 #define	CID_ALLOC()	(++callout_id)
 #define	CID_UNDEF	(0)
 
-static callout *
-alloc_callout(void)
+static callout *alloc_callout(P_void);
+static callout *alloc_callout()
 {
 	callout *cp = free_callouts;
 	if (cp) {
@@ -86,11 +90,12 @@ alloc_callout(void)
 	return ALLOC(callout);
 }
 
-static void
-free_callout(callout *cp)
+static void free_callout P((callout *cp));
+static void free_callout(cp)
+callout *cp;
 {
 	if (nfree_callouts > CALLOUT_FREE_SLOP) {
-		free(cp);
+		free((voidp) cp);
 	} else {
 		cp->c_next = free_callouts;
 		free_callouts = cp;
@@ -103,8 +108,11 @@ free_callout(callout *cp)
  *
  * (*fn)(closure) will be called at clocktime() + secs
  */
-int
-timeout(unsigned int secs, void (*fn)(void *), void *closure)
+int timeout P((unsigned int secs, void (*fn)(), voidp closure));
+int timeout(secs, fn, closure)
+unsigned int secs;
+void (*fn)();
+voidp closure;
 {
 	callout *cp, *cp2;
 	time_t t = clocktime() + secs;
@@ -124,7 +132,7 @@ timeout(unsigned int secs, void (*fn)(void *), void *closure)
 	/*
 	 * Find the correct place in the list
 	 */
-	for (cp = &callouts; (cp2 = cp->c_next); cp = cp2)
+	for (cp = &callouts; cp2 = cp->c_next; cp = cp2)
 		if (cp2->c_time >= t)
 			break;
 
@@ -143,11 +151,12 @@ timeout(unsigned int secs, void (*fn)(void *), void *closure)
 /*
  * De-schedule a callout
  */
-void
-untimeout(int id)
+void untimeout P((int id));
+void untimeout(id)
+int id;
 {
 	callout *cp, *cp2;
-	for (cp = &callouts; (cp2 = cp->c_next); cp = cp2) {
+	for (cp = &callouts; cp2 = cp->c_next; cp = cp2) {
 		if (cp2->c_id == id) {
 			cp->c_next = cp2->c_next;
 			free_callout(cp2);
@@ -159,8 +168,10 @@ untimeout(int id)
 /*
  * Reschedule after clock changed
  */
-void
-reschedule_timeouts(time_t now, time_t then)
+void reschedule_timeouts P((time_t now, time_t then));
+void reschedule_timeouts(now, then)
+time_t now;
+time_t then;
 {
 	callout *cp;
 
@@ -179,8 +190,8 @@ reschedule_timeouts(time_t now, time_t then)
 /*
  * Clock handler
  */
-int
-softclock(void)
+int softclock(P_void);
+int softclock()
 {
 	time_t now;
 	callout *cp;
@@ -205,8 +216,8 @@ softclock(void)
 			 * function will call timeout()
 			 * and try to allocate a callout
 			 */
-			void (*fn)(void *) = cp->c_fn;
-			void *closure = cp->c_closure;
+			void (*fn)() = cp->c_fn;
+			voidp closure = cp->c_closure;
 
 			callouts.c_next = cp->c_next;
 			free_callout(cp);
@@ -222,7 +233,7 @@ softclock(void)
 	 * Return number of seconds to next event,
 	 * or 0 if there is no event.
 	 */
-	if ((cp = callouts.c_next))
+	if (cp = callouts.c_next)
 		return cp->c_time - now;
 	return 0;
 }

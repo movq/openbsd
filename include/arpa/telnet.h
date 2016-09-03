@@ -1,4 +1,4 @@
-/*	$OpenBSD: telnet.h,v 1.7 2003/06/02 19:34:12 millert Exp $	*/
+/*	$OpenBSD: telnet.h,v 1.5 1997/09/21 10:46:04 niklas Exp $	*/
 /*	$NetBSD: telnet.h,v 1.4 1994/10/26 00:56:46 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -212,7 +216,7 @@ char *telopts[NTELOPTS+1] = {
 #define	NSLC		30
 
 /*
- * For backwards compatibility, we define SLC_NAMES to be the
+ * For backwards compatability, we define SLC_NAMES to be the
  * list of names if SLC_NAMES is not defined.
  */
 #define	SLC_NAMELIST	"0", "SYNCH", "BRK", "IP", "AO", "AYT", "EOR",	\

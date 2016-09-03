@@ -1,4 +1,4 @@
-/*	$OpenBSD: i82596.c,v 1.52 2016/04/13 10:49:26 mpi Exp $	*/
+/*	$OpenBSD: i82596.c,v 1.1 1999/08/15 23:49:30 mickey Exp $	*/
 /*	$NetBSD: i82586.c,v 1.18 1998/08/15 04:42:42 mycroft Exp $	*/
 
 /*-
@@ -16,6 +16,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -134,11 +141,11 @@ Mode of operation:
    the synchronization.
 */
 
-#include "bpfilter.h"
-
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/mbuf.h>
+#include <sys/buf.h>
+#include <sys/protosw.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <sys/errno.h>
@@ -146,56 +153,64 @@ Mode of operation:
 #include <sys/device.h>
 
 #include <net/if.h>
+#include <net/if_dl.h>
+#include <net/if_types.h>
 #include <net/if_media.h>
 
 #if NBPFILTER > 0
 #include <net/bpf.h>
+#include <net/bpfdesc.h>
 #endif
 
+#ifdef INET
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
+#include <netinet/in_var.h>
+#include <netinet/ip.h>
 #include <netinet/if_ether.h>
+#endif
 
 #include <machine/bus.h>
 
 #include <dev/ic/i82596reg.h>
 #include <dev/ic/i82596var.h>
 
-static	char *padbuf;
+void	i82596_reset 	__P((struct ie_softc *, int));
+void	i82596_watchdog	__P((struct ifnet *));
+int	i82596_init 	__P((struct ie_softc *));
+int	i82596_ioctl 	__P((struct ifnet *, u_long, caddr_t));
+void	i82596_start 	__P((struct ifnet *));
 
-void	i82596_reset(struct ie_softc *, int);
-void	i82596_watchdog(struct ifnet *);
-int	i82596_init(struct ie_softc *);
-int	i82596_ioctl(struct ifnet *, u_long, caddr_t);
-void	i82596_start(struct ifnet *);
+int	i82596_rint 	__P((struct ie_softc *, int));
+int	i82596_tint 	__P((struct ie_softc *, int));
 
-int	i82596_rint(struct ie_softc *, int);
-int	i82596_tint(struct ie_softc *, int);
+int   	i82596_mediachange 	__P((struct ifnet *));
+void  	i82596_mediastatus 	__P((struct ifnet *, struct ifmediareq *));
 
-int   	i82596_mediachange(struct ifnet *);
-void  	i82596_mediastatus(struct ifnet *, struct ifmediareq *);
+int 	i82596_readframe	__P((struct ie_softc *, int));
+int	i82596_get_rbd_list	__P((struct ie_softc *,
+					     u_int16_t *, u_int16_t *, int *));
+void	i82596_release_rbd_list	__P((struct ie_softc *, u_int16_t, u_int16_t));
+int	i82596_drop_frames	__P((struct ie_softc *));
+int	i82596_chk_rx_ring	__P((struct ie_softc *));
 
-int 	i82596_readframe(struct ie_softc *, int);
-int	i82596_get_rbd_list(struct ie_softc *,
-					     u_int16_t *, u_int16_t *, int *);
-void	i82596_release_rbd_list(struct ie_softc *, u_int16_t, u_int16_t);
-int	i82596_drop_frames(struct ie_softc *);
-int	i82596_chk_rx_ring(struct ie_softc *);
+void	i82596_start_transceiver __P((struct ie_softc *));
+void	i82596_stop 		__P((struct ie_softc *));
+void 	i82596_xmit 		__P((struct ie_softc *));
 
-void	i82596_start_transceiver(struct ie_softc *);
-void	i82596_stop(struct ie_softc *);
-void 	i82596_xmit(struct ie_softc *);
-
-void 	i82596_setup_bufs(struct ie_softc *);
-void	i82596_simple_command(struct ie_softc *, int, int);
-int 	ie_cfg_setup(struct ie_softc *, int, int, int);
-int	ie_ia_setup(struct ie_softc *, int);
-void 	ie_run_tdr(struct ie_softc *, int);
-int 	ie_mc_setup(struct ie_softc *, int);
-void 	ie_mc_reset(struct ie_softc *);
-int	i82596_cmd_wait(struct ie_softc *);
+void 	i82596_setup_bufs	__P((struct ie_softc *));
+void	i82596_simple_command	__P((struct ie_softc *, int, int));
+int 	ie_cfg_setup		__P((struct ie_softc *, int, int, int));
+int	ie_ia_setup		__P((struct ie_softc *, int));
+void 	ie_run_tdr		__P((struct ie_softc *, int));
+int 	ie_mc_setup 		__P((struct ie_softc *, int));
+void 	ie_mc_reset 		__P((struct ie_softc *));
+int	i82596_cmd_wait		__P((struct ie_softc *));
 
 #ifdef I82596_DEBUG
-void 	print_rbd(struct ie_softc *, int);
+void 	print_rbd	__P((struct ie_softc *, int));
+
+int spurious_intrs = 0;
 #endif
 
 struct cfdriver ie_cd = {
@@ -209,37 +224,83 @@ int
 i82596_probe(sc)
 	struct ie_softc *sc;
 {
-	int i;
+#ifdef rewrite_also_do_the_test_command
+	volatile struct ie_sys_conf_ptr *scp;
+	volatile struct ie_int_sys_conf_ptr *iscp;
+	volatile struct ie_sys_ctl_block *scb;
+	u_long realbase;
+	int s;
 
-	sc->scp = sc->sc_msize - IE_SCP_SZ;
-	sc->iscp = 0;
-	sc->scb = 32;
+	s = splnet();
 
-	(sc->ie_bus_write16)(sc, IE_ISCP_BUSY(sc->iscp), 1);
-	(sc->ie_bus_write16)(sc, IE_ISCP_SCB(sc->iscp), sc->scb);
-	(sc->ie_bus_write24)(sc, IE_ISCP_BASE(sc->iscp), sc->sc_maddr);
-	(sc->ie_bus_write24)(sc, IE_SCP_ISCP(sc->scp), sc->sc_maddr);
-	(sc->ie_bus_write16)(sc, IE_SCP_BUS_USE(sc->scp), sc->sysbus);
+	realbase = (u_long)where + size - (1 << 24);
 
-	(sc->hwreset)(sc, IE_CARD_RESET);
+	scp = (volatile struct ie_sys_conf_ptr *)(realbase + IE_SCP_ADDR);
+	bzero((char *)scp, sizeof *scp);
 
-	if ((sc->ie_bus_read16)(sc, IE_ISCP_BUSY(sc->iscp))) {
-#ifdef I82596_DEBUG
-		printf("%s: ISCP set failed\n", sc->sc_dev.dv_xname);
-#endif
+	/*
+	 * First we put the ISCP at the bottom of memory; this tests to make
+	 * sure that our idea of the size of memory is the same as the
+	 * controller's.  This is NOT where the ISCP will be in normal
+	 * operation.
+	 */
+	iscp = (volatile struct ie_int_sys_conf_ptr *)where;
+	bzero((char *)iscp, sizeof *iscp);
+
+	scb = (volatile struct ie_sys_ctl_block *)where;
+	bzero((char *)scb, sizeof *scb);
+
+	scp->ie_bus_use = 0;		/* 16-bit */
+	scp->ie_iscp_ptr = (caddr_t)((volatile caddr_t)iscp -
+	    (volatile caddr_t)realbase);
+
+	iscp->ie_busy = 1;
+	iscp->ie_scb_offset = MK_16(realbase, scb) + 256;
+
+	(sc->reset)(sc);
+	(sc->chan_attn)(sc);
+
+	delay(100);			/* wait a while... */
+
+	if (iscp->ie_busy) {
+		splx(s);
 		return 0;
 	}
 
-	if (sc->port) {
-		(sc->ie_bus_write24)(sc, sc->scp, 0);
-		(sc->ie_bus_write24)(sc, IE_SCP_TEST(sc->scp), -1);
-		(sc->port)(sc, IE_PORT_TEST);
-		for (i = 9000; i-- &&
-			     (sc->ie_bus_read16)(sc, IE_SCP_TEST(sc->scp));
-		     DELAY(100))
-			;
+	/*
+	 * Now relocate the ISCP to its real home, and reset the controller
+	 * again.
+	 */
+	iscp = (void *)ALIGN(realbase + IE_SCP_ADDR - sizeof(*iscp));
+	bzero((char *)iscp, sizeof *iscp);
+
+	scp->ie_iscp_ptr = (caddr_t)((caddr_t)iscp - (caddr_t)realbase);
+
+	iscp->ie_busy = 1;
+	iscp->ie_scb_offset = MK_16(realbase, scb);
+
+	(sc->reset)(sc);
+	(sc->chan_attn)(sc);
+
+	delay(100);
+
+	if (iscp->ie_busy) {
+		splx(s);
+		return 0;
 	}
 
+	sc->sc_msize = size;
+	sc->sc_maddr = (caddr_t)realbase;
+
+	sc->iscp = iscp;
+	sc->scb = scb;
+
+	/*
+	 * Acknowledge any interrupts we may have caused...
+	 */
+	ie_ack(sc, IE_ST_WHENCE);
+	splx(s);
+#endif
 	return 1;
 }
 
@@ -266,21 +327,15 @@ i82596_probe(sc)
  *
  */
 void
-i82596_attach(struct ie_softc *sc, const char *name, u_int8_t *etheraddr,
-    uint64_t *media, int nmedia, uint64_t defmedia)
+i82596_attach(sc, name, etheraddr, media, nmedia, defmedia)
+	struct ie_softc *sc;
+	const char *name;
+	u_int8_t *etheraddr;
+        int *media, nmedia, defmedia;
 {
 	int i;
 	struct ifnet *ifp = &sc->sc_arpcom.ac_if;
 
-	/* Setup SCP+ISCP */
-	(sc->ie_bus_write16)(sc, IE_ISCP_BUSY(sc->iscp), 1);
-	(sc->ie_bus_write16)(sc, IE_ISCP_SCB(sc->iscp), sc->scb);
-	(sc->ie_bus_write24)(sc, IE_ISCP_BASE(sc->iscp), sc->sc_maddr);
-	(sc->ie_bus_write24)(sc, IE_SCP_ISCP(sc->scp), sc->sc_maddr +sc->iscp);
-	(sc->ie_bus_write16)(sc, IE_SCP_BUS_USE(sc->scp), sc->sysbus);
-	(sc->hwreset)(sc, IE_CARD_RESET);
-
-	/* Setup Iface */
 	bcopy(sc->sc_dev.dv_xname, ifp->if_xname, IFNAMSIZ);
 	ifp->if_softc = sc;
 	ifp->if_start = i82596_start;
@@ -290,7 +345,7 @@ i82596_attach(struct ie_softc *sc, const char *name, u_int8_t *etheraddr,
 #ifdef I82596_DEBUG
 		IFF_DEBUG |
 #endif
-		IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
+		IFF_BROADCAST | IFF_SIMPLEX | IFF_NOTRAILERS | IFF_MULTICAST;
 
         /* Initialize media goo. */
         ifmedia_init(&sc->sc_media, 0, i82596_mediachange, i82596_mediastatus);
@@ -303,22 +358,15 @@ i82596_attach(struct ie_softc *sc, const char *name, u_int8_t *etheraddr,
                 ifmedia_set(&sc->sc_media, IFM_ETHER|IFM_MANUAL);
         }
 
-	if (padbuf == NULL) {
-		padbuf = malloc(ETHER_MIN_LEN - ETHER_CRC_LEN, M_DEVBUF,
-		    M_NOWAIT | M_ZERO);
-		if (padbuf == NULL) {
-			printf("%s: can't allocate pad buffer\n",
-			    sc->sc_dev.dv_xname);
-			return;
-		}
-	}
-
 	/* Attach the interface. */
 	if_attach(ifp);
 	ether_ifattach(ifp);
 
-	printf(" %s v%d.%d, address %s\n", name, sc->sc_vers / 10,
-	       sc->sc_vers % 10, ether_sprintf(etheraddr));
+	printf(" address %s, type %s\n", ether_sprintf(etheraddr), name);
+
+#if NBPFILTER > 0
+	bpfattach(&ifp->if_bpf, ifp, DLT_EN10MB, sizeof(struct ether_header));
+#endif
 }
 
 
@@ -344,30 +392,27 @@ i82596_cmd_wait(sc)
 	struct ie_softc *sc;
 {
 	/* spin on i82596 command acknowledge; wait at most 0.9 (!) seconds */
-	int i, off;
+	register int i, off;
 
-	for (i = 180000; i--; DELAY(5)) {
+	for (i = 0; i < 90000; i++) {
 		/* Read the command word */
 		off = IE_SCB_CMD(sc->scb);
 		bus_space_barrier(sc->bt, sc->bh, off, 2,
 				  BUS_SPACE_BARRIER_READ);
 		if ((sc->ie_bus_read16)(sc, off) == 0) {
-#ifdef I82596_DEBUG
+#ifdef I82596_DEBUG1
 			if (sc->sc_debug & IED_CMDS)
-				printf("%s: cmd_wait after %d usec\n",
-				    sc->sc_dev.dv_xname, (180000 - i) * 5);
+				printf ("%s: cmd_wait after %d usec\n",
+					sc->sc_dev.dv_xname, (90000 - i) * 10);
 #endif
 			return (0);
 		}
+		delay(10);
 	}
 
-#ifdef I82596_DEBUG
-	if (sc->sc_debug & IED_CMDS)
-		printf("i82596_cmd_wait: timo(%ssync): scb status: %b\n",
-		    sc->async_cmd_inprogress? "a" : "",
-		    sc->ie_bus_read16(sc, IE_SCB_STATUS(sc->scb)),
-		    IE_STAT_BITS);
-#endif
+	printf ("i82596_cmd_wait: timo(%ssync): scb status: %b\n",
+		sc->async_cmd_inprogress?"a":"",
+		sc->ie_bus_read16(sc, off), IE_STAT_BITS);
 	return (1);	/* Timeout */
 }
 
@@ -389,7 +434,7 @@ i82596_start_cmd(sc, cmd, iecmdbuf, mask, async)
 	int mask;
 	int async;
 {
-	int i, off;
+	register int i, off;
 
 #ifdef I82596_DEBUG
 	if (sc->sc_debug & IED_CMDS)
@@ -424,21 +469,22 @@ i82596_start_cmd(sc, cmd, iecmdbuf, mask, async)
 		 * According to the packet driver, the minimum timeout
 		 * should be .369 seconds.
 		 */
-		for (i = 73800; i--; DELAY(5)) {
+		for (i = 0; i < 36900; i++) {
 			/* Read the command status */
 			off = IE_CMD_COMMON_STATUS(iecmdbuf);
 			bus_space_barrier(sc->bt, sc->bh, off, 2,
-			    BUS_SPACE_BARRIER_READ);
+					  BUS_SPACE_BARRIER_READ);
 			status = (sc->ie_bus_read16)(sc, off);
 			if (status & mask) {
 #ifdef I82596_DEBUG
 				if (sc->sc_debug & IED_CMDS)
-					printf("%s: cmd status %b\n",
-					    sc->sc_dev.dv_xname,
-					    status, IE_STAT_BITS);
+					printf ("%s: cmd status %b\n",
+						sc->sc_dev.dv_xname,
+						status, IE_STAT_BITS);
 #endif
 				return (0);
 			}
+			delay(10);
 		}
 
 	} else {
@@ -491,36 +537,42 @@ i82596_intr(v)
 	register u_int status;
 	register int off;
 
+        /*
+         * Implementation dependent interrupt handling.
+         */
+	if (sc->intrhook)
+		(sc->intrhook)(sc, INTR_ENTER);
+
 	off = IE_SCB_STATUS(sc->scb);
 	bus_space_barrier(sc->bt, sc->bh, off, 2, BUS_SPACE_BARRIER_READ);
 	status = sc->ie_bus_read16(sc, off) /* & IE_ST_WHENCE */;
 
 	if ((status & IE_ST_WHENCE) == 0) {
+#ifdef I82596_DEBUG
+		if ((spurious_intrs++ % 25) == 0)
+			printf("%s: i82596_intr: %d spurious interrupts\n",
+			       sc->sc_dev.dv_xname, spurious_intrs);
+#endif
 		if (sc->intrhook)
-			(sc->intrhook)(sc, IE_INTR_EXIT);
+			(sc->intrhook)(sc, INTR_EXIT);
 
 		return (0);
 	}
 
 loop:
 	/* Ack interrupts FIRST in case we receive more during the ISR. */
+#if 0
+	ie_ack(sc, status & IE_ST_WHENCE);
+#endif
 	i82596_start_cmd(sc, status & IE_ST_WHENCE, 0, 0, 1);
 
-	if (status & (IE_ST_FR | IE_ST_RNR)) {
-		if (sc->intrhook)
-			(sc->intrhook)(sc, IE_INTR_ENRCV);
-
+	if (status & (IE_ST_FR | IE_ST_RNR))
 		if (i82596_rint(sc, status) != 0)
 			goto reset;
-	}
 
-	if (status & IE_ST_CX) {
-		if (sc->intrhook)
-			(sc->intrhook)(sc, IE_INTR_ENSND);
-
+	if (status & IE_ST_CX)
 		if (i82596_tint(sc, status) != 0)
 			goto reset;
-	}
 
 #ifdef I82596_DEBUG
 	if ((status & IE_ST_CNA) && (sc->sc_debug & IED_CNA))
@@ -528,17 +580,13 @@ loop:
 			status, IE_ST_BITS);
 #endif
 	if (sc->intrhook)
-		(sc->intrhook)(sc, IE_INTR_LOOP);
+		(sc->intrhook)(sc, INTR_LOOP);
 
 	/*
 	 * Interrupt ACK was posted asynchronously; wait for
 	 * completion here before reading SCB status again.
-	 *
-	 * If ACK fails, try to reset the chip, in hopes that
-	 * it helps.
 	 */
-	if (i82596_cmd_wait(sc))
-		goto reset;
+	i82596_cmd_wait(sc);
 
 	bus_space_barrier(sc->bt, sc->bh, off, 2, BUS_SPACE_BARRIER_READ);
 	status = sc->ie_bus_read16(sc, off);
@@ -547,13 +595,14 @@ loop:
 
 out:
 	if (sc->intrhook)
-		(sc->intrhook)(sc, IE_INTR_EXIT);
+		(sc->intrhook)(sc, INTR_EXIT);
 	return (1);
 
 reset:
 	i82596_cmd_wait(sc);
 	i82596_reset(sc, 1);
 	goto out;
+
 }
 
 /*
@@ -615,6 +664,7 @@ i82596_rint(sc, scbstatus)
 			printf("%s: rint: frame(%d) busy; status=%x\n",
 				sc->sc_dev.dv_xname, i, status, IE_ST_BITS);
 #endif
+
 
 		/*
 		 * Advance the RFD list, since we're done with
@@ -720,10 +770,10 @@ i82596_tint(sc, scbstatus)
 	int	scbstatus;
 {
 	register struct ifnet *ifp = &sc->sc_arpcom.ac_if;
-	register int off, status;
+	register int status;
 
 	ifp->if_timer = 0;
-	ifq_clr_oactive(&ifp->if_snd);
+	ifp->if_flags &= ~IFF_OACTIVE;
 
 #ifdef I82596_DEBUG
 	if (sc->xmit_busy <= 0) {
@@ -735,8 +785,8 @@ i82596_tint(sc, scbstatus)
 	}
 #endif
 
-	off = IE_CMD_XMIT_STATUS(sc->xmit_cmds, sc->xctail);
-	status = sc->ie_bus_read16(sc, off);
+	status = sc->ie_bus_read16(sc, IE_CMD_XMIT_STATUS(sc->xmit_cmds,
+							  sc->xctail));
 
 #ifdef I82596_DEBUG
 	if (sc->sc_debug & IED_TINT)
@@ -745,7 +795,7 @@ i82596_tint(sc, scbstatus)
 			status, IE_XS_BITS);
 #endif
 
-	if ((status & (IE_STAT_COMPL|IE_STAT_BUSY)) == IE_STAT_BUSY) {
+	if ((status & IE_STAT_COMPL) == 0 || (status & IE_STAT_BUSY)) {
 		printf("%s: i82596_tint: command still busy;"
 		       "status=%b; tail=%d\n", sc->sc_dev.dv_xname,
 		       status, IE_XS_BITS, sc->xctail);
@@ -761,7 +811,6 @@ i82596_tint(sc, scbstatus)
 		 * Check SQE and DEFERRED?
 		 * What if more than one bit is set?
 		 */
-#ifdef I82596_DEBUG
 		if (status & IE_STAT_ABORT)
 			printf("%s: send aborted\n", sc->sc_dev.dv_xname);
 		else if (status & IE_XS_NOCARRIER)
@@ -770,13 +819,9 @@ i82596_tint(sc, scbstatus)
 			printf("%s: lost CTS\n", sc->sc_dev.dv_xname);
 		else if (status & IE_XS_UNDERRUN)
 			printf("%s: DMA underrun\n", sc->sc_dev.dv_xname);
-		else
-#endif /* I82596_DEBUG */
-		if (status & IE_XS_EXCMAX) {
-#ifdef I82596_DEBUG
+		else if (status & IE_XS_EXCMAX) {
 			printf("%s: too many collisions\n",
 				sc->sc_dev.dv_xname);
-#endif /* I82596_DEBUG */
 			sc->sc_arpcom.ac_if.if_collisions += 16;
 		}
 	}
@@ -960,70 +1005,57 @@ i82596_chk_rx_ring(sc)
  * operation considerably.  (Provided that it works, of course.)
  */
 static __inline__ struct mbuf *
-i82596_get(struct ie_softc *sc, int head, int totlen)
+i82596_get(struct ie_softc *sc, struct ether_header *ehp, int head, int totlen)
 {
-	struct mbuf *m, *m0, *newm;
-	int off, len, resid;
+	struct mbuf *top, **mp, *m;
+	int len, resid;
 	int thisrboff, thismboff;
-	struct ether_header eh;
 
 	/*
 	 * Snarf the Ethernet header.
 	 */
-	(sc->memcopyin)(sc, &eh, IE_RBUF_ADDR(sc, head),
-	    sizeof(struct ether_header));
+	(sc->memcopyin)(sc, ehp, IE_RBUF_ADDR(sc,head), sizeof *ehp);
 
-	resid = totlen;
+	resid = totlen -= (thisrboff = sizeof *ehp);
 
-	MGETHDR(m0, M_DONTWAIT, MT_DATA);
-	if (m0 == NULL)
+	MGETHDR(m, M_DONTWAIT, MT_DATA);
+	if (m == 0)
 		return (0);
-	m0->m_pkthdr.len = totlen;
+	m->m_pkthdr.rcvif = &sc->sc_arpcom.ac_if;
+	m->m_pkthdr.len = totlen;
 	len = MHLEN;
-	m = m0;
+	top = 0;
+	mp = &top;
 
 	/*
 	 * This loop goes through and allocates mbufs for all the data we will
 	 * be copying in.  It does not actually do the copying yet.
 	 */
 	while (totlen > 0) {
+		if (top) {
+			MGET(m, M_DONTWAIT, MT_DATA);
+			if (m == 0) {
+				m_freem(top);
+				return (0);
+			}
+			len = MLEN;
+		}
 		if (totlen >= MINCLSIZE) {
 			MCLGET(m, M_DONTWAIT);
-			if ((m->m_flags & M_EXT) == 0)
-				goto bad;
+			if ((m->m_flags & M_EXT) == 0) {
+				m_freem(top);
+				return (0);
+			}
 			len = MCLBYTES;
 		}
-
-		if (m == m0) {
-			caddr_t newdata = (caddr_t)
-			    ALIGN(m->m_data + sizeof(struct ether_header)) -
-			    sizeof(struct ether_header);
-			len -= newdata - m->m_data;
-			m->m_data = newdata;
-		}
-
 		m->m_len = len = min(totlen, len);
-
 		totlen -= len;
-		if (totlen > 0) {
-			MGET(newm, M_DONTWAIT, MT_DATA);
-			if (newm == NULL)
-				goto bad;
-			len = MLEN;
-			m = m->m_next = newm;
-		}
+		*mp = m;
+		mp = &m->m_next;
 	}
 
-	m = m0;
+	m = top;
 	thismboff = 0;
-
-	/*
-	 * Copy the Ethernet header into the mbuf chain.
-	 */
-	bcopy(&eh, mtod(m, caddr_t), sizeof(struct ether_header));
-	thismboff = sizeof(struct ether_header);
-	thisrboff = sizeof(struct ether_header);
-	resid -= sizeof(struct ether_header);
 
 	/*
 	 * Now we take the mbuf chain (hopefully only one mbuf most of the
@@ -1035,8 +1067,9 @@ i82596_get(struct ie_softc *sc, int head, int totlen)
 		    thismblen = m->m_len - thismboff;
 		len = min(thisrblen, thismblen);
 
-		off = IE_RBUF_ADDR(sc,head) + thisrboff;
-		(sc->memcopyin)(sc, mtod(m, caddr_t) + thismboff, off, len);
+		(sc->memcopyin)(sc, mtod(m, caddr_t) + thismboff,
+				IE_RBUF_ADDR(sc,head) + thisrboff,
+				(u_int)len);
 		resid -= len;
 
 		if (len == thismblen) {
@@ -1058,11 +1091,7 @@ i82596_get(struct ie_softc *sc, int head, int totlen)
 	 * we have now copied everything in from the shared memory.
 	 * This means that we are done.
 	 */
-	return (m0);
-
-bad:
-	m_freem(m0);
-	return (NULL);
+	return (top);
 }
 
 /*
@@ -1081,7 +1110,7 @@ i82596_readframe(sc, num)
 {
 	struct ifnet *ifp = &sc->sc_arpcom.ac_if;
 	struct mbuf *m;
-	struct mbuf_list ml = MBUF_LIST_INITIALIZER();
+	struct ether_header eh;
 	u_int16_t bstart, bend;
 	int pktlen;
 
@@ -1090,26 +1119,48 @@ i82596_readframe(sc, num)
 		return (1);
 	}
 
-	m = i82596_get(sc, bstart, pktlen);
+	m = i82596_get(sc, &eh, bstart, pktlen);
 	i82596_release_rbd_list(sc, bstart, bend);
 
-	if (m == NULL) {
+	if (m == 0) {
 		sc->sc_arpcom.ac_if.if_ierrors++;
 		return (0);
 	}
 
 #ifdef I82596_DEBUG
-	if (sc->sc_debug & IED_READFRAME) {
-		struct ether_header *eh = mtod(m, struct ether_header *);
-
+	if (sc->sc_debug & IED_READFRAME)
 		printf("%s: frame from ether %s type 0x%x len %d\n",
-		    sc->sc_dev.dv_xname, ether_sprintf(eh->ether_shost),
-		    (u_int)eh->ether_type, pktlen);
-	}
+		       sc->sc_dev.dv_xname,
+		       ether_sprintf(eh.ether_shost),
+		       (u_int)eh.ether_type, pktlen);
 #endif
 
-	ml_enqueue(&ml, m);
-	if_input(ifp, &ml);
+#if NBPFILTER > 0
+	/*
+	 * Check for a BPF filter; if so, hand it up.
+	 * Note that we have to stick an extra mbuf up front, because bpf_mtap
+	 * expects to have the ether header at the front.
+	 * It doesn't matter that this results in an ill-formatted mbuf chain,
+	 * since BPF just looks at the data.  (It doesn't try to free the mbuf,
+	 * tho' it will make a copy for tcpdump.)
+	 */
+	if (ifp->if_bpf) {
+		struct mbuf m0;
+		m0.m_len = sizeof eh;
+		m0.m_data = (caddr_t)&eh;
+		m0.m_next = m;
+
+		/* Pass it up. */
+		bpf_mtap(ifp->if_bpf, &m0);
+
+	}
+#endif /* NBPFILTER > 0 */
+
+	/*
+	 * Finally pass this packet up to higher layers.
+	 */
+	ether_input(ifp, &eh, m);
+	ifp->if_ipackets++;
 	return (0);
 }
 
@@ -1182,14 +1233,9 @@ i82596_xmit(sc)
 		bus_space_barrier(sc->bt, sc->bh, off, 2,
 				  BUS_SPACE_BARRIER_WRITE);
 
-		if (i82596_start_cmd(sc, IE_CUC_START, 0, 0, 1)) {
-#ifdef I82596_DEBUG
-			if (sc->sc_debug & IED_XMIT)
-				printf("%s: i82596_xmit: "
-				    "start xmit command timed out\n",
-				       sc->sc_dev.dv_xname);
-#endif
-		}
+		if (i82596_start_cmd(sc, IE_CUC_START, 0, 0, 1))
+			printf("%s: i82596_xmit: start xmit command timed out\n",
+			       sc->sc_dev.dv_xname);
 	}
 
 	sc->sc_arpcom.ac_if.if_timer = 5;
@@ -1207,23 +1253,27 @@ i82596_start(ifp)
 	struct mbuf *m0, *m;
 	int	buffer, head, xbase;
 	u_short	len;
+	int	s;
 
 #ifdef I82596_DEBUG
 	if (sc->sc_debug & IED_ENQ)
-		printf("i82596_start(%p)\n", ifp);
+		printf ("i82596_start(%p)\n", ifp);
 #endif
 
-	if (!(ifp->if_flags & IFF_RUNNING) || ifq_is_oactive(&ifp->if_snd))
+	if ((ifp->if_flags & (IFF_RUNNING | IFF_OACTIVE)) != IFF_RUNNING)
 		return;
 
 	for (;;) {
 		if (sc->xmit_busy == NTXBUF) {
-			ifq_set_oactive(&ifp->if_snd);
+			ifp->if_flags |= IFF_OACTIVE;
 			break;
 		}
 
-		IFQ_DEQUEUE(&ifp->if_snd, m0);
-		if (m0 == NULL)
+		head = sc->xchead;
+		xbase = sc->xbds;
+
+		IF_DEQUEUE(&ifp->if_snd, m0);
+		if (m0 == 0)
 			break;
 
 		/* We need to use m->m_pkthdr.len, so require the header */
@@ -1233,70 +1283,48 @@ i82596_start(ifp)
 #if NBPFILTER > 0
 		/* Tap off here if there is a BPF listener. */
 		if (ifp->if_bpf)
-			bpf_mtap(ifp->if_bpf, m0, BPF_DIRECTION_OUT);
+			bpf_mtap(ifp->if_bpf, m0);
+#endif
+
+#ifdef I82596_DEBUG
+		if (sc->sc_debug & IED_ENQ)
+			printf("%s: fill buffer %d\n", sc->sc_dev.dv_xname,
+				sc->xchead);
 #endif
 
 		if (m0->m_pkthdr.len > IE_TBUF_SIZE)
 			printf("%s: tbuf overflow\n", sc->sc_dev.dv_xname);
 
-		head = sc->xchead;
-		sc->xchead = (head + 1) % NTXBUF;
 		buffer = IE_XBUF_ADDR(sc, head);
-
-#ifdef I82596_DEBUG
-		if (sc->sc_debug & IED_ENQ)
-			printf("%s: fill buffer %d offset %x",
-			    sc->sc_dev.dv_xname, head, buffer);
-#endif
-
 		for (m = m0; m != 0; m = m->m_next) {
-#ifdef I82596_DEBUG
-			if (sc->sc_debug & IED_ENQ) {
-				u_int8_t *e, *p = mtod(m, u_int8_t *);
-				static int i;
-				if (m == m0)
-					i = 0;
-				for (e = p + m->m_len; p < e; i++, p += 2) {
-					if (!(i % 8))
-						printf("\n%s:",
-						    sc->sc_dev.dv_xname);
-					printf(" %02x%02x", p[0], p[1]);
-				}
-			}
-#endif
 			(sc->memcopyout)(sc, mtod(m,caddr_t), buffer, m->m_len);
 			buffer += m->m_len;
 		}
 
-		len = m0->m_pkthdr.len;
-		if (len < ETHER_MIN_LEN - ETHER_CRC_LEN) {
-			(sc->memcopyout)(sc, padbuf, buffer,
-			    ETHER_MIN_LEN - ETHER_CRC_LEN - len);
-			buffer += ETHER_MIN_LEN - ETHER_CRC_LEN - len;
-			len = ETHER_MIN_LEN - ETHER_CRC_LEN;
-		}
-
-#ifdef I82596_DEBUG
-		if (sc->sc_debug & IED_ENQ)
-			printf("\n");
-#endif
-
+		len = max(m0->m_pkthdr.len, ETHER_MIN_LEN);
 		m_freem(m0);
 
 		/*
 		 * Setup the transmit buffer descriptor here, while we
 		 * know the packet's length.
 		 */
-		xbase = sc->xbds;
 		sc->ie_bus_write16(sc, IE_XBD_FLAGS(xbase, head),
 				       len | IE_TBD_EOL);
 		sc->ie_bus_write16(sc, IE_XBD_NEXT(xbase, head), 0xffff);
 		sc->ie_bus_write24(sc, IE_XBD_BUF(xbase, head),
 				       sc->sc_maddr + IE_XBUF_ADDR(sc, head));
 
+		if (++head == NTXBUF)
+			head = 0;
+		sc->xchead = head;
+
+		s = splnet();
 		/* Start the first packet transmitting. */
-		if (sc->xmit_busy++ == 0)
+		if (sc->xmit_busy == 0)
 			i82596_xmit(sc);
+
+		sc->xmit_busy++;
+		splx(s);
 	}
 }
 
@@ -1312,25 +1340,25 @@ i82596_proberam(sc)
 
 	/* Put in 16-bit mode */
 	off = IE_SCP_BUS_USE(sc->scp);
-	(sc->ie_bus_write16)(sc, off, 0);
-	bus_space_barrier(sc->bt, sc->bh, off, 2, BUS_SPACE_BARRIER_WRITE);
+	bus_space_write_1(sc->bt, sc->bh, off, 0);
+	bus_space_barrier(sc->bt, sc->bh, off, 1, BUS_SPACE_BARRIER_WRITE);
 
 	/* Set the ISCP `busy' bit */
 	off = IE_ISCP_BUSY(sc->iscp);
-	(sc->ie_bus_write16)(sc, off, 1);
-	bus_space_barrier(sc->bt, sc->bh, off, 2, BUS_SPACE_BARRIER_WRITE);
+	bus_space_write_1(sc->bt, sc->bh, off, 1);
+	bus_space_barrier(sc->bt, sc->bh, off, 1, BUS_SPACE_BARRIER_WRITE);
 
 	if (sc->hwreset)
-		(sc->hwreset)(sc, IE_CHIP_PROBE);
+		(sc->hwreset)(sc, CHIP_PROBE);
 
 	(sc->chan_attn) (sc);
 
-	DELAY(100);		/* wait a while... */
+	delay(100);		/* wait a while... */
 
 	/* Read back the ISCP `busy' bit; it should be clear by now */
 	off = IE_ISCP_BUSY(sc->iscp);
 	bus_space_barrier(sc->bt, sc->bh, off, 1, BUS_SPACE_BARRIER_READ);
-	result = (sc->ie_bus_read16)(sc, off) == 0;
+	result = bus_space_read_1(sc->bt, sc->bh, off) == 0;
 
 	/* Acknowledge any interrupts we may have caused. */
 	ie_ack(sc, IE_ST_WHENCE);
@@ -1345,23 +1373,18 @@ i82596_reset(sc, hard)
 {
 	int s = splnet();
 
-#ifdef I82596_DEBUG
 	if (hard)
 		printf("%s: reset\n", sc->sc_dev.dv_xname);
-#endif
 
 	/* Clear OACTIVE in case we're called from watchdog (frozen xmit). */
 	sc->sc_arpcom.ac_if.if_timer = 0;
-	ifq_clr_oactive(&sc->sc_arpcom.ac_if.if_snd);
+	sc->sc_arpcom.ac_if.if_flags &= ~IFF_OACTIVE;
 
 	/*
 	 * Stop i82596 dead in its tracks.
 	 */
-	if (i82596_start_cmd(sc, IE_RUC_ABORT | IE_CUC_ABORT, 0, 0, 0)) {
-#ifdef I82596_DEBUG
+	if (i82596_start_cmd(sc, IE_RUC_ABORT | IE_CUC_ABORT, 0, 0, 0))
 		printf("%s: abort commands timed out\n", sc->sc_dev.dv_xname);
-#endif
-	}
 
 	/*
 	 * This can really slow down the i82596_reset() on some cards, but it's
@@ -1369,9 +1392,9 @@ i82596_reset(sc, hard)
 	 * lockups.
 	 */
 	if (hard && sc->hwreset)
-		(sc->hwreset)(sc, IE_CARD_RESET);
+		(sc->hwreset)(sc, CARD_RESET);
 
-	DELAY(100);
+	delay(100);
 	ie_ack(sc, IE_ST_WHENCE);
 
 	if ((sc->sc_arpcom.ac_if.if_flags & IFF_UP) != 0) {
@@ -1407,7 +1430,7 @@ ie_run_tdr(sc, cmd)
 	struct ie_softc *sc;
 	int cmd;
 {
-	int result, clocks;
+	int result;
 
 	i82596_simple_command(sc, IE_CMD_TDR, cmd);
 	(sc->ie_bus_write16)(sc, IE_CMD_TDR_TIME(cmd), 0);
@@ -1424,23 +1447,21 @@ ie_run_tdr(sc, cmd)
 	if (result & IE_TDR_SUCCESS)
 		return;
 
-	clocks = result & IE_TDR_TIME;
 	if (result & 0x10000)
 		printf("%s: TDR command failed\n", sc->sc_dev.dv_xname);
-	else if (result & IE_TDR_XCVR) {
-#ifdef I82596_DEBUG
+	else if (result & IE_TDR_XCVR)
 		printf("%s: transceiver problem\n", sc->sc_dev.dv_xname);
-#endif
-	} else if (result & IE_TDR_OPEN)
-		printf("%s: TDR detected an open %d clock%s away\n",
-		    sc->sc_dev.dv_xname, clocks, clocks == 1? "":"s");
+	else if (result & IE_TDR_OPEN)
+		printf("%s: TDR detected an open %d clocks away\n",
+			sc->sc_dev.dv_xname, result & IE_TDR_TIME);
 	else if (result & IE_TDR_SHORT)
-		printf("%s: TDR detected a short %d clock%s away\n",
-		    sc->sc_dev.dv_xname, clocks, clocks == 1? "":"s");
+		printf("%s: TDR detected a short %d clocks away\n",
+			sc->sc_dev.dv_xname, result & IE_TDR_TIME);
 	else
 		printf("%s: TDR returned unknown status 0x%x\n",
-		    sc->sc_dev.dv_xname, result);
+			sc->sc_dev.dv_xname, result);
 }
+
 
 /*
  * i82596_setup_bufs: set up the buffers
@@ -1457,62 +1478,57 @@ void
 i82596_setup_bufs(sc)
 	struct ie_softc *sc;
 {
-	int n, r, ptr = sc->buf_area;	/* memory pool */
-	int cl = 32;
+	register int n, r, ptr = sc->buf_area;	/* memory pool */
 
 	/*
 	 * step 0: zero memory and figure out how many recv buffers and
 	 * frames we can have.
 	 */
-	ptr = (ptr + cl - 1) & ~(cl - 1); /* set alignment and stick with it */
+	ptr = (ptr + 3) & ~3;	/* set alignment and stick with it */
+
 
 	/*
 	 *  step 1: lay out data structures in the shared-memory area
 	 */
 
 	/* The no-op commands; used if "nop-chaining" is in effect */
-	ptr += cl;
-	sc->nop_cmds = ptr - 2;
-	ptr += NTXBUF * 32;
+	sc->nop_cmds = ptr;
+	ptr += NTXBUF * IE_CMD_NOP_SZ;
 
 	/* The transmit commands */
-	ptr += cl;
-	sc->xmit_cmds = ptr - 2;
-	ptr += NTXBUF * 32;
+	sc->xmit_cmds = ptr;
+	ptr += NTXBUF * IE_CMD_XMIT_SZ;
 
 	/* The transmit buffers descriptors */
-	ptr += cl;
-	sc->xbds = ptr - 2;
-	ptr += NTXBUF * 32;
+	sc->xbds = ptr;
+	ptr += NTXBUF * IE_XBD_SZ;
 
 	/* The transmit buffers */
 	sc->xbufs = ptr;
 	ptr += NTXBUF * IE_TBUF_SIZE;
 
-	ptr = (ptr + cl - 1) & ~(cl - 1);	/* re-align.. just in case */
+	ptr = (ptr + 3) & ~3;		/* re-align.. just in case */
 
 	/* Compute free space for RECV stuff */
 	n = sc->buf_area_sz - (ptr - sc->buf_area);
 
 	/* Compute size of one RECV frame */
-	r = 64 + ((32 + IE_RBUF_SIZE) * B_PER_F);
+	r = IE_RFRAME_SZ + ((IE_RBD_SZ + IE_RBUF_SIZE) * B_PER_F);
 
 	sc->nframes = n / r;
 
-	if (sc->nframes <= 8)
-		panic("ie: bogus buffer calc");
+	if (sc->nframes <= 0)
+		panic("ie: bogus buffer calc\n");
 
 	sc->nrxbuf = sc->nframes * B_PER_F;
 
-	/* The receive frame descriptors */
-	ptr += cl;
-	sc->rframes = ptr - 2;
-	ptr += sc->nframes * 64;
+	/* The receice frame descriptors */
+	sc->rframes = ptr;
+	ptr += sc->nframes * IE_RFRAME_SZ;
 
 	/* The receive buffer descriptors */
-	ptr += cl;
-	sc->rbds = ptr - 2;
-	ptr += sc->nrxbuf * 32;
+	sc->rbds = ptr;
+	ptr += sc->nrxbuf * IE_RBD_SZ;
 
 	/* The receive buffers */
 	sc->rbufs = ptr;
@@ -1782,7 +1798,7 @@ i82596_init(sc)
 		(sc->hwinit)(sc);
 
 	ifp->if_flags |= IFF_RUNNING;
-	ifq_clr_oactive(&ifp->if_snd);
+	ifp->if_flags &= ~IFF_OACTIVE;
 
 	if (NTXBUF < 2)
 		sc->do_xmitnopchain = 0;
@@ -1849,15 +1865,33 @@ i82596_ioctl(ifp, cmd, data)
 	caddr_t data;
 {
 	struct ie_softc *sc = ifp->if_softc;
+	struct ifaddr *ifa = (struct ifaddr *)data;
 	struct ifreq *ifr = (struct ifreq *)data;
 	int s, error = 0;
 
 	s = splnet();
 
+	if ((error = ether_ioctl(ifp, &sc->sc_arpcom, cmd, data)) > 0) {
+		splx(s);
+		return error;
+	}
+
 	switch(cmd) {
+
 	case SIOCSIFADDR:
 		ifp->if_flags |= IFF_UP;
-		i82596_init(sc);
+
+		switch(ifa->ifa_addr->sa_family) {
+#ifdef INET
+		case AF_INET:
+			i82596_init(sc);
+			arp_ifinit(&sc->sc_arpcom, ifa);
+			break;
+#endif
+		default:
+			i82596_init(sc);
+			break;
+		}
 		break;
 
 	case SIOCSIFFLAGS:
@@ -1893,21 +1927,30 @@ i82596_ioctl(ifp, cmd, data)
 #endif
 		break;
 
-	case SIOCGIFMEDIA:
-	case SIOCSIFMEDIA:
-		error = ifmedia_ioctl(ifp, ifr, &sc->sc_media, cmd);
+	case SIOCADDMULTI:
+	case SIOCDELMULTI:
+		error = (cmd == SIOCADDMULTI) ?
+		    ether_addmulti(ifr, &sc->sc_arpcom):
+		    ether_delmulti(ifr, &sc->sc_arpcom);
+
+		if (error == ENETRESET) {
+			/*
+			 * Multicast list has changed; set the hardware filter
+			 * accordingly.
+			 */
+			ie_mc_reset(sc);
+			error = 0;
+		}
 		break;
 
+        case SIOCGIFMEDIA:
+        case SIOCSIFMEDIA:
+                error = ifmedia_ioctl(ifp, ifr, &sc->sc_media, cmd);
+                break;
+
 	default:
-		error = ether_ioctl(ifp, &sc->sc_arpcom, cmd, data);
+		error = EINVAL;
 	}
-
-	if (error == ENETRESET) {
-		if (ifp->if_flags & IFF_RUNNING)
-			ie_mc_reset(sc);
-		error = 0;
-	}
-
 	splx(s);
 	return (error);
 }
@@ -1916,47 +1959,47 @@ void
 ie_mc_reset(sc)
 	struct ie_softc *sc;
 {
-	struct arpcom *ac = &sc->sc_arpcom;
 	struct ether_multi *enm;
 	struct ether_multistep step;
 	int size;
 
-	if (ac->ac_multicnt >= IE_MAXMCAST || ac->ac_multirangecnt > 0) {
-		ac->ac_if.if_flags |= IFF_ALLMULTI;
-		i82596_ioctl(&ac->ac_if, SIOCSIFFLAGS, NULL);
-		return;
-	}
-
 	/*
 	 * Step through the list of addresses.
 	 */
+again:
 	size = 0;
 	sc->mcast_count = 0;
 	ETHER_FIRST_MULTI(step, &sc->sc_arpcom, enm);
 	while (enm) {
-		size += ETHER_ADDR_LEN;
-		sc->mcast_count++;
+		size += 6;
+		if (sc->mcast_count >= IE_MAXMCAST ||
+		    bcmp(enm->enm_addrlo, enm->enm_addrhi, 6) != 0) {
+			sc->sc_arpcom.ac_if.if_flags |= IFF_ALLMULTI;
+			i82596_ioctl(&sc->sc_arpcom.ac_if,
+				     SIOCSIFFLAGS, (void *)0);
+			return;
+		}
 		ETHER_NEXT_MULTI(step, enm);
 	}
 
 	if (size > sc->mcast_addrs_size) {
 		/* Need to allocate more space */
 		if (sc->mcast_addrs_size)
-			free(sc->mcast_addrs, M_IFMADDR, 0);
+			free(sc->mcast_addrs, M_IPMADDR);
 		sc->mcast_addrs = (char *)
-			malloc(size, M_IFMADDR, M_WAITOK);
+			malloc(size, M_IPMADDR, M_WAITOK);
 		sc->mcast_addrs_size = size;
 	}
 
 	/*
 	 * We've got the space; now copy the addresses
 	 */
-	sc->mcast_count = 0;
 	ETHER_FIRST_MULTI(step, &sc->sc_arpcom, enm);
 	while (enm) {
-		bcopy(enm->enm_addrlo,
-		   &sc->mcast_addrs[sc->mcast_count * ETHER_ADDR_LEN],
-		   ETHER_ADDR_LEN);
+		if (sc->mcast_count >= IE_MAXMCAST)
+			goto again; /* Just in case */
+
+		bcopy(enm->enm_addrlo, &sc->mcast_addrs[sc->mcast_count], 6);
 		sc->mcast_count++;
 		ETHER_NEXT_MULTI(step, enm);
 	}

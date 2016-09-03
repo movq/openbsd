@@ -1,4 +1,4 @@
-.\"	$OpenBSD: doc,v 1.16 2005/09/27 18:57:17 jaredy Exp $
+.\"	$OpenBSD: doc,v 1.3 1997/11/30 05:00:07 deraadt Exp $
 .\"
 .\" Copyright (c) 1991, 1993
 .\"	The Regents of the University of California.  All rights reserved.
@@ -11,7 +11,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -32,10 +36,8 @@
 .\" .mdoc-parse - attempt to parse troff request arguments
 .\"     %beginstrip%
 .if \n(.g \{\
-.	cp 0
-.	if !\n[DVI] \{\
-.		ftr C CR
-.	\}
+.cp 0
+.ftr C CR
 .\}
 .if t \{\
 .       so /usr/share/tmac/mdoc/doc-ditroff
@@ -364,7 +366,7 @@
 .	el .as b1 \&\f\\n(cF\s\\n(cZ\\*(A\\n(aP\fP\s0
 .	ie \\n(aC==\\n(aP \{\
 .		if \\n(jM==4 .as b1 \&\|\-
-.		as b1 \fP\s0
+.		as b1 \&\fP\s0
 .		aZ
 .	\}
 .	el \{\
@@ -392,7 +394,7 @@
 .	ie \\n(jM==2 .as b1 \&\\*(A\\n(aP
 .	el .as b1 \&\f\\n(cF\s\\n(cZ\\*(A\\n(aP\fP\s0
 .	ie \\n(aC==\\n(aP \{\
-.		as b1 \f\\n(cF\s\\n(cZ
+.		as b1 \&\f\\n(cF\s\\n(cZ
 .		aZ
 .	\}
 .	el \{\
@@ -669,33 +671,6 @@
 .       nR
 .\}
 ..
-.\" NS In macro - include
-.de In
-.ds mN In
-.if \\n(nS>0 \{\
-.\"	if a variable type was the last thing given, want vertical space
-.	if \\n(fX>0 \{\
-.		Pp
-.		nr fX 0
-.	\}
-.\"	if a subroutine was the last thing given, want vertical space
-.	if \\n(fZ>0 \{\
-.		ie \\n(fD==0 \{\
-.			Pp
-.			rs
-.		\}
-.		el .br
-.	\}
-.	nr fD \\n(fD+1
-.\}
-.nr cF \\n(.f
-.nr cZ \\n(.s
-.fI
-\&\\*(fD#include <\\$1>
-.br
-.ft \\n(cF
-.fs \\n(cZ
-..
 .\" NS Li macro - literals
 .de Li
 .if \\n(aC==0 \{\
@@ -764,44 +739,20 @@
 .if \\n(aC==0 \{\
 .	ie \\n(.$==0 \{\
 .		ie "\\*(n1"" .tm Usage: .Nm Name(s) ... \\*(Pu (#\\n(.c)
-.		el \{\
-.			ds mN Nm
-.			ds A1 \\*(n1
-.			nr fV 1
-.			fV
-.		\}
+.		el \&\\*(nM\\*(n1\fP\s0
 .	\}
 .	el \{\
 .		ds mN Nm
-.		sW "\\$1"
-.		aT \\$1
-.		ie \\n(aT==3:\\n(aT==4 \{\
-.			ds A1 \\*(n1
-.			ds A2 \\$1
-.			ds A3 \\$2
-.			ds A4 \\$3
-.			ds A5 \\$4
-.			ds A6 \\$5
-.			ds A7 \\$6
-.			ds A8 \\$7
-.			ds A9 \\$8
-.			if !"\\$9"" .as A9 " \\$9
-.			nr fV \\n(.$
-.			if \\n(fV<9 .nr fV \\n(fV+1
-.		\}
-.		el \{\
-.			ie "\\$1"" .ds A1 \\*(n1
-.			el .ds A1 \\$1
-.			ds A2 \\$2
-.			ds A3 \\$3
-.			ds A4 \\$4
-.			ds A5 \\$5
-.			ds A6 \\$6
-.			ds A7 \\$7
-.			ds A8 \\$8
-.			ds A9 \\$9
-.			nr fV \\n(.$
-.		\}
+.               ds A1 \\$1
+.               ds A2 \\$2
+.               ds A3 \\$3
+.               ds A4 \\$4
+.               ds A5 \\$5
+.               ds A6 \\$6
+.               ds A7 \\$7
+.               ds A8 \\$8
+.               ds A9 \\$9
+.               nr fV \\n(.$
 .               fV
 .       \}
 .\}
@@ -1198,7 +1149,7 @@
 .ds qL
 .eO \\$1 \\$2 \\$3 \\$4 \\$5 \\$6 \\$7 \\$8 \\$9
 ..
-.\" NS Xc macro - Extend close (end)
+.\" NS Xe macro - Extend close (end)
 .de Xc
 .\" .nr mN 0
 .if \\n(aC==0 .ds mN Xc
@@ -1725,7 +1676,7 @@
 .de Ed
 .ds mN Ed
 .br
-.if \\n(dP==0 .tm mdoc: Extraneous .Ed call (#\\n(.c)
+.if \\n(dP==0 .tm mdoc: Extraneous .Ed
 .if "\\*(d\\n(dP"dL" \{\
 .	ft \\n(cF
 .	fz \\n(cZ
@@ -1990,9 +1941,8 @@
 .	tm Usage .Bl -list-type [-width [string] | -compact | -offset [string]] (#\\n(.c)
 .	tm .It \\$1 \\$2 \\$3 \\$4 \\$5 \\$6 \\$7 \\$8
 .\}
-.br
-.if !\\n(cR .ne 3v
 .\" .tm Here is L[\\n(lC]==\\*(L\\n(lC
+.ne 3v
 .ie \\n(.$>0 \{\
 .	ds mN It
 .	ds b1
@@ -2255,7 +2205,7 @@
 .	rr o\\n(lC
 .\}
 .el 'in \\n(.iu-\\n(w\\n(lCu-\\n(lSu
-.if \\n(lC<=0 .tm mdoc: Extraneous .El call (#\\n(.c)
+.if \\n(lC<=0 .tm Extraneous .El call (#\\n(.c)
 .tZ
 .nr lC \\n(lC-1
 .tY
@@ -2303,17 +2253,19 @@
 .	el \{\
 .		ie \\n(C\\n(aP>2 .y\\n(C\\n(aP
 .		el \{\
-.			as b1 \\*(xR\\*(A\\n(aP\fP\s0
-.			nr aP \\n(aP+1
-.			if \\n(aC>=\\n(aP \{\
+.			as b1 \&\\*(xR\\*(A\\n(aP\fP\s0
+.			if \\n(aC>\\n(aP \{\
+.				nr aP \\n(aP+1
 .				if \\n(C\\n(aP==2 \{\
-.					as b1 \&\\*(lp\\*(A\\n(aP\\*(rp
+.					as b1 \&(\\*(A\\n(aP)
 .					nr aP \\n(aP+1
 .				\}
+.				if \\n(aC>=\\n(aP \{\
+.					c\\n(C\\n(aP
+.				\}
 .			\}
-.			ie \\n(aC>=\\n(aP .c\\n(C\\n(aP
-.			el .aZ
 .		\}
+.		aZ
 .       \}
 .\}
 ..
@@ -2475,7 +2427,9 @@
 .               ds A9 \\$9
 .		nr fV \\n(.$
 .		fV
-.		No
+.		nr aP \\n(aP+1
+.		ie \\n(C\\n(aP==1 .\\*(A\\n(aP
+.		el .No
 .	\}
 .\}
 .el \{\
@@ -2483,45 +2437,40 @@
 .\}
 .in \\n(.iu-\\n(Dsu
 ..
+.\" NS Ex macro - DEFUNCT
+.de Ex
+.tm Ex defunct, Use .D1: \\$1 \\$2 \\$3 \\$4 \\$5 \\$6 \\$7 \\$8 \\$9
+..
 .\"
-.\" NS Vt macro - Variable type
+.\" NS Ex macro - DEFUNCT
+.de Ex
+.tm Ex defunct, Use .D1: \\$1 \\$2 \\$3 \\$4 \\$5 \\$6 \\$7 \\$8 \\$9
+..
+.\"
+.\" NS Vt macro - Variable type (for forcing old style variable declarations)
+.\" this is not done in the same manner as .Ot for fortrash - clean up later
 .de Vt
-.if \\n(aC==0 \{\
-.       ie \\n(.$==0 .tm Usage: .Vt variable_type ... \\*(Pu (#\\n(.c)
-.	el \{\
-.		ds mN Vt
-.		aV \\$1 \\$2 \\$3 \\$4 \\$5 \\$6 \\$7 \\$8 \\$9
-.	\}
+.\" if a function declaration was the last thing given, want vertical space
+.if \\n(fD>0 \{\
+.	Pp
+.	nr fD 0
 .\}
-.if \\n(aC>\\n(aP \{\
-.	if \\n(nS>0 \{\
-.		\" if a function declaration was the last
-.		\" thing given, want vertical space
-.		if \\n(fD>0 \{\
-.			Pp
-.			nr fD 0
-.		\}
-.		\" if a subroutine was the last thing
-.		\" given, want vertical space
-.		if \\n(fZ>0 \{\
-.			ie \\n(fX==0 \{\
-.				Pp
-.\"				rs
-.			\}
-.			el .br
-.		\}
-.		nr fX 1
+.\"	if a subroutine was the last thing given, want vertical space
+.if \\n(fZ>0 \{\
+.	ie \\n(fX==0 \{\
+.		Pp
+.		rs
 .	\}
-.	as b1 \\*(vY
-.	nr aP \\n(aP+1
-.	nr cF \\n(.f
-.	nr cZ \\n(.s
-.	nR
-.	if \\n(nS>0 \{\
-.		ie \\n(oT==0 .br
-.		el \&\ \&
-.	\}
+.	el .br
 .\}
+.nr fX \\n(fX+1
+.nr cF \\n(.f
+.nr cZ \\n(.s
+\\*(fT\&\\$1 \\$2 \\$3 \\$4 \\$5 \\$6 \\$7 \\$8 \\$9
+.ie \\n(oT==0 .br
+.el \&\ \&
+.ft \\n(cF
+.fs \\n(cZ
 ..
 .\"
 .\" NS Ft macro - Function type
@@ -2937,16 +2886,10 @@
 ..
 .\" NS rZ macro - reference print
 .de rZ
-.if \\n(uK \{\
-.	ie (\\n(uK>2 \{\&\\*(U1,
-.		nr aK 1
+.if \\n(uK \{\&\\*(U1,
+.	nr aK 1
+.	if (\\n(uK>1 \{\
 .		aK
-.	\}
-.	el \{\
-.		ie (\\n(uK>1 \{\&\\*(U1 and \&\\*(U2,
-.		\}
-.		el \{\&\\*(U1,
-.		\}
 .	\}
 .	nr Kl -\\n(uK
 .\}
@@ -3456,27 +3399,20 @@ File:
 .\" NS An macro - author name
 .\" NS aN register
 .nr aN 0
-.nr aS 1
 .de An
 .if \\n(nY==1 \{\
 .	ie \\n(aN==1 \{\
-.		if \\n(aS==1 .br
+.		br
 .	\}
 .	el \{\
 .		nr aN 1
 .	\}
 .\}
 .if \\n(aC==0 \{\
-.       ie \\n(.$==0 .tm Usage: .An -nosplit | -split | author_name ... \\*(Pu (#\\n(.c)
+.       ie \\n(.$==0 .tm Usage: .An author_name ... \\*(Pu (#\\n(.c)
 .	el \{\
-.		ie "\\$1"-nosplit" .nr aS 0
-.		el \{\
-.			ie "\\$1"-split" .nr aS 1
-.			el \{\
-.				ds mN An
-.				aV \\$1 \\$2 \\$3 \\$4 \\$5 \\$6 \\$7 \\$8 \\$9
-.			\}
-.		\}
+.		ds mN An
+.		aV \\$1 \\$2 \\$3 \\$4 \\$5 \\$6 \\$7 \\$8 \\$9
 .	\}
 .\}
 .if \\n(aC>\\n(aP \{\
@@ -3490,7 +3426,7 @@ File:
 .de Sf
 .tm .Sf defunct, use prefix or Ns
 ..
-.ds rV "function returns the value 0 if successful; otherwise the value \-1 is returned and the global variable \\*(vAerrno\fP is set to indicate the error.
+.ds rV "function returns the value 0 if successful; otherwise the value -1 is returned and the global variable \\*(vAerrno\fP is set to indicate the error.
 .\" Ns Rv macro - return values
 .\" Ns rV string - standard return message
 .de Rv
@@ -3517,25 +3453,6 @@ File:
 \&The
 .Fn \\$2
 \&\\*(rV
-.	\}
-.\}
-..
-.\" Ns Ex macro - Exit values
-.\" Ns eX string - standard return message
-.ds eX "utility exits 0 on success, and >0 if an error occurs.
-.de Ex
-.ie \\n(.$==0 \{\
-.tm Usage: .Ex [-std] (#\\n(.c)
-.\}
-.el \{\
-.	ds mN Ex
-.	if "\\$1"-std" \{\
-.	nr cH \\*(cH
-.	if (\\n(cH=2):(\\n(cH=3):(\\n(cH=4):(\\n(cH=5):(\\n(cH=7):(\\n(cH=9) .tm Usage: .Ex -std sections 1, 6, and 8 only
-.		br
-\&The
-.Nm \\$2
-\&\\*(eX
 .	\}
 .\}
 ..

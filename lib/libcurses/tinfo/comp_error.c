@@ -1,7 +1,7 @@
-/* $OpenBSD: comp_error.c,v 1.6 2010/01/12 23:22:06 nicm Exp $ */
+/*	$OpenBSD: comp_error.c,v 1.1 1999/01/18 19:10:13 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2005,2007 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -31,8 +31,8 @@
 /****************************************************************************
  *  Author: Zeyd M. Ben-Halim <zmbenhal@netcom.com> 1992,1995               *
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
- *     and: Thomas E. Dickey                        1996-on                 *
  ****************************************************************************/
+
 
 /*
  *	comp_error.c -- Error message routines
@@ -43,113 +43,92 @@
 
 #include <tic.h>
 
-MODULE_ID("$Id: comp_error.c,v 1.6 2010/01/12 23:22:06 nicm Exp $")
+MODULE_ID("$From: comp_error.c,v 1.16 1998/08/01 23:39:51 tom Exp $")
 
-NCURSES_EXPORT_VAR(bool) _nc_suppress_warnings = FALSE;
-NCURSES_EXPORT_VAR(int) _nc_curr_line = 0; /* current line # in input */
-NCURSES_EXPORT_VAR(int) _nc_curr_col = 0; /* current column # in input */
+bool	_nc_suppress_warnings;
+int	_nc_curr_line;		/* current line # in input */
+int	_nc_curr_col;		/* current column # in input */
 
-#define SourceName	_nc_globals.comp_sourcename
-#define TermType	_nc_globals.comp_termtype
+static const char *sourcename;
+static char termtype[MAX_NAME_SIZE+1];
 
-NCURSES_EXPORT(const char *)
-_nc_get_source(void)
+void _nc_set_source(const char *const name)
 {
-    return SourceName;
+	sourcename = name;
 }
 
-NCURSES_EXPORT(void)
-_nc_set_source(const char *const name)
+void _nc_set_type(const char *const name)
 {
-    SourceName = name;
-}
-
-NCURSES_EXPORT(void)
-_nc_set_type(const char *const name)
-{
-    if (TermType == 0)
-	TermType = typeMalloc(char, MAX_NAME_SIZE + 1);
-    if (TermType != 0) {
-	TermType[0] = '\0';
 	if (name)
-	    strncat(TermType, name, MAX_NAME_SIZE);
-    }
+		strlcpy( termtype, name, sizeof(termtype) );
+	else
+		termtype[0] = '\0';
 }
 
-NCURSES_EXPORT(void)
-_nc_get_type(char *name)
+void _nc_get_type(char *name)
 {
-#if NO_LEAKS
-    if (name == 0 && TermType != 0) {
-	FreeAndNull(TermType);
-	return;
-    }
-#endif
-    if (name != 0)
-        strlcpy(name, TermType != 0 ? TermType : "", MAX_NAME_SIZE + 1);
+	strcpy( name, termtype );
 }
 
-static NCURSES_INLINE void
-where_is_problem(void)
+static inline void where_is_problem(void)
 {
-    fprintf(stderr, "\"%s\"", SourceName ? SourceName : "?");
-    if (_nc_curr_line >= 0)
-	fprintf(stderr, ", line %d", _nc_curr_line);
-    if (_nc_curr_col >= 0)
-	fprintf(stderr, ", col %d", _nc_curr_col);
-    if (TermType != 0 && TermType[0] != '\0')
-	fprintf(stderr, ", terminal '%s'", TermType);
-    fputc(':', stderr);
-    fputc(' ', stderr);
+	fprintf (stderr, "\"%s\"", sourcename);
+	if (_nc_curr_line >= 0)
+		fprintf (stderr, ", line %d", _nc_curr_line);
+	if (_nc_curr_col >= 0)
+		fprintf (stderr, ", col %d", _nc_curr_col);
+	if (termtype[0])
+		fprintf (stderr, ", terminal '%s'", termtype);
+	fputc(':', stderr);
+	fputc(' ', stderr);
 }
 
-NCURSES_EXPORT(void)
-_nc_warning(const char *const fmt,...)
+void _nc_warning(const char *const fmt, ...)
 {
-    va_list argp;
+va_list argp;
 
-    if (_nc_suppress_warnings)
-	return;
+	if (_nc_suppress_warnings)
+	    return;
 
-    where_is_problem();
-    va_start(argp, fmt);
-    vfprintf(stderr, fmt, argp);
-    fprintf(stderr, "\n");
-    va_end(argp);
+	where_is_problem();
+	va_start(argp,fmt);
+	vfprintf (stderr, fmt, argp);
+	fprintf (stderr, "\n");
+	va_end(argp);
 }
 
-NCURSES_EXPORT(void)
-_nc_err_abort(const char *const fmt,...)
-{
-    va_list argp;
 
-    where_is_problem();
-    va_start(argp, fmt);
-    vfprintf(stderr, fmt, argp);
-    fprintf(stderr, "\n");
-    va_end(argp);
-    exit(EXIT_FAILURE);
+void _nc_err_abort(const char *const fmt, ...)
+{
+va_list argp;
+
+	where_is_problem();
+	va_start(argp,fmt);
+	vfprintf (stderr, fmt, argp);
+	fprintf (stderr, "\n");
+	va_end(argp);
+	exit(EXIT_FAILURE);
 }
 
-NCURSES_EXPORT(void)
-_nc_syserr_abort(const char *const fmt,...)
+
+void _nc_syserr_abort(const char *const fmt, ...)
 {
-    va_list argp;
+va_list argp;
 
-    where_is_problem();
-    va_start(argp, fmt);
-    vfprintf(stderr, fmt, argp);
-    fprintf(stderr, "\n");
-    va_end(argp);
+	where_is_problem();
+	va_start(argp,fmt);
+	vfprintf (stderr, fmt, argp);
+	fprintf (stderr, "\n");
+	va_end(argp);
 
-    /* If we're debugging, try to show where the problem occurred - this
-     * will dump core.
-     */
+	/* If we're debugging, try to show where the problem occurred - this
+	 * will dump core.
+	 */
 #if defined(TRACE) || !defined(NDEBUG)
-    abort();
+	abort();
 #else
-    /* Dumping core in production code is not a good idea.
-     */
-    exit(EXIT_FAILURE);
+	/* Dumping core in production code is not a good idea.
+	 */
+	exit(EXIT_FAILURE);
 #endif
 }

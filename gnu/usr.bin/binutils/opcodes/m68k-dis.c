@@ -1,43 +1,32 @@
 /* Print Motorola 68k instructions.
-   Copyright 1986, 1987, 1989, 1991, 1992, 1993, 1994, 1995, 1996, 1997,
-   1998, 1999, 2000, 2001, 2002, 2003
-   Free Software Foundation, Inc.
+   Copyright 1986, 1987, 1989, 1991, 1992, 1993 Free Software Foundation, Inc.
 
-   This file is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+This file is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
 
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
 
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
-#include "sysdep.h"
 #include "dis-asm.h"
 #include "floatformat.h"
-#include "libiberty.h"
-#include "opintl.h"
 
 #include "opcode/m68k.h"
 
 /* Local function prototypes */
 
 static int
-fetch_data PARAMS ((struct disassemble_info *, bfd_byte *));
-
-static void
-dummy_print_address PARAMS ((bfd_vma, struct disassemble_info *));
-
-static int
 fetch_arg PARAMS ((unsigned char *, int, int, disassemble_info *));
 
 static void
-print_base PARAMS ((int, bfd_vma, disassemble_info *));
+print_base PARAMS ((int, bfd_vma, disassemble_info*));
 
 static unsigned char *
 print_indexed PARAMS ((int, unsigned char *, bfd_vma, disassemble_info *));
@@ -46,22 +35,20 @@ static int
 print_insn_arg PARAMS ((const char *, unsigned char *, unsigned char *,
 			bfd_vma, disassemble_info *));
 
-const char * const fpcr_names[] = {
-    "", "%fpiar", "%fpsr", "%fpiar/%fpsr", "%fpcr",
-    "%fpiar/%fpcr", "%fpsr/%fpcr", "%fpiar/%fpsr/%fpcr"
-};
+CONST char * CONST fpcr_names[] = {
+  "", "%fpiar", "%fpsr", "%fpiar/%fpsr", "%fpcr",
+  "%fpiar/%fpcr", "%fpsr/%fpcr", "%fpiar/%fpsr/%fpcr"};
 
 static char *const reg_names[] = {
-    "%d0", "%d1", "%d2", "%d3", "%d4", "%d5", "%d6", "%d7",
-    "%a0", "%a1", "%a2", "%a3", "%a4", "%a5", "%fp", "%sp",
-    "%ps", "%pc"
-};
+  "%d0", "%d1", "%d2", "%d3", "%d4", "%d5", "%d6", "%d7",
+  "%a0", "%a1", "%a2", "%a3", "%a4", "%a5", "%fp", "%sp",
+  "%ps", "%pc"};
 
 /* Sign-extend an (unsigned char). */
 #if __STDC__ == 1
-#define COERCE_SIGNED_CHAR(ch) ((signed char) (ch))
+#define COERCE_SIGNED_CHAR(ch) ((signed char)(ch))
 #else
-#define COERCE_SIGNED_CHAR(ch) ((int) (((ch) ^ 0x80) & 0xFF) - 128)
+#define COERCE_SIGNED_CHAR(ch) ((int)(((ch) ^ 0x80) & 0xFF) - 128)
 #endif
 
 /* Get a 1 byte signed integer.  */
@@ -74,30 +61,35 @@ static char *const reg_names[] = {
    COERCE16 ((p[-2] << 8) + p[-1]))
 
 /* Get a 4 byte signed integer.  */
-#define COERCE32(x) ((bfd_signed_vma) ((x) ^ 0x80000000) - 0x80000000)
+#define COERCE32(x) ((int) (((x) ^ 0x80000000) - 0x80000000))
 #define NEXTLONG(p)  \
   (p += 4, FETCH_DATA (info, p), \
    (COERCE32 ((((((p[-4] << 8) + p[-3]) << 8) + p[-2]) << 8) + p[-1])))
 
-/* Get a 4 byte unsigned integer.  */
-#define NEXTULONG(p)  \
-  (p += 4, FETCH_DATA (info, p), \
-   (unsigned int) ((((((p[-4] << 8) + p[-3]) << 8) + p[-2]) << 8) + p[-1]))
+/* NEXTSINGLE and NEXTDOUBLE handle alignment problems, but not
+ * byte-swapping or other float format differences.  FIXME! */
 
-/* Get a single precision float.  */
+union number {
+    double d;
+    float f;
+    char c[10];
+};
+
 #define NEXTSINGLE(val, p) \
-  (p += 4, FETCH_DATA (info, p), \
-   floatformat_to_double (&floatformat_ieee_single_big, (char *) p - 4, &val))
+  { unsigned int i; union number u;\
+    FETCH_DATA (info, p + sizeof (float));\
+    for (i = 0; i < sizeof(float); i++) u.c[i] = *p++; \
+    val = u.f; }
 
-/* Get a double precision float.  */
 #define NEXTDOUBLE(val, p) \
-  (p += 8, FETCH_DATA (info, p), \
-   floatformat_to_double (&floatformat_ieee_double_big, (char *) p - 8, &val))
+  { unsigned int i; union number u;\
+    FETCH_DATA (info, p + sizeof (double));\
+    for (i = 0; i < sizeof(double); i++) u.c[i] = *p++; \
+    val = u.d; }
 
-/* Get an extended precision float.  */
-#define NEXTEXTEND(val, p) \
-  (p += 12, FETCH_DATA (info, p), \
-   floatformat_to_double (&floatformat_m68881_ext, (char *) p - 12, &val))
+/* Need a function to convert from extended to double precision... */
+#define NEXTEXTEND(p) \
+  (p += 12, FETCH_DATA (info, p), 0.0)
 
 /* Need a function to convert from packed to double
    precision.   Actually, it's easier to print a
@@ -105,13 +97,15 @@ static char *const reg_names[] = {
    there should be a special case to handle this... */
 #define NEXTPACKED(p) \
   (p += 12, FETCH_DATA (info, p), 0.0)
+
 
 /* Maximum length of an instruction.  */
 #define MAXLEN 22
 
 #include <setjmp.h>
 
-struct private {
+struct private
+{
   /* Points to first byte not fetched.  */
   bfd_byte *max_fetched;
   bfd_byte the_buffer[MAXLEN];
@@ -123,7 +117,7 @@ struct private {
    to ADDR (exclusive) are valid.  Returns 1 for success, longjmps
    on error.  */
 #define FETCH_DATA(info, addr) \
-  ((addr) <= ((struct private *) (info->private_data))->max_fetched \
+  ((addr) <= ((struct private *)(info->private_data))->max_fetched \
    ? 1 : fetch_data ((info), (addr)))
 
 static int
@@ -152,20 +146,16 @@ fetch_data (info, addr)
 /* This function is used to print to the bit-bucket. */
 static int
 #ifdef __STDC__
-dummy_printer (FILE *file ATTRIBUTE_UNUSED,
-	       const char *format ATTRIBUTE_UNUSED, ...)
+dummy_printer (FILE * file, const char * format, ...)
 #else
-dummy_printer (file)
-     FILE *file ATTRIBUTE_UNUSED;
+dummy_printer (file) FILE *file;
 #endif
-{
-  return 0;
-}
+ { return 0; }
 
-static void
+void
 dummy_print_address (vma, info)
-     bfd_vma vma ATTRIBUTE_UNUSED;
-     struct disassemble_info *info ATTRIBUTE_UNUSED;
+     bfd_vma vma;
+     struct disassemble_info *info;
 {
 }
 
@@ -182,109 +172,25 @@ print_insn_m68k (memaddr, info)
   unsigned char *save_p;
   register const char *d;
   register unsigned long bestmask;
-  const struct m68k_opcode *best;
-  unsigned int arch_mask;
+  const struct m68k_opcode *best = 0;
   struct private priv;
   bfd_byte *buffer = priv.the_buffer;
   fprintf_ftype save_printer = info->fprintf_func;
-  void (*save_print_address) PARAMS ((bfd_vma, struct disassemble_info *))
+  void (*save_print_address) PARAMS((bfd_vma, struct disassemble_info*))
     = info->print_address_func;
-  int major_opcode;
-  static int numopcodes[16];
-  static const struct m68k_opcode **opcodes[16];
-
-  if (!opcodes[0])
-    {
-      /* Speed up the matching by sorting the opcode table on the upper
-	 four bits of the opcode.  */
-      const struct m68k_opcode **opc_pointer[16];
-
-      /* First count how many opcodes are in each of the sixteen buckets.  */
-      for (i = 0; i < m68k_numopcodes; i++)
-	numopcodes[(m68k_opcodes[i].opcode >> 28) & 15]++;
-
-      /* Then create a sorted table of pointers that point into the
-	 unsorted table.  */
-      opc_pointer[0] = ((const struct m68k_opcode **)
-			xmalloc (sizeof (struct m68k_opcode *)
-				 * m68k_numopcodes));
-      opcodes[0] = opc_pointer[0];
-      for (i = 1; i < 16; i++)
-	{
-	  opc_pointer[i] = opc_pointer[i - 1] + numopcodes[i - 1];
-	  opcodes[i] = opc_pointer[i];
-	}
-
-      for (i = 0; i < m68k_numopcodes; i++)
-	*opc_pointer[(m68k_opcodes[i].opcode >> 28) & 15]++ = &m68k_opcodes[i];
-
-    }
 
   info->private_data = (PTR) &priv;
-  /* Tell objdump to use two bytes per chunk and six bytes per line for
-     displaying raw data.  */
-  info->bytes_per_chunk = 2;
-  info->bytes_per_line = 6;
-  info->display_endian = BFD_ENDIAN_BIG;
   priv.max_fetched = priv.the_buffer;
   priv.insn_start = memaddr;
   if (setjmp (priv.bailout) != 0)
     /* Error return.  */
     return -1;
 
-  best = NULL;
-  switch (info->mach)
-    {
-    default:
-    case 0:
-      arch_mask = (unsigned int) -1;
-      break;
-    case bfd_mach_m68000:
-      arch_mask = m68000;
-      break;
-    case bfd_mach_m68008:
-      arch_mask = m68008;
-      break;
-    case bfd_mach_m68010:
-      arch_mask = m68010;
-      break;
-    case bfd_mach_m68020:
-      arch_mask = m68020;
-      break;
-    case bfd_mach_m68030:
-      arch_mask = m68030;
-      break;
-    case bfd_mach_m68040:
-      arch_mask = m68040;
-      break;
-    case bfd_mach_m68060:
-      arch_mask = m68060;
-      break;
-    case bfd_mach_mcf5200:
-      arch_mask = mcf5200;
-      break;
-    case bfd_mach_mcf528x:
-      arch_mask = mcf528x;
-      break;
-    case bfd_mach_mcf5206e:
-      arch_mask = mcf5206e;
-      break;
-    case bfd_mach_mcf5307:
-      arch_mask = mcf5307;
-      break;
-    case bfd_mach_mcf5407:
-      arch_mask = mcf5407;
-      break;
-    }
-
-  arch_mask |= m68881 | m68851;
-
   bestmask = 0;
   FETCH_DATA (info, buffer + 2);
-  major_opcode = (buffer[0] >> 4) & 15;
-  for (i = 0; i < numopcodes[major_opcode]; i++)
+  for (i = 0; i < m68k_numopcodes; i++)
     {
-      const struct m68k_opcode *opc = opcodes[major_opcode][i];
+      const struct m68k_opcode *opc = &m68k_opcodes[i];
       unsigned long opcode = opc->opcode;
       unsigned long match = opc->match;
 
@@ -296,8 +202,7 @@ print_insn_m68k (memaddr, info)
 	      (FETCH_DATA (info, buffer + 4)
 	       && ((0xff & buffer[2] & (match >> 8)) == (0xff & (opcode >> 8)))
 	       && ((0xff & buffer[3] & match) == (0xff & opcode)))
-	      )
-	  && (opc->arch & arch_mask) != 0)
+	      ))
 	{
 	  /* Don't use for printout the variants of divul and divsl
 	     that have the same register number in two places.
@@ -339,13 +244,13 @@ print_insn_m68k (memaddr, info)
 	}
     }
 
-  if (best == NULL)
+  if (best == 0)
     goto invalid;
 
   /* Point at first word of argument data,
      and at descriptor for first argument.  */
   p = buffer + 2;
-
+  
   /* Figure out how long the fixed-size portion of the instruction is.
      The only place this is stored in the opcode table is
      in the arguments--look for arguments which specify fields in the 2nd
@@ -358,7 +263,7 @@ print_insn_m68k (memaddr, info)
 	{
 	  if (d[1] == 'l' && p - buffer < 6)
 	    p = buffer + 6;
-	  else if (p - buffer < 4 && d[1] != 'C' && d[1] != '8')
+	  else if (p - buffer < 4 && d[1] != 'C' && d[1] != '8' )
 	    p = buffer + 4;
 	}
       if ((d[0] == 'L' || d[0] == 'l') && d[1] == 'w' && p - buffer < 4)
@@ -385,53 +290,35 @@ print_insn_m68k (memaddr, info)
 	  break;
 	}
     }
-
-  /* pflusha is an exceptions.  It takes no arguments but is two words
-     long.  Recognize it by looking at the lower 16 bits of the mask.  */
+  /* Some opcodes like pflusha and lpstop are exceptions; they take no
+     arguments but are two words long.  Recognize them by looking at
+     the lower 16 bits of the mask.  */
   if (p - buffer < 4 && (best->match & 0xFFFF) != 0)
     p = buffer + 4;
-
-  /* lpstop is another exception.  It takes a one word argument but is
-     three words long.  */
-  if (p - buffer < 6
-      && (best->match & 0xffff) == 0xffff
-      && best->args[0] == '#'
-      && best->args[1] == 'w')
-    {
-      /* Copy the one word argument into the usual location for a one
-	 word argument, to simplify printing it.  We can get away with
-	 this because we know exactly what the second word is, and we
-	 aren't going to print anything based on it.  */
-      p = buffer + 6;
-      FETCH_DATA (info, p);
-      buffer[2] = buffer[4];
-      buffer[3] = buffer[5];
-    }
-
+  
   FETCH_DATA (info, p);
-
+  
   d = best->args;
 
-  /* We scan the operands twice.  The first time we don't print anything,
+  /* We can the operands twice.  The first time we don't print anything,
      but look for errors. */
 
   save_p = p;
   info->print_address_func = dummy_print_address;
-  info->fprintf_func = (fprintf_ftype) dummy_printer;
-  for (; *d; d += 2)
+  info->fprintf_func = (fprintf_ftype)dummy_printer;
+  for ( ; *d; d += 2)
     {
-      int eaten = print_insn_arg (d, buffer, p, memaddr + (p - buffer), info);
+      int eaten = print_insn_arg (d, buffer, p, memaddr + p - buffer, info);
       if (eaten >= 0)
 	p += eaten;
       else if (eaten == -1)
 	goto invalid;
       else
 	{
-	  (*info->fprintf_func) (info->stream,
-				 /* xgettext:c-format */
-				 _("<internal error in opcode table: %s %s>\n"),
-				 best->name,
-				 best->args);
+	  (*info->fprintf_func)(info->stream,
+				"<internal error in opcode table: %s %s>\n",
+				best->name,
+				best->args);
 	  goto invalid;
 	}
 
@@ -449,7 +336,7 @@ print_insn_m68k (memaddr, info)
 
   while (*d)
     {
-      p += print_insn_arg (d, buffer, p, memaddr + (p - buffer), info);
+      p += print_insn_arg (d, buffer, p, memaddr + p - buffer, info);
       d += 2;
       if (*d && *(d - 2) != 'I' && *d != 'k')
 	(*info->fprintf_func) (info->stream, ",");
@@ -481,12 +368,10 @@ print_insn_arg (d, buffer, p0, addr, info)
   register int place = d[1];
   register unsigned char *p = p0;
   int regno;
-  register const char *regname;
+  register CONST char *regname;
   register unsigned char *p1;
   double flval;
   int flt_p;
-  bfd_signed_vma disp;
-  unsigned int uval;
 
   switch (*d)
     {
@@ -503,14 +388,14 @@ print_insn_arg (d, buffer, p0, addr, info)
         (*info->fprintf_func)
 	  (info->stream,
 	   "%s@",
-	   reg_names[fetch_arg (buffer, place, 3, info) + 8]);
+	   reg_names [fetch_arg (buffer, place, 3, info) + 8]);
         break;
       }
 
     case '_':		/* 32-bit absolute address for move16. */
       {
-        uval = NEXTULONG (p);
-	(*info->print_address_func) (uval, info);
+        val = NEXTLONG (p);
+	(*info->print_address_func) (val, info);
         break;
       }
 
@@ -526,30 +411,14 @@ print_insn_arg (d, buffer, p0, addr, info)
       (*info->fprintf_func) (info->stream, "%%usp");
       break;
 
-    case 'E':
-      (*info->fprintf_func) (info->stream, "%%acc");
-      break;
-
-    case 'G':
-      (*info->fprintf_func) (info->stream, "%%macsr");
-      break;
-
-    case 'H':
-      (*info->fprintf_func) (info->stream, "%%mask");
-      break;
-
     case 'J':
       {
-	/* FIXME: There's a problem here, different m68k processors call the
-	   same address different names. This table can't get it right
-	   because it doesn't know which processor it's disassembling for.  */
 	static const struct { char *name; int value; } names[]
 	  = {{"%sfc", 0x000}, {"%dfc", 0x001}, {"%cacr", 0x002},
 	     {"%tc",  0x003}, {"%itt0",0x004}, {"%itt1", 0x005},
              {"%dtt0",0x006}, {"%dtt1",0x007}, {"%buscr",0x008},
 	     {"%usp", 0x800}, {"%vbr", 0x801}, {"%caar", 0x802},
-	     {"%msp", 0x803}, {"%isp", 0x804},
-	     {"%flashbar", 0xc04}, {"%rambar", 0xc05}, /* mcf528x added these.  */
+	     {"%msp", 0x803}, {"%ibsp", 0x804},
 
 	     /* Should we be calling this psr like we do in case 'Y'?  */
 	     {"%mmusr",0x805},
@@ -576,28 +445,11 @@ print_insn_arg (d, buffer, p0, addr, info)
       (*info->fprintf_func) (info->stream, "#%d", val);
       break;
 
-    case 'x':
-      val = fetch_arg (buffer, place, 3, info);
-      /* 0 means -1.  */
-      if (val == 0)
-	val = -1;
-      (*info->fprintf_func) (info->stream, "#%d", val);
-      break;
-
     case 'M':
-      if (place == 'h')
-	{
-	  static char *const scalefactor_name[] = { "<<", ">>" };
-	  val = fetch_arg (buffer, place, 1, info);
-	  (*info->fprintf_func) (info->stream, scalefactor_name[val]);
-	}
-      else
-	{
-	  val = fetch_arg (buffer, place, 8, info);
-	  if (val & 0x80)
-	    val = val - 0x100;
-	  (*info->fprintf_func) (info->stream, "#%d", val);
-	}
+      val = fetch_arg (buffer, place, 8, info);
+      if (val & 0x80)
+	val = val - 0x100;
+      (*info->fprintf_func) (info->stream, "#%d", val);
       break;
 
     case 'T':
@@ -639,7 +491,7 @@ print_insn_arg (d, buffer, p0, addr, info)
     case 'O':
       val = fetch_arg (buffer, place, 6, info);
       if (val & 0x20)
-	(*info->fprintf_func) (info->stream, "%s", reg_names[val & 7]);
+	(*info->fprintf_func) (info->stream, "%s", reg_names [val & 7]);
       else
 	(*info->fprintf_func) (info->stream, "%d", val);
       break;
@@ -664,7 +516,7 @@ print_insn_arg (d, buffer, p0, addr, info)
       else if (place == 'C')
 	{
 	  val = fetch_arg (buffer, place, 7, info);
-	  if (val > 63)		/* This is a signed constant. */
+	  if ( val > 63 )		/* This is a signed constant. */
 	    val -= 128;
 	  (*info->fprintf_func) (info->stream, "{#%d}", val);
 	}
@@ -696,39 +548,39 @@ print_insn_arg (d, buffer, p0, addr, info)
 
     case 'B':
       if (place == 'b')
-	disp = NEXTBYTE (p);
+	val = NEXTBYTE (p);
       else if (place == 'B')
-	disp = COERCE_SIGNED_CHAR (buffer[1]);
+	val = COERCE_SIGNED_CHAR(buffer[1]);
       else if (place == 'w' || place == 'W')
-	disp = NEXTWORD (p);
+	val = NEXTWORD (p);
       else if (place == 'l' || place == 'L' || place == 'C')
-	disp = NEXTLONG (p);
+	val = NEXTLONG (p);
       else if (place == 'g')
 	{
-	  disp = NEXTBYTE (buffer);
-	  if (disp == 0)
-	    disp = NEXTWORD (p);
-	  else if (disp == -1)
-	    disp = NEXTLONG (p);
+	  val = NEXTBYTE (buffer);
+	  if (val == 0)
+	    val = NEXTWORD (p);
+	  else if (val == -1)
+	    val = NEXTLONG (p);
 	}
       else if (place == 'c')
 	{
 	  if (buffer[1] & 0x40)		/* If bit six is one, long offset */
-	    disp = NEXTLONG (p);
+	    val = NEXTLONG (p);
 	  else
-	    disp = NEXTWORD (p);
+	    val = NEXTWORD (p);
 	}
       else
 	return -2;
 
-      (*info->print_address_func) (addr + disp, info);
+      (*info->print_address_func) (addr + val, info);
       break;
 
     case 'd':
       val = NEXTWORD (p);
       (*info->fprintf_func)
 	(info->stream, "%s@(%d)",
-	 reg_names[fetch_arg (buffer, place, 3, info) + 8], val);
+	 reg_names[fetch_arg (buffer, place, 3, info)], val);
       break;
 
     case 's':
@@ -739,7 +591,7 @@ print_insn_arg (d, buffer, p0, addr, info)
     case 'I':
       /* Get coprocessor ID... */
       val = fetch_arg (buffer, 'd', 3, info);
-
+      
       if (val != 1)				/* Unusual coprocessor ID? */
 	(*info->fprintf_func) (info->stream, "(cpid=%d) ", val);
       break;
@@ -754,19 +606,9 @@ print_insn_arg (d, buffer, p0, addr, info)
     case '?':
     case '/':
     case '&':
+    case '`':
     case '|':
-    case '<':
-    case '>':
-    case 'm':
-    case 'n':
-    case 'o':
-    case 'p':
-    case 'q':
-    case 'v':
-    case 'b':
-    case 'w':
-    case 'y':
-    case 'z':
+
       if (place == 'd')
 	{
 	  val = fetch_arg (buffer, 'x', 6, info);
@@ -818,15 +660,13 @@ print_insn_arg (d, buffer, p0, addr, info)
 	      break;
 
 	    case 1:
-	      uval = NEXTULONG (p);
-	      (*info->print_address_func) (uval, info);
+	      val = NEXTLONG (p);
+	      (*info->print_address_func) (val, info);
 	      break;
 
 	    case 2:
 	      val = NEXTWORD (p);
-	      (*info->fprintf_func) (info->stream, "%%pc@(");
 	      (*info->print_address_func) (addr + val, info);
-	      (*info->fprintf_func) (info->stream, ")");
 	      break;
 
 	    case 3:
@@ -835,7 +675,7 @@ print_insn_arg (d, buffer, p0, addr, info)
 
 	    case 4:
 	      flt_p = 1;	/* Assume it's a float... */
-	      switch (place)
+	      switch( place )
 	      {
 		case 'b':
 		  val = NEXTBYTE (p);
@@ -853,25 +693,28 @@ print_insn_arg (d, buffer, p0, addr, info)
 		  break;
 
 		case 'f':
-		  NEXTSINGLE (flval, p);
+		  NEXTSINGLE(flval, p);
 		  break;
 
 		case 'F':
-		  NEXTDOUBLE (flval, p);
+		  NEXTDOUBLE(flval, p);
 		  break;
 
 		case 'x':
-		  NEXTEXTEND (flval, p);
+		  FETCH_DATA (info, p + 12);
+		  floatformat_to_double (&floatformat_m68881_ext,
+					 (char *) p, &flval);
+		  p += 12;
 		  break;
 
 		case 'p':
-		  flval = NEXTPACKED (p);
+		  flval = NEXTPACKED(p);
 		  break;
 
 		default:
 		  return -1;
 	      }
-	      if (flt_p)	/* Print a float? */
+	      if ( flt_p )	/* Print a float? */
 		(*info->fprintf_func) (info->stream, "#%g", flval);
 	      else
 		(*info->fprintf_func) (info->stream, "#%d", val);
@@ -1021,8 +864,7 @@ print_insn_arg (d, buffer, p0, addr, info)
 	else if (fc == 0)
 	  (*info->fprintf_func) (info->stream, "%%sfc");
 	else
-	  /* xgettext:c-format */
-	  (*info->fprintf_func) (info->stream, _("<function code %d>"), fc);
+	  (*info->fprintf_func) (info->stream, "<function code %d>", fc);
       }
       break;
 
@@ -1034,22 +876,6 @@ print_insn_arg (d, buffer, p0, addr, info)
       {
 	int level = fetch_arg (buffer, place, 3, info);
 	(*info->fprintf_func) (info->stream, "%d", level);
-      }
-      break;
-
-    case 'u':
-      {
-	short is_upper = 0;
-	int reg = fetch_arg (buffer, place, 5, info);
-
-	if (reg & 0x10)
-	  {
-	    is_upper = 1;
-	    reg &= 0xf;
-	  }
-	(*info->fprintf_func) (info->stream, "%s%s",
-			       reg_names[reg],
-			       is_upper ? "u" : "l");
       }
       break;
 
@@ -1139,7 +965,7 @@ fetch_arg (buffer, code, bits, info)
       val = (buffer[2] << 8) + buffer[3];
       val >>= 7;
       break;
-
+      
     case '8':
       FETCH_DATA (info, buffer + 3);
       val = (buffer[2] << 8) + buffer[3];
@@ -1156,40 +982,12 @@ fetch_arg (buffer, code, bits, info)
       val = (buffer[1] >> 6);
       break;
 
-    case 'm':
-      val = (buffer[1] & 0x40 ? 0x8 : 0)
-	| ((buffer[0] >> 1) & 0x7)
-	| (buffer[3] & 0x80 ? 0x10 : 0);
-      break;
-
-    case 'n':
-      val = (buffer[1] & 0x40 ? 0x8 : 0) | ((buffer[0] >> 1) & 0x7);
-      break;
-
-    case 'o':
-      val = (buffer[2] >> 4) | (buffer[3] & 0x80 ? 0x10 : 0);
-      break;
-
-    case 'M':
-      val = buffer[1] | (buffer[3] & 0x40 ? 0x10 : 0);
-      break;
-
-    case 'N':
-      val = buffer[3] | (buffer[3] & 0x40 ? 0x10 : 0);
-      break;
-
-    case 'h':
-      val = buffer[2] >> 2;
-      break;
-
     default:
       abort ();
     }
 
   switch (bits)
     {
-    case 1:
-      return val & 1;
     case 2:
       return val & 3;
     case 3:
@@ -1223,7 +1021,7 @@ print_indexed (basereg, p, addr, info)
      disassemble_info *info;
 {
   register int word;
-  static char *const scales[] = { "", ":2", ":4", ":8" };
+  static char *const scales[] = {"", ":2", ":4", ":8"};
   bfd_vma base_disp;
   bfd_vma outer_disp;
   char buf[40];
@@ -1242,12 +1040,12 @@ print_indexed (basereg, p, addr, info)
 
   if ((word & 0x100) == 0)
     {
-      base_disp = word & 0xff;
-      if ((base_disp & 0x80) != 0)
-	base_disp -= 0x100;
+      word &= 0xff;
+      if ((word & 0x80) != 0)
+	word -= 0x100;
       if (basereg == -1)
-	base_disp += addr;
-      print_base (basereg, base_disp, info);
+	word += addr;
+      print_base (basereg, word, info);
       (*info->fprintf_func) (info->stream, ",%s)", buf);
       return p;
     }

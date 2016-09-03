@@ -1,4 +1,4 @@
-/*	$OpenBSD: time.c,v 1.21 2015/10/10 14:49:23 deraadt Exp $	*/
+/*	$OpenBSD: time.c,v 1.5 1998/09/02 06:39:16 deraadt Exp $	*/
 /*	$NetBSD: time.c,v 1.7 1995/06/27 00:34:00 jtc Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,54 +34,62 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1987, 1988, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)time.c	8.1 (Berkeley) 6/6/93";
+#endif
+static char rcsid[] = "$OpenBSD: time.c,v 1.5 1998/09/02 06:39:16 deraadt Exp $";
+#endif /* not lint */
+
+#include <sys/types.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <sys/wait.h>
-#include <sys/sysctl.h>
-
-#include <err.h>
-#include <errno.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <errno.h>
 
 int lflag;
 int portableflag;
 
-__dead void usage(void);
-
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
-	pid_t pid;
+	extern int optind;
+	register int pid;
 	int ch, status;
 	struct timeval before, after;
 	struct rusage ru;
 	int exitonsig = 0;
 
-	if (pledge("stdio proc exec", NULL) == -1)
-		err(1, "pledge");
-
-	while ((ch = getopt(argc, argv, "lp")) != -1) {
-		switch(ch) {
-		case 'l':
-			lflag = 1;
-			break;
+	lflag = 0;
+	while ((ch = getopt(argc, argv, "lp")) != -1)
+		switch((char)ch) {
 		case 'p':
 			portableflag = 1;
 			break;
+		case 'l':
+			lflag = 1;
+			break;
+		case '?':
 		default:
-			usage();
-			/* NOTREACHED */
+			fprintf(stderr, "usage: time [-lp] command.\n");
+			exit(1);
 		}
-	}
 
-	argc -= optind;
+	if (!(argc -= optind))
+		exit(0);
 	argv += optind;
-
-	if (argc < 1)
-		usage();
 
 	gettimeofday(&before, (struct timezone *)NULL);
 	switch(pid = vfork()) {
@@ -105,36 +117,25 @@ main(int argc, char *argv[])
 	timersub(&after, &before, &after);
 
 	if (portableflag) {
-		fprintf(stderr, "real %9lld.%02ld\n",
-			(long long)after.tv_sec, after.tv_usec/10000);
-		fprintf(stderr, "user %9lld.%02ld\n",
-			(long long)ru.ru_utime.tv_sec, ru.ru_utime.tv_usec/10000);
-		fprintf(stderr, "sys  %9lld.%02ld\n",
-			(long long)ru.ru_stime.tv_sec, ru.ru_stime.tv_usec/10000);
+		fprintf(stderr, "real %9ld.%02ld\n", 
+			after.tv_sec, after.tv_usec/10000);
+		fprintf(stderr, "user %9ld.%02ld\n",
+			ru.ru_utime.tv_sec, ru.ru_utime.tv_usec/10000);
+		fprintf(stderr, "sys  %9ld.%02ld\n",
+			ru.ru_stime.tv_sec, ru.ru_stime.tv_usec/10000);
 	} else {
 
-		fprintf(stderr, "%9lld.%02ld real ",
-			(long long)after.tv_sec, after.tv_usec/10000);
-		fprintf(stderr, "%9lld.%02ld user ",
-			(long long)ru.ru_utime.tv_sec, ru.ru_utime.tv_usec/10000);
-		fprintf(stderr, "%9lld.%02ld sys\n",
-			(long long)ru.ru_stime.tv_sec, ru.ru_stime.tv_usec/10000);
+		fprintf(stderr, "%9ld.%02ld real ", 
+			after.tv_sec, after.tv_usec/10000);
+		fprintf(stderr, "%9ld.%02ld user ",
+			ru.ru_utime.tv_sec, ru.ru_utime.tv_usec/10000);
+		fprintf(stderr, "%9ld.%02ld sys\n",
+			ru.ru_stime.tv_sec, ru.ru_stime.tv_usec/10000);
 	}
 
 	if (lflag) {
-		int hz;
+		int hz = 100;			/* XXX */
 		long ticks;
-		int mib[2];
-		struct clockinfo clkinfo;
-		size_t size;
-
-		mib[0] = CTL_KERN;
-		mib[1] = KERN_CLOCKRATE;
-		size = sizeof(clkinfo);
-		if (sysctl(mib, 2, &clkinfo, &size, NULL, 0) < 0)
-			err(1, "sysctl");
-
-		hz = clkinfo.hz;
 
 		ticks = hz * (ru.ru_utime.tv_sec + ru.ru_stime.tv_sec) +
 		     hz * (ru.ru_utime.tv_usec + ru.ru_stime.tv_usec) / 1000000;
@@ -148,9 +149,9 @@ main(int argc, char *argv[])
 		fprintf(stderr, "%10ld  %s\n", ticks ? ru.ru_isrss / ticks : 0,
 			"average unshared stack size");
 		fprintf(stderr, "%10ld  %s\n",
-			ru.ru_minflt, "minor page faults");
+			ru.ru_minflt, "page reclaims");
 		fprintf(stderr, "%10ld  %s\n",
-			ru.ru_majflt, "major page faults");
+			ru.ru_majflt, "page faults");
 		fprintf(stderr, "%10ld  %s\n",
 			ru.ru_nswap, "swaps");
 		fprintf(stderr, "%10ld  %s\n",
@@ -170,20 +171,10 @@ main(int argc, char *argv[])
 	}
 
 	if (exitonsig) {
-		if (signal(exitonsig, SIG_DFL) == SIG_ERR)
+		if (signal(exitonsig, SIG_DFL) < 0)
 			perror("signal");
 		else
-			kill(getpid(), exitonsig);
+		kill(getpid(), exitonsig);
 	}
 	exit(WIFEXITED(status) ? WEXITSTATUS(status) : EXIT_FAILURE);
-}
-
-__dead void
-usage(void)
-{
-	extern char *__progname;
-
-	(void)fprintf(stderr, "usage: %s [-lp] utility [argument ...]\n",
-	    __progname);
-	exit(1);
 }

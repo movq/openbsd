@@ -1,4 +1,4 @@
-/*	$OpenBSD: ncr5380sbc.c,v 1.32 2015/01/15 17:54:14 miod Exp $	*/
+/*	$OpenBSD: ncr5380sbc.c,v 1.9 1997/09/11 01:02:41 kstailey Exp $	*/
 /*	$NetBSD: ncr5380sbc.c,v 1.13 1996/10/13 01:37:25 christos Exp $	*/
 
 /*
@@ -75,6 +75,7 @@
 #include <sys/device.h>
 #include <sys/buf.h>
 #include <sys/proc.h>
+#include <sys/user.h>
 
 #include <scsi/scsi_all.h>
 #include <scsi/scsi_debug.h>
@@ -88,26 +89,24 @@
 #include <dev/ic/ncr5380reg.h>
 #include <dev/ic/ncr5380var.h>
 
-static void *	ncr5380_io_get(void *);
-static void	ncr5380_io_put(void *, void *);
+static void	ncr5380_sched __P((struct ncr5380_softc *));
+static void	ncr5380_done __P((struct ncr5380_softc *));
 
-static void	ncr5380_sched(struct ncr5380_softc *);
-static void	ncr5380_done(struct ncr5380_softc *);
+static int	ncr5380_select
+	__P((struct ncr5380_softc *, struct sci_req *));
+static void	ncr5380_reselect __P((struct ncr5380_softc *));
 
-static int	ncr5380_select(struct ncr5380_softc *, struct sci_req *);
-static void	ncr5380_reselect(struct ncr5380_softc *);
+static int	ncr5380_msg_in __P((struct ncr5380_softc *));
+static int	ncr5380_msg_out __P((struct ncr5380_softc *));
+static int	ncr5380_data_xfer __P((struct ncr5380_softc *, int));
+static int	ncr5380_command __P((struct ncr5380_softc *));
+static int	ncr5380_status __P((struct ncr5380_softc *));
+static void	ncr5380_machine __P((struct ncr5380_softc *));
 
-static int	ncr5380_msg_in(struct ncr5380_softc *);
-static int	ncr5380_msg_out(struct ncr5380_softc *);
-static int	ncr5380_data_xfer(struct ncr5380_softc *, int);
-static int	ncr5380_command(struct ncr5380_softc *);
-static int	ncr5380_status(struct ncr5380_softc *);
-static void	ncr5380_machine(struct ncr5380_softc *);
-
-void	ncr5380_abort(struct ncr5380_softc *);
-void	ncr5380_cmd_timeout(void *);
+void	ncr5380_abort __P((struct ncr5380_softc *));
+void	ncr5380_cmd_timeout __P((void *));
 /*
- * Action flags returned by the info_transfer functions:
+ * Action flags returned by the info_tranfer functions:
  * (These determine what happens next.)
  */
 #define ACT_CONTINUE	0x00	/* No flags: expect another phase */
@@ -135,16 +134,16 @@ struct ncr5380_softc *ncr5380_debug_sc;
 #define	NCR_BREAK() \
 	do { if (ncr5380_debug & NCR_DBG_BREAK) Debugger(); } while (0)
 
-static void ncr5380_show_scsi_cmd(struct scsi_xfer *);
-static void ncr5380_show_sense(struct scsi_xfer *);
+static void ncr5380_show_scsi_cmd __P((struct scsi_xfer *));
+static void ncr5380_show_sense __P((struct scsi_xfer *));
 
 #ifdef DDB
-void ncr5380_trace(char *, long);
-void ncr5380_clear_trace(void);
-void ncr5380_show_trace(void);
-void ncr5380_show_req(struct sci_req *);
-void ncr5380_show_req(struct sci_req *);
-void ncr5380_show_state(void);
+void ncr5380_trace __P((char *, long));
+void ncr5380_clear_trace __P((void));
+void ncr5380_show_trace __P((void));
+void ncr5380_show_req __P((struct sci_req *));
+void ncr5380_show_req __P((struct sci_req *));
+void ncr5380_show_state __P((void));
 #endif	/* DDB */
 #else	/* NCR5380_DEBUG */
 
@@ -154,7 +153,7 @@ void ncr5380_show_state(void);
 
 #endif	/* NCR5380_DEBUG */
 
-const char *
+static char *
 phase_names[8] = {
 	"DATA_OUT",
 	"DATA_IN",
@@ -181,9 +180,9 @@ int ncr5380_wait_phase_timo = 1000 * 10 * 300;	/* 5 min. */
 int ncr5380_wait_req_timo = 1000 * 50;	/* X2 = 100 mS. */
 int ncr5380_wait_nrq_timo = 1000 * 25;	/* X2 =  50 mS. */
 
-static __inline int ncr5380_wait_req(struct ncr5380_softc *);
-static __inline int ncr5380_wait_not_req(struct ncr5380_softc *);
-static __inline void ncr_sched_msgout(struct ncr5380_softc *, int);
+static __inline int ncr5380_wait_req __P((struct ncr5380_softc *));
+static __inline int ncr5380_wait_not_req __P((struct ncr5380_softc *));
+static __inline void ncr_sched_msgout __P((struct ncr5380_softc *, int));
 
 /* Return zero on success. */
 static __inline int ncr5380_wait_req(sc)
@@ -357,25 +356,18 @@ ncr5380_init(sc)
 	struct ncr5380_softc *sc;
 {
 	int i, j;
-	struct sci_req *sr;
 
 #ifdef	NCR5380_DEBUG
 	ncr5380_debug_sc = sc;
 #endif
 
-	for (i = 0; i < SCI_OPENINGS; i++) {
-		sr = &sc->sc_ring[i];
-		sr->sr_flags = SR_FREE;
-		timeout_set(&sr->sr_timeout, ncr5380_cmd_timeout, sr);
-	}
+	for (i = 0; i < SCI_OPENINGS; i++)
+		sc->sc_ring[i].sr_xs = NULL;
 	for (i = 0; i < 8; i++)
 		for (j = 0; j < 8; j++)
 			sc->sc_matrix[i][j] = NULL;
 
-	scsi_iopool_init(&sc->sc_iopool, sc, ncr5380_io_get, ncr5380_io_put);
-
 	sc->sc_link.openings = 2;	/* XXX - Not SCI_OPENINGS */
-	sc->sc_link.pool = &sc->sc_iopool;
 	sc->sc_prevphase = PHASE_INVALID;
 	sc->sc_state = NCR_IDLE;
 
@@ -591,43 +583,6 @@ out:
  *****************************************************************/
 
 
-void *
-ncr5380_io_get(void *xsc)
-{
-	struct ncr5380_softc *sc = xsc;
-	struct sci_req *sr = NULL;
-	int s, i;
-
-	/*
-	 * Find lowest empty slot in ring buffer.
-	 * XXX: What about "fairness" and cmd order?
-	 */
-
-	s = splbio();
-	for (i = 0; i < SCI_OPENINGS; i++) {
-		if (sc->sc_ring[i].sr_flags == SR_FREE) {
-			sr = &sc->sc_ring[i];
-			sr->sr_flags = 0;
-			sc->sc_ncmds++;
-			break;
-		}
-	}
-	splx(s);
-
-	return (sr);
-}
-
-void
-ncr5380_io_put(void *xsc, void *xsr)
-{
-	struct sci_req *sr = xsr;
-	int s;
-
-	s = splbio();
-	sr->sr_flags = SR_FREE;
-	splx(s);
-}
-
 /*
  * Enter a new SCSI command into the "issue" queue, and
  * if there is work to do, start it going.
@@ -635,19 +590,31 @@ ncr5380_io_put(void *xsc, void *xsr)
  * WARNING:  This can be called recursively!
  * (see comment in ncr5380_done)
  */
-void
+int
 ncr5380_scsi_cmd(xs)
 	struct scsi_xfer *xs;
 {
 	struct	ncr5380_softc *sc;
 	struct sci_req	*sr;
-	int s, flags;
+	int s, rv, i, flags;
+	extern int cold;		/* XXX */
 
 	sc = xs->sc_link->adapter_softc;
+
 	flags = xs->flags;
+	/*
+	 * XXX: Hack: During autoconfig, force polling mode.
+	 * Needed as long as sdsize() can be called while cold,
+	 * otherwise timeouts will never call back (grumble).
+	 */
+	if (cold)
+		flags |= SCSI_POLL;
 
 	if (sc->sc_flags & NCR5380_FORCE_POLLING)
 		flags |= SCSI_POLL;
+
+	if (flags & SCSI_DATA_UIO)
+		panic("ncr5380: scsi data uio requested");
 
 	s = splbio();
 
@@ -665,8 +632,21 @@ ncr5380_scsi_cmd(xs)
 		}
 	}
 
+	/*
+	 * Find lowest empty slot in ring buffer.
+	 * XXX: What about "fairness" and cmd order?
+	 */
+	for (i = 0; i < SCI_OPENINGS; i++)
+		if (sc->sc_ring[i].sr_xs == NULL)
+			goto new;
+
+	rv = TRY_AGAIN_LATER;
+	NCR_TRACE("scsi_cmd: no openings, rv=%d\n", rv);
+	goto out;
+
+new:
 	/* Create queue entry */
-	sr = xs->io;
+	sr = &sc->sc_ring[i];
 	sr->sr_xs = xs;
 	sr->sr_target = xs->sc_link->target;
 	sr->sr_lun = xs->sc_link->lun;
@@ -676,12 +656,13 @@ ncr5380_scsi_cmd(xs)
 	sr->sr_flags = (flags & SCSI_POLL) ? SR_IMMED : 0;
 	sr->sr_status = -1;	/* no value */
 	sc->sc_ncmds++;
+	rv = SUCCESSFULLY_QUEUED;
 
 	NCR_TRACE("scsi_cmd: new sr=0x%x\n", (long)sr);
 
 	if (flags & SCSI_POLL) {
 		/* Force this new command to be next. */
-		sc->sc_rr = sr - sc->sc_ring;
+		sc->sc_rr = i;
 	}
 
 	/*
@@ -696,14 +677,15 @@ ncr5380_scsi_cmd(xs)
 	}
 
 	if (flags & SCSI_POLL) {
-#ifdef DIAGNOSTIC
 		/* Make sure ncr5380_sched() finished it. */
-		if (sc->sc_state != NCR_IDLE)
+		if ((xs->flags & ITSDONE) == 0)
 			panic("ncr5380_scsi_cmd: poll didn't finish");
-#endif
+		rv = COMPLETE;
 	}
 
+out:
 	splx(s);
+	return (rv);
 }
 
 
@@ -821,13 +803,14 @@ finish:
 	/* Clear our pointers to the request. */
 	sc->sc_current = NULL;
 	sc->sc_matrix[sr->sr_target][sr->sr_lun] = NULL;
-	timeout_del(&sr->sr_timeout);
+	untimeout(ncr5380_cmd_timeout, sr);
 
 	/* Make the request free. */
 	sr->sr_xs = NULL;
 	sc->sc_ncmds--;
 
 	/* Tell common SCSI code it is done. */
+	xs->flags |= ITSDONE;
 	scsi_done(xs);
 
 	sc->sc_state = NCR_IDLE;
@@ -905,7 +888,7 @@ next_job:
 		/* Another hack (Er.. hook!) for the sun3 si: */
 		if (sc->sc_intr_on) {
 			NCR_TRACE("sched: ret, intr ON\n", 0);
-			sc->sc_intr_on(sc);
+		    sc->sc_intr_on(sc);
 		}
 
 		return;		/* No more work to do. */
@@ -1059,7 +1042,7 @@ next_job:
 	if ((sr->sr_flags & SR_IMMED) == 0) {
 		i = (xs->timeout * hz) / 1000;
 		NCR_TRACE("sched: set timeout=%d\n", i);
-		timeout_add(&sr->sr_timeout, i);
+		timeout(ncr5380_cmd_timeout, sr, i);
 	}
 
 have_nexus:
@@ -1123,7 +1106,7 @@ ncr5380_reselect(sc)
 	 * then raise SEL, and finally drop BSY.  Only then is the
 	 * data bus required to have valid selection ID bits set.
 	 * Wait for: SEL==1, BSY==0 before reading the data bus.
-	 * While this theoretically can happen, we are apparently
+	 * While this theoretically can happen, we are aparently
 	 * never fast enough to get here before BSY drops.
 	 */
 	timo = ncr5380_wait_nrq_timo;
@@ -1364,7 +1347,7 @@ ncr5380_select(sc, sr)
 	 * after we enter arbitration up until we assert SEL.
 	 * Avoid long interrupts during this period.
 	 */
-	s = splvm();	/* XXX: Begin time-critical section */
+	s = splimp();	/* XXX: Begin time-critical section */
 
 	*(sc->sci_odata) = 0x80;	/* OUR_ID */
 	*(sc->sci_mode) = SCI_MODE_ARB;
@@ -1530,7 +1513,7 @@ success:
 /*
  * The message system:
  *
- * This is a revamped message system that now should easier accommodate
+ * This is a revamped message system that now should easier accomodate
  * new messages, if necessary.
  *
  * Currently we accept these messages:
@@ -1553,6 +1536,10 @@ success:
  * SYNCHRONOUS DATA TRANSFER REQUEST	if appropriate
  * NOOP				if nothing else fits the bill ...
  */
+
+#define IS1BYTEMSG(m) (((m) != 0x01 && (m) < 0x20) || (m) >= 0x80)
+#define IS2BYTEMSG(m) (((m) & 0xf0) == 0x20)
+#define ISEXTMSG(m) ((m) == 0x01)
 
 /*
  * Precondition:
@@ -1691,8 +1678,6 @@ have_msg:
 		NCR_TRACE("msg_in: PARITY_ERROR\n", 0);
 		/* Resend the last message. */
 		ncr_sched_msgout(sc, sc->sc_msgout);
-		/* Reset icmd after scheduling the REJECT cmd - jwg */
-		icmd = *sc->sci_icmd & SCI_ICMD_RMASK;
 		break;
 
 	case MSG_MESSAGE_REJECT:
@@ -1754,8 +1739,6 @@ have_msg:
 		/* fallthrough */
 	reject:
 		ncr_sched_msgout(sc, SEND_REJECT);
-		/* Reset icmd after scheduling the REJECT cmd - jwg */
-		icmd = *sc->sci_icmd & SCI_ICMD_RMASK;
 		break;
 
 	abort:
@@ -2415,7 +2398,7 @@ do_actions:
 		ncr5380_reset_scsibus(sc);
 	busfree:
 		NCR_TRACE("machine: discon, waited %d\n",
-			ncr5380_wait_req_timo - timo);
+			ncr5380_wait_nrq_timo - timo);
 
 		*sc->sci_icmd = 0;
 		*sc->sci_mode = 0;
@@ -2521,14 +2504,14 @@ ncr5380_trace(msg, val)
 
 #ifdef	DDB
 void
-ncr5380_clear_trace(void)
+ncr5380_clear_trace()
 {
 	ncr5380_traceidx = 0;
-	bzero(ncr5380_tracebuf, sizeof(ncr5380_tracebuf));
+	bzero((char*) ncr5380_tracebuf, sizeof(ncr5380_tracebuf));
 }
 
 void
-ncr5380_show_trace(void)
+ncr5380_show_trace()
 {
 	struct trace_ent *tr;
 	int idx;
@@ -2571,7 +2554,7 @@ ncr5380_show_req(sr)
 }
 
 void
-ncr5380_show_state(void)
+ncr5380_show_state()
 {
 	struct ncr5380_softc *sc;
 	struct sci_req *sr;

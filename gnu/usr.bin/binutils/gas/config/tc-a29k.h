@@ -1,6 +1,5 @@
 /* tc-a29k.h -- Assemble for the AMD 29000.
-   Copyright 1989, 1990, 1991, 1992, 1993, 1995, 1998
-   Free Software Foundation, Inc.
+   Copyright (C) 1989, 1990, 1991 Free Software Foundation, Inc.
 
 This file is part of GAS, the GNU Assembler.
 
@@ -15,15 +14,12 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GAS; see the file COPYING.  If not, write to the Free
-Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-02111-1307, USA.  */
+along with GAS; see the file COPYING.  If not, write to
+the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #define TC_A29K
 
 #define TARGET_BYTES_BIG_ENDIAN	1
-
-#define WORKING_DOT_WORD
 
 #define LEX_DOLLAR 1
 
@@ -40,8 +36,8 @@ extern int a29k_unrecognized_line PARAMS ((int));
 #define BFD_ARCH bfd_arch_a29k
 #define COFF_MAGIC SIPFBOMAGIC
 /* Should the reloc be output ?
-	on the 29k, this is true only if there is a symbol attached.
-	on the h8, this is always true, since no fixup is done
+	on the 29k, this is true only if there is a symbol attatched.
+	on the h8, this is allways true, since no fixup is done
 */
 #define TC_COUNT_RELOC(x) (x->fx_addsy)
 #define TC_CONS_RELOC RELOC_32

@@ -1,4 +1,4 @@
-/*	$OpenBSD: sem.c,v 1.22 2016/03/19 15:42:38 krw Exp $	*/
+/*	$OpenBSD: sem.c,v 1.6 1998/08/26 08:00:07 deraadt Exp $	*/
 /*	$NetBSD: sem.c,v 1.9 1995/09/27 00:38:50 jtc Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,27 +34,41 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/types.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)sem.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: sem.c,v 1.6 1998/08/26 08:00:07 deraadt Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
+#include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <limits.h>
-#include <stdarg.h>
+#ifdef __STDC__
+# include <stdarg.h>
+#else
+# include <varargs.h>
+#endif
 
 #include "csh.h"
 #include "proc.h"
 #include "extern.h"
 
-static void	 vffree(int);
-static Char	*splicepipe(struct command *t, Char *);
-static void	 doio(struct command *t, int *, int *);
-static void	 chkclob(char *);
+static void	 vffree __P((int));
+static Char	*splicepipe __P((struct command *t, Char *));
+static void	 doio __P((struct command *t, int *, int *));
+static void	 chkclob __P((char *));
 
 void
-execute(struct command *t, int wanttty, int *pipein, int *pipeout)
+execute(t, wanttty, pipein, pipeout)
+    register struct command *t;
+    int     wanttty, *pipein, *pipeout;
 {
     bool    forked = 0;
     struct biltins *bifunc;
@@ -77,8 +95,7 @@ execute(struct command *t, int wanttty, int *pipein, int *pipeout)
 
     case NODE_COMMAND:
 	if ((t->t_dcom[0][0] & (QUOTE | TRIM)) == QUOTE)
-	    (void) memmove(t->t_dcom[0], t->t_dcom[0] + 1,
-		(Strlen(t->t_dcom[0] + 1) + 1) * sizeof(Char));
+	    (void) Strcpy(t->t_dcom[0], t->t_dcom[0] + 1);
 	if ((t->t_dflg & F_REPEAT) == 0)
 	    Dfix(t);		/* $ " ' \ */
 	if (t->t_dcom[0] == 0)
@@ -150,7 +167,7 @@ execute(struct command *t, int wanttty, int *pipein, int *pipeout)
 	     * Check if we have a builtin function and remember which one.
 	     */
 	    bifunc = isbfunc(t);
-	    if (noexec) {
+ 	    if (noexec) {
 		/*
 		 * Continue for builtins that are part of the scripting language
 		 */
@@ -191,7 +208,7 @@ execute(struct command *t, int wanttty, int *pipein, int *pipeout)
 	 * We have to fork for eval too.
 	 */
 	    (bifunc && (t->t_dflg & (F_PIPEIN | F_PIPEOUT)) != 0 &&
-	     bifunc->bfunct == doeval)) {
+	     bifunc->bfunct == doeval))
 	    if (t->t_dtyp == NODE_PAREN ||
 		t->t_dflg & (F_REPEAT | F_AMPERSAND) || bifunc) {
 		forked++;
@@ -249,7 +266,7 @@ execute(struct command *t, int wanttty, int *pipein, int *pipeout)
 		otpgrp = tpgrp;
 		ocsigset = csigset;
 		onosigchld = nosigchld;
-		Vsav = Vdp = NULL;
+		Vsav = Vdp = 0;
 		Vexpath = 0;
 		Vt = 0;
 		pid = vfork();
@@ -272,14 +289,14 @@ execute(struct command *t, int wanttty, int *pipein, int *pipeout)
 		    csigset = ocsigset;
 		    nosigchld = onosigchld;
 
-		    free(Vsav);
-		    Vsav = NULL;
-		    free(Vdp);
-		    Vdp = NULL;
-		    free(Vexpath);
-		    Vexpath = NULL;
+		    xfree((ptr_t) Vsav);
+		    Vsav = 0;
+		    xfree((ptr_t) Vdp);
+		    Vdp = 0;
+		    xfree((ptr_t) Vexpath);
+		    Vexpath = 0;
 		    blkfree((Char **) Vt);
-		    Vt = NULL;
+		    Vt = 0;
 		    /* this is from pfork() */
 		    palloc(pid, t);
 		    sigprocmask(SIG_SETMASK, &osigset, NULL);
@@ -334,7 +351,6 @@ execute(struct command *t, int wanttty, int *pipein, int *pipeout)
 		}
 
 	    }
-	}
 	if (pid != 0) {
 	    /*
 	     * It would be better if we could wait for the whole job when we
@@ -436,7 +452,7 @@ execute(struct command *t, int wanttty, int *pipein, int *pipeout)
     }
     /*
      * Fall through for all breaks from switch
-     *
+     * 
      * If there will be no more executions of this command, flush all file
      * descriptors. Places that turn on the F_REPEAT bit are responsible for
      * doing donefds after the last re-execution
@@ -446,8 +462,19 @@ execute(struct command *t, int wanttty, int *pipein, int *pipeout)
 }
 
 static void
-vffree(int i)
+vffree(i)
+int i;
 {
+    register Char **v;
+
+    if ((v = gargv) != NULL) {
+	gargv = 0;
+	xfree((ptr_t) v);
+    }
+    if ((v = pargv) != NULL) {
+	pargv = 0;
+	xfree((ptr_t) v);
+    }
     _exit(i);
 }
 
@@ -463,11 +490,13 @@ vffree(int i)
  *
  * I don't know what is best to do. I think that Ambiguous is better
  * than restructuring the command vector, because the user can get
- * unexpected results. In any case, the command vector restructuring
+ * unexpected results. In any case, the command vector restructuring 
  * code is present and the user can choose it by setting noambiguous
  */
 static Char *
-splicepipe(struct command *t, Char *cp) /* word after < or > */
+splicepipe(t, cp)
+    register struct command *t;
+    Char *cp;	/* word after < or > */
 {
     Char *blk[2];
 
@@ -482,23 +511,23 @@ splicepipe(struct command *t, Char *cp) /* word after < or > */
 	    pv = globall(blk);
 	    if (pv == NULL) {
 		setname(vis_str(blk[0]));
-		free(blk[0]);
+		xfree((ptr_t) blk[0]);
 		stderror(ERR_NAME | ERR_NOMATCH);
 	    }
 	    gargv = NULL;
 	    if (pv[1] != NULL) { /* we need to fix the command vector */
 		Char **av = blkspl(t->t_dcom, &pv[1]);
-		free(t->t_dcom);
+		xfree((ptr_t) t->t_dcom);
 		t->t_dcom = av;
 	    }
-	    free(blk[0]);
+	    xfree((ptr_t) blk[0]);
 	    blk[0] = pv[0];
-	    free(pv);
+	    xfree((ptr_t) pv);
 	}
     }
     else {
 	blk[0] = globone(blk[1] = Dfix1(cp), G_ERROR);
-	free(blk[1]);
+	xfree((ptr_t) blk[1]);
     }
     return(blk[0]);
 }
@@ -508,17 +537,19 @@ splicepipe(struct command *t, Char *cp) /* word after < or > */
  * We may or maynot be forked here.
  */
 static void
-doio(struct command *t, int *pipein, int *pipeout)
+doio(t, pipein, pipeout)
+    register struct command *t;
+    int    *pipein, *pipeout;
 {
-    int fd;
-    Char *cp;
-    int flags = t->t_dflg;
+    register int fd;
+    register Char *cp;
+    register int flags = t->t_dflg;
 
     if (didfds || (flags & F_REPEAT))
 	return;
     if ((flags & F_READ) == 0) {/* F_READ already done */
 	if (t->t_dlef) {
-	    char    tmp[PATH_MAX];
+	    char    tmp[MAXPATHLEN];
 
 	    /*
 	     * so < /dev/std{in,out,err} work
@@ -527,8 +558,9 @@ doio(struct command *t, int *pipein, int *pipeout)
 	    (void) dcopy(SHOUT, 1);
 	    (void) dcopy(SHERR, 2);
 	    cp = splicepipe(t, t->t_dlef);
-	    strlcpy(tmp, short2str(cp), sizeof tmp);
-	    free(cp);
+	    (void) strncpy(tmp, short2str(cp), sizeof tmp-1);
+	    tmp[sizeof tmp-1] = '\0';
+	    xfree((ptr_t) cp);
 	    if ((fd = open(tmp, O_RDONLY)) < 0)
 		stderror(ERR_SYSTEM, tmp, strerror(errno));
 	    (void) dmove(fd, 0);
@@ -546,22 +578,28 @@ doio(struct command *t, int *pipein, int *pipeout)
 	else {
 	    (void) close(0);
 	    (void) dup(OLDSTD);
-	    (void) fcntl(STDIN_FILENO, F_SETFD, 0);
+	    (void) ioctl(0, FIONCLEX, NULL);
 	}
     }
     if (t->t_drit) {
-	char    tmp[PATH_MAX];
+	char    tmp[MAXPATHLEN];
 
 	cp = splicepipe(t, t->t_drit);
-	strlcpy(tmp, short2str(cp), sizeof tmp);
-	free(cp);
+	(void) strncpy(tmp, short2str(cp), sizeof tmp-1);
+	tmp[sizeof tmp-1] = '\0';
+	xfree((ptr_t) cp);
 	/*
 	 * so > /dev/std{out,err} work
 	 */
 	(void) dcopy(SHOUT, 1);
 	(void) dcopy(SHERR, 2);
 	if ((flags & F_APPEND) &&
+#ifdef O_APPEND
 	    (fd = open(tmp, O_WRONLY | O_APPEND)) >= 0);
+#else
+	    (fd = open(tmp, O_WRONLY)) >= 0)
+	    (void) lseek(1, (off_t) 0, SEEK_END);
+#endif
 	else {
 	    if (!(flags & F_OVERWRITE) && adrof(STRnoclobber)) {
 		if (flags & F_APPEND)
@@ -580,7 +618,7 @@ doio(struct command *t, int *pipein, int *pipeout)
     else {
 	(void) close(1);
 	(void) dup(SHOUT);
-	(void) fcntl(STDOUT_FILENO, F_SETFD, 0);
+	(void) ioctl(1, FIONCLEX, NULL);
     }
 
     (void) close(2);
@@ -589,13 +627,14 @@ doio(struct command *t, int *pipein, int *pipeout)
     }
     else {
 	(void) dup(SHERR);
-	(void) fcntl(STDERR_FILENO, F_SETFD, 0);
+	(void) ioctl(2, FIONCLEX, NULL);
     }
     didfds = 1;
 }
 
 void
-mypipe(int *pv)
+mypipe(pv)
+    register int *pv;
 {
 
     if (pipe(pv) < 0)
@@ -609,7 +648,8 @@ oops:
 }
 
 static void
-chkclob(char *cp)
+chkclob(cp)
+    register char *cp;
 {
     struct stat stb;
 

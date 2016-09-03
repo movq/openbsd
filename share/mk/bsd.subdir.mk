@@ -1,4 +1,4 @@
-#	$OpenBSD: bsd.subdir.mk,v 1.21 2015/03/08 21:59:48 espie Exp $
+#	$OpenBSD: bsd.subdir.mk,v 1.10 1998/03/01 09:18:06 niklas Exp $
 #	$NetBSD: bsd.subdir.mk,v 1.11 1996/04/04 02:05:06 jtc Exp $
 #	@(#)bsd.subdir.mk	5.9 (Berkeley) 2/1/91
 
@@ -12,7 +12,7 @@ SKIPDIR?=
 _SUBDIRUSE: .USE
 .if defined(SUBDIR)
 	@for entry in ${SUBDIR}; do \
-		set -e; if test -d ${.CURDIR}/$${entry}.${MACHINE}; then \
+		(set -e; if test -d ${.CURDIR}/$${entry}.${MACHINE}; then \
 			_newdir_="$${entry}.${MACHINE}"; \
 		else \
 			_newdir_="$${entry}"; \
@@ -39,12 +39,11 @@ _SUBDIRUSE: .USE
 		done; \
 		if [ X$${skipdir} = X -o X$${subentry} != X ]; then \
 			echo "===> $${_nextdir_}"; \
-			${MAKE} -C ${.CURDIR}/$${_newdir_} \
-			    SKIPDIR="$${subskipdir}" \
+			cd ${.CURDIR}/$${_newdir_}; \
+			${MAKE} ${.MAKEFLAGS} SKIPDIR="$${subskipdir}" \
 			    $${_makefile_spec_} _THISDIR_="$${_nextdir_}" \
-			    ${MAKE_FLAGS} \
-			    ${.TARGET:S/^real//}; \
-		fi; \
+			    ${.TARGET:S/realinstall/install/:S/.depend/depend/}; \
+		fi); \
 	done
 
 ${SUBDIR}::
@@ -58,30 +57,53 @@ ${SUBDIR}::
 		_makefile_spec_="-f Makefile.bsd-wrapper"; \
 	fi; \
 	echo "===> $${_newdir_}"; \
-	exec ${MAKE} -C ${.CURDIR}/$${_newdir_} ${MAKE_FLAGS} \
-	    $${_makefile_spec_} _THISDIR_="$${_newdir_}" all
+	cd ${.CURDIR}/$${_newdir_}; \
+	${MAKE} ${.MAKEFLAGS} $${_makefile_spec_} _THISDIR_="$${_newdir_}" all
 .endif
 
 .if !target(install)
-.  if !target(beforeinstall)
+.if !target(beforeinstall)
 beforeinstall:
-.  endif
-.  if !target(afterinstall)
+.endif
+.if !target(afterinstall)
 afterinstall:
-.  endif
+.endif
 install: maninstall
 maninstall: afterinstall
 afterinstall: realinstall
 realinstall: beforeinstall _SUBDIRUSE
 .endif
 
-
-.for t in all clean cleandir includes depend obj tags regress manlint
-.  if !target($t)
-$t: _SUBDIRUSE
-.  endif
-.endfor
-
-.if !defined(BSD_OWN_MK)
-.  include <bsd.own.mk>
+.if !target(all)
+all: _SUBDIRUSE
 .endif
+
+.if !target(clean)
+clean: _SUBDIRUSE
+.endif
+
+.if !target(cleandir)
+cleandir: _SUBDIRUSE
+.endif
+
+.if !target(includes)
+includes: _SUBDIRUSE
+.endif
+
+.if !target(depend)
+depend: _SUBDIRUSE
+.endif
+
+.if !target(lint)
+lint: _SUBDIRUSE
+.endif
+
+.if !target(obj)
+obj: _SUBDIRUSE
+.endif
+
+.if !target(tags)
+tags: _SUBDIRUSE
+.endif
+
+.include <bsd.own.mk>

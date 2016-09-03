@@ -1,4 +1,3 @@
-/*	$OpenBSD: yp_get_default_domain.c,v 1.9 2015/09/13 20:57:28 guenther Exp $ */
 /*
  * Copyright (c) 1992, 1993 Theo de Raadt <deraadt@theos.com>
  * All rights reserved.
@@ -11,6 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Theo de Raadt.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
  * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -25,9 +29,20 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: yp_get_default_domain.c,v 1.3 1996/08/19 08:35:09 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
+#include <sys/param.h>
 #include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/file.h>
+#include <sys/uio.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
-#include <limits.h>
 #include <rpc/rpc.h>
 #include <rpc/xdr.h>
 #include <rpcsvc/yp.h>
@@ -35,15 +50,13 @@
 #include "ypinternal.h"
 
 int
-yp_get_default_domain(char **domp)
+yp_get_default_domain(domp)
+	char          **domp;
 {
 	*domp = NULL;
 	if (_yp_domain[0] == '\0')
 		if (getdomainname(_yp_domain, sizeof _yp_domain))
 			return YPERR_NODOM;
 	*domp = _yp_domain;
-	if (_yp_domain[0] == '\0')
-		return YPERR_NODOM;
 	return 0;
 }
-DEF_WEAK(yp_get_default_domain);

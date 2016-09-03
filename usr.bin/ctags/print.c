@@ -1,4 +1,4 @@
-/*	$OpenBSD: print.c,v 1.7 2012/03/04 04:05:15 fgsch Exp $	*/
+/*	$OpenBSD: print.c,v 1.3 1997/11/04 08:03:05 deraadt Exp $	*/
 /*	$NetBSD: print.c,v 1.4 1995/09/27 01:06:58 jtc Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +34,14 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)print.c	8.3 (Berkeley) 4/2/94";
+#else 
+static char rcsid[] = "$OpenBSD: print.c,v 1.3 1997/11/04 08:03:05 deraadt Exp $";
+#endif
+#endif /* not lint */
+
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,12 +51,12 @@
 #include "ctags.h"
 
 /*
- * get_line --
+ * getline --
  *	get the line the token of interest occurred on,
  *	prepare it for printing.
  */
 void
-get_line(void)
+getline()
 {
 	long	saveftell;
 	int	c;
@@ -90,7 +102,8 @@ get_line(void)
  *	write out the tags
  */
 void
-put_entries(NODE *node)
+put_entries(node)
+	NODE	*node;
 {
 
 	if (node->left)

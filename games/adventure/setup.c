@@ -1,4 +1,4 @@
-/*	$OpenBSD: setup.c,v 1.13 2016/01/07 16:00:31 tb Exp $	*/
+/*	$OpenBSD: setup.c,v 1.5 1998/09/02 06:36:07 pjanzen Exp $	*/
 /*	$NetBSD: setup.c,v 1.2 1995/03/21 12:05:10 cgd Exp $	*/
 
 /*-
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,10 +37,24 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1991, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)setup.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: setup.c,v 1.5 1998/09/02 06:36:07 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
 /*
  * Setup: keep the structure of the original Adventure port, but use an
  * internal copy of the data file, serving as a sort of virtual disk.  It's
- * lightly obfuscated to prevent casual snooping of the executable.
+ * lightly encrypted to prevent casual snooping of the executable.
  *
  * Also do appropriate things to tabs so that bogus editors will do the right
  * thing with the data file.
@@ -49,9 +67,9 @@
 #include <err.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
+#include "hdr.h"	/* SEED lives in there; keep them coordinated. */
 
-#define USAGE "Usage: setup file > data.c (file is typically glorkz)\n"
+#define USAGE "Usage: setup file > data.c (file is typically glorkz)"
 
 #define YES 1
 #define NO  0
@@ -59,34 +77,26 @@
 #define LINE 10		/* How many values do we get on a line? */
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	FILE	*infile;
 	int	c, count, linestart;
 
-	if (pledge("stdio rpath", NULL) == -1)
-	    err(1, "pledge");
-
-	if (argc != 2) {
-		fprintf(stderr, USAGE);
-		return 1;
-	}
+	if (argc != 2)
+		errx(1, USAGE);
 
 	if ((infile = fopen(argv[1], "r")) == NULL)
 		err(1, "Can't read file %s", argv[1]);
-
-	if (pledge("stdio", NULL) == -1)
-		err(1, "pledge");
-
 	puts("/*\n * data.c: created by setup from the ascii data file.");
 	puts(SIG1);
 	puts(SIG2);
 	puts(" */");
 	printf("\n\nchar data_file[] =\n{");
+	srandom(SEED);
 	count = 0;
 	linestart = YES;
-
-	srandom_deterministic(1);
 
 	while ((c = getc(infile)) != EOF) {
 		if (count++ % LINE == 0)
@@ -111,5 +121,5 @@ main(int argc, char *argv[])
 	}
 	puts("\n\t0\n};");
 	fclose(infile);
-	return 0;
+	exit(0);
 }

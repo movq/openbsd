@@ -1,4 +1,4 @@
-/*	$OpenBSD: position.c,v 1.10 2009/10/27 23:59:21 deraadt Exp $	*/
+/*	$OpenBSD: position.c,v 1.3 1997/02/14 07:05:22 millert Exp $	*/
 /*	$NetBSD: position.c,v 1.4 1995/03/21 09:04:12 cgd Exp $	*/
 
 /*-
@@ -17,7 +17,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -34,11 +38,18 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)position.c	8.3 (Berkeley) 4/2/94";
+#else
+static char rcsid[] = "$OpenBSD: position.c,v 1.3 1997/02/14 07:05:22 millert Exp $";
+#endif
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <sys/mtio.h>
-#include <sys/time.h>
 
 #include <err.h>
 #include <errno.h>
@@ -55,15 +66,15 @@
  * output.
  */
 void
-pos_in(void)
+pos_in()
 {
 	size_t bcnt;
 	ssize_t nr;
 	off_t cnt;
 	int warned;
 
-	/* If not a pipe, tape or tty device, try to seek on it. */
-	if (!(in.flags & (ISPIPE|ISTAPE)) && !isatty(in.fd)) {
+	/* If not a character, pipe or tape device, try to seek on it. */
+	if (!(in.flags & (ISCHR|ISPIPE|ISTAPE))) {
 		if (lseek(in.fd, in.offset * in.dbsz, SEEK_CUR) == -1)
 			err(1, "%s", in.name);
 		return;
@@ -112,7 +123,7 @@ pos_in(void)
 }
 
 void
-pos_out(void)
+pos_out()
 {
 	struct mtop t_op;
 	off_t cnt;

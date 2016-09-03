@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_scroll.c,v 1.4 2010/01/12 23:22:06 nicm Exp $ */
+/*	$OpenBSD: lib_scroll.c,v 1.1 1999/01/18 19:09:58 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2004,2006 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -29,10 +29,11 @@
  ****************************************************************************/
 
 /****************************************************************************
- *  Author: Thomas E. Dickey 1996-2003                                      *
- *     and: Zeyd M. Ben-Halim <zmbenhal@netcom.com> 1992,1995               *
+ *  Author: Zeyd M. Ben-Halim <zmbenhal@netcom.com> 1992,1995               *
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
  ****************************************************************************/
+
+
 
 /*
 **	lib_scroll.c
@@ -45,108 +46,75 @@
 
 #include <curses.priv.h>
 
-MODULE_ID("$Id: lib_scroll.c,v 1.4 2010/01/12 23:22:06 nicm Exp $")
+MODULE_ID("$From: lib_scroll.c,v 1.16 1998/02/11 12:13:55 tom Exp $")
 
-NCURSES_EXPORT(void)
-_nc_scroll_window(WINDOW *win,
-		  int const n,
-		  NCURSES_SIZE_T const top,
-		  NCURSES_SIZE_T const bottom,
-		  NCURSES_CH_T blank)
+void _nc_scroll_window(WINDOW *win, int const n, short const top, short const bottom, chtype blank)
 {
-    int limit;
-    int line;
-    int j;
-    size_t to_copy = (size_t) (sizeof(NCURSES_CH_T) * (win->_maxx + 1));
+int	line, j;
+size_t	to_copy = (size_t)(sizeof(chtype) * (win->_maxx + 1));
 
-    TR(TRACE_MOVE, ("_nc_scroll_window(%p, %d, %ld, %ld)",
-		    win, n, (long) top, (long) bottom));
+	TR(TRACE_MOVE, ("_nc_scroll_window(%p, %d, %d, %d)", win, n, top,bottom)); 
 
-    if (top < 0
-	|| bottom < top
-	|| bottom > win->_maxy) {
-	TR(TRACE_MOVE, ("nothing to scroll"));
-	return;
-    }
+	/*
+	 * This used to do a line-text pointer-shuffle instead of text copies.
+	 * That (a) doesn't work when the window is derived and doesn't have
+	 * its own storage, (b) doesn't save you a lot on modern machines
+	 * anyway.  Your typical memcpy implementations are coded in
+	 * assembler using a tight BLT loop; for the size of copies we're
+	 * talking here, the total execution time is dominated by the one-time
+	 * setup cost.  So there is no point in trying to be excessively
+	 * clever -- esr.
+	 */
 
-    /*
-     * This used to do a line-text pointer-shuffle instead of text copies.
-     * That (a) doesn't work when the window is derived and doesn't have
-     * its own storage, (b) doesn't save you a lot on modern machines
-     * anyway.  Your typical memcpy implementations are coded in
-     * assembler using a tight BLT loop; for the size of copies we're
-     * talking here, the total execution time is dominated by the one-time
-     * setup cost.  So there is no point in trying to be excessively
-     * clever -- esr.
-     */
+	/* shift n lines downwards */
+    	if (n < 0) {
+		for (line = bottom; line >= top-n; line--) {
+		    	memcpy(win->_line[line].text,
+			       win->_line[line+n].text,
+			       to_copy);
+			if_USE_SCROLL_HINTS(win->_line[line].oldindex = win->_line[line+n].oldindex);
+		}
+		for (line = top; line < top-n; line++) {
+			for (j = 0; j <= win->_maxx; j ++)
+				win->_line[line].text[j] = blank;
+			if_USE_SCROLL_HINTS(win->_line[line].oldindex = _NEWINDEX);
+		}
+    	}
 
-    /* shift n lines downwards */
-    if (n < 0) {
-	limit = top - n;
-	for (line = bottom; line >= limit && line >= 0; line--) {
-	    TR(TRACE_MOVE, ("...copying %d to %d", line + n, line));
-	    memcpy(win->_line[line].text,
-		   win->_line[line + n].text,
-		   to_copy);
-	    if_USE_SCROLL_HINTS(win->_line[line].oldindex =
-				win->_line[line + n].oldindex);
+	/* shift n lines upwards */
+    	if (n > 0) {
+		for (line = top; line <= bottom-n; line++) {
+		    	memcpy(win->_line[line].text,
+			       win->_line[line+n].text,
+			       to_copy);
+			if_USE_SCROLL_HINTS(win->_line[line].oldindex = win->_line[line+n].oldindex);
+		}
+		for (line = bottom; line > bottom-n; line--) {
+			for (j = 0; j <= win->_maxx; j ++)
+				win->_line[line].text[j] = blank;
+			if_USE_SCROLL_HINTS(win->_line[line].oldindex = _NEWINDEX);
+		}
 	}
-	for (line = top; line < limit && line <= win->_maxy; line++) {
-	    TR(TRACE_MOVE, ("...filling %d", line));
-	    for (j = 0; j <= win->_maxx; j++)
-		win->_line[line].text[j] = blank;
-	    if_USE_SCROLL_HINTS(win->_line[line].oldindex = _NEWINDEX);
-	}
-    }
-
-    /* shift n lines upwards */
-    if (n > 0) {
-	limit = bottom - n;
-	for (line = top; line <= limit && line <= win->_maxy; line++) {
-	    memcpy(win->_line[line].text,
-		   win->_line[line + n].text,
-		   to_copy);
-	    if_USE_SCROLL_HINTS(win->_line[line].oldindex =
-				win->_line[line + n].oldindex);
-	}
-	for (line = bottom; line > limit && line >= 0; line--) {
-	    for (j = 0; j <= win->_maxx; j++)
-		win->_line[line].text[j] = blank;
-	    if_USE_SCROLL_HINTS(win->_line[line].oldindex = _NEWINDEX);
-	}
-    }
-    touchline(win, top, bottom - top + 1);
-
-    if_WIDEC({
-	if (WINDOW_EXT(win, addch_used) != 0) {
-	    int next = WINDOW_EXT(win, addch_y) + n;
-	    if (next < 0 || next > win->_maxy) {
-		TR(TRACE_VIRTPUT,
-		   ("Alert discarded multibyte on scroll"));
-		WINDOW_EXT(win, addch_y) = 0;
-	    } else {
-		TR(TRACE_VIRTPUT, ("scrolled working position to %d,%d",
-				   WINDOW_EXT(win, addch_y),
-				   WINDOW_EXT(win, addch_x)));
-		WINDOW_EXT(win, addch_y) = next;
-	    }
-	}
-    })
+	touchline(win, top, bottom-top+1);
 }
 
-NCURSES_EXPORT(int)
+int
 wscrl(WINDOW *win, int n)
 {
-    T((T_CALLED("wscrl(%p,%d)"), win, n));
+	T((T_CALLED("wscrl(%p,%d)"), win, n));
 
-    if (!win || !win->_scroll) {
-	TR(TRACE_MOVE, ("...scrollok is false"));
-	returnCode(ERR);
-    }
+	if (!win || !win->_scroll)
+		returnCode(ERR);
 
-    if (n != 0) {
-	_nc_scroll_window(win, n, win->_regtop, win->_regbottom, win->_nc_bkgd);
+	if (n == 0)
+		returnCode(OK);
+
+	if ((n > (win->_regbottom - win->_regtop)) || 
+	    (-n > (win->_regbottom - win->_regtop)))
+	    returnCode(ERR);
+
+	_nc_scroll_window(win, n, win->_regtop, win->_regbottom, _nc_background(win));
+
 	_nc_synchook(win);
-    }
-    returnCode(OK);
+    	returnCode(OK);
 }

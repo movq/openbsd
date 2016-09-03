@@ -1,5 +1,3 @@
-/*	$OpenBSD: cut.h,v 1.9 2016/05/27 09:18:11 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1991, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -12,7 +10,7 @@
  */
 
 typedef struct _texth TEXTH;		/* TEXT list head structure. */
-TAILQ_HEAD(_texth, _text);
+CIRCLEQ_HEAD(_texth, _text);
 
 /* Cut buffers. */
 struct _cb {
@@ -27,7 +25,7 @@ struct _cb {
 
 /* Lines/blocks of text. */
 struct _text {				/* Text: a linked list of lines. */
-	TAILQ_ENTRY(_text) q;		/* Linked list of text structures. */
+	CIRCLEQ_ENTRY(_text) q;		/* Linked list of text structures. */
 	char	*lb;			/* Line buffer. */
 	size_t	 lb_len;		/* Line buffer length. */
 	size_t	 len;			/* Line length. */
@@ -67,8 +65,9 @@ struct _text {				/* Text: a linked list of lines. */
 #define	CBNAME(sp, cbp, nch) {						\
 	CHAR_T L__name;							\
 	L__name = isupper(nch) ? tolower(nch) : (nch);			\
-	LIST_FOREACH((cbp), &(sp)->gp->cutq, q)				\
-		if ((cbp)->name == L__name)				\
+	for (cbp = sp->gp->cutq.lh_first;				\
+	    cbp != NULL; cbp = cbp->q.le_next)				\
+		if (cbp->name == L__name)				\
 			break;						\
 }
 
@@ -76,6 +75,3 @@ struct _text {				/* Text: a linked list of lines. */
 #define	CUT_LINEMODE	0x01		/* Cut in line mode. */
 #define	CUT_NUMOPT	0x02		/* Numeric buffer: optional. */
 #define	CUT_NUMREQ	0x04		/* Numeric buffer: required. */
-
-/* Special length to cut_line(). */
-#define CUT_LINE_TO_EOL	((size_t) -1)	/* Cut to the end of line. */

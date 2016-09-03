@@ -1,9 +1,8 @@
 #!./perl
-BEGIN {
-    chdir 't' if -d 't';
-    @INC = '../lib';
-    require './test.pl';
-}
+
+# $RCSfile: my.t,v $
+
+print "1..30\n";
 
 sub foo {
     my($a, $b) = @_;
@@ -13,10 +12,8 @@ sub foo {
     $d = "ok 4\n";
     { my($a, undef, $c) = ("ok 9\n", "not ok 10\n", "ok 10\n");
       ($x, $y) = ($a, $c); }
-    is($a, "ok 1\n", 'value of sub argument maintained outside of block');
-    is($b, "ok 2\n", 'sub argument maintained');
-    is($c, "ok 3\n", 'variable value maintained outside of block');
-    is($d, "ok 4\n", 'variable value maintained');
+    print $a, $b;
+    $c . $d;
 }
 
 $a = "ok 5\n";
@@ -24,14 +21,9 @@ $b = "ok 6\n";
 $c = "ok 7\n";
 $d = "ok 8\n";
 
-&foo("ok 1\n","ok 2\n");
+print &foo("ok 1\n","ok 2\n");
 
-is($a, "ok 5\n", 'global was not affected by duplicate names inside subroutine');
-is($b, "ok 6\n", '...');
-is($c, "ok 7\n", '...');
-is($d, "ok 8\n", '...');
-is($x, "ok 9\n", 'globals modified inside of block keeps its value outside of block');
-is($y, "ok 10\n", '...');
+print $a,$b,$c,$d,$x,$y;
 
 # same thing, only with arrays and associative arrays
 
@@ -40,13 +32,9 @@ sub foo2 {
     my(@c, %d);
     @c = "ok 13\n";
     $d{''} = "ok 14\n";
-    { my($a,@c) = ("ok 19\n", "ok 20\n", "ok 21\n"); ($x, $y) = ($a, @c); }
-    is($a, "ok 11\n", 'value of sub argument maintained outside of block');
-    is(scalar @b, 1, 'did not add any elements to @b');
-    is($b[0], "ok 12\n", 'did not alter @b');
-    is(scalar @c, 1, 'did not add arguments to @c');
-    is($c[0], "ok 13\n", 'did not alter @c');
-    is($d{''}, "ok 14\n", 'did not touch %d');
+    { my($a,@c) = ("ok 19\n", "ok 20\n"); ($x, $y) = ($a, @c); }
+    print $a, @b;
+    $c[0] . $d{''};
 }
 
 $a = "ok 15\n";
@@ -54,100 +42,53 @@ $a = "ok 15\n";
 @c = "ok 17\n";
 $d{''} = "ok 18\n";
 
-&foo2("ok 11\n", "ok 12\n");
+print &foo2("ok 11\n","ok 12\n");
 
-is($a, "ok 15\n", 'Global was not modifed out of scope');
-is(scalar @b, 1, 'correct number of elements in array');
-is($b[0], "ok 16\n", 'array value was not modified out of scope');
-is(scalar @c, 1, 'correct number of elements in array');
-is($c[0], "ok 17\n", 'array value was not modified out of scope');
-is($d{''}, "ok 18\n", 'hash key/value pair is correct');
-is($x, "ok 19\n", 'global was modified');
-is($y, "ok 20\n", 'this one too');
+print $a,@b,@c,%d,$x,$y;
 
 my $i = "outer";
 
 if (my $i = "inner") {
-    is( $i, 'inner', 'my variable inside conditional propagates inside block');
+    print "not " if $i ne "inner";
 }
+print "ok 21\n";
 
 if ((my $i = 1) == 0) {
-    fail("nested parens do not propagate variable outside");
+    print "not ";
 }
 else {
-    is($i, 1, 'lexical variable lives available inside else block');
+    print "not" if $i != 1;
 }
+print "ok 22\n";
 
 my $j = 5;
 while (my $i = --$j) {
-    last unless is( $i, $j, 'lexical inside while block');
+    print("not "), last unless $i > 0;
 }
 continue {
-    last unless is( $i, $j, 'lexical inside continue block');
+    print("not "), last unless $i > 0;
 }
-is( $j, 0, 'went through the previous while/continue loop all 4 times' );
+print "ok 23\n";
 
 $j = 5;
 for (my $i = 0; (my $k = $i) < $j; ++$i) {
-    fail(""), last unless $i >= 0 && $i < $j && $i == $k;
+    print("not "), last unless $i >= 0 && $i < $j && $i == $k;
 }
-ok( ! defined $k, '$k is only defined in the scope of the previous for loop' );
+print "ok 24\n";
+print "not " if defined $k;
+print "ok 25\n";
 
-curr_test(37);
-$jj = 0;
-foreach my $i (30, 31) {
-    is( $i, $jj+30, 'assignment inside the foreach loop variable definition');
-    $jj++;
+foreach my $i (26, 27) {
+    print "ok $i\n";
 }
-is( $jj, 2, 'foreach loop executed twice');
 
-is( $i, 'outer', '$i not modified by while/for/foreach using same variable name');
+print "not " if $i ne "outer";
+print "ok 28\n";
 
 # Ensure that C<my @y> (without parens) doesn't force scalar context.
 my @x;
 { @x = my @y }
-is(scalar @x, 0, 'my @y without parens does not force scalar context');
+print +(@x ? "not " : ""), "ok 29\n";
 { @x = my %y }
-is(scalar @x, 0, 'my %y without parens does not force scalar context');
+print +(@x ? "not " : ""), "ok 30\n";
 
-# Found in HTML::FormatPS
-my %fonts = qw(nok 35);
-for my $full (keys %fonts) {
-    $full =~ s/^n//;
-    is( $fonts{nok}, 35, 'Supposed to be copy-on-write via force_normal after a THINKFIRST check.' );
-}
-
-#  [perl #29340] optimising away the = () left the padav returning the
-# array rather than the contents, leading to 'Bizarre copy of array' error
-
-sub opta { my @a=() }
-sub opth { my %h=() }
-eval { my $x = opta };
-is($@, '', ' perl #29340, No bizarre copy of array error');
-eval { my $x = opth };
-is($@, '', ' perl #29340, No bizarre copy of array error via hash');
-
-sub foo3 {
-    ++my $x->{foo};
-    ok(! defined $x->{bar}, '$x->{bar} is not defined');
-    ++$x->{bar};
-}
-eval { foo3(); foo3(); };
-is( $@, '', 'no errors while checking autovivification and persistence of hash refs inside subs' );
-
-# my $foo = undef should always assign [perl #37776]
-{
-    my $count = 35;
-    loop:
-    my $test = undef;
-    is($test, undef, 'var is undef, repeated test');
-    $test = 42;
-    goto loop if ++$count < 37;
-}
-
-# [perl #113554]
-eval "my ()";
-is( $@, '', "eval of my() passes");
-
-#Variable number of tests due to the way the while/for loops are tested now
-done_testing();

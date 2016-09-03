@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.34 2015/11/13 16:46:30 deraadt Exp $
+#	$OpenBSD: Makefile,v 1.8 1998/07/27 15:25:13 millert Exp $
 #
 # Copyright (c) 1990 The Regents of the University of California.
 # All rights reserved.
@@ -11,7 +11,11 @@
 # 2. Redistributions in binary form must reproduce the above copyright
 #    notice, this list of conditions and the following disclaimer in the
 #    documentation and/or other materials provided with the distribution.
-# 3. Neither the name of the University nor the names of its contributors
+# 3. All advertising materials mentioning features or use of this software
+#    must display the following acknowledgement:
+#	This product includes software developed by the University of
+#	California, Berkeley and its contributors.
+# 4. Neither the name of the University nor the names of its contributors
 #    may be used to endorse or promote products derived from this software
 #    without specific prior written permission.
 #
@@ -32,12 +36,22 @@
 
 PROG=	telnet
 
-CFLAGS+=-DKLUDGELINEMODE
-CFLAGS+= -Wall
-LDADD+=	-lcurses
-DPADD=	${LIBCURSES}
+CFLAGS+=-DTERMCAP -DKLUDGELINEMODE -DUSE_TERMIO -DSKEY -Dunix
+CFLAGS+=-DENV_HACK -D_USE_OLD_CURSES_
+CFLAGS+=-I${.CURDIR}/../../lib
+LDADD+=	-locurses -ltelnet
+DPADD=	${LIBOLDCURSES} ${LIBTELNET}
 
-SRCS=	commands.c main.c network.c ring.c sys_bsd.c telnet.c \
-	terminal.c utilities.c genget.c
+SRCS=	authenc.c commands.c main.c network.c ring.c sys_bsd.c telnet.c \
+	terminal.c tn3270.c utilities.c
+
+.include <bsd.own.mk> # for KERBEROS
+
+.if (${KERBEROS} == "yes")
+CFLAGS+=-DENCRYPTION -DAUTHENTICATION -DKRB4
+LDADD+= -lkrb -ldes
+DPADD+= ${LIBDES} ${LIBKRB}
+.endif
 
 .include <bsd.prog.mk>
+

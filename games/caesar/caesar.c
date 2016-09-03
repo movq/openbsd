@@ -1,4 +1,4 @@
-/*	$OpenBSD: caesar.c,v 1.19 2016/02/26 12:10:49 mestre Exp $	*/
+/*	$OpenBSD: caesar.c,v 1.7 1998/08/19 07:53:54 pjanzen Exp $	*/
 
 /*
  * Copyright (c) 1989, 1993
@@ -20,7 +20,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -36,6 +40,20 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1989, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)caesar.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: caesar.c,v 1.7 1998/08/19 07:53:54 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
 #include <ctype.h>
 #include <err.h>
@@ -58,38 +76,43 @@
 double stdf[26] = {
 	7.97, 1.35, 3.61, 4.78, 12.37, 2.01, 1.46, 4.49, 6.39, 0.04,
 	0.42, 3.81, 2.69, 5.92,  6.96, 2.91, 0.08, 6.63, 8.77, 9.68,
-	2.62, 0.81, 1.88, 0.23,  2.07, 0.06
+	2.62, 0.81, 1.88, 0.23,  2.07, 0.06,
 };
 
-__dead void printit(int);
+void printit __P((int));
+void usage   __P((void));
+
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
-	int ch, i, nread;
-	extern char *__progname;
-	const char *errstr;
-	char *inbuf;
+	register int ch, dot, i, nread, winnerdot;
+	register char *inbuf, *p, **av;
 	int obs[26], try, winner;
-	double dot, winnerdot;
 
-	if (pledge("stdio", NULL) == -1)
-		err(1, "pledge");
+	/* revoke privs */
+	setegid(getgid());
+	setgid(getgid());
 
 	/* check to see if we were called as rot13 */
-	if (strcmp(__progname, "rot13") == 0)
+	av = argv;
+	p = strrchr(*av, '/');
+	if (p++ == NULL)
+		p = *av;
+	if (strcmp(p,"rot13") == 0)
 		printit(13);
 
 	if (argc > 1) {
-		i = strtonum(argv[1], 0, 25, &errstr);
-		if (errstr)
-			errx(1, "rotation is %s: %s", errstr, argv[1]);
-		else
+		if ((i = atoi(argv[1])))
 			printit(i);
+		else
+			usage();
 	}
 
 	if (!(inbuf = malloc(LINELENGTH)))
-		err(1, NULL);
+		errx(1, "out of memory.");
 
 	/* adjust frequency table to weight low probs REAL low */
 	for (i = 0; i < 26; ++i)
@@ -129,14 +152,26 @@ main(int argc, char *argv[])
 		putchar(ROTATE(ch, winner));
 	}
 	printit(winner);
+	/* NOT REACHED */
 }
 
 void
-printit(int rot)
+printit(rot)
+	int rot;
 {
-	int ch;
+	register int ch;
+
+	if ((rot < 0) || ( rot >= 26))
+		errx(1, "bad rotation value");
 	
 	while ((ch = getchar()) != EOF)
 		putchar(ROTATE(ch, rot));
 	exit(0);
+}
+
+void
+usage()
+{
+	fprintf(stderr,"usage: caesar [rotation]\n");
+	exit(1);
 }

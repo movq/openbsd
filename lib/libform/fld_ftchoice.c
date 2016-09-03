@@ -1,6 +1,7 @@
-/*	$OpenBSD: fld_ftchoice.c,v 1.6 2015/01/23 22:48:51 krw Exp $	*/
+/*	$OpenBSD: fld_ftchoice.c,v 1.3 1999/05/17 03:04:13 millert Exp $	*/
+
 /****************************************************************************
- * Copyright (c) 1998-2003,2004 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -28,12 +29,12 @@
  ****************************************************************************/
 
 /****************************************************************************
- *   Author:  Juergen Pfeifer, 1995,1997                                    *
+ *   Author: Juergen Pfeifer <juergen.pfeifer@gmx.net> 1995,1997            *
  ****************************************************************************/
 
 #include "form.priv.h"
 
-MODULE_ID("$Id: fld_ftchoice.c,v 1.6 2015/01/23 22:48:51 krw Exp $")
+MODULE_ID("$From: fld_ftchoice.c,v 1.4 1999/05/16 17:17:21 juergen Exp $")
 
 /*---------------------------------------------------------------------------
 |   Facility      :  libnform  
@@ -47,14 +48,11 @@ MODULE_ID("$Id: fld_ftchoice.c,v 1.6 2015/01/23 22:48:51 krw Exp $")
 |   Return Values :  E_OK           - success
 |                    E_BAD_ARGUMENT - invalid arguments
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(int)
-set_fieldtype_choice(FIELDTYPE *typ,
-		     bool (*const next_choice) (FIELD *, const void *),
-		     bool (*const prev_choice) (FIELD *, const void *))
+int set_fieldtype_choice(FIELDTYPE * typ,
+			 bool (* const next_choice) (FIELD *,const void *),
+			 bool (* const prev_choice) (FIELD *,const void *))
 {
-  T((T_CALLED("set_fieldtype_choice(%p,%p,%p)"), typ, next_choice, prev_choice));
-
-  if (!typ || !next_choice || !prev_choice)
+  if ( !typ || !next_choice || !prev_choice ) 
     RETURN(E_BAD_ARGUMENT);
 
   typ->status |= _HAS_CHOICE;

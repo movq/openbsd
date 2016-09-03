@@ -1,4 +1,4 @@
-/*	$OpenBSD: move.c,v 1.13 2016/08/27 02:02:44 guenther Exp $	*/
+/*	$OpenBSD: move.c,v 1.3 1998/07/09 04:34:18 pjanzen Exp $	*/
 /*	$NetBSD: move.c,v 1.4 1995/04/22 10:08:58 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,11 +34,13 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/time.h>
-#include <ctype.h>
-#include <poll.h>
-#include <termios.h>
-#include <unistd.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)move.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: move.c,v 1.3 1998/07/09 04:34:18 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
 #include "robots.h"
 
@@ -45,11 +51,9 @@
  *	Get and execute a move from the player
  */
 void
-get_move(void)
+get_move()
 {
-	int	c;
-	int retval;
-	struct timespec t, tn;
+	register int	c;
 #ifdef FANCY
 	int lastmove;
 #endif
@@ -65,10 +69,6 @@ get_move(void)
 			lastmove = -1;	/* flag for "first time in" */
 	}
 #endif
-	if (Real_time) {
-		t = tv;
-		clock_gettime(CLOCK_MONOTONIC, &tn);
-	}
 	for (;;) {
 		if (Teleport && must_telep())
 			goto teleport;
@@ -93,31 +93,16 @@ get_move(void)
 #endif
 		else {
 over:
-			if (Real_time) {
-				struct pollfd pfd[1];
-
-				pfd[0].fd = STDIN_FILENO;
-				pfd[0].events = POLLIN;
-				retval = ppoll(pfd, 1, &t, NULL);
-				if (retval > 0)
-					c = getchar();
-				else	/* Don't move if timed out or error */
-					c = ' ';
-			} else {
-				c = getchar();
-				/* Can't use digits in real time mode, or digit/ESC
-				 * is an effective way to stop the game.
-				 */
-				if (isdigit(c)) {
-					Count = (c - '0');
-					while (isdigit(c = getchar()))
-						Count = Count * 10 + (c - '0');
-					if (c == ESC)
-						goto over;
-					Cnt_move = c;
-					if (Count)
-						leaveok(stdscr, TRUE);
-				}
+			c = getchar();
+			if (isdigit(c)) {
+				Count = (c - '0');
+				while (isdigit(c = getchar()))
+					Count = Count * 10 + (c - '0');
+				if (c == ESC)
+					goto over;
+				Cnt_move = c;
+				if (Count)
+					leaveok(stdscr, TRUE);
 			}
 		}
 
@@ -192,30 +177,18 @@ teleport:
 			mvaddch(My_pos.y, My_pos.x, PLAYER);
 			leaveok(stdscr, FALSE);
 			refresh();
-			flushinp();
+			flush_in();
 			goto ret;
 		  case CTRL('L'):
 			wrefresh(curscr);
 			break;
 		  case EOF:
-			quit(0);
 			break;
 		  default:
-			beep();
+			putchar(CTRL('G'));
 			reset_count();
+			fflush(stdout);
 			break;
-		}
-		if (Real_time) {
-			/* Update current time. */
-			clock_gettime(CLOCK_MONOTONIC, &t);
-
-			/* Check whether tv time has passed. */
-			timespecadd(&tn, &tv, &tn);
-			if (timespeccmp(&tn, &t, <))
-				goto ret;
-
-			/* Keep the difference otherwise. */
-			timespecsub(&tn, &t, &t);
 		}
 	}
 ret:
@@ -230,9 +203,9 @@ ret:
  * being eaten?
  */
 bool
-must_telep(void)
+must_telep()
 {
-	int		x, y;
+	register int	x, y;
 	static COORD	newpos;
 
 #ifdef	FANCY
@@ -262,7 +235,8 @@ must_telep(void)
  *	Execute a move
  */
 bool
-do_move(int dy, int dx)
+do_move(dy, dx)
+	int	dy, dx;
 {
 	static COORD	newpos;
 
@@ -276,8 +250,9 @@ do_move(int dy, int dx)
 			leaveok(stdscr, FALSE);
 			move(My_pos.y, My_pos.x);
 			refresh();
-		} else {
-			beep();
+		}
+		else {
+			putchar(CTRL('G'));
 			reset_count();
 		}
 		return FALSE;
@@ -297,9 +272,10 @@ do_move(int dy, int dx)
  *	Player would get eaten at this place
  */
 bool
-eaten(COORD *pos)
+eaten(pos)
+	register COORD	*pos;
 {
-	int	x, y;
+	register int	x, y;
 
 	for (y = pos->y - 1; y <= pos->y + 1; y++) {
 		if (y <= 0 || y >= Y_FIELDSIZE)
@@ -319,7 +295,7 @@ eaten(COORD *pos)
  *	Reset the count variables
  */
 void
-reset_count(void)
+reset_count()
 {
 	Count = 0;
 	Running = FALSE;
@@ -332,7 +308,7 @@ reset_count(void)
  *	See if we are jumping, i.e., we should not refresh.
  */
 bool
-jumping(void)
+jumping()
 {
 	return (Jump && (Count || Running || Waiting));
 }

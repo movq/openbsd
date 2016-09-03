@@ -1,4 +1,4 @@
-/*	$OpenBSD: allow.c,v 1.6 2015/11/30 08:19:25 tb Exp $	*/
+/*	$OpenBSD: allow.c,v 1.3 1999/07/31 21:57:40 pjanzen Exp $	*/
 
 /*
  * Copyright (c) 1980, 1993
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,10 +33,18 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)allow.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: allow.c,v 1.3 1999/07/31 21:57:40 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
 #include "back.h"
 
 int
-movallow(void)
+movallow()
 {
 	int     i, m, iold, r;
 

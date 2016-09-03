@@ -1,4 +1,4 @@
-/*	$OpenBSD: bt_open.c,v 1.19 2015/12/28 22:08:18 mmcc Exp $	*/
+/*	$OpenBSD: bt_open.c,v 1.6 1999/02/15 05:11:22 millert Exp $	*/
 
 /*-
  * Copyright (c) 1990, 1993, 1994
@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,6 +36,14 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+#if 0
+static char sccsid[] = "@(#)bt_open.c	8.11 (Berkeley) 11/2/95";
+#else
+static char rcsid[] = "$OpenBSD: bt_open.c,v 1.6 1999/02/15 05:11:22 millert Exp $";
+#endif
+#endif /* LIBC_SCCS and not lint */
+
 /*
  * Implementation of btree access method for 4.4BSD.
  *
@@ -40,6 +52,7 @@
  * is wholly independent of the Postgres code.
  */
 
+#include <sys/param.h>
 #include <sys/stat.h>
 
 #include <errno.h>
@@ -59,9 +72,9 @@
 #define	MINPSIZE	128
 #endif
 
-static int byteorder(void);
-static int nroot(BTREE *);
-static int tmp(void);
+static int byteorder __P((void));
+static int nroot __P((BTREE *));
+static int tmp __P((void));
 
 /*
  * __BT_OPEN -- Open a btree.
@@ -80,8 +93,10 @@ static int tmp(void);
  *
  */
 DB *
-__bt_open(const char *fname, int flags, int mode, const BTREEINFO *openinfo,
-    int dflags)
+__bt_open(fname, flags, mode, openinfo, dflags)
+	const char *fname;
+	int flags, mode, dflags;
+	const BTREEINFO *openinfo;
 {
 	struct stat sb;
 	BTMETA m;
@@ -90,7 +105,7 @@ __bt_open(const char *fname, int flags, int mode, const BTREEINFO *openinfo,
 	DB *dbp;
 	pgno_t ncache;
 	ssize_t nr;
-	int machine_lorder, saved_errno;
+	int machine_lorder;
 
 	t = NULL;
 
@@ -116,7 +131,7 @@ __bt_open(const char *fname, int flags, int mode, const BTREEINFO *openinfo,
 		 */
 		if (b.psize &&
 		    (b.psize < MINPSIZE || b.psize > MAX_PAGE_OFFSET + 1 ||
-		    b.psize & (sizeof(indx_t) - 1)))
+		    b.psize & sizeof(indx_t) - 1))
 			goto einval;
 
 		/* Minimum number of keys per page; absolute minimum is 2. */
@@ -150,8 +165,9 @@ __bt_open(const char *fname, int flags, int mode, const BTREEINFO *openinfo,
 		goto einval;
 
 	/* Allocate and initialize DB and BTREE structures. */
-	if ((t = calloc(1, sizeof(BTREE))) == NULL)
+	if ((t = (BTREE *)malloc(sizeof(BTREE))) == NULL)
 		goto err;
+	memset(t, 0, sizeof(BTREE));
 	t->bt_fd = -1;			/* Don't close unopened fd on error. */
 	t->bt_lorder = b.lorder;
 	t->bt_order = NOT;
@@ -159,8 +175,9 @@ __bt_open(const char *fname, int flags, int mode, const BTREEINFO *openinfo,
 	t->bt_pfx = b.prefix;
 	t->bt_rfd = -1;
 
-	if ((t->bt_dbp = dbp = calloc(1, sizeof(DB))) == NULL)
+	if ((t->bt_dbp = dbp = (DB *)malloc(sizeof(DB))) == NULL)
 		goto err;
+	memset(t->bt_dbp, 0, sizeof(DB));
 	if (t->bt_lorder != machine_lorder)
 		F_SET(t, B_NEEDSWAP);
 
@@ -190,7 +207,7 @@ __bt_open(const char *fname, int flags, int mode, const BTREEINFO *openinfo,
 			goto einval;
 		}
 		
-		if ((t->bt_fd = open(fname, flags | O_CLOEXEC, mode)) < 0)
+		if ((t->bt_fd = open(fname, flags, mode)) < 0)
 			goto err;
 
 	} else {
@@ -200,6 +217,9 @@ __bt_open(const char *fname, int flags, int mode, const BTREEINFO *openinfo,
 			goto err;
 		F_SET(t, B_INMEM);
 	}
+
+	if (fcntl(t->bt_fd, F_SETFD, 1) == -1)
+		goto err;
 
 	if (fstat(t->bt_fd, &sb))
 		goto err;
@@ -231,7 +251,7 @@ __bt_open(const char *fname, int flags, int mode, const BTREEINFO *openinfo,
 		if (m.magic != BTREEMAGIC || m.version != BTREEVERSION)
 			goto eftype;
 		if (m.psize < MINPSIZE || m.psize > MAX_PAGE_OFFSET + 1 ||
-		    m.psize & (sizeof(indx_t) - 1))
+		    m.psize & sizeof(indx_t) - 1)
 			goto eftype;
 		if (m.flags & ~SAVEMETA)
 			goto eftype;
@@ -264,8 +284,8 @@ __bt_open(const char *fname, int flags, int mode, const BTREEINFO *openinfo,
 	t->bt_psize = b.psize;
 
 	/* Set the cache size; must be a multiple of the page size. */
-	if (b.cachesize && b.cachesize & (b.psize - 1))
-		b.cachesize += (~b.cachesize & (b.psize - 1)) + 1;
+	if (b.cachesize && b.cachesize & b.psize - 1)
+		b.cachesize += (~b.cachesize & b.psize - 1) + 1;
 	if (b.cachesize < b.psize * MINCACHE)
 		b.cachesize = b.psize * MINCACHE;
 
@@ -316,14 +336,13 @@ einval:	errno = EINVAL;
 eftype:	errno = EFTYPE;
 	goto err;
 
-err:	saved_errno = errno;
-	if (t) {
-		free(t->bt_dbp);
+err:	if (t) {
+		if (t->bt_dbp)
+			free(t->bt_dbp);
 		if (t->bt_fd != -1)
 			(void)close(t->bt_fd);
 		free(t);
 	}
-	errno = saved_errno;
 	return (NULL);
 }
 
@@ -337,7 +356,8 @@ err:	saved_errno = errno;
  *	RET_ERROR, RET_SUCCESS
  */
 static int
-nroot(BTREE *t)
+nroot(t)
+	BTREE *t;
 {
 	PAGE *meta, *root;
 	pgno_t npg;
@@ -377,32 +397,28 @@ nroot(BTREE *t)
 }
 
 static int
-tmp(void)
+tmp()
 {
 	sigset_t set, oset;
-	int fd, len;
+	int fd;
 	char *envtmp = NULL;
-	char path[PATH_MAX];
+	char path[MAXPATHLEN];
 
 	if (issetugid() == 0)
 		envtmp = getenv("TMPDIR");
-	len = snprintf(path,
+	(void)snprintf(path,
 	    sizeof(path), "%s/bt.XXXXXX", envtmp ? envtmp : "/tmp");
-	if (len < 0 || len >= sizeof(path)) {
-		errno = ENAMETOOLONG;
-		return(-1);
-	}
 
 	(void)sigfillset(&set);
 	(void)sigprocmask(SIG_BLOCK, &set, &oset);
-	if ((fd = mkostemp(path, O_CLOEXEC)) != -1)
+	if ((fd = mkstemp(path)) != -1)
 		(void)unlink(path);
 	(void)sigprocmask(SIG_SETMASK, &oset, NULL);
 	return(fd);
 }
 
 static int
-byteorder(void)
+byteorder()
 {
 	u_int32_t x;
 	u_char *p;
@@ -420,7 +436,8 @@ byteorder(void)
 }
 
 int
-__bt_fd(const DB *dbp)
+__bt_fd(dbp)
+	const DB *dbp;
 {
 	BTREE *t;
 

@@ -1,4 +1,4 @@
-/*	$OpenBSD: fish.c,v 1.23 2016/03/07 12:07:56 mestre Exp $	*/
+/*	$OpenBSD: fish.c,v 1.6 1999/09/25 15:52:19 pjanzen Exp $	*/
 /*	$NetBSD: fish.c,v 1.3 1995/03/23 08:28:18 cgd Exp $	*/
 
 /*-
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,22 +37,35 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/wait.h>
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1990, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)fish.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: fish.c,v 1.6 1999/09/25 15:52:19 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <err.h>
 #include <fcntl.h>
 #include <paths.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
-
+#include <string.h>
+#include <time.h>
 #include "pathnames.h"
 
 #define	RANKS		13
 #define	HANDSIZE	7
 #define	CARDS		4
-#define	TOTCARDS	RANKS * CARDS
 
 #define	USER		1
 #define	COMPUTER	0
@@ -61,50 +78,50 @@ const char *const cards[] = {
 #define	PRC(card)	(void)printf(" %s", cards[card])
 
 int promode;
-int curcard;
-int asked[RANKS], comphand[RANKS], deck[TOTCARDS];
+int asked[RANKS], comphand[RANKS], deck[RANKS];
 int userasked[RANKS], userhand[RANKS];
 
-void	chkwinner(int, const int *);
-int	compmove(void);
-int	countbooks(const int *);
-int	countcards(const int *);
-int	drawcard(int, int *);
-int	getans(const char *);
-int	gofish(int, int, int *);
-void	goodmove(int, int, int *, int *);
-void	init(void);
-void	instructions(void);
-int	nrandom(int);
-void	printhand(const int *);
-void	printplayer(int);
-int	promove(void);
-__dead void	usage(void);
-int	usermove(void);
+void	chkwinner __P((int, const int *));
+int	compmove __P((void));
+int	countbooks __P((const int *));
+int	countcards __P((const int *));
+int	drawcard __P((int, int *));
+int	getans __P((const char *));
+int	gofish __P((int, int, int *));
+void	goodmove __P((int, int, int *, int *));
+void	init __P((void));
+void	instructions __P((void));
+int	nrandom __P((int));
+void	printhand __P((const int *));
+void	printplayer __P((int));
+int	promove __P((void));
+void	usage __P((void));
+int	usermove __P((void));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
 	int ch, move;
 
-	if (pledge("stdio rpath proc exec", NULL) == -1)
-		err(1, "pledge");
+	/* revoke privs */
+	setegid(getgid());
+	setgid(getgid());
 
 	while ((ch = getopt(argc, argv, "ph")) != -1)
 		switch(ch) {
 		case 'p':
 			promode = 1;
 			break;
+		case '?':
 		case 'h':
 		default:
 			usage();
 		}
 
+	srandom(time((time_t *)NULL));
 	instructions();
-
-	if (pledge("stdio", NULL) == -1)
-		err(1, "pledge");
-
 	init();
 
 	if (nrandom(2) == 1) {
@@ -134,10 +151,11 @@ istart:		for (;;) {
 				goodmove(COMPUTER, move, comphand, userhand);
 		}
 	}
+	/* NOTREACHED */
 }
 
 int
-usermove(void)
+usermove()
 {
 	int n;
 	const char *const *p;
@@ -155,7 +173,7 @@ usermove(void)
 			continue;
 		if (buf[0] == '\n') {
 			(void)printf("%d cards in my hand, %d in the pool.\n",
-			    countcards(comphand), curcard);
+			    countcards(comphand), countcards(deck));
 			(void)printf("My books:");
 			(void)countbooks(comphand);
 			continue;
@@ -188,10 +206,11 @@ usermove(void)
 			(void)printf("No cheating!\n");
 		(void)printf("Guess again.\n");
 	}
+	/* NOTREACHED */
 }
 
 int
-compmove(void)
+compmove()
 {
 	static int lmove;
 
@@ -209,7 +228,7 @@ compmove(void)
 }
 
 int
-promove(void)
+promove()
 {
 	int i, max;
 
@@ -231,7 +250,7 @@ promove(void)
 				max = i;
 		return(max);
 	} 
-	if (nrandom(1024) == 723) {
+	if (nrandom(1024) == 0723) {
 		for (i = 0; i < RANKS; ++i)
 			if (userhand[i] && comphand[i])
 				return(i);
@@ -244,14 +263,19 @@ promove(void)
 		for (i = 0; i < RANKS; ++i)
 			asked[i] = 0;
 	}
+	/* NOTREACHED */
 }
 
 int
-drawcard(int player, int *hand)
+drawcard(player, hand)
+	int player;
+	int *hand;
 {
 	int card;
 
-	++hand[card = deck[--curcard]];
+	while (deck[card = nrandom(RANKS)] == 0);
+	++hand[card];
+	--deck[card];
 	if (player == USER || hand[card] == CARDS) {
 		printplayer(player);
 		(void)printf("drew %s", cards[card]);
@@ -266,7 +290,9 @@ drawcard(int player, int *hand)
 }
 
 int
-gofish(int askedfor, int player, int *hand)
+gofish(askedfor, player, hand)
+	int askedfor, player;
+	int *hand;
 {
 	printplayer(OTHER(player));
 	(void)printf("say \"GO FISH!\"\n");
@@ -281,7 +307,9 @@ gofish(int askedfor, int player, int *hand)
 }
 
 void
-goodmove(int player, int move, int *hand, int *opphand)
+goodmove(player, move, hand, opphand)
+	int player, move;
+	int *hand, *opphand;
 {
 	printplayer(OTHER(player));
 	(void)printf("have %d %s%s.\n",
@@ -303,7 +331,9 @@ goodmove(int player, int move, int *hand, int *opphand)
 }
 
 void
-chkwinner(int player, const int *hand)
+chkwinner(player, hand)
+	int player;
+	const int *hand;
 {
 	int cb, i, ub;
 
@@ -319,11 +349,11 @@ chkwinner(int player, const int *hand)
 	(void)printf("\nI have %d, you have %d.\n", cb, ub);
 	if (ub > cb) {
 		(void)printf("\nYou win!!!\n");
-		if (nrandom(1024) == 723)
+		if (nrandom(1024) == 0723)
 			(void)printf("Cheater, cheater, pumpkin eater!\n");
 	} else if (cb > ub) {
 		(void)printf("\nI win!!!\n");
-		if (nrandom(1024) == 723)
+		if (nrandom(1024) == 0723)
 			(void)printf("Hah!  Stupid peasant!\n");
 	} else
 		(void)printf("\nTie!\n");
@@ -331,7 +361,8 @@ chkwinner(int player, const int *hand)
 }
 
 void
-printplayer(int player)
+printplayer(player)
+	int player;
 {
 	switch (player) {
 	case COMPUTER:
@@ -344,7 +375,8 @@ printplayer(int player)
 }
 
 void
-printhand(const int *hand)
+printhand(hand)
+	const int *hand;
 {
 	int book, i, j;
 
@@ -364,7 +396,8 @@ printhand(const int *hand)
 }
 
 int
-countcards(const int *hand)
+countcards(hand)
+	const int *hand;
 {
 	int i, count;
 
@@ -374,7 +407,8 @@ countcards(const int *hand)
 }
 
 int
-countbooks(const int *hand)
+countbooks(hand)
+	const int *hand;
 {
 	int i, count;
 
@@ -390,35 +424,34 @@ countbooks(const int *hand)
 }
 
 void
-init(void)
+init()
 {
-	int i, j, temp;
+	int i, rank;
 
-	curcard = TOTCARDS;
-	for (i = 0; i < TOTCARDS; ++i)
-		deck[i] = i % RANKS;
-	for (i = 0; i < TOTCARDS - 1; ++i) {
-		j = nrandom(TOTCARDS-i);
-		if (j == 0)
-			continue;
-		temp = deck[i];
-		deck[i] = deck[i+j];
-		deck[i+j] = temp;
+	for (i = 0; i < RANKS; ++i)
+		deck[i] = CARDS;
+	for (i = 0; i < HANDSIZE; ++i) {
+		while (!deck[rank = nrandom(RANKS)]);
+		++userhand[rank];
+		--deck[rank];
 	}
 	for (i = 0; i < HANDSIZE; ++i) {
-		++userhand[deck[--curcard]];
-		++comphand[deck[--curcard]];
+		while (!deck[rank = nrandom(RANKS)]);
+		++comphand[rank];
+		--deck[rank];
 	}
 }
 
 int
-nrandom(int n)
+nrandom(n)
+	int n;
 {
-	return(arc4random_uniform(n));
+	return((int)random() % n);
 }
 
 int
-getans(const char *prompt)
+getans(prompt)
+	const char *prompt;
 {
 	char buf[20];
 
@@ -430,10 +463,8 @@ getans(const char *prompt)
 	for (;;) {
 		(void)printf("%s", prompt);
 		(void)fflush(stdout);
-		if (!fgets(buf, sizeof(buf), stdin)) {
-			(void)printf("\n");
-			exit(0);
-		}
+		if (!fgets(buf, sizeof(buf), stdin))
+			return(0);
 		if (*buf == 'N' || *buf == 'n')
 			return(0);
 		if (*buf == 'Y' || *buf == 'y')
@@ -441,10 +472,11 @@ getans(const char *prompt)
 		(void)printf(
 "I don't understand your answer; please enter 'y' or 'n'!\n");
 	}
+	/* NOTREACHED */
 }
 
 void
-instructions(void)
+instructions()
 {
 	const char *pager;
 	pid_t pid;
@@ -468,7 +500,7 @@ instructions(void)
 			}
 			if (dup2(fd, 0) == -1)
 				err(1, "dup2");
-			(void)execl(_PATH_BSHELL, "sh", "-c", pager, (char *)NULL);
+			(void)execl(_PATH_BSHELL, "sh", "-c", pager, NULL);
 			err(1, "exec sh -c %s", pager);
 			/* NOT REACHED */
 		case -1:
@@ -486,8 +518,8 @@ instructions(void)
 }
 
 void
-usage(void)
+usage()
 {
-	(void)fprintf(stderr, "usage: %s [-p]\n", getprogname());
+	(void)fprintf(stderr, "usage: fish [-p]\n");
 	exit(1);
 }

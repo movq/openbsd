@@ -1,4 +1,4 @@
-/*	$OpenBSD: systm.h,v 1.114 2016/09/01 12:50:53 akfaew Exp $	*/
+/*	$OpenBSD: systm.h,v 1.32 1999/09/12 19:44:04 weingart Exp $	*/
 /*	$NetBSD: systm.h,v 1.50 1996/06/09 04:55:09 briggs Exp $	*/
 
 /*-
@@ -18,7 +18,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -40,8 +44,7 @@
 #ifndef __SYSTM_H__
 #define __SYSTM_H__
 
-#include <sys/queue.h>
-#include <sys/stdarg.h>
+#include <machine/stdarg.h>
 
 /*
  * The `securelevel' variable controls the security level of the system.
@@ -49,7 +52,7 @@
  *
  * Security levels are as follows:
  *   -1	permanently insecure mode - always run system in level 0 mode.
- *    0	insecure mode - immutable and append-only flags may be turned off.
+ *    0	insecure mode - immutable and append-only flags make be turned off.
  *	All devices may be read or written subject to permission modes.
  *    1	secure mode - immutable and append-only flags may not be changed;
  *	raw disks of mounted filesystems, /dev/mem, and /dev/kmem are
@@ -72,19 +75,20 @@
  */
 extern int securelevel;		/* system security level */
 extern const char *panicstr;	/* panic message */
-extern const char version[];		/* system version */
-extern const char copyright[];	/* system copyright */
-extern const char ostype[];
-extern const char osversion[];
-extern const char osrelease[];
-extern int cold;		/* cold start flag initialized in locore */
+extern char version[];		/* system version */
+extern char copyright[];	/* system copyright */
 
-extern int ncpus;		/* number of CPUs used */
-extern int ncpusfound;		/* number of CPUs found */
 extern int nblkdev;		/* number of entries in bdevsw */
 extern int nchrdev;		/* number of entries in cdevsw */
+#if !defined(UVM)
+extern int nswdev;		/* number of swap devices */
+extern int nswap;		/* size of swap space */
+#endif
 
 extern int selwait;		/* select timeout address */
+
+extern u_char curpriority;	/* priority of current process */
+
 extern int maxmem;		/* max memory per process */
 extern int physmem;		/* physical memory */
 
@@ -92,248 +96,177 @@ extern dev_t dumpdev;		/* dump device */
 extern long dumplo;		/* offset into dumpdev */
 
 extern dev_t rootdev;		/* root device */
-extern u_char bootduid[8];	/* boot device disklabel uid */
-extern u_char rootduid[8];	/* root device disklabel uid */
 extern struct vnode *rootvp;	/* vnode equivalent to above */
 
 extern dev_t swapdev;		/* swapping device */
 extern struct vnode *swapdev_vp;/* vnode equivalent to above */
 
 struct proc;
-struct process;
-#define curproc curcpu()->ci_curproc
-
-typedef int	sy_call_t(struct proc *, void *, register_t *);
-
 extern struct sysent {		/* system call table */
 	short	sy_narg;	/* number of args */
 	short	sy_argsize;	/* total size of arguments */
-	int	sy_flags;
-	sy_call_t *sy_call;	/* implementing function */
+				/* implementing function */
+	int	(*sy_call) __P((struct proc *, void *, register_t *));
 } sysent[];
-
-#define SY_NOLOCK		0x01
-
-#if	_BYTE_ORDER == _BIG_ENDIAN
-#define SCARG(p, k)	((p)->k.be.datum)	/* get arg from args pointer */
-#elif	_BYTE_ORDER == _LITTLE_ENDIAN
-#define SCARG(p, k)	((p)->k.le.datum)	/* get arg from args pointer */
-#else
-#error	"what byte order is this machine?"
-#endif
+#define	SCARG(p,k)	((p)->k.datum)	/* get arg from args pointer */
 
 #if defined(_KERNEL) && defined(SYSCALL_DEBUG)
-void scdebug_call(struct proc *p, register_t code, const register_t retval[]);
-void scdebug_ret(struct proc *p, register_t code, int error,
-    const register_t retval[]);
+void scdebug_call __P((struct proc *p, register_t code, register_t retval[]));
+void scdebug_ret __P((struct proc *p, register_t code, int error, register_t retval[]));
 #endif /* _KERNEL && SYSCALL_DEBUG */
 
 extern int boothowto;		/* reboot flags, from console subsystem */
 
-extern void (*v_putc)(int); /* Virtual console putc routine */
+extern void (*v_putc) __P((int)); /* Virtual console putc routine */
+
+extern	void	_insque	__P((void *, void *));
+extern	void	_remque	__P((void *));
+
+/* casts to keep lint happy, but it should be happy with void * */
+#define	insque(q,p)	_insque(q, p)
+#define	remque(q)	_remque(q)
 
 /*
  * General function declarations.
  */
-int	nullop(void *);
-int	enodev(void);
-int	enosys(void);
-int	enoioctl(void);
-int	enxio(void);
-int	eopnotsupp(void *);
+int	nullop __P((void *));
+int	enodev __P((void));
+int	enosys __P((void));
+int	enoioctl __P((void));
+int	enxio __P((void));
+int	eopnotsupp __P((void *));
+
+int	lkmenodev __P((void));
 
 struct vnodeopv_desc;
-void vfs_opv_init_explicit(struct vnodeopv_desc *);
-void vfs_opv_init_default(struct vnodeopv_desc *);
-void vfs_op_init(void);
+void vfs_opv_init __P((void));
+void vfs_opv_init_explicit __P((struct vnodeopv_desc *));
+void vfs_opv_init_default __P((struct vnodeopv_desc *));
+void vfs_op_init __P((void));
 
-int	seltrue(dev_t dev, int which, struct proc *);
-int	selfalse(dev_t dev, int which, struct proc *);
-void	*hashinit(int, int, int, u_long *);
-int	sys_nosys(struct proc *, void *, register_t *);
+int	seltrue __P((dev_t dev, int which, struct proc *));
+void	*hashinit __P((int, int, int, u_long *));
+int	sys_nosys __P((struct proc *, void *, register_t *));
 
-void	panic(const char *, ...)
-    __attribute__((__noreturn__,__format__(__kprintf__,1,2)));
-void	__assert(const char *, const char *, int, const char *)
+void	panic __P((const char *, ...))
+#ifdef __KPRINTF_ATTRIBUTE__
+    __kprintf_attribute__((__noreturn__,__format__(__kprintf__,1,2)));
+#else
     __attribute__((__noreturn__));
-int	printf(const char *, ...)
-    __attribute__((__format__(__kprintf__,1,2)));
-void	uprintf(const char *, ...)
-    __attribute__((__format__(__kprintf__,1,2)));
-int	vprintf(const char *, va_list)
-    __attribute__((__format__(__kprintf__,1,0)));
-int	vsnprintf(char *, size_t, const char *, va_list)
-    __attribute__((__format__(__kprintf__,3,0)));
-int	snprintf(char *buf, size_t, const char *, ...)
-    __attribute__((__format__(__kprintf__,3,4)));
+#endif
+void	__assert __P((const char *, const char *, int, const char *))
+    __attribute__((__noreturn__));
+int	printf __P((const char *, ...))
+    __kprintf_attribute__((__format__(__kprintf__,1,2)));
+void	uprintf __P((const char *, ...))
+    __kprintf_attribute__((__format__(__kprintf__,1,2)));
+void	vprintf __P((const char *, _BSD_VA_LIST_));
+int	vsprintf __P((char *, const char *, va_list))
+    __kprintf_attribute__((__format__(__kprintf__,2,3)));
+int	sprintf __P((char *buf, const char *, ...))
+    __kprintf_attribute__((__format__(__kprintf__,2,3)));
 struct tty;
-void	ttyprintf(struct tty *, const char *, ...)
-    __attribute__((__format__(__kprintf__,2,3)));
+void	ttyprintf __P((struct tty *, const char *, ...))
+    __kprintf_attribute__((__format__(__kprintf__,2,3)));
 
-void	splassert_fail(int, int, const char *);
-extern	int splassert_ctl;
+void	tablefull __P((const char *));
 
-void	assertwaitok(void);
+#if defined(UVM)
+int	kcopy __P((const void *, void *, size_t));
+#endif
 
-void	tablefull(const char *);
+void	bcopy __P((const void *, void *, size_t));
+void	ovbcopy __P((const void *, void *, size_t));
+void	bzero __P((void *, size_t));
+int	bcmp __P((const void *, const void *, size_t));
+void	*memcpy __P((void *, const void *, size_t));
+void	*memmove __P((void *, const void *, size_t));
+void	*memset __P((void *, int, size_t));
 
-int	kcopy(const void *, void *, size_t)
-		__attribute__ ((__bounded__(__buffer__,1,3)))
-		__attribute__ ((__bounded__(__buffer__,2,3)));
+int	copystr __P((const void *, void *, size_t, size_t *));
+int	copyinstr __P((const void *, void *, size_t, size_t *));
+int	copyoutstr __P((const void *, void *, size_t, size_t *));
+int	copyin __P((const void *, void *, size_t));
+int	copyout __P((const void *, void *, size_t));
 
-void	bcopy(const void *, void *, size_t)
-		__attribute__ ((__bounded__(__buffer__,1,3)))
-		__attribute__ ((__bounded__(__buffer__,2,3)));
-void	bzero(void *, size_t)
-		__attribute__ ((__bounded__(__buffer__,1,2)));
-void	explicit_bzero(void *, size_t)
-		__attribute__ ((__bounded__(__buffer__,1,2)));
-int	bcmp(const void *, const void *, size_t);
-void	*memcpy(void *, const void *, size_t)
-		__attribute__ ((__bounded__(__buffer__,1,3)))
-		__attribute__ ((__bounded__(__buffer__,2,3)));
-void	*memmove(void *, const void *, size_t)
-		__attribute__ ((__bounded__(__buffer__,1,3)))
-		__attribute__ ((__bounded__(__buffer__,2,3)));
-void	*memset(void *, int, size_t)
-		__attribute__ ((__bounded__(__buffer__,1,3)));
-
-int	copystr(const void *, void *, size_t, size_t *)
-		__attribute__ ((__bounded__(__string__,2,3)));
-int	copyinstr(const void *, void *, size_t, size_t *)
-		__attribute__ ((__bounded__(__string__,2,3)));
-int	copyoutstr(const void *, void *, size_t, size_t *);
-int	copyin(const void *, void *, size_t)
-		__attribute__ ((__bounded__(__buffer__,2,3)));
-int	copyout(const void *, void *, size_t);
-
-void	arc4random_buf(void *, size_t)
-		__attribute__ ((__bounded__(__buffer__,1,2)));
-u_int32_t arc4random(void);
-u_int32_t arc4random_uniform(u_int32_t);
+int	fubyte __P((void *));
+#ifdef notdef
+int	fuibyte __P((void *));
+#endif
+int	subyte __P((void *, int));
+int	suibyte __P((void *, int));
+long	fuword __P((void *));
+long	fuiword __P((void *));
+int	suword __P((void *, long));
+int	suiword __P((void *, long));
+int	fuswintr __P((caddr_t));
+int	suswintr __P((caddr_t, u_int));
 
 struct timeval;
-struct timespec;
-int	tvtohz(const struct timeval *);
-int	tstohz(const struct timespec *);
-void	realitexpire(void *);
+int	hzto __P((struct timeval *));
+void	timeout __P((void (*)(void *), void *, int));
+void	untimeout __P((void (*)(void *), void *));
+void	realitexpire __P((void *));
 
 struct clockframe;
-void	hardclock(struct clockframe *);
-void	softclock(void *);
-void	statclock(struct clockframe *);
+void	hardclock __P((struct clockframe *));
+void	softclock __P((void));
+void	statclock __P((struct clockframe *));
+#ifdef NTP
+void	hardupdate __P((long offset));
+#ifdef PPS_SYNC
+void	hardpps __P((struct timeval *, long));
+#endif
+#endif
 
-void	initclocks(void);
-void	inittodr(time_t);
-void	resettodr(void);
-void	cpu_initclocks(void);
+void	initclocks __P((void));
+void	inittodr __P((time_t));
+void	resettodr __P((void));
+void	cpu_initclocks __P((void));
 
-void	startprofclock(struct process *);
-void	stopprofclock(struct process *);
-void	setstatclockrate(int);
-
-struct sleep_state;
-void	sleep_setup(struct sleep_state *, const volatile void *, int,
-	    const char *);
-void	sleep_setup_timeout(struct sleep_state *, int);
-void	sleep_setup_signal(struct sleep_state *, int);
-void	sleep_finish(struct sleep_state *, int);
-int	sleep_finish_timeout(struct sleep_state *);
-int	sleep_finish_signal(struct sleep_state *);
-void	sleep_queue_init(void);
-
-struct mutex;
-void    wakeup_n(const volatile void *, int);
-void    wakeup(const volatile void *);
-#define wakeup_one(c) wakeup_n((c), 1)
-int	tsleep(const volatile void *, int, const char *, int);
-int	msleep(const volatile void *, struct mutex *, int,  const char*, int);
-void	yield(void);
-
-void	wdog_register(int (*)(void *, int), void *);
-void	wdog_shutdown(void *);
+void	startprofclock __P((struct proc *));
+void	stopprofclock __P((struct proc *));
+void	setstatclockrate __P((int));
 
 /*
- * Startup hooks are functions running after the scheduler has started
- * but before any threads have been created or root has been mounted.
+ * Shutdown hooks.  Functions to be run with all interrupts disabled
+ * immediately before the system is halted or rebooted.
  */
-
-struct hook_desc {
-	TAILQ_ENTRY(hook_desc) hd_list;
-	void	(*hd_fn)(void *);
-	void	*hd_arg;
-};
-TAILQ_HEAD(hook_desc_head, hook_desc);
-
-extern struct hook_desc_head startuphook_list;
-
-void	*hook_establish(struct hook_desc_head *, int, void (*)(void *), void *);
-void	hook_disestablish(struct hook_desc_head *, void *);
-void	dohooks(struct hook_desc_head *, int);
-
-#define HOOK_REMOVE	0x01
-#define HOOK_FREE	0x02
-
-#define startuphook_establish(fn, arg) \
-	hook_establish(&startuphook_list, 1, (fn), (arg))
-#define startuphook_disestablish(vhook) \
-	hook_disestablish(&startuphook_list, (vhook))
-#define dostartuphooks() dohooks(&startuphook_list, HOOK_REMOVE|HOOK_FREE)
+void	*shutdownhook_establish __P((void (*)(void *), void *));
+void	shutdownhook_disestablish __P((void *));
+void	doshutdownhooks __P((void));
 
 struct uio;
-int	uiomove(void *, size_t, struct uio *);
+int	uiomove __P((caddr_t, int, struct uio *));
 
-#if defined(_KERNEL)
-__returns_twice int	setjmp(label_t *);
-__dead void	longjmp(label_t *);
-#endif
+int	setjmp	__P((label_t *));
+void	longjmp	__P((label_t *));
 
-void	consinit(void);
+void	consinit __P((void));
 
-void	cpu_startup(void);
-void	cpu_configure(void);
-void	diskconf(void);
+void	cpu_startup __P((void));
+void	cpu_set_kpc __P((struct proc *, void (*)(void *), void *));
+extern void (*md_diskconf) __P((void));
+
 
 #ifdef GPROF
-void	kmstartup(void);
+void	kmstartup __P((void));
 #endif
 
-int nfs_mountroot(void);
-int dk_mountroot(void);
-extern int (*mountroot)(void);
+int nfs_mountroot __P((void));
+int dk_mountroot __P((void));
+int (*mountroot)__P((void));
 
 #include <lib/libkern/libkern.h>
 
 #if defined(DDB) || defined(KGDB)
 /* debugger entry points */
-void	Debugger(void);	/* in DDB only */
-int	read_symtab_from_file(struct proc *,struct vnode *,const char *);
+void	Debugger __P((void));	/* in DDB only */
+int	read_symtab_from_file __P((struct proc *,struct vnode *,const char *));
 #endif
 
 #ifdef BOOT_CONFIG
-void	user_config(void);
+void	user_config __P((void));
 #endif
-
-#if defined(MULTIPROCESSOR)
-void	_kernel_lock_init(void);
-void	_kernel_lock(void);
-void	_kernel_unlock(void);
-int	_kernel_lock_held(void);
-
-#define	KERNEL_LOCK_INIT()		_kernel_lock_init()
-#define	KERNEL_LOCK()			_kernel_lock()
-#define	KERNEL_UNLOCK()			_kernel_unlock()
-#define	KERNEL_ASSERT_LOCKED()		KASSERT(_kernel_lock_held())
-#define	KERNEL_ASSERT_UNLOCKED()	KASSERT(!_kernel_lock_held())
-
-#else /* ! MULTIPROCESSOR */
-
-#define	KERNEL_LOCK_INIT()		/* nothing */
-#define	KERNEL_LOCK()			/* nothing */
-#define	KERNEL_UNLOCK()			/* nothing */
-#define	KERNEL_ASSERT_LOCKED()		/* nothing */
-#define	KERNEL_ASSERT_UNLOCKED()	/* nothing */
-
-#endif /* MULTIPROCESSOR */
 
 #endif /* __SYSTM_H__ */

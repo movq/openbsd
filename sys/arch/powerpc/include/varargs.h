@@ -1,4 +1,3 @@
-/*	$OpenBSD: varargs.h,v 1.6 2008/11/08 19:49:24 kettenis Exp $	*/
 /*	$NetBSD: varargs.h,v 1.1 1996/09/30 16:34:37 ws Exp $	*/
 
 /*-
@@ -18,7 +17,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -37,21 +40,14 @@
  *	@(#)varargs.h	8.2 (Berkeley) 3/22/94
  */
 
-#ifndef _POWERPC_VARARGS_H_
-#define	_POWERPC_VARARGS_H_
+#ifndef _PPC_VARARGS_H_
+#define	_PPC_VARARGS_H_
 
-#include <machine/stdarg.h>
+#define _VARARGS_H
 
-#if __GNUC__ == 1
-#define	__va_ellipsis
-#else
-#define	__va_ellipsis	...
-#endif
+#include <machine/ansi.h>
+#include <machine/va-ppc.h>
 
-#define	va_alist	__builtin_va_alist
-#define	va_dcl		__builtin_va_alist_t __builtin_va_alist; __va_ellipsis
+typedef _BSD_VA_LIST_ va_list;
 
-#undef va_start
-#define	va_start(ap)	__builtin_varargs_start((ap))
-
-#endif /* !_POWERPC_VARARGS_H_ */
+#endif /* !_PPC_VARARGS_H_ */

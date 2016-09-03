@@ -1,7 +1,7 @@
-/* $OpenBSD: m_userptr.c,v 1.7 2010/01/12 23:22:08 nicm Exp $ */
+/*	$OpenBSD: m_userptr.c,v 1.5 1999/05/17 03:04:26 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2003,2004 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -29,7 +29,7 @@
  ****************************************************************************/
 
 /****************************************************************************
- *   Author:  Juergen Pfeifer, 1995,1997                                    *
+ *   Author: Juergen Pfeifer <juergen.pfeifer@gmx.net> 1995,1997            *
  ****************************************************************************/
 
 /***************************************************************************
@@ -39,7 +39,7 @@
 
 #include "menu.priv.h"
 
-MODULE_ID("$Id: m_userptr.c,v 1.7 2010/01/12 23:22:08 nicm Exp $")
+MODULE_ID("$From: m_userptr.c,v 1.10 1999/05/16 17:28:29 juergen Exp $")
 
 /*---------------------------------------------------------------------------
 |   Facility      :  libnmenu  
@@ -50,12 +50,10 @@ MODULE_ID("$Id: m_userptr.c,v 1.7 2010/01/12 23:22:08 nicm Exp $")
 |
 |   Return Values :  E_OK         - success
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(int)
-set_menu_userptr(MENU * menu, void *userptr)
+int set_menu_userptr(MENU * menu, void * userptr)
 {
-  T((T_CALLED("set_menu_userptr(%p,%p)"), menu, userptr));
   Normalize_Menu(menu)->userptr = userptr;
-  RETURN(E_OK);
+  RETURN( E_OK );
 }
 
 /*---------------------------------------------------------------------------
@@ -68,11 +66,9 @@ set_menu_userptr(MENU * menu, void *userptr)
 |   Return Values :  Value of the pointer. If no such pointer has been set,
 |                    NULL is returned
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(void *)
-menu_userptr(const MENU * menu)
+void *menu_userptr(const MENU * menu)
 {
-  T((T_CALLED("menu_userptr(%p)"), menu));
-  returnVoidPtr(Normalize_Menu(menu)->userptr);
+  return( Normalize_Menu(menu)->userptr);
 }
 
 /* m_userptr.c ends here */

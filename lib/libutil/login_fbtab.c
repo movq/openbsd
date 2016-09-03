@@ -1,16 +1,15 @@
-/*	$OpenBSD: login_fbtab.c,v 1.16 2015/11/27 01:57:59 mmcc Exp $	*/
+/*	$OpenBSD: login_fbtab.c,v 1.6 1999/09/21 04:52:45 csapuntz Exp $	*/
 
 /************************************************************************
-* Copyright 1995 by Wietse Venema.  All rights reserved.  Some individual
-* files may be covered by other copyrights.
+* Copyright 1995 by Wietse Venema.  All rights reserved.
 *
 * This material was originally written and compiled by Wietse Venema at
 * Eindhoven University of Technology, The Netherlands, in 1990, 1991,
 * 1992, 1993, 1994 and 1995.
 *
-* Redistribution and use in source and binary forms, with or without
-* modification, are permitted provided that this entire copyright notice
-* is duplicated in all such copies.
+* Redistribution and use in source and binary forms are permitted
+* provided that this entire copyright notice is duplicated in all such
+* copies.
 *
 * This software is provided "as is" and without any expressed or implied
 * warranties, including, without limitation, the implied warranties of
@@ -51,6 +50,10 @@
 	Problems are reported via the syslog daemon with severity
 	LOG_ERR.
 
+    BUGS
+	This module uses strtok(3), which may cause conflicts with other
+	uses of that same routine.
+
     AUTHOR
 	Wietse Venema (wietse@wzv.win.tue.nl)
 	Eindhoven University of Technology
@@ -59,21 +62,19 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
-
+#include <stdio.h>
+#include <syslog.h>
+#include <string.h>
 #include <errno.h>
 #include <dirent.h>
-#include <limits.h>
-#include <paths.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <syslog.h>
 #include <unistd.h>
-#include <util.h>
+#include <paths.h>
+
+#include "util.h"
 
 #define _PATH_FBTAB	"/etc/fbtab"
 
-static void login_protect(const char *, mode_t, uid_t, gid_t);
+static void login_protect __P((char *, char *, int, uid_t, gid_t));
 
 #define	WSPACE		" \t\n"
 
@@ -81,50 +82,38 @@ static void login_protect(const char *, mode_t, uid_t, gid_t);
  * login_fbtab - apply protections specified in /etc/fbtab or logindevperm
  */
 void
-login_fbtab(const char *tty, uid_t uid, gid_t gid)
+login_fbtab(tty, uid, gid)
+	char	*tty;
+	uid_t	uid;
+	gid_t	gid;
 {
 	FILE	*fp;
-	char	*buf, *toklast, *tbuf, *devnam, *cp;
-	mode_t	prot;
-	size_t	len;
+	char	buf[BUFSIZ], *devname, *cp, *table;
+	int	prot;
 
-	if ((fp = fopen(_PATH_FBTAB, "r")) == NULL)
+	if ((fp = fopen(table = _PATH_FBTAB, "r")) == NULL)
 		return;
 
-	tbuf = NULL;
-	while ((buf = fgetln(fp, &len)) != NULL) {
-		if (buf[len - 1] == '\n')
-			buf[len - 1] = '\0';
-		else {
-			if ((tbuf = malloc(len + 1)) == NULL)
-				break;
-			memcpy(tbuf, buf, len);
-			tbuf[len] = '\0';
-			buf = tbuf;
-		}
+	while (fgets(buf, sizeof(buf), fp)) {
 		if ((cp = strchr(buf, '#')))
-			*cp = '\0';	/* strip comment */
-		if (buf[0] == '\0' ||
-		    (cp = devnam = strtok_r(buf, WSPACE, &toklast)) == NULL)
+			*cp = 0;	/* strip comment */
+		if ((cp = devname = strtok(buf, WSPACE)) == 0)
 			continue;	/* empty or comment */
-		if (strncmp(devnam, _PATH_DEV, sizeof(_PATH_DEV) - 1) != 0 ||
-		    (cp = strtok_r(NULL, WSPACE, &toklast)) == NULL ||
+		if (strncmp(devname, _PATH_DEV, sizeof(_PATH_DEV) - 1) != 0 ||
+		    (cp = strtok((char *) 0, WSPACE)) == 0 ||
 		    *cp != '0' ||
 		    sscanf(cp, "%o", &prot) == 0 ||
 		    prot == 0 ||
 		    (prot & 0777) != prot ||
-		    (cp = strtok_r(NULL, WSPACE, &toklast)) == NULL) {
-			syslog(LOG_ERR, "%s: bad entry: %s", _PATH_FBTAB,
+		    (cp = strtok((char *) 0, WSPACE)) == 0) {
+			syslog(LOG_ERR, "%s: bad entry: %s", table,
 			    cp ? cp : "(null)");
 			continue;
 		}
-		if (strcmp(devnam + sizeof(_PATH_DEV) - 1, tty) == 0) {
-			for (cp = strtok_r(cp, ":", &toklast); cp != NULL;
-			    cp = strtok_r(NULL, ":", &toklast))
-				login_protect(cp, prot, uid, gid);
-		}
+		if (strcmp(devname + sizeof(_PATH_DEV) - 1, tty) == 0)
+			for (cp = strtok(cp, ":"); cp; cp = strtok(NULL, ":"))
+				login_protect(table, cp, prot, uid, gid);
 	}
-	free(tbuf);
 	fclose(fp);
 }
 
@@ -132,51 +121,39 @@ login_fbtab(const char *tty, uid_t uid, gid_t gid)
  * login_protect - protect one device entry
  */
 static void
-login_protect(const char *path, mode_t mask, uid_t uid, gid_t gid)
+login_protect(table, path, mask, uid, gid)
+	char	*table;
+	char	*path;
+	int	mask;
+	uid_t	uid;
+	gid_t	gid;
 {
-	char	buf[PATH_MAX];
-	size_t	pathlen = strlen(path);
-	DIR	*dir;
+	char	buf[BUFSIZ];
+	int	pathlen = strlen(path);
 	struct	dirent *ent;
-
-	if (pathlen >= sizeof(buf)) {
-		errno = ENAMETOOLONG;
-		syslog(LOG_ERR, "%s: %s: %m", _PATH_FBTAB, path);
-		return;
-	}
+	DIR	*dir;
 
 	if (strcmp("/*", path + pathlen - 2) != 0) {
 		if (chmod(path, mask) && errno != ENOENT)
-			syslog(LOG_ERR, "%s: chmod(%s): %m", _PATH_FBTAB, path);
+			syslog(LOG_ERR, "%s: chmod(%s): %m", table, path);
 		if (chown(path, uid, gid) && errno != ENOENT)
-			syslog(LOG_ERR, "%s: chown(%s): %m", _PATH_FBTAB, path);
+			syslog(LOG_ERR, "%s: chown(%s): %m", table, path);
 	} else {
-		/*
-		 * This is a wildcard directory (/path/to/whatever/ * ).
-		 * Make a copy of path without the trailing '*' (but leave
-		 * the trailing '/' so we can append directory entries.)
-		 */
-		memcpy(buf, path, pathlen - 1);
-		buf[pathlen - 1] = '\0';
-		if ((dir = opendir(buf)) == NULL) {
-			syslog(LOG_ERR, "%s: opendir(%s): %m", _PATH_FBTAB,
-			    path);
-			return;
-		}
-
-		while ((ent = readdir(dir)) != NULL) {
-			if (strcmp(ent->d_name, ".")  != 0 &&
-			    strcmp(ent->d_name, "..") != 0) {
-				buf[pathlen - 1] = '\0';
-				if (strlcat(buf, ent->d_name, sizeof(buf))
-				    >= sizeof(buf)) {
-					errno = ENAMETOOLONG;
-					syslog(LOG_ERR, "%s: %s: %m",
-					    _PATH_FBTAB, path);
-				} else
-					login_protect(buf, mask, uid, gid);
+		strncpy(buf, path, sizeof buf);
+		buf[pathlen - 1] = 0;
+		if ((dir = opendir(buf)) == 0) {
+			syslog(LOG_ERR, "%s: opendir(%s): %m", table, path);
+		} else {
+			while ((ent = readdir(dir))) {
+				if (strcmp(ent->d_name, ".") &&
+				    strcmp(ent->d_name, "..")) {
+					strncpy(buf + pathlen - 1, ent->d_name,
+					    sizeof(buf) - pathlen - 1);
+					login_protect(table, buf, mask,
+					    uid, gid);
+				}
 			}
+			closedir(dir);
 		}
-		closedir(dir);
 	}
 }

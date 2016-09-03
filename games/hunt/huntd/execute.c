@@ -1,52 +1,25 @@
-/*	$OpenBSD: execute.c,v 1.13 2016/08/27 02:06:40 guenther Exp $	*/
+/*	$OpenBSD: execute.c,v 1.5 1999/08/30 23:29:46 d Exp $	*/
 /*	$NetBSD: execute.c,v 1.2 1997/10/10 16:33:13 lukem Exp $	*/
 /*
- * Copyright (c) 1983-2003, Regents of the University of California.
- * All rights reserved.
- * 
- * Redistribution and use in source and binary forms, with or without 
- * modification, are permitted provided that the following conditions are 
- * met:
- * 
- * + Redistributions of source code must retain the above copyright 
- *   notice, this list of conditions and the following disclaimer.
- * + Redistributions in binary form must reproduce the above copyright 
- *   notice, this list of conditions and the following disclaimer in the 
- *   documentation and/or other materials provided with the distribution.
- * + Neither the name of the University of California, San Francisco nor 
- *   the names of its contributors may be used to endorse or promote 
- *   products derived from this software without specific prior written 
- *   permission.
- * 
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS 
- * IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED 
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A 
- * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT 
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT 
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, 
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY 
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *  Hunt
+ *  Copyright (c) 1985 Conrad C. Huang, Gregory S. Couch, Kenneth C.R.C. Arnold
+ *  San Francisco, California
  */
 
-#include <sys/select.h>
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
-
-#include "conf.h"
 #include "hunt.h"
+#include "conf.h"
 #include "server.h"
 
-static void	cloak(PLAYER *);
-static void	face(PLAYER *, int);
-static void	fire(PLAYER *, int);
-static void	fire_slime(PLAYER *, int);
-static void	move_player(PLAYER *, int);
-static void	pickup(PLAYER *, int, int, int, int);
-static void	scan(PLAYER *);
+static void	cloak __P((PLAYER *));
+static void	face __P((PLAYER *, int));
+static void	fire __P((PLAYER *, int));
+static void	fire_slime __P((PLAYER *, int));
+static void	move_player __P((PLAYER *, int));
+static void	pickup __P((PLAYER *, int, int, int, int));
+static void	scan __P((PLAYER *));
 
 
 /*
@@ -54,7 +27,8 @@ static void	scan(PLAYER *);
  *	Execute a single monitor command
  */
 void
-mon_execute(PLAYER *pp)
+mon_execute(pp)
+	PLAYER	*pp;
 {
 	char	ch;
 
@@ -80,7 +54,8 @@ mon_execute(PLAYER *pp)
  *	Execute a single command from a player
  */
 void
-execute(PLAYER *pp)
+execute(pp)
+	PLAYER	*pp;
 {
 	char	ch;
 
@@ -195,7 +170,9 @@ execute(PLAYER *pp)
  *	Try to move player 'pp' in direction 'dir'.
  */
 static void
-move_player(PLAYER *pp, int dir)
+move_player(pp, dir)
+	PLAYER	*pp;
+	int	dir;
 {
 	PLAYER	*newp;
 	int	x, y;
@@ -339,7 +316,9 @@ move_player(PLAYER *pp, int dir)
  *	Change the direction the player is facing
  */
 static void
-face(PLAYER *pp, int dir)
+face(pp, dir)
+	PLAYER	*pp;
+	int	dir;
 {
 	if (pp->p_face != dir) {
 		pp->p_face = dir;
@@ -352,7 +331,9 @@ face(PLAYER *pp, int dir)
  *	Fire a shot of the given type in the given direction
  */
 static void
-fire(PLAYER *pp, int req_index)
+fire(pp, req_index)
+	PLAYER	*pp;
+	int	req_index;
 {
 	if (pp == NULL)
 		return;
@@ -396,7 +377,9 @@ fire(PLAYER *pp, int req_index)
  *	Fire a slime shot in the given direction
  */
 static void
-fire_slime(PLAYER *pp, int req_index)
+fire_slime(pp, req_index)
+	PLAYER	*pp;
+	int	req_index;
 {
 	if (pp == NULL)
 		return;
@@ -444,8 +427,14 @@ fire_slime(PLAYER *pp, int req_index)
  *	Create a shot with the given properties
  */
 void
-add_shot(int type, int y, int x, char face, int charge, PLAYER *owner,
-    int expl, char over)
+add_shot(type, y, x, face, charge, owner, expl, over)
+	int	type;
+	int	y, x;
+	char	face;
+	int	charge;
+	PLAYER	*owner;
+	int	expl;
+	char	over;
 {
 	BULLET	*bp;
 	int	size;
@@ -489,14 +478,22 @@ add_shot(int type, int y, int x, char face, int charge, PLAYER *owner,
  *	initialize and return it
  */
 BULLET *
-create_shot(int type, int y, int x, char face, int charge, int size,
-    PLAYER *owner, IDENT *score, int expl, char over)
+create_shot(type, y, x, face, charge, size, owner, score, expl, over)
+	int	type;
+	int	y, x;
+	char	face;
+	int	charge;
+	int	size;
+	PLAYER	*owner;
+	IDENT	*score;
+	int	expl;
+	char	over;
 {
 	BULLET	*bp;
 
-	bp = malloc(sizeof (BULLET));
+	bp = (BULLET *) malloc(sizeof (BULLET));	/* NOSTRICT */
 	if (bp == NULL) {
-		logit(LOG_ERR, "malloc");
+		log(LOG_ERR, "malloc");
 		if (owner != NULL)
 			message(owner, "Out of memory");
 		return NULL;
@@ -522,7 +519,8 @@ create_shot(int type, int y, int x, char face, int charge, int size,
  *	Turn on or increase length of a cloak
  */
 static void
-cloak(PLAYER *pp)
+cloak(pp)
+	PLAYER	*pp;
 {
 	/* Check configuration: */
 	if (!conf_cloak)
@@ -560,7 +558,8 @@ cloak(PLAYER *pp)
  *	Turn on or increase length of a scan
  */
 static void
-scan(PLAYER *pp)
+scan(pp)
+	PLAYER	*pp;
 {
 	/* Check configuration: */
 	if (!conf_scan)
@@ -592,7 +591,11 @@ scan(PLAYER *pp)
  *	pick up a mine or grenade, with some probability of it exploding
  */
 static void
-pickup(PLAYER *pp, int y, int x, int prob, int obj)
+pickup(pp, y, x, prob, obj)
+	PLAYER	*pp;
+	int	y, x;
+	int	prob;
+	int	obj;
 {
 	int	req;
 
@@ -624,7 +627,8 @@ pickup(PLAYER *pp, int y, int x, int prob, int obj)
 }
 
 void
-ammo_update(PLAYER *pp)
+ammo_update(pp)
+	PLAYER *pp;
 {
 	outyx(pp, STAT_AMMO_ROW, STAT_VALUE_COL - 1, "%4d", pp->p_ammo);
 }

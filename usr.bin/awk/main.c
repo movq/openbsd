@@ -1,4 +1,4 @@
-/*	$OpenBSD: main.c,v 1.19 2015/10/22 04:08:17 deraadt Exp $	*/
+/*	$OpenBSD: main.c,v 1.7 1999/04/20 17:31:30 millert Exp $	*/
 /****************************************************************
 Copyright (C) Lucent Technologies 1997
 All Rights Reserved
@@ -23,7 +23,7 @@ ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ****************************************************************/
 
-const char	*version = "version 20110810";
+char	*version = "version 19990416";
 
 #define DEBUG
 #include <stdio.h>
@@ -32,7 +32,6 @@ const char	*version = "version 20110810";
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
-#include <unistd.h>
 #include "awk.h"
 #include "ytab.h"
 
@@ -41,7 +40,6 @@ extern	int	nfields;
 extern	char	*__progname;
 
 int	dbg	= 0;
-Awkfloat	srand_seed = 1;
 char	*cmdname;	/* gets argv[0] for error messages */
 extern	FILE	*yyin;	/* lex input file */
 char	*lexprog;	/* points to program argument if it exists */
@@ -49,9 +47,7 @@ extern	int errorflag;	/* non-zero if any syntax errors; set by yyerror */
 int	compile_time = 2;	/* for error printing: */
 				/* 2 = cmdline, 1 = compile, 0 = running */
 
-#define	MAX_PFILE	20	/* max number of -f's */
-
-char	*pfile[MAX_PFILE];	/* program filenames from -f's */
+char	*pfile[20];	/* program filenames from -f's */
 int	npfile = 0;	/* number of filenames */
 int	curpfile = 0;	/* current filename */
 
@@ -59,26 +55,17 @@ int	safe	= 0;	/* 1 => "safe" mode */
 
 int main(int argc, char *argv[])
 {
-	const char *fs = NULL;
+	char *fs = NULL, *marg;
+	int temp;
 
 	setlocale(LC_ALL, "");
-	setlocale(LC_NUMERIC, "C"); /* for parsing cmdline & prog */
-
-	if (pledge("stdio rpath wpath cpath proc exec", NULL) == -1) {
-		fprintf(stderr, "%s: pledge: incorrect arguments\n",
-		    cmdname);
-		exit(1);
-	}
 
 	cmdname = __progname;
 	if (argc == 1) {
-		fprintf(stderr, "usage: %s [-safe] [-V] [-d[n]] [-F fs] "
-		    "[-v var=value] [prog | -f progfile]\n\tfile ...\n",
-		    cmdname);
+		fprintf(stderr, "Usage: %s [-f programfile | 'program'] [-Ffieldsep] [-v var=value] [-safe] [-mrn] [-mfn] [files]\n", cmdname);
 		exit(1);
 	}
 	signal(SIGFPE, fpecatch);
-
 	yyin = NULL;
 	symtab = makesymtab(NSYMTAB);
 	while (argc > 1 && argv[1][0] == '-' && argv[1][1] != '\0') {
@@ -93,18 +80,11 @@ int main(int argc, char *argv[])
 				safe = 1;
 			break;
 		case 'f':	/* next argument is program filename */
-			if (argv[1][2] != 0) {  /* arg is -fsomething */
-				if (npfile >= MAX_PFILE - 1)
-					FATAL("too many -f options"); 
-				pfile[npfile++] = &argv[1][2];
-			} else {		/* arg is -f something */
-				argc--; argv++;
-				if (argc <= 1)
-					FATAL("no program filename");
-				if (npfile >= MAX_PFILE - 1)
-					FATAL("too many -f options"); 
-				pfile[npfile++] = argv[1];
-			}
+			argc--;
+			argv++;
+			if (argc <= 1)
+				ERROR "no program filename" FATAL;
+			pfile[npfile++] = argv[1];
 			break;
 		case 'F':	/* set field separator */
 			if (argv[1][2] != 0) {	/* arg is -Fsomething */
@@ -120,22 +100,25 @@ int main(int argc, char *argv[])
 					fs = &argv[1][0];
 			}
 			if (fs == NULL || *fs == '\0')
-				WARNING("field separator FS is empty");
+				ERROR "field separator FS is empty" WARNING;
 			break;
 		case 'v':	/* -v a=1 to be done NOW.  one -v for each */
-			if (argv[1][2] != 0) {  /* arg is -vsomething */
-				if (isclvar(&argv[1][2]))
-					setclvar(&argv[1][2]);
-				else
-					FATAL("invalid -v option argument: %s", &argv[1][2]);
-			} else {		/* arg is -v something */
-				argc--; argv++;
-				if (argc <= 1)
-					FATAL("no variable name");
-				if (isclvar(argv[1]))
-					setclvar(argv[1]);
-				else
-					FATAL("invalid -v option argument: %s", argv[1]);
+			if (argv[1][2] == '\0' && --argc > 1 && isclvar((++argv)[1]))
+				setclvar(argv[1]);
+			break;
+		case 'm':	/* more memory: -mr=record, -mf=fields */
+				/* no longer needed */
+			marg = argv[1];
+			if (argv[1][3])
+				temp = atoi(&argv[1][3]);
+			else {
+				argv++; argc--;
+				temp = atoi(&argv[1][0]);
+			}
+			switch (marg[2]) {
+			case 'r':	recsize = temp; break;
+			case 'f':	nfields = temp; break;
+			default: ERROR "unknown option %s\n", marg FATAL;
 			}
 			break;
 		case 'd':
@@ -149,27 +132,18 @@ int main(int argc, char *argv[])
 			exit(0);
 			break;
 		default:
-			WARNING("unknown option %s ignored", argv[1]);
+			ERROR "unknown option %s ignored", argv[1] WARNING;
 			break;
 		}
 		argc--;
 		argv++;
 	}
-
-	if (safe) {
-		if (pledge("stdio rpath", NULL) == -1) {
-			fprintf(stderr, "%s: pledge: incorrect arguments\n",
-			    cmdname);
-			exit(1);
-		}
-	}
-
 	/* argv[1] is now the first argument */
 	if (npfile == 0) {	/* no -f; first argument is program */
 		if (argc <= 1) {
 			if (dbg)
 				exit(0);
-			FATAL("no program given");
+			ERROR "no program given" FATAL;
 		}
 		   dprintf( ("program = |%s|\n", argv[1]) );
 		lexprog = argv[1];
@@ -185,7 +159,6 @@ int main(int argc, char *argv[])
 	if (!safe)
 		envinit(environ);
 	yyparse();
-	setlocale(LC_NUMERIC, ""); /* back to whatever it is locally */
 	if (fs)
 		*FS = qstring(fs, '\0');
 	   dprintf( ("errorflag=%d\n", errorflag) );
@@ -208,7 +181,7 @@ int pgetc(void)		/* get 1 character from awk program */
 			if (strcmp(pfile[curpfile], "-") == 0)
 				yyin = stdin;
 			else if ((yyin = fopen(pfile[curpfile], "r")) == NULL)
-				FATAL("can't open file %s", pfile[curpfile]);
+				ERROR "can't open file %s", pfile[curpfile] FATAL;
 			lineno = 1;
 		}
 		if ((c = getc(yyin)) != EOF)

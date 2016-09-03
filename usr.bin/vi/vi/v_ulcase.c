@@ -1,5 +1,3 @@
-/*	$OpenBSD: v_ulcase.c,v 1.10 2016/05/27 09:18:12 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)v_ulcase.c	10.7 (Berkeley) 3/6/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -26,7 +28,7 @@
 #include "../common/common.h"
 #include "vi.h"
 
-static int ulcase(SCR *, recno_t, CHAR_T *, size_t, size_t, size_t);
+static int ulcase __P((SCR *, recno_t, CHAR_T *, size_t, size_t, size_t));
 
 /*
  * v_ulcase -- [count]~
@@ -42,10 +44,12 @@ static int ulcase(SCR *, recno_t, CHAR_T *, size_t, size_t, size_t);
  * if there had been an associated motion, but it's too late to make
  * that the default now.
  *
- * PUBLIC: int v_ulcase(SCR *, VICMD *);
+ * PUBLIC: int v_ulcase __P((SCR *, VICMD *));
  */
 int
-v_ulcase(SCR *sp, VICMD *vp)
+v_ulcase(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	recno_t lno;
 	size_t cno, lcnt, len;
@@ -100,10 +104,12 @@ v_ulcase(SCR *sp, VICMD *vp)
  * v_mulcase -- [count]~[count]motion
  *	Toggle upper & lower case letters over a range.
  *
- * PUBLIC: int v_mulcase(SCR *, VICMD *);
+ * PUBLIC: int v_mulcase __P((SCR *, VICMD *));
  */
 int
-v_mulcase(SCR *sp, VICMD *vp)
+v_mulcase(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	CHAR_T *p;
 	size_t len;
@@ -139,7 +145,11 @@ v_mulcase(SCR *sp, VICMD *vp)
  *	Change part of a line's case.
  */
 static int
-ulcase(SCR *sp, recno_t lno, CHAR_T *lp, size_t len, size_t scno, size_t ecno)
+ulcase(sp, lno, lp, len, scno, ecno)
+	SCR *sp;
+	recno_t lno;
+	CHAR_T *lp;
+	size_t len, scno, ecno;
 {
 	size_t blen;
 	int change, rval;

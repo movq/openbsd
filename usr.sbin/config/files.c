@@ -1,4 +1,4 @@
-/*	$OpenBSD: files.c,v 1.20 2015/01/16 06:40:16 deraadt Exp $	*/
+/*	$OpenBSD: files.c,v 1.7 1997/11/13 08:21:53 deraadt Exp $	*/
 /*	$NetBSD: files.c,v 1.6 1996/03/17 13:18:17 cgd Exp $	*/
 
 /*
@@ -22,7 +22,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -41,11 +45,11 @@
  *	from: @(#)files.c	8.1 (Berkeley) 6/6/93
  */
 
+#include <sys/param.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
 #include "config.h"
 
 extern const char *yyfile;
@@ -64,20 +68,16 @@ static struct files **unchecked;
 
 static struct objects **nextobject;
 
-static int	checkaux(const char *, void *);
-static int	fixcount(const char *, void *);
-static int	fixfsel(const char *, void *);
-static int	fixsel(const char *, void *);
-static int	expr_eval(struct nvlist *,
-		    int (*)(const char *, void *), void *);
-static void	expr_free(struct nvlist *);
-
-#ifdef DEBUG
-static void	pr0();
-#endif
+static int	checkaux __P((const char *, void *));
+static int	fixcount __P((const char *, void *));
+static int	fixfsel __P((const char *, void *));
+static int	fixsel __P((const char *, void *));
+static int	expr_eval __P((struct nvlist *,
+		    int (*)(const char *, void *), void *));
+static void	expr_free __P((struct nvlist *));
 
 void
-initfiles(void)
+initfiles()
 {
 
 	basetab = ht_new();
@@ -88,11 +88,14 @@ initfiles(void)
 }
 
 void
-addfile(struct nvlist *nvpath, struct nvlist *optx, int flags, const char *rule)
+addfile(path, optx, flags, rule)
+	const char *path;
+	struct nvlist *optx;
+	int flags;
+	const char *rule;
 {
 	struct files *fi;
-	const char *dotp, *dotp1, *tail, *path, *tail1 = NULL;
-	struct nvlist *nv;
+	const char *dotp, *tail;
 	size_t baselen;
 	int needc, needf;
 	char base[200];
@@ -105,37 +108,21 @@ addfile(struct nvlist *nvpath, struct nvlist *optx, int flags, const char *rule)
 		goto bad;
 	}
 	if (optx == NULL && (needc || needf)) {
-		error("nothing to %s", needc ? "count" : "flag");
+		error("nothing to %s for %s", needc ? "count" : "flag", path);
 		goto bad;
 	}
 
-	for (nv = nvpath; nv; nv = nv->nv_next) {
-		path = nv->nv_name;
-
-		/* find last part of pathname, and same without trailing suffix */
-		tail = strrchr(path, '/');
-		if (tail == NULL)
-			tail = path;
-		else
-			tail++;
-		dotp = strrchr(tail, '.');
-		if (dotp == NULL || dotp[1] == 0 ||
-		    (baselen = dotp - tail) >= sizeof(base)) {
-			error("invalid pathname `%s'", path);
-			goto bad;
-		}
-
-		/*
-		 * Ensure all tailnames are identical, because .o
-		 * filenames must be identical too.
-		 */
-		if (tail1 &&
-		    (dotp - tail != dotp1 - tail1 ||
-		    strncmp(tail1, tail, dotp - tail)))
-			error("different production from %s %s",
-			    nvpath->nv_name, tail);
-		tail1 = tail;
-		dotp1 = dotp;
+	/* find last part of pathname, and same without trailing suffix */
+	tail = strrchr(path, '/');
+	if (tail == NULL)
+		tail = path;
+	else
+		tail++;
+	dotp = strrchr(tail, '.');
+	if (dotp == NULL || dotp[1] == 0 ||
+	    (baselen = dotp - tail) >= sizeof(base)) {
+		error("invalid pathname `%s'", path);
+		goto bad;
 	}
 
 	/*
@@ -157,7 +144,8 @@ addfile(struct nvlist *nvpath, struct nvlist *optx, int flags, const char *rule)
 	fi->fi_srcfile = yyfile;
 	fi->fi_srcline = currentline();
 	fi->fi_flags = flags;
-	fi->fi_nvpath = nvpath;
+	fi->fi_path = path;
+	fi->fi_tail = tail;
 	fi->fi_base = intern(base);
 	fi->fi_optx = optx;
 	fi->fi_optf = NULL;
@@ -170,7 +158,10 @@ bad:
 }
 
 void
-addobject(const char *path, struct nvlist *optx, int flags)
+addobject(path, optx, flags)
+	const char *path;
+	struct nvlist *optx;
+	int flags;
 {
 	struct objects *oi;
 
@@ -186,7 +177,7 @@ addobject(const char *path, struct nvlist *optx, int flags)
 		error("duplicate file %s", path);
 		xerror(oi->oi_srcfile, oi->oi_srcline,
 		    "here is the original definition");
-	}
+	} 
 	oi->oi_next = NULL;
 	oi->oi_srcfile = yyfile;
 	oi->oi_srcline = currentline();
@@ -196,7 +187,7 @@ addobject(const char *path, struct nvlist *optx, int flags)
 	oi->oi_optf = NULL;
 	*nextobject = oi;
 	nextobject = &oi->oi_next;
-}
+}     
 
 /*
  * We have finished reading some "files" file, either ../../conf/files
@@ -205,9 +196,9 @@ addobject(const char *path, struct nvlist *optx, int flags)
  * depending on some machine-specific device.)
  */
 void
-checkfiles(void)
+checkfiles()
 {
-	struct files *fi, *last;
+	register struct files *fi, *last;
 
 	last = NULL;
 	for (fi = *unchecked; fi != NULL; last = fi, fi = fi->fi_next)
@@ -222,9 +213,11 @@ checkfiles(void)
  * We are not actually interested in the expression's value.
  */
 static int
-checkaux(const char *name, void *context)
+checkaux(name, context)
+	const char *name;
+	void *context;
 {
-	struct files *fi = context;
+	register struct files *fi = context;
 
 	if (ht_lookup(devbasetab, name) == NULL) {
 		xerror(fi->fi_srcfile, fi->fi_srcline,
@@ -242,9 +235,9 @@ checkaux(const char *name, void *context)
  * from the selected sources do not collide.
  */
 int
-fixfiles(void)
+fixfiles()
 {
-	struct files *fi, *ofi;
+	register struct files *fi, *ofi;
 	struct nvlist *flathead, **flatp;
 	int err, sel;
 
@@ -276,7 +269,7 @@ fixfiles(void)
 			 * If the new file comes from a different source,
 			 * allow the new one to override the old one.
 			 */
-			if (fi->fi_nvpath != ofi->fi_nvpath) {
+			if (fi->fi_path != ofi->fi_path) {
 				if (ht_replace(basetab, fi->fi_base, fi) != 1)
 					panic("fixfiles ht_replace(%s)",
 					    fi->fi_base);
@@ -285,10 +278,10 @@ fixfiles(void)
 			} else {
 				xerror(fi->fi_srcfile, fi->fi_srcline,
 				    "object file collision on %s.o, from %s",
-				    fi->fi_base, fi->fi_nvpath->nv_name);
+				    fi->fi_base, fi->fi_path);
 				xerror(ofi->fi_srcfile, ofi->fi_srcline,
 				    "here is the previous file: %s",
-				    ofi->fi_nvpath->nv_name);
+				    ofi->fi_path);
 				err = 1;
 			}
 		}
@@ -297,16 +290,16 @@ fixfiles(void)
 	return (err);
 }
 
-/*
+/*    
  * We have finished reading everything.  Tack the objects down: calculate
  * selection.
- */
-int
-fixobjects(void)
-{
+ */   
+int    
+fixobjects()
+{     
 	struct objects *oi;
 	struct nvlist *flathead, **flatp;
-	int err, sel;
+	int err, sel; 
 
 	err = 0;
 	for (oi = allobjects; oi != NULL; oi = oi->oi_next) {
@@ -323,10 +316,10 @@ fixobjects(void)
 				continue;
 		}
 
-		oi->oi_flags |= OI_SEL;
+		oi->oi_flags |= OI_SEL;  
 	}
 	return (err);
-}
+}     
 
 /*
  * Called when evaluating a needs-count expression.  Make sure the
@@ -338,11 +331,13 @@ fixobjects(void)
  * are called to eval each atom.
  */
 static int
-fixcount(const char *name, void *context)
+fixcount(name, context)
+	register const char *name;
+	void *context;
 {
-	struct nvlist ***p = context;
-	struct devbase *dev;
-	struct nvlist *nv;
+	register struct nvlist ***p = context;
+	register struct devbase *dev;
+	register struct nvlist *nv;
 
 	dev = ht_lookup(devbasetab, name);
 	if (dev == NULL)	/* cannot occur here; we checked earlier */
@@ -359,11 +354,13 @@ fixcount(const char *name, void *context)
  * file that will generate a .h with flags.  We will need the flat list.
  */
 static int
-fixfsel(const char *name, void *context)
+fixfsel(name, context)
+	const char *name;
+	void *context;
 {
-	struct nvlist ***p = context;
-	struct nvlist *nv;
-	int sel;
+	register struct nvlist ***p = context;
+	register struct nvlist *nv;
+	register int sel;
 
 	sel = ht_lookup(selecttab, name) != NULL;
 	nv = newnv(name, NULL, NULL, sel, NULL);
@@ -376,7 +373,9 @@ fixfsel(const char *name, void *context)
  * As for fixfsel above, but we do not need the flat list.
  */
 static int
-fixsel(const char *name, void *context)
+fixsel(name, context)
+	const char *name;
+	void *context;
 {
 
 	return (ht_lookup(selecttab, name) != NULL);
@@ -391,7 +390,10 @@ fixsel(const char *name, void *context)
  * our mixing of C's bitwise & boolean here may give surprises).
  */
 static int
-expr_eval(struct nvlist *expr, int (*fn)(const char *, void *), void *context)
+expr_eval(expr, fn, context)
+	register struct nvlist *expr;
+	register int (*fn) __P((const char *, void *));
+	register void *context;
 {
 	int lhs, rhs;
 
@@ -421,9 +423,10 @@ expr_eval(struct nvlist *expr, int (*fn)(const char *, void *), void *context)
  * Free an expression tree.
  */
 static void
-expr_free(struct nvlist *expr)
+expr_free(expr)
+	register struct nvlist *expr;
 {
-	struct nvlist *rhs;
+	register struct nvlist *rhs;
 
 	/* This loop traverses down the RHS of each subexpression. */
 	for (; expr != NULL; expr = rhs) {
@@ -453,8 +456,11 @@ expr_free(struct nvlist *expr)
  * Print expression tree.
  */
 void
-prexpr(struct nvlist *expr)
+prexpr(expr)
+	struct nvlist *expr;
 {
+	static void pr0();
+
 	printf("expr =");
 	pr0(expr);
 	printf("\n");
@@ -462,7 +468,8 @@ prexpr(struct nvlist *expr)
 }
 
 static void
-pr0(struct nvlist *e)
+pr0(e)
+	register struct nvlist *e;
 {
 
 	switch (e->nv_int) {

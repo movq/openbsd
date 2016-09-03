@@ -1,4 +1,4 @@
-.\"	$OpenBSD: from.1,v 1.13 2015/06/02 15:44:17 millert Exp $
+.\"	$OpenBSD: from.1,v 1.5 1999/07/04 11:53:54 aaron Exp $
 .\"	$NetBSD: from.1,v 1.4 1995/09/01 01:39:09 jtc Exp $
 .\"
 .\" Copyright (c) 1980, 1990, 1993
@@ -12,7 +12,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -30,7 +34,7 @@
 .\"
 .\"	@(#)from.1	8.2 (Berkeley) 12/30/93
 .\"
-.Dd $Mdocdate: June 2 2015 $
+.Dd December 30, 1993
 .Dt FROM 1
 .Os
 .Sh NAME
@@ -38,16 +42,16 @@
 .Nd print names of those who have sent mail
 .Sh SYNOPSIS
 .Nm from
-.Op Fl f Ar file
 .Op Fl s Ar sender
+.Op Fl f Ar file
 .Op Ar user
 .Sh DESCRIPTION
 .Nm
 prints
 out the mail header lines from the invoker's mailbox.
 .Pp
-The options are as follows:
-.Bl -tag -width Ds
+The available options are as follows:
+.Bl -tag -width Fl
 .It Fl f Ar file
 The supplied file
 is examined instead of the invoker's mailbox.
@@ -66,21 +70,8 @@ If
 .Ar user
 is given, the
 .Ar user Ns 's
-mailbox is examined instead of the invoker's own mailbox.
+mailbox, is examined instead of the invoker's own mailbox.
 (Privileges are required.)
-.Sh ENVIRONMENT
-.Nm
-utilizes the
-.Ev LOGNAME ,
-.Ev MAIL ,
-and
-.Ev USER
-environment variables.
-.Pp
-If the
-.Ev MAIL
-environment variable is set, its value is used as the path to the
-user's mail spool.
 .Sh FILES
 .Bl -tag -width /var/mail/* -compact
 .It Pa /var/mail/*
@@ -92,7 +83,4 @@ user's mail spool.
 The
 .Nm
 command appeared in
-.Bx 2 .
-.Sh AUTHORS
-.An Bill Joy ,
-1979.
+.Bx 3.0 .

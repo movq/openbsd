@@ -1,4 +1,4 @@
-/*	$OpenBSD: nfsproto.h,v 1.10 2009/07/08 14:39:31 thib Exp $	*/
+/*	$OpenBSD: nfsproto.h,v 1.2 1996/04/17 04:50:39 mickey Exp $	*/
 /*	$NetBSD: nfsproto.h,v 1.1 1996/02/18 11:54:06 fvdl Exp $	*/
 
 /*
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -38,6 +42,11 @@
 #ifndef _NFS_NFSPROTO_H_
 #define _NFS_NFSPROTO_H_
 
+
+/*
+ * nfs definitions as per the Version 2 and 3 specs
+ */
+
 /*
  * Constants as defined in the Sun NFS Version 2 and 3 specs.
  * "NFS: Network File System Protocol Specification" RFC1094
@@ -49,10 +58,9 @@
 #define	NFS_PROG	100003
 #define NFS_VER2	2
 #define	NFS_VER3	3
-#define NFS_VER4        4
 #define NFS_V2MAXDATA	8192
-#define	NFS_MAXDGRAMDATA 32768
-#define	NFS_MAXDATA	MAXBSIZE
+#define	NFS_MAXDGRAMDATA 16384
+#define	NFS_MAXDATA	32768
 #define	NFS_MAXPATHLEN	1024
 #define	NFS_MAXNAMLEN	255
 #define	NFS_MAXPKTHDR	404
@@ -164,8 +172,14 @@
 #define	NFSPROC_FSINFO		19
 #define	NFSPROC_PATHCONF	20
 #define	NFSPROC_COMMIT		21
-#define NFSPROC_NOOP		22
-#define	NFS_NPROCS		23
+
+/* And leasing (nqnfs) procedure numbers (must be last) */
+#define	NQNFSPROC_GETLEASE	22
+#define	NQNFSPROC_VACATED	23
+#define	NQNFSPROC_EVICTED	24
+
+#define NFSPROC_NOOP		25
+#define	NFS_NPROCS		26
 
 /* Actual Version 2 procedure numbers */
 #define	NFSV2PROC_NULL		0
@@ -233,13 +247,17 @@ typedef enum { NFNON=0, NFREG=1, NFDIR=2, NFBLK=3, NFCHR=4, NFLNK=5,
 /* Structs for common parts of the rpc's */
 /*
  * File Handle (32 bytes for version 2), variable up to 64 for version 3.
+ * File Handles of up to NFS_SMALLFH in size are stored directly in the
+ * nfs node, whereas larger ones are malloc'd. (This never happens when
+ * NFS_SMALLFH is set to 64.)
+ * NFS_SMALLFH should be in the range of 32 to 64 and be divisible by 4.
  */
-#ifndef NFS_MAXFHSIZE
-#define NFS_MAXFHSIZE	64
+#ifndef NFS_SMALLFH
+#define NFS_SMALLFH	64
 #endif
 union nfsfh {
 	fhandle_t fh_generic;
-	u_char    fh_bytes[NFS_MAXFHSIZE];
+	u_char    fh_bytes[NFS_SMALLFH];
 };
 typedef union nfsfh nfsfh_t;
 
@@ -263,6 +281,15 @@ struct nfs_uquad {
 	u_int32_t nfsuquad[2];
 };
 typedef	struct nfs_uquad	nfsuint64;
+
+/*
+ * Used to convert between two u_longs and a u_quad_t.
+ */
+union nfs_quadconvert {
+	u_int32_t lval[2];
+	u_quad_t  qval;
+};
+typedef union nfs_quadconvert	nfsquad_t;
 
 /*
  * NFS Version 3 special file number.

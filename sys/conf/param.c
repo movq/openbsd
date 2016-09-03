@@ -1,4 +1,4 @@
-/*	$OpenBSD: param.c,v 1.37 2016/05/06 19:45:35 kettenis Exp $	*/
+/*	$OpenBSD: param.c,v 1.6 1998/08/27 05:00:11 deraadt Exp $	*/
 /*	$NetBSD: param.c,v 1.16 1996/03/12 03:08:40 mrg Exp $	*/
 
 /*
@@ -18,7 +18,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -43,7 +47,10 @@
 #include <sys/proc.h>
 #include <sys/vnode.h>
 #include <sys/file.h>
-#include <sys/timeout.h>
+#include <sys/callout.h>
+#ifdef REAL_CLISTS
+#include <sys/clist.h>
+#endif
 #include <sys/mbuf.h>
 #include <ufs/ufs/quota.h>
 #include <sys/kernel.h>
@@ -82,46 +89,29 @@ int	hz = HZ;
 int	tick = 1000000 / HZ;
 int	tickadj = 240000 / (60 * HZ);		/* can adjust 240ms in 60s */
 struct	timezone tz = { TIMEZONE, DST };
-#define	NPROCESS (30 + 16 * MAXUSERS)
-#define	NTEXT (80 + NPROCESS / 8)		/* actually the object cache */
-#define	NVNODE (NPROCESS * 2 + NTEXT + 100)	 
-int	initialvnodes = NVNODE;
-int	maxprocess = NPROCESS;
-int	maxthread = NPROCESS + 8 * MAXUSERS;
-int	maxfiles = 5 * (NPROCESS + MAXUSERS) + 80;
-int	nmbclust = NMBCLUSTERS;
-
-#ifndef MBLOWAT
-#define MBLOWAT		16
+#define	NPROC (20 + 16 * MAXUSERS)
+int	maxproc = NPROC;
+#define	NTEXT (80 + NPROC / 8)	/* actually the object cache */
+int	vm_cache_max = NTEXT;	/* XXX these probably needs some measurements */
+#define	NVNODE (NPROC * 2 + NTEXT + 100)
+int	desiredvnodes = NVNODE;
+int	maxfiles = 3 * (NPROC + MAXUSERS) + 80;
+int	ncallout = 16 + NPROC;
+#ifdef REAL_CLISTS
+int	nclist = 60 + 12 * MAXUSERS;
 #endif
-int	mblowat = MBLOWAT;
-
-#ifndef MCLLOWAT
-#define MCLLOWAT	8
-#endif
-int	mcllowat = MCLLOWAT;
-
-#ifndef BUFCACHEPERCENT
-#define BUFCACHEPERCENT	20
-#endif
-int     bufcachepercent = BUFCACHEPERCENT;
-
-#ifndef  BUFPAGES
-#define BUFPAGES	0
-#endif
-long     bufpages = BUFPAGES;
-
+int	nmbclusters = NMBCLUSTERS;
 int	fscale = FSCALE;	/* kernel uses `FSCALE', user uses `fscale' */
 
 /*
  * Values in support of System V compatible shared memory.	XXX
  */
 #ifdef SYSVSHM
-#define	SHMMAX	SHMMAXPGS	/* shminit() performs a `*= PAGE_SIZE' */
+#define	SHMMAX	SHMMAXPGS	/* shminit() performs a `*= NBPG' */
 #define	SHMMIN	1
-#define	SHMMNI	128		/* <64k, see IPCID_TO_IX in ipc.h */
-#define	SHMSEG	128
-#define	SHMALL	(SHMMAXPGS)
+#define	SHMMNI	32			/* <= SHMMMNI in shm.h */
+#define	SHMSEG	8
+#define	SHMALL	(SHMMAXPGS/CLSIZE)
 
 struct	shminfo shminfo = {
 	SHMMAX,
@@ -137,6 +127,7 @@ struct	shminfo shminfo = {
  */
 #ifdef SYSVSEM
 struct	seminfo seminfo = {
+	SEMMAP,		/* # of entries in semaphore map */
 	SEMMNI,		/* # of semaphore identifiers */
 	SEMMNS,		/* # of semaphores in system */
 	SEMMNU,		/* # of undo structures in system */
@@ -150,8 +141,34 @@ struct	seminfo seminfo = {
 #endif
 
 /*
- * This has to be allocated somewhere; allocating
+ * Values in support of System V compatible messages.
+ */
+#ifdef SYSVMSG
+struct	msginfo msginfo = {
+	MSGMAX,		/* max chars in a message */
+	MSGMNI,		/* # of message queue identifiers */
+	MSGMNB,		/* max chars in a queue */
+	MSGTQL,		/* max messages in system */
+	MSGSSZ,		/* size of a message segment */
+			/* (must be small power of 2 greater than 4) */
+	MSGSEG		/* number of message segments */
+};
+#endif
+
+/*
+ * These are initialized at bootstrap time
+ * to values dependent on memory size
+ */
+int	nbuf, nswbuf;
+
+/*
+ * These have to be allocated somewhere; allocating
  * them here forces loader errors if this file is omitted
  * (if they've been externed everywhere else; hah!).
  */
+struct 	callout *callout;
+struct	cblock *cfree;
+struct	buf *buf, *swbuf;
+char	*buffers;
+
 struct	utsname utsname;

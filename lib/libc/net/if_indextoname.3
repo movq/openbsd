@@ -1,4 +1,3 @@
-.\"	$OpenBSD: if_indextoname.3,v 1.16 2015/11/21 07:48:10 jmc Exp $
 .\" Copyright (c) 1983, 1991, 1993
 .\"	The Regents of the University of California.  All rights reserved.
 .\"
@@ -10,7 +9,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -27,8 +30,9 @@
 .\" SUCH DAMAGE.
 .\"
 .\"     From: @(#)rcmd.3	8.1 (Berkeley) 6/4/93
+.\"	$Id: if_indextoname.3,v 1.3 1999/07/05 04:40:59 aaron Exp $
 .\"
-.Dd $Mdocdate: November 21 2015 $
+.Dd May 21, 1998
 .Dt IF_NAMETOINDEX 3
 .Os
 .Sh NAME
@@ -38,9 +42,7 @@
 .Nm if_freenameindex
 .Nd convert interface index to name, and vice versa
 .Sh SYNOPSIS
-.In sys/types.h
-.In sys/socket.h
-.In net/if.h
+.Fd #include <net/if.h>
 .Ft "unsigned int"
 .Fn if_nametoindex "const char *ifname"
 .Ft "char *"
@@ -73,8 +75,8 @@ bytes into which the interface name corresponding to the specified index is
 returned.
 .Pf ( Dv IF_NAMESIZE
 is also defined in
-.In net/if.h
-and its value includes a terminating NUL byte at the end of the
+.Aq Pa net/if.h
+and its value includes a terminating null byte at the end of the
 interface name.)
 This pointer is also the return value of the function.
 If there is no interface corresponding to the specified index,
@@ -83,16 +85,16 @@ is returned.
 .Pp
 .Fn if_nameindex
 returns an array of
-.Vt if_nameindex
+.Fa if_nameindex
 structures.
-.Vt if_nameindex
+.Fa if_nametoindex
 is also defined in
-.In net/if.h ,
+.Aq Pa net/if.h ,
 and is as follows:
-.Bd -literal -offset indent
+.Bd -literal -offset
 struct if_nameindex {
-	unsigned int	  if_index;	/* 1, 2, ... */
-	char		 *if_name;	/* NUL-terminated name */
+    unsigned int   if_index;  /* 1, 2, ... */
+    char          *if_name;   /* null terminated name: "le0", ... */
 };
 .Ed
 .Pp
@@ -128,16 +130,8 @@ return
 .Dv NULL
 on errors.
 .Sh SEE ALSO
-.Xr getifaddrs 3 ,
-.Xr netintro 4
+R. Gilligan, S.  Thomson, J. Bound, and W. Stevens,
+``Basic Socket Interface Extensions for IPv6,'' RFC2553, March 1999.
 .Sh STANDARDS
-.Rs
-.%A R. Gilligan
-.%A S. Thomson
-.%A J. Bound
-.%A J. McCann
-.%A W. Stevens
-.%D February 2003
-.%R RFC 3493
-.%T Basic Socket Interface Extensions for IPv6
-.Re
+These functions are defined in ``Basic Socket Interface Extensions for IPv6''
+.Pq RFC2533 .

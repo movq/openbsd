@@ -1,4 +1,3 @@
-/*	$OpenBSD: fdopen.c,v 1.9 2016/03/20 00:01:21 krw Exp $ */
 /*-
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,31 +34,30 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: fdopen.c,v 1.2 1996/08/19 08:32:20 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
 #include <fcntl.h>
-#include <limits.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <errno.h>
 #include "local.h"
 
 FILE *
-fdopen(int fd, const char *mode)
+fdopen(fd, mode)
+	int fd;
+	const char *mode;
 {
-	FILE *fp;
+	register FILE *fp;
 	int flags, oflags, fdflags, tmp;
-
-	/* _file is only a short */
-	if (fd > SHRT_MAX) {
-		errno = EMFILE;
-		return (NULL);
-	}
 
 	if ((flags = __sflags(mode, &oflags)) == 0)
 		return (NULL);
 
 	/* Make sure the mode the user wants is a subset of the actual mode. */
-	if ((fdflags = fcntl(fd, F_GETFL)) < 0)
+	if ((fdflags = fcntl(fd, F_GETFL, 0)) < 0)
 		return (NULL);
 	tmp = fdflags & O_ACCMODE;
 	if (tmp != O_RDWR && (tmp != (oflags & O_ACCMODE))) {
@@ -66,7 +68,6 @@ fdopen(int fd, const char *mode)
 	if ((fp = __sfp()) == NULL)
 		return (NULL);
 	fp->_flags = flags;
-
 	/*
 	 * If opened for appending, but underlying descriptor does not have
 	 * O_APPEND bit set, assert __SAPP so that __swrite() will lseek to
@@ -74,13 +75,6 @@ fdopen(int fd, const char *mode)
 	 */
 	if ((oflags & O_APPEND) && !(fdflags & O_APPEND))
 		fp->_flags |= __SAPP;
-
-	/*
-	 * If close-on-exec was requested, then turn it on if not already
-	 */
-	if ((oflags & O_CLOEXEC) && !((tmp = fcntl(fd, F_GETFD)) & FD_CLOEXEC))
-		fcntl(fd, F_SETFD, tmp | FD_CLOEXEC);
-
 	fp->_file = fd;
 	fp->_cookie = fp;
 	fp->_read = __sread;
@@ -89,4 +83,3 @@ fdopen(int fd, const char *mode)
 	fp->_close = __sclose;
 	return (fp);
 }
-DEF_WEAK(fdopen);

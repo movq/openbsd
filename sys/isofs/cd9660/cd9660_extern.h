@@ -1,4 +1,4 @@
-/*	$OpenBSD: cd9660_extern.h,v 1.13 2013/06/02 01:07:39 deraadt Exp $	*/
+/*	$OpenBSD: cd9660_extern.h,v 1.3 1999/07/01 02:20:20 d Exp $	*/
 /*	$NetBSD: cd9660_extern.h,v 1.1 1997/01/24 00:24:53 cgd Exp $	*/
 
 /*-
@@ -18,7 +18,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -80,32 +84,31 @@ struct iso_mnt {
 #define lblkno(imp, loc)	((loc) >> (imp)->im_bshift)
 #define blksize(imp, ip, lbn)	((imp)->logical_block_size)
 
-int cd9660_mount(struct mount *, const char *, void *,
-                      struct nameidata *, struct proc *);
-int cd9660_start(struct mount *, int, struct proc *);
-int cd9660_unmount(struct mount *, int, struct proc *);
-int cd9660_root(struct mount *, struct vnode **);
-int cd9660_quotactl(struct mount *, int, uid_t, caddr_t, struct proc *);
-int cd9660_statfs(struct mount *, struct statfs *, struct proc *);
-int cd9660_sync(struct mount *, int, struct ucred *, struct proc *);
-int cd9660_vget(struct mount *, ino_t, struct vnode **);
-int cd9660_fhtovp(struct mount *, struct fid *, struct vnode **);
-int cd9660_vptofh(struct vnode *, struct fid *);
-int cd9660_init(struct vfsconf *);
-int cd9660_check_export(struct mount *, struct mbuf *, int *,
-                             struct ucred **);
-#define cd9660_sysctl ((int (*)(int *, u_int, void *, size_t *, void *, \
-                                    size_t, struct proc *))eopnotsupp)
+int cd9660_mount __P((struct mount *,
+	    const char *, caddr_t, struct nameidata *, struct proc *));
+int cd9660_start __P((struct mount *, int, struct proc *));
+int cd9660_unmount __P((struct mount *, int, struct proc *));
+int cd9660_root __P((struct mount *, struct vnode **));
+int cd9660_quotactl __P((struct mount *, int, uid_t, caddr_t, struct proc *));
+int cd9660_statfs __P((struct mount *, struct statfs *, struct proc *));
+int cd9660_sync __P((struct mount *, int, struct ucred *, struct proc *));
+int cd9660_vget __P((struct mount *, ino_t, struct vnode **));
+int cd9660_fhtovp __P((struct mount *, struct fid *, struct mbuf *,
+	    struct vnode **, int *, struct ucred **));
+int cd9660_vptofh __P((struct vnode *, struct fid *));
+int cd9660_init __P((struct vfsconf *));
+#define cd9660_sysctl ((int (*) __P((int *, u_int, void *, size_t *, void *, \
+                                    size_t, struct proc *)))eopnotsupp)
 
-int cd9660_mountroot(void); 
+int cd9660_mountroot __P((void)); 
 
-extern struct vops	cd9660_vops;
-extern struct vops	cd9660_specvops;
+extern int (**cd9660_vnodeop_p) __P((void *));
+extern int (**cd9660_specop_p) __P((void *));
 #ifdef FIFO
-extern struct vops	cd9660_fifovops;
+extern int (**cd9660_fifoop_p) __P((void *));
 #endif
 
-int	isochar(const u_char *, const u_char *, int, u_char *);
-int	isofncmp(const u_char *, int, const u_char *, int, int);
-void	isofntrans(u_char *, int, u_char *, u_short *, int, int, int);
-cdino_t	isodirino(struct iso_directory_record *, struct iso_mnt *);
+int isochar __P((const u_char *, const u_char *, int, u_char *));
+int isofncmp __P((const u_char *, int, const u_char *, int, int));
+void isofntrans __P((u_char *, int, u_char *, u_short *, int, int, int));
+ino_t isodirino __P((struct iso_directory_record *, struct iso_mnt *));

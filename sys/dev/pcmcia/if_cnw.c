@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_cnw.c,v 1.36 2016/04/13 10:49:26 mpi Exp $	*/
+/*	$OpenBSD: if_cnw.c,v 1.2 1999/08/24 07:11:09 fgsch Exp $	*/
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -14,6 +14,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the NetBSD
+ *	Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -34,8 +41,9 @@
  *
  * When this driver was developed, the Linux Netwave driver was used
  * as a hardware manual. That driver is Copyright (c) 1997 University
- * of Tromsø, Norway. It is part of the Linux pcmcia-cs package that
- * can be found at http://pcmcia-cs.sourceforge.net/. The most
+ * of Tromsø, Norway. It is part of the Linix pcmcia-cs package that
+ * can be found at
+ * http://hyper.stanford.edu/HyperNews/get/pcmcia/home.html. The most
  * recent version of the pcmcia-cs package when this driver was
  * written was 3.0.6.
  *
@@ -61,16 +69,24 @@
 
 #include <dev/pcmcia/if_cnwreg.h>
 
+#include <dev/pcmcia/pcmciareg.h>
 #include <dev/pcmcia/pcmciavar.h>
 #include <dev/pcmcia/pcmciadevs.h>
 
 #include <net/if.h>
+#include <net/if_dl.h>
 
+#ifdef INET
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
+#include <netinet/in_var.h>
+#include <netinet/ip.h>
 #include <netinet/if_ether.h>
+#endif
 
 #if NBPFILTER > 0
 #include <net/bpf.h>
+#include <net/bpfdesc.h>
 #endif
 
 
@@ -90,10 +106,10 @@ int cnw_domain = CNW_DOMAIN;		/* Domain */
 int cnw_skey = CNW_SCRAMBLEKEY;		/* Scramble key */
 
 
-int	cnw_match(struct device *, void *, void *);
-void	cnw_attach(struct device *, struct device *, void *);
-int	cnw_detach(struct device *, int);
-int	cnw_activate(struct device *, int);
+int	cnw_match __P((struct device *, void *, void *));
+void	cnw_attach __P((struct device *, struct device *, void *));
+int	cnw_detach __P((struct device *, int));
+int	cnw_activate __P((struct device *, enum devact));
 
 struct cnw_softc {
 	struct device sc_dev;		    /* Device glue (must be first) */
@@ -124,25 +140,25 @@ struct cfdriver cnw_cd = {
 	NULL, "cnw", DV_IFNET
 };
 
-void cnw_reset(struct cnw_softc *);
-void cnw_init(struct cnw_softc *);
-int cnw_enable(struct cnw_softc *sc);
-void cnw_disable(struct cnw_softc *sc);
-void cnw_config(struct cnw_softc *sc, u_int8_t *);
-void cnw_start(struct ifnet *);
-void cnw_transmit(struct cnw_softc *, struct mbuf *);
-struct mbuf *cnw_read(struct cnw_softc *);
-void cnw_recv(struct cnw_softc *);
-int cnw_intr(void *arg);
-int cnw_ioctl(struct ifnet *, u_long, caddr_t);
-void cnw_watchdog(struct ifnet *);
+void cnw_reset __P((struct cnw_softc *));
+void cnw_init __P((struct cnw_softc *));
+int cnw_enable __P((struct cnw_softc *sc));
+void cnw_disable __P((struct cnw_softc *sc));
+void cnw_config __P((struct cnw_softc *sc, u_int8_t *));
+void cnw_start __P((struct ifnet *));
+void cnw_transmit __P((struct cnw_softc *, struct mbuf *));
+struct mbuf *cnw_read __P((struct cnw_softc *));
+void cnw_recv __P((struct cnw_softc *));
+int cnw_intr __P((void *arg));
+int cnw_ioctl __P((struct ifnet *, u_long, caddr_t));
+void cnw_watchdog __P((struct ifnet *));
 
 /* ---------------------------------------------------------------- */
 
 /* Help routines */
-static int wait_WOC(struct cnw_softc *, int);
-static int read16(struct cnw_softc *, int);
-static int cnw_cmd(struct cnw_softc *, int, int, int, int);
+static int wait_WOC __P((struct cnw_softc *, int));
+static int read16 __P((struct cnw_softc *, int));
+static int cnw_cmd __P((struct cnw_softc *, int, int, int, int));
 
 /* 
  * Wait until the WOC (Write Operation Complete) bit in the 
@@ -300,8 +316,7 @@ cnw_enable(sc)
 {
 	struct ifnet *ifp = &sc->sc_arpcom.ac_if;
 
-	sc->sc_ih = pcmcia_intr_establish(sc->sc_pf, IPL_NET,
-	    cnw_intr, sc, sc->sc_dev.dv_xname);
+	sc->sc_ih = pcmcia_intr_establish(sc->sc_pf, IPL_NET, cnw_intr, sc);
 	if (sc->sc_ih == NULL) {
 		printf("%s: couldn't establish interrupt handler\n",
 		    sc->sc_dev.dv_xname);
@@ -326,8 +341,8 @@ cnw_disable(sc)
 {
 	struct ifnet *ifp = &sc->sc_arpcom.ac_if;
 
-	pcmcia_intr_disestablish(sc->sc_pf, sc->sc_ih);
 	pcmcia_function_disable(sc->sc_pf);
+	pcmcia_intr_disestablish(sc->sc_pf, sc->sc_ih);
 	ifp->if_flags &= ~IFF_RUNNING;
 	ifp->if_timer = 0;
 }
@@ -343,13 +358,8 @@ cnw_match(parent, match, aux)
 {
 	struct pcmcia_attach_args *pa = aux;
 
-	if (pa->manufacturer == PCMCIA_VENDOR_XIRCOM &&
-	    pa->product == PCMCIA_PRODUCT_XIRCOM_XIR_CNW_801)
-		return (1);
-	if (pa->manufacturer == PCMCIA_VENDOR_XIRCOM &&
-	    pa->product == PCMCIA_PRODUCT_XIRCOM_XIR_CNW_802)
-		return (1);
-	return (0);
+	return (pa->manufacturer == PCMCIA_VENDOR_XIRCOM &&
+		pa->product == PCMCIA_PRODUCT_XIRCOM_XIR_CNW);
 }
 
 
@@ -368,7 +378,7 @@ cnw_attach(parent, self, aux)
 
 	/* Enable the card */
 	sc->sc_pf = pa->pf;
-	pcmcia_function_init(sc->sc_pf, SIMPLEQ_FIRST(&sc->sc_pf->cfe_head));
+	pcmcia_function_init(sc->sc_pf, sc->sc_pf->cfe_head.sqh_first);
 	if (pcmcia_function_enable(sc->sc_pf)) {
 		printf(": function enable failed\n");
 		return;
@@ -394,7 +404,7 @@ cnw_attach(parent, self, aux)
 	if (pcmcia_mem_map(sc->sc_pf, PCMCIA_MEM_COMMON, CNW_MEM_ADDR,
 			   CNW_MEM_SIZE, &sc->sc_pcmemh, &sc->sc_memoff,
 			   &sc->sc_memwin) != 0) {
-		printf(": can't map mem space\n");
+		printf(": can't map memory\n");
 		return;
 	}
 	sc->sc_memt = sc->sc_pcmemh.memt;
@@ -418,14 +428,15 @@ cnw_attach(parent, self, aux)
 	ifp->if_start = cnw_start;
 	ifp->if_ioctl = cnw_ioctl;
 	ifp->if_watchdog = cnw_watchdog;
-	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX;
+	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_NOTRAILERS;
 
 	/* Attach the interface */
 	if_attach(ifp);
 	ether_ifattach(ifp);
-
-	if_addgroup(ifp, "wlan");
-	ifp->if_priority = IF_WIRELESS_DEFAULT_PRIORITY;
+#if NBPFILTER > 0
+	bpfattach(&sc->sc_arpcom.ac_if.if_bpf, ifp, DLT_EN10MB,
+		  sizeof(struct ether_header));
+#endif
 
 	/* Disable the card now, and turn it on when the interface goes up */
 	pcmcia_function_disable(sc->sc_pf);
@@ -459,13 +470,13 @@ cnw_start(ifp)
 			return;
 		}
 
-		IFQ_DEQUEUE(&ifp->if_snd, m0);
-		if (m0 == NULL)
+		IF_DEQUEUE(&ifp->if_snd, m0);
+		if (m0 == 0)
 			return;
 
 #if NBPFILTER > 0
 		if (ifp->if_bpf)
-			bpf_mtap(ifp->if_bpf, m0, BPF_DIRECTION_OUT);
+			bpf_mtap(ifp->if_bpf, m0);
 #endif
 		
 		cnw_transmit(sc, m0);
@@ -524,7 +535,7 @@ cnw_transmit(sc, m0)
 			mptr += n;
 			mbytes -= n;
 		}
-		m0 = m_free(m);
+		MFREE(m, m0);
 		m = m0;
 	}
 
@@ -555,8 +566,9 @@ cnw_read(sc)
 	bufptr = 0; /* XXX make gcc happy */
 
 	MGETHDR(m, M_DONTWAIT, MT_DATA);
-	if (m == NULL)
+	if (m == 0)
 		return (0);
+	m->m_pkthdr.rcvif = &sc->sc_arpcom.ac_if;
 	m->m_pkthdr.len = totbytes;
 	mbytes = MHLEN;
 	top = 0;
@@ -565,7 +577,7 @@ cnw_read(sc)
 	while (totbytes > 0) {
 		if (top) {
 			MGET(m, M_DONTWAIT, MT_DATA);
-			if (m == NULL) {
+			if (m == 0) {
 				m_freem(top);
 				return (0);
 			}
@@ -629,15 +641,15 @@ cnw_recv(sc)
 {
 	int rser;
 	struct ifnet *ifp = &sc->sc_arpcom.ac_if;
-	struct mbuf_list ml = MBUF_LIST_INITIALIZER();
 	struct mbuf *m;
+	struct ether_header *eh;
 
 	for (;;) {
 		WAIT_WOC(sc);
 		rser = bus_space_read_1(sc->sc_memt, sc->sc_memh,
 					sc->sc_memoff + CNW_EREG_RSER);
 		if (!(rser & CNW_RSER_RXAVAIL))
-			break;
+			return;
 
 		/* Pull packet off card */
 		m = cnw_read(sc);
@@ -646,14 +658,34 @@ cnw_recv(sc)
 		CNW_CMD0(sc, CNW_CMD_SRP);
 
 		/* Did we manage to get the packet from the interface? */
-		if (m == NULL) {
+		if (m == 0) {
 			++ifp->if_ierrors;
-			break;
+			return;
 		}
-		ml_enqueue(&ml, m);
-	}
+		++ifp->if_ipackets;
 
-	if_input(ifp, &ml);
+#if NBPFILTER > 0
+		if (ifp->if_bpf)
+			bpf_mtap(ifp->if_bpf, m);
+#endif
+
+		/*
+		 * Check that the packet is for us or {multi,broad}cast. Maybe
+		 * there's a fool-poof hardware check for this, but I don't
+		 * really know...
+		 */
+		eh = mtod(m, struct ether_header *);
+		if ((eh->ether_dhost[0] & 1) == 0 && /* !mcast and !bcast */
+		    bcmp(sc->sc_arpcom.ac_enaddr, eh->ether_dhost,
+			sizeof(eh->ether_dhost)) != 0) {
+			m_freem(m);
+			continue;
+		}
+
+		/* Pass the packet up, with the ether header sort-of removed */
+		m_adj(m, sizeof(struct ether_header));
+		ether_input(ifp, eh, m);
+	}
 }
 
 
@@ -747,16 +779,25 @@ cnw_ioctl(ifp, cmd, data)
 	caddr_t data;
 {
 	struct cnw_softc *sc = ifp->if_softc;
+	struct ifaddr *ifa = (struct ifaddr *)data;
 	int s, error = 0;
 
 	s = splnet();
 
 	switch (cmd) {
+
 	case SIOCSIFADDR:
 		if (!(ifp->if_flags & IFF_RUNNING) &&
 		    (error = cnw_enable(sc)) != 0)
 			break;
 		ifp->if_flags |= IFF_UP;
+		switch (ifa->ifa_addr->sa_family) {
+#ifdef INET
+		case AF_INET:
+			arp_ifinit(&sc->sc_arpcom, ifa);
+			break;
+#endif
+		}
 		break;
 
 	case SIOCSIFFLAGS:
@@ -776,7 +817,7 @@ cnw_ioctl(ifp, cmd, data)
 		break;
 
 	default:
-		error = ENOTTY;
+		error = EINVAL;
 		break;
 	}
 
@@ -824,20 +865,24 @@ cnw_detach(dev, flags)
 int
 cnw_activate(dev, act)
 	struct device *dev;
-	int act;
+	enum devact act;
 {
 	struct cnw_softc *sc = (struct cnw_softc *)dev;
-        struct ifnet *ifp = &sc->sc_arpcom.ac_if;
+	int s;
 
+	s = splnet();
 	switch (act) {
+	case DVACT_ACTIVATE:
+		pcmcia_function_enable(sc->sc_pf);
+		sc->sc_ih =
+		    pcmcia_intr_establish(sc->sc_pf, IPL_NET, cnw_intr, sc);
+		break;
+
 	case DVACT_DEACTIVATE:
-		ifp->if_timer = 0;
-		ifp->if_flags &= ~IFF_RUNNING; /* XXX no cnw_stop() ? */
-		if (sc->sc_ih)
-			pcmcia_intr_disestablish(sc->sc_pf, sc->sc_ih);
-		sc->sc_ih = NULL;
 		pcmcia_function_disable(sc->sc_pf);
+		pcmcia_intr_disestablish(sc->sc_pf, sc->sc_ih);
 		break;
 	}
+	splx(s);
 	return (0);
 }

@@ -1,5 +1,5 @@
 %{
-/*	$OpenBSD: gram.y,v 1.24 2015/01/16 06:40:16 deraadt Exp $	*/
+/*	$OpenBSD: gram.y,v 1.9 1997/11/13 08:21:54 deraadt Exp $	*/
 /*	$NetBSD: gram.y,v 1.14 1997/02/02 21:12:32 thorpej Exp $	*/
 
 /*
@@ -23,7 +23,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -42,12 +46,11 @@
  *	from: @(#)gram.y	8.1 (Berkeley) 6/6/93
  */
 
-#include <sys/param.h>	/* NODEV */
 #include <sys/types.h>
+#include <sys/param.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <limits.h>
 #include <string.h>
 #include <errno.h>
 #include "config.h"
@@ -57,9 +60,9 @@
 
 #define	stop(s)	error(s), exit(1)
 
-int	include(const char *, int);
-void	yyerror(const char *);
-int	yylex(void);
+int	include __P((const char *, int));
+void	yyerror __P((const char *));
+int	yylex __P((void));
 
 static	struct	config conf;	/* at most one active at a time */
 
@@ -82,9 +85,9 @@ static	int	adepth;
 #define	fx_and(e1, e2)	new0(NULL, NULL, e1, FX_AND, e2)
 #define	fx_or(e1, e2)	new0(NULL, NULL, e1, FX_OR, e2)
 
-static	void	cleanup(void);
-static	void	setmachine(const char *, const char *);
-static	void	check_maxpart(void);
+static	void	cleanup __P((void));
+static	void	setmachine __P((const char *, const char *));
+static	void	check_maxpart __P((void));
 
 %}
 
@@ -97,18 +100,16 @@ static	void	check_maxpart(void);
 	int	val;
 }
 
-%token	AND AT ATTACH BUILD COMPILE_WITH CONFIG DEFINE DEFOPT
-%token	DEVICE DISABLE
+%token	AND AT ATTACH BUILD COMPILE_WITH CONFIG DEFINE DEFOPT DEVICE DISABLE
 %token	DUMPS ENDFILE XFILE XOBJECT FLAGS INCLUDE XMACHINE MAJOR MAKEOPTIONS
 %token	MAXUSERS MAXPARTITIONS MINOR ON OPTIONS PSEUDO_DEVICE ROOT SOURCE SWAP
-%token	WITH NEEDS_COUNT NEEDS_FLAG RMOPTIONS ENABLE
+%token	WITH NEEDS_COUNT NEEDS_FLAG
 %token	<val> NUMBER
 %token	<str> PATHNAME WORD EMPTY
 
 %left '|'
 %left '&'
 
-%type	<list>	pathnames
 %type	<list>	fopts fexpr fatom
 %type	<val>	fflgs fflag oflgs oflag
 %type	<str>	rule
@@ -161,21 +162,17 @@ topthing:
 
 machine_spec:
 	XMACHINE WORD '\n'		{ setmachine($2,NULL); } |
-	XMACHINE WORD WORD '\n'		{ setmachine($2,$3); } |
+	XMACHINE WORD WORD '\n' 	{ setmachine($2,$3); } |
 	error { stop("cannot proceed without machine specifier"); };
 
 dev_eof:
 	ENDFILE				{ enddefs(); checkfiles(); };
 
-pathnames:
-	PATHNAME			{ $$ = new_nsi($1, NULL, 0); } |
-	pathnames '|' PATHNAME		{ ($$ = $1)->nv_next = new_nsi($3, NULL, 0); };
-
 /*
  * Various nonterminals shared between the grammars.
  */
 file:
-	XFILE pathnames fopts fflgs rule { addfile($2, $3, $4, $5); };
+	XFILE PATHNAME fopts fflgs rule	{ addfile($2, $3, $4, $5); };
 
 object:
 	XOBJECT PATHNAME fopts oflgs	{ addobject($2, $3, $4); };
@@ -241,7 +238,7 @@ one_def:
 	ATTACH devbase AT atlist devattach_opt attrs_opt
 					{ defdevattach($5, $2, $4, $6); } |
 	MAXUSERS NUMBER NUMBER NUMBER	{ setdefmaxusers($2, $3, $4); } |
-	MAXPARTITIONS NUMBER		{ maxpartitions = $2; } |
+	MAXPARTITIONS NUMBER 		{ maxpartitions = $2; } |
 	PSEUDO_DEVICE devbase attrs_opt { defdev($2,1,NULL,$3); } |
 	MAJOR '{' majorlist '}';
 
@@ -258,7 +255,7 @@ atname:
 	ROOT				{ $$ = NULL; };
 
 devbase:
-	WORD				{ $$ = getdevbase((char *)$1); };
+	WORD				{ $$ = getdevbase($1); };
 
 devattach_opt:
 	WITH WORD			{ $$ = getdevattach($2); } |
@@ -279,7 +276,7 @@ loclist:
 
 /* "[ WORD locdefault ]" syntax may be unnecessary... */
 locdef:
-	WORD locdefault			{ $$ = new_nsi($1, $2, 0); } |
+	WORD locdefault 		{ $$ = new_nsi($1, $2, 0); } |
 	WORD				{ $$ = new_nsi($1, NULL, 0); } |
 	'[' WORD locdefault ']'		{ $$ = new_nsi($2, $3, 1); };
 
@@ -289,13 +286,9 @@ locdefault:
 value:
 	WORD				{ $$ = $1; } |
 	EMPTY				{ $$ = $1; } |
-	signed_number			{
-						char bf[40];
-
-						(void)snprintf(bf, sizeof bf,
-						    FORMAT($1), $1);
-						$$ = intern(bf);
-					};
+	signed_number			{ char bf[40];
+					    (void)sprintf(bf, FORMAT($1), $1);
+					    $$ = intern(bf); };
 
 signed_number:
 	NUMBER				{ $$ = $1; } |
@@ -338,12 +331,10 @@ config_spec:
 	object |
 	include |
 	OPTIONS opt_list |
-	RMOPTIONS ropt_list |
 	MAKEOPTIONS mkopt_list |
 	MAXUSERS NUMBER			{ setmaxusers($2); } |
 	CONFIG conf sysparam_list	{ addconf(&conf); } |
-	PSEUDO_DEVICE WORD npseudo disable { addpseudo($2, $3, $4); } |
-	device_instance AT attachment ENABLE { enabledev($1, $3); } |
+	PSEUDO_DEVICE WORD npseudo	{ addpseudo($2, $3); } |
 	device_instance AT attachment disable locators flags_opt
 					{ adddev($1, $3, $5, $6, $4); };
 
@@ -357,10 +348,6 @@ mkoption:
 opt_list:
 	opt_list ',' option |
 	option;
-
-ropt_list:
-	ropt_list ',' WORD { removeoption($3); } |
-	WORD { removeoption($1); };
 
 option:
 	WORD				{ addoption($1, NULL); } |
@@ -424,7 +411,8 @@ flags_opt:
 %%
 
 void
-yyerror(const char *s)
+yyerror(s)
+	const char *s;
 {
 
 	error("%s", s);
@@ -435,10 +423,10 @@ yyerror(const char *s)
  * allocated during parsing the current line.
  */
 static void
-cleanup(void)
+cleanup()
 {
-	struct nvlist **np;
-	int i;
+	register struct nvlist **np;
+	register int i;
 
 	for (np = alloc, i = adepth; --i >= 0; np++)
 		nvfree(*np);
@@ -446,22 +434,24 @@ cleanup(void)
 }
 
 static void
-setmachine(const char *mch, const char *mcharch)
+setmachine(mch, mcharch)
+	const char *mch;
+	const char *mcharch;
 {
-	char buf[PATH_MAX];
+	char buf[MAXPATHLEN];
 
 	machine = mch;
 	machinearch = mcharch;
 
-	(void)snprintf(buf, sizeof buf, "arch/%s/conf/files.%s", machine, machine);
+	(void)sprintf(buf, "arch/%s/conf/files.%s", machine, machine);
 	if (include(buf, ENDFILE) != 0)
 		exit(1);
 
 	if (machinearch != NULL)
-		(void)snprintf(buf, sizeof buf, "arch/%s/conf/files.%s",
+		(void)sprintf(buf, "arch/%s/conf/files.%s",
 		    machinearch, machinearch);
 	else
-		strlcpy(buf, _PATH_DEVNULL, sizeof buf);
+		strcpy(buf, _PATH_DEVNULL);
 	if (include(buf, ENDFILE) != 0)
 		exit(1);
 
@@ -470,7 +460,7 @@ setmachine(const char *mch, const char *mcharch)
 }
 
 static void
-check_maxpart(void)
+check_maxpart()
 {
 	if (maxpartitions <= 0) {
 		stop("cannot proceed without maxpartitions specifier");

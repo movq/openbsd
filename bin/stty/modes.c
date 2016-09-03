@@ -1,4 +1,4 @@
-/*	$OpenBSD: modes.c,v 1.11 2016/03/23 14:52:42 mmcc Exp $	*/
+/*	$OpenBSD: modes.c,v 1.4 1996/12/16 20:04:41 tholo Exp $	*/
 /*	$NetBSD: modes.c,v 1.9 1996/05/07 18:20:09 jtc Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,19 +34,23 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/types.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)modes.c	8.3 (Berkeley) 4/2/94";
+#else
+static char rcsid[] = "$OpenBSD: modes.c,v 1.4 1996/12/16 20:04:41 tholo Exp $";
+#endif
+#endif /* not lint */
 
+#include <sys/types.h>
 #include <stddef.h>
 #include <string.h>
-#include <termios.h>
-
 #include "stty.h"
-#include "extern.h"
 
 struct modes {
 	const char *name;
-	unsigned int set;
-	unsigned int unset;
+	long set;
+	long unset;
 };
 
 /*
@@ -194,15 +202,15 @@ const struct modes omodes[] = {
 	{ "-tabs",	OXTABS, 0 },
 	{ "oxtabs",	OXTABS, 0 },
 	{ "-oxtabs",	0, OXTABS },
-	{ "onoeot",	ONOEOT, 0 },
-	{ "-onoeot",	0, ONOEOT },
 	{ NULL },
 };
 
 #define	CHK(s)	(!strcmp(name, s))
 
 int
-msearch(char ***argvp, struct info *ip)
+msearch(argvp, ip)
+	char ***argvp;
+	struct info *ip;
 {
 	const struct modes *mp;
 	char *name;

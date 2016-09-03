@@ -1,4 +1,4 @@
-/*	$OpenBSD: nfsdiskless.h,v 1.10 2013/09/20 23:51:44 fgsch Exp $	*/
+/*	$OpenBSD: nfsdiskless.h,v 1.5 1997/09/06 14:48:59 deraadt Exp $	*/
 /*	$NetBSD: nfsdiskless.h,v 1.9 1996/02/18 11:54:00 fvdl Exp $	*/
 
 /*
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -50,20 +54,18 @@
  * client/server byte ordering differences.
  */
 struct nfs_dlmount {
-	struct nfs_args ndm_args;
 	struct sockaddr_in ndm_saddr;  		/* Address of file server */
 	char		ndm_host[MNAMELEN]; 	/* Host name for mount pt */
-	u_char		ndm_fh[NFSX_V3FHMAX]; 	/* The file's file handle */
+	u_char		ndm_fh[NFSX_V2FH]; 	/* The file's file handle */
 };
 struct nfs_diskless {
 	struct sockaddr_in nd_boot;	/* Address of boot server */
 	struct nfs_dlmount nd_root; 	/* Mount info for root */
 	struct nfs_dlmount nd_swap; 	/* Mount info for swap */
-	struct vnode	   *sw_vp;
 };
 
-int nfs_boot_init(struct nfs_diskless *nd, struct proc *procp);
-int nfs_boot_getfh(struct sockaddr_in *bpsin, char *key,
-		struct nfs_dlmount *ndmntp, int retries);
+int nfs_boot_init __P((struct nfs_diskless *nd, struct proc *procp));
+void nfs_boot_getfh __P((struct sockaddr_in *bpsin, char *key,
+		struct nfs_dlmount *ndmntp));
 #endif	/* _NFS_DISKLESS_H_ */
 

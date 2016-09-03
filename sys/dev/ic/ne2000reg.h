@@ -1,4 +1,4 @@
-/*	$OpenBSD: ne2000reg.h,v 1.3 2006/10/20 18:27:25 brad Exp $	*/
+/*	$OpenBSD: ne2000reg.h,v 1.1 1998/09/22 06:38:04 fgsch Exp $	*/
 /*	$NetBSD: ne2000reg.h,v 1.2 1997/10/14 22:54:11 thorpej Exp $	*/
 
 /*

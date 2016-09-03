@@ -1,4 +1,4 @@
-/*      $OpenBSD: sv.c,v 1.32 2015/05/11 06:46:22 ratchov Exp $ */
+/*      $OpenBSD: sv.c,v 1.7 1999/08/04 23:27:49 niklas Exp $ */
 
 /*
  * Copyright (c) 1998 Constantine Paul Sapuntzakis
@@ -48,6 +48,8 @@
 
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
+#include <dev/mulaw.h>
+#include <dev/auconv.h>
 
 #include <dev/ic/i8237reg.h>
 #include <dev/ic/s3_617.h>
@@ -70,9 +72,14 @@ static int	svdebug = 100;
 #define DPRINTFN(n,x)
 #endif
 
-int	sv_match(struct device *, void *, void *);
-static void	sv_attach(struct device *, struct device *, void *);
-int	sv_intr(void *);
+#define __BROKEN_INDIRECT_CONFIG
+#ifdef __BROKEN_INDIRECT_CONFIG
+int	sv_match __P((struct device *, void *, void *));
+#else
+int	sv_match __P((struct device *, struct cfdata *, void *));
+#endif
+static void	sv_attach __P((struct device *, struct device *, void *));
+int	sv_intr __P((void *));
 
 struct sv_dma {
 	bus_dmamap_t map;
@@ -132,30 +139,31 @@ struct audio_device sv_device = {
 
 #define ARRAY_SIZE(foo)  ((sizeof(foo)) / sizeof(foo[0]))
 
-int	sv_allocmem(struct sv_softc *, size_t, size_t, struct sv_dma *);
-int	sv_freemem(struct sv_softc *, struct sv_dma *);
+int	sv_allocmem __P((struct sv_softc *, size_t, size_t, struct sv_dma *));
+int	sv_freemem __P((struct sv_softc *, struct sv_dma *));
 
-int	sv_open(void *, int);
-void	sv_close(void *);
-int	sv_query_encoding(void *, struct audio_encoding *);
-int	sv_set_params(void *, int, int, struct audio_params *, struct audio_params *);
-int	sv_round_blocksize(void *, int);
-int	sv_dma_init_output(void *, void *, int);
-int	sv_dma_init_input(void *, void *, int);
-int	sv_dma_output(void *, void *, int, void (*)(void *), void *);
-int	sv_dma_input(void *, void *, int, void (*)(void *), void *);
-int	sv_halt_in_dma(void *);
-int	sv_halt_out_dma(void *);
-int	sv_getdev(void *, struct audio_device *);
-int	sv_mixer_set_port(void *, mixer_ctrl_t *);
-int	sv_mixer_get_port(void *, mixer_ctrl_t *);
-int	sv_query_devinfo(void *, mixer_devinfo_t *);
-void   *sv_malloc(void *, int, size_t, int, int);
-void	sv_free(void *, void *, int);
-paddr_t	sv_mappage(void *, void *, off_t, int);
-int	sv_get_props(void *);
+int	sv_open __P((void *, int));
+void	sv_close __P((void *));
+int	sv_query_encoding __P((void *, struct audio_encoding *));
+int	sv_set_params __P((void *, int, int, struct audio_params *, struct audio_params *));
+int	sv_round_blocksize __P((void *, int));
+int	sv_dma_init_output __P((void *, void *, int));
+int	sv_dma_init_input __P((void *, void *, int));
+int	sv_dma_output __P((void *, void *, int, void (*)(void *), void*));
+int	sv_dma_input __P((void *, void *, int, void (*)(void *), void*));
+int	sv_halt_in_dma __P((void *));
+int	sv_halt_out_dma __P((void *));
+int	sv_getdev __P((void *, struct audio_device *));
+int	sv_mixer_set_port __P((void *, mixer_ctrl_t *));
+int	sv_mixer_get_port __P((void *, mixer_ctrl_t *));
+int	sv_query_devinfo __P((void *, mixer_devinfo_t *));
+void   *sv_malloc __P((void *, u_long, int, int));
+void	sv_free __P((void *, void *, int));
+u_long	sv_round __P((void *, u_long));
+int	sv_mappage __P((void *, void *, int, int));
+int	sv_get_props __P((void *));
 
-void    sv_dumpregs(struct sv_softc *sc);
+void    sv_dumpregs __P((struct sv_softc *sc));
 
 struct audio_hw_if sv_hw_if = {
 	sv_open,
@@ -179,35 +187,42 @@ struct audio_hw_if sv_hw_if = {
 	sv_query_devinfo,
 	sv_malloc,
 	sv_free,
-	NULL,
+	sv_round,
 	sv_mappage,
 	sv_get_props,
-	NULL,
 	NULL,
 	NULL
 };
 
 
-static __inline__ u_int8_t sv_read(struct sv_softc *, u_int8_t);
-static __inline__ u_int8_t sv_read_indirect(struct sv_softc *, u_int8_t);
-static __inline__ void sv_write(struct sv_softc *, u_int8_t, u_int8_t );
-static __inline__ void sv_write_indirect(struct sv_softc *, u_int8_t, u_int8_t );
-static void sv_init_mixer(struct sv_softc *);
+static __inline__ u_int8_t sv_read __P((struct sv_softc *, u_int8_t));
+static __inline__ u_int8_t sv_read_indirect __P((struct sv_softc *, u_int8_t));
+static __inline__ void sv_write __P((struct sv_softc *, u_int8_t, u_int8_t ));
+static __inline__ void sv_write_indirect __P((struct sv_softc *, u_int8_t, u_int8_t ));
+static void sv_init_mixer __P((struct sv_softc *));
 
 static __inline__ void
-sv_write (struct sv_softc *sc, u_int8_t reg, u_int8_t val)
+sv_write (sc, reg, val)
+     struct sv_softc *sc;
+     u_int8_t reg, val;
+     
 {
   bus_space_write_1(sc->sc_iot, sc->sc_ioh, reg, val);
 }
 
 static __inline__ u_int8_t
-sv_read (struct sv_softc *sc, u_int8_t reg)
+sv_read (sc, reg)
+     struct sv_softc *sc;
+     u_int8_t reg;
+     
 {
   return (bus_space_read_1(sc->sc_iot, sc->sc_ioh, reg));
 }
 
 static __inline__ u_int8_t
-sv_read_indirect (struct sv_softc *sc, u_int8_t reg)
+sv_read_indirect (sc, reg)
+     struct sv_softc *sc;
+     u_int8_t reg;
 {
     u_int8_t iaddr = 0;
 
@@ -221,7 +236,9 @@ sv_read_indirect (struct sv_softc *sc, u_int8_t reg)
 }
 
 static __inline__ void
-sv_write_indirect (struct sv_softc *sc, u_int8_t reg, u_int8_t val)
+sv_write_indirect (sc, reg, val)
+     struct sv_softc *sc;
+     u_int8_t reg, val;
 {
     u_int8_t iaddr = 0;
 #ifdef DIAGNOSTIC
@@ -243,7 +260,9 @@ sv_write_indirect (struct sv_softc *sc, u_int8_t reg, u_int8_t val)
 }
 
 int
-sv_match(struct device *parent, void *match, void *aux)
+sv_match(parent, match, aux)
+     struct device *parent;
+     void *match, *aux;
 {
 	struct pci_attach_args *pa = aux;
 
@@ -255,25 +274,37 @@ sv_match(struct device *parent, void *match, void *aux)
 }
 
 static void
-sv_attach(struct device *parent, struct device *self, void *aux)
+sv_attach(parent, self, aux)
+     struct device *parent, *self;
+     void *aux;
+
 {
   struct sv_softc *sc = (struct sv_softc *)self;
   struct pci_attach_args *pa = aux;
   pci_chipset_tag_t pc = pa->pa_pc;
   pci_intr_handle_t ih;
+  bus_addr_t iobase;
   bus_size_t iosize;
+  pcireg_t csr;
   char const *intrstr;
   u_int32_t  dmareg, dmaio; 
   u_int8_t   reg;
+
+  printf ("\n");
 
   sc->sc_pci_chipset_tag = pc;
   sc->sc_pci_tag = pa->pa_tag;
 
   /* Map the enhanced port only */
-  if (pci_mapreg_map(pa, SV_ENHANCED_PORTBASE_SLOT, PCI_MAPREG_TYPE_IO, 0,
-      &sc->sc_iot, &sc->sc_ioh, NULL, &iosize, 0)) {
-    printf (": Couldn't map enhanced synth I/O range\n");
+  if (pci_io_find(pc, pa->pa_tag, SV_ENHANCED_PORTBASE_SLOT, 
+		  &iobase, &iosize)) {
+    printf ("%s: Couldn't find enhanced synth I/O range\n", sc->sc_dev.dv_xname);
     return;
+  }
+
+  if (bus_space_map(sc->sc_iot, iobase, iosize, 0, &sc->sc_ioh)) {
+      printf("%s: can't map i/o space\n", sc->sc_dev.dv_xname);
+      return;
   }
 
   sc->sc_dmatag = pa->pa_dmat;
@@ -290,7 +321,7 @@ sv_attach(struct device *parent, struct device *self, void *aux)
          and disable this DMA before we enable the device */
       pci_conf_write(pa->pa_pc, pa->pa_tag, SV_DMAA_CONFIG_OFF, 0);
 
-      printf (": can't map DMA i/o space\n");
+      printf ("%s: can't map DMA i/o space\n", sc->sc_dev.dv_xname);
       goto enable;
     }
 
@@ -310,7 +341,7 @@ sv_attach(struct device *parent, struct device *self, void *aux)
          and disable this DMA before we enable the device */
       pci_conf_write (pa->pa_pc, pa->pa_tag, SV_DMAC_CONFIG_OFF, 
 		      dmareg & ~SV_DMA_CHANNEL_ENABLE); 
-      printf (": can't map DMA i/o space\n");
+      printf ("%s: can't map DMA i/o space\n", sc->sc_dev.dv_xname);
       goto enable;
     }
 
@@ -321,6 +352,11 @@ sv_attach(struct device *parent, struct device *self, void *aux)
 
   /* Enable the device. */
  enable:
+  csr = pci_conf_read(pa->pa_pc, pa->pa_tag, PCI_COMMAND_STATUS_REG);
+  pci_conf_write(pa->pa_pc, pa->pa_tag, PCI_COMMAND_STATUS_REG,
+		 csr | PCI_COMMAND_MASTER_ENABLE 
+		 /* | PCI_COMMAND_IO_ENABLE | PCI_COMMAND_PARITY_ENABLE */);
+
   sv_write_indirect(sc, SV_ANALOG_POWER_DOWN_CONTROL, 0);
   sv_write_indirect(sc, SV_DIGITAL_POWER_DOWN_CONTROL, 0);
 
@@ -355,21 +391,23 @@ sv_attach(struct device *parent, struct device *self, void *aux)
   sc->sc_enable = 0;
 
   /* Map and establish the interrupt. */
-  if (pci_intr_map(pa, &ih)) {
-    printf(": couldn't map interrupt\n");
+  if (pci_intr_map(pc, pa->pa_intrtag, pa->pa_intrpin,
+		   pa->pa_intrline, &ih)) {
+    printf("%s: couldn't map interrupt\n", sc->sc_dev.dv_xname);
     return;
   }
   intrstr = pci_intr_string(pc, ih);
-  sc->sc_ih = pci_intr_establish(pc, ih, IPL_AUDIO | IPL_MPSAFE,
-      sv_intr, sc, sc->sc_dev.dv_xname);
+  sc->sc_ih = pci_intr_establish(pc, ih, IPL_AUDIO, sv_intr, sc,
+				 sc->sc_dev.dv_xname);
   if (sc->sc_ih == NULL) {
-    printf(": couldn't establish interrupt");
+    printf("%s: couldn't establish interrupt",
+	   sc->sc_dev.dv_xname);
     if (intrstr != NULL)
       printf(" at %s", intrstr);
     printf("\n");
     return;
   }
-  printf(": %s\n", intrstr);
+  printf("%s: interrupting at %s\n", sc->sc_dev.dv_xname, intrstr);
 
   sv_init_mixer(sc);
 
@@ -378,7 +416,8 @@ sv_attach(struct device *parent, struct device *self, void *aux)
 
 #ifdef AUDIO_DEBUG
 void
-sv_dumpregs(struct sv_softc *sc)
+sv_dumpregs(sc)
+     struct sv_softc *sc;
 {
   int idx;
 
@@ -407,18 +446,16 @@ sv_dumpregs(struct sv_softc *sc)
 #endif
 
 int
-sv_intr(void *p)
+sv_intr(p)
+	void *p;
 {
   struct sv_softc *sc = p;
   u_int8_t intr;
 
-  mtx_enter(&audio_lock);
   intr = sv_read(sc, SV_CODEC_STATUS);
 
-  if (!(intr & (SV_INTSTATUS_DMAA | SV_INTSTATUS_DMAC))) {
-    mtx_leave(&audio_lock);
+  if (!(intr & (SV_INTSTATUS_DMAA | SV_INTSTATUS_DMAC))) 
     return (0);
-  }
 
   if (intr & SV_INTSTATUS_DMAA) {
     if (sc->sc_pintr)
@@ -429,12 +466,16 @@ sv_intr(void *p)
     if (sc->sc_rintr)
       sc->sc_rintr(sc->sc_rarg);
   }
-  mtx_leave(&audio_lock);
+
   return (1);
 }
 
 int
-sv_allocmem(struct sv_softc *sc, size_t size, size_t align, struct sv_dma *p)
+sv_allocmem(sc, size, align, p)
+	struct sv_softc *sc;
+	size_t size;
+	size_t align;
+        struct sv_dma *p;
 {
 	int error;
 
@@ -471,7 +512,9 @@ free:
 }
 
 int
-sv_freemem(struct sv_softc *sc, struct sv_dma *p)
+sv_freemem(sc, p)
+	struct sv_softc *sc;
+        struct sv_dma *p;
 {
 	bus_dmamap_unload(sc->sc_dmatag, p->map);
 	bus_dmamap_destroy(sc->sc_dmatag, p->map);
@@ -481,7 +524,9 @@ sv_freemem(struct sv_softc *sc, struct sv_dma *p)
 }
 
 int
-sv_open(void *addr, int flags)
+sv_open(addr, flags)
+	void *addr;
+	int flags;
 {
 
     struct sv_softc *sc = addr;
@@ -564,7 +609,8 @@ sv_open(void *addr, int flags)
  * Close function is called at splaudio().
  */
 void
-sv_close(void *addr)
+sv_close(addr)
+	void *addr;
 {
 	struct sv_softc *sc = addr;
     
@@ -576,48 +622,106 @@ sv_close(void *addr)
 }
 
 int
-sv_query_encoding(void *addr, struct audio_encoding *fp)
+sv_query_encoding(addr, fp)
+	void *addr;
+	struct audio_encoding *fp;
 {
 	switch (fp->index) {
 	case 0:
-		strlcpy(fp->name, AudioEulinear, sizeof fp->name);
+		strcpy(fp->name, AudioEulinear);
 		fp->encoding = AUDIO_ENCODING_ULINEAR;
 		fp->precision = 8;
 		fp->flags = 0;
-		break;
-        case 1:
-		strlcpy(fp->name, AudioEslinear_le, sizeof fp->name);
+		return (0);
+	case 1:
+		strcpy(fp->name, AudioEmulaw);
+		fp->encoding = AUDIO_ENCODING_ULAW;
+		fp->precision = 8;
+		fp->flags = AUDIO_ENCODINGFLAG_EMULATED;
+		return (0);
+	case 2:
+		strcpy(fp->name, AudioEalaw);
+		fp->encoding = AUDIO_ENCODING_ALAW;
+		fp->precision = 8;
+		fp->flags = AUDIO_ENCODINGFLAG_EMULATED;
+		return (0);
+	case 3:
+		strcpy(fp->name, AudioEslinear);
+		fp->encoding = AUDIO_ENCODING_SLINEAR;
+		fp->precision = 8;
+		fp->flags = AUDIO_ENCODINGFLAG_EMULATED;
+		return (0);
+        case 4:
+		strcpy(fp->name, AudioEslinear_le);
 		fp->encoding = AUDIO_ENCODING_SLINEAR_LE;
 		fp->precision = 16;
 		fp->flags = 0;
-		break;
+		return (0);
+	case 5:
+		strcpy(fp->name, AudioEulinear_le);
+		fp->encoding = AUDIO_ENCODING_ULINEAR_LE;
+		fp->precision = 16;
+		fp->flags = AUDIO_ENCODINGFLAG_EMULATED;
+		return (0);
+	case 6:
+		strcpy(fp->name, AudioEslinear_be);
+		fp->encoding = AUDIO_ENCODING_SLINEAR_BE;
+		fp->precision = 16;
+		fp->flags = AUDIO_ENCODINGFLAG_EMULATED;
+		return (0);
+	case 7:
+		strcpy(fp->name, AudioEulinear_be);
+		fp->encoding = AUDIO_ENCODING_ULINEAR_BE;
+		fp->precision = 16;
+		fp->flags = AUDIO_ENCODINGFLAG_EMULATED;
+		return (0);
 	default:
 		return (EINVAL);
 	}
-	fp->bps = AUDIO_BPS(fp->precision);
-	fp->msb = 1;
-
-	return (0);
 }
 
 int
-sv_set_params(void *addr, int setmode, int usemode,
-    struct audio_params *p, struct audio_params *r)
+sv_set_params(addr, setmode, usemode, p, r)
+	void *addr;
+	int setmode, usemode;
+	struct audio_params *p, *r;
 {
 	struct sv_softc *sc = addr;
+	void (*pswcode) __P((void *, u_char *buf, int cnt));
+	void (*rswcode) __P((void *, u_char *buf, int cnt));
         u_int32_t mode, val;
         u_int8_t reg;
 	
+        pswcode = rswcode = 0;
         switch (p->encoding) {
+        case AUDIO_ENCODING_SLINEAR_BE:
+        	if (p->precision == 16)
+                	rswcode = pswcode = swap_bytes;
+		else
+			pswcode = rswcode = change_sign8;
+		break;
         case AUDIO_ENCODING_SLINEAR_LE:
         	if (p->precision != 16)
-			return EINVAL;
+			pswcode = rswcode = change_sign8;
         	break;
         case AUDIO_ENCODING_ULINEAR_BE:
+        	if (p->precision == 16) {
+			pswcode = swap_bytes_change_sign16;
+			rswcode = change_sign16_swap_bytes;
+		}
+		break;
         case AUDIO_ENCODING_ULINEAR_LE:
-        	if (p->precision != 8)
-			return EINVAL;
+        	if (p->precision == 16)
+			pswcode = rswcode = change_sign16;
         	break;
+        case AUDIO_ENCODING_ULAW:
+        	pswcode = mulaw_to_ulinear8;
+                rswcode = ulinear8_to_mulaw;
+                break;
+        case AUDIO_ENCODING_ALAW:
+                pswcode = alaw_to_ulinear8;
+                rswcode = ulinear8_to_alaw;
+                break;
         default:
         	return (EINVAL);
         }
@@ -626,18 +730,15 @@ sv_set_params(void *addr, int setmode, int usemode,
 		mode = SV_DMAA_FORMAT16 | SV_DMAC_FORMAT16;
 	else
 		mode = 0;
-	if (p->channels > 2)
-		p->channels = 2;
         if (p->channels == 2)
         	mode |= SV_DMAA_STEREO | SV_DMAC_STEREO;
-        if (p->sample_rate < 2000)
-		p->sample_rate = 2000;
-	if (p->sample_rate > 48000)
-		p->sample_rate = 48000;
+	else if (p->channels != 1)
+		return (EINVAL);
+        if (p->sample_rate < 2000 || p->sample_rate > 48000)
+        	return (EINVAL);
 
-	p->bps = AUDIO_BPS(p->precision);
-	r->bps = AUDIO_BPS(r->precision);
-	p->msb = r->msb = 1;
+        p->sw_code = pswcode;
+        r->sw_code = rswcode;
 
         /* Set the encoding */
 	reg = sv_read_indirect(sc, SV_DMA_DATA_FORMAT);
@@ -653,6 +754,8 @@ sv_set_params(void *addr, int setmode, int usemode,
 
 #define F_REF 24576000
 
+#define ABS(x) (((x) < 0) ? (-x) : (x))
+
 	if (setmode & AUMODE_RECORD)
 	{
 	  /* The ADC reference frequency (f_out) is 512 * the sample rate */
@@ -664,7 +767,7 @@ sv_set_params(void *addr, int setmode, int usemode,
 
 	     with the constraint that:
 
-	     80 MhZ < (m + 2) / (n + 2) * f_ref <= 150MHz
+	     80 MhZ < (m + 2) / (n + 2) * f_ref <= 150Mhz
 	     and n, m >= 1
 	  */
 
@@ -691,7 +794,7 @@ sv_set_params(void *addr, int setmode, int usemode,
 
 	    /* Threshold might be good here */
 	    error = pll_sample - r->sample_rate;
-	    error = abs(error);
+	    error = ABS(error);
 	    
 	    if (error < best_error) {
 	      best_error = error;
@@ -712,13 +815,18 @@ sv_set_params(void *addr, int setmode, int usemode,
 }
 
 int
-sv_round_blocksize(void *addr, int blk)
+sv_round_blocksize(addr, blk)
+	void *addr;
+	int blk;
 {
-	return ((blk + 31) & -32);	/* keep good alignment */
+	return (blk & -32);	/* keep good alignment */
 }
 
 int
-sv_dma_init_input(void *addr, void *buf, int cc)
+sv_dma_init_input(addr, buf, cc)
+	void *addr;
+	void *buf;
+	int cc;
 {
 	struct sv_softc *sc = addr;
 	struct sv_dma *p;
@@ -746,13 +854,16 @@ sv_dma_init_input(void *addr, void *buf, int cc)
 }
 
 int
-sv_dma_init_output(void *addr, void *buf, int cc)
+sv_dma_init_output(addr, buf, cc)
+	void *addr;
+	void *buf;
+	int cc;
 {
 	struct sv_softc *sc = addr;
 	struct sv_dma *p;
 	int dma_count;
 
-	DPRINTF(("sv: dma start loop output buf=%p cc=%d\n", buf, cc));
+	DPRINTF(("eap: dma start loop output buf=%p cc=%d\n", buf, cc));
         for (p = sc->sc_dmas; p && KERNADDR(p) != buf; p = p->next)
 		;
 	if (!p) {
@@ -773,7 +884,12 @@ sv_dma_init_output(void *addr, void *buf, int cc)
 }
 
 int
-sv_dma_output(void *addr, void *p, int cc, void (*intr)(void *), void *arg)
+sv_dma_output(addr, p, cc, intr, arg)
+	void *addr;
+	void *p;
+	int cc;
+	void (*intr) __P((void *));
+	void *arg;
 {
 	struct sv_softc *sc = addr;
 	u_int8_t mode;
@@ -781,6 +897,7 @@ sv_dma_output(void *addr, void *p, int cc, void (*intr)(void *), void *arg)
 	DPRINTFN(1, 
                  ("sv_dma_output: sc=%p buf=%p cc=%d intr=%p(%p)\n", 
                   addr, p, cc, intr, arg));
+
 	sc->sc_pintr = intr;
 	sc->sc_parg = arg;
 	if (!(sc->sc_enable & SV_PLAY_ENABLE)) {
@@ -798,7 +915,12 @@ sv_dma_output(void *addr, void *p, int cc, void (*intr)(void *), void *arg)
 }
 
 int
-sv_dma_input(void *addr, void *p, int cc, void (*intr)(void *), void *arg)
+sv_dma_input(addr, p, cc, intr, arg)
+	void *addr;
+	void *p;
+	int cc;
+	void (*intr) __P((void *));
+	void *arg;
 {
 	struct sv_softc *sc = addr;
 	u_int8_t mode;
@@ -822,39 +944,41 @@ sv_dma_input(void *addr, void *p, int cc, void (*intr)(void *), void *arg)
 }
 
 int
-sv_halt_out_dma(void *addr)
+sv_halt_out_dma(addr)
+	void *addr;
 {
 	struct sv_softc *sc = addr;
 	u_int8_t mode;
 	
-        DPRINTF(("sv: sv_halt_out_dma\n"));
-	mtx_enter(&audio_lock);
+        DPRINTF(("eap: sv_halt_out_dma\n"));
 	mode = sv_read_indirect(sc, SV_PLAY_RECORD_ENABLE);
 	mode &= ~SV_PLAY_ENABLE;
 	sc->sc_enable &= ~SV_PLAY_ENABLE;
 	sv_write_indirect(sc, SV_PLAY_RECORD_ENABLE, mode);
-	mtx_leave(&audio_lock);
+
         return (0);
 }
 
 int
-sv_halt_in_dma(void *addr)
+sv_halt_in_dma(addr)
+	void *addr;
 {
 	struct sv_softc *sc = addr;
 	u_int8_t mode;
     
-        DPRINTF(("sv: sv_halt_in_dma\n"));
-	mtx_enter(&audio_lock);
+        DPRINTF(("eap: sv_halt_in_dma\n"));
 	mode = sv_read_indirect(sc, SV_PLAY_RECORD_ENABLE);
 	mode &= ~SV_RECORD_ENABLE;
 	sc->sc_enable &= ~SV_RECORD_ENABLE;
 	sv_write_indirect(sc, SV_PLAY_RECORD_ENABLE, mode);
-	mtx_leave(&audio_lock);
+
         return (0);
 }
 
 int
-sv_getdev(void *addr, struct audio_device *retp)
+sv_getdev(addr, retp)
+	void *addr;
+        struct audio_device *retp;
 {
 	*retp = sv_device;
         return (0);
@@ -922,19 +1046,18 @@ static const struct {
 #define SV_SRS_MODE (SV_LAST_MIXER + 4)
 
 int 
-sv_query_devinfo(void *addr, mixer_devinfo_t *dip)
+sv_query_devinfo(addr, dip)
+	void *addr;
+	mixer_devinfo_t *dip;
 {
-
-  if (dip->index < 0)
-    return (ENXIO);
 
   /* It's a class */
   if (dip->index <= SV_LAST_CLASS) {
     dip->type = AUDIO_MIXER_CLASS;
     dip->mixer_class = dip->index;
     dip->next = dip->prev = AUDIO_MIXER_LAST;
-    strlcpy(dip->label.name, mixer_classes[dip->index],
-	    sizeof dip->label.name);
+    strcpy(dip->label.name, 
+	   mixer_classes[dip->index]);
     return (0);
   }
 
@@ -945,7 +1068,7 @@ sv_query_devinfo(void *addr, mixer_devinfo_t *dip)
     int idx = off / SV_DEVICES_PER_PORT;
 
     dip->mixer_class = ports[idx].class;
-    strlcpy(dip->label.name, ports[idx].audio, sizeof dip->label.name);
+    strcpy(dip->label.name, ports[idx].audio);
 
     if (!mute) {
       dip->type = AUDIO_MIXER_VALUE;
@@ -957,20 +1080,18 @@ sv_query_devinfo(void *addr, mixer_devinfo_t *dip)
       else
 	dip->un.v.num_channels = 1;
       
-      strlcpy(dip->un.v.units.name, AudioNvolume, sizeof dip->un.v.units.name);
-
+      strcpy(dip->un.v.units.name, AudioNvolume);
+		
     } else {
       dip->type = AUDIO_MIXER_ENUM;
       dip->prev = dip->index - 1;
       dip->next = AUDIO_MIXER_LAST;
 
-      strlcpy(dip->label.name, AudioNmute, sizeof dip->label.name);
+      strcpy(dip->label.name, AudioNmute);
       dip->un.e.num_mem = 2;
-      strlcpy(dip->un.e.member[0].label.name, AudioNoff,
-	  sizeof dip->un.e.member[0].label.name);
+      strcpy(dip->un.e.member[0].label.name, AudioNoff);
       dip->un.e.member[0].ord = 0;
-      strlcpy(dip->un.e.member[1].label.name, AudioNon,
-	  sizeof dip->un.e.member[1].label.name);
+      strcpy(dip->un.e.member[1].label.name, AudioNon);
       dip->un.e.member[1].ord = 1;
 
     }
@@ -983,7 +1104,7 @@ sv_query_devinfo(void *addr, mixer_devinfo_t *dip)
     dip->mixer_class = SV_RECORD_CLASS;
     dip->prev = AUDIO_MIXER_LAST;
     dip->next = SV_RECORD_GAIN;
-    strlcpy(dip->label.name, AudioNsource, sizeof dip->label.name);
+    strcpy(dip->label.name, AudioNsource);
     dip->type = AUDIO_MIXER_ENUM;
 
     dip->un.e.num_mem = ARRAY_SIZE(record_sources);
@@ -991,8 +1112,7 @@ sv_query_devinfo(void *addr, mixer_devinfo_t *dip)
     {
       int idx;
       for (idx = 0; idx < ARRAY_SIZE(record_sources); idx++) {
-	strlcpy(dip->un.e.member[idx].label.name, record_sources[idx].name,
-	    sizeof dip->un.e.member[idx].label.name);
+	strcpy(dip->un.e.member[idx].label.name, record_sources[idx].name);
 	dip->un.e.member[idx].ord = record_sources[idx].idx;
       }
     }
@@ -1002,32 +1122,30 @@ sv_query_devinfo(void *addr, mixer_devinfo_t *dip)
     dip->mixer_class = SV_RECORD_CLASS;
     dip->prev = SV_RECORD_SOURCE;
     dip->next = AUDIO_MIXER_LAST;
-    strlcpy(dip->label.name, "gain", sizeof dip->label.name);
+    strcpy(dip->label.name, "gain");
     dip->type = AUDIO_MIXER_VALUE;
     dip->un.v.num_channels = 1;
-    strlcpy(dip->un.v.units.name, AudioNvolume, sizeof dip->un.v.units.name);
+    strcpy(dip->un.v.units.name, AudioNvolume);
     return (0);
 
   case SV_MIC_BOOST:
     dip->mixer_class = SV_RECORD_CLASS;
     dip->prev = AUDIO_MIXER_LAST;
     dip->next = AUDIO_MIXER_LAST;
-    strlcpy(dip->label.name, "micboost", sizeof dip->label.name);
+    strcpy(dip->label.name, "micboost");
     goto on_off;
 
   case SV_SRS_MODE:
     dip->mixer_class = SV_OUTPUT_CLASS;
     dip->prev = dip->next = AUDIO_MIXER_LAST;
-    strlcpy(dip->label.name, AudioNspatial, sizeof dip->label.name);
+    strcpy(dip->label.name, AudioNspatial);
 
 on_off:
     dip->type = AUDIO_MIXER_ENUM;
     dip->un.e.num_mem = 2;
-    strlcpy(dip->un.e.member[0].label.name, AudioNoff,
-	sizeof dip->un.e.member[0].label.name);
+    strcpy(dip->un.e.member[0].label.name, AudioNoff);
     dip->un.e.member[0].ord = 0;
-    strlcpy(dip->un.e.member[1].label.name, AudioNon,
-	sizeof dip->un.e.member[1].label.name);
+    strcpy(dip->un.e.member[1].label.name, AudioNon);
     dip->un.e.member[1].ord = 1;
     return (0);
   }
@@ -1036,7 +1154,9 @@ on_off:
 }
 
 int
-sv_mixer_set_port(void *addr, mixer_ctrl_t *cp)
+sv_mixer_set_port(addr, cp)
+	void *addr;
+	mixer_ctrl_t *cp;
 {
   struct sv_softc *sc = addr;
   u_int8_t reg;
@@ -1199,7 +1319,9 @@ sv_mixer_set_port(void *addr, mixer_ctrl_t *cp)
 }
 
 int
-sv_mixer_get_port(void *addr, mixer_ctrl_t *cp)
+sv_mixer_get_port(addr, cp)
+	void *addr;
+	mixer_ctrl_t *cp;
 {
   struct sv_softc *sc = addr;
   int val;
@@ -1299,7 +1421,8 @@ sv_mixer_get_port(void *addr, mixer_ctrl_t *cp)
 
 
 static void
-sv_init_mixer(struct sv_softc *sc)
+sv_init_mixer(sc)
+     struct sv_softc *sc;
 {
   mixer_ctrl_t cp;
   int idx;
@@ -1311,7 +1434,7 @@ sv_init_mixer(struct sv_softc *sc)
   sv_mixer_set_port(sc, &cp);
 
   for (idx = 0; idx < ARRAY_SIZE(ports); idx++) {
-    if (strcmp(ports[idx].audio, AudioNdac) == 0) {
+    if (ports[idx].audio == AudioNdac) {
       cp.type = AUDIO_MIXER_ENUM;
       cp.dev = SV_FIRST_MIXER + idx * SV_DEVICES_PER_PORT + 1;
       cp.un.ord = 0;
@@ -1322,7 +1445,11 @@ sv_init_mixer(struct sv_softc *sc)
 }
 
 void *
-sv_malloc(void *addr, int direction, size_t size, int pool, int flags)
+sv_malloc(addr, size, pool, flags)
+	void *addr;
+	u_long size;
+	int pool;
+	int flags;
 {
 	struct sv_softc *sc = addr;
         struct sv_dma *p;
@@ -1333,7 +1460,7 @@ sv_malloc(void *addr, int direction, size_t size, int pool, int flags)
                 return (0);
         error = sv_allocmem(sc, size, 16, p);
         if (error) {
-                free(p, pool, 0);
+                free(p, pool);
         	return (0);
         }
         p->next = sc->sc_dmas;
@@ -1342,7 +1469,10 @@ sv_malloc(void *addr, int direction, size_t size, int pool, int flags)
 }
 
 void
-sv_free(void *addr, void *ptr, int pool)
+sv_free(addr, ptr, pool)
+	void *addr;
+	void *ptr;
+	int pool;
 {
 	struct sv_softc *sc = addr;
         struct sv_dma **p;
@@ -1351,14 +1481,26 @@ sv_free(void *addr, void *ptr, int pool)
                 if (KERNADDR(*p) == ptr) {
                         sv_freemem(sc, *p);
                         *p = (*p)->next;
-                        free(*p, pool, 0);
+                        free(*p, pool);
                         return;
                 }
         }
 }
 
-paddr_t
-sv_mappage(void *addr, void *mem, off_t off, int prot)
+u_long
+sv_round(addr, size)
+	void *addr;
+	u_long size;
+{
+	return (size);
+}
+
+int
+sv_mappage(addr, mem, off, prot)
+	void *addr;
+        void *mem;
+        int off;
+	int prot;
 {
 	struct sv_softc *sc = addr;
         struct sv_dma *p;
@@ -1372,7 +1514,8 @@ sv_mappage(void *addr, void *mem, off_t off, int prot)
 }
 
 int
-sv_get_props(void *addr)
+sv_get_props(addr)
+	void *addr;
 {
 	return (AUDIO_PROP_MMAP | AUDIO_PROP_FULLDUPLEX);
 }

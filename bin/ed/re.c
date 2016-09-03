@@ -1,4 +1,4 @@
-/*	$OpenBSD: re.c,v 1.17 2016/03/22 17:58:28 mmcc Exp $	*/
+/*	$OpenBSD: re.c,v 1.7 1998/01/21 03:51:50 millert Exp $	*/
 /*	$NetBSD: re.c,v 1.14 1995/03/21 09:04:48 cgd Exp $	*/
 
 /* re.c: This file contains the regular expression interface routines for
@@ -29,53 +29,52 @@
  * SUCH DAMAGE.
  */
 
-#include <regex.h>
-#include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#ifndef lint
+#if 0
+static char *rcsid = "@(#)re.c,v 1.6 1994/02/01 00:34:43 alm Exp";
+#else
+static char rcsid[] = "$OpenBSD: re.c,v 1.7 1998/01/21 03:51:50 millert Exp $";
+#endif
+#endif /* not lint */
 
 #include "ed.h"
 
-static char *extract_pattern(int);
-static char *parse_char_class(char *);
 
 extern int patlock;
 
+char errmsg[MAXPATHLEN + 40] = "";
 
-/* get_compiled_pattern: return pointer to compiled pattern from command
+/* get_compiled_pattern: return pointer to compiled pattern from command 
    buffer */
-regex_t *
-get_compiled_pattern(void)
+pattern_t *
+get_compiled_pattern()
 {
-	static regex_t *exp = NULL;
-	char errbuf[128] = "";
+	static pattern_t *exp = NULL;
 
 	char *exps;
 	char delimiter;
 	int n;
 
 	if ((delimiter = *ibufp) == ' ') {
-		seterrmsg("invalid pattern delimiter");
+		strcpy(errmsg, "invalid pattern delimiter");
 		return NULL;
 	} else if (delimiter == '\n' || *++ibufp == '\n' || *ibufp == delimiter) {
 		if (!exp)
-			seterrmsg("no previous pattern");
+			strcpy(errmsg, "no previous pattern");
 		return exp;
 	} else if ((exps = extract_pattern(delimiter)) == NULL)
 		return NULL;
 	/* buffer alloc'd && not reserved */
 	if (exp && !patlock)
 		regfree(exp);
-	else if ((exp = malloc(sizeof(regex_t))) == NULL) {
+	else if ((exp = (pattern_t *) malloc(sizeof(pattern_t))) == NULL) {
 		perror(NULL);
-		seterrmsg("out of memory");
+		strcpy(errmsg, "out of memory");
 		return NULL;
 	}
 	patlock = 0;
 	if ((n = regcomp(exp, exps, 0)) != 0) {
-		regerror(n, exp, errbuf, sizeof errbuf);
-		seterrmsg(errbuf);
+		regerror(n, exp, errmsg, sizeof errmsg);
 		free(exp);
 		return exp = NULL;
 	}
@@ -85,8 +84,9 @@ get_compiled_pattern(void)
 
 /* extract_pattern: copy a pattern string from the command buffer; return
    pointer to the copy */
-static char *
-extract_pattern(int delimiter)
+char *
+extract_pattern(delimiter)
+	int delimiter;
 {
 	static char *lhbuf = NULL;	/* buffer */
 	static int lhbufsz = 0;		/* buffer size */
@@ -100,13 +100,13 @@ extract_pattern(int delimiter)
 			break;
 		case '[':
 			if ((nd = parse_char_class(++nd)) == NULL) {
-				seterrmsg("unbalanced brackets ([])");
+				strcpy(errmsg, "unbalanced brackets ([])");
 				return NULL;
 			}
 			break;
 		case '\\':
 			if (*++nd == '\n') {
-				seterrmsg("trailing backslash (\\)");
+				strcpy(errmsg, "trailing backslash (\\)");
 				return NULL;
 			}
 			break;
@@ -121,8 +121,9 @@ extract_pattern(int delimiter)
 
 
 /* parse_char_class: expand a POSIX character class */
-static char *
-parse_char_class(char *s)
+char *
+parse_char_class(s)
+	char *s;
 {
 	int c, d;
 

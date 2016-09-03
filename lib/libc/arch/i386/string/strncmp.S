@@ -1,10 +1,14 @@
-/*	$OpenBSD: strncmp.S,v 1.4 2015/08/31 02:53:56 guenther Exp $ */
 /*
  * Written by J.T. Conklin <jtc@netbsd.org>.
  * Public domain.
  */
 
-#include "SYS.h"
+#include <machine/asm.h>
+
+#if defined(LIBC_SCCS)
+	.text
+	.asciz "$OpenBSD: strncmp.S,v 1.2 1996/08/19 08:13:21 tholo Exp $"
+#endif
 
 /*
  * NOTE: I've unrolled the loop eight times: large enough to make a
@@ -111,4 +115,3 @@ L3:	movzbl	(%eax),%eax		/* unsigned comparision */
 L4:	xorl	%eax,%eax
 	popl	%ebx
 	ret
-END_STRONG(strncmp)

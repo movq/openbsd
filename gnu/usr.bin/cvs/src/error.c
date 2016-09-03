@@ -64,8 +64,7 @@ extern char *strerror ();
 void
 error_exit PROTO ((void))
 {
-    rcs_cleanup ();
-    Lock_Cleanup ();
+    Lock_Cleanup();
 #ifdef SERVER_SUPPORT
     if (server_active)
 	server_cleanup (0);
@@ -121,11 +120,9 @@ error (status, errnum, message, va_alist)
 	char *q;
 	char *str;
 	int num;
-	long lnum;
 	unsigned int unum;
-	unsigned long ulnum;
 	int ch;
-	char buf[100];
+	unsigned char buf[100];
 
 	cvs_outerr (program_name, 0);
 	if (command_name && *command_name)
@@ -159,21 +156,6 @@ error (status, errnum, message, va_alist)
 		sprintf (buf, "%d", num);
 		cvs_outerr (buf, strlen (buf));
 		break;
-	    case 'l':
-		if (q[2] == 'd')
-		{
-		    lnum = va_arg (args, long);
-		    sprintf (buf, "%ld", lnum);
-		}
-		else if (q[2] == 'u')
-		{
-		    ulnum = va_arg (args, unsigned long);
-		    sprintf (buf, "%lu", ulnum);
-		}
-		else goto bad;
-		cvs_outerr (buf, strlen (buf));
-		q++;
-		break;
 	    case 'x':
 		unum = va_arg (args, unsigned int);
 		sprintf (buf, "%x", unum);
@@ -188,7 +170,6 @@ error (status, errnum, message, va_alist)
 		cvs_outerr ("%", 1);
 		break;
 	    default:
-	    bad:
 		cvs_outerr (msg, sizeof (msg) - 1);
 		/* Don't just keep going, because q + 1 might point to the
 		   terminating '\0'.  */
@@ -220,9 +201,9 @@ error (status, errnum, message, va_alist)
 /* VARARGS */
 void
 #if defined (HAVE_VPRINTF) && defined (__STDC__)
-fperrmsg (FILE *fp, int status, int errnum, char *message, ...)
+fperror (FILE *fp, int status, int errnum, char *message, ...)
 #else
-fperrmsg (fp, status, errnum, message, va_alist)
+fperror (fp, status, errnum, message, va_alist)
     FILE *fp;
     int status;
     int errnum;

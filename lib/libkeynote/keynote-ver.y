@@ -1,4 +1,4 @@
-/* $OpenBSD: keynote-ver.y,v 1.10 2004/06/29 11:35:56 msf Exp $ */
+/* $OpenBSD: keynote-ver.y,v 1.6 1999/10/09 19:47:32 angelos Exp $ */
 /*
  * The author of this code is Angelos D. Keromytis (angelos@dsl.cis.upenn.edu)
  *
@@ -7,7 +7,7 @@
  *
  * Copyright (C) 1998, 1999 by Angelos D. Keromytis.
  *	
- * Permission to use, copy, and modify this software with or without fee
+ * Permission to use, copy, and modify this software without fee
  * is hereby granted, provided that this entire notice is included in
  * all copies of any software which is or includes a copy or
  * modification of this software. 
@@ -28,16 +28,20 @@
 %nonassoc EQ
 %start program
 %{
+#if HAVE_CONFIG_H
+#include "config.h"
+#endif /* HAVE_CONFIG_H */
 
 #include <sys/types.h>
-
-#include <regex.h>
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
+#include <stdio.h>
 
-#include "header.h"
+#if STDC_HEADERS
+#include <string.h>
+#endif /* STDC_HEADERS */
+
 #include "keynote.h"
+#include "header.h"
 %}
 %%
 

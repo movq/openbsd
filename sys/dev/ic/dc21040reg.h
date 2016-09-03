@@ -1,4 +1,4 @@
-/*	$OpenBSD: dc21040reg.h,v 1.15 2005/11/07 00:03:09 brad Exp $	*/
+/*	$OpenBSD: dc21040reg.h,v 1.9 1998/08/28 06:31:19 rahnds Exp $	*/
 /*	$NetBSD: dc21040reg.h,v 1.11 1997/06/08 18:44:02 thorpej Exp $	*/
 
 /*-
@@ -11,7 +11,7 @@
  * 1. Redistributions of source code must retain the above copyright
  *    notice, this list of conditions and the following disclaimer.
  * 2. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission
+ *    derived from this software withough specific prior written permission
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -44,13 +44,25 @@
 #define	TULIP_BITFIELD4(a, b, c, d)	a, b, c, d
 #endif
 
+typedef union {
+	struct {
+	u_int32_t TULIP_BITFIELD3(bd_length1 : 11,
+			          bd_length2 : 11,
+			          bd_flag : 10);
+	}s;
+	u_int32_t f;
+} tulip_desc_bitfield_t;
+#define bd_length1 s.bd_length1
+#define bd_length2 s.bd_length2
+#define bd_flag    s.bd_flag
 typedef struct {
     u_int32_t d_status;
-    u_int32_t TULIP_BITFIELD3(d_length1 : 11,
-			      d_length2 : 11,
-			      d_flag : 10);
+    tulip_desc_bitfield_t u;
     u_int32_t d_addr1;
     u_int32_t d_addr2;
+#ifdef PPC_MPC106_BUG
+    u_int32_t fill[4];		/* Make descr. 32 bytes avoiding MPC106 bug! */
+#endif
 } tulip_desc_t;
 
 #define	TULIP_DSTS_OWNER	0x80000000	/* Owner (1 = 21040) */
@@ -160,7 +172,7 @@ typedef struct {
 #define	TULIP_STS_FULDPLXSHRT	0x00000800L		/* (RW)  Full Duplex Short Fram Rcvd (21040) */
 #define	TULIP_STS_GPTIMEOUT	0x00000800L		/* (RW)  General Purpose Timeout (21140) */
 #define	TULIP_STS_AUI		0x00000400L		/* (RW)  AUI/TP Switch (21040) */
-#define	TULIP_STS_RXTIMEOUT	0x00000200L		/* (RW)  Receive Watchdog Timeout */
+#define	TULIP_STS_RXTIMEOUT	0x00000200L		/* (RW)  Receive Watchbog Timeout */
 #define	TULIP_STS_RXSTOPPED	0x00000100L		/* (RW)  Receive Process Stopped */
 #define	TULIP_STS_RXNOBUF	0x00000080L		/* (RW)  Receive Buffer Unavailable */
 #define	TULIP_STS_RXINTR	0x00000040L		/* (RW)  Receive Interrupt */
@@ -178,10 +190,10 @@ typedef struct {
 #define	TULIP_CMD_SCRAMBLER	0x01000000L		/* (RW)  Scrambler Mode (21140) */
 #define	TULIP_CMD_PCSFUNCTION	0x00800000L		/* (RW)  PCS Function (21140) */
 #define	TULIP_CMD_TXTHRSHLDCTL	0x00400000L		/* (RW)  Transmit Threshold Mode (21140) */
-#define	TULIP_CMD_STOREFWD	0x00200000L		/* (RW)  Store and Forward (21140) */
+#define	TULIP_CMD_STOREFWD	0x00200000L		/* (RW)  Store and Foward (21140) */
 #define	TULIP_CMD_NOHEARTBEAT	0x00080000L		/* (RW)  No Heartbeat (21140) */
 #define	TULIP_CMD_PORTSELECT	0x00040000L		/* (RW)  Post Select (100Mb) (21140) */
-#define	TULIP_CMD_ENHCAPTEFFCT	0x00040000L		/* (RW)  Enhanced Capture Effect (21041) */
+#define	TULIP_CMD_ENHCAPTEFFCT	0x00040000L		/* (RW)  Enhanced Capture Effecty (21041) */
 #define	TULIP_CMD_CAPTREFFCT	0x00020000L		/* (RW)  Capture Effect (!802.3) */
 #define	TULIP_CMD_BACKPRESSURE	0x00010000L		/* (RW)  Back Pressure (!802.3) (21040) */
 #define	TULIP_CMD_THRESHOLDCTL	0x0000C000L		/* (RW)  Threshold Control */
@@ -216,15 +228,15 @@ typedef struct {
 #define	TULIP_21040_PROBE_AUIBNC_TIMEOUT	300
 #define	TULIP_21040_PROBE_EXTSIA_TIMEOUT	300
 
-#define	TULIP_21040_SIACONN_10BASET	0x0000EF01L
+#define	TULIP_21040_SIACONN_10BASET	0x00008F01L
 #define	TULIP_21040_SIATXRX_10BASET	0x0000FFFFL
 #define	TULIP_21040_SIAGEN_10BASET	0x00000000L
 
-#define	TULIP_21040_SIACONN_10BASET_FD	0x0000EF01L
+#define	TULIP_21040_SIACONN_10BASET_FD	0x00008F01L
 #define	TULIP_21040_SIATXRX_10BASET_FD	0x0000FFFDL
 #define	TULIP_21040_SIAGEN_10BASET_FD	0x00000000L
 
-#define	TULIP_21040_SIACONN_AUIBNC	0x0000EF09L
+#define	TULIP_21040_SIACONN_AUIBNC	0x00008F09L
 #define	TULIP_21040_SIATXRX_AUIBNC	0x00000705L
 #define	TULIP_21040_SIAGEN_AUIBNC	0x00000006L
 
@@ -332,7 +344,7 @@ typedef struct {
 
 #define	TULIP_GP_PINSET			0x00000100L
 /*
- * These are the definitions used for the DEC 21140
+ * These are the defintitions used for the DEC 21140
  * evaluation board.
  */
 #define	TULIP_GP_EB_PINS		0x0000001F	/* General Purpose Pin directions */
@@ -341,7 +353,7 @@ typedef struct {
 #define	TULIP_GP_EB_INIT		0x0000000B	/* No loopback --- point-to-point */
 
 /*
- * These are the definitions used for the SMC9332 (21140) board.
+ * These are the defintitions used for the SMC9332 (21140) board.
  */
 #define	TULIP_GP_SMC_9332_PINS		0x0000003F	/* General Purpose Pin directions */
 #define	TULIP_GP_SMC_9332_OK10		0x00000080	/* 10 Mb/sec Signal Detect gep<7> */
@@ -367,7 +379,7 @@ typedef struct {
 #define	TULIP_GP_DE500_FORCE_100	0x00000001L
 
 /*
- * These are the definitions used for the Cogent EM100
+ * These are the defintitions used for the Cogent EM100
  * 21140 board.
  */
 #define	TULIP_GP_EM100_PINS		0x0000003F	/* General Purpose Pin directions */
@@ -380,7 +392,7 @@ typedef struct {
 
 
 /*
- * These are the definitions used for the Znyx ZX342
+ * These are the defintitions used for the Znyx ZX342
  * 10/100 board
  */
 #define	TULIP_OUI_ZNYX_0		0x00
@@ -522,6 +534,17 @@ typedef struct {
 #define	PHYCTL_ISOLATE		0x0400
 #define	PHYCTL_AUTONEG_RESTART	0x0200
 #define	PHYCTL_FULL_DUPLEX	0x0100
+
+
+#define MII_RD          0x00040000
+#define MII_WR          0x00000000
+#define MII_DIN         0x00080000
+#define MII_DOUT        0x00020000
+#define MII_DOUTON      MII_DOUT
+#define MII_DOUTOFF     MII_DOUT
+#define MII_CLK		0x00010000
+#define MII_CLKON       MII_CLK
+#define MII_CLKOFF      MII_CLK
 
 /*
  * Definitions for the DE425.

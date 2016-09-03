@@ -1,4 +1,4 @@
-/*	$OpenBSD: apecsvar.h,v 1.10 2006/03/16 22:32:44 miod Exp $	*/
+/*	$OpenBSD: apecsvar.h,v 1.6 1997/01/24 19:57:35 niklas Exp $	*/
 /*	$NetBSD: apecsvar.h,v 1.5 1996/11/25 03:49:36 cgd Exp $	*/
 
 /*
@@ -30,7 +30,6 @@
 
 #include <dev/isa/isavar.h>
 #include <dev/pci/pcivar.h>
-#include <alpha/pci/pci_sgmap_pte64.h>
 
 /*
  * An APECS chipset's configuration.
@@ -45,13 +44,8 @@ struct apecs_config {
 	int	ac_epic_pass2;
 	int	ac_memwidth;
 
-	struct alpha_bus_space ac_iot, ac_memt;
+	bus_space_tag_t ac_iot, ac_memt;
 	struct alpha_pci_chipset ac_pc;
-
-	struct alpha_bus_dma_tag ac_dmat_direct;
-	struct alpha_bus_dma_tag ac_dmat_sgmap;
-
-	struct alpha_sgmap ac_sgmap;
 
 	u_int32_t ac_haxr1, ac_haxr2;
 
@@ -59,9 +53,14 @@ struct apecs_config {
 	int	ac_mallocsafe;
 };
 
-void	apecs_init(struct apecs_config *, int);
-void	apecs_pci_init(pci_chipset_tag_t, void *);
-void	apecs_dma_init(struct apecs_config *);
+struct apecs_softc {
+	struct	device sc_dev;
 
-void apecs_bus_io_init(bus_space_tag_t, void *);
-void apecs_bus_mem_init(bus_space_tag_t, void *);
+	struct	apecs_config *sc_acp;
+};
+
+void	apecs_init __P((struct apecs_config *, int));
+void	apecs_pci_init __P((pci_chipset_tag_t, void *));
+
+bus_space_tag_t apecs_bus_io_init __P((void *));
+bus_space_tag_t apecs_bus_mem_init __P((void *));

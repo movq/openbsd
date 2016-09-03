@@ -1,4 +1,4 @@
-/*	$OpenBSD: ch.c,v 1.52 2016/03/12 15:16:04 krw Exp $	*/
+/*	$OpenBSD: ch.c,v 1.8 1998/03/22 20:19:59 tholo Exp $	*/
 /*	$NetBSD: ch.c,v 1.26 1997/02/21 22:06:52 thorpej Exp $	*/
 
 /*
@@ -41,10 +41,12 @@
 #include <sys/systm.h>
 #include <sys/errno.h>
 #include <sys/ioctl.h>
-#include <sys/chio.h>
+#include <sys/buf.h>
+#include <sys/proc.h>
+#include <sys/user.h>
+#include <sys/chio.h> 
 #include <sys/device.h>
 #include <sys/malloc.h>
-#include <sys/pool.h>
 #include <sys/conf.h>
 #include <sys/fcntl.h>
 
@@ -84,7 +86,7 @@ struct ch_softc {
 	/*
 	 * Quirks; see below.
 	 */
-	int		sc_settledelay; /* delay for settle */
+	int		sc_settledelay;	/* delay for settle */
 
 };
 
@@ -92,8 +94,8 @@ struct ch_softc {
 #define CHF_ROTATE	0x01		/* picker can rotate */
 
 /* Autoconfiguration glue */
-int	chmatch(struct device *, void *, void *);
-void	chattach(struct device *, struct device *, void *);
+int	chmatch __P((struct device *, void *, void *));
+void	chattach __P((struct device *, struct device *, void *));
 
 struct cfattach ch_ca = {
 	sizeof(struct ch_softc), chmatch, chattach
@@ -103,20 +105,23 @@ struct cfdriver ch_cd = {
 	NULL, "ch", DV_DULL
 };
 
-const struct scsi_inquiry_pattern ch_patterns[] = {
+struct scsi_inquiry_pattern ch_patterns[] = {
 	{T_CHANGER, T_REMOV,
 	 "",		"",		""},
 };
 
-int	ch_move(struct ch_softc *, struct changer_move *);
-int	ch_exchange(struct ch_softc *, struct changer_exchange *);
-int	ch_position(struct ch_softc *, struct changer_position *);
-int	ch_usergetelemstatus(struct ch_softc *,
-    struct changer_element_status_request *);
-int	ch_getelemstatus(struct ch_softc *, int, int, caddr_t, size_t, int);
-int	ch_get_params(struct ch_softc *, int);
-int	ch_interpret_sense(struct scsi_xfer *xs);
-void	ch_get_quirks(struct ch_softc *, struct scsi_inquiry_data *);
+/* SCSI glue */
+struct scsi_device ch_switch = {
+	NULL, NULL, NULL, NULL
+};
+
+int	ch_move __P((struct ch_softc *, struct changer_move *));
+int	ch_exchange __P((struct ch_softc *, struct changer_exchange *));
+int	ch_position __P((struct ch_softc *, struct changer_position *));
+int	ch_usergetelemstatus __P((struct ch_softc *, int, u_int8_t *));
+int	ch_getelemstatus __P((struct ch_softc *, int, int, caddr_t, size_t));
+int	ch_get_params __P((struct ch_softc *, int));
+void	ch_get_quirks __P((struct ch_softc *, struct scsi_inquiry_data *));
 
 /*
  * SCSI changer quirks.
@@ -133,46 +138,91 @@ struct chquirk chquirks[] = {
 };
 
 int
-chmatch(struct device *parent, void *match, void *aux)
+chmatch(parent, match, aux)
+	struct device *parent;
+	void *match, *aux;
 {
-	struct scsi_attach_args *sa = aux;
+	struct scsibus_attach_args *sa = aux;
 	int priority;
 
 	(void)scsi_inqmatch(sa->sa_inqbuf,
-	    ch_patterns, nitems(ch_patterns),
+	    (caddr_t)ch_patterns, sizeof(ch_patterns)/sizeof(ch_patterns[0]),
 	    sizeof(ch_patterns[0]), &priority);
 
 	return (priority);
 }
 
 void
-chattach(struct device *parent, struct device *self, void *aux)
+chattach(parent, self, aux)
+	struct device *parent, *self;
+	void *aux;
 {
 	struct ch_softc *sc = (struct ch_softc *)self;
-	struct scsi_attach_args *sa = aux;
+	struct scsibus_attach_args *sa = aux;
 	struct scsi_link *link = sa->sa_sc_link;
 
 	/* Glue into the SCSI bus */
 	sc->sc_link = link;
-	link->interpret_sense = ch_interpret_sense;
+	link->device = &ch_switch;
 	link->device_softc = sc;
 	link->openings = 1;
 
 	printf("\n");
 
 	/*
-	 * Store our our device's quirks.
+	 * Find out our device's quirks.
 	 */
 	ch_get_quirks(sc, sa->sa_inqbuf);
 
+	/*
+	 * Some changers require a long time to settle out, to do
+	 * tape inventory, for instance.
+	 */
+	if (sc->sc_settledelay) {
+		printf("%s: waiting %d seconds for changer to settle...\n",
+		    sc->sc_dev.dv_xname, sc->sc_settledelay);
+		delay(1000000 * sc->sc_settledelay);
+	}
+
+	/*
+	 * Get information about the device.  Note we can't use
+	 * interrupts yet.
+	 */
+	if (ch_get_params(sc, SCSI_AUTOCONF))
+		printf("%s: offline\n", sc->sc_dev.dv_xname);
+	else {
+#define PLURAL(c)	(c) == 1 ? "" : "s"
+		printf("%s: %d slot%s, %d drive%s, %d picker%s, %d portal%s\n",
+		    sc->sc_dev.dv_xname,
+		    sc->sc_counts[CHET_ST], PLURAL(sc->sc_counts[CHET_ST]),
+		    sc->sc_counts[CHET_DT], PLURAL(sc->sc_counts[CHET_DT]),
+		    sc->sc_counts[CHET_MT], PLURAL(sc->sc_counts[CHET_MT]),
+		    sc->sc_counts[CHET_IE], PLURAL(sc->sc_counts[CHET_IE]));
+#undef PLURAL
+#ifdef CHANGER_DEBUG
+		printf("%s: move mask: 0x%x 0x%x 0x%x 0x%x\n",
+		    sc->sc_dev.dv_xname,
+		    sc->sc_movemask[CHET_MT], sc->sc_movemask[CHET_ST],
+		    sc->sc_movemask[CHET_IE], sc->sc_movemask[CHET_DT]);
+		printf("%s: exchange mask: 0x%x 0x%x 0x%x 0x%x\n",
+		    sc->sc_dev.dv_xname,
+		    sc->sc_exchangemask[CHET_MT], sc->sc_exchangemask[CHET_ST],
+		    sc->sc_exchangemask[CHET_IE], sc->sc_exchangemask[CHET_DT]);
+#endif /* CHANGER_DEBUG */
+	}
+
+	/* Default the current picker. */
+	sc->sc_picker = sc->sc_firsts[CHET_MT];
 }
 
 int
-chopen(dev_t dev, int flags, int fmt, struct proc *p)
+chopen(dev, flags, fmt, p)
+	dev_t dev;
+	int flags, fmt;
+	struct proc *p;
 {
 	struct ch_softc *sc;
-	int oldcounts[4];
-	int i, unit, error = 0;
+	int unit, error = 0;
 
 	unit = CHUNIT(dev);
 	if ((unit >= ch_cd.cd_ndevs) ||
@@ -188,55 +238,20 @@ chopen(dev_t dev, int flags, int fmt, struct proc *p)
 	sc->sc_link->flags |= SDEV_OPEN;
 
 	/*
-	 * Absorb any unit attention errors. We must notice
-	 * "Not ready" errors as a changer will report "In the
-	 * process of getting ready" any time it must rescan
-	 * itself to determine the state of the changer.
+	 * Absorb any unit attention errors.  Ignore "not ready"
+	 * since this might occur if e.g. a tape isn't actually
+	 * loaded in the drive.
 	 */
-	error = scsi_test_unit_ready(sc->sc_link, TEST_READY_RETRIES,
-	    SCSI_IGNORE_ILLEGAL_REQUEST | SCSI_IGNORE_MEDIA_CHANGE);
+	error = scsi_test_unit_ready(sc->sc_link,
+	    SCSI_IGNORE_NOT_READY|SCSI_IGNORE_MEDIA_CHANGE);
 	if (error)
 		goto bad;
 
 	/*
-	 * Get information about the device. Save old information
-	 * so we can decide whether to be verbose about new parameters.
+	 * Make sure our parameters are up to date.
 	 */
-	for (i = 0; i < 4; i++) {
-		oldcounts[i] = sc->sc_counts[i];
-	}
-	error = ch_get_params(sc, scsi_autoconf);
-	if (error)
+	if ((error = ch_get_params(sc, 0)) != 0)
 		goto bad;
-
-	for (i = 0; i < 4; i++) {
-		if (oldcounts[i] != sc->sc_counts[i]) {
-			break;
-		}
-	}
-	if (i < 4) {
-#ifdef CHANGER_DEBUG
-#define PLURAL(c)	(c) == 1 ? "" : "s"
-		printf("%s: %d slot%s, %d drive%s, %d picker%s, %d portal%s\n",
-		    sc->sc_dev.dv_xname,
-		    sc->sc_counts[CHET_ST], PLURAL(sc->sc_counts[CHET_ST]),
-		    sc->sc_counts[CHET_DT], PLURAL(sc->sc_counts[CHET_DT]),
-		    sc->sc_counts[CHET_MT], PLURAL(sc->sc_counts[CHET_MT]),
-		    sc->sc_counts[CHET_IE], PLURAL(sc->sc_counts[CHET_IE]));
-#undef PLURAL
-		printf("%s: move mask: 0x%x 0x%x 0x%x 0x%x\n",
-		    sc->sc_dev.dv_xname,
-		    sc->sc_movemask[CHET_MT], sc->sc_movemask[CHET_ST],
-		    sc->sc_movemask[CHET_IE], sc->sc_movemask[CHET_DT]);
-		printf("%s: exchange mask: 0x%x 0x%x 0x%x 0x%x\n",
-		    sc->sc_dev.dv_xname,
-		    sc->sc_exchangemask[CHET_MT], sc->sc_exchangemask[CHET_ST],
-		    sc->sc_exchangemask[CHET_IE], sc->sc_exchangemask[CHET_DT]);
-#endif /* CHANGER_DEBUG */
-	}
-
-	/* Default the current picker. */
-	sc->sc_picker = sc->sc_firsts[CHET_MT];
 
 	return (0);
 
@@ -246,7 +261,10 @@ chopen(dev_t dev, int flags, int fmt, struct proc *p)
 }
 
 int
-chclose(dev_t dev, int flags, int fmt, struct proc *p)
+chclose(dev, flags, fmt, p)
+	dev_t dev;
+	int flags, fmt;
+	struct proc *p;
 {
 	struct ch_softc *sc = ch_cd.cd_devs[CHUNIT(dev)];
 
@@ -255,7 +273,12 @@ chclose(dev_t dev, int flags, int fmt, struct proc *p)
 }
 
 int
-chioctl(dev_t dev, u_long cmd, caddr_t data, int flags, struct proc *p)
+chioctl(dev, cmd, data, flags, p)
+	dev_t dev;
+	u_long cmd;
+	caddr_t data;
+	int flags;
+	struct proc *p;
 {
 	struct ch_softc *sc = ch_cd.cd_devs[CHUNIT(dev)];
 	int error = 0;
@@ -311,16 +334,17 @@ chioctl(dev_t dev, u_long cmd, caddr_t data, int flags, struct proc *p)
 		break;		}
 
 	case CHIOGSTATUS:	{
-		struct changer_element_status_request *cesr =
-		    (struct changer_element_status_request *)data;
+		struct changer_element_status *ces =
+		    (struct changer_element_status *)data;
 
-		error = ch_usergetelemstatus(sc, cesr);
+		error = ch_usergetelemstatus(sc, ces->ces_type, ces->ces_data);
 		break;		}
 
 	/* Implement prevent/allow? */
 
 	default:
-		error = scsi_do_ioctl(sc->sc_link, cmd, data, flags);
+		error = scsi_do_safeioctl(sc->sc_link, dev, cmd, data,
+		    flags, p);
 		break;
 	}
 
@@ -328,11 +352,11 @@ chioctl(dev_t dev, u_long cmd, caddr_t data, int flags, struct proc *p)
 }
 
 int
-ch_move(struct ch_softc *sc, struct changer_move *cm)
+ch_move(sc, cm)
+	struct ch_softc *sc;
+	struct changer_move *cm;
 {
-	struct scsi_move_medium *cmd;
-	struct scsi_xfer *xs;
-	int error;
+	struct scsi_move_medium cmd;
 	u_int16_t fromelem, toelem;
 
 	/*
@@ -359,33 +383,27 @@ ch_move(struct ch_softc *sc, struct changer_move *cm)
 	/*
 	 * Build the SCSI command.
 	 */
-	xs = scsi_xs_get(sc->sc_link, 0);
-	if (xs == NULL)
-		return (ENOMEM);
-	xs->cmdlen = sizeof(*cmd);
-	xs->retries = CHRETRIES;
-	xs->timeout = 100000;
-
-	cmd = (struct scsi_move_medium *)xs->cmd;
-	cmd->opcode = MOVE_MEDIUM;
-	_lto2b(sc->sc_picker, cmd->tea);
-	_lto2b(fromelem, cmd->src);
-	_lto2b(toelem, cmd->dst);
+	bzero(&cmd, sizeof(cmd));
+	cmd.opcode = MOVE_MEDIUM;
+	_lto2b(sc->sc_picker, cmd.tea);
+	_lto2b(fromelem, cmd.src);
+	_lto2b(toelem, cmd.dst);
 	if (cm->cm_flags & CM_INVERT)
-		cmd->flags |= MOVE_MEDIUM_INVERT;
+		cmd.flags |= MOVE_MEDIUM_INVERT;
 
-	error = scsi_xs_sync(xs);
-	scsi_xs_put(xs);
-
-	return (error);
+	/*
+	 * Send command to changer.
+	 */
+	return (scsi_scsi_cmd(sc->sc_link, (struct scsi_generic *)&cmd,
+	    sizeof(cmd), NULL, 0, CHRETRIES, 100000, NULL, 0));
 }
 
 int
-ch_exchange(struct ch_softc *sc, struct changer_exchange *ce)
+ch_exchange(sc, ce)
+	struct ch_softc *sc;
+	struct changer_exchange *ce;
 {
-	struct scsi_exchange_medium *cmd;
-	struct scsi_xfer *xs;
-	int error;
+	struct scsi_exchange_medium cmd;
 	u_int16_t src, dst1, dst2;
 
 	/*
@@ -403,9 +421,9 @@ ch_exchange(struct ch_softc *sc, struct changer_exchange *ce)
 	 * Check the request against the changer's capabilities.
 	 */
 	if (((sc->sc_exchangemask[ce->ce_srctype] &
-	    (1 << ce->ce_fdsttype)) == 0) ||
+	     (1 << ce->ce_fdsttype)) == 0) ||
 	    ((sc->sc_exchangemask[ce->ce_fdsttype] &
-	    (1 << ce->ce_sdsttype)) == 0))
+	     (1 << ce->ce_sdsttype)) == 0))
 		return (EINVAL);
 
 	/*
@@ -418,36 +436,30 @@ ch_exchange(struct ch_softc *sc, struct changer_exchange *ce)
 	/*
 	 * Build the SCSI command.
 	 */
-	xs = scsi_xs_get(sc->sc_link, 0);
-	if (xs == NULL)
-		return (ENOMEM);
-	xs->cmdlen = sizeof(*cmd);
-	xs->retries = CHRETRIES;
-	xs->timeout = 100000;
-
-	cmd = (struct scsi_exchange_medium *)xs->cmd;
-	cmd->opcode = EXCHANGE_MEDIUM;
-	_lto2b(sc->sc_picker, cmd->tea);
-	_lto2b(src, cmd->src);
-	_lto2b(dst1, cmd->fdst);
-	_lto2b(dst2, cmd->sdst);
+	bzero(&cmd, sizeof(cmd));
+	cmd.opcode = EXCHANGE_MEDIUM;
+	_lto2b(sc->sc_picker, cmd.tea);
+	_lto2b(src, cmd.src);
+	_lto2b(dst1, cmd.fdst);
+	_lto2b(dst2, cmd.sdst);
 	if (ce->ce_flags & CE_INVERT1)
-		cmd->flags |= EXCHANGE_MEDIUM_INV1;
+		cmd.flags |= EXCHANGE_MEDIUM_INV1;
 	if (ce->ce_flags & CE_INVERT2)
-		cmd->flags |= EXCHANGE_MEDIUM_INV2;
+		cmd.flags |= EXCHANGE_MEDIUM_INV2;
 
-	error = scsi_xs_sync(xs);
-	scsi_xs_put(xs);
-
-	return (error);
+	/*
+	 * Send command to changer.
+	 */
+	return (scsi_scsi_cmd(sc->sc_link, (struct scsi_generic *)&cmd,
+	    sizeof(cmd), NULL, 0, CHRETRIES, 100000, NULL, 0));
 }
 
 int
-ch_position(struct ch_softc *sc, struct changer_position *cp)
+ch_position(sc, cp)
+	struct ch_softc *sc;
+	struct changer_position *cp;
 {
-	struct scsi_position_to_element *cmd;
-	struct scsi_xfer *xs;
-	int error;
+	struct scsi_position_to_element cmd;
 	u_int16_t dst;
 
 	/*
@@ -466,83 +478,38 @@ ch_position(struct ch_softc *sc, struct changer_position *cp)
 	/*
 	 * Build the SCSI command.
 	 */
-	xs = scsi_xs_get(sc->sc_link, 0);
-	if (xs == NULL)
-		return (ENOMEM);
-	xs->cmdlen = sizeof(*cmd);
-	xs->retries = CHRETRIES;
-	xs->timeout = 100000;
-
-	cmd = (struct scsi_position_to_element *)xs->cmd;
-	cmd->opcode = POSITION_TO_ELEMENT;
-	_lto2b(sc->sc_picker, cmd->tea);
-	_lto2b(dst, cmd->dst);
+	bzero(&cmd, sizeof(cmd));
+	cmd.opcode = POSITION_TO_ELEMENT;
+	_lto2b(sc->sc_picker, cmd.tea);
+	_lto2b(dst, cmd.dst);
 	if (cp->cp_flags & CP_INVERT)
-		cmd->flags |= POSITION_TO_ELEMENT_INVERT;
+		cmd.flags |= POSITION_TO_ELEMENT_INVERT;
 
-	error = scsi_xs_sync(xs);
-	scsi_xs_put(xs);
-
-	return (error);
-}
-
-/*
- * Copy a volume tag to a volume_tag struct, converting SCSI byte order
- * to host native byte order in the volume serial number.  The volume
- * label as returned by the changer is transferred to user mode as
- * nul-terminated string.  Volume labels are truncated at the first
- * space, as suggested by SCSI-2.
- */
-static  void
-copy_voltag(struct changer_voltag *uvoltag, struct volume_tag *voltag)
-{
-	int i;
-
-	for (i=0; i<CH_VOLTAG_MAXLEN; i++) {
-		char c = voltag->vif[i];
-		if (c && c != ' ')
-			uvoltag->cv_volid[i] = c;
-		else
-			break;
-	}
-	uvoltag->cv_volid[i] = '\0';
-	uvoltag->cv_serial = _2btol(voltag->vsn);
-}
-
-/*
- * Copy an an element status descriptor to a user-mode
- * changer_element_status structure.
- */
-static void
-copy_element_status(int flags,	struct read_element_status_descriptor *desc,
-    struct changer_element_status *ces)
-{
-	ces->ces_flags = desc->flags1;
-
-	if (flags & READ_ELEMENT_STATUS_PVOLTAG)
-		copy_voltag(&ces->ces_pvoltag, &desc->pvoltag);
-	if (flags & READ_ELEMENT_STATUS_AVOLTAG)
-		copy_voltag(&ces->ces_avoltag, &desc->avoltag);
+	/*
+	 * Send command to changer.
+	 */
+	return (scsi_scsi_cmd(sc->sc_link, (struct scsi_generic *)&cmd,
+	    sizeof(cmd), NULL, 0, CHRETRIES, 100000, NULL, 0));
 }
 
 /*
  * Perform a READ ELEMENT STATUS on behalf of the user, and return to
  * the user only the data the user is interested in (i.e. an array of
- * changer_element_status structures)
+ * flags bytes).
  */
 int
-ch_usergetelemstatus(struct ch_softc *sc,
-    struct changer_element_status_request *cesr)
+ch_usergetelemstatus(sc, chet, uptr)
+	struct ch_softc *sc;
+	int chet;
+	u_int8_t *uptr;
 {
-	struct changer_element_status *user_data = NULL;
 	struct read_element_status_header *st_hdr;
 	struct read_element_status_page_header *pg_hdr;
-	caddr_t desc;
+	struct read_element_status_descriptor *desc;
 	caddr_t data = NULL;
-	size_t size, desclen, udsize;
-	int chet = cesr->cesr_type;
+	size_t size, desclen;
 	int avail, i, error = 0;
-	int want_voltags = (cesr->cesr_flags & CESR_VOLTAGS) ? 1 : 0;
+	u_int8_t *user_data = NULL;
 
 	/*
 	 * If there are no elements of the requested type in the changer,
@@ -557,29 +524,28 @@ ch_usergetelemstatus(struct ch_softc *sc,
 	 * we can allocate enough storage for all of them.  We assume
 	 * that the first one can fit into 1k.
 	 */
-	size = 1024;
-	data = dma_alloc(size, PR_WAITOK);
-	error = ch_getelemstatus(sc, sc->sc_firsts[chet], 1, data, size,
-	    want_voltags);
+	data = (caddr_t)malloc(1024, M_DEVBUF, M_WAITOK);
+	error = ch_getelemstatus(sc, sc->sc_firsts[chet], 1, data, 1024);
 	if (error)
 		goto done;
 
 	st_hdr = (struct read_element_status_header *)data;
-	pg_hdr = (struct read_element_status_page_header *) (st_hdr + 1);
+	pg_hdr = (struct read_element_status_page_header *)((u_long)st_hdr +
+	    sizeof(struct read_element_status_header));
 	desclen = _2btol(pg_hdr->edl);
 
-	dma_free(data, size);
+	size = sizeof(struct read_element_status_header) +
+	    sizeof(struct read_element_status_page_header) +
+	    (desclen * sc->sc_counts[chet]);
 
 	/*
 	 * Reallocate storage for descriptors and get them from the
 	 * device.
 	 */
-	size = sizeof(struct read_element_status_header) +
-	    sizeof(struct read_element_status_page_header) +
-	    (desclen * sc->sc_counts[chet]);
-	data = dma_alloc(size, PR_WAITOK);
+	free(data, M_DEVBUF);
+	data = (caddr_t)malloc(size, M_DEVBUF, M_WAITOK);
 	error = ch_getelemstatus(sc, sc->sc_firsts[chet],
-	    sc->sc_counts[chet], data, size, want_voltags);
+	    sc->sc_counts[chet], data, size);
 	if (error)
 		goto done;
 
@@ -587,207 +553,154 @@ ch_usergetelemstatus(struct ch_softc *sc,
 	 * Fill in the user status array.
 	 */
 	st_hdr = (struct read_element_status_header *)data;
-	pg_hdr = (struct read_element_status_page_header *) (st_hdr + 1);
-
 	avail = _2btol(st_hdr->count);
-	if (avail != sc->sc_counts[chet]) {
-		error = EINVAL;
-		goto done;
-	}
+	if (avail != sc->sc_counts[chet])
+		printf("%s: warning, READ ELEMENT STATUS avail != count\n",
+		    sc->sc_dev.dv_xname);
 
-	user_data = mallocarray(avail, sizeof(struct changer_element_status),
-	    M_DEVBUF, M_WAITOK | M_ZERO);
-	udsize = avail * sizeof(struct changer_element_status);
+	user_data = (u_int8_t *)malloc(avail, M_DEVBUF, M_WAITOK);
 
-	desc = (caddr_t)(pg_hdr + 1);
+	desc = (struct read_element_status_descriptor *)((u_long)data +
+	    sizeof(struct read_element_status_header) +
+	    sizeof(struct read_element_status_page_header));
 	for (i = 0; i < avail; ++i) {
-		struct changer_element_status *ces = &(user_data[i]);
-		copy_element_status(pg_hdr->flags,
-		    (struct read_element_status_descriptor *)desc, ces);
-		desc += desclen;
+		user_data[i] = desc->flags1;
+		(u_long)desc += desclen;
 	}
 
-	/* Copy array out to userspace. */
-	error = copyout(user_data, cesr->cesr_data, udsize);
+	/* Copy flags array out to userspace. */
+	error = copyout(user_data, uptr, avail);
 
  done:
 	if (data != NULL)
-		dma_free(data, size);
+		free(data, M_DEVBUF);
 	if (user_data != NULL)
-		free(user_data, M_DEVBUF, udsize);
+		free(user_data, M_DEVBUF);
 	return (error);
 }
 
 int
-ch_getelemstatus(struct ch_softc *sc, int first, int count, caddr_t data,
-    size_t datalen, int voltag)
+ch_getelemstatus(sc, first, count, data, datalen)
+	struct ch_softc *sc;
+	int first, count;
+	caddr_t data;
+	size_t datalen;
 {
-	struct scsi_read_element_status *cmd;
-	struct scsi_xfer *xs;
-	int error;
+	struct scsi_read_element_status cmd;
 
 	/*
 	 * Build SCSI command.
 	 */
-	xs = scsi_xs_get(sc->sc_link, SCSI_DATA_IN);
-	if (xs == NULL)
-		return (ENOMEM);
-	xs->cmdlen = sizeof(*cmd);
-	xs->data = data;
-	xs->datalen = datalen;
-	xs->retries = CHRETRIES;
-	xs->timeout = 100000;
+	bzero(&cmd, sizeof(cmd));
+	cmd.opcode = READ_ELEMENT_STATUS;
+	_lto2b(first, cmd.sea);
+	_lto2b(count, cmd.count);
+	_lto3b(datalen, cmd.len);
 
-	cmd = (struct scsi_read_element_status *)xs->cmd;
-	cmd->opcode = READ_ELEMENT_STATUS;
-	_lto2b(first, cmd->sea);
-	_lto2b(count, cmd->count);
-	_lto3b(datalen, cmd->len);
-	if (voltag)
-		cmd->byte2 |= READ_ELEMENT_STATUS_VOLTAG;
-
-	error = scsi_xs_sync(xs);
-	scsi_xs_put(xs);
-
-	return (error);
+	/*
+	 * Send command to changer.
+	 */
+	return (scsi_scsi_cmd(sc->sc_link, (struct scsi_generic *)&cmd,
+	    sizeof(cmd), (u_char *)data, datalen, CHRETRIES, 100000, NULL, SCSI_DATA_IN));
 }
+
 
 /*
  * Ask the device about itself and fill in the parameters in our
  * softc.
  */
 int
-ch_get_params(struct ch_softc *sc, int flags)
+ch_get_params(sc, scsiflags)
+	struct ch_softc *sc;
+	int scsiflags;
 {
-	union scsi_mode_sense_buf *data;
-	struct page_element_address_assignment *ea;
-	struct page_device_capabilities *cap;
+	struct scsi_mode_sense cmd;
+	struct scsi_mode_sense_data {
+		struct scsi_mode_header header;
+		union {
+			struct page_element_address_assignment ea;
+			struct page_transport_geometry_parameters tg;
+			struct page_device_capabilities cap;
+		} pages;
+	} sense_data;
 	int error, from;
 	u_int8_t *moves, *exchanges;
 
-	data = dma_alloc(sizeof(*data), PR_NOWAIT);
-	if (data == NULL)
-		return (ENOMEM);
-
 	/*
-	 * Grab info from the element address assignment page (0x1d).
+	 * Grab info from the element address assignment page.
 	 */
-	error = scsi_do_mode_sense(sc->sc_link, 0x1d, data,
-	    (void **)&ea, NULL, NULL, NULL, sizeof(*ea), flags, NULL);
-	if (error == 0 && ea == NULL)
-		error = EIO;
-	if (error != 0) {
-#ifdef CHANGER_DEBUG
+	bzero(&cmd, sizeof(cmd));
+	bzero(&sense_data, sizeof(sense_data));
+	cmd.opcode = MODE_SENSE;
+	cmd.byte2 |= 0x08;	/* disable block descriptors */
+	cmd.page = 0x1d;
+	cmd.length = (sizeof(sense_data) & 0xff);
+	error = scsi_scsi_cmd(sc->sc_link, (struct scsi_generic *)&cmd,
+	    sizeof(cmd), (u_char *)&sense_data, sizeof(sense_data), CHRETRIES,
+	    6000, NULL, scsiflags | SCSI_DATA_IN);
+	if (error) {
 		printf("%s: could not sense element address page\n",
 		    sc->sc_dev.dv_xname);
-#endif
-		dma_free(data, sizeof(*data));
 		return (error);
 	}
 
-	sc->sc_firsts[CHET_MT] = _2btol(ea->mtea);
-	sc->sc_counts[CHET_MT] = _2btol(ea->nmte);
-	sc->sc_firsts[CHET_ST] = _2btol(ea->fsea);
-	sc->sc_counts[CHET_ST] = _2btol(ea->nse);
-	sc->sc_firsts[CHET_IE] = _2btol(ea->fieea);
-	sc->sc_counts[CHET_IE] = _2btol(ea->niee);
-	sc->sc_firsts[CHET_DT] = _2btol(ea->fdtea);
-	sc->sc_counts[CHET_DT] = _2btol(ea->ndte);
+	sc->sc_firsts[CHET_MT] = _2btol(sense_data.pages.ea.mtea);
+	sc->sc_counts[CHET_MT] = _2btol(sense_data.pages.ea.nmte);
+	sc->sc_firsts[CHET_ST] = _2btol(sense_data.pages.ea.fsea);
+	sc->sc_counts[CHET_ST] = _2btol(sense_data.pages.ea.nse);
+	sc->sc_firsts[CHET_IE] = _2btol(sense_data.pages.ea.fieea);
+	sc->sc_counts[CHET_IE] = _2btol(sense_data.pages.ea.niee);
+	sc->sc_firsts[CHET_DT] = _2btol(sense_data.pages.ea.fdtea);
+	sc->sc_counts[CHET_DT] = _2btol(sense_data.pages.ea.ndte);
 
-	/* XXX Ask for transport geometry page. */
+	/* XXX ask for page trasport geom */
 
 	/*
-	 * Grab info from the capabilities page (0x1f).
+	 * Grab info from the capabilities page.
 	 */
-	error = scsi_do_mode_sense(sc->sc_link, 0x1f, data,
-	    (void **)&cap, NULL, NULL, NULL, sizeof(*cap), flags, NULL);
-	if (cap == NULL)
-		error = EIO;
-	if (error != 0) {
-#ifdef CHANGER_DEBUG
+	bzero(&cmd, sizeof(cmd));
+	bzero(&sense_data, sizeof(sense_data));
+	cmd.opcode = MODE_SENSE;
+	cmd.byte2 |= 0x08;	/* disable block descriptors */
+	cmd.page = 0x1f;
+	cmd.length = (sizeof(sense_data) & 0xff);
+	error = scsi_scsi_cmd(sc->sc_link, (struct scsi_generic *)&cmd,
+	    sizeof(cmd), (u_char *)&sense_data, sizeof(sense_data), CHRETRIES,
+	    6000, NULL, scsiflags | SCSI_DATA_IN);
+	if (error) {
 		printf("%s: could not sense capabilities page\n",
 		    sc->sc_dev.dv_xname);
-#endif
-		dma_free(data, sizeof(*data));
 		return (error);
 	}
 
 	bzero(sc->sc_movemask, sizeof(sc->sc_movemask));
 	bzero(sc->sc_exchangemask, sizeof(sc->sc_exchangemask));
-	moves = &cap->move_from_mt;
-	exchanges = &cap->exchange_with_mt;
+	moves = &sense_data.pages.cap.move_from_mt;
+	exchanges = &sense_data.pages.cap.exchange_with_mt;
 	for (from = CHET_MT; from <= CHET_DT; ++from) {
 		sc->sc_movemask[from] = moves[from];
 		sc->sc_exchangemask[from] = exchanges[from];
 	}
 
 	sc->sc_link->flags |= SDEV_MEDIA_LOADED;
-	dma_free(data, sizeof(*data));
 	return (0);
 }
 
 void
-ch_get_quirks(struct ch_softc *sc, struct scsi_inquiry_data *inqbuf)
+ch_get_quirks(sc, inqbuf)
+	struct ch_softc *sc;
+	struct scsi_inquiry_data *inqbuf;
 {
-	const struct chquirk *match;
+	struct chquirk *match;
 	int priority;
 
 	sc->sc_settledelay = 0;
 
-	match = (const struct chquirk *)scsi_inqmatch(inqbuf,
+	match = (struct chquirk *)scsi_inqmatch(inqbuf,
 	    (caddr_t)chquirks,
 	    sizeof(chquirks) / sizeof(chquirks[0]),
 	    sizeof(chquirks[0]), &priority);
 	if (priority != 0) {
 		sc->sc_settledelay = match->cq_settledelay;
-	}
-}
-
-/*
- * Look at the returned sense and act on the error and detirmine
- * The unix error number to pass back... (0 = report no error)
- *                            (-1 = continue processing)
- */
-int
-ch_interpret_sense(struct scsi_xfer *xs)
-{
-	struct scsi_sense_data *sense = &xs->sense;
-	struct scsi_link *link = xs->sc_link;
-	u_int8_t serr = sense->error_code & SSD_ERRCODE;
-	u_int8_t skey = sense->flags & SSD_KEY;
-
-	if (((link->flags & SDEV_OPEN) == 0) ||
-	    (serr != SSD_ERRCODE_CURRENT && serr != SSD_ERRCODE_DEFERRED))
-		return (scsi_interpret_sense(xs));
-
-	switch (skey) {
-
-	/*
-	 * We do custom processing in ch for the unit becoming ready case.
-	 * in this case we do not allow xs->retries to be decremented
-	 * only on the "Unit Becoming Ready" case. This is because tape
-	 * changers report "Unit Becoming Ready" when they rescan their
-	 * state (i.e. when the door got opened) and can take a long time
-	 * for large units. Rather than having a massive timeout for
-	 * all operations (which would cause other problems) we allow
-	 * changers to wait (but be interruptable with Ctrl-C) forever
-	 * as long as they are reporting that they are becoming ready.
-	 * all other cases are handled as per the default.
-	 */
-	case SKEY_NOT_READY:
-		if ((xs->flags & SCSI_IGNORE_NOT_READY) != 0)
-			return (0);
-		switch (ASC_ASCQ(sense)) {
-		case SENSE_NOT_READY_BECOMING_READY:
-			SC_DEBUG(link, SDEV_DB1, ("not ready: busy (%#x)\n",
-			    sense->add_sense_code_qual));
-			/* don't count this as a retry */
-			xs->retries++;
-			return (scsi_delay(xs, 1));
-		default:
-			return (scsi_interpret_sense(xs));
-	}
-	default:
-		return (scsi_interpret_sense(xs));
 	}
 }

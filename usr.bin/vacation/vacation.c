@@ -1,4 +1,4 @@
-/*	$OpenBSD: vacation.c,v 1.37 2015/08/20 22:32:42 deraadt Exp $	*/
+/*	$OpenBSD: vacation.c,v 1.12 1999/06/03 20:20:26 marc Exp $	*/
 /*	$NetBSD: vacation.c,v 1.7 1995/04/29 05:58:27 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,18 +34,33 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1983, 1987, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)vacation.c	8.2 (Berkeley) 1/26/94";
+#endif
+static char rcsid[] = "$OpenBSD: vacation.c,v 1.12 1999/06/03 20:20:26 marc Exp $";
+#endif /* not lint */
+
 /*
 **  Vacation
 **  Copyright (c) 1983  Eric P. Allman
 **  Berkeley, California
 */
 
+#include <sys/param.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <pwd.h>
 #include <db.h>
 #include <time.h>
 #include <syslog.h>
+#include <tzfile.h>
 #include <errno.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -73,32 +92,32 @@ DB *db;
 char from[MAXLINE];
 char subj[MAXLINE];
 
-int junkmail(void);
-int nsearch(char *, char *);
-void readheaders(void);
-int recent(void);
-void sendmessage(char *);
-void setinterval(time_t);
-void setreply(void);
-void usage(void);
-
-#define	SECSPERDAY	(24 * 60 * 60)
+int junkmail __P((void));
+int nsearch __P((char *, char *));
+void readheaders __P((void));
+int recent __P((void));
+void sendmessage __P((char *));
+void setinterval __P((time_t));
+void setreply __P((void));
+void usage __P((void));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
-	int ch, iflag, flags;
 	struct passwd *pw;
-	time_t interval;
 	struct stat sb;
 	ALIAS *cur;
+	time_t interval;
+	int ch, iflag, flags;
 
 	opterr = iflag = 0;
 	interval = -1;
 	while ((ch = getopt(argc, argv, "a:Iir:")) != -1)
-		switch ((char)ch) {
+		switch((char)ch) {
 		case 'a':			/* alias */
-			if (!(cur = malloc(sizeof(ALIAS))))
+			if (!(cur = (ALIAS *)malloc((u_int)sizeof(ALIAS))))
 				break;
 			cur->name = optarg;
 			cur->next = names;
@@ -109,13 +128,15 @@ main(int argc, char *argv[])
 			iflag = 1;
 			break;
 		case 'r':
-			if (isdigit((unsigned char)*optarg)) {
+			if (isdigit(*optarg)) {
 				interval = atol(optarg) * SECSPERDAY;
 				if (interval < 0)
 					usage();
-			} else
-				interval = 0;	/* one time only */
+			}
+			else
+				interval = (time_t)LONG_MAX;	/* XXX */
 			break;
+		case '?':
 		default:
 			usage();
 		}
@@ -130,7 +151,8 @@ main(int argc, char *argv[])
 			    "no such user uid %u.", getuid());
 			exit(1);
 		}
-	} else if (!(pw = getpwnam(*argv))) {
+	}
+	else if (!(pw = getpwnam(*argv))) {
 		syslog(LOG_ERR, "no such user %s.", *argv);
 		exit(1);
 	}
@@ -147,7 +169,7 @@ main(int argc, char *argv[])
 		flags = O_CREAT|O_RDWR|O_TRUNC;
 	else
 		flags = O_CREAT|O_RDWR;
-
+		
 	db = dbopen(VDB, flags, S_IRUSR|S_IWUSR, DB_HASH, NULL);
 	if (!db) {
 		syslog(LOG_NOTICE, "%s: %m", VDB);
@@ -162,7 +184,7 @@ main(int argc, char *argv[])
 		exit(0);
 	}
 
-	if (!(cur = malloc(sizeof(ALIAS))))
+	if (!(cur = malloc((u_int)sizeof(ALIAS))))
 		exit(1);
 	cur->name = pw->pw_name;
 	cur->next = names;
@@ -173,7 +195,8 @@ main(int argc, char *argv[])
 		setreply();
 		(void)(db->close)(db);
 		sendmessage(pw->pw_name);
-	} else
+	}
+	else
 		(void)(db->close)(db);
 	exit(0);
 	/* NOTREACHED */
@@ -184,119 +207,90 @@ main(int argc, char *argv[])
  *	read mail headers
  */
 void
-readheaders(void)
+readheaders()
 {
-	char buf[MAXLINE], *p;
+	register ALIAS *cur;
+	register char *p;
 	int tome, cont;
-	ALIAS *cur;
+	char buf[MAXLINE];
 
 	cont = tome = 0;
 	while (fgets(buf, sizeof(buf), stdin) && *buf != '\n')
-		switch (*buf) {
-		case 'A':		/* "Auto-Submitted:" */
-		case 'a':
-			cont = 0;
-			if (strncasecmp(buf, "Auto-Submitted:", 15))
-				break;
-			for (p = buf + 15; isspace((unsigned char)*p); ++p)
-				;
-			/*
-			 * RFC 3834 section 2:
-			 * Automatic responses SHOULD NOT be issued in response
-			 * to any message which contains an Auto-Submitted
-			 * header where the field has any value other than "no".
-			 */
-			if ((p[0] == 'n' || p[0] == 'N') &&
-			    (p[1] == 'o' || p[1] == 'O')) {
-				for (p += 2; isspace((unsigned char)*p); ++p)
-					;
-				if (*p == '\0')
-					break;	/* Auto-Submitted: no */
-			}
-			exit(0);
+		switch(*buf) {
 		case 'F':		/* "From " */
-		case 'f':
 			cont = 0;
-			if (!strncasecmp(buf, "From ", 5)) {
+			if (!strncmp(buf, "From ", 5)) {
 				for (p = buf + 5; *p && *p != ' '; ++p)
 					;
 				*p = '\0';
-				(void)strlcpy(from, buf + 5, sizeof(from));
-				from[strcspn(from, "\n")] = '\0';
+				(void)strcpy(from, buf + 5);
+				if (p = strchr(from, '\n'))
+					*p = '\0';
 				if (junkmail())
 					exit(0);
 			}
 			break;
-		case 'L':		/* "List-Id:" */
-		case 'l':
-			cont = 0;
-			/*
-			 * If present (with any value), message is coming from a
-			 * mailing list, cf. RFC2919.
-			 */
-			if (strncasecmp(buf, "List-Id:", 8) == 0)
-				exit(0);
-			break;
 		case 'R':		/* "Return-Path:" */
-		case 'r':
 			cont = 0;
 			if (strncasecmp(buf, "Return-Path:",
-			    sizeof("Return-Path:")-1) ||
-			    (buf[12] != ' ' && buf[12] != '\t'))
+					sizeof("Return-Path:")-1) ||
+			    buf[12] != ' ' && buf[12] != '\t')
 				break;
-			for (p = buf + 12; isspace((unsigned char)*p); ++p)
+			for (p = buf + 12; *p && isspace(*p); ++p)
 				;
-			if (strlcpy(from, p, sizeof(from)) >= sizeof(from)) {
+			if (strlcpy(from, p, sizeof from ) > sizeof from) {
 				syslog(LOG_NOTICE,
-				    "Return-Path %s exceeds limits", p);
+				       "Return-Path %s exceeds limits", p);
 				exit(1);
 			}
-			from[strcspn(from, "\n")] = '\0';
+			if (p = strchr(from, '\n'))
+				*p = '\0';
 			if (junkmail())
 				exit(0);
 			break;
 		case 'P':		/* "Precedence:" */
-		case 'p':
 			cont = 0;
-			if (strncasecmp(buf, "Precedence:", 11))
+			if (strncasecmp(buf, "Precedence", 10) ||
+			    buf[10] != ':' && buf[10] != ' ' && buf[10] != '\t')
 				break;
-			for (p = buf + 11; isspace((unsigned char)*p); ++p)
-				;
+			if (!(p = strchr(buf, ':')))
+				break;
+			while (*++p && isspace(*p));
+			if (!*p)
+				break;
 			if (!strncasecmp(p, "junk", 4) ||
 			    !strncasecmp(p, "bulk", 4) ||
 			    !strncasecmp(p, "list", 4))
 				exit(0);
 			break;
 		case 'S':		/* Subject: */
-		case 's':
 			cont = 0;
 			if (strncasecmp(buf, "Subject:",
-			    sizeof("Subject:")-1) ||
-			    (buf[8] != ' ' && buf[8] != '\t'))
+					sizeof("Subject:")-1) ||
+			    buf[8] != ' ' && buf[8] != '\t')
 				break;
-			for (p = buf + 8; isspace((unsigned char)*p); ++p)
+			for (p = buf + 8; *p && isspace(*p); ++p)
 				;
-			if (strlcpy(subj, p, sizeof(subj)) >= sizeof(subj)) {
+			if (strlcpy(subj, p, sizeof subj ) > sizeof subj) {
 				syslog(LOG_NOTICE,
-				    "Subject %s exceeds limits", p);
+				       "Subject %s exceeds limits", p);
 				exit(1);
 			}
-			subj[strcspn(subj, "\n")] = '\0';
+			if (p = strchr(subj, '\n'))
+				*p = '\0';
 			break;
 		case 'C':		/* "Cc:" */
-		case 'c':
-			if (strncasecmp(buf, "Cc:", 3))
+			if (strncmp(buf, "Cc:", 3))
 				break;
 			cont = 1;
 			goto findme;
 		case 'T':		/* "To:" */
-		case 't':
-			if (strncasecmp(buf, "To:", 3))
+			if (strncmp(buf, "To:", 3))
 				break;
 			cont = 1;
 			goto findme;
 		default:
-			if (!isspace((unsigned char)*buf) || !cont || tome) {
+			if (!isspace(*buf) || !cont || tome) {
 				cont = 0;
 				break;
 			}
@@ -306,8 +300,7 @@ findme:			for (cur = names; !tome && cur; cur = cur->next)
 	if (!tome)
 		exit(0);
 	if (!*from) {
-		syslog(LOG_NOTICE,
-		    "no initial \"From\" or \"Return-Path\"line.");
+		syslog(LOG_NOTICE, "no initial \"From\" or \"Return-Path\"line.");
 		exit(1);
 	}
 }
@@ -317,12 +310,13 @@ findme:			for (cur = names; !tome && cur; cur = cur->next)
  *	do a nice, slow, search of a string for a substring.
  */
 int
-nsearch(char *name, char *str)
+nsearch(name, str)
+	register char *name, *str;
 {
-	int len;
+	register int len;
 
 	for (len = strlen(name); *str; ++str)
-		if (!strncasecmp(name, str, len))
+		if (*str == *name && !strncasecmp(name, str, len))
 			return(1);
 	return(0);
 }
@@ -332,23 +326,19 @@ nsearch(char *name, char *str)
  *	read the header and return if automagic/junk/bulk/list mail
  */
 int
-junkmail(void)
+junkmail()
 {
 	static struct ignore {
 		char	*name;
 		int	len;
 	} ignore[] = {
-		{ "-request", 8 },
-		{ "postmaster", 10 },
-		{ "uucp", 4 },
-		{ "mailer-daemon", 13 },
-		{ "mailer", 6 },
-		{ "-relay", 6 },
-		{ NULL, 0 }
+		"-request", 8,		"postmaster", 10,	"uucp", 4,
+		"mailer-daemon", 13,	"mailer", 6,		"-relay", 6,
+		NULL, NULL,
 	};
-	struct ignore *cur;
-	int len;
-	char *p;
+	register struct ignore *cur;
+	register int len;
+	register char *p;
 
 	/*
 	 * This is mildly amusing, and I'm not positive it's right; trying
@@ -357,16 +347,15 @@ junkmail(void)
 	 *
 	 * From site!site!SENDER%site.domain%site.domain@site.domain
 	 */
-	if (!(p = strchr(from, '%'))) {
+	if (!(p = strchr(from, '%')))
 		if (!(p = strchr(from, '@'))) {
-			if ((p = strrchr(from, '!')))
+			if (p = strrchr(from, '!'))
 				++p;
 			else
 				p = from;
 			for (; *p; ++p)
 				;
 		}
-	}
 	len = p - from;
 	for (cur = ignore; cur->name; ++cur)
 		if (len >= cur->len &&
@@ -383,16 +372,16 @@ junkmail(void)
  *	use bcopy for machines with alignment restrictions
  */
 int
-recent(void)
+recent()
 {
-	time_t then, next;
 	DBT key, data;
+	time_t then, next;
 
 	/* get interval time */
 	key.data = VIT;
 	key.size = sizeof(VIT);
 	if ((db->get)(db, &key, &data, 0))
-		next = SECSPERDAY * 7;
+		next = SECSPERDAY * DAYSPERWEEK;
 	else
 		bcopy(data.data, &next, sizeof(next));
 
@@ -401,7 +390,7 @@ recent(void)
 	key.size = strlen(from);
 	if (!(db->get)(db, &key, &data, 0)) {
 		bcopy(data.data, &then, sizeof(then));
-		if (next == 0 ||
+		if (next == (time_t)LONG_MAX ||			/* XXX */
 		    then + next > time(NULL))
 			return(1);
 	}
@@ -413,7 +402,8 @@ recent(void)
  *	store the reply interval
  */
 void
-setinterval(time_t interval)
+setinterval(interval)
+	time_t interval;
 {
 	DBT key, data;
 
@@ -429,7 +419,7 @@ setinterval(time_t interval)
  *	store that this user knows about the vacation.
  */
 void
-setreply(void)
+setreply()
 {
 	DBT key, data;
 	time_t now;
@@ -447,11 +437,13 @@ setreply(void)
  *	exec sendmail to send the vacation file to sender
  */
 void
-sendmessage(char *myname)
+sendmessage(myname)
+	char *myname;
 {
-	char buf[MAXLINE];
 	FILE *mfp, *sfp;
-	int pvect[2], i;
+	int i;
+	int pvect[2];
+	char buf[MAXLINE];
 
 	mfp = fopen(VMSG, "r");
 	if (mfp == NULL) {
@@ -473,24 +465,16 @@ sendmessage(char *myname)
 		close(pvect[1]);
 		close(fileno(mfp));
 		execl(_PATH_SENDMAIL, "sendmail", "-f", myname, "--",
-		    from, (char *)NULL);
+		    from, NULL);
 		syslog(LOG_ERR, "can't exec %s: %m", _PATH_SENDMAIL);
 		_exit(1);
 	}
 	close(pvect[0]);
 	sfp = fdopen(pvect[1], "w");
-	if (sfp == NULL) {
-		/* XXX could not fdopen; likely out of memory */
-		fclose(mfp);
-		close(pvect[1]);
-		return;
-	}
 	fprintf(sfp, "To: %s\n", from);
-	fputs("Auto-Submitted: auto-replied\n", sfp);
 	while (fgets(buf, sizeof buf, mfp)) {
 		char *s = strstr(buf, "$SUBJECT");
-
-		if (s) {
+		if ( s ) {
 			*s = 0;
 			fputs(buf, sfp);
 			fputs(subj, sfp);
@@ -504,7 +488,7 @@ sendmessage(char *myname)
 }
 
 void
-usage(void)
+usage()
 {
 	syslog(LOG_NOTICE, "uid %u: usage: vacation [-i] [-a alias] login",
 	    getuid());

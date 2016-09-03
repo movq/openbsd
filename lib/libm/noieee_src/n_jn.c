@@ -1,4 +1,3 @@
-/*	$OpenBSD: n_jn.c,v 1.7 2009/10/27 23:59:29 deraadt Exp $	*/
 /*	$NetBSD: n_jn.c,v 1.1 1995/10/10 23:36:54 ragge Exp $	*/
 /*-
  * Copyright (c) 1992, 1993
@@ -12,7 +11,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,6 +32,10 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char sccsid[] = "@(#)jn.c	8.2 (Berkeley) 11/30/93";
+#endif /* not lint */
+
 /*
  * 16 December 1992
  * Minor modifications by Peter McIlroy to adapt non-IEEE architecture.
@@ -40,18 +47,18 @@
  *
  * Developed at SunPro, a Sun Microsystems, Inc. business.
  * Permission to use, copy, modify, and distribute this
- * software is freely granted, provided that this notice
+ * software is freely granted, provided that this notice 
  * is preserved.
  * ====================================================
  *
  * ******************* WARNING ********************
  * This is an alpha version of SunPro's FDLIBM (Freely
- * Distributable Math Library) for IEEE double precision
+ * Distributable Math Library) for IEEE double precision 
  * arithmetic. FDLIBM is a basic math library written
- * in C that runs on machines that conform to IEEE
- * Standard 754/854. This alpha version is distributed
- * for testing purpose. Those who use this software
- * should report any bugs to
+ * in C that runs on machines that conform to IEEE 
+ * Standard 754/854. This alpha version is distributed 
+ * for testing purpose. Those who use this software 
+ * should report any bugs to 
  *
  *		fdlibm-comments@sunpro.eng.sun.com
  *
@@ -63,7 +70,7 @@
  * jn(int n, double x), yn(int n, double x)
  * floating point Bessel's function of the 1st and 2nd kind
  * of order n
- *
+ *          
  * Special cases:
  *	y0(0)=y1(0)=yn(n,0) = -inf with division by zero signal;
  *	y0(-ve)=y1(-ve)=yn(n,-ve) are NaN with invalid signal.
@@ -82,14 +89,14 @@
  *	yn(n,x) is similar in all respects, except
  *	that forward recursion is used for all
  *	values of n>1.
- *
+ *	
  */
 
 #include <math.h>
 #include <float.h>
 #include <errno.h>
 
-#if defined(__vax__)
+#if defined(vax) || defined(tahoe)
 #define _IEEE	0
 #else
 #define _IEEE	1
@@ -102,8 +109,8 @@ two  = 2.0,
 zero = 0.0,
 one  = 1.0;
 
-double
-jn(int n, double x)
+double jn(n,x)
+	int n; double x;
 {
 	int i, sgn;
 	double a, b, temp;
@@ -114,7 +121,7 @@ jn(int n, double x)
      */
     /* if J(n,NaN) is NaN */
 	if (_IEEE && isnan(x)) return x+x;
-	if (n<0){
+	if (n<0){		
 		n = -n;
 		x = -x;
 	}
@@ -128,10 +135,10 @@ jn(int n, double x)
 			/* Safe to use J(n+1,x)=2n/x *J(n,x)-J(n-1,x) */
 	    if (_IEEE && x >= 8.148143905337944345e+090) {
 					/* x >= 2**302 */
-    /* (x >> n**2)
+    /* (x >> n**2) 
      *	    Jn(x) = cos(x-(2n+1)*pi/4)*sqrt(2/x*pi)
      *	    Yn(x) = sin(x-(2n+1)*pi/4)*sqrt(2/x*pi)
-     *	    Let s=sin(x), c=cos(x),
+     *	    Let s=sin(x), c=cos(x), 
      *		xn=x-(2n+1)*pi/4, sqt2 = sqrt(2),then
      *
      *		   n	sin(xn)*sqt2	cos(xn)*sqt2
@@ -148,7 +155,7 @@ jn(int n, double x)
 		    case 3: temp =  cos(x)-sin(x); break;
 		}
 		b = invsqrtpi*temp/sqrt(x);
-	    } else {
+	    } else {	
 	        a = j0(x);
 	        b = j1(x);
 	        for(i=1;i<n;i++){
@@ -159,7 +166,7 @@ jn(int n, double x)
 	    }
 	} else {
 	    if (x < 1.86264514923095703125e-009) { /* x < 2**-29 */
-    /* x is tiny, return the first Taylor expansion of J(n,x)
+    /* x is tiny, return the first Taylor expansion of J(n,x) 
      * J(n,x) = 1/n!*(x/2)^n  - ...
      */
 		if (n > 33)	/* underflow */
@@ -174,14 +181,14 @@ jn(int n, double x)
 		}
 	    } else {
 		/* use backward recurrence */
-		/* 			x      x^2      x^2
+		/* 			x      x^2      x^2       
 		 *  J(n,x)/J(n-1,x) =  ----   ------   ------   .....
 		 *			2n  - 2(n+1) - 2(n+2)
 		 *
-		 * 			1      1        1
+		 * 			1      1        1       
 		 *  (for large x)   =  ----  ------   ------   .....
 		 *			2n   2(n+1)   2(n+2)
-		 *			-- - ------ - ------ -
+		 *			-- - ------ - ------ - 
 		 *			 x     x         x
 		 *
 		 * Let w = 2n/x and h=2/x, then the above quotient
@@ -197,9 +204,9 @@ jn(int n, double x)
 		 * To determine how many terms needed, let
 		 * Q(0) = w, Q(1) = w(w+h) - 1,
 		 * Q(k) = (w+k*h)*Q(k-1) - Q(k-2),
-		 * When Q(k) > 1e4	good for single
-		 * When Q(k) > 1e9	good for double
-		 * When Q(k) > 1e17	good for quadruple
+		 * When Q(k) > 1e4	good for single 
+		 * When Q(k) > 1e9	good for double 
+		 * When Q(k) > 1e17	good for quadruple 
 		 */
 	    /* determine k */
 		double t,v;
@@ -232,11 +239,11 @@ jn(int n, double x)
 		        b = ((i+i)/x)*b - a;
 		        a = temp;
 		    /* scale b to avoid spurious overflow */
-#			if defined(__vax__)
+#			if defined(vax) || defined(tahoe)
 #				define BMAX 1e13
 #			else
 #				define BMAX 1e100
-#			endif /* defined(__vax__) */
+#			endif /* defined(vax) || defined(tahoe) */
 			if (b > BMAX) {
 				a /= b;
 				t /= b;
@@ -248,15 +255,14 @@ jn(int n, double x)
 	}
 	return ((sgn == 1) ? -b : b);
 }
-
-double
-yn(int n, double x)
+double yn(n,x) 
+	int n; double x;
 {
 	int i, sign;
 	double a, b, temp;
 
     /* Y(n,NaN), Y(n, x < 0) is NaN */
-	if (x <= 0 || isnan(x))
+	if (x <= 0 || (_IEEE && x != x))
 		if (_IEEE && x < 0) return zero/zero;
 		else if (x < 0)     return (infnan(EDOM));
 		else if (_IEEE)     return -one/zero;
@@ -270,10 +276,10 @@ yn(int n, double x)
 	if (n == 0) return(y0(x));
 	if (n == 1) return(sign*y1(x));
 	if(_IEEE && x >= 8.148143905337944345e+090) { /* x > 2**302 */
-    /* (x >> n**2)
+    /* (x >> n**2) 
      *	    Jn(x) = cos(x-(2n+1)*pi/4)*sqrt(2/x*pi)
      *	    Yn(x) = sin(x-(2n+1)*pi/4)*sqrt(2/x*pi)
-     *	    Let s=sin(x), c=cos(x),
+     *	    Let s=sin(x), c=cos(x), 
      *		xn=x-(2n+1)*pi/4, sqt2 = sqrt(2),then
      *
      *		   n	sin(xn)*sqt2	cos(xn)*sqt2

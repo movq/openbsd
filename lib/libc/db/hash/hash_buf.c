@@ -1,4 +1,4 @@
-/*	$OpenBSD: hash_buf.c,v 1.19 2015/01/16 16:48:51 deraadt Exp $	*/
+/*	$OpenBSD: hash_buf.c,v 1.7 1999/02/15 05:11:24 millert Exp $	*/
 
 /*-
  * Copyright (c) 1990, 1993, 1994
@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,6 +35,14 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
+#if defined(LIBC_SCCS) && !defined(lint)
+#if 0
+static char sccsid[] = "@(#)hash_buf.c	8.5 (Berkeley) 7/15/94";
+#else
+static char rcsid[] = "$OpenBSD: hash_buf.c,v 1.7 1999/02/15 05:11:24 millert Exp $";
+#endif
+#endif /* LIBC_SCCS and not lint */
 
 /*
  * PACKAGE: hash
@@ -48,6 +60,8 @@
  *	newbuf
  */
 
+#include <sys/param.h>
+
 #include <errno.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -63,9 +77,7 @@
 #include "page.h"
 #include "extern.h"
 
-#define MAXIMUM(a, b)	(((a) > (b)) ? (a) : (b))
-
-static BUFHEAD *newbuf(HTAB *, u_int32_t, BUFHEAD *);
+static BUFHEAD *newbuf __P((HTAB *, u_int32_t, BUFHEAD *));
 
 /* Unlink B from its place in the lru */
 #define BUF_REMOVE(B) { \
@@ -96,14 +108,16 @@ static BUFHEAD *newbuf(HTAB *, u_int32_t, BUFHEAD *);
  * be valid.  Therefore, you must always verify that its address matches the
  * address you are seeking.
  */
-BUFHEAD *
-__get_buf(HTAB *hashp, u_int32_t addr,
-    BUFHEAD *prev_bp,	/* If prev_bp set, indicates a new overflow page. */
-    int newpage)
+extern BUFHEAD *
+__get_buf(hashp, addr, prev_bp, newpage)
+	HTAB *hashp;
+	u_int32_t addr;
+	BUFHEAD *prev_bp;
+	int newpage;	/* If prev_bp set, indicates a new overflow page. */
 {
-	BUFHEAD *bp;
-	u_int32_t is_disk_mask;
-	int is_disk, segment_ndx;
+	register BUFHEAD *bp;
+	register u_int32_t is_disk_mask;
+	register int is_disk, segment_ndx;
 	SEGMENT segp;
 
 	is_disk = 0;
@@ -150,42 +164,25 @@ __get_buf(HTAB *hashp, u_int32_t addr,
  * If newbuf finds an error (returning NULL), it also sets errno.
  */
 static BUFHEAD *
-newbuf(HTAB *hashp, u_int32_t addr, BUFHEAD *prev_bp)
+newbuf(hashp, addr, prev_bp)
+	HTAB *hashp;
+	u_int32_t addr;
+	BUFHEAD *prev_bp;
 {
-	BUFHEAD *bp;		/* The buffer we're going to use */
-	BUFHEAD *xbp;		/* Temp pointer */
-	BUFHEAD *next_xbp;
+	register BUFHEAD *bp;		/* The buffer we're going to use */
+	register BUFHEAD *xbp;		/* Temp pointer */
+	register BUFHEAD *next_xbp;
 	SEGMENT segp;
 	int segment_ndx;
 	u_int16_t oaddr, *shortp;
 
 	oaddr = 0;
 	bp = LRU;
-
-        /* It is bad to overwrite the page under the cursor. */
-        if (bp == hashp->cpage) {
-                BUF_REMOVE(bp);
-                MRU_INSERT(bp);
-                bp = LRU;
-        }
-
-	/* If prev_bp is part of bp overflow, create a new buffer. */
-	if (hashp->nbufs == 0 && prev_bp && bp->ovfl) {
-		BUFHEAD *ovfl;
-
-		for (ovfl = bp->ovfl; ovfl ; ovfl = ovfl->ovfl) {
-			if (ovfl == prev_bp) {
-				hashp->nbufs++;
-				break;
-			}
-		}
-	}
-
 	/*
 	 * If LRU buffer is pinned, the buffer pool is too small. We need to
 	 * allocate more buffers.
 	 */
-	if (hashp->nbufs || (bp->flags & BUF_PIN) || bp == hashp->cpage) {
+	if (hashp->nbufs || (bp->flags & BUF_PIN)) {
 		/* Allocate a new one */
 		if ((bp = (BUFHEAD *)malloc(sizeof(BUFHEAD))) == NULL)
 			return (NULL);
@@ -281,7 +278,7 @@ newbuf(HTAB *hashp, u_int32_t addr, BUFHEAD *prev_bp)
 		 */
 #ifdef DEBUG1
 		(void)fprintf(stderr, "NEWBUF2: %d->ovfl was %d is now %d\n",
-		    prev_bp->addr, (prev_bp->ovfl ? prev_bp->ovfl->addr : 0),
+		    prev_bp->addr, (prev_bp->ovfl ? bp->ovfl->addr : 0),
 		    (bp ? bp->addr : 0));
 #endif
 		prev_bp->ovfl = bp;
@@ -292,15 +289,17 @@ newbuf(HTAB *hashp, u_int32_t addr, BUFHEAD *prev_bp)
 	return (bp);
 }
 
-void
-__buf_init(HTAB *hashp, int nbytes)
+extern void
+__buf_init(hashp, nbytes)
+	HTAB *hashp;
+	int nbytes;
 {
 	BUFHEAD *bfp;
 	int npages;
 
 	bfp = &(hashp->bufhead);
 	npages = (nbytes + hashp->BSIZE - 1) >> hashp->BSHIFT;
-	npages = MAXIMUM(npages, MIN_BUFFERS);
+	npages = MAX(npages, MIN_BUFFERS);
 
 	hashp->nbufs = npages;
 	bfp->next = bfp;
@@ -315,8 +314,10 @@ __buf_init(HTAB *hashp, int nbytes)
 	 */
 }
 
-int
-__buf_free(HTAB *hashp, int do_free, int to_disk)
+extern int
+__buf_free(hashp, do_free, to_disk)
+	HTAB *hashp;
+	int do_free, to_disk;
 {
 	BUFHEAD *bp;
 
@@ -346,8 +347,10 @@ __buf_free(HTAB *hashp, int do_free, int to_disk)
 	return (0);
 }
 
-void
-__reclaim_buf(HTAB *hashp, BUFHEAD *bp)
+extern void
+__reclaim_buf(hashp, bp)
+	HTAB *hashp;
+	BUFHEAD *bp;
 {
 	bp->ovfl = 0;
 	bp->addr = 0;

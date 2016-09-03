@@ -1,7 +1,7 @@
-/* $OpenBSD: m_item_new.c,v 1.9 2010/01/12 23:22:08 nicm Exp $ */
+/*	$OpenBSD: m_item_new.c,v 1.6 1999/05/17 03:04:24 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2005,2006 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -29,7 +29,7 @@
  ****************************************************************************/
 
 /****************************************************************************
- *   Author:  Juergen Pfeifer, 1995,1997                                    *
+ *   Author: Juergen Pfeifer <juergen.pfeifer@gmx.net> 1995,1997            *
  ****************************************************************************/
 
 /***************************************************************************
@@ -40,13 +40,7 @@
 
 #include "menu.priv.h"
 
-#if USE_WIDEC_SUPPORT
-#if HAVE_WCTYPE_H
-#include <wctype.h>
-#endif
-#endif
-
-MODULE_ID("$Id: m_item_new.c,v 1.9 2010/01/12 23:22:08 nicm Exp $")
+MODULE_ID("$From: m_item_new.c,v 1.11 1999/05/16 17:28:49 juergen Exp $")
 
 /*---------------------------------------------------------------------------
 |   Facility      :  libnmenu  
@@ -58,44 +52,16 @@ MODULE_ID("$Id: m_item_new.c,v 1.9 2010/01/12 23:22:08 nicm Exp $")
 |   Return Values :  TRUE     - if string is printable
 |                    FALSE    - if string contains non-printable characters
 +--------------------------------------------------------------------------*/
-static bool
-Is_Printable_String(const char *s)
+static bool Is_Printable_String(const char *s)
 {
-  int result = TRUE;
-
-#if USE_WIDEC_SUPPORT
-  int count = mbstowcs(0, s, 0);
-  wchar_t *temp = 0;
-
   assert(s);
-
-  if (count > 0
-      && (temp = typeCalloc(wchar_t, (2 + (unsigned)count))) != 0)
+  while(*s)
     {
-      int n;
-
-      mbstowcs(temp, s, (unsigned)count);
-      for (n = 0; n < count; ++n)
-	if (!iswprint((wint_t) temp[n]))
-	  {
-	    result = FALSE;
-	    break;
-	  }
-      free(temp);
-    }
-#else
-  assert(s);
-  while (*s)
-    {
-      if (!isprint(UChar(*s)))
-	{
-	  result = FALSE;
-	  break;
-	}
+      if (!isprint((unsigned char)*s))
+	return FALSE;
       s++;
     }
-#endif
-  return result;
+  return TRUE;
 }
 
 /*---------------------------------------------------------------------------
@@ -108,46 +74,41 @@ Is_Printable_String(const char *s)
 |
 |   Return Values :  The item pointer or NULL if creation failed.
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(ITEM *)
-new_item(const char *name, const char *description)
+ITEM *new_item(const char *name, const char *description)
 {
   ITEM *item;
-
-  T((T_CALLED("new_item(\"%s\", \"%s\")"),
-     name ? name : "",
-     description ? description : ""));
-
-  if (!name || (*name == '\0') || !Is_Printable_String(name))
+  
+  if ( !name || (*name == '\0') || !Is_Printable_String(name) )
     {
-      item = (ITEM *) 0;
-      SET_ERROR(E_BAD_ARGUMENT);
+      item = (ITEM *)0;
+      SET_ERROR( E_BAD_ARGUMENT );
     }
   else
     {
-      item = (ITEM *) calloc(1, sizeof(ITEM));
+      item = (ITEM *)calloc(1,sizeof(ITEM));
       if (item)
 	{
-	  *item = _nc_Default_Item;	/* hope we have struct assignment */
+	  *item  = _nc_Default_Item; /* hope we have struct assignment */
+	  
+	  item->name.length	   = strlen(name);
+	  item->name.str 	   = name;
 
-	  item->name.length = strlen(name);
-	  item->name.str = name;
-
-	  if (description && (*description != '\0') &&
+	  if (description && (*description != '\0') && 
 	      Is_Printable_String(description))
 	    {
-	      item->description.length = strlen(description);
-	      item->description.str = description;
+	      item->description.length = strlen(description);	      
+	      item->description.str    = description;
 	    }
 	  else
 	    {
 	      item->description.length = 0;
-	      item->description.str = (char *)0;
+	      item->description.str    = (char *)0;
 	    }
 	}
       else
-	SET_ERROR(E_SYSTEM_ERROR);
-    }
-  returnItem(item);
+	SET_ERROR( E_SYSTEM_ERROR );
+    }  
+  return(item);
 }
 
 /*---------------------------------------------------------------------------
@@ -161,20 +122,17 @@ new_item(const char *name, const char *description)
 |                    E_BAD_ARGUMENT    - invalid value has been passed
 |                    E_CONNECTED       - item is still connected to a menu    
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(int)
-free_item(ITEM * item)
+int free_item(ITEM * item)
 {
-  T((T_CALLED("free_item(%p)"), item));
-
   if (!item)
-    RETURN(E_BAD_ARGUMENT);
+    RETURN( E_BAD_ARGUMENT );
 
   if (item->imenu)
-    RETURN(E_CONNECTED);
-
+    RETURN( E_CONNECTED );
+  
   free(item);
 
-  RETURN(E_OK);
+  RETURN( E_OK );
 }
 
 /*---------------------------------------------------------------------------
@@ -194,19 +152,16 @@ free_item(ITEM * item)
 |                    E_BAD_ARGUMENT     - an invalid value has been passed
 |                    E_SYSTEM_ERROR     - no memory to store mark
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(int)
-set_menu_mark(MENU * menu, const char *mark)
+int set_menu_mark(MENU * menu, const char * mark)
 {
-  unsigned l;
+  int l;
 
-  T((T_CALLED("set_menu_mark(%p,%s)"), menu, _nc_visbuf(mark)));
-
-  if (mark && (*mark != '\0') && Is_Printable_String(mark))
+  if ( mark && (*mark != '\0') && Is_Printable_String(mark) )
     l = strlen(mark);
   else
     l = 0;
 
-  if (menu)
+  if ( menu )
     {
       char *old_mark = menu->mark;
       unsigned short old_status = menu->status;
@@ -215,16 +170,16 @@ set_menu_mark(MENU * menu, const char *mark)
 	{
 	  /* If the menu is already posted, the geometry is fixed. Then
 	     we can only accept a mark with exactly the same length */
-	  if (menu->marklen != (int)l)
+	  if (menu->marklen != l) 
 	    RETURN(E_BAD_ARGUMENT);
-	}
+	}	
       menu->marklen = l;
       if (l)
 	{
-	  menu->mark = (char *)malloc(l + 1);
+	  menu->mark = (char *)malloc(l+1);
 	  if (menu->mark)
 	    {
-	      strlcpy(menu->mark, mark, l+1);
+	      strcpy(menu->mark, mark);
 	      if (menu != &_nc_Default_Menu)
 		menu->status |= _MARK_ALLOCATED;
 	    }
@@ -236,24 +191,24 @@ set_menu_mark(MENU * menu, const char *mark)
 	}
       else
 	menu->mark = (char *)0;
-
+      
       if ((old_status & _MARK_ALLOCATED) && old_mark)
 	free(old_mark);
 
       if (menu->status & _POSTED)
 	{
-	  _nc_Draw_Menu(menu);
-	  _nc_Show_Menu(menu);
+	  _nc_Draw_Menu( menu );
+	  _nc_Show_Menu( menu );
 	}
       else
 	{
 	  /* Recalculate the geometry */
-	  _nc_Calculate_Item_Length_and_Width(menu);
+	  _nc_Calculate_Item_Length_and_Width( menu );			
 	}
     }
   else
     {
-      returnCode(set_menu_mark(&_nc_Default_Menu, mark));
+      return set_menu_mark(&_nc_Default_Menu, mark);
     }
   RETURN(E_OK);
 }
@@ -266,11 +221,9 @@ set_menu_mark(MENU * menu, const char *mark)
 |
 |   Return Values :  The marker string pointer or NULL if no marker defined
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(const char *)
-menu_mark(const MENU * menu)
+const char *menu_mark(const MENU * menu)
 {
-  T((T_CALLED("menu_mark(%p)"), menu));
-  returnPtr(Normalize_Menu(menu)->mark);
+  return Normalize_Menu( menu )->mark;
 }
 
 /* m_item_new.c */

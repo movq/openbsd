@@ -1,5 +1,3 @@
-/*	$OpenBSD: getc.c,v 1.10 2016/01/06 22:28:52 millert Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)getc.c	10.10 (Berkeley) 3/6/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -38,17 +40,19 @@
  * cs_init --
  *	Initialize character stream routines.
  *
- * PUBLIC: int cs_init(SCR *, VCS *);
+ * PUBLIC: int cs_init __P((SCR *, VCS *));
  */
 int
-cs_init(SCR *sp, VCS *csp)
+cs_init(sp, csp)
+	SCR *sp;
+	VCS *csp;
 {
 	int isempty;
 
 	if (db_eget(sp, csp->cs_lno, (char **) &csp->cs_bp, &csp->cs_len,
 	    &isempty)) {
 		if (isempty)
-			msgq(sp, M_BERR, "Empty file");
+			msgq(sp, M_BERR, "177|Empty file");
 		return (1);
 	}
 	if (csp->cs_len == 0 || v_isempty(csp->cs_bp, csp->cs_len)) {
@@ -65,10 +69,12 @@ cs_init(SCR *sp, VCS *csp)
  * cs_next --
  *	Retrieve the next character.
  *
- * PUBLIC: int cs_next(SCR *, VCS *);
+ * PUBLIC: int cs_next __P((SCR *, VCS *));
  */
 int
-cs_next(SCR *sp, VCS *csp)
+cs_next(sp, csp)
+	SCR *sp;
+	VCS *csp;
 {
 	char *p;
 
@@ -115,10 +121,12 @@ cs_next(SCR *sp, VCS *csp)
  * function -- once the other word routines are converted, they may have
  * to change.
  *
- * PUBLIC: int cs_fspace(SCR *, VCS *);
+ * PUBLIC: int cs_fspace __P((SCR *, VCS *));
  */
 int
-cs_fspace(SCR *sp, VCS *csp)
+cs_fspace(sp, csp)
+	SCR *sp;
+	VCS *csp;
 {
 	if (csp->cs_flags != 0 || !isblank(csp->cs_ch))
 		return (0);
@@ -135,16 +143,18 @@ cs_fspace(SCR *sp, VCS *csp)
  * cs_fblank --
  *	Eat forward to the next non-whitespace character.
  *
- * PUBLIC: int cs_fblank(SCR *, VCS *);
+ * PUBLIC: int cs_fblank __P((SCR *, VCS *));
  */
 int
-cs_fblank(SCR *sp, VCS *csp)
+cs_fblank(sp, csp)
+	SCR *sp;
+	VCS *csp;
 {
 	for (;;) {
 		if (cs_next(sp, csp))
 			return (1);
 		if (csp->cs_flags == CS_EOL || csp->cs_flags == CS_EMP ||
-		    (csp->cs_flags == 0 && isblank(csp->cs_ch)))
+		    csp->cs_flags == 0 && isblank(csp->cs_ch))
 			continue;
 		break;
 	}
@@ -155,10 +165,12 @@ cs_fblank(SCR *sp, VCS *csp)
  * cs_prev --
  *	Retrieve the previous character.
  *
- * PUBLIC: int cs_prev(SCR *, VCS *);
+ * PUBLIC: int cs_prev __P((SCR *, VCS *));
  */
 int
-cs_prev(SCR *sp, VCS *csp)
+cs_prev(sp, csp)
+	SCR *sp;
+	VCS *csp;
 {
 	switch (csp->cs_flags) {
 	case CS_EMP:				/* EMP; get previous line. */
@@ -205,16 +217,18 @@ cs_prev(SCR *sp, VCS *csp)
  * cs_bblank --
  *	Eat backward to the next non-whitespace character.
  *
- * PUBLIC: int cs_bblank(SCR *, VCS *);
+ * PUBLIC: int cs_bblank __P((SCR *, VCS *));
  */
 int
-cs_bblank(SCR *sp, VCS *csp)
+cs_bblank(sp, csp)
+	SCR *sp;
+	VCS *csp;
 {
 	for (;;) {
 		if (cs_prev(sp, csp))
 			return (1);
 		if (csp->cs_flags == CS_EOL || csp->cs_flags == CS_EMP ||
-		    (csp->cs_flags == 0 && isblank(csp->cs_ch)))
+		    csp->cs_flags == 0 && isblank(csp->cs_ch))
 			continue;
 		break;
 	}

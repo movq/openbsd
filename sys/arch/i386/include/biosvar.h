@@ -1,4 +1,4 @@
-/*	$OpenBSD: biosvar.h,v 1.64 2015/09/03 15:52:16 deraadt Exp $	*/
+/*	$OpenBSD: biosvar.h,v 1.30 1999/08/25 00:54:18 mickey Exp $	*/
 
 /*
  * Copyright (c) 1997-1999 Michael Shalayeff
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *      This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -26,20 +31,13 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _MACHINE_BIOSVAR_H_
-#define _MACHINE_BIOSVAR_H_
+#ifndef _I386_BIOSVAR_H_
+#define _I386_BIOSVAR_H_
 
 	/* some boxes put apm data seg in the 2nd page */
-#define	BOOTARG_OFF	(PAGE_SIZE * 2)
-#define	BOOTARG_LEN	(PAGE_SIZE * 1)
+#define	BOOTARG_OFF	(NBPG*2)
+#define	BOOTARG_LEN	(NBPG*1)
 #define	BOOTBIOS_ADDR	(0x7c00)
-#define	BOOTBIOS_MAXSEC	((1 << 28) - 1)
-
-	/* BIOS configure flags */
-#define	BIOSF_BIOS32	0x0001
-#define	BIOSF_PCIBIOS	0x0002
-#define	BIOSF_PROMSCAN	0x0004
-#define	BIOSF_SMBIOS	0x0008
 
 /* BIOS media ID */
 #define BIOSM_F320K	0xff	/* floppy ds/sd  8 spt */
@@ -62,66 +60,22 @@
 #define	BIOS_MAP_ACPI	0x03	/* ACPI Reclaim memory */
 #define	BIOS_MAP_NVS	0x04	/* ACPI NVS memory */
 
-/*
- * Optional ROM header
- */
-typedef
-struct bios_romheader {
-	u_int16_t	signature;	/* 0xaa55 */
-	u_int8_t	len;		/* length in pages (512 bytes) */
-	u_int32_t	entry;		/* initialization entry point */
-	u_int8_t	reserved[19];
-	u_int16_t	pnpheader;	/* offset to PnP expansion header */
-} __packed *bios_romheader_t;
-
-/*
- * BIOS32
- */
-typedef
-struct bios32_header {
-	u_int32_t	signature;	/* 00: signature "_32_" */
-	u_int32_t	entry;		/* 04: entry point */
-	u_int8_t	rev;		/* 08: revision */
-	u_int8_t	length;		/* 09: header length */
-	u_int8_t	cksum;		/* 0a: modulo 256 checksum */
-	u_int8_t	reserved[5];
-} __packed *bios32_header_t;
-
-typedef
-struct bios32_entry_info {
-	u_int32_t	bei_base;
-	u_int32_t	bei_size;
-	u_int32_t	bei_entry;
-} __packed *bios32_entry_info_t;
-
-typedef
-struct bios32_entry {
-	u_int32_t	offset;
-	u_int16_t	segment;
-} __packed *bios32_entry_t;
-
-#define	BIOS32_START	0xe0000
-#define	BIOS32_SIZE	0x20000
-#define	BIOS32_END	(BIOS32_START + BIOS32_SIZE - 0x10)
-
-#define	BIOS32_MAKESIG(a, b, c, d) \
-	((a) | ((b) << 8) | ((c) << 16) | ((d) << 24))
-#define	BIOS32_SIGNATURE	BIOS32_MAKESIG('_', '3', '2', '_')
-#define	PCIBIOS_SIGNATURE	BIOS32_MAKESIG('$', 'P', 'C', 'I')
-#define	SMBIOS_SIGNATURE	BIOS32_MAKESIG('_', 'S', 'M', '_')
-
-/*
+/* 
  * CTL_BIOS definitions.
  */
 #define	BIOS_DEV		1	/* int: BIOS boot device */
 #define	BIOS_DISKINFO		2	/* struct: BIOS boot device info */
-#define BIOS_CKSUMLEN		3	/* int: disk cksum block count */
-#define	BIOS_MAXID		4	/* number of valid machdep ids */
+#define	BIOS_CNVMEM		3	/* int: amount of conventional memory */
+#define	BIOS_EXTMEM		4	/* int: amount of extended memory */
+#define BIOS_CKSUMLEN		5	/* int: disk cksum block count */
+#define	BIOS_MAXID		6	/* number of valid machdep ids */
 
 #define	CTL_BIOS_NAMES { \
 	{ 0, 0 }, \
 	{ "biosdev", CTLTYPE_INT }, \
 	{ "diskinfo", CTLTYPE_STRUCT }, \
+	{ "cnvmem", CTLTYPE_INT }, \
+	{ "extmem", CTLTYPE_INT }, \
 	{ "cksumlen", CTLTYPE_INT }, \
 }
 
@@ -130,7 +84,7 @@ typedef struct _bios_memmap {
 	u_int64_t addr;		/* Beginning of block */
 	u_int64_t size;		/* Size of block */
 	u_int32_t type;		/* Type of block */
-} __packed bios_memmap_t;
+} bios_memmap_t;
 
 /* Info about disk from the bios, plus the mapping from
  * BIOS numbers to BSD major (driver?) number.
@@ -160,10 +114,9 @@ typedef struct _bios_diskinfo {
 #define BDI_INVALID	0x00000001	/* I/O error during checksumming */
 #define BDI_GOODLABEL	0x00000002	/* Had SCSI or ST506/ESDI disklabel */
 #define BDI_BADLABEL	0x00000004	/* Had another disklabel */
-#define BDI_EL_TORITO	0x00000008	/* 2,048-byte sectors */
 #define BDI_PICKED	0x80000000	/* kernel-only: cksum matched */
 
-} __packed bios_diskinfo_t;
+} bios_diskinfo_t;
 
 #define	BOOTARG_APMINFO 2
 typedef struct _bios_apminfo {
@@ -176,66 +129,20 @@ typedef struct _bios_apminfo {
 	u_int	apm_data_len;
 	u_int	apm_entry;
 	u_int	apm_code16_len;
-} __packed bios_apminfo_t;
+} bios_apminfo_t;
 
 #define	BOOTARG_CKSUMLEN 3		/* u_int32_t */
 
 #define	BOOTARG_PCIINFO 4
 typedef struct _bios_pciinfo {
 	/* PCI BIOS v2.0+ - Installation check values */
-	u_int32_t	pci_chars;	/* Characteristics (%eax) */
-	u_int32_t	pci_rev;	/* BCD Revision (%ebx) */
+	u_int32_t	pci_chars;		/* Characteristics (%eax) */
+	u_int32_t	pci_rev;		/* BCD Revision (%ebx) */
 	u_int32_t	pci_entry32;	/* PM entry point for PCI BIOS */
 	u_int32_t	pci_lastbus;	/* Number of last PCI bus */
-} __packed bios_pciinfo_t;
+} bios_pciinfo_t;
 
-#define	BOOTARG_CONSDEV	5
-typedef struct _bios_consdev {
-	dev_t	consdev;
-	int	conspeed;
-	int	consaddr;
-	int	consfreq;
-} __packed bios_consdev_t;
-
-#define BOOTARG_SMPINFO 6		/* struct mp_float[] */
-
-#define BOOTARG_BOOTMAC	7
-typedef struct _bios_bootmac {
-	char	mac[6];
-} __packed bios_bootmac_t;
-
-#define BOOTARG_DDB 8
-typedef struct _bios_ddb {
-	int	db_console;
-} __packed bios_ddb_t;
-
-#define BOOTARG_BOOTDUID 9
-typedef struct _bios_bootduid {
-	u_char	duid[8];
-} __packed bios_bootduid_t;
-
-#define BOOTARG_BOOTSR 10
-#define BOOTSR_UUID_MAX 16
-#define BOOTSR_CRYPTO_MAXKEYBYTES 32
-typedef struct _bios_bootsr {
-	u_int8_t	uuid[BOOTSR_UUID_MAX];
-	u_int8_t	maskkey[BOOTSR_CRYPTO_MAXKEYBYTES];
-} __packed bios_bootsr_t;
-
-#define	BOOTARG_EFIINFO 11
-typedef struct _bios_efiinfo {
-	uint64_t	config_acpi;
-	uint64_t	config_smbios;
-	uint64_t	fb_addr;
-	uint64_t	fb_size;
-	uint32_t	fb_height;
-	uint32_t	fb_width;
-	uint32_t	fb_pixpsl;	/* pixels per scan line */
-	uint32_t	fb_red_mask;
-	uint32_t	fb_green_mask;
-	uint32_t	fb_blue_mask;
-	uint32_t	fb_reserved_mask;
-} __packed bios_efiinfo_t;
+#define	BOOTARG_CONSDEV	5		/* dev_t */
 
 #if defined(_KERNEL) || defined (_STANDALONE)
 
@@ -244,7 +151,7 @@ typedef struct _bios_efiinfo {
 #else
 #define	DOINT(n)	"int $0x20+(" #n ")"
 
-extern volatile struct BIOS_regs {
+extern struct BIOS_regs {
 	u_int32_t	biosr_ax;
 	u_int32_t	biosr_cx;
 	u_int32_t	biosr_dx;
@@ -254,45 +161,40 @@ extern volatile struct BIOS_regs {
 	u_int32_t	biosr_di;
 	u_int32_t	biosr_ds;
 	u_int32_t	biosr_es;
-} __packed BIOS_regs;
+}	BIOS_regs;
 
 #ifdef _KERNEL
 #include <machine/bus.h>
 
 struct bios_attach_args {
-	char		*ba_name;
-	u_int		ba_func;
-	bus_space_tag_t	ba_iot;
-	bus_space_tag_t	ba_memt;
+	char *bios_dev;
+	u_int bios_func;
+	bus_space_tag_t bios_iot;
+	bus_space_tag_t bios_memt;
 	union {
-		void		*_p;
-		bios_apminfo_t	*_ba_apmp;
-		paddr_t		_ba_acpipbase;
+		void *_p;
+		bios_apminfo_t *_bios_apmp;
 	} _;
 };
 
-#define	ba_apmp		_._ba_apmp
-#define ba_acpipbase	_._ba_acpipbase
+#define	bios_apmp	_._bios_apmp
 
 struct consdev;
 struct proc;
 
-int bios_sysctl(int *, u_int, void *, size_t *, void *, size_t, struct proc *);
+int bios_sysctl
+	__P((int *, u_int, void *, size_t *, void *, size_t, struct proc *));
 
-void bios_getopt(void);
+void bioscnprobe __P((struct consdev *));
+void bioscninit __P((struct consdev *));
+void bioscnputc __P((dev_t, int));
+int bioscngetc __P((dev_t));
+void bioscnpollc __P((dev_t, int));
 
-/* bios32.c */
-int  bios32_service(u_int32_t, bios32_entry_t, bios32_entry_info_t);
-void bios32_cleanup(void);
-
-extern u_int bootapiver;
-extern bios_memmap_t *bios_memmap;
-extern bios_efiinfo_t *bios_efiinfo;
-extern void *bios_smpinfo;
-extern bios_pciinfo_t *bios_pciinfo;
+extern	u_int bootapiver;
 
 #endif /* _KERNEL */
 #endif /* _LOCORE */
 #endif /* _KERNEL || _STANDALONE */
 
-#endif /* _MACHINE_BIOSVAR_H_ */
+#endif /* _I386_BIOSVAR_H_ */

@@ -1,4 +1,3 @@
-/*	$OpenBSD: elf_hash.c,v 1.9 2015/01/16 16:48:51 deraadt Exp $ */
 /*
  * Copyright (c) 1995, 1996 Erik Theisen
  * All rights reserved.
@@ -26,7 +25,12 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: elf_hash.c,v 1.5 1997/07/01 05:53:29 millert Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
+#include <sys/param.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/file.h>
@@ -45,9 +49,10 @@
  * HASH TABLES WILL BE GENERATED!
  */
 unsigned int
-elf_hash(const unsigned char *name)
+elf_hash(name)
+	const unsigned char *name;
 {
-	unsigned int h = 0, g;
+	register unsigned int h = 0, g;
 
 	while (*name) {
 		h = (h << 4) + *name++;

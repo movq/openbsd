@@ -1,4 +1,4 @@
-/*	$OpenBSD: bt_utils.c,v 1.11 2015/01/16 16:48:51 deraadt Exp $	*/
+/*	$OpenBSD: bt_utils.c,v 1.4 1999/02/15 05:11:23 millert Exp $	*/
 
 /*-
  * Copyright (c) 1990, 1993, 1994
@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,14 +36,22 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+#if 0
+static char sccsid[] = "@(#)bt_utils.c	8.8 (Berkeley) 7/20/94";
+#else
+static char rcsid[] = "$OpenBSD: bt_utils.c,v 1.4 1999/02/15 05:11:23 millert Exp $";
+#endif
+#endif /* LIBC_SCCS and not lint */
+
+#include <sys/param.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include <db.h>
 #include "btree.h"
-
-#define MINIMUM(a, b)	(((a) < (b)) ? (a) : (b))
 
 /*
  * __bt_ret --
@@ -58,7 +70,11 @@
  *	RET_SUCCESS, RET_ERROR.
  */
 int
-__bt_ret(BTREE *t, EPG *e, DBT *key, DBT *rkey, DBT *data, DBT *rdata, int copy)
+__bt_ret(t, e, key, rkey, data, rdata, copy)
+	BTREE *t;
+	EPG *e;
+	DBT *key, *rkey, *data, *rdata;
+	int copy;
 {
 	BLEAF *bl;
 	void *p;
@@ -80,7 +96,8 @@ __bt_ret(BTREE *t, EPG *e, DBT *key, DBT *rkey, DBT *data, DBT *rdata, int copy)
 		key->data = rkey->data;
 	} else if (copy || F_ISSET(t, B_DB_LOCK)) {
 		if (bl->ksize > rkey->size) {
-			p = realloc(rkey->data, bl->ksize);
+			p = (void *)(rkey->data == NULL ?
+			    malloc(bl->ksize) : realloc(rkey->data, bl->ksize));
 			if (p == NULL)
 				return (RET_ERROR);
 			rkey->data = p;
@@ -106,7 +123,9 @@ dataonly:
 	} else if (copy || F_ISSET(t, B_DB_LOCK)) {
 		/* Use +1 in case the first record retrieved is 0 length. */
 		if (bl->dsize + 1 > rdata->size) {
-			p = realloc(rdata->data, bl->dsize + 1);
+			p = (void *)(rdata->data == NULL ?
+			    malloc(bl->dsize + 1) :
+			    realloc(rdata->data, bl->dsize + 1));
 			if (p == NULL)
 				return (RET_ERROR);
 			rdata->data = p;
@@ -137,7 +156,10 @@ dataonly:
  *	> 0 if k1 is > record
  */
 int
-__bt_cmp(BTREE *t, const DBT *k1, EPG *e)
+__bt_cmp(t, k1, e)
+	BTREE *t;
+	const DBT *k1;
+	EPG *e;
 {
 	BINTERNAL *bi;
 	BLEAF *bl;
@@ -197,10 +219,11 @@ __bt_cmp(BTREE *t, const DBT *k1, EPG *e)
  *	> 0 if a is > b
  */
 int
-__bt_defcmp(const DBT *a, const DBT *b)
+__bt_defcmp(a, b)
+	const DBT *a, *b;
 {
-	size_t len;
-	u_char *p1, *p2;
+	register size_t len;
+	register u_char *p1, *p2;
 
 	/*
 	 * XXX
@@ -208,7 +231,7 @@ __bt_defcmp(const DBT *a, const DBT *b)
 	 * What we need is a integral type which is guaranteed to be
 	 * larger than a size_t, and there is no such thing.
 	 */
-	len = MINIMUM(a->size, b->size);
+	len = MIN(a->size, b->size);
 	for (p1 = a->data, p2 = b->data; len--; ++p1, ++p2)
 		if (*p1 != *p2)
 			return ((int)*p1 - (int)*p2);
@@ -229,11 +252,11 @@ size_t
 __bt_defpfx(a, b)
 	const DBT *a, *b;
 {
-	u_char *p1, *p2;
-	size_t cnt, len;
+	register u_char *p1, *p2;
+	register size_t cnt, len;
 
 	cnt = 1;
-	len = MINIMUM(a->size, b->size);
+	len = MIN(a->size, b->size);
 	for (p1 = a->data, p2 = b->data; len--; ++p1, ++p2, ++cnt)
 		if (*p1 != *p2)
 			return (cnt);

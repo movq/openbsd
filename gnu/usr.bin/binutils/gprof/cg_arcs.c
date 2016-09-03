@@ -1,36 +1,23 @@
 /*
- * Copyright (c) 1983, 1993, 2001
- *      The Regents of the University of California.  All rights reserved.
+ * Copyright (c) 1983 Regents of the University of California.
+ * All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
+ * Redistribution and use in source and binary forms are permitted
+ * provided that: (1) source distributions retain this entire copyright
+ * notice and comment, and (2) distributions including binaries display
+ * the following acknowledgement:  ``This product includes software
+ * developed by the University of California, Berkeley and its contributors''
+ * in the documentation or other materials provided with the distribution
+ * and in all advertising materials mentioning features or use of this
+ * software. Neither the name of the University nor the names of its
+ * contributors may be used to endorse or promote products derived
+ * from this software without specific prior written permission.
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 #include "libiberty.h"
 #include "gprof.h"
-#include "search_list.h"
-#include "source.h"
-#include "symtab.h"
 #include "call_graph.h"
 #include "cg_arcs.h"
 #include "cg_dfn.h"
@@ -38,27 +25,17 @@
 #include "utils.h"
 #include "sym_ids.h"
 
-static int cmp_topo PARAMS ((const PTR, const PTR));
-static void propagate_time PARAMS ((Sym *));
-static void cycle_time PARAMS ((void));
-static void cycle_link PARAMS ((void));
-static void inherit_flags PARAMS ((Sym *));
-static void propagate_flags PARAMS ((Sym **));
-static int cmp_total PARAMS ((const PTR, const PTR));
-
 Sym *cycle_header;
-unsigned int num_cycles;
+int num_cycles;
 Arc **arcs;
-unsigned int numarcs;
+int numarcs;
 
 /*
  * Return TRUE iff PARENT has an arc to covers the address
  * range covered by CHILD.
  */
 Arc *
-arc_lookup (parent, child)
-     Sym *parent;
-     Sym *child;
+DEFUN (arc_lookup, (parent, child), Sym * parent AND Sym * child)
 {
   Arc *arc;
 
@@ -87,15 +64,13 @@ arc_lookup (parent, child)
  * Add (or just increment) an arc:
  */
 void
-arc_add (parent, child, count)
-     Sym *parent;
-     Sym *child;
-     unsigned long count;
+DEFUN (arc_add, (parent, child, count),
+       Sym * parent AND Sym * child AND int count)
 {
-  static unsigned int maxarcs = 0;
+  static int maxarcs = 0;
   Arc *arc, **newarcs;
 
-  DBG (TALLYDEBUG, printf ("[arc_add] %lu arcs from %s to %s\n",
+  DBG (TALLYDEBUG, printf ("[arc_add] %d arcs from %s to %s\n",
 			   count, parent->name, child->name));
   arc = arc_lookup (parent, child);
   if (arc)
@@ -103,13 +78,12 @@ arc_add (parent, child, count)
       /*
        * A hit: just increment the count.
        */
-      DBG (TALLYDEBUG, printf ("[tally] hit %lu += %lu\n",
+      DBG (TALLYDEBUG, printf ("[tally] hit %d += %d\n",
 			       arc->count, count));
       arc->count += count;
       return;
     }
   arc = (Arc *) xmalloc (sizeof (*arc));
-  memset (arc, 0, sizeof (*arc));
   arc->parent = parent;
   arc->child = child;
   arc->count = count;
@@ -127,7 +101,7 @@ arc_add (parent, child, count)
 	  if (maxarcs == 0)
 	    maxarcs = 1;
 	  maxarcs *= 2;
-
+	
 	  /* Allocate the new array.  */
 	  newarcs = (Arc **)xmalloc(sizeof (Arc *) * maxarcs);
 
@@ -156,9 +130,7 @@ arc_add (parent, child, count)
 
 
 static int
-cmp_topo (lp, rp)
-     const PTR lp;
-     const PTR rp;
+DEFUN (cmp_topo, (lp, rp), const PTR lp AND const PTR rp)
 {
   const Sym *left = *(const Sym **) lp;
   const Sym *right = *(const Sym **) rp;
@@ -168,8 +140,7 @@ cmp_topo (lp, rp)
 
 
 static void
-propagate_time (parent)
-     Sym *parent;
+DEFUN (propagate_time, (parent), Sym * parent)
 {
   Arc *arc;
   Sym *child;
@@ -239,7 +210,7 @@ propagate_time (parent)
       DBG (PROPDEBUG,
 	   printf ("[prop_time] child \t");
 	   print_name (child);
-	   printf (" with %f %f %lu/%lu\n", child->hist.time,
+	   printf (" with %f %f %d/%d\n", child->hist.time,
 		   child->cg.child_time, arc->count, child->ncalls);
 	   printf ("[prop_time] parent\t");
 	   print_name (parent);
@@ -253,7 +224,7 @@ propagate_time (parent)
  * its members.
  */
 static void
-cycle_time ()
+DEFUN_VOID (cycle_time)
 {
   Sym *member, *cyc;
 
@@ -277,7 +248,7 @@ cycle_time ()
 
 
 static void
-cycle_link ()
+DEFUN_VOID (cycle_link)
 {
   Sym *sym, *cyc, *member;
   Arc *arc;
@@ -365,8 +336,7 @@ cycle_link ()
  * fractions from parents.
  */
 static void
-inherit_flags (child)
-     Sym *child;
+DEFUN (inherit_flags, (child), Sym * child)
 {
   Sym *head, *parent, *member;
   Arc *arc;
@@ -390,7 +360,7 @@ inherit_flags (child)
 	   * is static (and all others are, too)) no time propagates
 	   * along this arc.
 	   */
-	  if (child->ncalls != 0)
+	  if (child->ncalls)
 	    {
 	      child->cg.prop.fract += parent->cg.prop.fract
 		* (((double) arc->count) / ((double) child->ncalls));
@@ -420,7 +390,7 @@ inherit_flags (child)
 	       * arc is static (and all others are, too)) no time
 	       * propagates along this arc.
 	       */
-	      if (head->ncalls != 0)
+	      if (head->ncalls)
 		{
 		  head->cg.prop.fract += parent->cg.prop.fract
 		    * (((double) arc->count) / ((double) head->ncalls));
@@ -444,8 +414,7 @@ inherit_flags (child)
  * and while we're here, sum time for functions.
  */
 static void
-propagate_flags (symbols)
-     Sym **symbols;
+DEFUN (propagate_flags, (symbols), Sym ** symbols)
 {
   int index;
   Sym *old_head, *child;
@@ -545,9 +514,7 @@ propagate_flags (symbols)
  * first.  All else being equal, compare by names.
  */
 static int
-cmp_total (lp, rp)
-     const PTR lp;
-     const PTR rp;
+DEFUN (cmp_total, (lp, rp), const PTR lp AND const PTR rp)
 {
   const Sym *left = *(const Sym **) lp;
   const Sym *right = *(const Sym **) rp;
@@ -604,12 +571,13 @@ cmp_total (lp, rp)
  * time bottom up and flags top down.
  */
 Sym **
-cg_assemble ()
+DEFUN_VOID (cg_assemble)
 {
   Sym *parent, **time_sorted_syms, **top_sorted_syms;
-  unsigned int index;
+  long index;
   Arc *arc;
-
+  extern void find_call PARAMS ((Sym * parent,
+				 bfd_vma p_lowpc, bfd_vma p_highpc));
   /*
    * initialize various things:
    *      zero out child times.

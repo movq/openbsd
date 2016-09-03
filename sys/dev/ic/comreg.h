@@ -1,4 +1,4 @@
-/*	$OpenBSD: comreg.h,v 1.16 2008/06/08 13:55:06 kettenis Exp $	*/
+/*	$OpenBSD: comreg.h,v 1.9 1998/05/14 05:59:42 downsj Exp $	*/
 /*	$NetBSD: comreg.h,v 1.8 1996/02/05 23:01:50 scottr Exp $	*/
 
 /*
@@ -12,6 +12,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *      This product includes software developed by Jason Downs for the
+ *      OpenBSD system.
+ * 4. Neither the name(s) of the author(s) nor the name OpenBSD
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR(S) ``AS IS'' AND ANY EXPRESS
  * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -37,7 +44,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -69,9 +80,6 @@
 #define	IER_ERLS	0x4	/* Enable line status interrupt */
 #define	IER_EMSC	0x8	/* Enable modem status interrupt */
 #define IER_SLEEP	0x10	/* Enable sleep mode */
-/* PXA2X0's ns16550 ports have extra bits in this register */
-#define	IER_ERXTOUT	0x10	/* Enable rx timeout interrupt */
-#define	IER_EUART	0x40	/* Enable UART */
 
 /* interrupt identification register */
 #define	IIR_IMASK	0xf
@@ -127,10 +135,9 @@
 #define	LCR_7BITS	0x02	/* 7 bits */
 #define	LCR_6BITS	0x01	/* 6 bits */
 #define	LCR_5BITS	0x00	/* 5 bits */
-#define LCR_EFR		0xbf	/* ST16650/XR16850/OX16C950 EFR access enable */
+#define LCR_EFR		0xbf	/* ST16650/XR16850 EFR access enable */
 
 /* modem control register */
-#define	MCR_AFE		0x20	/* auto flow control */
 #define	MCR_LOOPBACK	0x10	/* Loop test: echos from TX to RX */
 #define	MCR_IENABLE	0x08	/* Out2: enables UART interrupts */
 #define	MCR_DRS		0x04	/* Out1: resets some internal modems */
@@ -173,24 +180,15 @@
 #define FCTL_TRIGGER2	0x10
 #define FCTL_TRIGGER3	0x20
 
-/* infrared selection register */
-#define ISR_XMITIR	0x01	/* transmitter SIR enable */
-#define ISR_RCVEIR	0x02	/* receiver SIR enable */
-#define ISR_XMODE	0x04	/* 1.6us transmit pulse width */
-#define ISR_TXPL	0x08	/* negative transmit data polarity */
-#define ISR_RXPL	0x10	/* negative receive data polarity */
-
-#ifdef COM_PXA2X0
-#define	COM_NPORTS	9
-#else
 #define	COM_NPORTS	8
-#endif
 
 /*
  * WARNING: Serial console is assumed to be at COM1 address
+ * and CONUNIT must be 0.
  */
 #ifndef CONADDR
 #define	CONADDR	(0x3f8)
-#else
-#define CONADDR_OVERRIDE
+#endif
+#ifndef CONUNIT
+#define	CONUNIT	(0)
 #endif

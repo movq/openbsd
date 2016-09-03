@@ -9,7 +9,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -25,18 +29,17 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.\"	$OpenBSD: radixsort.3,v 1.13 2015/01/29 01:46:31 schwarze Exp $
+.\"	$OpenBSD: radixsort.3,v 1.5 1999/06/29 18:36:22 aaron Exp $
 .\"
-.Dd $Mdocdate: January 29 2015 $
+.Dd January 27, 1994
 .Dt RADIXSORT 3
 .Os
 .Sh NAME
-.Nm radixsort ,
-.Nm sradixsort
+.Nm radixsort
 .Nd radix sort
 .Sh SYNOPSIS
-.In limits.h
-.In stdlib.h
+.Fd #include <limits.h>
+.Fd #include <stdlib.h>
 .Ft int
 .Fn radixsort "const u_char **base" "int nmemb" "const u_char *table" "u_int endbyte"
 .Ft int
@@ -46,12 +49,11 @@ The
 .Fn radixsort
 and
 .Fn sradixsort
-functions are implementations of radix sort.
+functions
+are implementations of radix sort.
 .Pp
-These functions sort an array of
-.Fa nmemb
-pointers to byte strings.
-The initial member is referenced by
+These functions sort an array of pointers to byte strings, the initial
+member of which is referenced by
 .Fa base .
 The byte strings may contain any values; the end of each string
 is denoted by the user-specified value
@@ -64,27 +66,31 @@ If non-null,
 .Fa table
 must reference an array of
 .Dv UCHAR_MAX
-+ 1 bytes which contains the sort weight of each possible byte value.
++ 1 bytes which contains the sort
+weight of each possible byte value.
 The end-of-string byte must have a sort weight of 0 or 255
 (for sorting in reverse order).
 More than one byte may have the same sort weight.
 The
 .Fa table
-argument is useful for applications which wish to sort different characters
-equally; for example, providing a table with the same weights
-for A\-Z as for a\-z will result in a case-insensitive sort.
+argument
+is useful for applications which wish to sort different characters
+equally, for example, providing a table with the same weights
+for A-Z as for a-z will result in a case-insensitive sort.
 If
 .Fa table
 is
 .Dv NULL ,
-the contents of the array are sorted in ascending order according to the
-ASCII order of the byte strings they reference and
+the contents of the array are sorted in ascending order
+according to the
+.Tn ASCII
+order of the byte strings they reference and
 .Fa endbyte
 has a sorting weight of 0.
 .Pp
 The
 .Fn sradixsort
-function is stable; that is, if two elements compare as equal, their
+function is stable, that is, if two elements compare as equal, their
 order in the sorted array is unchanged.
 The
 .Fn sradixsort
@@ -100,7 +106,10 @@ These functions are variants of most-significant-byte radix sorting; in
 particular, see D.E. Knuth's Algorithm R and section 5.2.5, exercise 10.
 They take linear time relative to the number of bytes in the strings.
 .Sh RETURN VALUES
-.Rv -std
+Upon successful completion 0 is returned.
+Otherwise, \-1 is returned and the global variable
+.Va errno
+is set to indicate the error.
 .Sh ERRORS
 .Bl -tag -width Er
 .It Bq Er EINVAL
@@ -113,13 +122,15 @@ is not 0 or 255.
 .Pp
 Additionally, the
 .Fn sradixsort
-function may fail and set
+function
+may fail and set
 .Va errno
 for any of the errors specified for the library routine
 .Xr malloc 3 .
 .Sh SEE ALSO
 .Xr sort 1 ,
 .Xr qsort 3
+.Pp
 .Rs
 .%A Knuth, D.E.
 .%D 1968

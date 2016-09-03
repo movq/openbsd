@@ -1,4 +1,4 @@
-/*	$OpenBSD: btree.h,v 1.7 2015/07/16 04:27:33 tedu Exp $	*/
+/*	$OpenBSD: btree.h,v 1.4 1999/02/15 05:11:23 millert Exp $	*/
 
 /*-
  * Copyright (c) 1991, 1993, 1994
@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -333,11 +337,11 @@ typedef struct _btree {
 	EPGNO	  bt_last;		/* last insert */
 
 					/* B: key comparison function */
-	int	(*bt_cmp)(const DBT *, const DBT *);
+	int	(*bt_cmp) __P((const DBT *, const DBT *));
 					/* B: prefix comparison function */
-	size_t	(*bt_pfx)(const DBT *, const DBT *);
+	size_t	(*bt_pfx) __P((const DBT *, const DBT *));
 					/* R: recno input function */
-	int	(*bt_irec)(struct _btree *, recno_t);
+	int	(*bt_irec) __P((struct _btree *, recno_t));
 
 	FILE	 *bt_rfp;		/* R: record FILE pointer */
 	int	  bt_rfd;		/* R: record file descriptor */
@@ -367,6 +371,7 @@ typedef struct _btree {
 #define	R_CLOSEFP	0x00040		/* opened a file pointer */
 #define	R_EOF		0x00100		/* end of input file reached. */
 #define	R_FIXLEN	0x00200		/* fixed length records */
+#define	R_MEMMAPPED	0x00400		/* memory mapped file. */
 #define	R_INMEM		0x00800		/* in-memory file */
 #define	R_MODIFIED	0x01000		/* modified file */
 #define	R_RDONLY	0x02000		/* read-only file */

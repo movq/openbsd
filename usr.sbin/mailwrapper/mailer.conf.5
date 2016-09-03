@@ -1,4 +1,4 @@
-.\"	$OpenBSD: mailer.conf.5,v 1.17 2015/12/08 09:06:32 sunil Exp $
+.\"	$OpenBSD: mailer.conf.5,v 1.1 1999/08/02 19:50:07 jakob Exp $
 .\"	$NetBSD: mailer.conf.5,v 1.1 1999/03/25 16:40:17 is Exp $
 .\"
 .\" Copyright (c) 1998
@@ -30,75 +30,66 @@
 .\" (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 .\" THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: December 8 2015 $
+.\" The following requests are required for all man pages.
+.Dd December 16, 1998
 .Dt MAILER.CONF 5
 .Os
 .Sh NAME
 .Nm mailer.conf
-.Nd configuration file for mailwrapper(8)
+.Nd configuration file for
+.Xr mailwrapper 8
 .Sh DESCRIPTION
+.Pp
 The file
 .Pa /etc/mailer.conf
-contains a series of pairs.
-The first member of each pair is the name of a program invoking
+contains a series of pairs. The first member of each pair is the name
+of a program invoking
 .Xr mailwrapper 8
 which is typically a symbolic link to
 .Pa /usr/sbin/sendmail .
 (On a typical system,
-.Xr newaliases 8
+.Xr newaliases 1
 and
-.Xr mailq 8
+.Xr mailq 1
 would be set up this way.)
 The second member of each pair is the name of the program to
-actually execute when the first name is invoked.
-The file may also contain comments, denoted by a
+actually execute when the first name is invoked. The file may also
+contain comments, denoted by a
 .Ql #
 character in the first column of any line.
+.Sh EXAMPLES
+The following is an example of how to set up a
+.Nm
+file for traditional sendmail invocation behavior.
+.Bd -literal
+# Execute the "real" sendmail program, named /usr/libexec/sendmail/sendmail
+sendmail	/usr/libexec/sendmail/sendmail
+mailq		/usr/libexec/sendmail/sendmail
+newaliases	/usr/libexec/sendmail/sendmail
+.Ed
+.Pp
+This example shows how to invoke the "postfix" program in place of sendmail.
+.Bd -literal
+# Emulate sendmail using postfix
+sendmail	/usr/local/libexec/postfix/sendmail
+mailq		/usr/local/libexec/postfix/sendmail
+newaliases	/usr/local/libexec/postfix/sendmail
+.Ed
 .Sh FILES
 .Bl -tag -width /etc/mailer.conf -compact
 .It Pa /etc/mailer.conf
 .El
-.Sh EXAMPLES
-The following is an example of how to set up
-.Nm
-for the default
-.Xr smtpd 8
-MTA suite .
-.Bd -literal
-# Emulate sendmail using smtpd
-sendmail	/usr/sbin/smtpctl
-send-mail	/usr/sbin/smtpctl
-mailq		/usr/sbin/smtpctl
-makemap 	/usr/sbin/smtpctl
-newaliases	/usr/sbin/smtpctl
-.Ed
-.Pp
-This example shows how to invoke the traditional
-.Xr sendmail 8
-MTA suite in place of
-.Xr smtpd 8 .
-.Bd -literal
-# Execute the "real" sendmail program, named /usr/libexec/sendmail/sendmail
-sendmail	/usr/libexec/sendmail/sendmail
-send-mail	/usr/libexec/sendmail/sendmail
-mailq		/usr/libexec/sendmail/sendmail
-makemap 	/usr/libexec/sendmail/makemap
-newaliases	/usr/libexec/sendmail/sendmail
-hoststat	/usr/libexec/sendmail/sendmail
-purgestat	/usr/libexec/sendmail/sendmail
-.Ed
 .Sh SEE ALSO
 .Xr mail 1 ,
-.Xr mailq 8 ,
+.Xr mailq 1 ,
+.Xr newaliases 1 ,
 .Xr mailwrapper 8 ,
-.Xr newaliases 8 ,
-.Xr smtpd 8
+.Xr sendmail 8
 .Sh AUTHORS
-.An Perry E. Metzger Aq Mt perry@piermont.com
+Perry E. Metzger <perry@piermont.com>
 .Sh BUGS
-The entire reason this program exists is a crock.
-Instead, a command for how to submit mail should be standardized,
-and all the "behave differently if invoked with a different name"
-behavior of things like
-.Xr mailq 8
+The entire reason this program exists is a crock. Instead, a command
+for how to submit mail should be standardized, and all the "behave
+differently if invoked with a different name" behavior of things like
+.Xr mailq 1
 should go away.

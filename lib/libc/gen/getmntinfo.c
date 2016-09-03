@@ -1,4 +1,3 @@
-/*	$OpenBSD: getmntinfo.c,v 1.10 2015/09/14 16:09:13 tedu Exp $ */
 /*
  * Copyright (c) 1989, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,7 +31,11 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/types.h>
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: getmntinfo.c,v 1.4 1999/06/01 15:31:13 millert Exp $";
+#endif /* LIBC_SCCS and not lint */
+
+#include <sys/param.h>
 #include <sys/mount.h>
 #include <stdlib.h>
 
@@ -36,7 +43,9 @@
  * Return information about mounted filesystems.
  */
 int
-getmntinfo(struct statfs **mntbufp, int flags)
+getmntinfo(mntbufp, flags)
+	struct statfs **mntbufp;
+	int flags;
 {
 	static struct statfs *mntbuf;
 	static int mntsize;
@@ -47,9 +56,10 @@ getmntinfo(struct statfs **mntbufp, int flags)
 	if (bufsize > 0 && (mntsize = getfsstat(mntbuf, bufsize, flags)) < 0)
 		return (0);
 	while (bufsize <= mntsize * sizeof(struct statfs)) {
-		free(mntbuf);
+		if (mntbuf)
+			free(mntbuf);
 		bufsize = (mntsize + 1) * sizeof(struct statfs);
-		if ((mntbuf = malloc(bufsize)) == 0) {
+		if ((mntbuf = (struct statfs *)malloc(bufsize)) == 0) {
 			bufsize = 0;
 			return (0);
 		}

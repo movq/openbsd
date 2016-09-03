@@ -1,4 +1,3 @@
-/*	$OpenBSD: getproto.c,v 1.8 2015/09/14 07:38:38 guenther Exp $ */
 /*
  * Copyright (c) 1983, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,33 +31,25 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: getproto.c,v 1.3 1997/07/09 01:08:31 millert Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <netdb.h>
-#include <stdio.h>
 
-int
-getprotobynumber_r(int num, struct protoent *pe, struct protoent_data *pd)
-{
-	int error;
-
-	setprotoent_r(pd->stayopen, pd);
-	while ((error = getprotoent_r(pe, pd)) == 0)
-		if (pe->p_proto == num)
-			break;
-	if (!pd->stayopen && pd->fp != NULL) {
-		(void)fclose(pd->fp);
-		pd->fp = NULL;
-	}
-	return (error);
-}
-DEF_WEAK(getprotobynumber_r);
+extern int _proto_stayopen;
 
 struct protoent *
-getprotobynumber(int num)
+getprotobynumber(proto)
+	register int proto;
 {
-	extern struct protoent_data _protoent_data;
-	static struct protoent proto;
+	register struct protoent *p;
 
-	if (getprotobynumber_r(num, &proto, &_protoent_data) != 0)
-		return (NULL);
-	return (&proto);
+	setprotoent(_proto_stayopen);
+	while ((p = getprotoent()))
+		if (p->p_proto == proto)
+			break;
+	if (!_proto_stayopen)
+		endprotoent();
+	return (p);
 }

@@ -1,4 +1,5 @@
-/* $OpenBSD: param.h,v 1.39 2013/03/26 05:04:08 deraadt Exp $ */
+/*	$OpenBSD: param.h,v 1.10 1997/09/17 17:44:04 downsj Exp $	*/
+/*	$NetBSD: param.h,v 1.15 1996/11/13 21:13:19 cgd Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -17,7 +18,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,65 +37,128 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
+ *
+ * from: Utah $Hdr: machparam.h 1.11 89/08/14$
+ *
+ *	@(#)param.h	8.1 (Berkeley) 6/10/93
  */
 
-#ifndef	_MACHINE_PARAM_H_
-#define	_MACHINE_PARAM_H_
-
+/*
+ * Machine dependent constants for the Alpha.
+ */
 #define	_MACHINE	alpha
 #define	MACHINE		"alpha"
 #define	_MACHINE_ARCH	alpha
 #define	MACHINE_ARCH	"alpha"
 #define	MID_MACHINE	MID_ALPHA
 
-#ifdef _KERNEL
+#include <machine/alpha_cpu.h>
 #include <machine/cpu.h>
-#endif
 
-#define	PAGE_SHIFT	13
-#define	PAGE_SIZE	(1 << PAGE_SHIFT)
-#define	PAGE_MASK	(PAGE_SIZE - 1)
+/*
+ * Round p (pointer or byte index) up to a correctly-aligned value for all
+ * data types (int, long, ...).   The result is u_long and must be cast to
+ * any desired pointer type.
+ */
+#define	ALIGNBYTES	7
+#define	ALIGN(p)	(((u_long)(p) + ALIGNBYTES) &~ ALIGNBYTES)
 
-#define	KERNBASE	0xfffffc0000580000	/* start of kernel virtual */
+#define	NBPG		(1 << ALPHA_PGSHIFT)		/* bytes/page */
+#define	PGOFSET		(NBPG-1)			/* byte off. into pg */
+#define	PGSHIFT		ALPHA_PGSHIFT			/* LOG2(NBPG) */
+#define	NPTEPG		(1 << (PGSHIFT-PTESHIFT))	/* pte's/page */
 
-#ifdef _KERNEL
+#define	SEGSHIFT	(PGSHIFT + (PGSHIFT-PTESHIFT))	/* LOG2(NBSEG) */
+#define	NBSEG		(1 << SEGSHIFT)			/* bytes/segment (8M) */
+#define	SEGOFSET	(NBSEG-1)			/* byte off. into seg */
 
-#define	NBPG		PAGE_SIZE		/* bytes/page */
-#define	PGSHIFT		PAGE_SHIFT		/* LOG2(PAGE_SIZE) */
-#define	PGOFSET		PAGE_MASK		/* byte offset into page */
+#define	KERNBASE	0xfffffc0000230000	/* start of kernel virtual */
+#define	BTOPKERNBASE	((u_long)KERNBASE >> PGSHIFT)
+
+#define	DEV_BSIZE	512
+#define	DEV_BSHIFT	9		/* log2(DEV_BSIZE) */
+#define	BLKDEV_IOSIZE	2048
+#define	MAXPHYS		(64 * 1024)	/* max raw I/O transfer size */
+
+#define	CLSIZE		1
+#define	CLSIZELOG2	0
+
+/* NOTE: SSIZE, SINCR and UPAGES must be multiples of CLSIZE */
+#define	SSIZE		1		/* initial stack size/NBPG */
+#define	SINCR		1		/* increment of stack/NBPG */
 
 #define	UPAGES		2			/* pages of u-area */
-#define	USPACE		(UPAGES * PAGE_SIZE)	/* total size of u-area */
-#define	USPACE_ALIGN	0			/* u-area alignment 0-none */
+#define	USPACE		(UPAGES * NBPG)		/* total size of u-area */
 
-#define	NMBCLUSTERS	4096			/* map size, max cluster allocation */
-
-#ifndef	MSGBUFSIZE
-#define	MSGBUFSIZE	(2 * PAGE_SIZE)		/* default message buffer size */
+/*
+ * Constants related to network buffer management.
+ * MCLBYTES must be no larger than CLBYTES (the software page size), and,
+ * on machines that exchange pages of input or output buffers with mbuf
+ * clusters (MAPPED_MBUFS), MCLBYTES must also be an integral multiple
+ * of the hardware page size.
+ */
+#define	MSIZE		256		/* size of an mbuf */
+#define	MCLSHIFT	11
+#define	MCLBYTES	(1 << MCLSHIFT)	/* large enough for ether MTU */
+#define	MCLOFSET	(MCLBYTES - 1)
+#ifndef NMBCLUSTERS
+#ifdef GATEWAY
+#define	NMBCLUSTERS	1024		/* map size, max cluster allocation */
+#else
+#define	NMBCLUSTERS	512		/* map size, max cluster allocation */
+#endif
 #endif
 
 /*
- * Maximum size of the kernel malloc arena in PAGE_SIZE-sized
- * logical pages.
- */
-#define	NKMEMPAGES_MAX_DEFAULT	((128 * 1024 * 1024) >> PAGE_SHIFT)
+ * Size of kernel malloc arena in CLBYTES-sized logical pages
+ */ 
+#ifndef NKMEMCLUSTERS
+#define	NKMEMCLUSTERS	(4096*1024/CLBYTES)	/* XXX? */
+#endif
 
-#ifndef _LOCORE
+/* pages ("clicks") to disk blocks */
+#define	ctod(x)		((x) << (PGSHIFT - DEV_BSHIFT))
+#define	dtoc(x)		((x) >> (PGSHIFT - DEV_BSHIFT))
+
+/* pages to bytes */
+#define	ctob(x)		((x) << PGSHIFT)
+#define	btoc(x)		(((x) + PGOFSET) >> PGSHIFT)
+
+/* bytes to disk blocks */
+#define	btodb(x)	((x) >> DEV_BSHIFT)
+#define	dbtob(x)	((x) << DEV_BSHIFT)
+
+/*
+ * Map a ``block device block'' to a file system block.
+ * This should be device dependent, and should use the bsize
+ * field from the disk label.
+ * For now though just use DEV_BSIZE.
+ */
+#define	bdbtofsb(bn)	((bn) / (BLKDEV_IOSIZE/DEV_BSIZE))
+
+/*
+ * Mach derived conversion macros
+ */
+#define	alpha_round_page(x)	((((unsigned long)(x)) + NBPG - 1) & ~(NBPG-1))
+#define	alpha_trunc_page(x)	((unsigned long)(x) & ~(NBPG-1))
+#define	alpha_btop(x)		((unsigned long)(x) >> PGSHIFT)
+#define	alpha_ptob(x)		((unsigned long)(x) << PGSHIFT)
 
 #include <machine/intr.h>
 
-void	delay(unsigned long);
+#ifdef _KERNEL
+#ifndef _LOCORE
+
+void	delay __P((unsigned long));
 #define	DELAY(n)	delay(n)
 
 /* XXX THE FOLLOWING PROTOTYPE BELONGS IN INTR.H */
-int spl0(void);			/* drop ipl to zero */
+int spl0 __P((void));					/* drop ipl to zero */
 /* XXX END INTR.H */
 
 /* XXX THE FOLLOWING PROTOTYPE SHOULD BE A BUS.H INTERFACE */
-paddr_t alpha_XXX_dmamap(vaddr_t);
+vm_offset_t alpha_XXX_dmamap __P((vm_offset_t));
 /* XXX END BUS.H */
 
 #endif
 #endif /* !_KERNEL */
-
-#endif /* _MACHINE_PARAM_H_ */

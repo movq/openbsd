@@ -1,5 +1,5 @@
 /* BFD back end for Lynx core files
-   Copyright 1993, 1994, 1995, 2001, 2002 Free Software Foundation, Inc.
+   Copyright 1993 Free Software Foundation, Inc.
    Written by Stu Grossman of Cygnus Support.
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -26,7 +26,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #include <sys/conf.h>
 #include <sys/kernel.h>
-/* sys/kernel.h should define this, but doesn't always, sigh.  */
+/* sys/kernel.h should define this, but doesn't always, sigh. */
 #ifndef __LYNXOS
 #define __LYNXOS
 #endif
@@ -40,7 +40,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 /* These are stored in the bfd's tdata */
 
-struct lynx_core_struct
+struct lynx_core_struct 
 {
   int sig;
   char cmd[PNMLEN + 1];
@@ -55,7 +55,7 @@ struct lynx_core_struct
 static asection *
 make_bfd_asection (abfd, name, flags, _raw_size, vma, filepos)
      bfd *abfd;
-     const char *name;
+     CONST char *name;
      flagword flags;
      bfd_size_type _raw_size;
      bfd_vma vma;
@@ -64,7 +64,7 @@ make_bfd_asection (abfd, name, flags, _raw_size, vma, filepos)
   asection *asect;
   char *newname;
 
-  newname = bfd_alloc (abfd, (bfd_size_type) strlen (name) + 1);
+  newname = bfd_alloc (abfd, strlen (name) + 1);
   if (!newname)
     return NULL;
 
@@ -83,17 +83,18 @@ make_bfd_asection (abfd, name, flags, _raw_size, vma, filepos)
   return asect;
 }
 
+/* ARGSUSED */
 const bfd_target *
 lynx_core_file_p (abfd)
      bfd *abfd;
 {
+  int val;
   int secnum;
   struct pssentry pss;
-  bfd_size_type tcontext_size;
+  size_t tcontext_size;
   core_st_t *threadp;
   int pagesize;
   asection *newsect;
-  bfd_size_type amt;
 
   pagesize = getpagesize ();	/* Serious cross-target issue here...  This
 				   really needs to come from a system-specific
@@ -101,11 +102,11 @@ lynx_core_file_p (abfd)
 
   /* Get the pss entry from the core file */
 
-  if (bfd_seek (abfd, (file_ptr) 0, SEEK_SET) != 0)
+  if (bfd_seek (abfd, 0, SEEK_SET) != 0)
     return NULL;
 
-  amt = sizeof pss;
-  if (bfd_bread ((void *) &pss, amt, abfd) != amt)
+  val = bfd_read ((void *)&pss, 1, sizeof pss, abfd);
+  if (val != sizeof pss)
     {
       /* Too small to be a core file */
       if (bfd_get_error () != bfd_error_system_call)
@@ -113,8 +114,8 @@ lynx_core_file_p (abfd)
       return NULL;
     }
 
-  amt = sizeof (struct lynx_core_struct);
-  core_hdr (abfd) = (struct lynx_core_struct *) bfd_zalloc (abfd, amt);
+  core_hdr (abfd) = (struct lynx_core_struct *)
+    bfd_zalloc (abfd, sizeof (struct lynx_core_struct));
 
   if (!core_hdr (abfd))
     return NULL;
@@ -127,23 +128,25 @@ lynx_core_file_p (abfd)
 
   /* Allocate space for the thread contexts */
 
-  threadp = (core_st_t *) bfd_alloc (abfd, tcontext_size);
+  threadp = (core_st_t *)bfd_alloc (abfd, tcontext_size);
   if (!threadp)
-    goto fail;
+    return NULL;
 
   /* Save thread contexts */
 
-  if (bfd_seek (abfd, (file_ptr) pagesize, SEEK_SET) != 0)
-    goto fail;
+  if (bfd_seek (abfd, pagesize, SEEK_SET) != 0)
+    return NULL;
 
-  if (bfd_bread ((void *) threadp, tcontext_size, abfd) != tcontext_size)
+  val = bfd_read ((void *)threadp, pss.threadcnt, sizeof (core_st_t), abfd);
+
+  if (val != tcontext_size)
     {
       /* Probably too small to be a core file */
       if (bfd_get_error () != bfd_error_system_call)
 	bfd_set_error (bfd_error_wrong_format);
-      goto fail;
+      return NULL;
     }
-
+  
   core_signal (abfd) = threadp->currsig;
 
   newsect = make_bfd_asection (abfd, ".stack",
@@ -152,7 +155,7 @@ lynx_core_file_p (abfd)
 			       pss.slimit,
 			       pagesize + tcontext_size);
   if (!newsect)
-    goto fail;
+    return NULL;
 
   newsect = make_bfd_asection (abfd, ".data",
 			       SEC_ALLOC + SEC_LOAD + SEC_HAS_CONTENTS,
@@ -170,7 +173,7 @@ lynx_core_file_p (abfd)
 #endif
 			       );
   if (!newsect)
-    goto fail;
+    return NULL;
 
 /* And, now for the .reg/XXX pseudo sections.  Each thread has it's own
    .reg/XXX section, where XXX is the thread id (without leading zeros).  The
@@ -185,7 +188,7 @@ lynx_core_file_p (abfd)
 			       0,
 			       pagesize);
   if (!newsect)
-    goto fail;
+    return NULL;
 
   for (secnum = 0; secnum < pss.threadcnt; secnum++)
     {
@@ -198,16 +201,10 @@ lynx_core_file_p (abfd)
 				   0,
 				   pagesize + secnum * sizeof (core_st_t));
       if (!newsect)
-	goto fail;
+	return NULL;
     }
 
   return abfd->xvec;
-
- fail:
-  bfd_release (abfd, core_hdr (abfd));
-  core_hdr (abfd) = NULL;
-  bfd_section_list_clear (abfd);
-  return NULL;
 }
 
 char *
@@ -217,6 +214,7 @@ lynx_core_file_failing_command (abfd)
   return core_command (abfd);
 }
 
+/* ARGSUSED */
 int
 lynx_core_file_failing_signal (abfd)
      bfd *abfd;
@@ -224,11 +222,12 @@ lynx_core_file_failing_signal (abfd)
   return core_signal (abfd);
 }
 
-bfd_boolean
+/* ARGSUSED */
+boolean
 lynx_core_file_matches_executable_p  (core_bfd, exec_bfd)
      bfd *core_bfd, *exec_bfd;
 {
-  return TRUE;		/* FIXME, We have no way of telling at this point */
+  return true;		/* FIXME, We have no way of telling at this point */
 }
 
 #endif /* LYNX_CORE */

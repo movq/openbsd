@@ -1,5 +1,3 @@
-/*	$OpenBSD: v_paragraph.c,v 1.8 2015/12/07 20:39:19 mmcc Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)v_paragraph.c	10.7 (Berkeley) 3/6/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -47,7 +49,7 @@
 		continue;						\
 	for (lp = VIP(sp)->ps; *lp != '\0'; lp += 2)			\
 		if (lp[0] == p[1] &&					\
-		    ((lp[1] == ' ' && len == 2) || lp[1] == p[2]) &&	\
+		    (lp[1] == ' ' && len == 2 || lp[1] == p[2]) &&	\
 		    !--cnt)						\
 			goto found;					\
 }
@@ -59,10 +61,12 @@
  * Paragraphs are empty lines after text, formfeed characters, or values
  * from the paragraph or section options.
  *
- * PUBLIC: int v_paragraphf(SCR *, VICMD *);
+ * PUBLIC: int v_paragraphf __P((SCR *, VICMD *));
  */
 int
-v_paragraphf(SCR *sp, VICMD *vp)
+v_paragraphf(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	enum { P_INTEXT, P_INBLANK } pstate;
 	size_t lastlen, len;
@@ -84,7 +88,7 @@ v_paragraphf(SCR *sp, VICMD *vp)
 	 * line itself remained.  If somebody complains, don't pause, don't
 	 * hesitate, just hit them.
 	 */
-	if (ISMOTION(vp)) {
+	if (ISMOTION(vp))
 		if (vp->m_start.cno == 0)
 			F_SET(vp, VM_LMODE);
 		else {
@@ -95,7 +99,6 @@ v_paragraphf(SCR *sp, VICMD *vp)
 			if (vp->m_start.cno <= vp->m_stop.cno)
 				F_SET(vp, VM_LMODE);
 		}
-	}
 
 	/* Figure out what state we're currently in. */
 	lno = vp->m_start.lno;
@@ -197,10 +200,12 @@ eof:	if (vp->m_start.lno == lno || vp->m_start.lno == lno - 1) {
  * v_paragraphb -- [count]{
  *	Move backward count paragraphs.
  *
- * PUBLIC: int v_paragraphb(SCR *, VICMD *);
+ * PUBLIC: int v_paragraphb __P((SCR *, VICMD *));
  */
 int
-v_paragraphb(SCR *sp, VICMD *vp)
+v_paragraphb(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	enum { P_INTEXT, P_INBLANK } pstate;
 	size_t len;
@@ -227,7 +232,7 @@ v_paragraphb(SCR *sp, VICMD *vp)
 	 */
 	lno = vp->m_start.lno;
 
-	if (ISMOTION(vp)) {
+	if (ISMOTION(vp))
 		if (vp->m_start.cno == 0) {
 			if (vp->m_start.lno == 1) {
 				v_sof(sp, &vp->m_start);
@@ -237,7 +242,6 @@ v_paragraphb(SCR *sp, VICMD *vp)
 			F_SET(vp, VM_LMODE);
 		} else
 			--vp->m_start.cno;
-	}
 
 	if (vp->m_start.lno <= 1)
 		goto sof;
@@ -304,10 +308,12 @@ found:	vp->m_stop.lno = lno;
  * v_buildps --
  *	Build the paragraph command search pattern.
  *
- * PUBLIC: int v_buildps(SCR *, char *, char *);
+ * PUBLIC: int v_buildps __P((SCR *, char *, char *));
  */
 int
-v_buildps(SCR *sp, char *p_p, char *s_p)
+v_buildps(sp, p_p, s_p)
+	SCR *sp;
+	char *p_p, *s_p;
 {
 	VI_PRIVATE *vip;
 	size_t p_len, s_len;
@@ -323,7 +329,7 @@ v_buildps(SCR *sp, char *p_p, char *s_p)
 	if (p_len == 0 && s_len == 0)
 		return (0);
 
-	MALLOC_RET(sp, p, p_len + s_len + 1);
+	MALLOC_RET(sp, p, char *, p_len + s_len + 1);
 
 	vip = VIP(sp);
 	if (vip->ps != NULL)

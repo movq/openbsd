@@ -1,5 +1,4 @@
-/*	$OpenBSD: eisa_machdep.c,v 1.16 2016/07/16 06:08:52 mlarkin Exp $	*/
-/*	$NetBSD: eisa_machdep.c,v 1.10.22.2 2000/06/25 19:36:58 sommerfeld Exp $	*/
+/*	$NetBSD: eisa_machdep.c,v 1.6 1997/06/06 23:12:52 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1997 The NetBSD Foundation, Inc.
@@ -17,6 +16,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the NetBSD
+ *	Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -72,9 +78,10 @@
 #include <sys/errno.h>
 #include <sys/device.h>
 
+#define _I386_BUS_DMA_PRIVATE
 #include <machine/bus.h>
-#include <machine/i8259.h>
 
+#include <i386/isa/icu.h>
 #include <dev/isa/isavar.h>
 #include <dev/eisa/eisavar.h>
 
@@ -82,7 +89,7 @@
  * EISA doesn't have any special needs; just use the generic versions
  * of these funcions.
  */
-struct bus_dma_tag eisa_bus_dma_tag = {
+struct i386_bus_dma_tag eisa_bus_dma_tag = {
 	NULL,			/* _cookie */
 	_bus_dmamap_create,
 	_bus_dmamap_destroy,
@@ -91,9 +98,8 @@ struct bus_dma_tag eisa_bus_dma_tag = {
 	_bus_dmamap_load_uio,
 	_bus_dmamap_load_raw,
 	_bus_dmamap_unload,
-	_bus_dmamap_sync,
+	NULL,			/* _dmamap_sync */
 	_bus_dmamem_alloc,
-	_bus_dmamem_alloc_range,
 	_bus_dmamem_free,
 	_bus_dmamem_map,
 	_bus_dmamem_unmap,
@@ -101,15 +107,19 @@ struct bus_dma_tag eisa_bus_dma_tag = {
 };
 
 void
-eisa_attach_hook(struct device *parent, struct device *self,
-    struct eisabus_attach_args *eba)
+eisa_attach_hook(parent, self, eba)
+	struct device *parent, *self;
+	struct eisabus_attach_args *eba;
 {
+
 	/* Nothing to do */
 }
 
 int
-eisa_maxslots(eisa_chipset_tag_t ec)
+eisa_maxslots(ec)
+	eisa_chipset_tag_t ec;
 {
+
 	/*
 	 * Always try 16 slots.
 	 */
@@ -117,12 +127,16 @@ eisa_maxslots(eisa_chipset_tag_t ec)
 }
 
 int
-eisa_intr_map(eisa_chipset_tag_t ec, u_int irq, eisa_intr_handle_t *ihp)
+eisa_intr_map(ec, irq, ihp)
+	eisa_chipset_tag_t ec;
+	u_int irq;
+	eisa_intr_handle_t *ihp;
 {
+
 	if (irq >= ICU_LEN) {
 		printf("eisa_intr_map: bad IRQ %d\n", irq);
 		*ihp = -1;
-		return (1);
+		return 1;
 	}
 	if (irq == 2) {
 		printf("eisa_intr_map: changed IRQ 2 to IRQ 9\n");
@@ -130,34 +144,44 @@ eisa_intr_map(eisa_chipset_tag_t ec, u_int irq, eisa_intr_handle_t *ihp)
 	}
 
 	*ihp = irq;
-	return (0);
+	return 0;
 }
 
 const char *
-eisa_intr_string(eisa_chipset_tag_t ec, eisa_intr_handle_t ih)
+eisa_intr_string(ec, ih)
+	eisa_chipset_tag_t ec;
+	eisa_intr_handle_t ih;
 {
-	static char irqstr[64];
+	static char irqstr[8];		/* 4 + 2 + NULL + sanity */
 
-	if (ih == 0 || (ih & 0xff) >= ICU_LEN || ih == 2)
+	if (ih == 0 || ih >= ICU_LEN || ih == 2)
 		panic("eisa_intr_string: bogus handle 0x%x", ih);
 
-	snprintf(irqstr, sizeof irqstr, "irq %d", ih);
+	sprintf(irqstr, "irq %d", ih);
 	return (irqstr);
 	
 }
 
 void *
-eisa_intr_establish(eisa_chipset_tag_t ec, eisa_intr_handle_t ih, int type,
-    int level, int (*func)(void *), void *arg, char *what)
+eisa_intr_establish(ec, ih, type, level, func, arg, what)
+	eisa_chipset_tag_t ec;
+	eisa_intr_handle_t ih;
+	int type, level, (*func) __P((void *));
+	void *arg;
+	char *what;
 {
+
 	if (ih == 0 || ih >= ICU_LEN || ih == 2)
 		panic("eisa_intr_establish: bogus handle 0x%x", ih);
 
-	return (isa_intr_establish(NULL, ih, type, level, func, arg, what));
+	return isa_intr_establish(NULL, ih, type, level, func, arg, what);
 }
 
 void
-eisa_intr_disestablish(eisa_chipset_tag_t ec, void *cookie)
+eisa_intr_disestablish(ec, cookie)
+	eisa_chipset_tag_t ec;
+	void *cookie;
 {
-	return (isa_intr_disestablish(NULL, cookie));
+
+	return isa_intr_disestablish(NULL, cookie);
 }

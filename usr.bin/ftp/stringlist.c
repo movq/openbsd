@@ -1,4 +1,4 @@
-/*	$OpenBSD: stringlist.c,v 1.12 2015/05/20 23:39:55 schwarze Exp $	*/
+/*	$OpenBSD: stringlist.c,v 1.2 1997/07/25 21:56:23 millert Exp $	*/
 /*	$NetBSD: stringlist.c,v 1.2 1997/01/17 07:26:20 lukem Exp $	*/
 
 /*
@@ -13,6 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Christos Zoulas.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
  * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -27,7 +32,9 @@
  * SUCH DAMAGE.
  */
 
-#ifndef SMALL
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: stringlist.c,v 1.2 1997/07/25 21:56:23 millert Exp $";
+#endif /* LIBC_SCCS and not lint */
 
 #include <stdio.h>
 #include <string.h>
@@ -42,17 +49,17 @@
  * sl_init(): Initialize a string list
  */
 StringList *
-sl_init(void)
+sl_init()
 {
 	StringList *sl = malloc(sizeof(StringList));
 	if (sl == NULL)
-		err(1, "stringlist");
+		err(1, "stringlist: %m");
 
 	sl->sl_cur = 0;
 	sl->sl_max = _SL_CHUNKSIZE;
-	sl->sl_str = calloc(sl->sl_max, sizeof(char *));
+	sl->sl_str = malloc(sl->sl_max * sizeof(char *));
 	if (sl->sl_str == NULL)
-		err(1, "stringlist");
+		err(1, "stringlist: %m");
 	return sl;
 }
 
@@ -61,14 +68,15 @@ sl_init(void)
  * sl_add(): Add an item to the string list
  */
 void
-sl_add(StringList *sl, char *name)
+sl_add(sl, name)
+	StringList *sl;
+	char *name;
 {
 	if (sl->sl_cur == sl->sl_max - 1) {
 		sl->sl_max += _SL_CHUNKSIZE;
-		sl->sl_str = reallocarray(sl->sl_str, sl->sl_max,
-		    sizeof(char *));
+		sl->sl_str = realloc(sl->sl_str, sl->sl_max * sizeof(char *));
 		if (sl->sl_str == NULL)
-			err(1, "stringlist");
+			err(1, "stringlist: %m");
 	}
 	sl->sl_str[sl->sl_cur++] = name;
 }
@@ -78,7 +86,9 @@ sl_add(StringList *sl, char *name)
  * sl_free(): Free a stringlist
  */
 void
-sl_free(StringList *sl, int all)
+sl_free(sl, all)
+	StringList *sl;
+	int all;
 {
 	size_t i;
 
@@ -93,5 +103,20 @@ sl_free(StringList *sl, int all)
 	free(sl);
 }
 
-#endif /* !SMALL */
 
+/*
+ * sl_find(): Find a name in the string list
+ */
+char *
+sl_find(sl, name)
+	StringList *sl;
+	char *name;
+{
+	size_t i;
+
+	for (i = 0; i < sl->sl_cur; i++)
+		if (strcmp(sl->sl_str[i], name) == 0)
+			return sl->sl_str[i];
+
+	return NULL;
+}

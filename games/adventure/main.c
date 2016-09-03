@@ -1,4 +1,4 @@
-/*	$OpenBSD: main.c,v 1.23 2016/03/08 10:48:39 mestre Exp $	*/
+/*	$OpenBSD: main.c,v 1.10 1998/11/29 19:45:10 pjanzen Exp $	*/
 /*	$NetBSD: main.c,v 1.5 1996/05/21 21:53:09 mrg Exp $	*/
 
 /*-
@@ -18,7 +18,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -35,26 +39,42 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1991, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)main.c	8.1 (Berkeley) 6/2/93";
+#else
+static char rcsid[] = "$OpenBSD: main.c,v 1.10 1998/11/29 19:45:10 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
 /*	Re-coding of advent in C: main program				*/
 
-#include <err.h>
+#include <sys/file.h>
+#include <signal.h>
 #include <stdio.h>
-#include <time.h>
 #include <unistd.h>
-
-#include "extern.h"
 #include "hdr.h"
+#include "extern.h"
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int     argc;
+	char  **argv;
 {
 	int     i;
 	int     rval, ll;
 	struct text *kk;
 
-	if (pledge("stdio rpath wpath cpath", NULL) == -1)
-		err(1, "pledge");
-	
+	/* revoke privs */
+	setegid(getgid());
+	setgid(getgid());
+
 	init();		/* Initialize everything */
 	signal(SIGINT, trapdel);
 
@@ -71,7 +91,7 @@ main(int argc, char *argv[])
 			errx(1, "can't open file");	/* So give up */
 		case 2:		/* Oops -- file was altered */
 			rspeak(202);	/* You dissolve */
-			return 2;	/* File could be non-adventure */
+			exit(2);	/* File could be non-adventure */
 		}			/* So don't unlink it. */
 	}
 
@@ -152,12 +172,11 @@ l2600:		checkhints();		/* to 2600-2602		*/
 		wzdark = dark();	/* 2605			*/
 		if (knfloc > 0 && knfloc != loc)
 			knfloc = 1;
-		getin(wd1, sizeof(wd1), wd2, sizeof(wd2));
+		getin(&wd1, &wd2);
 		if (delhit) {		/* user typed a DEL	*/
 			delhit = 0;	/* reset counter	*/
-			/* pretend he's quitting */
-			strlcpy(wd1, "quit", sizeof(wd1));
-			wd2[0] = 0;
+			copystr("quit", wd1);	/* pretend he's quitting */
+			*wd2 = 0;
 		}
 l2608:		if ((foobar = -foobar) > 0)
 			foobar = 0;	/* 2608		*/
@@ -166,7 +185,7 @@ l2608:		if ((foobar = -foobar) > 0)
 		if (demo && turns >= SHORT)
 			done(1);	/* to 13000	*/
 
-		if (verb == say && wd2[0] != 0)
+		if (verb == say && *wd2 != 0)
 			verb = 0;
 		if (verb == say)
 			goto l4090;
@@ -228,7 +247,7 @@ l19999:		k = 43;
 		    || (!weq(wd2, "plant") && !weq(wd2, "door")))
 			goto l2610;
 		if (at(vocab(wd2, 1, 0)))
-			strlcpy(wd2, "pour", sizeof(wd2));
+			copystr("pour", wd2);
 
 l2610:		if (weq(wd1, "west"))
 			if (++iwest == 10)
@@ -263,16 +282,16 @@ l8:
 		default: bug(110);
 		}
 
-l2800:		strlcpy(wd1, wd2, sizeof(wd1));
-		wd2[0] = 0;
+l2800:		copystr(wd2, wd1);
+		*wd2 = 0;
 		goto l2610;
 
 l4000:		verb = k;
 		spk = actspk[verb];
-		if (wd2[0] != 0 && verb != say)
+		if (*wd2 != 0 && verb != say)
 			goto l2800;
 		if (verb == say)
-			obj = wd2[0];
+			obj= *wd2;
 		if (obj != 0)
 			goto l4090;
 l4080:
@@ -627,7 +646,7 @@ l5000:
 		obj = k;
 		if (fixed[k] != loc && !here(k))
 			goto l5100;
-l5010:		if (wd2[0] != 0)
+l5010:		if (*wd2 != 0)
 			goto l2800;
 		if (verb != 0)
 			goto l4090;
@@ -661,7 +680,7 @@ l5140:		if (obj != rod || !here(rod2))
 			goto l5190;
 		obj = rod2;
 		goto l5010;
-l5190:		if ((verb == find || verb == invent) && wd2[0] == 0)
+l5190:		if ((verb == find || verb == invent) && *wd2 == 0)
 			goto l5010;
 		printf("I see no %s here\n", wd1);
 		goto l2012;

@@ -1,5 +1,3 @@
-/*	$OpenBSD: main.c,v 1.42 2016/03/16 15:41:10 krw Exp $	*/
-
 /*-
  * Copyright (c) 1980, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -12,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,6 +31,18 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1980, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+/*static char sccsid[] = "from: @(#)main.c	8.1 (Berkeley) 6/20/93";*/
+static char rcsid[] = "$Id: main.c,v 1.12 1998/07/10 08:06:04 deraadt Exp $";
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/stat.h>
 #include <termios.h>
 #include <sys/ioctl.h>
@@ -39,12 +53,13 @@
 #include <fcntl.h>
 #include <time.h>
 #include <ctype.h>
+#include <fcntl.h>
+#include <setjmp.h>
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
-#include <stdio.h>
+#include <time.h>
 #include <unistd.h>
-#include <limits.h>
 #include <util.h>
 
 #include "gettytab.h"
@@ -57,17 +72,27 @@
  */
 #define GETTY_TIMEOUT	60 /* seconds */
 
+/* defines for auto detection of incoming PPP calls (->PAP/CHAP) */
+
+#define PPP_FRAME	    0x7e  /* PPP Framing character */
+#define PPP_STATION	    0xff  /* "All Station" character */
+#define PPP_ESCAPE	    0x7d  /* Escape Character */
+#define PPP_CONTROL	    0x03  /* PPP Control Field */
+#define PPP_CONTROL_ESCAPED 0x23  /* PPP Control Field, escaped */
+#define PPP_LCP_HI	    0xc0  /* LCP protocol - high byte */
+#define PPP_LCP_LOW	    0x21  /* LCP protocol - low byte */
+
 struct termios tmode, omode;
 
 int crmod, digit, lower, upper;
 
-char	hostname[HOST_NAME_MAX+1];
-char	globalhostname[HOST_NAME_MAX+1];
+char	hostname[MAXHOSTNAMELEN];
 struct	utsname kerninfo;
-char	name[LOGIN_NAME_MAX];
+char	name[16];
 char	dev[] = _PATH_DEV;
 char	ttyn[32];
-char	*portselector(void);
+char	*portselector();
+char	*ttyname();
 
 #define	OBUFSIZ		128
 #define	TABBUFSIZ	512
@@ -100,55 +125,57 @@ char partab[] = {
 #define	KILL	tmode.c_cc[VKILL]
 #define	EOT	tmode.c_cc[VEOF]
 
+jmp_buf timeout;
+
 static void
-dingdong(int signo)
+dingdong()
 {
-	tmode.c_ispeed = tmode.c_ospeed = 0;
-	(void)tcsetattr(0, TCSANOW, &tmode);
-	_exit(1);
+
+	alarm(0);
+	signal(SIGALRM, SIG_DFL);
+	longjmp(timeout, 1);
 }
 
-volatile sig_atomic_t interrupt_flag;
+jmp_buf	intrupt;
 
 static void
-interrupt(int signo)
+interrupt()
 {
-	int save_errno = errno;
 
-	interrupt_flag = 1;
 	signal(SIGINT, interrupt);
-	errno = save_errno;
+	longjmp(intrupt, 1);
 }
 
 /*
  * Action to take when getty is running too long.
  */
-static void
-timeoverrun(int signo)
+void
+timeoverrun(signo)
+	int signo;
 {
-	struct syslog_data sdata = SYSLOG_DATA_INIT;
 
-	syslog_r(LOG_ERR, &sdata,
-	    "getty exiting due to excessive running time");
-	_exit(1);
+	syslog(LOG_ERR, "getty exiting due to excessive running time");
+	exit(1);
 }
 
-static int	getname(void);
-static void	oflush(void);
-static void	prompt(void);
-static void	putchr(int);
-static void	putf(char *);
-static void	putpad(char *);
-static void	xputs(char *);
+static int	getname __P((void));
+static void	oflush __P((void));
+static void	prompt __P((void));
+static void	putchr __P((int));
+static void	putf __P((char *));
+static void	putpad __P((char *));
+static void	xputs __P((char *));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	extern char **environ;
 	char *tname;
 	int repcnt = 0, failopenlogged = 0;
 	struct rlimit limit;
-	int off = 0;
+	int rval;
 
 	signal(SIGINT, SIG_IGN);
 /*
@@ -157,7 +184,7 @@ main(int argc, char *argv[])
 	openlog("getty", LOG_ODELAY|LOG_CONS|LOG_PID, LOG_AUTH);
 	gethostname(hostname, sizeof(hostname));
 	if (hostname[0] == '\0')
-		strlcpy(hostname, "Amnesiac", sizeof hostname);
+		strcpy(hostname, "Amnesiac");
 	uname(&kerninfo);
 
 	/*
@@ -168,34 +195,20 @@ main(int argc, char *argv[])
 	limit.rlim_cur = GETTY_TIMEOUT;
 	(void)setrlimit(RLIMIT_CPU, &limit);
 
-	ioctl(0, FIOASYNC, &off);	/* turn off async mode */
-
-	if (pledge("stdio rpath wpath fattr proc exec tty", NULL) == -1) {
-		syslog(LOG_ERR, "pledge: %m");
-		exit(1);
-	}
-
 	/*
 	 * The following is a work around for vhangup interactions
 	 * which cause great problems getting window systems started.
 	 * If the tty line is "-", we do the old style getty presuming
-	 * that the file descriptors are already set up for us.
+	 * that the file descriptors are already set up for us. 
 	 * J. Gettys - MIT Project Athena.
 	 */
-	if (argc <= 2 || strcmp(argv[2], "-") == 0) {
-		if ((tname = ttyname(0)) == NULL) {
-			syslog(LOG_ERR, "stdin: %m");
-			exit(1);
-		}
-		if (strlcpy(ttyn, tname, sizeof(ttyn)) >= sizeof(ttyn)) {
-			errno = ENAMETOOLONG;
-			syslog(LOG_ERR, "%s: %m", tname);
-			exit(1);
-		}
-	} else {
+	if (argc <= 2 || strcmp(argv[2], "-") == 0)
+		strcpy(ttyn, ttyname(0));
+	else {
 		int i;
 
-		snprintf(ttyn, sizeof ttyn, "%s%s", dev, argv[2]);
+		strcpy(ttyn, dev);
+		strncat(ttyn, argv[2], sizeof(ttyn)-sizeof(dev));
 		if (strcmp(argv[0], "+") != 0) {
 			chown(ttyn, 0, 0);
 			chmod(ttyn, 0600);
@@ -218,11 +231,6 @@ main(int argc, char *argv[])
 		}
 	}
 
-	if (pledge("stdio rpath proc exec tty", NULL) == -1) {
-		syslog(LOG_ERR, "pledge: %m");
-		exit(1);
-	}
-
 	/* Start with default tty settings */
 	if (tcgetattr(0, &tmode) < 0) {
 		syslog(LOG_ERR, "%s: %m", ttyn);
@@ -236,12 +244,16 @@ main(int argc, char *argv[])
 	if (argc > 1)
 		tname = argv[1];
 	for (;;) {
+		int off;
+
 		gettable(tname, tabent);
 		if (OPset || EPset || APset)
 			APset++, OPset++, EPset++;
 		setdefaults();
+		off = 0;
 		(void)tcflush(0, TCIOFLUSH);	/* clear out the crap */
 		ioctl(0, FIONBIO, &off);	/* turn off non-blocking mode */
+		ioctl(0, FIOASYNC, &off);	/* ditto for async mode */
 
 		if (IS)
 			cfsetispeed(&tmode, IS);
@@ -258,6 +270,8 @@ main(int argc, char *argv[])
 			exit(1);
 		}
 		if (AB) {
+			extern char *autobaud();
+
 			tname = autobaud();
 			continue;
 		}
@@ -267,15 +281,27 @@ main(int argc, char *argv[])
 		}
 		if (CL && *CL)
 			putpad(CL);
-		strlcpy(globalhostname, HN, sizeof(globalhostname));
+		edithost(HE);
 		if (IM && *IM)
 			putf(IM);
+		if (setjmp(timeout)) {
+			tmode.c_ispeed = tmode.c_ospeed = 0;
+			(void)tcsetattr(0, TCSANOW, &tmode);
+			exit(1);
+		}
 		if (TO) {
 			signal(SIGALRM, dingdong);
 			alarm(TO);
 		}
-		if (getname()) {
-			int i;
+		if ((rval = getname()) == 2) {
+			oflush();
+			alarm(0);
+			signal(SIGALRM, SIG_DFL);
+			execle(PP, "ppplogin", ttyn, (char *) 0, env);
+			syslog(LOG_ERR, "%s: %m", PP);
+			exit(1);
+		} else if (rval) {
+			register int i;
 
 			oflush();
 			alarm(0);
@@ -291,7 +317,7 @@ main(int argc, char *argv[])
 				tmode.c_iflag |= ICRNL;
 				tmode.c_oflag |= ONLCR;
 			}
-			if (UC) {
+			if (upper || UC) {
 				tmode.c_iflag |= IUCLC;
 				tmode.c_oflag |= OLCUC;
 				tmode.c_lflag |= XCASE;
@@ -306,14 +332,14 @@ main(int argc, char *argv[])
 				exit(1);
 			}
 			signal(SIGINT, SIG_DFL);
-			for (i = 0; environ[i] != NULL; i++)
+			for (i = 0; environ[i] != (char *)0; i++)
 				env[i] = environ[i];
 			makeenv(&env[i]);
 
 			limit.rlim_max = RLIM_INFINITY;
 			limit.rlim_cur = RLIM_INFINITY;
 			(void)setrlimit(RLIMIT_CPU, &limit);
-			execle(LO, "login", "-p", "--", name, NULL, env);
+			execle(LO, "login", "-p", "--", name, (char *)0, env);
 			syslog(LOG_ERR, "%s: %m", LO);
 			exit(1);
 		}
@@ -326,15 +352,21 @@ main(int argc, char *argv[])
 }
 
 static int
-getname(void)
+getname()
 {
+	register int c;
+	register char *np;
 	unsigned char cs;
-	int c, r;
-	char *np;
+	int ppp_state = 0;
+	int ppp_connection = 0;
 
 	/*
 	 * Interrupt may happen if we use CBREAK mode
 	 */
+	if (setjmp(intrupt)) {
+		signal(SIGINT, SIG_IGN);
+		return (0);
+	}
 	signal(SIGINT, interrupt);
 	setflags(1);
 	prompt();
@@ -351,20 +383,41 @@ getname(void)
 	np = name;
 	for (;;) {
 		oflush();
-		r = read(STDIN_FILENO, &cs, 1);
-		if (r <= 0) {
-			if (r == -1 && errno == EINTR && interrupt_flag) {
-				interrupt_flag = 0;
-				return (0);
-			}
+		if (read(STDIN_FILENO, &cs, 1) <= 0)
 			exit(0);
-		}
 		if ((c = cs&0177) == 0)
 			return (0);
 
+		/*
+		 * PPP detection state machine..
+		 * Look for sequences:
+		 * PPP_FRAME, PPP_STATION, PPP_ESCAPE, PPP_CONTROL_ESCAPED or
+		 * PPP_FRAME, PPP_STATION, PPP_CONTROL (deviant from RFC)
+		 * See RFC1662.
+		 * Derived from code from Michael Hancock <michaelh@cet.co.jp>
+		 * and Erik 'PPP' Olson <eriko@wrq.com>
+		 */
+		if (PP && cs == PPP_FRAME) {
+			ppp_state = 1;
+		} else if (ppp_state == 1 && cs == PPP_STATION) {
+			ppp_state = 2;
+		} else if (ppp_state == 2 && cs == PPP_ESCAPE) {
+			ppp_state = 3;
+		} else if ((ppp_state == 2 && cs == PPP_CONTROL) ||
+		    (ppp_state == 3 && cs == PPP_CONTROL_ESCAPED)) {
+			ppp_state = 4;
+		} else if (ppp_state == 4 && cs == PPP_LCP_HI) {
+			ppp_state = 5;
+		} else if (ppp_state == 5 && cs == PPP_LCP_LOW) {
+			ppp_connection = 1;
+			break;
+		} else {
+			ppp_state = 0;
+		}
+
 		if (c == EOT)
 			exit(1);
-		if (c == '\r' || c == '\n' || np >= name + sizeof name -1) {
+		if (c == '\r' || c == '\n' || np >= &name[sizeof name]) {
 			putf("\r\n");
 			break;
 		}
@@ -400,29 +453,30 @@ getname(void)
 		putchr(cs);
 	}
 	signal(SIGINT, SIG_IGN);
-	if (interrupt_flag) {
-		interrupt_flag = 0;
-		return (0);
-	}
 	*np = 0;
 	if (c == '\r')
 		crmod = 1;
-	return (1);
+	if (upper && !lower && !LC || UC)
+		for (np = name; *np; np++)
+			if (isupper(*np))
+				*np = tolower(*np);
+	return (1 + ppp_connection);
 }
 
 static void
-putpad(char *s)
+putpad(s)
+	register char *s;
 {
-	int pad = 0;
+	register pad = 0;
 	speed_t ospeed = cfgetospeed(&tmode);
 
-	if (isdigit((unsigned char)*s)) {
-		while (isdigit((unsigned char)*s)) {
+	if (isdigit(*s)) {
+		while (isdigit(*s)) {
 			pad *= 10;
 			pad += *s++ - '0';
 		}
 		pad *= 10;
-		if (*s == '.' && isdigit((unsigned char)s[1])) {
+		if (*s == '.' && isdigit(s[1])) {
 			pad += s[1] - '0';
 			s += 2;
 		}
@@ -448,7 +502,8 @@ putpad(char *s)
 }
 
 static void
-xputs(char *s)
+xputs(s)
+	register char *s;
 {
 	while (*s)
 		putchr(*s++);
@@ -458,7 +513,8 @@ char	outbuf[OBUFSIZ];
 int	obufcnt = 0;
 
 static void
-putchr(int cc)
+putchr(cc)
+	int cc;
 {
 	char c;
 
@@ -477,7 +533,7 @@ putchr(int cc)
 }
 
 static void
-oflush(void)
+oflush()
 {
 	if (obufcnt)
 		write(STDOUT_FILENO, outbuf, obufcnt);
@@ -485,7 +541,7 @@ oflush(void)
 }
 
 static void
-prompt(void)
+prompt()
 {
 
 	putf(LM);
@@ -494,10 +550,12 @@ prompt(void)
 }
 
 static void
-putf(char *cp)
+putf(cp)
+	register char *cp;
 {
-	char *slash, db[100];
+	extern char editedhost[];
 	time_t t;
+	char *slash, db[100];
 
 	while (*cp) {
 		if (*cp != '%') {
@@ -515,16 +573,17 @@ putf(char *cp)
 			break;
 
 		case 'h':
-			xputs(globalhostname);
+			xputs(editedhost);
 			break;
 
 		case 'd': {
+			static char fmt[] = "%l:% %p on %A, %d %B %Y";
+
+			fmt[4] = 'M';		/* I *hate* SCCS... */
 			(void)time(&t);
-			(void)strftime(db, sizeof(db),
-			    "%l:%M%p on %A, %d %B %Y", localtime(&t));
+			(void)strftime(db, sizeof(db), fmt, localtime(&t));
 			xputs(db);
 			break;
-		}
 
 		case 's':
 			xputs(kerninfo.sysname);
@@ -541,6 +600,7 @@ putf(char *cp)
 		case 'v':
 			xputs(kerninfo.version);
 			break;
+		}
 
 		case '%':
 			putchr('%');

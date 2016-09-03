@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.4 2003/04/10 22:42:29 millert Exp $
+#	$OpenBSD: Makefile,v 1.2 1997/09/21 11:35:34 deraadt Exp $
 
 SUBDIR=	boggle mkdict mkindex
 
@@ -14,9 +14,9 @@ beforeinstall:
 	rm -f ${DESTDIR}/usr/share/games/boggle/dictindex
 	${MKINDEX} < ${DESTDIR}/usr/share/games/boggle/dictionary > \
 	    ${DESTDIR}/usr/share/games/boggle/dictindex
-	chown ${BINOWN}:${BINGRP} ${DESTDIR}/usr/share/games/boggle/dictionary
+	chown ${BINOWN}.${BINGRP} ${DESTDIR}/usr/share/games/boggle/dictionary
 	chmod 444 ${DESTDIR}/usr/share/games/boggle/dictionary
-	chown ${BINOWN}:${BINGRP} ${DESTDIR}/usr/share/games/boggle/dictindex
+	chown ${BINOWN}.${BINGRP} ${DESTDIR}/usr/share/games/boggle/dictindex
 	chmod 444 ${DESTDIR}/usr/share/games/boggle/dictindex
 
 .include <bsd.subdir.mk>

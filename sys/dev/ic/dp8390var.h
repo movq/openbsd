@@ -1,4 +1,4 @@
-/*	$OpenBSD: dp8390var.h,v 1.12 2010/08/29 18:01:21 deraadt Exp $	*/
+/*	$OpenBSD: dp8390var.h,v 1.1 1998/09/22 06:41:13 fgsch Exp $	*/
 /*	$NetBSD: dp8390var.h,v 1.8 1998/08/12 07:19:09 scottr Exp $	*/
 
 /*
@@ -14,12 +14,6 @@
  * the author assume any responsibility for damages incurred with its use.
  */
 
-/*
- * We include MII glue here -- some DP8390 compatible chips have
- * MII interfaces on them (scary, isn't it...).
- */
-#include <dev/mii/miivar.h>
-
 #define INTERFACE_NAME_LEN	32
 
 /*
@@ -30,9 +24,12 @@ struct dp8390_softc {
 	void	*sc_ih;
 	int	sc_flags;		/* interface flags, from config */
 
+#ifdef __NetBSD__
+	struct ethercom sc_ec;		/* ethernet common */
+#else
 	struct arpcom sc_arpcom;	/* ethernet common */
-	struct mii_data sc_mii;		/* MII glue */
-#define sc_media sc_mii.mii_media	/* compatibility definition */
+#endif
+	struct ifmedia sc_media;	/* supported media information */
 
 	bus_space_tag_t	sc_regt;	/* NIC register space tag */
 	bus_space_handle_t sc_regh;	/* NIC register space handle */
@@ -44,7 +41,6 @@ struct dp8390_softc {
 	int	is790;		/* NIC is a 790 */
 
 	u_int8_t cr_proto;	/* values always set in CR */
-	u_int8_t rcr_proto;	/* values always set in RCR */
 	u_int8_t dcr_reg;	/* override DCR iff LS is set */
 
 	int	mem_start;	/* offset of NIC memory */
@@ -63,27 +59,27 @@ struct dp8390_softc {
 	u_short	rec_page_stop;	/* last page of RX ring-buffer */
 	u_short	next_packet;	/* pointer to next unread RX packet */
 
+#ifdef __NetBSD__
+	u_int8_t sc_enaddr[6];	/* storage for MAC address */
+#endif
+
 	int	sc_enabled;	/* boolean; power enabled on interface */
 
-	int	(*test_mem)(struct dp8390_softc *);
-	void	(*init_card)(struct dp8390_softc *);
-	void	(*stop_card)(struct dp8390_softc *);
-	void	(*read_hdr)(struct dp8390_softc *,
-		    int, struct dp8390_ring *);
-	void	(*recv_int)(struct dp8390_softc *);
-	int	(*ring_copy)(struct dp8390_softc *,
-		    int, caddr_t, u_short);
-	int	(*write_mbuf)(struct dp8390_softc *, struct mbuf *, int);
+	int	(*test_mem) __P((struct dp8390_softc *));
+	void	(*init_card) __P((struct dp8390_softc *));
+	void	(*read_hdr) __P((struct dp8390_softc *,
+		    int, struct dp8390_ring *));
+	void	(*recv_int) __P((struct dp8390_softc *));
+	int	(*ring_copy) __P((struct dp8390_softc *,
+		    int, caddr_t, u_short));
+	int	(*write_mbuf) __P((struct dp8390_softc *, struct mbuf *, int));
 
-	int	(*sc_enable)(struct dp8390_softc *);
-	void	(*sc_disable)(struct dp8390_softc *);
+	int	(*sc_enable) __P((struct dp8390_softc *));
+	void	(*sc_disable) __P((struct dp8390_softc *));
 
-	void	(*sc_media_init)(struct dp8390_softc *);
-	void	(*sc_media_fini)(struct dp8390_softc *);
-
-	int	(*sc_mediachange)(struct dp8390_softc *);
-	void	(*sc_mediastatus)(struct dp8390_softc *,
-		    struct ifmediareq *);
+	int	(*sc_mediachange) __P((struct dp8390_softc *));
+	void	(*sc_mediastatus) __P((struct dp8390_softc *,
+		    struct ifmediareq *));
 };
 
 /*
@@ -106,9 +102,9 @@ struct dp8390_softc {
  * Compile-time config flags
  */
 /*
- * This sets the default for enabling/disabling the transceiver.
+ * This sets the default for enabling/disablng the tranceiver.
  */
-#define DP8390_DISABLE_TRANSCEIVER	0x0001
+#define DP8390_DISABLE_TRANCEIVER	0x0001
 
 /*
  * This forces the board to be used in 8/16-bit mode even if it autoconfigs
@@ -129,48 +125,28 @@ struct dp8390_softc {
 #define DP8390_FORCE_PIO		0x0010
 
 /*
- * The chip is ASIX AX88190 and needs work around.
- */
-#define DP8390_DO_AX88190_WORKAROUND	0x0020
-
-#define DP8390_ATTACHED			0x0040	/* attach has succeeded */
-
-/*
- * ASIX AX88796 doesn't have remote DMA conmplete bit in ISR, so don't
- * check ISR.RDC
- */
-#define DP8390_NO_REMOTE_DMA_COMPLETE	0x0080
-
-/*
  * NIC register access macros
  */
 #define NIC_GET(t, h, reg)	bus_space_read_1(t, h,			\
 				    ((sc)->sc_reg_map[reg]))
 #define NIC_PUT(t, h, reg, val)	bus_space_write_1(t, h,			\
 				    ((sc)->sc_reg_map[reg]), (val))
-#define NIC_BARRIER(t, h)	bus_space_barrier(t, h, 0, 0x10,	\
-		    BUS_SPACE_BARRIER_READ | BUS_SPACE_BARRIER_WRITE)
 
-int	dp8390_config(struct dp8390_softc *);
-int	dp8390_intr(void *);
-int	dp8390_ioctl(struct ifnet *, u_long, caddr_t);
-void	dp8390_start(struct ifnet *);
-void	dp8390_watchdog(struct ifnet *);
-void	dp8390_reset(struct dp8390_softc *);
-void	dp8390_init(struct dp8390_softc *);
-void	dp8390_stop(struct dp8390_softc *);
-int	dp8390_enable(struct dp8390_softc *);
-void	dp8390_disable(struct dp8390_softc *);
+int	dp8390_config __P((struct dp8390_softc *, int *, int, int));
+int	dp8390_intr __P((void *));
+int	dp8390_ioctl __P((struct ifnet *, u_long, caddr_t));
+void	dp8390_start __P((struct ifnet *));
+void	dp8390_watchdog __P((struct ifnet *));
+void	dp8390_reset __P((struct dp8390_softc *));
+void	dp8390_init __P((struct dp8390_softc *));
+void	dp8390_stop __P((struct dp8390_softc *));
 
-int	dp8390_mediachange(struct ifnet *);
-void	dp8390_mediastatus(struct ifnet *, struct ifmediareq *);
+void	dp8390_rint __P((struct dp8390_softc *));
 
-void	dp8390_media_init(struct dp8390_softc *);
-
-int	dp8390_detach(struct dp8390_softc *, int);
-
-void	dp8390_rint(struct dp8390_softc *);
-
-void	dp8390_getmcaf(struct arpcom *, u_int8_t *);
-struct mbuf *dp8390_get(struct dp8390_softc *, int, u_short);
-void	dp8390_read(struct dp8390_softc *, int, u_short);
+#ifdef __NetBSD__
+void	dp8390_getmcaf __P((struct ethercom *, u_int8_t *));
+#else
+void	dp8390_getmcaf __P((struct arpcom *, u_int8_t *));
+#endif
+struct mbuf *dp8390_get __P((struct dp8390_softc *, int, u_short));
+void	dp8390_read __P((struct dp8390_softc *, int, u_short));

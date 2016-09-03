@@ -1,4 +1,4 @@
-/*	$OpenBSD: stat.h,v 1.28 2015/04/04 18:06:08 jca Exp $	*/
+/*	$OpenBSD: stat.h,v 1.7 1998/02/16 21:56:25 millert Exp $	*/
 /*	$NetBSD: stat.h,v 1.20 1996/05/16 22:17:49 cgd Exp $	*/
 
 /*-
@@ -18,7 +18,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -42,58 +46,66 @@
 
 #include <sys/time.h>
 
-struct stat {
+#ifdef _KERNEL
+struct ostat {
+	u_int16_t st_dev;		/* inode's device */
+	ino_t	  st_ino;		/* inode's number */
 	mode_t	  st_mode;		/* inode protection mode */
+	nlink_t	  st_nlink;		/* number of hard links */
+	u_int16_t st_uid;		/* user ID of the file's owner */
+	u_int16_t st_gid;		/* group ID of the file's group */
+	u_int16_t st_rdev;		/* device type */
+	int32_t	  st_size;		/* file size, in bytes */
+	struct	timespec st_atimespec;	/* time of last access */
+	struct	timespec st_mtimespec;	/* time of last data modification */
+	struct	timespec st_ctimespec;	/* time of last file status change */
+	int32_t	  st_blksize;		/* optimal blocksize for I/O */
+	int32_t	  st_blocks;		/* blocks allocated for file */
+	u_int32_t st_flags;		/* user defined flags for file */
+	u_int32_t st_gen;		/* file generation number */
+};
+#endif /* !_KERNEL */
+
+struct stat {
 	dev_t	  st_dev;		/* inode's device */
 	ino_t	  st_ino;		/* inode's number */
+	mode_t	  st_mode;		/* inode protection mode */
 	nlink_t	  st_nlink;		/* number of hard links */
 	uid_t	  st_uid;		/* user ID of the file's owner */
 	gid_t	  st_gid;		/* group ID of the file's group */
 	dev_t	  st_rdev;		/* device type */
-#if __POSIX_VISIBLE >= 200809 || __BSD_VISIBLE
-	struct	timespec st_atim;	/* time of last access */
-	struct	timespec st_mtim;	/* time of last data modification */
-	struct	timespec st_ctim;	/* time of last file status change */
+#ifndef _POSIX_SOURCE
+	struct	timespec st_atimespec;	/* time of last access */
+	struct	timespec st_mtimespec;	/* time of last data modification */
+	struct	timespec st_ctimespec;	/* time of last file status change */
 #else
-	time_t    st_atime;		/* time of last access */
+	time_t	  st_atime;		/* time of last access */
 	long	  st_atimensec;		/* nsec of last access */
-	time_t    st_mtime;		/* time of last data modification */
+	time_t	  st_mtime;		/* time of last data modification */
 	long	  st_mtimensec;		/* nsec of last data modification */
-	time_t    st_ctime;		/* time of last file status change */
+	time_t	  st_ctime;		/* time of last file status change */
 	long	  st_ctimensec;		/* nsec of last file status change */
-#endif /* __POSIX_VISIBLE >= 200809 || __BSD_VISIBLE */
+#endif
 	off_t	  st_size;		/* file size, in bytes */
-	blkcnt_t  st_blocks;		/* blocks allocated for file */
-	blksize_t st_blksize;		/* optimal blocksize for I/O */
+	int64_t	  st_blocks;		/* blocks allocated for file */
+	u_int32_t st_blksize;		/* optimal blocksize for I/O */
 	u_int32_t st_flags;		/* user defined flags for file */
 	u_int32_t st_gen;		/* file generation number */
-#if __POSIX_VISIBLE >= 200809 || __BSD_VISIBLE
-	struct	timespec __st_birthtim;	/* time of file creation */
-#else
-	time_t    __st_birthtime;	/* time of file creation */
-	long	  __st_birthtimensec;	/* nsec of file creation */
-#endif /* __POSIX_VISIBLE >= 200809 || __BSD_VISIBLE */
+	int32_t	  st_lspare;
+	int64_t	  st_qspare[2];
 };
-#if __POSIX_VISIBLE >= 200809 || __BSD_VISIBLE
-#define	st_atime		st_atim.tv_sec
-#define	st_mtime		st_mtim.tv_sec
-#define	st_ctime		st_ctim.tv_sec
-#define	__st_birthtime		__st_birthtim.tv_sec
-#endif
-#if __BSD_VISIBLE
-#define	st_atimespec		st_atim
-#define	st_atimensec		st_atim.tv_nsec
-#define	st_mtimespec		st_mtim
-#define	st_mtimensec		st_mtim.tv_nsec
-#define	st_ctimespec		st_ctim
-#define	st_ctimensec		st_ctim.tv_nsec
-#define	__st_birthtimespec	__st_birthtim
-#define	__st_birthtimensec	__st_birthtim.tv_nsec
+#ifndef _POSIX_SOURCE
+#define	st_atime	st_atimespec.tv_sec
+#define	st_atimensec	st_atimespec.tv_nsec
+#define	st_mtime	st_mtimespec.tv_sec
+#define	st_mtimensec	st_mtimespec.tv_nsec
+#define	st_ctime	st_ctimespec.tv_sec
+#define	st_ctimensec	st_ctimespec.tv_nsec
 #endif
 
 #define	S_ISUID	0004000			/* set user id on execution */
 #define	S_ISGID	0002000			/* set group id on execution */
-#if __BSD_VISIBLE
+#ifndef _POSIX_SOURCE
 #define	S_ISTXT	0001000			/* sticky bit */
 #endif
 
@@ -102,7 +114,7 @@ struct stat {
 #define	S_IWUSR	0000200			/* W for owner */
 #define	S_IXUSR	0000100			/* X for owner */
 
-#if __BSD_VISIBLE
+#ifndef _POSIX_SOURCE
 #define	S_IREAD		S_IRUSR
 #define	S_IWRITE	S_IWUSR
 #define	S_IEXEC		S_IXUSR
@@ -118,7 +130,7 @@ struct stat {
 #define	S_IWOTH	0000002			/* W for other */
 #define	S_IXOTH	0000001			/* X for other */
 
-#if __XPG_VISIBLE || __BSD_VISIBLE
+#ifndef _POSIX_SOURCE
 #define	S_IFMT	 0170000		/* type of file mask */
 #define	S_IFIFO	 0010000		/* named pipe (fifo) */
 #define	S_IFCHR	 0020000		/* character special */
@@ -127,6 +139,7 @@ struct stat {
 #define	S_IFREG	 0100000		/* regular */
 #define	S_IFLNK	 0120000		/* symbolic link */
 #define	S_IFSOCK 0140000		/* socket */
+#define	S_IFWHT  0160000		/* whiteout */
 #define	S_ISVTX	 0001000		/* save swapped text even after use */
 #endif
 
@@ -135,26 +148,20 @@ struct stat {
 #define	S_ISBLK(m)	((m & 0170000) == 0060000)	/* block special */
 #define	S_ISREG(m)	((m & 0170000) == 0100000)	/* regular file */
 #define	S_ISFIFO(m)	((m & 0170000) == 0010000)	/* fifo */
-#if __POSIX_VISIBLE >= 200112 || __BSD_VISIBLE
+#ifndef _POSIX_SOURCE
 #define	S_ISLNK(m)	((m & 0170000) == 0120000)	/* symbolic link */
 #define	S_ISSOCK(m)	((m & 0170000) == 0140000)	/* socket */
+#define	S_ISWHT(m)	((m & 0170000) == 0160000)	/* whiteout */
 #endif
 
-#if __POSIX_VISIBLE >= 200809
-/* manadated to be present, but permitted to always return zero */
-#define	S_TYPEISMQ(m)	0
-#define	S_TYPEISSEM(m)	0
-#define	S_TYPEISSHM(m)	0
-#endif
-
-#if __BSD_VISIBLE
-#define	ACCESSPERMS	(S_IRWXU|S_IRWXG|S_IRWXO)	/* 00777 */
-							/* 07777 */
+#ifndef _POSIX_SOURCE
+#define	ACCESSPERMS	(S_IRWXU|S_IRWXG|S_IRWXO)	/* 0777 */
+							/* 7777 */
 #define	ALLPERMS	(S_ISUID|S_ISGID|S_ISTXT|S_IRWXU|S_IRWXG|S_IRWXO)
-							/* 00666 */
+							/* 0666 */
 #define	DEFFILEMODE	(S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH)
 
-#define	S_BLKSIZE	512		/* block size used in the stat struct */
+#define S_BLKSIZE	512		/* block size used in the stat struct */
 
 /*
  * Definitions of flags stored in file flags word.
@@ -165,7 +172,7 @@ struct stat {
 #define	UF_NODUMP	0x00000001	/* do not dump file */
 #define	UF_IMMUTABLE	0x00000002	/* file may not be changed */
 #define	UF_APPEND	0x00000004	/* writes to file may only append */
-#define	UF_OPAQUE	0x00000008	/* directory is opaque wrt. union */
+#define UF_OPAQUE	0x00000008	/* directory is opaque wrt. union */
 /*
  * Super-user changeable flags.
  */
@@ -181,41 +188,25 @@ struct stat {
 #define	OPAQUE		(UF_OPAQUE)
 #define	APPEND		(UF_APPEND | SF_APPEND)
 #define	IMMUTABLE	(UF_IMMUTABLE | SF_IMMUTABLE)
-#endif /* _KERNEL */
-#endif /* __BSD_VISIBLE */
-
-#if __POSIX_VISIBLE >= 200809
-#define	UTIME_NOW	-2L
-#define	UTIME_OMIT	-1L
-#endif /* __POSIX_VISIBLE */
+#endif
+#endif
 
 #ifndef _KERNEL
+#include <sys/cdefs.h>
+
 __BEGIN_DECLS
-int	chmod(const char *, mode_t);
-int	fstat(int, struct stat *);
-int	mknod(const char *, mode_t, dev_t);
-int	mkdir(const char *, mode_t);
-int	mkfifo(const char *, mode_t);
-int	stat(const char *, struct stat *);
-mode_t	umask(mode_t);
-#if __POSIX_VISIBLE >= 200112L || __XPG_VISIBLE >= 420 || __BSD_VISIBLE
-int	fchmod(int, mode_t);
-int	lstat(const char *, struct stat *);
-#endif
-#if __POSIX_VISIBLE >= 200809
-int	fchmodat(int, const char *, mode_t, int);
-int	fstatat(int, const char *, struct stat *, int);
-int	mkdirat(int, const char *, mode_t);
-int	mkfifoat(int, const char *, mode_t);
-int	mknodat(int, const char *, mode_t, dev_t);
-int	utimensat(int, const char *, const struct timespec [2], int);
-int	futimens(int, const struct timespec [2]);
-#endif
-#if __BSD_VISIBLE
-int	chflags(const char *, unsigned int);
-int	chflagsat(int, const char *, unsigned int, int);
-int	fchflags(int, unsigned int);
-int	isfdtype(int, int);
+int	chmod __P((const char *, mode_t));
+int	fstat __P((int, struct stat *));
+int	mknod __P((const char *, mode_t, dev_t));
+int	mkdir __P((const char *, mode_t));
+int	mkfifo __P((const char *, mode_t));
+int	stat __P((const char *, struct stat *));
+mode_t	umask __P((mode_t));
+#ifndef _POSIX_SOURCE
+int	chflags __P((const char *, unsigned int));
+int	fchflags __P((int, unsigned int));
+int	fchmod __P((int, mode_t));
+int	lstat __P((const char *, struct stat *));
 #endif
 __END_DECLS
 #endif

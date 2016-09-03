@@ -1,4 +1,4 @@
-/*	$OpenBSD: scsi_tape.h,v 1.9 2015/06/07 19:13:27 krw Exp $	*/
+/*	$OpenBSD: scsi_tape.h,v 1.7 1998/01/07 17:28:38 deraadt Exp $	*/
 /*	$NetBSD: scsi_tape.h,v 1.9 1996/05/24 02:04:47 thorpej Exp $	*/
 
 /*
@@ -36,7 +36,7 @@
  *
  * TRW Financial Systems, in accordance with their agreement with Carnegie
  * Mellon University, makes this software available to CMU to distribute
- * or use in any manner that they see fit as long as this message is kept with
+ * or use in any manner that they see fit as long as this message is kept with 
  * the software. For this reason TFS also grants any other persons or
  * organisations permission to use or modify this software.
  *
@@ -173,6 +173,7 @@ struct scsi_tape_dev_conf_page {
 #define	SMH_DSP_BUFF_MODE_OFF	0x00
 #define	SMH_DSP_BUFF_MODE_ON	0x10
 #define	SMH_DSP_BUFF_MODE_MLTI	0x20
+#define	SMH_DSP_WRITE_PROT	0x80
 
 /* A special for the CIPHER ST150S(old drive) */
 struct block_desc_cipher {

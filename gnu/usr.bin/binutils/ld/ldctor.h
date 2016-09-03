@@ -1,7 +1,6 @@
 /* ldctor.h - linker constructor support
-   Copyright 1991, 1992, 1993, 1994, 1995, 1998, 2000, 2002, 2003
-   Free Software Foundation, Inc.
-
+   Copyright 1991, 1992, 1993 Free Software Foundation, Inc.
+   
 This file is part of GLD, the Gnu Linker.
 
 GLD is free software; you can redistribute it and/or modify
@@ -15,9 +14,8 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GLD; see the file COPYING.  If not, write to the Free
-Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-02111-1307, USA.  */
+along with GLD; see the file COPYING.  If not, write to
+the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #ifndef LDCTOR_H
 #define LDCTOR_H
@@ -25,14 +23,10 @@ Software Foundation, 59 Temple Place - Suite 330, Boston, MA
 /* List of statements needed to handle constructors */
 extern lang_statement_list_type constructor_list;
 
-/* Whether the constructors should be sorted.  Note that this is
-   global for the entire link; we assume that there is only a single
-   CONSTRUCTORS command in the linker script.  */
-extern bfd_boolean constructors_sorted;
-
 /* We keep a list of these structures for each set we build.  */
 
-struct set_info {
+struct set_info
+{
   struct set_info *next;		/* Next set.  */
   struct bfd_link_hash_entry *h;	/* Hash table entry.  */
   bfd_reloc_code_real_type reloc;	/* Reloc to use for an entry.  */
@@ -40,7 +34,8 @@ struct set_info {
   struct set_element *elements;		/* Elements in set.  */
 };
 
-struct set_element {
+struct set_element
+{
   struct set_element *next;		/* Next element.  */
   const char *name;			/* Name in set (may be NULL).  */
   asection *section;			/* Section of value in set.  */
@@ -51,10 +46,9 @@ struct set_element {
 
 extern struct set_info *sets;
 
-extern void ldctor_add_set_entry
-  (struct bfd_link_hash_entry *, bfd_reloc_code_real_type, const char *,
-   asection *, bfd_vma);
-extern void ldctor_build_sets
-  (void);
+extern void ldctor_add_set_entry PARAMS ((struct bfd_link_hash_entry *,
+					  bfd_reloc_code_real_type,
+					  const char *, asection *, bfd_vma));
+extern void ldctor_build_sets PARAMS ((void));
 
 #endif

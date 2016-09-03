@@ -155,10 +155,8 @@ int			sig;
 	this = SIG_handlers[sig];
 	while (this != (struct SIG_hlist *) NULL)
 	{
-		/* handler may free this (and thus clobber this->next) */
-		struct SIG_hlist *current = this;
+		(*this->handler)(sig);
 		this = this->next;
-		(*current->handler)(sig);
 	}
 
 	return;
@@ -384,16 +382,6 @@ void SIG_beginCrSect()
 		}
 		SIG_crSectNest++;
 	}
-}
-
-/*
- * Return nonzero if currently in a critical section.
- * Otherwise return zero.
- */
-
-int SIG_inCrSect()
-{
-	return SIG_crSectNest > 0;
 }
 
 /*

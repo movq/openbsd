@@ -1,5 +1,6 @@
-#	$OpenBSD: Makefile,v 1.4 2001/07/05 22:06:24 pjanzen Exp $
+#	$OpenBSD: Makefile,v 1.3 1997/09/21 11:48:53 deraadt Exp $
 
 PROG=	dirname
+NOMAN=	noman
 
 .include <bsd.prog.mk>

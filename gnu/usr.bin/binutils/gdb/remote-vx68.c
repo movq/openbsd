@@ -1,40 +1,40 @@
 /* 68k-dependent portions of the RPC protocol
    used with a VxWorks target 
 
-   Contributed by Wind River Systems.
+Contributed by Wind River Systems.
 
-   This file is part of GDB.
+This file is part of GDB.
 
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
 
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
 
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 59 Temple Place - Suite 330,
-   Boston, MA 02111-1307, USA.  */
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #include <stdio.h>
 #include "defs.h"
 
-#include "vx-share/regPacket.h"
+#include "vx-share/regPacket.h"  
 #include "frame.h"
 #include "inferior.h"
+#include "wait.h"
 #include "target.h"
 #include "gdbcore.h"
 #include "command.h"
 #include "symtab.h"
-#include "symfile.h"
-#include "regcache.h"
+#include "symfile.h"		/* for struct complaint */
 
 #include "gdb_string.h"
 #include <errno.h>
+#include <signal.h>
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/time.h>
@@ -76,7 +76,8 @@ extern void net_write_registers ();
    it is ignored.  FIXME look at regno to improve efficiency.  */
 
 void
-vx_read_register (int regno)
+vx_read_register (regno)
+     int regno;
 {
   char mc68k_greg_packet[MC68K_GREG_PLEN];
   char mc68k_fpreg_packet[MC68K_FPREG_PLEN];
@@ -85,15 +86,11 @@ vx_read_register (int regno)
 
   net_read_registers (mc68k_greg_packet, MC68K_GREG_PLEN, PTRACE_GETREGS);
 
-  memcpy (deprecated_registers,
-	  &mc68k_greg_packet[MC68K_R_D0]
-	  16 * MC68K_GREG_SIZE);
-  memcpy (&deprecated_registers[DEPRECATED_REGISTER_BYTE (PS_REGNUM)],
-	  &mc68k_greg_packet[MC68K_R_SR],
-	  MC68K_GREG_SIZE);
-  memcpy (&deprecated_registers[DEPRECATED_REGISTER_BYTE (PC_REGNUM)],
-	  &mc68k_greg_packet[MC68K_R_PC],
-	  MC68K_GREG_SIZE);
+  bcopy (&mc68k_greg_packet[MC68K_R_D0], registers, 16 * MC68K_GREG_SIZE);
+  bcopy (&mc68k_greg_packet[MC68K_R_SR], &registers[REGISTER_BYTE (PS_REGNUM)],
+	 MC68K_GREG_SIZE);
+  bcopy (&mc68k_greg_packet[MC68K_R_PC], &registers[REGISTER_BYTE (PC_REGNUM)],
+	 MC68K_GREG_SIZE);
 
   /* Get floating-point registers, if the target system has them.
      Otherwise, zero them.  */
@@ -103,24 +100,24 @@ vx_read_register (int regno)
       net_read_registers (mc68k_fpreg_packet, MC68K_FPREG_PLEN,
 			  PTRACE_GETFPREGS);
 
-      memcpy (&deprecated_registers[DEPRECATED_REGISTER_BYTE (FP0_REGNUM)],
-	      &mc68k_fpreg_packet[MC68K_R_FP0],
-	      MC68K_FPREG_SIZE * 8);
-      memcpy (&deprecated_registers[DEPRECATED_REGISTER_BYTE (FPC_REGNUM)],
-	      &mc68k_fpreg_packet[MC68K_R_FPCR],
-	      MC68K_FPREG_PLEN - (MC68K_FPREG_SIZE * 8));
+      bcopy (&mc68k_fpreg_packet[MC68K_R_FP0],
+	     &registers[REGISTER_BYTE (FP0_REGNUM)],
+	     MC68K_FPREG_SIZE * 8);
+      bcopy (&mc68k_fpreg_packet[MC68K_R_FPCR],
+	     &registers[REGISTER_BYTE (FPC_REGNUM)],
+	     MC68K_FPREG_PLEN - (MC68K_FPREG_SIZE * 8));
     }
   else
     {
-      memset (&deprecated_registers[DEPRECATED_REGISTER_BYTE (FP0_REGNUM)],
-	      0, MC68K_FPREG_SIZE * 8);
-      memset (&deprecated_registers[DEPRECATED_REGISTER_BYTE (FPC_REGNUM)],
-	      0, MC68K_FPREG_PLEN - (MC68K_FPREG_SIZE * 8));
+      bzero (&registers[REGISTER_BYTE (FP0_REGNUM)],
+	     MC68K_FPREG_SIZE * 8);
+      bzero (&registers[REGISTER_BYTE (FPC_REGNUM)],
+	     MC68K_FPREG_PLEN - (MC68K_FPREG_SIZE * 8));
     }
 
   /* Mark the register cache valid.  */
 
-  deprecated_registers_fetched ();
+  registers_fetched ();
 }
 
 /* Store a register or registers into the VxWorks target.
@@ -128,21 +125,19 @@ vx_read_register (int regno)
    it is ignored.  FIXME look at regno to improve efficiency.  */
 
 void
-vx_write_register (int regno)
+vx_write_register (regno)
+     int regno;
 {
   char mc68k_greg_packet[MC68K_GREG_PLEN];
   char mc68k_fpreg_packet[MC68K_FPREG_PLEN];
 
   /* Store general-purpose registers.  */
 
-  memcpy (&mc68k_greg_packet[MC68K_R_D0], deprecated_registers,
-	  16 * MC68K_GREG_SIZE);
-  memcpy (&mc68k_greg_packet[MC68K_R_SR],
-	  &deprecated_registers[DEPRECATED_REGISTER_BYTE (PS_REGNUM)],
-	  MC68K_GREG_SIZE);
-  memcpy (&mc68k_greg_packet[MC68K_R_PC],
-	  &deprecated_registers[DEPRECATED_REGISTER_BYTE (PC_REGNUM)],
-	  MC68K_GREG_SIZE);
+  bcopy (registers, &mc68k_greg_packet[MC68K_R_D0], 16 * MC68K_GREG_SIZE);
+  bcopy (&registers[REGISTER_BYTE (PS_REGNUM)],
+	 &mc68k_greg_packet[MC68K_R_SR], MC68K_GREG_SIZE);
+  bcopy (&registers[REGISTER_BYTE (PC_REGNUM)],
+	 &mc68k_greg_packet[MC68K_R_PC], MC68K_GREG_SIZE);
 
   net_write_registers (mc68k_greg_packet, MC68K_GREG_PLEN, PTRACE_SETREGS);
 
@@ -150,12 +145,12 @@ vx_write_register (int regno)
 
   if (target_has_fp)
     {
-      memcpy (&mc68k_fpreg_packet[MC68K_R_FP0],
-	      &deprecated_registers[DEPRECATED_REGISTER_BYTE (FP0_REGNUM)],
-	      MC68K_FPREG_SIZE * 8);
-      memcpy (&mc68k_fpreg_packet[MC68K_R_FPCR],
-	      &deprecated_registers[DEPRECATED_REGISTER_BYTE (FPC_REGNUM)],
-	      MC68K_FPREG_PLEN - (MC68K_FPREG_SIZE * 8));
+      bcopy (&registers[REGISTER_BYTE (FP0_REGNUM)],
+	     &mc68k_fpreg_packet[MC68K_R_FP0],
+	     MC68K_FPREG_SIZE * 8);
+      bcopy (&registers[REGISTER_BYTE (FPC_REGNUM)],
+	     &mc68k_fpreg_packet[MC68K_R_FPCR],
+	     MC68K_FPREG_PLEN - (MC68K_FPREG_SIZE * 8));
 
       net_write_registers (mc68k_fpreg_packet, MC68K_FPREG_PLEN,
 			   PTRACE_SETFPREGS);

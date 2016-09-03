@@ -1,6 +1,8 @@
-#	$OpenBSD: Makefile,v 1.4 2001/09/28 01:44:37 millert Exp $
+#	$OpenBSD: Makefile,v 1.3 1997/09/21 11:49:19 deraadt Exp $
 
 PROG=	ipcs
+BINGRP=	kmem
+BINMODE= 2555
 DPADD+=	${LIBKVM}
 LDADD+=	-lkvm
 

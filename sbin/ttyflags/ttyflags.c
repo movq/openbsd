@@ -1,4 +1,4 @@
-/*	$OpenBSD: ttyflags.c,v 1.13 2012/12/04 02:27:00 deraadt Exp $	*/
+/*	$OpenBSD: ttyflags.c,v 1.7 1997/03/04 05:48:00 tholo Exp $	*/
 /*	$NetBSD: ttyflags.c,v 1.8 1996/04/09 05:20:30 cgd Exp $	*/
 
 /*
@@ -32,7 +32,18 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifndef lint
+char copyright[] =
+"@(#) Copyright (c) 1994 Christopher G. Demetriou\n\
+	All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+static char rcsid[] = "$OpenBSD: ttyflags.c,v 1.7 1997/03/04 05:48:00 tholo Exp $";
+#endif /* not lint */
+
 #include <sys/types.h>
+#include <sys/cdefs.h>
 #include <sys/ioctl.h>
 
 #include <err.h>
@@ -46,10 +57,10 @@
 #include <ttyent.h>
 #include <unistd.h>
 
-int all(int);
-int ttys(char **, int);
-int ttyflags(struct ttyent *, int);
-void usage(void);
+int all __P((int));
+int ttys __P((char **, int));
+int ttyflags __P((struct ttyent *, int));
+void usage __P((void));
 
 int nflag, vflag;
 
@@ -59,7 +70,9 @@ int nflag, vflag;
  * the flags of the ttys specified on the command line.
  */
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	int aflag, ch, rval, pflag = 0;
 
@@ -106,7 +119,8 @@ main(int argc, char *argv[])
  * Change all /etc/ttys entries' flags.
  */
 int
-all(int print)
+all(print)
+	int print;
 {
 	struct ttyent *tep;
 	int rval;
@@ -122,7 +136,9 @@ all(int print)
  * Change the specified ttys' flags.
  */
 int
-ttys(char **ttylist, int print)
+ttys(ttylist, print)
+	char **ttylist;
+	int print;
 {
 	struct ttyent *tep;
 	int rval;
@@ -149,7 +165,9 @@ ttys(char **ttylist, int print)
  * open the device, and change the flags.
  */
 int
-ttyflags(struct ttyent *tep, int print)
+ttyflags(tep, print)
+	struct ttyent *tep;
+	int print;
 {
 	int fd, flags = 0, rval = 0, st, sep = 0;
 	char path[PATH_MAX];
@@ -165,26 +183,26 @@ ttyflags(struct ttyent *tep, int print)
 		/* Convert ttyent.h flags into ioctl flags. */
 		if (st & TTY_LOCAL) {
 			flags |= TIOCFLAG_CLOCAL;
-			(void)strlcat(strflags, "local", sizeof strflags);
+			(void)strcat(strflags, "local");
 			sep++;
 		}
 		if (st & TTY_RTSCTS) {
 			flags |= TIOCFLAG_CRTSCTS;
 			if (sep++)
-				(void)strlcat(strflags, "|", sizeof strflags);
-			(void)strlcat(strflags, "rtscts", sizeof strflags);
+				(void)strcat(strflags, "|");
+			(void)strcat(strflags, "rtscts");
 		}
 		if (st & TTY_SOFTCAR) {
 			flags |= TIOCFLAG_SOFTCAR;
 			if (sep++)
-				(void)strlcat(strflags, "|", sizeof strflags);
-			(void)strlcat(strflags, "softcar", sizeof strflags);
+				(void)strcat(strflags, "|");
+			(void)strcat(strflags, "softcar");
 		}
 		if (st & TTY_MDMBUF) {
 			flags |= TIOCFLAG_MDMBUF;
 			if (sep++)
-				(void)strlcat(strflags, "|", sizeof strflags);
-			(void)strlcat(strflags, "mdmbuf", sizeof strflags);
+				(void)strcat(strflags, "|");
+			(void)strcat(strflags, "mdmbuf");
 		}
 		if (vflag)
 			printf("%s setting flags to: %s\n", path, strflags);
@@ -215,23 +233,23 @@ ttyflags(struct ttyent *tep, int print)
 				rval = (errno != ENOTTY);
 			}
 		if (flags & TIOCFLAG_CLOCAL) {
-			(void)strlcat(strflags, "local", sizeof strflags);
+			(void)strcat(strflags, "local");
 			sep++;
 		}
 		if (flags & TIOCFLAG_CRTSCTS) {
 			if (sep++)
-				(void)strlcat(strflags, "|", sizeof strflags);
-			(void)strlcat(strflags, "rtscts", sizeof strflags);
+				(void)strcat(strflags, "|");
+			(void)strcat(strflags, "rtscts");
 		}
 		if (flags & TIOCFLAG_SOFTCAR) {
 			if (sep++)
-				(void)strlcat(strflags, "|", sizeof strflags);
-			(void)strlcat(strflags, "softcar", sizeof strflags);
+				(void)strcat(strflags, "|");
+			(void)strcat(strflags, "softcar");
 		}
 		if (flags & TIOCFLAG_MDMBUF) {
 			if (sep++)
-				(void)strlcat(strflags, "|", sizeof strflags);
-			(void)strlcat(strflags, "mdmbuf", sizeof strflags);
+				(void)strcat(strflags, "|");
+			(void)strcat(strflags, "mdmbuf");
 		}
 		printf("%s flags are: %s\n", path, strflags);
 	}
@@ -246,8 +264,8 @@ ttyflags(struct ttyent *tep, int print)
  * Print usage information when a bogus set of arguments is given.
  */
 void
-usage(void)
+usage()
 {
-	(void)fprintf(stderr, "usage: ttyflags [-pv] [-a | tty ...]\n");
+	(void)fprintf(stderr, "usage: ttyflags [-v] [-p] [-a | tty ... ]\n");
 	exit(1);
 }

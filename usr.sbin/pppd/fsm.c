@@ -1,46 +1,31 @@
-/*	$OpenBSD: fsm.c,v 1.8 2009/10/27 23:59:53 deraadt Exp $	*/
+/*	$OpenBSD: fsm.c,v 1.5 1998/01/17 20:30:22 millert Exp $	*/
 
 /*
  * fsm.c - {Link, IP} Control Protocol Finite State Machine.
  *
- * Copyright (c) 1984-2000 Carnegie Mellon University. All rights reserved.
+ * Copyright (c) 1989 Carnegie Mellon University.
+ * All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- *
- * 3. The name "Carnegie Mellon University" must not be used to
- *    endorse or promote products derived from this software without
- *    prior written permission. For permission or any legal
- *    details, please contact
- *      Office of Technology Transfer
- *      Carnegie Mellon University
- *      5000 Forbes Avenue
- *      Pittsburgh, PA  15213-3890
- *      (412) 268-4387, fax: (412) 268-7395
- *      tech-transfer@andrew.cmu.edu
- *
- * 4. Redistributions of any form whatsoever must retain the following
- *    acknowledgment:
- *    "This product includes software developed by Computing Services
- *     at Carnegie Mellon University (http://www.cmu.edu/computing/)."
- *
- * CARNEGIE MELLON UNIVERSITY DISCLAIMS ALL WARRANTIES WITH REGARD TO
- * THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
- * AND FITNESS, IN NO EVENT SHALL CARNEGIE MELLON UNIVERSITY BE LIABLE
- * FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
- * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
- * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Redistribution and use in source and binary forms are permitted
+ * provided that the above copyright notice and this paragraph are
+ * duplicated in all such forms and that any documentation,
+ * advertising materials, and other materials related to such
+ * distribution and use acknowledge that the software was developed
+ * by Carnegie Mellon University.  The name of the
+ * University may not be used to endorse or promote products derived
+ * from this software without specific prior written permission.
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
+ * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
+
+#ifndef lint
+#if 0
+static char rcsid[] = "Id: fsm.c,v 1.13 1997/04/30 05:52:17 paulus Exp";
+#else
+static char rcsid[] = "$OpenBSD: fsm.c,v 1.5 1998/01/17 20:30:22 millert Exp $";
+#endif
+#endif
 
 /*
  * TODO:
@@ -56,14 +41,14 @@
 #include "pppd.h"
 #include "fsm.h"
 
-static void fsm_timeout(void *);
-static void fsm_rconfreq(fsm *, int, u_char *, int);
-static void fsm_rconfack(fsm *, int, u_char *, int);
-static void fsm_rconfnakrej(fsm *, int, int, u_char *, int);
-static void fsm_rtermreq(fsm *, int, u_char *, int);
-static void fsm_rtermack(fsm *);
-static void fsm_rcoderej(fsm *, u_char *, int);
-static void fsm_sconfreq(fsm *, int);
+static void fsm_timeout __P((void *));
+static void fsm_rconfreq __P((fsm *, int, u_char *, int));
+static void fsm_rconfack __P((fsm *, int, u_char *, int));
+static void fsm_rconfnakrej __P((fsm *, int, int, u_char *, int));
+static void fsm_rtermreq __P((fsm *, int, u_char *, int));
+static void fsm_rtermack __P((fsm *));
+static void fsm_rcoderej __P((fsm *, u_char *, int));
+static void fsm_sconfreq __P((fsm *, int));
 
 #define PROTO_NAME(f)	((f)->callbacks->proto_name)
 
@@ -529,7 +514,7 @@ fsm_rconfnakrej(f, code, id, inp, len)
     u_char *inp;
     int len;
 {
-    int (*proc)(fsm *, u_char *, int);
+    int (*proc) __P((fsm *, u_char *, int));
     int ret;
 
     FSMDEBUG((LOG_INFO, "fsm_rconfnakrej(%s): Rcvd id %d.",

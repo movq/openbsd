@@ -1,4 +1,4 @@
-/*	$OpenBSD: fancy.c,v 1.13 2015/11/30 08:19:25 tb Exp $	*/
+/*	$OpenBSD: fancy.c,v 1.7 1999/07/31 21:57:40 pjanzen Exp $	*/
 
 /*
  * Copyright (c) 1980, 1993
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,77 +33,145 @@
  * SUCH DAMAGE.
  */
 
-#include <err.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)fancy.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: fancy.c,v 1.7 1999/07/31 21:57:40 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
 #include "back.h"
 
+char    PC;			/* padding character */
+char   *BC;			/* backspace sequence */
+char   *CD;			/* clear to end of screen sequence */
+char   *CE;			/* clear to end of line sequence */
+char   *CL;			/* clear screen sequence */
+char   *CM;			/* cursor movement instructions */
+char   *HO;			/* home cursor sequence */
+char   *ND;			/* forward cursor sequence */
+char   *UP;			/* up cursor sequence */
+
+int     lHO;			/* length of HO */
+int     lBC;			/* length of BC */
+int     lND;			/* length of ND */
+int     lUP;			/* length of UP */
+int     CO;			/* number of columns */
+int     LI;			/* number of lines */
+int    *linect;		/* array of lengths of lines on screen
+				   (the actual screen is not stored) */
+
+/* two letter codes */
+char    *tcap[] = {"le", "cd", "ce", "cl", "cm", "ho", "nd", "up", NULL};
+/* corresponding strings */
+char  **tstr[] = {&BC, &CD, &CE, &CL, &CM, &HO, &ND, &UP};
+
+int     buffnum;		/* pointer to output buffer */
+
+char    tbuf[1024];		/* buffer for decoded termcap entries */
+
 int     oldb[] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-int     oldr, oldw;
+
+int     oldr;
+int     oldw;
+
+/* "real" cursor positions, so it knows when to reposition.
+ * These are -1 if curr and curc are accurate */
+int     realr;
+int     realc;
 
 void
-fboard(void)
+fboard()
 {
-	int     i, j, k, l;
+	int     i, j, l;
 
-	/* could use box() or wborder() instead of the following */
-	move(0, 0);		/* do top line */
+	curmove(0, 0);		/* do top line */
 	for (i = 0; i < 53; i++)
-		addch('_');
+		fancyc('_');
 
-	move(15, 0);		/* do bottom line */
+	curmove(15, 0);		/* do botttom line */
 	for (i = 0; i < 53; i++)
-		addch('_');
+		fancyc('_');
 
 	l = 1;			/* do vertical lines */
 	for (i = 52; i > -1; i -= 28) {
-		k = (l == 1 ? 1 : 15);
-		mvaddch(k, i, '|');
-		for (j = 0; j < 14; j++)
-			mvaddch(k += l, i, '|');
+		curmove((l == 1 ? 1 : 15), i);
+		fancyc('|');
+		for (j = 0; j < 14; j++) {
+			curmove(curr + l, curc - 1);
+			fancyc('|');
+		}
 		if (i == 24)
 			i += 32;
 		l = -l;		/* alternate directions */
 	}
 
-	/* label positions */
-	for (i = 13; i < 19; i++)
-		mvprintw(2, 1 + (i - 13) * 4, "%d", i);
-	for (i = 19; i < 25; i++)
-		mvprintw(2, 29 + (i - 19) * 4, "%d", i);
-	for (i = 12; i > 6; i--)
-		mvprintw(14, 1 + (12 - i) * 4, "%2d", i);
-	for (i = 6; i > 0; i--)
-		mvprintw(14, 30 + (6 - i) * 4, "%d", i);
+	curmove(2, 1);		/* label positions 13-18 */
+	for (i = 13; i < 18; i++) {
+		fancyc('1');
+		fancyc((i % 10) + '0');
+		curmove(curr, curc + 2);
+	}
+	fancyc('1');
+	fancyc('8');
 
-	/* print positions 12-7 */
-	for (i = 12; i > 6; i--)
+	curmove(2, 29);		/* label positions 19-24 */
+	fancyc('1');
+	fancyc('9');
+	for (i = 20; i < 25; i++) {
+		curmove(curr, curc + 2);
+		fancyc('2');
+		fancyc((i % 10) + '0');
+	}
+
+	curmove(14, 1);		/* label positions 12-7 */
+	fancyc('1');
+	fancyc('2');
+	for (i = 11; i > 6; i--) {
+		curmove(curr, curc + 2);
+		fancyc(i > 9 ? '1' : ' ');
+		fancyc((i % 10) + '0');
+	}
+
+	curmove(14, 30);	/* label positions 6-1 */
+	fancyc('6');
+	for (i = 5; i > 0; i--) {
+		curmove(curr, curc + 3);
+		fancyc(i + '0');
+	}
+
+	for (i = 12; i > 6; i--)/* print positions 12-7 */
 		if (board[i])
 			bsect(board[i], 13, 1 + 4 * (12 - i), -1);
-	/* print red men on bar */
-	if (board[0])
+
+	if (board[0])		/* print red men on bar */
 		bsect(board[0], 13, 25, -1);
-	/* print positions 6-1 */
-	for (i = 6; i > 0; i--)
+
+	for (i = 6; i > 0; i--)	/* print positions 6-1 */
 		if (board[i])
 			bsect(board[i], 13, 29 + 4 * (6 - i), -1);
-	/* print white's home */
-	l = (off[1] < 0 ? off[1] + 15 : off[1]);
+
+	l = (off[1] < 0 ? off[1] + 15 : off[1]);	/* print white's home */
 	bsect(l, 3, 54, 1);
 
-	mvaddstr(8, 25, "BAR");
+	curmove(8, 25);		/* print the word BAR */
+	fancyc('B');
+	fancyc('A');
+	fancyc('R');
 
-	/* print positions 13-18 */
-	for (i = 13; i < 19; i++)
+	for (i = 13; i < 19; i++)	/* print positions 13-18 */
 		if (board[i])
 			bsect(board[i], 3, 1 + 4 * (i - 13), 1);
-	/* print white's men on bar */
-	if (board[25])
+
+	if (board[25])		/* print white's men on bar */
 		bsect(board[25], 3, 25, 1);
-	/* print positions 19-24 */
-	for (i = 19; i < 25; i++)
+
+	for (i = 19; i < 25; i++)	/* print positions 19-24 */
 		if (board[i])
 			bsect(board[i], 3, 29 + 4 * (i - 19), 1);
-	/* print red's home */
-	l = (off[0] < 0 ? off[0] + 15 : off[0]);
+
+	l = (off[0] < 0 ? off[0] + 15 : off[0]);	/* print red's home */
 	bsect(-l, 13, 54, -1);
 
 	for (i = 0; i < 26; i++)/* save board position for refresh later */
@@ -118,7 +190,11 @@ fboard(void)
  * differently.
  */
 void
-bsect(int b, int rpos, int cpos, int cnext)
+bsect(b, rpos, cpos, cnext)
+	int     b;		/* contents of position */
+	int     rpos;		/* row of position */
+	int     cpos;		/* column of position */
+	int     cnext;		/* direction of position */
 {
 	int     j;		/* index */
 	int     n;		/* number of men on position */
@@ -130,15 +206,15 @@ bsect(int b, int rpos, int cpos, int cnext)
 	pc = (b > 0 ? 'r' : 'w');
 
 	if (n < 6 && cpos < 54)	/* position cursor at start */
-		move(rpos, cpos + 1);
+		curmove(rpos, cpos + 1);
 	else
-		move(rpos, cpos);
+		curmove(rpos, cpos);
 
 	for (j = 0; j < 5; j++) {	/* print position row by row */
 
 		for (k = 0; k < 15; k += 5)	/* print men */
 			if (n > j + k)
-				addch(pc);
+				fancyc(pc);
 
 		if (j < 4) {	/* figure how far to back up for next row */
 			if (n < 6) {	/* stop if none left */
@@ -147,12 +223,13 @@ bsect(int b, int rpos, int cpos, int cnext)
 				bct = 1;	/* single column */
 			} else {
 				if (n < 11) {	/* two columns */
-					if (cpos >= 54) {	/* home pos */
+					if (cpos == 54) {	/* home pos */
 						if (j + 5 >= n)
 							bct = 1;
 						else
 							bct = 2;
-					} else { 	/* not home */
+					}
+					if (cpos < 54) {	/* not home */
 						if (j + 6 >= n)
 							bct = 1;
 						else
@@ -165,18 +242,19 @@ bsect(int b, int rpos, int cpos, int cnext)
 						bct = 3;
 				}
 			}
-			getyx(stdscr, rpos, cpos);
-			move(rpos + cnext, cpos - bct);
+			curmove(curr + cnext, curc - bct);	/* reposition cursor */
 		}
 	}
 }
 
 void
-moveplayers(void)
+refresh()
 {
-	int i, r, c;
+	int     i, r, c;
 
-	getyx(stdscr, r, c);
+	r = curr;		/* save current position */
+	c = curc;
+
 	for (i = 12; i > 6; i--)/* fix positions 12-7 */
 		if (board[i] != oldb[i]) {
 			fixpos(oldb[i], board[i], 13, 1 + (12 - i) * 4, -1);
@@ -215,13 +293,14 @@ moveplayers(void)
 		fixpos(oldr, i, 3, 54, 1);
 		oldr = i;
 	}
-	move(r, c);		/* return to saved position */
-	refresh();
+	curmove(r, c);		/* return to saved position */
+	newpos();
+	buflush();
 }
-	
 
 void
-fixpos(int old, int new, int r, int c, int inc)
+fixpos(old, new, r, c, inc)
+	int     old, new, r, c, inc;
 {
 	int     o, n, nv;
 	int     ov, nc;
@@ -291,30 +370,343 @@ fixpos(int old, int new, int r, int c, int inc)
 }
 
 void
-fixcol(int r, int c, int l, int ch, int inc)
+fixcol(r, c, l, ch, inc)
+	int     r, c, l, ch, inc;
 {
 	int     i;
 
-	mvaddch(r, c, ch);
+	curmove(r, c);
+	fancyc(ch);
 	for (i = 1; i < l; i++) {
-		r += inc;
-		mvaddch(r, c, ch);
+		curmove(curr + inc, curc - 1);
+		fancyc(ch);
 	}
 }
 
+void
+curmove(r, c)
+	int     r, c;
+{
+	if (curr == r && curc == c)
+		return;
+	if (realr == -1) {
+		realr = curr;
+		realc = curc;
+	}
+	curr = r;
+	curc = c;
+}
 
 void
-initcurses(void)
+newpos()
 {
-	initscr();
-	cbreak();
-	noecho();
-	keypad(stdscr, TRUE);
-	nl();
-	clear();
+	int     r;		/* destination row */
+	int     c;		/* destination column */
+	int     mode = -1;	/* mode of movement */
 
-	if ((LINES < 24) || (COLS < 80)) {
-		endwin();
-		errx(1, "screen must be at least 24x80.");
+	int     count = 1000;	/* character count */
+	int     i;		/* index */
+	int     n;		/* temporary variable */
+	char   *m;		/* string containing CM movement */
+
+	if (realr == -1)	/* see if already there */
+		return;
+
+	r = curr;		/* set current and dest. positions */
+	c = curc;
+	curr = realr;
+	curc = realc;
+
+	/* double check position */
+	if (curr == r && curc == c) {
+		realr = realc = -1;
+		return;
 	}
+	if (CM) {		/* try CM to get there */
+		mode = 0;
+		m = (char *)tgoto(CM, c, r);
+		count = strlen(m);
+	}
+	/* try HO and local movement */
+	if (HO && (n = r + c * lND + lHO) < count) {
+		mode = 1;
+		count = n;
+	}
+	/* try various LF combinations */
+	if (r >= curr) {
+		/* CR, LF, and ND */
+		if ((n = (r - curr) + c * lND + 1) < count) {
+			mode = 2;
+			count = n;
+		}
+		/* LF, ND */
+		if (c >= curc && (n = (r - curr) + (c - curc) * lND) < count) {
+			mode = 3;
+			count = n;
+		}
+		/* LF, BS */
+		if (c < curc && (n = (r - curr) + (curc - c) * lBC) < count) {
+			mode = 4;
+			count = n;
+		}
+	}
+	/* try corresponding UP combinations */
+	if (r < curr) {
+		/* CR, UP, and ND */
+		if ((n = (curr - r) * lUP + c * lND + 1) < count) {
+			mode = 5;
+			count = n;
+		}
+		/* UP and ND */
+		if (c >= curc && (n = (curr - r) * lUP + (c - curc) * lND) < count) {
+			mode = 6;
+			count = n;
+		}
+		/* UP and BS */
+		if (c < curc && (n = (curr - r) * lUP + (curc - c) * lBC) < count) {
+			mode = 7;
+			count = n;
+		}
+	}
+	/* space over */
+	if (curr == r && c > curc && linect[r] < curc && c - curc < count)
+		mode = 8;
+
+	switch (mode) {
+	case -1:		/* error! */
+		write(2, "\r\nInternal cursor error.\r\n", 26);
+		getout(0);
+
+	case  0:		/* direct cursor motion */
+		tputs(m, abs(curr - r), addbuf);
+		break;
+
+	case  1:		/* relative to "home" */
+		tputs(HO, r, addbuf);
+		for (i = 0; i < r; i++)
+			addbuf('\012');
+		for (i = 0; i < c; i++)
+			tputs(ND, 1, addbuf);
+		break;
+
+	case  2:		/* CR and down and over */
+		addbuf('\015');
+		for (i = 0; i < r - curr; i++)
+			addbuf('\012');
+		for (i = 0; i < c; i++)
+			tputs(ND, 1, addbuf);
+		break;
+
+	case  3:		/* down and over */
+		for (i = 0; i < r - curr; i++)
+			addbuf('\012');
+		for (i = 0; i < c - curc; i++)
+			tputs(ND, 1, addbuf);
+		break;
+
+	case  4:		/* down and back */
+		for (i = 0; i < r - curr; i++)
+			addbuf('\012');
+		for (i = 0; i < curc - c; i++)
+			addbuf('\010');
+		break;
+
+	case  5:		/* CR and up and over */
+		addbuf('\015');
+		for (i = 0; i < curr - r; i++)
+			tputs(UP, 1, addbuf);
+		for (i = 0; i < c; i++)
+			tputs(ND, 1, addbuf);
+		break;
+
+	case  6:		/* up and over */
+		for (i = 0; i < curr - r; i++)
+			tputs(UP, 1, addbuf);
+		for (i = 0; i < c - curc; i++)
+			tputs(ND, 1, addbuf);
+		break;
+
+	case  7:		/* up and back */
+		for (i = 0; i < curr - r; i++)
+			tputs(UP, 1, addbuf);
+		for (i = 0; i < curc - c; i++)  {
+			if (BC)
+				tputs(BC, 1, addbuf);
+			else
+				addbuf('\010');
+		}
+		break;
+
+	case  8:		/* safe space */
+		for (i = 0; i < c - curc; i++)
+			addbuf(' ');
+	}
+	/* fix positions */
+	curr = r;
+	curc = c;
+	realr = -1;
+	realc = -1;
+}
+
+void
+clear()
+{
+	int     i;
+
+	/* double space if can't clear */
+	if (CL == 0) {
+		writel("\n\n");
+		return;
+	}
+	curr = curc = 0;	/* fix position markers */
+	realr = realc = -1;
+	for (i = 0; i < 24; i++)/* clear line counts */
+		linect[i] = -1;
+	buffnum = -1;		/* ignore leftover buffer contents */
+	tputs(CL, LI, addbuf);	/* put CL in buffer */
+}
+
+void
+fancyc(c)
+	int     c;		/* character to output */
+{
+	int     sp;		/* counts spaces in a tab */
+
+	if (c == '\007') {	/* bells go in blindly */
+		addbuf(c);
+		return;
+	}
+	/* process tabs, use spaces if the the tab should be erasing things,
+	 * otherwise use cursor movement routines.  Note this does not use
+	 * hardware tabs at all. */
+	if (c == '\t') {
+		sp = (curc + 8) & (~7);	/* compute spaces */
+		/* check line length */
+		if (linect[curr] >= curc || sp < 4) {
+			for (; sp > curc; sp--)
+				addbuf(' ');
+			curc = sp;	/* fix curc */
+		} else
+			curmove(curr, sp);
+		return;
+	}
+	if (c == '\n') {
+		cline();
+		if (curr == LI - 1)
+			curmove(begscr, 0);
+		else
+			curmove(curr + 1, 0);
+		return;
+	}
+	/* ignore any other control chars */
+	if (c < ' ')
+		return;
+
+	/* if an erasing space or non-space, just add it to buffer.  Otherwise
+	 * use cursor movement routine, so that multiple spaces will be grouped
+	 * together */
+	if (c > ' ' || linect[curr] >= curc) {
+		newpos();	/* make sure position correct */
+		addbuf(c);	/* add character to buffer */
+		/* fix line length */
+		if (c == ' ' && linect[curr] == curc)
+			linect[curr]--;
+		else if (linect[curr] < curc)
+			linect[curr] = curc;
+		curc++;			/* fix curc */
+	} else
+		/* use cursor movement routine */
+		curmove(curr, curc + 1);
+}
+
+void
+clend()
+{
+	int     i;
+
+/*	*** Why does this code fail? ***
+ *	if (CD) {
+ *		tputs(CD, (LI - curr), addbuf);
+ *		for (i = curr; i < LI; i++)
+ *			linect[i] = -1;
+ *		return;
+ *	}
+ */
+	curmove(i = curr, 0);
+	cline();
+	while (curr < LI - 1) {
+		curmove(curr + 1, 0);
+		if (linect[curr] > -1)
+			cline();
+	}
+	curmove(i, 0);
+}
+
+void
+cline()
+{
+	int     c;
+
+	if (curc > linect[curr])
+		return;
+	newpos();
+	if (CE) {
+		tputs(CE, 1, addbuf);
+		linect[curr] = curc - 1;
+	} else {
+		c = curc - 1;
+		while (linect[curr] > c) {
+			addbuf(' ');
+			curc++;
+			linect[curr]--;
+		}
+		curmove(curr, c + 1);
+	}
+}
+
+int
+getcaps(s)
+	const char   *s;
+{
+	char   **code;		/* two letter code */
+	char ***cap;		/* pointer to cap string */
+	char   *bufp;		/* pointer to cap buffer */
+	char    tentry[1024];	/* temporary uncoded caps buffer */
+
+	tgetent(tentry, s);	/* get uncoded termcap entry */
+
+	LI = tgetnum("li");	/* get number of lines */
+	if (LI == -1)
+		LI = 12;
+	CO = tgetnum("co");	/* get number of columns */
+	if (CO == -1)
+		CO = 65;
+
+	bufp = tbuf;		/* get padding character */
+	tgetstr("pc", &bufp);
+	if (bufp != tbuf)
+		PC = *tbuf;
+	else
+		PC = 0;
+
+	bufp = tbuf;		/* get string entries */
+	cap = tstr;
+	for (code = tcap; *code; code++)
+		**cap++ = (char *)tgetstr(*code, &bufp);
+
+	/* get pertinent lengths */
+	if (HO)
+		lHO = strlen(HO);
+	if (BC)
+		lBC = strlen(BC);
+	else
+		lBC = 1;
+	if (UP)
+		lUP = strlen(UP);
+	if (ND)
+		lND = strlen(ND);
+	linect = (int *)calloc(LI + 1, sizeof(int));
+	if (LI < 24 || CO < 72 || !(CL && UP && ND))
+		return(0);
+	return(1);
 }

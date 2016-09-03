@@ -1,4 +1,4 @@
-/*	$OpenBSD: ftpcmd.y,v 1.64 2016/08/26 06:32:10 tedu Exp $	*/
+/*	$OpenBSD: ftpcmd.y,v 1.17 1999/10/08 14:40:35 deraadt Exp $	*/
 /*	$NetBSD: ftpcmd.y,v 1.7 1996/04/08 19:03:11 jtc Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -39,7 +43,15 @@
 
 %{
 
-#include <sys/types.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)ftpcmd.y	8.3 (Berkeley) 4/6/94";
+#else
+static char rcsid[] = "$OpenBSD: ftpcmd.y,v 1.17 1999/10/08 14:40:35 deraadt Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 
@@ -50,20 +62,19 @@
 #include <errno.h>
 #include <glob.h>
 #include <pwd.h>
+#include <setjmp.h>
 #include <signal.h>
+#include <tzfile.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
 #include <time.h>
 #include <unistd.h>
-#include <netdb.h>
-#include <limits.h>
 
-#include "monitor.h"
 #include "extern.h"
 
-extern	union sockunion data_dest;
+extern	struct sockaddr_in data_dest;
 extern	int logged_in;
 extern	struct passwd *pw;
 extern	int guest;
@@ -80,16 +91,13 @@ extern	int usedefault;
 extern  int transflag;
 extern  char tmpline[];
 extern	int portcheck;
-extern	union sockunion his_addr;
-extern	int umaskchange;
+extern	struct sockaddr_in his_addr;
 
 off_t	restart_point;
 
 static	int cmd_type;
 static	int cmd_form;
 static	int cmd_bytesz;
-static	int state;
-static	int quit;
 char	cbuf[512];
 char	*fromname;
 
@@ -97,7 +105,6 @@ char	*fromname;
 
 %union {
 	int	i;
-	off_t	o;
 	char   *s;
 }
 
@@ -105,7 +112,7 @@ char	*fromname;
 	A	B	C	E	F	I
 	L	N	P	R	S	T
 
-	SP	CRLF	COMMA	ALL
+	SP	CRLF	COMMA
 
 	USER	PASS	ACCT	REIN	QUIT	PORT
 	PASV	TYPE	STRU	MODE	RETR	STOR
@@ -115,21 +122,17 @@ char	*fromname;
 	STAT	HELP	NOOP	MKD	RMD	PWD
 	CDUP	STOU	SMNT	SYST	SIZE	MDTM
 
-	LPRT	LPSV	EPRT	EPSV
-
 	UMASK	IDLE	CHMOD
 
 	LEXERR
 
 %token	<s> STRING
 %token	<i> NUMBER
-%token	<o> BIGNUM
 
-%type	<i> check_login check_login_epsvall octal_number byte_size
+%type	<i> check_login octal_number byte_size
 %type	<i> struct_code mode_code type_code form_code
-%type	<i> host_port host_long_port4 host_long_port6
-%type	<o> file_size
 %type	<s> pathstring pathname password username
+%type	<i> host_port
 
 %start	cmd_list
 
@@ -139,11 +142,8 @@ cmd_list
 	: /* empty */
 	| cmd_list cmd
 		{
-			if (fromname) {
-				free(fromname);
-				fromname = NULL;
-			}
-			restart_point = 0;
+			fromname = (char *) 0;
+			restart_point = (off_t) 0;
 		}
 	| cmd_list rcmd
 	;
@@ -151,35 +151,31 @@ cmd_list
 cmd
 	: USER SP username CRLF
 		{
-			monitor_user($3);
+			user($3);
 			free($3);
 		}
 	| PASS SP password CRLF
 		{
-			quit = monitor_pass($3);
+			pass($3);
 			memset($3, 0, strlen($3));
 			free($3);
-
-			/* Terminate unprivileged pre-auth slave */
-			if (quit)
-				_exit(0);
 		}
-	| PORT check_login_epsvall SP host_port CRLF
+	| PORT check_login SP host_port CRLF
 		{
 			if ($2) {
 				if ($4) {
 					usedefault = 1;
-					reply(500,
+					reply(500,	
 					    "Illegal PORT rejected (range errors).");
 				} else if (portcheck &&
-				    ntohs(data_dest.su_sin.sin_port) < IPPORT_RESERVED) {
+				    ntohs(data_dest.sin_port) < IPPORT_RESERVED) {
 					usedefault = 1;
 					reply(500,
 					    "Illegal PORT rejected (reserved port).");
 				} else if (portcheck &&
-				    memcmp(&data_dest.su_sin.sin_addr,
-				    &his_addr.su_sin.sin_addr,
-				    sizeof data_dest.su_sin.sin_addr)) {
+				    memcmp(&data_dest.sin_addr,
+				    &his_addr.sin_addr,
+				    sizeof data_dest.sin_addr)) {
 					usedefault = 1;
 					reply(500,
 					    "Illegal PORT rejected (address wrong).");
@@ -193,77 +189,11 @@ cmd
 				}
 			}
 		}
-	| LPRT check_login_epsvall SP host_long_port4 CRLF
+	| PASV check_login CRLF
 		{
 			if ($2) {
-				/* reject invalid host_long_port4 */
-				if ($4) {
-					reply(500,
-					    "Illegal LPRT command rejected");
-					usedefault = 1;
-				} else {
-					usedefault = 0;
-					if (pdata >= 0) {
-						(void) close(pdata);
-						pdata = -1;
-					}
-					reply(200, "LPRT command successful.");
-				}
-			}
-		}
-
-	| LPRT check_login_epsvall SP host_long_port6 CRLF
-		{
-			if ($2) {
-				/* reject invalid host_long_port6 */
-				if ($4) {
-					reply(500,
-					    "Illegal LPRT command rejected");
-					usedefault = 1;
-				} else {
-					usedefault = 0;
-					if (pdata >= 0) {
-						(void) close(pdata);
-						pdata = -1;
-					}
-					reply(200, "LPRT command successful.");
-				}
-			}
-		}
-
-	| EPRT check_login_epsvall SP STRING CRLF
-		{
-			if ($2)
-				extended_port($4);
-			free($4);
-		}
-
-	| PASV check_login_epsvall CRLF
-		{
-			if ($2)
 				passive();
-		}
-	| LPSV check_login_epsvall CRLF
-		{
-			if ($2)
-				long_passive("LPSV", PF_UNSPEC);
-		}
-	| EPSV check_login SP NUMBER CRLF
-		{
-			if ($2)
-				long_passive("EPSV", epsvproto2af($4));
-		}
-	| EPSV check_login SP ALL CRLF
-		{
-			if ($2) {
-				reply(200, "EPSV ALL command successful.");
-				epsvall++;
 			}
-		}
-	| EPSV check_login CRLF
-		{
-			if ($2)
-				long_passive("EPSV", PF_UNSPEC);
 		}
 	| TYPE check_login SP type_code CRLF
 		{
@@ -282,7 +212,7 @@ cmd
 				case TYPE_E:
 					reply(504, "Type E not implemented.");
 					break;
-
+	
 				case TYPE_I:
 					reply(200, "Type set to I.");
 					type = cmd_type;
@@ -290,11 +220,11 @@ cmd
 
 				case TYPE_L:
 					if (cmd_bytesz == 8) {
-						reply(200,
-						    "Type set to L (byte size 8).");
-						    type = cmd_type;
+					       reply(200,
+					       "Type set to L (byte size 8).");
+					       type = cmd_type;
 					} else
-						reply(504, "Byte size must be 8.");
+					    reply(504, "Byte size must be 8.");
 
 				}
 			}
@@ -342,7 +272,7 @@ cmd
 	| RETR check_login SP pathname CRLF
 		{
 			if ($2 && $4 != NULL)
-				retrieve(NULL, $4);
+				retrieve((char *) 0, $4);
 			if ($4 != NULL)
 				free($4);
 		}
@@ -369,7 +299,8 @@ cmd
 		{
 			if ($2 && $4 != NULL)
 				send_file_list($4);
-			free($4);
+			if ($4 != NULL)
+				free($4);
 		}
 	| LIST check_login CRLF
 		{
@@ -404,22 +335,21 @@ cmd
 		}
 	| RNTO check_login SP pathname CRLF
 		{
-			if ($2 && $4 != NULL) {
+			if ($2) {
 				if (fromname) {
 					renamecmd(fromname, $4);
 					free(fromname);
-					fromname = NULL;
+					fromname = (char *) 0;
 				} else {
-					reply(503,
+					reply(503, 
 					  "Bad sequence of commands.");
 				}
 			}
-			if ($4 != NULL)
-				free($4);
+			free($4);
 		}
 	| ABOR check_login CRLF
 		{
-			if ($2)
+			if ($2) 
 				reply(225, "ABOR command successful.");
 		}
 	| CWD check_login CRLF
@@ -436,7 +366,7 @@ cmd
 		}
 	| HELP CRLF
 		{
-			help(cmdtab, NULL);
+			help(cmdtab, (char *) 0);
 		}
 	| HELP SP STRING CRLF
 		{
@@ -449,10 +379,12 @@ cmd
 				if (*cp)
 					help(sitetab, cp);
 				else
-					help(sitetab, NULL);
+					help(sitetab, (char *) 0);
 			} else
 				help(cmdtab, $3);
-			free ($3);
+
+			if ($3 != NULL)
+				free ($3);
 		}
 	| NOOP CRLF
 		{
@@ -484,16 +416,18 @@ cmd
 		}
 	| SITE SP HELP CRLF
 		{
-			help(sitetab, NULL);
+			help(sitetab, (char *) 0);
 		}
 	| SITE SP HELP SP STRING CRLF
 		{
 			help(sitetab, $5);
-			free ($5);
+
+			if ($5 != NULL)
+				free ($5);
 		}
 	| SITE SP UMASK check_login CRLF
 		{
-			mode_t oldmask;
+			int oldmask;
 
 			if ($4) {
 				oldmask = umask(0);
@@ -503,14 +437,11 @@ cmd
 		}
 	| SITE SP UMASK check_login SP octal_number CRLF
 		{
-			mode_t oldmask;
+			int oldmask;
 
 			if ($4) {
 				if (($6 == -1) || ($6 > 0777)) {
 					reply(501, "Bad UMASK value");
-				} else if (!umaskchange) {
-					reply(550,
-					    "No permission to change umask.");
 				} else {
 					oldmask = umask($6);
 					reply(200,
@@ -522,19 +453,13 @@ cmd
 	| SITE SP CHMOD check_login SP octal_number SP pathname CRLF
 		{
 			if ($4 && ($8 != NULL)) {
-				if (($6 == -1) || ($6 > 0777))
+				if ($6 > 0777)
 					reply(501,
-					    "CHMOD: Mode value must be between "
-					    "0 and 0777");
-				else if (!umaskchange)
-					reply(550,
-					    "No permission to change mode of %s.",
-					    $8);
+				"CHMOD: Mode value must be between 0 and 0777");
 				else if (chmod($8, $6) < 0)
 					perror_reply(550, $8);
 				else
-					reply(200,
-					    "CHMOD command successful.");
+					reply(200, "CHMOD command successful.");
 			}
 			if ($8 != NULL)
 				free($8);
@@ -542,24 +467,22 @@ cmd
 	| SITE SP check_login IDLE CRLF
 		{
 			if ($3)
-				reply(200,
-				    "Current IDLE time limit is %d "
-				    "seconds; max %d",
-				    timeout, maxtimeout);
+			  reply(200,
+	       		    "Current IDLE time limit is %d seconds; max %d",
+				timeout, maxtimeout);
 		}
 	| SITE SP check_login IDLE SP NUMBER CRLF
 		{
 			if ($3) {
 				if ($6 < 30 || $6 > maxtimeout) {
-					reply(501,
-					    "Maximum IDLE time must be between "
-					    "30 and %d seconds",
-					    maxtimeout);
+				reply(501,
+	       		 "Maximum IDLE time must be between 30 and %d seconds",
+				    maxtimeout);
 				} else {
 					timeout = $6;
 					(void) alarm((unsigned) timeout);
 					reply(200,
-					    "Maximum IDLE time set to %d seconds",
+					 "Maximum IDLE time set to %d seconds",
 					    timeout);
 				}
 			}
@@ -574,7 +497,16 @@ cmd
 	| SYST check_login CRLF
 		{
 			if ($2)
-			reply(215, "UNIX Type: L8");
+#ifdef unix
+#ifdef BSD
+			reply(215, "UNIX Type: L%d Version: BSD-%d",
+				NBBY, BSD);
+#else /* BSD */
+			reply(215, "UNIX Type: L%d", NBBY);
+#endif /* BSD */
+#else /* unix */
+			reply(215, "UNKNOWN Type: L%d", NBBY);
+#endif /* unix */
 		}
 
 		/*
@@ -615,7 +547,7 @@ cmd
 					t = gmtime(&stbuf.st_mtime);
 					reply(213,
 					    "%04d%02d%02d%02d%02d%02d",
-					    1900 + t->tm_year,
+					    TM_YEAR_BASE + t->tm_year,
 					    t->tm_mon+1, t->tm_mday,
 					    t->tm_hour, t->tm_min, t->tm_sec);
 				}
@@ -628,39 +560,35 @@ cmd
 			reply(221, "Goodbye.");
 			dologout(0);
 		}
-	| error
+	| error CRLF
 		{
-			yyclearin;		/* discard lookahead data */
-			yyerrok;		/* clear error condition */
-			state = 0;		/* reset lexer state */
+			yyerrok;
 		}
 	;
 rcmd
 	: RNFR check_login SP pathname CRLF
 		{
-			restart_point = 0;
+			char *renamefrom();
+
+			restart_point = (off_t) 0;
 			if ($2 && $4) {
-				if (fromname)
-					free(fromname);
 				fromname = renamefrom($4);
-				if (fromname == NULL)
+				if (fromname == (char *) 0 && $4) {
 					free($4);
-			} else if ($4) {
-				free ($4);
+				}
+			} else {
+				if ($4)
+					free ($4);
 			}
 		}
 
-	| REST check_login SP file_size CRLF
+	| REST check_login SP byte_size CRLF
 		{
 			if ($2) {
-				if (fromname) {
-					free(fromname);
-					fromname = NULL;
-				}
-				restart_point = $4;
-				reply(350, "Restarting at %lld. %s",
-				    (long long)restart_point,
-				    "Send STORE or RETRIEVE to initiate transfer.");
+			    fromname = (char *) 0;
+			    restart_point = $4;	/* XXX $4 is only "int" */
+			    reply(350, "Restarting at %qd. %s", restart_point,
+			       "Send STORE or RETRIEVE to initiate transfer.");
 			}
 		}
 	;
@@ -672,24 +600,13 @@ username
 password
 	: /* empty */
 		{
-			$$ = calloc(1, sizeof(char));
+			$$ = (char *)calloc(1, sizeof(char));
 		}
 	| STRING
 	;
 
 byte_size
 	: NUMBER
-	;
-
-file_size
-	: NUMBER
-		{
-			$$ = $1;
-		}
-	| BIGNUM
-		{
-			$$ = $1;
-		}
 	;
 
 host_port
@@ -703,88 +620,12 @@ host_port
 			    $9 < 0 || $9 > 255 || $11 < 0 || $11 > 255) {
 				$$ = 1;
 			} else {
-				data_dest.su_sin.sin_len = sizeof(struct sockaddr_in);
-				data_dest.su_sin.sin_family = AF_INET;
-				p = (char *)&data_dest.su_sin.sin_port;
+				data_dest.sin_len = sizeof(struct sockaddr_in);
+				data_dest.sin_family = AF_INET;
+				p = (char *)&data_dest.sin_port;
 				p[0] = $9; p[1] = $11;
-				a = (char *)&data_dest.su_sin.sin_addr;
+				a = (char *)&data_dest.sin_addr;
 				a[0] = $1; a[1] = $3; a[2] = $5; a[3] = $7;
-				$$ = 0;
-			}
-		}
-	;
-
-host_long_port4
-	: NUMBER COMMA NUMBER COMMA NUMBER COMMA NUMBER COMMA
-		NUMBER COMMA NUMBER COMMA NUMBER COMMA NUMBER COMMA
-		NUMBER
-		{
-			char *a, *p;
-
-			/* reject invalid LPRT command */
-			if ($1 != 4 || $3 != 4 ||
-			    $5 < 0 || $5 > 255 || $7 < 0 || $7 > 255 ||
-			    $9 < 0 || $9 > 255 || $11 < 0 || $11 > 255 ||
-			    $13 != 2 ||
-			    $15 < 0 || $15 > 255 || $17 < 0 || $17 > 255) {
-				$$ = 1;
-			} else {
-				data_dest.su_sin.sin_len =
-					sizeof(struct sockaddr_in);
-				data_dest.su_family = AF_INET;
-				p = (char *)&data_dest.su_port;
-				p[0] = $15; p[1] = $17;
-				a = (char *)&data_dest.su_sin.sin_addr;
-				a[0] = $5; a[1] = $7; a[2] = $9; a[3] = $11;
-				$$ = 0;
-			}
-		}
-	;
-
-host_long_port6
-	: NUMBER COMMA NUMBER COMMA NUMBER COMMA NUMBER COMMA
-		NUMBER COMMA NUMBER COMMA NUMBER COMMA NUMBER COMMA
-		NUMBER COMMA NUMBER COMMA NUMBER COMMA NUMBER COMMA
-		NUMBER COMMA NUMBER COMMA NUMBER COMMA NUMBER COMMA
-		NUMBER COMMA NUMBER COMMA NUMBER COMMA NUMBER COMMA
-		NUMBER
-		{
-			char *a, *p;
-
-			/* reject invalid LPRT command */
-			if ($1 != 6 || $3 != 16 ||
-			    $5 < 0 || $5 > 255 || $7 < 0 || $7 > 255 ||
-			    $9 < 0 || $9 > 255 || $11 < 0 || $11 > 255 ||
-			    $13 < 0 || $13 > 255 || $15 < 0 || $15 > 255 ||
-			    $17 < 0 || $17 > 255 || $19 < 0 || $19 > 255 ||
-			    $21 < 0 || $21 > 255 || $23 < 0 || $23 > 255 ||
-			    $25 < 0 || $25 > 255 || $27 < 0 || $27 > 255 ||
-			    $29 < 0 || $29 > 255 || $31 < 0 || $31 > 255 ||
-			    $33 < 0 || $33 > 255 || $35 < 0 || $35 > 255 ||
-			    $37 != 2 ||
-			    $39 < 0 || $39 > 255 || $41 < 0 || $41 > 255) {
-				$$ = 1;
-			} else {
-				data_dest.su_sin6.sin6_len =
-					sizeof(struct sockaddr_in6);
-				data_dest.su_family = AF_INET6;
-				p = (char *)&data_dest.su_port;
-				p[0] = $39; p[1] = $41;
-				a = (char *)&data_dest.su_sin6.sin6_addr;
-				 a[0] =  $5;  a[1] =  $7;
-				 a[2] =  $9;  a[3] = $11;
-				 a[4] = $13;  a[5] = $15;
-				 a[6] = $17;  a[7] = $19;
-				 a[8] = $21;  a[9] = $23;
-				a[10] = $25; a[11] = $27;
-				a[12] = $29; a[13] = $31;
-				a[14] = $33; a[15] = $35;
-				if (his_addr.su_family == AF_INET6) {
-					/* XXX more sanity checks! */
-					data_dest.su_sin6.sin6_scope_id =
-					    his_addr.su_sin6.sin6_scope_id;
-				}
-
 				$$ = 0;
 			}
 		}
@@ -833,7 +674,7 @@ type_code
 	| L
 		{
 			cmd_type = TYPE_L;
-			cmd_bytesz = 8;
+			cmd_bytesz = NBBY;
 		}
 	| L SP byte_size
 		{
@@ -960,23 +801,9 @@ check_login
 		}
 	;
 
-check_login_epsvall
-	: /* empty */
-		{
-			if (!logged_in) {
-				reply(530, "Please login with USER and PASS.");
-				$$ = 0;
-			} else if (epsvall) {
-				reply(501, "the command is disallowed "
-				    "after EPSV ALL");
-				usedefault = 1;
-				$$ = 0;
-			} else
-				$$ = 1;
-		}
-	;
-
 %%
+
+extern jmp_buf errcatch;
 
 #define	CMD	0	/* beginning of command */
 #define	ARGS	1	/* expect miscellaneous arguments */
@@ -1004,11 +831,7 @@ struct tab cmdtab[] = {		/* In order defined in RFC 765 */
 	{ "REIN", REIN, ARGS, 0,	"(reinitialize server state)" },
 	{ "QUIT", QUIT, ARGS, 1,	"(terminate service)", },
 	{ "PORT", PORT, ARGS, 1,	"<sp> b0, b1, b2, b3, b4" },
-	{ "LPRT", LPRT, ARGS, 1,	"<sp> af, hal, h1, h2, h3,..., pal, p1, p2..." },
-	{ "EPRT", EPRT, STR1, 1,	"<sp> |af|addr|port|" },
 	{ "PASV", PASV, ARGS, 1,	"(set server in passive mode)" },
-	{ "LPSV", LPSV, ARGS, 1,	"(set server in passive mode)" },
-	{ "EPSV", EPSV, ARGS, 1,	"[<sp> af|ALL]" },
 	{ "TYPE", TYPE, ARGS, 1,	"<sp> [ A | E | I | L ]" },
 	{ "STRU", STRU, ARGS, 1,	"(specify file structure)" },
 	{ "MODE", MODE, ARGS, 1,	"(specify transfer mode)" },
@@ -1059,13 +882,11 @@ struct tab sitetab[] = {
 	{ NULL,   0,    0,    0,	0 }
 };
 
-static void	 help(struct tab *, char *);
+static void	 help __P((struct tab *, char *));
 static struct tab *
-		 lookup(struct tab *, char *);
-static void	 sizecmd(char *);
-static int	 yylex(void);
-
-extern int epsvall;
+		 lookup __P((struct tab *, char *));
+static void	 sizecmd __P((char *));
+static int	 yylex __P((void));
 
 static struct tab *
 lookup(p, cmd)
@@ -1076,22 +897,22 @@ lookup(p, cmd)
 	for (; p->name != NULL; p++)
 		if (strcmp(cmd, p->name) == 0)
 			return (p);
-	return (NULL);
+	return (0);
 }
 
 #include <arpa/telnet.h>
 
 /*
- * get_line - a hacked up version of fgets to ignore TELNET escape codes.
+ * getline - a hacked up version of fgets to ignore TELNET escape codes.
  */
-int
-get_line(s, n, iop)
+char *
+getline(s, n, iop)
 	char *s;
 	int n;
 	FILE *iop;
 {
 	int c;
-	char *cs;
+	register char *cs;
 
 	cs = s;
 /* tmpline may contain saved command from urgent mode interruption */
@@ -1102,7 +923,7 @@ get_line(s, n, iop)
 			if (debug)
 				syslog(LOG_DEBUG, "command: %s", s);
 			tmpline[0] = '\0';
-			return(0);
+			return(s);
 		}
 		if (c == 0)
 			tmpline[0] = '\0';
@@ -1133,30 +954,19 @@ get_line(s, n, iop)
 		    }
 		}
 		*cs++ = c;
-		if (--n <= 0) {
-			/*
-			 * If command doesn't fit into buffer, discard the
-			 * rest of the command and indicate truncation.
-			 * This prevents the command to be split up into
-			 * multiple commands.
-			 */
-			while (c != '\n' && (c = getc(iop)) != EOF)
-				;
-			return (-2);
-		}
-		if (c == '\n')
+		if (--n <= 0 || c == '\n')
 			break;
 	}
 	if (c == EOF && cs == s)
-		return (-1);
+		return (NULL);
 	*cs++ = '\0';
 	if (debug) {
 		if (!guest && strncasecmp("pass ", s, 5) == 0) {
 			/* Don't syslog passwords */
 			syslog(LOG_DEBUG, "command: %.5s ???", s);
 		} else {
-			char *cp;
-			int len;
+			register char *cp;
+			register int len;
 
 			/* Don't syslog trailing CR-LF */
 			len = strlen(s);
@@ -1168,20 +978,18 @@ get_line(s, n, iop)
 			syslog(LOG_DEBUG, "command: %.*s", len, s);
 		}
 	}
-	return (0);
+	return (s);
 }
 
-/*ARGSUSED*/
 void
 toolong(signo)
 	int signo;
 {
-	struct syslog_data sdata = SYSLOG_DATA_INIT;
 
-	reply_r(421,
+	reply(421,
 	    "Timeout (%d seconds): closing control connection.", timeout);
 	if (logging)
-		syslog_r(LOG_INFO, &sdata, "User %s timed out after %d seconds",
+		syslog(LOG_INFO, "User %s timed out after %d seconds",
 		    (pw ? pw -> pw_name : "unknown"), timeout);
 	dologout(1);
 }
@@ -1189,7 +997,7 @@ toolong(signo)
 static int
 yylex()
 {
-	static int cpos;
+	static int cpos, state;
 	char *cp, *cp2;
 	struct tab *p;
 	int n;
@@ -1199,22 +1007,19 @@ yylex()
 		switch (state) {
 
 		case CMD:
+			(void) signal(SIGALRM, toolong);
 			(void) alarm((unsigned) timeout);
-			n = get_line(cbuf, sizeof(cbuf)-1, stdin);
-			if (n == -1) {
+			if (getline(cbuf, sizeof(cbuf)-1, stdin) == NULL) {
 				reply(221, "You could at least say goodbye.");
 				dologout(0);
-			} else if (n == -2) {
-				reply(500, "Command too long.");
-				alarm(0);
-				continue;
 			}
 			(void) alarm(0);
 			if ((cp = strchr(cbuf, '\r'))) {
 				*cp++ = '\n';
 				*cp = '\0';
 			}
-			if (strncasecmp(cbuf, "PASS", 4) != 0) {
+#ifdef HASSETPROCTITLE
+			if (strncasecmp(cbuf, "PASS", 4) != NULL) {
 				if ((cp = strpbrk(cbuf, "\n"))) {
 					c = *cp;
 					*cp = '\0';
@@ -1222,6 +1027,7 @@ yylex()
 					*cp = c;
 				}
 			}
+#endif /* HASSETPROCTITLE */
 			if ((cp = strpbrk(cbuf, " \n")))
 				cpos = cp - cbuf;
 			if (cpos == 0)
@@ -1231,10 +1037,11 @@ yylex()
 			upper(cbuf);
 			p = lookup(cmdtab, cbuf);
 			cbuf[cpos] = c;
-			if (p != NULL) {
+			if (p != 0) {
 				if (p->implemented == 0) {
 					nack(p->name);
-					return (LEXERR);
+					longjmp(errcatch,0);
+					/* NOTREACHED */
 				}
 				state = p->state;
 				yylval.s = p->name;
@@ -1255,11 +1062,12 @@ yylex()
 			upper(cp);
 			p = lookup(sitetab, cp);
 			cbuf[cpos] = c;
-			if (p != NULL) {
+			if (p != 0) {
 				if (p->implemented == 0) {
 					state = CMD;
 					nack(p->name);
-					return (LEXERR);
+					longjmp(errcatch,0);
+					/* NOTREACHED */
 				}
 				state = p->state;
 				yylval.s = p->name;
@@ -1315,9 +1123,9 @@ yylex()
 				cpos++;
 				return (SP);
 			}
-			if (isdigit((unsigned char)cbuf[cpos])) {
+			if (isdigit(cbuf[cpos])) {
 				cp = &cbuf[cpos];
-				while (isdigit((unsigned char)cbuf[++cpos]))
+				while (isdigit(cbuf[++cpos]))
 					;
 				c = cbuf[cpos];
 				cbuf[cpos] = '\0';
@@ -1330,29 +1138,15 @@ yylex()
 			goto dostr1;
 
 		case ARGS:
-			if (isdigit((unsigned char)cbuf[cpos])) {
-				long long llval;
-
+			if (isdigit(cbuf[cpos])) {
 				cp = &cbuf[cpos];
-				errno = 0;
-				llval = strtoll(cp, &cp2, 10);
-				if (llval < 0 ||
-				    (errno == ERANGE && llval == LLONG_MAX))
-					break;
-
-				cpos = (int)(cp2 - cbuf);
-				if (llval > INT_MAX) {
-					yylval.o = llval;
-					return (BIGNUM);
-				} else {
-					yylval.i = (int)llval;
-					return (NUMBER);
-				}
-			}
-			if (strncasecmp(&cbuf[cpos], "ALL", 3) == 0 &&
-			    !isalnum((unsigned char)cbuf[cpos + 3])) {
-				cpos += 3;
-				return ALL;
+				while (isdigit(cbuf[++cpos]))
+					;
+				c = cbuf[cpos];
+				cbuf[cpos] = '\0';
+				yylval.i = atoi(cp);
+				cbuf[cpos] = c;
+				return (NUMBER);
 			}
 			switch (cbuf[cpos++]) {
 
@@ -1420,8 +1214,9 @@ yylex()
 		default:
 			fatal("Unknown state in scanner.");
 		}
+		yyerror((char *) 0);
 		state = CMD;
-		return (LEXERR);
+		longjmp(errcatch,0);
 	}
 }
 
@@ -1429,11 +1224,10 @@ void
 upper(s)
 	char *s;
 {
-	char *p;
-
-	for (p = s; *p; p++) {
-		if (islower((unsigned char)*p))
-			*p = (char)toupper((unsigned char)*p);
+	while (*s != '\0') {
+		if (islower(*s))
+			*s = toupper(*s);
+		s++;
 	}
 }
 
@@ -1459,7 +1253,7 @@ help(ctab, s)
 		NCMDS++;
 	}
 	width = (width + 8) &~ 7;
-	if (s == NULL) {
+	if (s == 0) {
 		int i, j, w;
 		int columns, lines;
 
@@ -1491,7 +1285,7 @@ help(ctab, s)
 	}
 	upper(s);
 	c = lookup(ctab, s);
-	if (c == NULL) {
+	if (c == (struct tab *)0) {
 		reply(502, "Unknown command %s.", s);
 		return;
 	}
@@ -1513,7 +1307,7 @@ sizecmd(filename)
 		if (stat(filename, &stbuf) < 0 || !S_ISREG(stbuf.st_mode))
 			reply(550, "%s: not a plain file.", filename);
 		else
-			reply(213, "%lld", (long long)stbuf.st_size);
+			reply(213, "%qu", stbuf.st_size);
 		break; }
 	case TYPE_A: {
 		FILE *fin;
@@ -1530,21 +1324,16 @@ sizecmd(filename)
 			(void) fclose(fin);
 			return;
 		}
-		if (stbuf.st_size > 10240) {
-			reply(550, "%s: file too large for SIZE.", filename);
-			(void) fclose(fin);
-			return;
-		}
 
 		count = 0;
-		while((c = getc(fin)) != EOF) {
+		while((c=getc(fin)) != EOF) {
 			if (c == '\n')	/* will get expanded to \r\n */
 				count++;
 			count++;
 		}
 		(void) fclose(fin);
 
-		reply(213, "%lld", (long long)count);
+		reply(213, "%qd", count);
 		break; }
 	default:
 		reply(504, "SIZE not implemented for Type %c.", "?AEIL"[type]);

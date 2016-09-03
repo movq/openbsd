@@ -1,4 +1,4 @@
-#	$OpenBSD: locate.rc,v 1.7 2015/08/14 03:02:07 rzalamena Exp $
+#	$OpenBSD: locate.rc,v 1.4 1998/04/10 22:42:19 todd Exp $
 #
 # /etc/locate.rc -  command script for updatedb(8)
 #
@@ -13,11 +13,11 @@ FCODES="/var/db/locate.database"
 SEARCHPATHS="/"
 
 # directories unwanted in output
-PRUNEPATHS="/tmp /var/tmp"
+PRUNEPATHS="/tmp /usr/tmp /var/tmp"
 
 # filesystems allowed. Beware: a non-listed filesystem will be pruned
-# and if the SEARCHPATHS starts in such a filesystem locate will build
+# and is the SEARCHPATHS starts in such a filesystem locate will build
 # an empty database
 #
 # be careful if you add 'nfs'
-FILESYSTEMS="ffs ufs ext2fs"
+FILESYSTEMS="ffs ufs"

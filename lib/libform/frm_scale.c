@@ -1,6 +1,7 @@
-/*	$OpenBSD: frm_scale.c,v 1.6 2015/01/23 22:48:51 krw Exp $	*/
+/*	$OpenBSD: frm_scale.c,v 1.3 1999/05/17 03:04:17 millert Exp $	*/
+
 /****************************************************************************
- * Copyright (c) 1998-2003,2004 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -28,12 +29,12 @@
  ****************************************************************************/
 
 /****************************************************************************
- *   Author:  Juergen Pfeifer, 1995,1997                                    *
+ *   Author: Juergen Pfeifer <juergen.pfeifer@gmx.net> 1995,1997            *
  ****************************************************************************/
 
 #include "form.priv.h"
 
-MODULE_ID("$Id: frm_scale.c,v 1.6 2015/01/23 22:48:51 krw Exp $")
+MODULE_ID("$From: frm_scale.c,v 1.4 1999/05/16 17:22:02 juergen Exp $")
 
 /*---------------------------------------------------------------------------
 |   Facility      :  libnform  
@@ -45,22 +46,19 @@ MODULE_ID("$Id: frm_scale.c,v 1.6 2015/01/23 22:48:51 krw Exp $")
 |                    E_BAD_ARGUMENT    - invalid form pointer
 |                    E_NOT_CONNECTED   - no fields connected to form
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(int)
-scale_form(const FORM *form, int *rows, int *cols)
+int scale_form(const FORM * form, int * rows, int * cols)
 {
-  T((T_CALLED("scale_form(%p,%p,%p)"), form, rows, cols));
-
-  if (!form)
+  if ( !form )
     RETURN(E_BAD_ARGUMENT);
 
-  if (!(form->field))
+  if ( !(form->field) )
     RETURN(E_NOT_CONNECTED);
-
-  if (rows)
+  
+  if (rows) 
     *rows = form->rows;
-  if (cols)
+  if (cols) 
     *cols = form->cols;
-
+  
   RETURN(E_OK);
 }
 

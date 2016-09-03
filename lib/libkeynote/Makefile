@@ -1,19 +1,19 @@
-#	$OpenBSD: Makefile,v 1.20 2016/03/30 06:38:42 jmc Exp $
+#	$OpenBSD: Makefile,v 1.9 1999/10/11 00:08:28 angelos Exp $
 
 LIB=	keynote
 MAN=	keynote.3 keynote.4 keynote.5
 NOPIC=	
-CFLAGS+= -Wall -I. -I${.CURDIR}
+CFLAGS+= -Wall -DCRYPTO -DHAVE_CONFIG_H -I. -I${.CURDIR}
 LEXFLAGS = -Cr -Pkn -s -i
 YACCFLAGS = -d -p kn -b k
 
 HDRS=	keynote.h
-SRCS=	k.tab.c lex.kn.c environment.c parse_assertion.c signature.c auxil.c \
+SRCS=	k.tab.c lex.kn.c environment.c parse_assertion.c signature.c aux.c \
 	base64.c
 
 CLEANFILES+= k.tab.c lex.kn.c k.tab.h
 
-k.tab.c k.tab.h: keynote.y keynote.h signature.h
+k.tab.c: keynote.y keynote.h signature.h
 	$(YACC.y) $(YACCFLAGS) ${.CURDIR}/keynote.y
 
 lex.kn.c: keynote.l keynote.y keynote.h assertion.h signature.h

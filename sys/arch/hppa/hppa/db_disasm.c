@@ -1,22 +1,33 @@
-/*	$OpenBSD: db_disasm.c,v 1.20 2014/10/15 17:22:56 miod Exp $	*/
-
-/* TODO parse 64bit insns or rewrite */
+/*	$OpenBSD: db_disasm.c,v 1.4 1999/09/10 19:55:15 mickey Exp $	*/
 
 /*
- * Copyright (c) 1999,2005 Michael Shalayeff
+ * Copyright (c) 1999 Michael Shalayeff
  * All rights reserved.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF MIND, USE, DATA OR PROFITS, WHETHER IN
- * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 /*
  *  (c) Copyright 1992 HEWLETT-PACKARD COMPANY
@@ -39,6 +50,7 @@
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <vm/vm.h>
 
 #include <machine/db_machdep.h>
 #include <ddb/db_access.h>
@@ -113,45 +125,45 @@ struct ute {
  *
  * Revision 1.3  92/06/06  16:16:45  dalton
  * *** empty log message ***
- *
+ * 
  * Revision 1.2  92/06/06  15:42:28  dalton
  * Changed include to be a path relative to hp800.
- *
+ * 
  * Revision 1.1  92/06/06  14:05:33  dalton
  * Initial revision
- *
+ * 
  * Revision 1.2  91/04/14  20:29:49  osfrcs
  * 	Initial version.
  * 	[91/03/30  09:20:34  brezak]
- *
+ * 
  * Revision 1.1.2.2  91/04/02  10:42:50  brezak
  * 	Initial version.
  * 	[91/03/30  09:20:34  brezak]
- *
+ * 
  * Revision 1.1.1.2  91/03/30  09:20:34  brezak
  * 	Initial version.
- *
+ * 
  * Revision 1.1  88/07/11  14:05:15  14:05:15  ren (Bob Naas)
  * 	Initial revision
  *
  * Revision 5.2  87/07/02  14:45:57  14:45:57  kent (Kent McMullen)
  * added constants to support addDasm and addDCond added to ssDID.c
- *
+ * 
  * Revision 5.1  87/02/27  11:12:08  11:12:08  kent (Kent McMullen)
  * update all src to 5.1
- *
+ * 
  * Revision 5.0  87/02/18  16:31:15  16:31:15  kent (Kent McMullen)
  * update all revision numbers to 5.0 for release
- *
+ * 
  * Revision 1.1  86/07/15  08:34:55  08:34:55  kent (Kent McMullen)
  * Initial revision
- *
+ * 
  * Revision 4.1  83/10/25  17:01:22  17:01:22  djm (Daniel J Magenheimer)
  * First release for ACD v4
- *
+ * 
  * Revision 3.0  83/06/13  10:22:59  djm (Daniel Magenheimer)
  * First release for distribution
- *
+ * 
  *
  */
 
@@ -234,7 +246,7 @@ struct ute {
  *  program , "s" and "l" must (alas!) be constants.  (Suggestion: if
  *  "s" == 2 and "l" == 8, use _b28 for "n".)  The name "BITFLR" should
  *  be pre-defined if the compiler assigns bitfields from left-to-right.
- *  The resultant macro expansion defines a structure in which the bit field
+ *  The resultant macro expansion defines a stucture in which the bit field
  *  starting at position "s" with length "l" may be referenced by accessing
  *  member "n".  [Note: The leftmost bits in a 36-bit word may be accessed
  *  by specifying -4 <= s < 0 on the DEC-20.]
@@ -441,24 +453,24 @@ DeclBitfR(31,1,_b311)
  *
  * Revision 1.3  92/06/06  16:16:45  dalton
  * *** empty log message ***
- *
+ * 
  * Revision 1.2  92/06/06  15:42:28  dalton
  * Changed include to be a path relative to hp800.
- *
+ * 
  * Revision 1.1  92/06/06  14:05:33  dalton
  * Initial revision
- *
+ * 
  * Revision 1.2  91/04/14  20:29:49  osfrcs
  * 	Initial version.
  * 	[91/03/30  09:20:34  brezak]
- *
+ * 
  * Revision 1.1.2.2  91/04/02  10:42:50  brezak
  * 	Initial version.
  * 	[91/03/30  09:20:34  brezak]
- *
+ * 
  * Revision 1.1.1.2  91/03/30  09:20:34  brezak
  * 	Initial version.
- *
+ * 
  * Revision 6.1  89/09/06  10:39:58  burroughs
  * Added shadow registers for gr0-gr7.
  *     gr0-7 are copied into sh0-7 whenever a trap occurs
@@ -466,30 +478,30 @@ DeclBitfR(31,1,_b311)
  *     interrupt.
  *     the "sh" command displays the shadow registers
  *     = sh7 0x789 works, too.
- *
+ * 
  * Revision 6.0  89/09/01  15:46:37  15:46:37  burroughs (Greg Burroughs)
  * baseline for pcx simple offsite
- *
+ * 
  * Revision 5.2  87/09/02  14:30:23  14:30:23  kent
  * separated stat gathering for indexed vs short.
  * this will NOT work if cache hints ever get used
  * since this field was assumed always zero
- *
+ * 
  * Revision 5.1  87/02/27  11:12:16  11:12:16  kent (Kent McMullen)
  * update all src to 5.1
- *
+ * 
  * Revision 5.0  87/02/18  16:31:35  16:31:35  kent (Kent McMullen)
  * update all revision numbers to 5.0 for release
- *
+ * 
  * Revision 1.1  86/07/15  08:34:57  08:34:57  kent (Kent McMullen)
  * Initial revision
- *
+ * 
  * Revision 4.1  83/10/25  17:02:34  17:02:34  djm (Daniel J Magenheimer)
  * First release for ACD v4
- *
+ * 
  * Revision 3.0  83/06/13  10:24:45  djm (Daniel Magenheimer)
  * First release for distribution
- *
+ * 
  *
  */
 
@@ -686,51 +698,51 @@ DeclBitfR(31,1,_b311)
  *
  * Revision 1.3  92/06/06  16:16:45  dalton
  * *** empty log message ***
- *
+ * 
  * Revision 1.2  92/06/06  15:42:28  dalton
  * Changed include to be a path relative to hp800.
- *
+ * 
  * Revision 1.1  92/06/06  14:05:33  dalton
  * Initial revision
- *
+ * 
  * Revision 1.2  91/04/14  20:29:49  osfrcs
  * 	Initial version.
  * 	[91/03/30  09:20:34  brezak]
- *
+ * 
  * Revision 1.1.2.2  91/04/02  10:42:50  brezak
  * 	Initial version.
  * 	[91/03/30  09:20:34  brezak]
- *
+ * 
  * Revision 1.1.1.2  91/03/30  09:20:34  brezak
  * 	Initial version.
- *
+ * 
 ;Revision 1.1  88/07/11  14:05:21  14:05:21  ren (Bob Naas)
 ;Initial revision
 ;
  * Revision 5.1  87/02/27  11:12:23  11:12:23  kent (Kent McMullen)
  * update all src to 5.1
- *
+ * 
  * Revision 5.0  87/02/18  16:31:52  16:31:52  kent (Kent McMullen)
  * update all revision numbers to 5.0 for release
- *
+ * 
  * Revision 1.1  86/07/15  08:35:00  08:35:00  kent (Kent McMullen)
  * Initial revision
- *
+ * 
  * Revision 4.3  85/11/12  09:28:44  09:28:44  viggy (Viggy Mokkarala)
  * first mpsim version, partially stable
- *
+ * 
  * Revision 4.2  84/07/16  17:20:57  17:20:57  djm ()
  * Define field macros for COPR and SFU insts
- *
+ * 
  * Revision 4.1  83/10/25  17:10:14  djm (Daniel Magenheimer)
  * First release for ACD v4
- *
+ * 
  * Revision 3.1  83/08/03  14:09:59  djm (Daniel Magenheimer)
  * Sys calls, args, -S, bug fixes, etc.
- *
+ * 
  * Revision 3.0  83/06/13  10:25:13  djm (Daniel Magenheimer)
  * First release for distribution
- *
+ * 
  *
  */
 /*
@@ -889,48 +901,49 @@ struct majoropcode {
 /*##################### Globals - Imports ##################################*/
 
 /* Disassembly functions */
-int fcoprDasm(int w, u_int op1, u_int);
-char *edDCond(u_int cond);
-char *unitDCond(u_int cond);
-char *addDCond(u_int cond);
-char *subDCond(u_int cond);
-int blDasm(const struct inst *i, OFS ofs, int w);
-int ldDasm(const struct inst *, OFS, int);
-int stDasm(const struct inst *i, OFS, int);
-int addDasm(const struct inst *i, OFS, int);
-int unitDasm(const struct inst *i, OFS, int);
-int iaDasm(const struct inst *i, OFS, int);
-int shdDasm(const struct inst *i, OFS, int);
-int extrDasm(const struct inst *i, OFS, int);
-int vextrDasm(const struct inst *i, OFS, int);
-int depDasm(const struct inst *i, OFS, int);
-int vdepDasm(const struct inst *i, OFS, int);
-int depiDasm(const struct inst *i, OFS, int);
-int vdepiDasm(const struct inst *i, OFS, int);
-int limmDasm(const struct inst *i, OFS, int);
-int brkDasm(const struct inst *i, OFS, int);
-int lpkDasm(const struct inst *i, OFS, int);
-int fmpyaddDasm(const struct inst *i, OFS, int);
-int fmpysubDasm(const struct inst *i, OFS, int);
-int floatDasm(const struct inst *i, OFS, int);
-int coprDasm(const struct inst *i, OFS, int);
-int diagDasm(const struct inst *i, OFS, int);
-int scDasm(const struct inst *i, OFS, int);
-int mmgtDasm(const struct inst *i, OFS, int);
-int ldxDasm(const struct inst *i, OFS, int);
-int stsDasm(const struct inst *i, OFS, int);
-int stbysDasm(const struct inst *i, OFS, int);
-int brDasm(const struct inst *i, OFS, int);
-int bvDasm(const struct inst *i, OFS, int);
-int beDasm(const struct inst *i, OFS, int);
-int cbDasm(const struct inst *i,OFS ofs, int);
-int cbiDasm(const struct inst *i,OFS ofs, int);
-int bbDasm(const struct inst *i,OFS ofs, int);
-int ariDasm(const struct inst *i, OFS, int);
+int fcoprDasm __P((int w, u_int op1, u_int));
+char *edDCond __P((u_int cond));
+char *unitDCond __P((u_int cond));
+char *addDCond __P((u_int cond));
+char *subDCond __P((u_int cond));
+int blDasm __P((const struct inst *i, OFS ofs, int w));
+int ldDasm __P((const struct inst *, OFS, int));
+int stDasm __P((const struct inst *i, OFS, int));
+int addDasm __P((const struct inst *i, OFS, int));
+int unitDasm __P((const struct inst *i, OFS, int));
+int iaDasm __P((const struct inst *i, OFS, int));
+int shdDasm __P((const struct inst *i, OFS, int));
+int extrDasm __P((const struct inst *i, OFS, int));
+int vextrDasm __P((const struct inst *i, OFS, int));
+int depDasm __P((const struct inst *i, OFS, int));
+int vdepDasm __P((const struct inst *i, OFS, int));
+int depiDasm __P((const struct inst *i, OFS, int));
+int vdepiDasm __P((const struct inst *i, OFS, int));
+int limmDasm __P((const struct inst *i, OFS, int));
+int brkDasm __P((const struct inst *i, OFS, int));
+int lpkDasm __P((const struct inst *i, OFS, int));
+int fmpyaddDasm __P((const struct inst *i, OFS, int));
+int fmpysubDasm __P((const struct inst *i, OFS, int));
+int floatDasm __P((const struct inst *i, OFS, int));
+int coprDasm __P((const struct inst *i, OFS, int));
+int diagDasm __P((const struct inst *i, OFS, int));
+int scDasm __P((const struct inst *i, OFS, int));
+int mmgtDasm __P((const struct inst *i, OFS, int));
+int ldxDasm __P((const struct inst *i, OFS, int));
+int stsDasm __P((const struct inst *i, OFS, int));
+int stbysDasm __P((const struct inst *i, OFS, int));
+int brDasm __P((const struct inst *i, OFS, int));
+int bvDasm __P((const struct inst *i, OFS, int));
+int beDasm __P((const struct inst *i, OFS, int));
+int cbDasm __P((const struct inst *i,OFS ofs, int));
+int cbiDasm __P((const struct inst *i,OFS ofs, int));
+int bbDasm __P((const struct inst *i,OFS ofs, int));
+int ariDasm __P((const struct inst *i, OFS, int));
 
 /*##################### Globals - Exports ##################################*/
 /*##################### Local Variables ####################################*/
 
+static	const char	fcoprUndef[] = "copr\t(rsvd or undef.)";
 static	const char	fmtStrTbl[][5] = { "sgl", "dbl", "sgl", "quad" };
 static	const char	condStrTbl[][7] = {
 	    "false?", "false", "?", "!<=>", "=", "=t", "?=", "!<>",
@@ -1222,8 +1235,6 @@ static struct majoropcode majopcs[NMAJOPCS] = {
 #undef NENTS
 #undef ILLEG
 
-int iExInit(void);
-
 /*--------------------------------------------------------------------------
  * instruction$ExecutionInitialize - Initialize the instruction execution
  *  data structures.
@@ -1237,7 +1248,7 @@ iExInit(void)
 	u_int	shft, mask;
 
 	if (unasm_initted)
-		return 1;
+		return 0;
 
 	/*
 	 * Determine maxsubop for each major opcode.
@@ -1248,17 +1259,15 @@ iExInit(void)
 	 */
 	for (i = &instrs[0]; *i->mnem; i++) {
 		m = &majopcs[i->majopc];
-		if (m->maxsubop < i->opcext) {
-			db_printf("iExInit not enough space for opcode %d",
-			    i->majopc);
-			return 0;
-		}
+		if (m->maxsubop < i->opcext)
+			panic("iExInit not enough space for opcode %d",
+			      i->majopc);
 		shft = 32 - i->extbs - i->extbl;
 		mask = (1 << i->extbl) - 1;
 		if (m->extshft || m->extmask) {
 			if (m->extshft != shft || m->extmask != mask) {
 				db_printf("%s - Bad instruction initialization!\n", i->mnem);
-				return 0;
+				return (0);
 			}
 		} else {
 			m->extshft = shft;
@@ -1278,7 +1287,7 @@ iExInit(void)
 	}
 
 	unasm_initted++;
-	return 1;
+	return (1);
 }
 
 
@@ -1325,10 +1334,10 @@ iaDasm(i, ofs, w)
 {
 	if (Match("addi"))
 		db_printf("%s\t%d,%%r%d,%%r%d",
-		    addDCond(Cond4(w)),Im11(w),Rsb(w),Rta(w));
+		       addDCond(Cond4(w)),Im11(w),Rsb(w),Rta(w));
 	else
 		db_printf("%s\t%d,%%r%d,%%r%d",
-		    subDCond(Cond4(w)),Im11(w),Rsb(w),Rta(w));
+		       subDCond(Cond4(w)),Im11(w),Rsb(w),Rta(w));
 	return (1);
 }
 
@@ -1341,10 +1350,10 @@ shdDasm(i, ofs, w)
 {
 	if (Match("vshd"))
 		db_printf("%s\t%%r%d,%%r%d,%%r%d",
-		    edDCond(Cond(w)), Rsa(w),Rsb(w),Rtc(w));
+		       edDCond(Cond(w)), Rsa(w),Rsb(w),Rtc(w));
 	else
 		db_printf("%s\t%%r%d,%%r%d,%d,%%r%d",
-		    edDCond(Cond(w)),Rsa(w),Rsb(w),31-Imd5(w),Rtc(w));
+		       edDCond(Cond(w)),Rsa(w),Rsb(w),31-Imd5(w),Rtc(w));
 	return (1);
 }
 
@@ -1356,7 +1365,7 @@ extrDasm(i, ofs, w)
 	int w;
 {
 	db_printf("%s\t%%r%d,%d,%d,%%r%d",
-	    edDCond(Cond(w)),Rsb(w),Imd5(w),32 - Rsc(w),Rta(w));
+	       edDCond(Cond(w)),Rsb(w),Imd5(w),32 - Rsc(w),Rta(w));
 	return (1);
 }
 
@@ -1369,7 +1378,7 @@ vextrDasm(i, ofs, w)
 	int w;
 {
 	db_printf("%s\t%%r%d,%d,%%r%d",
-	    edDCond(Cond(w)),Rsb(w),32 - Rsc(w),Rta(w));
+	       edDCond(Cond(w)),Rsb(w),32 - Rsc(w),Rta(w));
 	return (1);
 }
 
@@ -1382,7 +1391,7 @@ depDasm(i, ofs, w)
 	int w;
 {
 	db_printf("%s\t%%r%d,%d,%d,%%r%d",
-	    edDCond(Cond(w)),Rsa(w),31 - Imd5(w),32 - Rsc(w),Rtb(w));
+	       edDCond(Cond(w)),Rsa(w),31 - Imd5(w),32 - Rsc(w),Rtb(w));
 	return (1);
 }
 
@@ -1395,7 +1404,7 @@ vdepDasm(i, ofs, w)
 	int w;
 {
 	db_printf("%s\t%%r%d,%d,%%r%d",
-	    edDCond(Cond(w)),Rsa(w),32 - Rsc(w),Rtb(w));
+	       edDCond(Cond(w)),Rsa(w),32 - Rsc(w),Rtb(w));
 	return (1);
 }
 
@@ -1408,7 +1417,7 @@ depiDasm(i, ofs, w)
 	int w;
 {
 	db_printf("%s\t%d,%d,%d,%%r%d",
-	    edDCond(Cond(w)),Ima5(w),31 - Imd5(w),32 - Imc5A(w),Rtb(w));
+	       edDCond(Cond(w)),Ima5(w),31 - Imd5(w),32 - Imc5A(w),Rtb(w));
 	return (1);
 }
 
@@ -1450,7 +1459,7 @@ subDCond(cond)
 	case TR:	return(",tr");
 	case NEV:	return("");
 	default:
-		return(",<unknown subDCond condition>");
+		panic("subDCond: unknown condition");
 	}
 }
 
@@ -1482,7 +1491,7 @@ addDCond(cond)
 	case TR:	return(",tr");
 	case NEV:	return("");
 	default:
-		return(",<unknown addDCond condition>");
+		panic("addDCond: unknown condition");
 	}
 }
 
@@ -1504,7 +1513,7 @@ unitDCond(cond)
 	case TR:	return(",tr");
 	case NEV:	return("");
 	default:
-		return(",<unknown unitDCond condition>");
+		panic("unitDCond: unknown condition");
 	}
 }
 
@@ -1522,7 +1531,7 @@ edDCond(cond)
 	case XEV:	return(",ev");
 	case NEV:	return("");
 	default:
-		return(",<unknown edDCond condition>");
+		panic("edDCond: unknown condition");
 	}
 }
 
@@ -1540,21 +1549,16 @@ ldDasm(i, ofs, w)
 	OFS ofs;
 	int w;
 {
-	register int d = Disp(w);
-	char s[2];
-
-	s[1] = '\0';
-	if (d < 0) {
-		d = -d;
-		s[0] = '-';
-	} else
-		s[0] = '\0';
+	register u_int d = Disp(w);
 
 	if (Rsb(w) == 0 && Match("ldo")) {
-		db_printf("ldi\t%s%X,%%r%d",s,d,Rta(w));
+		db_printf("ldi\t%D,%%r%d",d,Rta(w));
 		return (1);
 	}
-	db_printf("%s\t%s%s%X",i->mnem,(d < 2048? "R'":""), s, d);
+	if (d < 2048)
+		db_printf("%s\tR'%X",i->mnem,d);
+	else
+		db_printf("%s\t%D",i->mnem,d);
 	if (Dss(w))
 		db_printf("(%%sr%d,%%r%d),%%r%d",Dss(w),Rsb(w),Rta(w));
 	else
@@ -1569,20 +1573,13 @@ stDasm(i, ofs, w)
 	OFS ofs;
 	int w;
 {
-	register int d = Disp(w);
-	char s[2];
+	register u_int d = Disp(w);
 
 	db_printf("\t%%r%d,",Rta(w));
-
-	s[1] = '\0';
-	if (d < 0) {
-		d = -d;
-		s[0] = '-';
-	} else
-		s[0] = '\0';
-
-	db_printf("%s%s%X", (d < 2048? "R'":""), s, d);
-
+	if (d < 2048)
+		db_printf("R'%X",d);
+	else
+		db_printf("%D",d);
 	if (Dss(w))
 		db_printf("(%%sr%d,%%r%d)",Dss(w),Rsb(w));
 	else
@@ -1704,7 +1701,7 @@ blDasm(i, ofs, w)
 		db_printf(",n");
 	db_printf("\t");
 
-	db_printsym((db_addr_t)tgtofs, DB_STGY_ANY, db_printf);
+	db_printsym((db_addr_t)tgtofs, DB_STGY_ANY);
 
 	if (link || Match("gate"))
 		db_printf(",%%r%d",link);
@@ -1741,19 +1738,14 @@ beDasm(i, ofs, w)
 	OFS ofs;
 	int w;
 {
-	register int d = Bdisp(w);
+	register u_int d = Bdisp(w);
 	register const char *p;
-	char s[2];
-
-	s[1] = '\0';
-	if (d < 0) {
-		d = -d;
-		s[0] = '-';
-	} else
-		s[0] = '\0';
 
 	p =  Nu(w)? ",n":"";
-	db_printf("%s\tR'%s%X(%%sr%d,%%r%d)", p, s, d, Sr(w), Rsb(w));
+	if (d < 2048)
+		db_printf("%s\tR'%X(%%sr%d,%%r%d)", p, d, Sr(w), Rsb(w));
+	else
+		db_printf("%s\t%D(%%sr%d,%%r%d)", p, d, Sr(w), Rsb(w));
 	return (1);
 }
 
@@ -1774,7 +1766,7 @@ cbDasm(i, ofs, w)
 	else
 		db_printf(subDCond(Cond(w) << 1));
 	db_printf("%s\t%%r%d,%%r%d,", Nu(w)?",n":"", Rsa(w), Rsb(w));
-	db_printsym((db_addr_t)tgtofs, DB_STGY_ANY, db_printf);
+	db_printsym((db_addr_t)tgtofs, DB_STGY_ANY);
 	return (1);
 }
 
@@ -1794,7 +1786,7 @@ cbiDasm(i, ofs, w)
 	else
 		db_printf(subDCond(Cond(w) << 1));
 	db_printf("%s\t%d,%%r%d,", Nu(w)? ",n":"", Ima5(w), Rsb(w));
-	db_printsym((db_addr_t)tgtofs, DB_STGY_ANY, db_printf);
+	db_printsym((db_addr_t)tgtofs, DB_STGY_ANY);
 	return (1);
 }
 
@@ -1814,7 +1806,7 @@ bbDasm(i, ofs, w)
 		db_printf("%s\t%%r%d,", p, Rta(w));
 	else
 		db_printf("%s\t%%r%d,%d,", p, Rsa(w), Imb5(w));
-	db_printsym((db_addr_t)tgtofs, DB_STGY_ANY, db_printf);
+	db_printsym((db_addr_t)tgtofs, DB_STGY_ANY);
 	return (1);
 }
 
@@ -1863,9 +1855,10 @@ scDasm(i, ofs, w)
 			db_printf("\t(%%sr%d,%%r%d),%%r%d",Dss(w),Rsb(w),Rtc(w));
 		else
 			db_printf("\t(%%r%d),%%r%d",Rsb(w),Rtc(w));
-	} else
+	} else {
+		db_printf("?????");
 		return (0);
-
+	}
 	return (1);
 }
 
@@ -1880,17 +1873,17 @@ mmgtDasm(i, ofs, w)
 		if (ProbeI(w)) {
 			if (Dss(w))
 				db_printf("i\t(%%sr%d,%%r%d),%d,%%r%d",
-				    Dss(w),Rsb(w),Rsa(w),Rtc(w));
+				       Dss(w),Rsb(w),Rsa(w),Rtc(w));
 			else
 				db_printf("i\t(%%r%d),%d,%%r%d",
-				    Rsb(w),Rsa(w),Rtc(w));
+				       Rsb(w),Rsa(w),Rtc(w));
 		} else {
 			if (Dss(w))
 				db_printf("\t(%%sr%d,%%r%d),%%r%d,%%r%d",
-				    Dss(w),Rsb(w),Rsa(w),Rtc(w));
+				       Dss(w),Rsb(w),Rsa(w),Rtc(w));
 			else
 				db_printf("\t(%%r%d),%%r%d,%%r%d",
-				    Rsb(w),Rsa(w),Rtc(w));
+				       Rsb(w),Rsa(w),Rtc(w));
 		}
 	}
 	else if (Match("lha") || Match("lpa")) {
@@ -1898,7 +1891,7 @@ mmgtDasm(i, ofs, w)
 			db_printf(",m");
 		if (Dss(w))
 			db_printf("\t%%r%d(%%sr%d,%%r%d),%%r%d",
-			    Rsa(w),Dss(w),Rsb(w),Rtc(w));
+			       Rsa(w),Dss(w),Rsb(w),Rtc(w));
 		else
 			db_printf("\t%%r%d(%%r%d),%%r%d",Rsa(w),Rsb(w),Rtc(w));
 	}
@@ -1922,9 +1915,10 @@ mmgtDasm(i, ofs, w)
 	}
 	else if (Match("iitlb"))
 		db_printf("\t%%r%d,(%%sr%d,%%r%d)",Rsa(w),Sr(w),Rsb(w));
-	else
+	else {
+		db_printf("?????");
 		return (0);
-
+	}
 	return(1);
 }
 
@@ -1977,11 +1971,12 @@ floatDasm(i, ofs, w)
 				p = "cmp";
 				break;
 			default:
+				db_printf(fcoprUndef);
 				return(0);
 			}
 			db_printf("%s,%s",p,fmtStrTbl[fmt]);
 			db_printf(",%s\t%%f%s,%%f%s",
-			    condStrTbl[op2], ST(r1), ST(r2));
+			       condStrTbl[op2], ST(r1), ST(r2));
 			return (1);
 		}
 		/*
@@ -1997,7 +1992,7 @@ floatDasm(i, ofs, w)
 		case 2: p = (Fpi(w)) ? "mpyi" : "mpy"; break;
 		case 3: p = "div"; break;
 		case 4: p = "rem"; break;
-		default: return (0);
+		default: db_printf(fcoprUndef); return (0);
 		}
 		db_printf("%s,%s", p, fmtStrTbl[fmt]);
 		db_printf("\t%%f%s,%%f%s,%%f%s",ST(r1),ST(r2),ST(t));
@@ -2034,7 +2029,7 @@ floatDasm(i, ofs, w)
 		case 3: p = "abs"; break;
 		case 4: p = "sqrt"; break;
 		case 5: p = "rnd"; break;
-		default: return (0);
+		default: db_printf(fcoprUndef); return (0);
 		}
 		db_printf("%s,%s",p,fmtStrTbl[fmt]);
 		db_printf("\t%%f%s,%%f%s",ST(r1),ST(t));
@@ -2074,7 +2069,7 @@ fcoprDasm(w, op1, op2)
 		case 3: p = "abs"; break;
 		case 4: p = "sqrt"; break;
 		case 5: p = "rnd"; break;
-		default: return(0);
+		default: db_printf(fcoprUndef); return(0);
 		}
 		db_printf("f%s,%s\t%%fr%d,%%fr%d", p, fmtStrTbl[fmt], r1, t);
 		break;
@@ -2089,7 +2084,7 @@ fcoprDasm(w, op1, op2)
 		case 3: p = "fxt"; break;
 		}
 		db_printf("fcnv%s,%s,%s\t%%fr%d,%%fr%d",
-		    p, fmtStrTbl[fmt], fmtStrTbl[dfmt], r1, t);
+		       p, fmtStrTbl[fmt], fmtStrTbl[dfmt], r1, t);
 		break;
 	    case 2:
 		/* Opclass 2: 2 sources, no destination */
@@ -2097,10 +2092,10 @@ fcoprDasm(w, op1, op2)
 		fmt = (op1 >> 2) & 3;
 		switch((op1 >> 4) & 7) {
 		case 0: p = "fcmp"; break;
-		default: return (0);
+		default: db_printf(fcoprUndef); return (0);
 		}
 		db_printf("%s,%s,%s\t%%fr%d,%%fr%d",
-		    p,fmtStrTbl[fmt],condStrTbl[op2],r1,r2);
+		       p,fmtStrTbl[fmt],condStrTbl[op2],r1,r2);
 		break;
 	    case 3:
 		/* Opclass 3: 2 sources, 1 destination */
@@ -2112,12 +2107,13 @@ fcoprDasm(w, op1, op2)
 		case 2: p = "mpy"; break;
 		case 3: p = "div"; break;
 		case 4: p = "rem"; break;
-		default: return (0);
+		default: db_printf(fcoprUndef); return (0);
 		}
 		db_printf("f%s,%s\t%%fr%d,%%fr%d,%%fr%d",
-		    p, fmtStrTbl[fmt], r1, r2, t);
+		       p, fmtStrTbl[fmt], r1, r2, t);
 		break;
 	    default:
+		    db_printf(fcoprUndef);
 		    return(0);
 	}
 	return (1);
@@ -2132,7 +2128,7 @@ coprDasm(i, ofs, w)
 	register u_int uid = Uid(w);
 	register int load = 0;
 	register char *pfx = uid > 1 ? "c" : "f";
-	register int dreg = 0;
+	register int dreg;
 
 	if (Match("copr")) {
 		if (uid) {
@@ -2144,7 +2140,7 @@ coprDasm(i, ofs, w)
 		return fcoprDasm(w, CoprExt1(w),CoprExt2(w));
 	}
 	if (Match("cldd")) {
-		dreg = 1;
+		dreg = 1; 
 		load = 1;
 		db_printf("%sldd",pfx);
 	} else if (Match("cldw")) {
@@ -2155,9 +2151,10 @@ coprDasm(i, ofs, w)
 		db_printf("%sstd",pfx);
 	} else if (Match("cstw"))
 		db_printf("%sstw",pfx);
-	else
+	else {
+		db_printf("copr???");
 		return (0);
-
+	}
 	if (ShortDisp(w)) {
 		db_printf("s");
 		if (AstNu(w))
@@ -2262,8 +2259,10 @@ diagDasm(i, ofs, w)
 		db_printf(i->mnem);
 		if (Match("diag"))
 			db_printf("\t0x%X",w & 0x03ffffff);
-		else
+		else {
+			db_printf("?????");
 			return (0);
+		}
 	}
 	return (1);
 }
@@ -2276,12 +2275,12 @@ fmpysubDasm(i, ofs, w)
 {
 	if (SinglePrec(w))
 		db_printf("SUB,SGL\t%%f%s,%%f%s,%%f%s,%%f%s,%%f%s",
-		    fsreg[Ms1(w)], fsreg[Ms2(w)], fsreg[Mt(w)],
-		    fsreg[As(w)], fsreg[Ad(w)]);
+		       fsreg[Ms1(w)], fsreg[Ms2(w)], fsreg[Mt(w)],
+		       fsreg[As(w)], fsreg[Ad(w)]);
 	else
 		db_printf("SUB,DBL\t%%f%s,%%f%s,%%f%s,%%f%s,%%f%s",
-		    fdreg[Ms1(w)], fdreg[Ms2(w)], fdreg[Mt(w)],
-		    fdreg[As(w)], fdreg[Ad(w)]);
+		       fdreg[Ms1(w)], fdreg[Ms2(w)], fdreg[Mt(w)],
+		       fdreg[As(w)], fdreg[Ad(w)]);
 	return (1);
 }
 
@@ -2300,10 +2299,12 @@ fmpyaddDasm(i, ofs, w)
 
 	if (Rsd(w) == 0)
 		db_printf("\t%%fcfxt,%s,%%f%s,%%f%s,%%f%s",
-		    ((SinglePrec(w)) ? "sgl" : "dbl"), ms1, ms2, mt);
+		       ((SinglePrec(w)) ? "sgl" : "dbl"),
+		       ms1, ms2, mt, ad);
 	else
 		db_printf("add%s\t%%f%s,%%f%s,%%f%s,%%f%s,%%f%s",
-		    ((SinglePrec(w)) ? "sgl" : "dbl"), ms1, ms2, mt, as, ad);
+		       ((SinglePrec(w)) ? "sgl" : "dbl"),
+		       ms1, ms2, mt, as, ad);
 
 	return (1);
 }
@@ -2316,44 +2317,30 @@ db_disasm(loc, flag)
 	register const struct inst *i;
 	register const struct majoropcode *m;
 	register u_int ext;
-	int ok, instruct;
-	OFS ofs = loc;
+	int instruct = *(int *)loc;
+	OFS ofs = 0;
 
-	if (loc == PC_REGS(&ddb_regs) && ddb_regs.tf_iir)
-		instruct = ddb_regs.tf_iir;
-	else if (USERMODE(loc)) {
-		if (copyin((caddr_t)(loc &~ HPPA_PC_PRIV_MASK),
-		    &instruct, sizeof(instruct)))
-			instruct = 0;
+	iExInit();
+
+	m = &majopcs[Opcode(instruct)];
+	ext = OpExt(instruct, m);
+	if (ext <= m->maxsubop) {
+		/* special hack for majopcs table layout */
+		if (m->maxsubop == 1)
+			i = (const struct inst *)m->subops;
+		else
+			i = m->subops[ext];
+
+		if (i->dasmfcn != coprDasm && i->dasmfcn != diagDasm &&
+		    i->dasmfcn != ariDasm && i->dasmfcn != scDasm &&
+		    i->dasmfcn != ldDasm)
+			db_printf(i->mnem);
+		if (i->dasmfcn)
+			(*i->dasmfcn)(i, ofs, instruct);
+		else if (i->mnem[0] == '?')
+			db_printf(illeg.mnem);
 	} else
-		instruct = *(int *)loc;
-
-	ok = 0;
-	if (iExInit() != 0) {
-		m = &majopcs[Opcode(instruct)];
-		ext = OpExt(instruct, m);
-		if (ext <= m->maxsubop) {
-			/* special hack for majopcs table layout */
-			if (m->maxsubop == 1)
-				i = (const struct inst *)m->subops;
-			else
-				i = m->subops[ext];
-
-			if (i && i->mnem[0] != '?') {
-				if (i->dasmfcn != coprDasm &&
-				    i->dasmfcn != diagDasm &&
-				    i->dasmfcn != ariDasm &&
-				    i->dasmfcn != scDasm &&
-				    i->dasmfcn != ldDasm)
-					db_printf(i->mnem);
-				if (i->dasmfcn)
-					ok = (*i->dasmfcn)(i, ofs, instruct);
-			}
-		}
-	}
-
-	if (!ok)
-		db_printf("<%08x>", instruct);
+		db_printf(illeg.mnem);
 
 	db_printf("\n");
 	return (loc + sizeof(instruct));

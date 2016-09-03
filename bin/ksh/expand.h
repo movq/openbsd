@@ -1,4 +1,4 @@
-/*	$OpenBSD: expand.h,v 1.12 2015/11/08 17:52:43 mmcc Exp $	*/
+/*	$OpenBSD: expand.h,v 1.2 1998/06/25 19:01:56 millert Exp $	*/
 
 /*
  * Expanding strings
@@ -12,7 +12,7 @@
 
 	Xinit(xs, xp, 128, ATEMP); /* allocate initial string */
 	while ((c = generate()) {
-		Xcheck(xs, xp);	/* expand string if necessary */
+		Xcheck(xs, xp);	/* expand string if neccessary */
 		Xput(xs, xp, c); /* add character */
 	}
 	return Xclose(xs, xp);	/* resize string */
@@ -55,10 +55,11 @@ typedef char * XStringP;
 #define Xcheck(xs, xp)	XcheckN(xs, xp, 1)
 
 /* free string */
-#define	Xfree(xs, xp)	afree((xs).beg, (xs).areap)
+#define	Xfree(xs, xp)	afree((void*) (xs).beg, (xs).areap)
 
 /* close, return string */
-#define	Xclose(xs, xp)	aresize((xs).beg, ((xp) - (xs).beg), (xs).areap)
+#define	Xclose(xs, xp)	(char*) aresize((void*)(xs).beg, \
+					(size_t)((xp) - (xs).beg), (xs).areap)
 /* begin of string */
 #define	Xstring(xs, xp)	((xs).beg)
 
@@ -68,7 +69,7 @@ typedef char * XStringP;
 #define	Xsavepos(xs, xp) ((xp) - (xs).beg)
 #define	Xrestpos(xs, xp, n) ((xs).beg + (n))
 
-char *	Xcheck_grow_(XString *xsp, char *xp, int more);
+char *	Xcheck_grow_	ARGS((XString *xsp, char *xp, int more));
 
 /*
  * expandable vector of generic pointers
@@ -80,17 +81,17 @@ typedef struct XPtrV {
 } XPtrV;
 
 #define	XPinit(x, n) do { \
-			void **vp__; \
-			vp__ = areallocarray(NULL, n, sizeof(void *), ATEMP); \
+			register void **vp__; \
+			vp__ = (void**) alloc(sizeofN(void*, n), ATEMP); \
 			(x).cur = (x).beg = vp__; \
 			(x).end = vp__ + n; \
-		} while (0)
+		    } while (0)
 
 #define	XPput(x, p) do { \
 			if ((x).cur >= (x).end) { \
 				int n = XPsize(x); \
-				(x).beg = areallocarray((x).beg, n, \
-						   2 * sizeof(void *), ATEMP); \
+				(x).beg = (void**) aresize((void*) (x).beg, \
+						   sizeofN(void*, n*2), ATEMP); \
 				(x).cur = (x).beg + n; \
 				(x).end = (x).cur + n; \
 			} \
@@ -100,7 +101,7 @@ typedef struct XPtrV {
 #define	XPptrv(x)	((x).beg)
 #define	XPsize(x)	((x).cur - (x).beg)
 
-#define	XPclose(x)	areallocarray((x).beg, XPsize(x), \
-					 sizeof(void *), ATEMP)
+#define	XPclose(x)	(void**) aresize((void*)(x).beg, \
+					 sizeofN(void*, XPsize(x)), ATEMP)
 
-#define	XPfree(x)	afree((x).beg, ATEMP)
+#define	XPfree(x)	afree((void*) (x).beg, ATEMP)

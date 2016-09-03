@@ -1,8 +1,8 @@
-#	$OpenBSD: Makefile,v 1.8 2003/05/26 18:02:32 ian Exp $
+#	$OpenBSD: Makefile,v 1.4 1997/09/21 11:34:56 deraadt Exp $
 
 PROG=	df
-SRCS=	df.c ffs_df.c ext2fs_df.c
-LDADD=	-lutil
-DPADD=	${LIBUTIL}
+SRCS=	df.c ffs_df.c lfs_df.c ext2fs_df.c
+BINGRP=	operator
+BINMODE=2555
 
 .include <bsd.prog.mk>

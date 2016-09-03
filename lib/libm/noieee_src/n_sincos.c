@@ -1,4 +1,3 @@
-/*	$OpenBSD: n_sincos.c,v 1.14 2013/07/15 04:08:26 espie Exp $	*/
 /*	$NetBSD: n_sincos.c,v 1.1 1995/10/10 23:37:04 ragge Exp $	*/
 /*
  * Copyright (c) 1987, 1993
@@ -12,7 +11,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,24 +32,21 @@
  * SUCH DAMAGE.
  */
 
-#include <math.h>
+#ifndef lint
+static char sccsid[] = "@(#)sincos.c	8.1 (Berkeley) 6/4/93";
+#endif /* not lint */
 
 #include "mathimpl.h"
-
-float
-sinf(float x)
-{
-	return (float)sin((double) x);
-}
-
+#include "trig.h"
 double
-sin(double x)
+sin(x)
+double x;
 {
 	double a,c,z;
 
         if(!finite(x))		/* sin(NaN) and sin(INF) must be NaN */
 		return x-x;
-	x=remainder(x,PI2);	/* reduce x into [-PI,PI] */
+	x=drem(x,PI2);		/* reduce x into [-PI,PI] */
 	a=copysign(x,one);
 	if (a >= PIo4) {
 		if(a >= PI3o4)		/* ... in [3PI/4,PI] */
@@ -68,22 +68,15 @@ sin(double x)
 	return x+x*sin__S(x*x);
 }
 
-__strong_alias(sinl, sin);
-
-float
-cosf(float x)
-{
-	return (float)cos((double) x);
-}
-
 double
-cos(double x)
+cos(x) 
+double x;
 {
 	double a,c,z,s = 1.0;
 
 	if(!finite(x))		/* cos(NaN) and cos(INF) must be NaN */
 		return x-x;
-	x=remainder(x,PI2);	/* reduce x into [-PI,PI] */
+	x=drem(x,PI2);		/* reduce x into [-PI,PI] */
 	a=copysign(x,one);
 	if (a >= PIo4) {
 		if (a >= PI3o4) {	/* ... in [3PI/4,PI] */
@@ -92,7 +85,7 @@ cos(double x)
 		}
 		else {			/* ... in [PI/4,3PI/4] */
 			a = PIo2-a;
-			return a+a*sin__S(a*a);	/* rtn. S(PI/2-|x|) */
+			return a+a*sin__S(a*a);	/* rtn. S(PI/2-|x|) */ 
 		}
 	}
 	if (a < small) {
@@ -105,5 +98,3 @@ cos(double x)
 	a = (z >= thresh ? half-((z-half)-c) : one-(z-c));
 	return copysign(a,s);
 }
-
-__strong_alias(cosl, cos);

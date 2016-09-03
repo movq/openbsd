@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex.h,v 1.11 2016/05/27 09:18:12 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -15,7 +13,7 @@
 
 typedef struct _excmdlist {		/* Ex command table structure. */
 	char *name;			/* Command name, underlying function. */
-	int (*fn)(SCR *, EXCMD *);
+	int (*fn) __P((SCR *, EXCMD *));
 
 #define	E_ADDR1		0x00000001	/* One address. */
 #define	E_ADDR2		0x00000002	/* Two addresses. */
@@ -48,8 +46,8 @@ extern EXCMDLIST const cmds[];		/* Table of ex commands. */
  * enforce that here, just in case someone depends on it.
  */
 #define	IS_ESCAPE(sp, cmdp, ch)						\
-	(F_ISSET((cmdp), E_VLITONLY) ?					\
-	    (ch) == CH_LITERAL : KEY_VAL((sp), (ch)) == K_VLNEXT)
+	(F_ISSET(cmdp, E_VLITONLY) ?					\
+	    (ch) == CH_LITERAL : KEY_VAL(sp, ch) == K_VLNEXT)
 
 /*
  * File state must be checked for each command -- any ex command may be entered
@@ -58,7 +56,7 @@ extern EXCMDLIST const cmds[];		/* Table of ex commands. */
  */
 #define	NEEDFILE(sp, cmdp) {						\
 	if ((sp)->ep == NULL) {						\
-		ex_emsg((sp), (cmdp)->cmd->name, EXM_NOFILEYET);	\
+		ex_emsg(sp, (cmdp)->cmd->name, EXM_NOFILEYET);		\
 		return (1);						\
 	}								\
 }
@@ -66,7 +64,7 @@ extern EXCMDLIST const cmds[];		/* Table of ex commands. */
 /* Range structures for global and @ commands. */
 typedef struct _range RANGE;
 struct _range {				/* Global command range. */
-	TAILQ_ENTRY(_range) q;	/* Linked list of ranges. */
+	CIRCLEQ_ENTRY(_range) q;	/* Linked list of ranges. */
 	recno_t start, stop;		/* Start/stop of the range. */
 };
 
@@ -91,7 +89,7 @@ struct _excmd {
 	EXCMDLIST const *cmd;		/* Command: entry in command table. */
 	EXCMDLIST rcmd;			/* Command: table entry/replacement. */
 
-	TAILQ_HEAD(_rh, _range) rq;	/* @/global range: linked list. */
+	CIRCLEQ_HEAD(_rh, _range) rq;	/* @/global range: linked list. */
 	recno_t   range_lno;		/* @/global range: set line number. */
 	char	 *o_cp;			/* Original @/global command. */
 	size_t	  o_clen;		/* Original @/global command length. */
@@ -104,10 +102,10 @@ struct _excmd {
 
 	/* Clear the structure before each ex command. */
 #define	CLEAR_EX_CMD(cmdp) {						\
-	u_int32_t L__f = F_ISSET((cmdp), E_PRESERVE);			\
+	u_int32_t L__f = F_ISSET(cmdp, E_PRESERVE);			\
 	memset(&((cmdp)->buffer), 0, ((char *)&(cmdp)->flags -		\
 	    (char *)&((cmdp)->buffer)) + sizeof((cmdp)->flags));	\
-	F_SET((cmdp), L__f);						\
+	F_SET(cmdp, L__f);						\
 }
 
 	CHAR_T	  buffer;		/* Command: named buffer. */
@@ -159,8 +157,9 @@ struct _excmd {
 
 /* Ex private, per-screen memory. */
 typedef struct _ex_private {
-	TAILQ_HEAD(_tqh, _tagq) tq;	/* Tag queue. */
+	CIRCLEQ_HEAD(_tqh, _tagq) tq;	/* Tag queue. */
 	TAILQ_HEAD(_tagfh, _tagf) tagfq;/* Tag file list. */
+	LIST_HEAD(_csch, _csc) cscq;    /* Cscope connection list. */
 	char	*tag_last;		/* Saved last tag string. */
 
 	CHAR_T	*lastbcomm;		/* Last bang command. */
@@ -185,6 +184,7 @@ typedef struct _ex_private {
 	char	 obp[1024];		/* Ex output buffer. */
 	size_t	 obp_len;		/* Ex output buffer length. */
 
+#define	EXP_CSCINIT	0x01		/* Cscope initialized. */
 	u_int8_t flags;
 } EX_PRIVATE;
 #define	EXP(sp)	((EX_PRIVATE *)((sp)->ex_private))

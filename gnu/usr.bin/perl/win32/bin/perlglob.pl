@@ -41,7 +41,7 @@ builtins.
 
 =head1 AUTHOR
 
-Gurusamy Sarathy <gsar@activestate.com>
+Gurusamy Sarathy <gsar@umich.edu>
 
 =head1 SEE ALSO
 

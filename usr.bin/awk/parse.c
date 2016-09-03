@@ -1,4 +1,4 @@
-/*	$OpenBSD: parse.c,v 1.6 2002/12/19 21:24:28 millert Exp $	*/
+/*	$OpenBSD: parse.c,v 1.3 1999/04/20 17:31:30 millert Exp $	*/
 /****************************************************************
 Copyright (C) Lucent Technologies 1997
 All Rights Reserved
@@ -36,7 +36,7 @@ Node *nodealloc(int n)
 
 	x = (Node *) malloc(sizeof(Node) + (n-1)*sizeof(Node *));
 	if (x == NULL)
-		FATAL("out of space in nodealloc");
+		ERROR "out of space in nodealloc" FATAL;
 	x->nnext = NULL;
 	x->lineno = lineno;
 	return(x);
@@ -190,7 +190,7 @@ Node *makearr(Node *p)
 	if (isvalue(p)) {
 		cp = (Cell *) (p->narg[0]);
 		if (isfcn(cp))
-			SYNTAX( "%s is a function, not an array", cp->nval );
+			ERROR "%s is a function, not an array", cp->nval SYNTAX;
 		else if (!isarr(cp)) {
 			xfree(cp->sval);
 			cp->sval = (char *) makesymtab(NSYMTAB);
@@ -210,7 +210,7 @@ Node *pa2stat(Node *a, Node *b, Node *c)	/* pat, pat {...} */
 
 	x = node4(PASTAT2, a, b, c, itonp(paircnt));
 	if (paircnt++ >= PA2NUM)
-		SYNTAX( "limited to %d pat,pat statements", PA2NUM );
+		ERROR "limited to %d pat,pat statements", PA2NUM SYNTAX;
 	x->ntype = NSTAT;
 	return(x);
 }
@@ -237,14 +237,9 @@ void defn(Cell *v, Node *vl, Node *st)	/* turn on FCN bit in definition, */
 	int n;
 
 	if (isarr(v)) {
-		SYNTAX( "`%s' is an array name and a function name", v->nval );
+		ERROR "`%s' is an array name and a function name", v->nval SYNTAX;
 		return;
 	}
-	if (isarg(v->nval) != -1) {
-		SYNTAX( "`%s' is both function name and argument name", v->nval );
-		return;
-	}
-
 	v->tval = FCN;
 	v->sval = (char *) st;
 	n = 0;	/* count arguments */
@@ -254,7 +249,7 @@ void defn(Cell *v, Node *vl, Node *st)	/* turn on FCN bit in definition, */
 	dprintf( ("defining func %s (%d args)\n", v->nval, n) );
 }
 
-int isarg(const char *s)		/* is s in argument list for current function? */
+int isarg(char *s)		/* is s in argument list for current function? */
 {			/* return -1 if not, otherwise arg # */
 	extern Node *arglist;
 	Node *p = arglist;

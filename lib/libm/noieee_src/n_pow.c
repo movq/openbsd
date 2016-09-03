@@ -1,5 +1,4 @@
-/*	$OpenBSD: n_pow.c,v 1.12 2009/10/27 23:59:29 deraadt Exp $	*/
-/*	$NetBSD: n_pow.c,v 1.1 1995/10/10 23:37:02 ragge Exp $	*/
+/*      $NetBSD: n_pow.c,v 1.1 1995/10/10 23:37:02 ragge Exp $ */
 /*
  * Copyright (c) 1985, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -12,7 +11,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,18 +32,22 @@
  * SUCH DAMAGE.
  */
 
-/* POW(X,Y)
- * RETURN X**Y
+#ifndef lint
+static char sccsid[] = "@(#)pow.c	8.1 (Berkeley) 6/4/93";
+#endif /* not lint */
+
+/* POW(X,Y)  
+ * RETURN X**Y 
  * DOUBLE PRECISION (VAX D format 56 bits, IEEE DOUBLE 53 BITS)
- * CODED IN C BY K.C. NG, 1/8/85;
+ * CODED IN C BY K.C. NG, 1/8/85; 
  * REVISED BY K.C. NG on 7/10/85.
  * KERNEL pow_P() REPLACED BY P. McILROY 7/22/92.
  * Required system supported functions:
- *      scalbn(x,n)
- *      logb(x)
- *	copysign(x,y)
- *	finite(x)
- *	remainder(x,y)
+ *      scalb(x,n)      
+ *      logb(x)         
+ *	copysign(x,y)	
+ *	finite(x)	
+ *	drem(x,y)
  *
  * Required kernel functions:
  *	exp__D(a,c)			exp(a + c) for |a| << |c|
@@ -50,7 +57,7 @@
  *	1. Compute and return log(x) in three pieces:
  *		log(x) = n*ln2 + hi + lo,
  *	   where n is an integer.
- *	2. Perform y*log(x) by simulating muti-precision arithmetic and
+ *	2. Perform y*log(x) by simulating muti-precision arithmetic and 
  *	   return the answer in three pieces:
  *		y*log(x) = m*ln2 + hi + lo,
  *	   where m is an integer.
@@ -88,7 +95,7 @@
  *			pow(integer,integer)
  *	always returns the correct integer provided it is representable.
  *	In a test run with 100,000 random arguments with 0 < x, y < 20.0
- *	on a VAX, the maximum observed error was 1.79 ulps (units in the
+ *	on a VAX, the maximum observed error was 1.79 ulps (units in the 
  *	last place).
  *
  * Constants :
@@ -103,7 +110,7 @@
 
 #include "mathimpl.h"
 
-#if defined(__vax__)
+#if (defined(vax) || defined(tahoe))
 #define TRUNC(x)	x = (double) (float) x
 #define _IEEE		0
 #else
@@ -111,21 +118,21 @@
 #define endian		(((*(int *) &one)) ? 1 : 0)
 #define TRUNC(x) 	*(((int *) &x)+endian) &= 0xf8000000
 #define infnan(x)	0.0
-#endif		/* defined(__vax__) */
+#endif		/* vax or tahoe */
 
-static const double zero=0.0, one=1.0, two=2.0, negone= -1.0;
+const static double zero=0.0, one=1.0, two=2.0, negone= -1.0;
 
-static double pow_P(double, double);
+static double pow_P __P((double, double));
 
-double
-pow(double x, double y)
+double pow(x,y)  	
+double x,y;
 {
 	double t;
 	if (y==zero)
 		return (one);
-	else if (y==one || isnan(x))
+	else if (y==one || (_IEEE && x != x))
 		return (x);		/* if x is NaN or y=1 */
-	else if (isnan(y))		/* if y is NaN */
+	else if (_IEEE && y!=y)		/* if y is NaN */
 		return (y);
 	else if (!finite(y))		/* if y is INF */
 		if ((t=fabs(x))==one)	/* +-1 ** +-INF is NaN */
@@ -144,7 +151,7 @@ pow(double x, double y)
 
     /* sign(x)= -1 */
 	/* if y is an even integer */
-	else if ( (t=remainder(y,two)) == zero)
+	else if ( (t=drem(y,two)) == zero)
 		return (pow_P(-x, y));
 
 	/* if y is an odd integer */
@@ -161,10 +168,14 @@ pow(double x, double y)
 }
 /* kernel function for x >= 0 */
 static double
+#ifdef _ANSI_SOURCE
 pow_P(double x, double y)
+#else
+pow_P(x, y) double x, y;
+#endif
 {
-	struct Double s, t;
-	double  huge = 1e300, tiny = 1e-300;
+	struct Double s, t, __log__D();
+	double  __exp__D(), huge = 1e300, tiny = 1e-300;
 
 	if (x == zero)
 		if (y > zero)

@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_sm_pcmcia.c,v 1.37 2015/11/24 17:11:40 mpi Exp $	*/
+/*	$OpenBSD: if_sm_pcmcia.c,v 1.10 1999/10/01 04:05:11 downsj Exp $	*/
 /*	$NetBSD: if_sm_pcmcia.c,v 1.11 1998/08/15 20:47:32 thorpej Exp $  */
 
 /*-
@@ -17,6 +17,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the NetBSD
+ *	Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -40,36 +47,45 @@
 #include <sys/ioctl.h>
 #include <sys/errno.h>
 #include <sys/syslog.h>
-#include <sys/selinfo.h>
-#include <sys/timeout.h>
+#include <sys/select.h>
 #include <sys/device.h>
 
 #include <net/if.h>
+#include <net/if_dl.h>
 #include <net/if_media.h>
 
+#ifdef INET
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
+#include <netinet/in_var.h>
+#include <netinet/ip.h>
 #include <netinet/if_ether.h>
+#endif
+
+#ifdef NS
+#include <netns/ns.h>
+#include <netns/ns_if.h>
+#endif
 
 #if NBPFILTER > 0
 #include <net/bpf.h>
+#include <net/bpfdesc.h>
 #endif
 
 #include <machine/intr.h>
 #include <machine/bus.h>
 
-#include <dev/mii/mii.h>
-#include <dev/mii/miivar.h>
-
+#include <dev/ic/smc91cxxreg.h>
 #include <dev/ic/smc91cxxvar.h>
 
 #include <dev/pcmcia/pcmciareg.h>
 #include <dev/pcmcia/pcmciavar.h>
 #include <dev/pcmcia/pcmciadevs.h>
 
-int	sm_pcmcia_match(struct device *, void *, void *);
-void	sm_pcmcia_attach(struct device *, struct device *, void *);
-int	sm_pcmcia_detach(struct device *, int);
-int	sm_pcmcia_activate(struct device *, int);
+int	sm_pcmcia_match __P((struct device *, void *, void *));
+void	sm_pcmcia_attach __P((struct device *, struct device *, void *));
+int	sm_pcmcia_detach __P((struct device *, int));
+int	sm_pcmcia_activate __P((struct device *, enum devact));
 
 struct sm_pcmcia_softc {
 	struct	smc91cxx_softc sc_smc;		/* real "smc" softc */
@@ -86,13 +102,13 @@ struct cfattach sm_pcmcia_ca = {
 	sm_pcmcia_detach, sm_pcmcia_activate
 };
 
-int	sm_pcmcia_enable(struct smc91cxx_softc *);
-void	sm_pcmcia_disable(struct smc91cxx_softc *);
+int	sm_pcmcia_enable __P((struct smc91cxx_softc *));
+void	sm_pcmcia_disable __P((struct smc91cxx_softc *));
 
-int	sm_pcmcia_ascii_enaddr(const char *, u_int8_t *);
-int	sm_pcmcia_funce_enaddr(struct device *, u_int8_t *);
+int	sm_pcmcia_ascii_enaddr __P((const char *, u_int8_t *));
+int	sm_pcmcia_funce_enaddr __P((struct device *, u_int8_t *));
 
-int	sm_pcmcia_lannid_ciscallback(struct pcmcia_tuple *, void *);
+int	sm_pcmcia_lannid_ciscallback __P((struct pcmcia_tuple *, void *));
 
 struct sm_pcmcia_product {
 	u_int16_t	spp_vendor;	/* vendor ID */
@@ -101,13 +117,11 @@ struct sm_pcmcia_product {
 } sm_pcmcia_prod[] = {
 	{ PCMCIA_VENDOR_MEGAHERTZ2,	PCMCIA_PRODUCT_MEGAHERTZ2_XJACK,
 	  0 },
-	{ PCMCIA_VENDOR_MEGAHERTZ2,	PCMCIA_PRODUCT_MEGAHERTZ2_XJEM1144,
-	  0 },
+
 	{ PCMCIA_VENDOR_NEWMEDIA,	PCMCIA_PRODUCT_NEWMEDIA_BASICS,
 	  0 },
+
 	{ PCMCIA_VENDOR_SMC,		PCMCIA_PRODUCT_SMC_8020,
-	  0 },
-	{ PCMCIA_VENDOR_PSION,		PCMCIA_PRODUCT_PSION_GOLDCARD,
 	  0 }
 };
 
@@ -119,7 +133,7 @@ sm_pcmcia_match(parent, match, aux)
 	struct pcmcia_attach_args *pa = aux;
 	int i;
 
-	for (i = 0; i < nitems(sm_pcmcia_prod); i++)
+	for (i = 0; i < sizeof(sm_pcmcia_prod)/sizeof(sm_pcmcia_prod[0]); i++)
 		if (pa->manufacturer == sm_pcmcia_prod[i].spp_vendor &&
 		    pa->product == sm_pcmcia_prod[i].spp_product &&
 		    pa->pf->number == sm_pcmcia_prod[i].spp_expfunc)
@@ -137,10 +151,9 @@ sm_pcmcia_attach(parent, self, aux)
 	struct pcmcia_attach_args *pa = aux;
 	struct pcmcia_config_entry *cfe;
 	u_int8_t myla[ETHER_ADDR_LEN], *enaddr = NULL;
-	const char *intrstr;
 
 	psc->sc_pf = pa->pf;
-	cfe = SIMPLEQ_FIRST(&pa->pf->cfe_head);
+	cfe = pa->pf->cfe_head.sqh_first;
 
 	/* Enable the card. */
 	pcmcia_function_init(pa->pf, cfe);
@@ -174,8 +187,7 @@ sm_pcmcia_attach(parent, self, aux)
 		return;
 	}
 
-	printf(" port 0x%lx/%lu", psc->sc_pcioh.addr,
-	    (u_long)psc->sc_pcioh.size);
+	printf(" port 0x%lx/%d", psc->sc_pcioh.addr, cfe->iospace[0].length);
 
 	/*
 	 * First try to get the Ethernet address from FUNCE/LANNID tuple.
@@ -204,13 +216,12 @@ sm_pcmcia_attach(parent, self, aux)
 	if (enaddr == NULL)
 		printf(", unable to get Ethernet address\n");
 
-	psc->sc_ih = pcmcia_intr_establish(psc->sc_pf, IPL_NET,
-	    smc91cxx_intr, sc, sc->sc_dev.dv_xname);
-	intrstr = pcmcia_intr_string(psc->sc_pf, psc->sc_ih);
-	if (*intrstr)
-		printf(", %s", intrstr);
+	psc->sc_ih = pcmcia_intr_establish(psc->sc_pf, IPL_NET, smc91cxx_intr,
+	    sc);
+	if (psc->sc_ih == NULL)
+		printf(": couldn't establish interrupt\n");
 
-	/* Perform generic initialization. */
+	/* Perform generic intialization. */
 	smc91cxx_attach(sc, enaddr);
 
 #ifdef notyet
@@ -239,22 +250,25 @@ sm_pcmcia_detach(dev, flags)
 int
 sm_pcmcia_activate(dev, act)
 	struct device *dev;
-	int act;
+	enum devact act;
 {
 	struct sm_pcmcia_softc *sc = (struct sm_pcmcia_softc *)dev;
-	struct ifnet *ifp = &sc->sc_smc.sc_arpcom.ac_if;
+	int s;
 
+	s = splnet();
 	switch (act) {
+	case DVACT_ACTIVATE:
+		pcmcia_function_enable(sc->sc_pf);
+		sc->sc_ih = pcmcia_intr_establish(sc->sc_pf, IPL_NET,
+		    smc91cxx_intr, sc);
+		break;
+
 	case DVACT_DEACTIVATE:
-		ifp->if_timer = 0;
-		if (ifp->if_flags & IFF_RUNNING)
-			smc91cxx_stop(&sc->sc_smc);
-		if (sc->sc_ih)
-			pcmcia_intr_disestablish(sc->sc_pf, sc->sc_ih);
-		sc->sc_ih = NULL;
 		pcmcia_function_disable(sc->sc_pf);
+		pcmcia_intr_disestablish(sc->sc_pf, sc->sc_ih);
 		break;
 	}
+	splx(s);
 	return (0);
 }
 
@@ -270,7 +284,8 @@ sm_pcmcia_ascii_enaddr(cisstr, myla)
 		/* Bogus address! */
 		return (0);
 	}
-	bcopy(cisstr, enaddr_str, sizeof enaddr_str);
+	bcopy(cisstr, enaddr_str, 12);
+	bzero(myla, sizeof(myla));
 	for (i = 0; i < 6; i++) {
 		for (j = 0; j < 2; j++) {
 			/* Convert to upper case. */
@@ -318,8 +333,7 @@ sm_pcmcia_lannid_ciscallback(tuple, arg)
 	u_int8_t *myla = arg;
 	int i;
 
-	if (tuple->code == PCMCIA_CISTPL_FUNCE || tuple->code ==
-	    PCMCIA_CISTPL_SPCL) {
+	if (tuple->code == PCMCIA_CISTPL_FUNCE) {
 		/* subcode, length */
 		if (tuple->length < 2)
 			return (0);
@@ -344,7 +358,7 @@ sm_pcmcia_enable(sc)
 
 	/* Establish the interrupt handler. */
 	psc->sc_ih = pcmcia_intr_establish(psc->sc_pf, IPL_NET, smc91cxx_intr,
-	    sc, sc->sc_dev.dv_xname);
+	    sc);
 	if (psc->sc_ih == NULL) {
 		printf("%s: couldn't establish interrupt handler\n",
 		    sc->sc_dev.dv_xname);
@@ -360,6 +374,7 @@ sm_pcmcia_disable(sc)
 {
 	struct sm_pcmcia_softc *psc = (struct sm_pcmcia_softc *)sc;
 
-	pcmcia_intr_disestablish(psc->sc_pf, psc->sc_ih);
 	pcmcia_function_disable(psc->sc_pf);
+
+	pcmcia_intr_disestablish(psc->sc_pf, psc->sc_ih);
 }

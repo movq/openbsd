@@ -1,15 +1,20 @@
-/*	$OpenBSD: timer_settime.c,v 1.7 2015/09/12 13:13:34 guenther Exp $ */
+#if defined(SYSLIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: timer_settime.c,v 1.4 1998/02/07 20:50:55 tholo Exp $";
+#endif /* SYSLIBC_SCCS and not lint */
 
+#include <signal.h>
 #include <time.h>
 #include <errno.h>
 
-int	timer_settime(timer_t, int, const struct itimerspec *,
-	    struct itimerspec *);
-PROTO_DEPRECATED(timer_settime);
+struct itimerspec;
 
+/* ARGSUSED */
 int
-timer_settime(timer_t timerid, int flags, const struct itimerspec *value,
-    struct itimerspec *ovalue)
+timer_settime(timerid, flags, value, ovalue)
+	timer_t timerid;
+	int flags;
+	const struct itimerspec *value;
+	struct itimerspec *ovalue;
 {
 	errno = ENOSYS;
 	return -1;

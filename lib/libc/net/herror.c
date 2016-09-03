@@ -1,4 +1,4 @@
-/*	$OpenBSD: herror.c,v 1.10 2015/09/14 07:38:38 guenther Exp $	*/
+/*	$OpenBSD: herror.c,v 1.4 1997/03/13 19:07:28 downsj Exp $	*/
 
 /*
  * ++Copyright++ 1987, 1993
@@ -14,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ * 	This product includes software developed by the University of
+ * 	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  * 
@@ -51,20 +55,30 @@
  * --Copyright--
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+#if 0
+static char sccsid[] = "@(#)herror.c	8.1 (Berkeley) 6/4/93";
+static char rcsid[] = "$From: herror.c,v 8.3 1996/08/05 08:31:35 vixie Exp $";
+#else
+static char rcsid[] = "$OpenBSD: herror.c,v 1.4 1997/03/13 19:07:28 downsj Exp $";
+#endif
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
+#include <sys/param.h>
 #include <sys/uio.h>
 #include <netdb.h>
 #include <unistd.h>
 #include <string.h>
 
-const char * const h_errlist[] = {
+const char *h_errlist[] = {
 	"Resolver Error 0 (no error)",
 	"Unknown host",				/* 1 HOST_NOT_FOUND */
 	"Host name lookup failure",		/* 2 TRY_AGAIN */
 	"Unknown server error",			/* 3 NO_RECOVERY */
 	"No address associated with name",	/* 4 NO_ADDRESS */
 };
-const int	h_nerr = { sizeof h_errlist / sizeof h_errlist[0] };
+int	h_nerr = { sizeof h_errlist / sizeof h_errlist[0] };
 
 extern int	h_errno;
 
@@ -73,10 +87,11 @@ extern int	h_errno;
  *	print the error indicated by the h_errno value.
  */
 void
-herror(const char *s)
+herror(s)
+	const char *s;
 {
 	struct iovec iov[4];
-	struct iovec *v = iov;
+	register struct iovec *v = iov;
 
 	if (s && *s) {
 		v->iov_base = (char *)s;
@@ -95,7 +110,8 @@ herror(const char *s)
 }
 
 const char *
-hstrerror(int err)
+hstrerror(err)
+	int err;
 {
 	if (err < 0)
 		return ("Resolver internal error");
@@ -103,4 +119,3 @@ hstrerror(int err)
 		return (h_errlist[err]);
 	return ("Unknown resolver error");
 }
-DEF_WEAK(hstrerror);

@@ -1,4 +1,4 @@
-/*	$OpenBSD: netboot.c,v 1.8 2011/06/05 21:49:36 miod Exp $	*/
+/*	$OpenBSD: netboot.c,v 1.3 1996/11/27 19:54:56 niklas Exp $	*/
 /*	$NetBSD: netboot.c,v 1.1 1996/09/18 20:03:12 cgd Exp $	*/
 
 /*
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -40,16 +44,22 @@
 
 #include <sys/param.h>
 #include <sys/exec.h>
+#include <sys/exec_ecoff.h>
 
 #include <machine/rpb.h>
 #include <machine/prom.h>
 
+#define _KERNEL
+#include "include/pte.h"
+
+int loadfile __P((char *, u_int64_t *));
+
 char boot_file[128];
 char boot_flags[128];
 
-extern char bootprog_name[], bootprog_rev[];
+extern char bootprog_name[], bootprog_rev[], bootprog_date[], bootprog_maker[];
 
-vaddr_t ptbr_save;
+vm_offset_t ffp_save, ptbr_save;
 
 int debug;
 
@@ -57,35 +67,32 @@ void
 main()
 {
 	u_int64_t entry;
-	u_long marks[MARK_MAX];
-	int rc;
 
 	/* Init prom callback vector. */
 	init_prom_calls();
 
 	/* print a banner */
-	printf("%s %s\n", bootprog_name, bootprog_rev);
+	printf("\n");
+	printf("%s, Revision %s\n", bootprog_name, bootprog_rev);
+	printf("(%s, %s)\n", bootprog_maker, bootprog_date);
+	printf("\n");
 
 	/* switch to OSF pal code. */
 	OSFpal();
+
+	printf("\n");
 
 	prom_getenv(PROM_E_BOOTED_FILE, boot_file, sizeof(boot_file));
 	prom_getenv(PROM_E_BOOTED_OSFLAGS, boot_flags, sizeof(boot_flags));
 
 	if (boot_file[0] == '\0')
 		bcopy("bsd", boot_file, sizeof "bsd");
-	else
-		(void)printf("Boot: %s %s\n", boot_file, boot_flags);
 
-	(void)printf("Loading %s...\n", boot_file);
-	marks[MARK_START] = 0;
-	rc = loadfile(boot_file, &marks, LOAD_KERNEL | COUNT_KERNEL);
-	(void)printf("\n");
-	if (rc == 0) {
-		entry = marks[MARK_START];
+	(void)printf("Boot: %s %s\n", boot_file, boot_flags);
+
+	if (!loadfile(boot_file, &entry)) {
 		(void)printf("Entering kernel at 0x%lx...\n", entry);
-		(*(void (*)(u_int64_t, u_int64_t, u_int64_t))entry)
-		    (0, ptbr_save, 0);
+		(*(void (*)())entry)(ffp_save, ptbr_save, 0);
 	}
 
 	(void)printf("Boot failed!  Halting...\n");

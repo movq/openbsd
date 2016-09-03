@@ -1,4 +1,3 @@
-/*	$OpenBSD: lcong48.c,v 1.6 2015/09/13 08:31:47 guenther Exp $ */
 /*
  * Copyright (c) 1993 Martin Birgmeier
  * All rights reserved.
@@ -12,19 +11,19 @@
  * to anyone/anything when using this software.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: lcong48.c,v 1.2 1996/08/19 08:33:35 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include "rand48.h"
+
+extern unsigned short __rand48_seed[3];
+extern unsigned short __rand48_mult[3];
+extern unsigned short __rand48_add;
 
 void
 lcong48(unsigned short p[7])
 {
-	lcong48_deterministic(p);
-	__rand48_deterministic = 0;
-}
-
-void
-lcong48_deterministic(unsigned short p[7])
-{
-	__rand48_deterministic = 1;
 	__rand48_seed[0] = p[0];
 	__rand48_seed[1] = p[1];
 	__rand48_seed[2] = p[2];
@@ -33,4 +32,3 @@ lcong48_deterministic(unsigned short p[7])
 	__rand48_mult[2] = p[5];
 	__rand48_add = p[6];
 }
-DEF_WEAK(lcong48_deterministic);

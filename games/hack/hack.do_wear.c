@@ -1,85 +1,23 @@
-/*	$OpenBSD: hack.do_wear.c,v 1.8 2016/01/09 18:33:15 mestre Exp $	*/
-
 /*
- * Copyright (c) 1985, Stichting Centrum voor Wiskunde en Informatica,
- * Amsterdam
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- * - Redistributions of source code must retain the above copyright notice,
- * this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above copyright
- * notice, this list of conditions and the following disclaimer in the
- * documentation and/or other materials provided with the distribution.
- *
- * - Neither the name of the Stichting Centrum voor Wiskunde en
- * Informatica, nor the names of its contributors may be used to endorse or
- * promote products derived from this software without specific prior
- * written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
- * IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
- * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER
- * OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Copyright (c) Stichting Mathematisch Centrum, Amsterdam, 1985.
  */
 
-/*
- * Copyright (c) 1982 Jay Fenlason <hack@gnu.org>
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
- * AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL
- * THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
+#ifndef lint
+static char rcsid[] = "$NetBSD: hack.do_wear.c,v 1.3 1995/03/23 08:29:57 cgd Exp $";
+#endif /* not lint */
 
 #include "hack.h"
-
+#include <stdio.h>
 extern char *nomovemsg;
 extern char quitchars[];
+extern char *Doname();
 
-static void off_msg(struct obj *);
-static int  dorr(struct obj *);
-static int  cursed(struct obj *);
-
-static void
-off_msg(struct obj *otmp)
-{
+off_msg(otmp) register struct obj *otmp; {
 	pline("You were wearing %s.", doname(otmp));
 }
 
-int
-doremarm(void)
-{
-	struct obj *otmp;
+doremarm() {
+	register struct obj *otmp;
 	if(!uarm && !uarmh && !uarms && !uarmg) {
 		pline("Not wearing any armor.");
 		return(0);
@@ -102,9 +40,7 @@ doremarm(void)
 	return(1);
 }
 
-int
-doremring(void)
-{
+doremring() {
 	if(!uleft && !uright){
 		pline("Not wearing any ring.");
 		return(0);
@@ -131,21 +67,20 @@ doremring(void)
 			/* might look at morc here %% */
 		}
 	}
+	/* NOTREACHED */
+#ifdef lint
 	return(0);
+#endif lint
 }
 
-static int
-dorr(struct obj *otmp)
-{
+dorr(otmp) register struct obj *otmp; {
 	if(cursed(otmp)) return(0);
 	ringoff(otmp);
 	off_msg(otmp);
 	return(1);
 }
 
-static int
-cursed(struct obj *otmp)
-{
+cursed(otmp) register struct obj *otmp; {
 	if(otmp->cursed){
 		pline("You can't. It appears to be cursed.");
 		return(1);
@@ -153,11 +88,8 @@ cursed(struct obj *otmp)
 	return(0);
 }
 
-int
-armoroff(struct obj *otmp)
-{
-	int delay = -objects[otmp->otyp].oc_delay;
-
+armoroff(otmp) register struct obj *otmp; {
+register int delay = -objects[otmp->otyp].oc_delay;
 	if(cursed(otmp)) return(0);
 	setworn((struct obj *) 0, otmp->owornmask & W_ARMOR);
 	if(delay) {
@@ -178,12 +110,10 @@ armoroff(struct obj *otmp)
 	return(1);
 }
 
-int
-doweararm(void)
-{
-	struct obj *otmp;
-	int delay;
-	int err = 0;
+doweararm() {
+	register struct obj *otmp;
+	register int delay;
+	register int err = 0;
 	long mask = 0;
 
 	otmp = getobj("[", "wear");
@@ -239,10 +169,8 @@ doweararm(void)
 	return(1);
 }
 
-int
-dowearring(void)
-{
-	struct obj *otmp;
+dowearring() {
+	register struct obj *otmp;
 	long mask = 0;
 	long oldprop;
 
@@ -310,11 +238,10 @@ dowearring(void)
 	return(1);
 }
 
-void
-ringoff(struct obj *obj)
+ringoff(obj)
+register struct obj *obj;
 {
-	long mask;
-
+register long mask;
 	mask = obj->owornmask & W_RING;
 	setworn((struct obj *) 0, obj->owornmask);
 	if(!(u.uprops[PROP(obj->otyp)].p_flgs & mask))
@@ -347,11 +274,8 @@ ringoff(struct obj *obj)
 	}
 }
 
-void
-find_ac(void)
-{
-	int uac = 10;
-
+find_ac(){
+register int uac = 10;
 	if(uarm) uac -= ARM_BONUS(uarm);
 	if(uarm2) uac -= ARM_BONUS(uarm2);
 	if(uarmh) uac -= ARM_BONUS(uarmh);
@@ -365,12 +289,9 @@ find_ac(void)
 	}
 }
 
-void
-glibr(void)
-{
-	struct obj *otmp;
-	int xfl = 0;
-
+glibr(){
+register struct obj *otmp;
+int xfl = 0;
 	if(!uarmg) if(uleft || uright) {
 		/* Note: at present also cursed rings fall off */
 		pline("Your %s off your fingers.",
@@ -395,21 +316,16 @@ glibr(void)
 }
 
 struct obj *
-some_armor(void)
-{
-	struct obj *otmph = uarm;
-
+some_armor(){
+register struct obj *otmph = uarm;
 	if(uarmh && (!otmph || !rn2(4))) otmph = uarmh;
 	if(uarmg && (!otmph || !rn2(4))) otmph = uarmg;
 	if(uarms && (!otmph || !rn2(4))) otmph = uarms;
 	return(otmph);
 }
 
-void
-corrode_armor(void)
-{
-	struct obj *otmph = some_armor();
-
+corrode_armor(){
+register struct obj *otmph = some_armor();
 	if(otmph){
 		if(otmph->rustfree ||
 		   otmph->otyp == ELVEN_CLOAK ||

@@ -1,4 +1,4 @@
-/*	$OpenBSD: crc.c,v 1.7 2009/10/27 23:59:23 deraadt Exp $	*/
+/*	$OpenBSD: crc.c,v 1.3 1998/08/31 02:29:36 pjanzen Exp $	*/
 /*	$NetBSD: crc.c,v 1.2 1995/03/21 12:04:59 cgd Exp $	*/
 
 /*-
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,6 +36,15 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)crc.c	8.1 (Berkeley) 5/31/93";
+static char ORIGINAL_sccsid[] = "@(#)crc.c	5.2 (Berkeley) 4/4/91";
+#else
+static char rcsid[] = "$OpenBSD: crc.c,v 1.3 1998/08/31 02:29:36 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
 #include "extern.h"
 
@@ -102,14 +115,15 @@ unsigned long crcval;
 unsigned int step;
 
 void
-crc_start(void)
+crc_start()
 {
 	crcval = step = 0;
 }
 
-/* Process nr bytes at a time; ptr points to them */	
 unsigned long
-crc(const char *ptr, int nr)
+crc(ptr, nr)		/* Process nr bytes at a time; ptr points to them */
+	const char *ptr;
+	int     nr;
 {
 	int     i;
 	const char *p;
@@ -121,7 +135,7 @@ crc(const char *ptr, int nr)
 				if (step >= sizeof(crctab) / sizeof(crctab[0]))
 					step = 0;
 			}
-			crcval = ((crcval << 8) ^ crctab[i]) & 0xffffffff;
+			crcval = (crcval << 8) ^ crctab[i];
 		}
-	return crcval;
+	return crcval & 0xffffffff;	/* Mask to 32 bits. */
 }

@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_delch.c,v 1.3 2010/01/12 23:22:05 nicm Exp $ */
+/*	$OpenBSD: lib_delch.c,v 1.1 1999/01/18 19:09:40 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998,2000,2001 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -42,30 +42,29 @@
 
 #include <curses.priv.h>
 
-MODULE_ID("$Id: lib_delch.c,v 1.3 2010/01/12 23:22:05 nicm Exp $")
+MODULE_ID("$From: lib_delch.c,v 1.8 1998/06/28 00:28:17 tom Exp $")
 
-NCURSES_EXPORT(int)
-wdelch(WINDOW *win)
+int wdelch(WINDOW *win)
 {
-    int code = ERR;
+int     code = ERR;
 
-    T((T_CALLED("wdelch(%p)"), win));
+	T((T_CALLED("wdelch(%p)"), win));
 
-    if (win) {
-	NCURSES_CH_T blank = win->_nc_bkgd;
-	struct ldat *line = &(win->_line[win->_cury]);
-	NCURSES_CH_T *end = &(line->text[win->_maxx]);
-	NCURSES_CH_T *temp2 = &(line->text[win->_curx + 1]);
-	NCURSES_CH_T *temp1 = temp2 - 1;
+	if (win) {
+		chtype	blank = _nc_background(win);
+		struct ldat *line = &(win->_line[win->_cury]);
+		chtype *end   = &(line->text[win->_maxx]);
+		chtype *temp2 = &(line->text[win->_curx + 1]);
+		chtype *temp1 = temp2 - 1;
 
-	CHANGED_TO_EOL(line, win->_curx, win->_maxx);
-	while (temp1 < end)
-	    *temp1++ = *temp2++;
+		CHANGED_TO_EOL(line, win->_curx, win->_maxx);
+		while (temp1 < end)
+			*temp1++ = *temp2++;
 
-	*temp1 = blank;
+		*temp1 = blank;
 
-	_nc_synchook(win);
-	code = OK;
-    }
-    returnCode(code);
+		_nc_synchook(win);
+		code = OK;
+	}
+	returnCode(code);
 }

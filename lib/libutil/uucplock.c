@@ -1,4 +1,4 @@
-/*	$OpenBSD: uucplock.c,v 1.19 2016/08/30 14:52:09 guenther Exp $	*/
+/* * $OpenBSD: uucplock.c,v 1.7 1999/09/21 04:52:46 csapuntz Exp $*/
 /*
  * Copyright (c) 1988, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +11,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +34,10 @@
  *
  */
 
+#ifndef lint
+static const char sccsid[] = "@(#)uucplock.c	8.1 (Berkeley) 6/6/93";
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <dirent.h>
 #include <errno.h>
@@ -44,38 +52,40 @@
 
 #define MAXTRIES 5
 
-#define LOCKTMP "LCKTMP..%ld"
+#define LOCKTMP "LCKTMP..%d"
 #define LOCKFMT "LCK..%s"
 
 #define GORET(level, val) { err = errno; uuerr = (val); \
 			    goto __CONCAT(ret, level); }
 
 /* Forward declarations */
-static int put_pid(int fd, pid_t pid);
-static pid_t get_pid(int fd,int *err);
+static int put_pid __P((int fd, pid_t pid));
+static pid_t get_pid __P((int fd,int *err));
 
 /*
  * uucp style locking routines
  */
+
 int
-uu_lock(const char *ttyname)
+uu_lock(ttyname)
+	const char *ttyname;
 {
+	int fd, tmpfd, i;
+	pid_t pid, pid_old;
 	char lckname[sizeof(_PATH_UUCPLOCK) + MAXNAMLEN],
 	     lcktmpname[sizeof(_PATH_UUCPLOCK) + MAXNAMLEN];
-	int fd, tmpfd, i, err, uuerr;
-	pid_t pid, pid_old;
+	int err, uuerr;
 
 	pid = getpid();
 	(void)snprintf(lcktmpname, sizeof(lcktmpname), _PATH_UUCPLOCK LOCKTMP,
-	    (long)pid);
+			pid);
 	(void)snprintf(lckname, sizeof(lckname), _PATH_UUCPLOCK LOCKFMT,
-	    ttyname);
-	tmpfd = open(lcktmpname, O_CREAT|O_TRUNC|O_WRONLY|O_CLOEXEC, 0664);
-	if (tmpfd < 0)
+			ttyname);
+	if ((tmpfd = creat(lcktmpname, 0664)) < 0)
 		GORET(0, UU_LOCK_CREAT_ERR);
 
 	for (i = 0; i < MAXTRIES; i++) {
-		if (link(lcktmpname, lckname) < 0) {
+		if (link (lcktmpname, lckname) < 0) {
 			if (errno != EEXIST)
 				GORET(1, UU_LOCK_LINK_ERR);
 			/*
@@ -83,10 +93,10 @@ uu_lock(const char *ttyname)
 			 * check to see if the process holding the lock
 			 * still exists
 			 */
-			if ((fd = open(lckname, O_RDONLY | O_CLOEXEC)) < 0)
+			if ((fd = open(lckname, O_RDONLY)) < 0)
 				GORET(1, UU_LOCK_OPEN_ERR);
 
-			if ((pid_old = get_pid(fd, &err)) == -1)
+			if ((pid_old = get_pid (fd, &err)) == -1)
 				GORET(2, UU_LOCK_READ_ERR);
 
 			close(fd);
@@ -99,7 +109,7 @@ uu_lock(const char *ttyname)
 			 */
 			(void)unlink(lckname);
 		} else {
-			if (!put_pid(tmpfd, pid))
+			if (!put_pid (tmpfd, pid))
 				GORET(3, UU_LOCK_WRITE_ERR);
 			break;
 		}
@@ -120,28 +130,30 @@ ret0:
 }
 
 int
-uu_lock_txfr(const char *ttyname, pid_t pid)
+uu_lock_txfr(ttyname, pid)
+	const char *ttyname;
+	pid_t pid;
 {
+	int fd, err;
 	char lckname[sizeof(_PATH_UUCPLOCK) + MAXNAMLEN];
-	int fd, err, ret;
 
 	snprintf(lckname, sizeof(lckname), _PATH_UUCPLOCK LOCKFMT, ttyname);
 
-	if ((fd = open(lckname, O_RDWR | O_CLOEXEC)) < 0)
+	if ((fd = open(lckname, O_RDWR)) < 0)
 		return UU_LOCK_OWNER_ERR;
 	if (get_pid(fd, &err) != getpid())
-		ret = UU_LOCK_OWNER_ERR;
-	else {
-		lseek(fd, 0, SEEK_SET);
-		ret = put_pid(fd, pid) ? UU_LOCK_OK : UU_LOCK_WRITE_ERR;
-	}
-
+		return UU_LOCK_OWNER_ERR;
+        lseek(fd, 0, SEEK_SET);
+	if (put_pid(fd, pid))
+		return UU_LOCK_WRITE_ERR;
 	close(fd);
-	return ret;
+
+	return UU_LOCK_OK;
 }
 
 int
-uu_unlock(const char *ttyname)
+uu_unlock(ttyname)
+	const char *ttyname;
 {
 	char tbuf[sizeof(_PATH_UUCPLOCK) + MAXNAMLEN];
 
@@ -150,10 +162,11 @@ uu_unlock(const char *ttyname)
 }
 
 const char *
-uu_lockerr(int uu_lockresult)
+uu_lockerr(uu_lockresult)
+	int uu_lockresult;
 {
 	static char errbuf[128];
-	const char *err;
+	char *fmt;
 
 	switch (uu_lockresult) {
 	case UU_LOCK_INUSE:
@@ -161,62 +174,66 @@ uu_lockerr(int uu_lockresult)
 	case UU_LOCK_OK:
 		return "";
 	case UU_LOCK_OPEN_ERR:
-		err = "open error";
+		fmt = "open error: %s";
 		break;
 	case UU_LOCK_READ_ERR:
-		err = "read error";
+		fmt = "read error: %s";
 		break;
 	case UU_LOCK_CREAT_ERR:
-		err = "creat error";
+		fmt = "creat error: %s";
 		break;
 	case UU_LOCK_WRITE_ERR:
-		err = "write error";
+		fmt = "write error: %s";
 		break;
 	case UU_LOCK_LINK_ERR:
-		err = "link error";
+		fmt = "link error: %s";
 		break;
 	case UU_LOCK_TRY_ERR:
-		err = "too many tries";
+		fmt = "too many tries: %s";
 		break;
 	case UU_LOCK_OWNER_ERR:
-		err = "not locking process";
+		fmt = "not locking process: %s";
 		break;
 	default:
-		err = "undefined error";
+		fmt = "undefined error: %s";
 		break;
 	}
 
-	(void)snprintf(errbuf, sizeof(errbuf), "%s: %s", err, strerror(errno));
+	(void)snprintf(errbuf, sizeof(errbuf), fmt, strerror(errno));
 	return errbuf;
 }
 
 static int
-put_pid(int fd, pid_t pid)
+put_pid(fd, pid)
+	int fd;
+	pid_t pid;
 {
 	char buf[32];
 	int len;
 
-	len = snprintf(buf, sizeof buf, "%10ld\n", (long)pid);
+	len = sprintf (buf, "%10d\n", (int)pid);
 
-	if (len < sizeof buf && len != -1 && write(fd, buf, (size_t)len) == len) {
+	if (write (fd, buf, len) == len) {
 		/* We don't mind too much if ftruncate() fails - see get_pid */
-		ftruncate(fd, (off_t)len);
+		ftruncate(fd, len);
 		return 1;
 	}
 	return 0;
 }
 
 static pid_t
-get_pid(int fd, int *err)
+get_pid(fd, err)
+	int fd;
+	int *err;
 {
-	ssize_t bytes_read;
+	int bytes_read;
 	char buf[32];
 	pid_t pid;
 
-	bytes_read = read(fd, buf, sizeof (buf) - 1);
+	bytes_read = read (fd, buf, sizeof (buf) - 1);
 	if (bytes_read > 0) {
 		buf[bytes_read] = '\0';
-		pid = (pid_t)strtoul(buf, (char **) NULL, 10);
+		pid = strtoul (buf, (char **) NULL, 10);
 	} else {
 		pid = -1;
 		*err = bytes_read ? errno : EINVAL;

@@ -1,5 +1,3 @@
-/*	$OpenBSD: v_txt.c,v 1.33 2016/05/27 09:18:12 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -11,6 +9,11 @@
 
 #include "config.h"
 
+#ifndef lint
+static const char sccsid[] = "@(#)v_txt.c	10.87 (Berkeley) 10/13/96";
+#endif /* not lint */
+
+#include <sys/types.h>
 #include <sys/queue.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -27,27 +30,25 @@
 #include "../common/common.h"
 #include "vi.h"
 
-#define MINIMUM(a, b)	(((a) < (b)) ? (a) : (b))
-
-static int	 txt_abbrev(SCR *, TEXT *, CHAR_T *, int, int *, int *);
-static void	 txt_ai_resolve(SCR *, TEXT *, int *);
-static TEXT	*txt_backup(SCR *, TEXTH *, TEXT *, u_int32_t *);
-static int	 txt_dent(SCR *, TEXT *, int);
-static int	 txt_emark(SCR *, TEXT *, size_t);
-static void	 txt_err(SCR *, TEXTH *);
-static int	 txt_fc(SCR *, TEXT *, int *);
-static int	 txt_fc_col(SCR *, int, ARGS **);
-static int	 txt_hex(SCR *, TEXT *);
-static int	 txt_insch(SCR *, TEXT *, CHAR_T *, u_int);
-static int	 txt_isrch(SCR *, VICMD *, TEXT *, u_int8_t *);
-static int	 txt_map_end(SCR *);
-static int	 txt_map_init(SCR *);
-static int	 txt_margin(SCR *, TEXT *, TEXT *, int *, u_int32_t);
-static void	 txt_nomorech(SCR *);
-static void	 txt_Rresolve(SCR *, TEXTH *, TEXT *, const size_t);
-static int	 txt_resolve(SCR *, TEXTH *, u_int32_t);
-static int	 txt_showmatch(SCR *, TEXT *);
-static void	 txt_unmap(SCR *, TEXT *, u_int32_t *);
+static int	 txt_abbrev __P((SCR *, TEXT *, CHAR_T *, int, int *, int *));
+static void	 txt_ai_resolve __P((SCR *, TEXT *, int *));
+static TEXT	*txt_backup __P((SCR *, TEXTH *, TEXT *, u_int32_t *));
+static int	 txt_dent __P((SCR *, TEXT *, int));
+static int	 txt_emark __P((SCR *, TEXT *, size_t));
+static void	 txt_err __P((SCR *, TEXTH *));
+static int	 txt_fc __P((SCR *, TEXT *, int *));
+static int	 txt_fc_col __P((SCR *, int, ARGS **));
+static int	 txt_hex __P((SCR *, TEXT *));
+static int	 txt_insch __P((SCR *, TEXT *, CHAR_T *, u_int));
+static int	 txt_isrch __P((SCR *, VICMD *, TEXT *, u_int8_t *));
+static int	 txt_map_end __P((SCR *));
+static int	 txt_map_init __P((SCR *));
+static int	 txt_margin __P((SCR *, TEXT *, TEXT *, int *, u_int32_t));
+static void	 txt_nomorech __P((SCR *));
+static void	 txt_Rresolve __P((SCR *, TEXTH *, TEXT *, const size_t));
+static int	 txt_resolve __P((SCR *, TEXTH *, u_int32_t));
+static int	 txt_showmatch __P((SCR *, TEXT *));
+static void	 txt_unmap __P((SCR *, TEXT *, u_int32_t *));
 
 /* Cursor character (space is hard to track on the screen). */
 #if defined(DEBUG) && 0
@@ -59,10 +60,14 @@ static void	 txt_unmap(SCR *, TEXT *, u_int32_t *);
  * v_tcmd --
  *	Fill a buffer from the terminal for vi.
  *
- * PUBLIC: int v_tcmd(SCR *, VICMD *, CHAR_T, u_int);
+ * PUBLIC: int v_tcmd __P((SCR *, VICMD *, ARG_CHAR_T, u_int));
  */
 int
-v_tcmd(SCR *sp, VICMD *vp, CHAR_T prompt, u_int flags)
+v_tcmd(sp, vp, prompt, flags)
+	SCR *sp;
+	VICMD *vp;
+	ARG_CHAR_T prompt;
+	u_int flags;
 {
 	/* Normally, we end up where we started. */
 	vp->m_final.lno = sp->lno;
@@ -113,7 +118,8 @@ v_tcmd(SCR *sp, VICMD *vp, CHAR_T prompt, u_int flags)
  *	Initialize the screen map for colon command-line input.
  */
 static int
-txt_map_init(SCR *sp)
+txt_map_init(sp)
+	SCR *sp;
 {
 	SMAP *esmp;
 	VI_PRIVATE *vip;
@@ -165,7 +171,8 @@ txt_map_init(SCR *sp)
  *	Reset the screen map for colon command-line input.
  */
 static int
-txt_map_end(SCR *sp)
+txt_map_end(sp)
+	SCR *sp;
 {
 	VI_PRIVATE *vip;
 	size_t cnt;
@@ -234,14 +241,22 @@ txt_map_end(SCR *sp)
  * v_txt --
  *	Vi text input.
  *
- * PUBLIC: int v_txt(SCR *, VICMD *, MARK *,
- * PUBLIC:    const char *, size_t, CHAR_T, recno_t, u_long, u_int32_t);
+ * PUBLIC: int v_txt __P((SCR *, VICMD *, MARK *,
+ * PUBLIC:    const char *, size_t, ARG_CHAR_T, recno_t, u_long, u_int32_t));
  */
 int
-v_txt(SCR *sp, VICMD *vp, MARK *tm, const char *lp, size_t len,
-    CHAR_T prompt, recno_t ai_line, u_long rcount, u_int32_t flags)
+v_txt(sp, vp, tm, lp, len, prompt, ai_line, rcount, flags)
+	SCR *sp;
+	VICMD *vp;
+	MARK *tm;		/* To MARK. */
+	const char *lp;		/* Input line. */
+	size_t len;		/* Input line length. */
+	ARG_CHAR_T prompt;	/* Prompt to display. */
+	recno_t ai_line;	/* Line number to use for autoindent count. */
+	u_long rcount;		/* Replay count. */
+	u_int32_t flags;	/* TXT_* flags. */
 {
-	EVENT ev, *evp = NULL;	/* Current event. */
+	EVENT ev, *evp;		/* Current event. */
 	EVENT fc;		/* File name completion event. */
 	GS *gp;
 	TEXT *ntp, *tp;		/* Input text structures. */
@@ -284,9 +299,9 @@ v_txt(SCR *sp, VICMD *vp, MARK *tm, const char *lp, size_t len,
 	 * copy it into the TEXT buffer.
 	 */
 	tiqh = &sp->tiq;
-	if (!TAILQ_EMPTY(tiqh)) {
-		tp = TAILQ_FIRST(tiqh);
-		if (TAILQ_NEXT(tp, q) || tp->lb_len < len + 32) {
+	if (tiqh->cqh_first != (void *)tiqh) {
+		tp = tiqh->cqh_first;
+		if (tp->q.cqe_next != (void *)tiqh || tp->lb_len < len + 32) {
 			text_lfree(tiqh);
 			goto newtp;
 		}
@@ -299,7 +314,7 @@ v_txt(SCR *sp, VICMD *vp, MARK *tm, const char *lp, size_t len,
 	} else {
 newtp:		if ((tp = text_init(sp, lp, len, len + 32)) == NULL)
 			return (1);
-		TAILQ_INSERT_HEAD(tiqh, tp, q);
+		CIRCLEQ_INSERT_HEAD(tiqh, tp, q);
 	}
 
 	/* Set default termination condition. */
@@ -495,17 +510,7 @@ next:	if (v_event_get(sp, evp, 0, ec_flags))
 	case E_EOF:
 		F_SET(sp, SC_EXIT_FORCE);
 		return (1);
-	case E_REPAINT:
-		if (vs_repaint(sp, &ev))
-			return (1);
-		goto next;
-	case E_WRESIZE:
-		/* <resize> interrupts the input mode. */
-		v_emsg(sp, NULL, VIM_WRESIZE);
-	/* FALLTHROUGH */
-	default:
-		if (evp->e_event != E_INTERRUPT && evp->e_event != E_WRESIZE)
-			v_event_err(sp, evp);
+	case E_INTERRUPT:
 		/*
 		 * !!!
 		 * Historically, <interrupt> exited the user from text input
@@ -513,26 +518,18 @@ next:	if (v_event_get(sp, evp, 0, ec_flags))
 		 * mode.  It also beeped the terminal, but that seems a bit
 		 * excessive.
 		 */
-		/*
-		 * If we are recording, morph into <escape> key so that
-		 * we can repeat the command safely: there is no way to
-		 * invalidate the repetition of an instance of a command,
-		 * which would be the alternative possibility.
-		 * If we are not recording (most likely on the command line),
-		 * simply discard the input and return to command mode
-		 * so that an INTERRUPT doesn't become for example a file
-		 * completion request. -aymeric
-		 */
-		if (LF_ISSET(TXT_RECORD)) {
-		    evp->e_event = E_CHARACTER;
-		    evp->e_c = 033;
-		    evp->e_flags = 0;
-		    evp->e_value = K_ESCAPE;
-		    break;
-		} else {
-		    tp->term = TERM_ESC;
-		    goto k_escape;
-		}
+		goto k_escape;
+	case E_REPAINT:
+		if (vs_repaint(sp, &ev))
+			return (1);
+		goto next;
+	case E_WRESIZE:
+		/* <resize> interrupts the input mode. */
+		v_emsg(sp, NULL, VIM_WRESIZE);
+		goto k_escape;
+	default:
+		v_event_err(sp, evp);
+		goto k_escape;
 	}
 
 	/*
@@ -542,7 +539,7 @@ next:	if (v_event_get(sp, evp, 0, ec_flags))
 	 * This was not documented as far as I know, and is a great test of vi
 	 * clones.
 	 */
-	if (LF_ISSET(TXT_RECORD) && rcol == 0 && evp->e_c == '\0') {
+	if (rcol == 0 && !LF_ISSET(TXT_REPLAY) && evp->e_c == '\0') {
 		if (vip->rep == NULL)
 			goto done;
 
@@ -586,7 +583,7 @@ next:	if (v_event_get(sp, evp, 0, ec_flags))
 		if (++abcnt > MAX_ABBREVIATION_EXPANSION) {
 			if (v_event_flush(sp, CH_ABBREVIATED))
 				msgq(sp, M_ERR,
-"Abbreviation exceeded expansion limit: characters discarded");
+"191|Abbreviation exceeded expansion limit: characters discarded");
 			abcnt = 0;
 			if (LF_ISSET(TXT_REPLAY))
 				goto done;
@@ -618,21 +615,30 @@ replay:	if (LF_ISSET(TXT_REPLAY))
 
 	/*
 	 * !!!
-	 * If this character was quoted by a K_VLNEXT, replace the placeholder
-	 * (a carat) with the new character.  We've already adjusted the cursor
-	 * because it has to appear on top of the placeholder character.
-	 * Historic practice.
+	 * If this character was quoted by a K_VLNEXT or a backslash, replace
+	 * the placeholder (a carat or a backslash) with the new character.
+	 * If it was quoted by a K_VLNEXT, we've already adjusted the cursor
+	 * because it has to appear on top of the placeholder character.  If
+	 * it was quoted by a backslash, adjust the cursor now, the cursor
+	 * doesn't appear on top of it.  Historic practice in both cases.
 	 *
 	 * Skip tests for abbreviations; ":ab xa XA" followed by "ixa^V<space>"
 	 * doesn't perform an abbreviation.  Special case, ^V^J (not ^V^M) is
 	 * the same as ^J, historically.
 	 */
-	if (quote == Q_VTHIS) {
+	if (quote == Q_BTHIS || quote == Q_VTHIS) {
 		FL_CLR(ec_flags, EC_QUOTED);
 		if (LF_ISSET(TXT_MAPINPUT))
 			FL_SET(ec_flags, EC_MAPINPUT);
 
-		if (evp->e_value != K_NL) {
+		if (quote == Q_BTHIS &&
+		    (evp->e_value == K_VERASE || evp->e_value == K_VKILL)) {
+			quote = Q_NOTSET;
+			--tp->cno;
+			++tp->owrite;
+			goto insl_ch;
+		}
+		if (quote == Q_VTHIS && evp->e_value != K_NL) {
 			quote = Q_NOTSET;
 			goto insl_ch;
 		}
@@ -765,7 +771,7 @@ k_cr:		if (LF_ISSET(TXT_CR)) {
 		if ((ntp = text_init(sp, p,
 		    insert + owrite, insert + owrite + 32)) == NULL)
 			goto err;
-		TAILQ_INSERT_TAIL(&sp->tiq, ntp, q);
+		CIRCLEQ_INSERT_TAIL(&sp->tiq, ntp, q);
 
 		/* Set up bookkeeping for the new line. */
 		ntp->insert = insert;
@@ -1098,12 +1104,12 @@ leftmargin:		tp->lb[tp->cno - 1] = ' ';
 		 */
 		if (LF_ISSET(TXT_TTYWERASE))
 			while (tp->cno > max) {
-				if (isblank(tp->lb[tp->cno - 1]))
-					break;
 				--tp->cno;
 				++tp->owrite;
 				if (FL_ISSET(is_flags, IS_RUNNING))
 					tp->lb[tp->cno] = ' ';
+				if (isblank(tp->lb[tp->cno - 1]))
+					break;
 			}
 		else {
 			if (LF_ISSET(TXT_ALTWERASE)) {
@@ -1111,17 +1117,19 @@ leftmargin:		tp->lb[tp->cno - 1] = ' ';
 				++tp->owrite;
 				if (FL_ISSET(is_flags, IS_RUNNING))
 					tp->lb[tp->cno] = ' ';
+				if (isblank(tp->lb[tp->cno - 1]))
+					break;
 			}
 			if (tp->cno > max)
 				tmp = inword(tp->lb[tp->cno - 1]);
 			while (tp->cno > max) {
-				if (tmp != inword(tp->lb[tp->cno - 1])
-				    || isblank(tp->lb[tp->cno - 1]))
-					break;
 				--tp->cno;
 				++tp->owrite;
 				if (FL_ISSET(is_flags, IS_RUNNING))
 					tp->lb[tp->cno] = ' ';
+				if (tmp != inword(tp->lb[tp->cno - 1])
+				    || isblank(tp->lb[tp->cno - 1]))
+					break;
 			}
 		}
 
@@ -1192,6 +1200,31 @@ leftmargin:		tp->lb[tp->cno - 1] = ' ';
 		if (LF_ISSET(TXT_SHOWMATCH))
 			showmatch = 1;
 		goto ins_ch;
+	case K_BACKSLASH:		/* Quote next erase/kill. */
+		/*
+		 * !!!
+		 * Historic vi tried to make abbreviations after a backslash
+		 * escape work.  If you did ":ab x y", and inserted "x\^H",
+		 * (assuming the erase character was ^H) you got "x^H", and
+		 * no abbreviation was done.  If you inserted "x\z", however,
+		 * it tried to back up and do the abbreviation, i.e. replace
+		 * 'x' with 'y'.  The problem was it got it wrong, and you
+		 * ended up with "zy\".
+		 *
+		 * This is really hard to do (you have to remember the
+		 * word/non-word state, for example), and doesn't make any
+		 * sense to me.  Both backslash and the characters it
+		 * (usually) escapes will individually trigger the
+		 * abbreviation, so I don't see why the combination of them
+		 * wouldn't.  I don't expect to get caught on this one,
+		 * particularly since it never worked right, but I've been
+		 * wrong before.
+		 *
+		 * Do the tests for abbreviations, so ":ab xa XA",
+		 * "ixa\<K_VERASE>" performs the abbreviation.
+		 */
+		quote = Q_BNEXT;
+		goto insq_ch;
 	case K_VLNEXT:			/* Quote next character. */
 		evp->e_c = '^';
 		quote = Q_VNEXT;
@@ -1230,7 +1263,7 @@ ins_ch:		/*
 		if (LF_ISSET(TXT_BEAUTIFY) && iscntrl(evp->e_c) &&
 		    evp->e_value != K_FORMFEED && evp->e_value != K_TAB) {
 			msgq(sp, M_BERR,
-			    "Illegal character; quote to enter");
+			    "192|Illegal character; quote to enter");
 			if (LF_ISSET(TXT_REPLAY))
 				goto done;
 			break;
@@ -1329,6 +1362,8 @@ ebuf_chk:	if (tp->cno >= tp->len) {
 
 		/* Step the quote state forward. */
 		if (quote != Q_NOTSET) {
+			if (quote == Q_BNEXT)
+				quote = Q_BTHIS;
 			if (quote == Q_VNEXT)
 				quote = Q_VTHIS;
 		}
@@ -1421,7 +1456,6 @@ done:	/* Leave input mode. */
 
 err:
 alloc_err:
-	F_CLR(sp, SC_TINPUT);
 	txt_err(sp, &sp->tiq);
 	return (1);
 }
@@ -1431,9 +1465,13 @@ alloc_err:
  *	Handle abbreviations.
  */
 static int
-txt_abbrev(SCR *sp, TEXT *tp, CHAR_T *pushcp, int isinfoline, int *didsubp,
-    int *turnoffp)
+txt_abbrev(sp, tp, pushcp, isinfoline, didsubp, turnoffp)
+	SCR *sp;
+	TEXT *tp;
+	CHAR_T *pushcp;
+	int isinfoline, *didsubp, *turnoffp;
 {
+	VI_PRIVATE *vip;
 	CHAR_T ch, *p;
 	SEQ *qp;
 	size_t len, off;
@@ -1442,6 +1480,8 @@ txt_abbrev(SCR *sp, TEXT *tp, CHAR_T *pushcp, int isinfoline, int *didsubp,
 	*didsubp = 0;
 	if (tp->cno == tp->offset)
 		return (0);
+
+	vip = VIP(sp);
 
 	/*
 	 * Find the start of the "word".
@@ -1520,7 +1560,7 @@ txt_abbrev(SCR *sp, TEXT *tp, CHAR_T *pushcp, int isinfoline, int *didsubp,
 	 *
 	 * This makes the layering look like a Nachos Supreme.
 	 */
-search:	if (isinfoline) {
+search:	if (isinfoline)
 		if (off == tp->ai || off == tp->offset)
 			if (ex_is_abbrev(p, len)) {
 				*turnoffp = 1;
@@ -1530,7 +1570,6 @@ search:	if (isinfoline) {
 		else
 			if (*turnoffp)
 				return (0);
-	}
 
 	/* Check for any abbreviations. */
 	if ((qp = seq_find(sp, NULL, NULL, p, len, SEQ_ABBREV, NULL)) == NULL)
@@ -1596,7 +1635,10 @@ search:	if (isinfoline) {
  *	Handle the unmap command.
  */
 static void
-txt_unmap(SCR *sp, TEXT *tp, u_int32_t *ec_flagsp)
+txt_unmap(sp, tp, ec_flagsp)
+	SCR *sp;
+	TEXT *tp;
+	u_int32_t *ec_flagsp;
 {
 	size_t len, off;
 	char *p;
@@ -1636,7 +1678,10 @@ txt_unmap(SCR *sp, TEXT *tp, u_int32_t *ec_flagsp)
  *	When a line is resolved by <esc>, review autoindent characters.
  */
 static void
-txt_ai_resolve(SCR *sp, TEXT *tp, int *changedp)
+txt_ai_resolve(sp, tp, changedp)
+	SCR *sp;
+	TEXT *tp;
+	int *changedp;
 {
 	u_long ts;
 	int del;
@@ -1684,7 +1729,7 @@ txt_ai_resolve(SCR *sp, TEXT *tp, int *changedp)
 	 * If there are no spaces, or no tabs after spaces and less than
 	 * ts spaces, it's already minimal.
 	 */
-	if (!spaces || (!tab_after_sp && spaces < ts))
+	if (!spaces || !tab_after_sp && spaces < ts)
 		return;
 
 	/* Count up spaces/tabs needed to get to the target. */
@@ -1720,10 +1765,14 @@ txt_ai_resolve(SCR *sp, TEXT *tp, int *changedp)
  *	Handle autoindent.  If aitp isn't NULL, use it, otherwise,
  *	retrieve the line.
  *
- * PUBLIC: int v_txt_auto(SCR *, recno_t, TEXT *, size_t, TEXT *);
+ * PUBLIC: int v_txt_auto __P((SCR *, recno_t, TEXT *, size_t, TEXT *));
  */
 int
-v_txt_auto(SCR *sp, recno_t lno, TEXT *aitp, size_t len, TEXT *tp)
+v_txt_auto(sp, lno, aitp, len, tp)
+	SCR *sp;
+	recno_t lno;
+	TEXT *aitp, *tp;
+	size_t len;
 {
 	size_t nlen;
 	char *p, *t;
@@ -1773,15 +1822,20 @@ v_txt_auto(SCR *sp, recno_t lno, TEXT *aitp, size_t len, TEXT *tp)
  *	Back up to the previously edited line.
  */
 static TEXT *
-txt_backup(SCR *sp, TEXTH *tiqh, TEXT *tp, u_int32_t *flagsp)
+txt_backup(sp, tiqh, tp, flagsp)
+	SCR *sp;
+	TEXTH *tiqh;
+	TEXT *tp;
+	u_int32_t *flagsp;
 {
+	VI_PRIVATE *vip;
 	TEXT *ntp;
 
 	/* Get a handle on the previous TEXT structure. */
-	if ((ntp = TAILQ_PREV(tp, _texth, q)) == NULL) {
+	if ((ntp = tp->q.cqe_prev) == (void *)tiqh) {
 		if (!FL_ISSET(*flagsp, TXT_REPLAY))
 			msgq(sp, M_BERR,
-			    "Already at the beginning of the insert");
+			    "193|Already at the beginning of the insert");
 		return (tp);
 	}
 
@@ -1789,6 +1843,7 @@ txt_backup(SCR *sp, TEXTH *tiqh, TEXT *tp, u_int32_t *flagsp)
 	ntp->len = ntp->sv_len;
 
 	/* Handle appending to the line. */
+	vip = VIP(sp);
 	if (ntp->owrite == 0 && ntp->insert == 0) {
 		ntp->lb[ntp->len] = CH_CURSOR;
 		++ntp->insert;
@@ -1798,7 +1853,7 @@ txt_backup(SCR *sp, TEXTH *tiqh, TEXT *tp, u_int32_t *flagsp)
 		FL_CLR(*flagsp, TXT_APPENDEOL);
 
 	/* Release the current TEXT. */
-	TAILQ_REMOVE(tiqh, tp, q);
+	CIRCLEQ_REMOVE(tiqh, tp, q);
 	text_free(tp);
 
 	/* Update the old line on the screen. */
@@ -1846,11 +1901,14 @@ txt_backup(SCR *sp, TEXTH *tiqh, TEXT *tp, u_int32_t *flagsp)
  * changes.
  */
 static int
-txt_dent(SCR *sp, TEXT *tp, int isindent)
+txt_dent(sp, tp, isindent)
+	SCR *sp;
+	TEXT *tp;
+	int isindent;
 {
 	CHAR_T ch;
 	u_long sw, ts;
-	size_t cno, current, spaces, target, tabs;
+	size_t cno, current, spaces, target, tabs, off;
 	int ai_reset;
 
 	ts = O_VAL(sp, O_TABSTOP);
@@ -1879,10 +1937,8 @@ txt_dent(SCR *sp, TEXT *tp, int isindent)
 	target = current;
 	if (isindent)
 		target += COL_OFF(target, sw);
-	else {
-		--target;
-		target -= target % sw;
-	}
+	else
+		target -= --target % sw;
 
 	/*
 	 * The AI characters will be turned into overwrite characters if the
@@ -1947,7 +2003,10 @@ txt_dent(SCR *sp, TEXT *tp, int isindent)
  *	File name completion.
  */
 static int
-txt_fc(SCR *sp, TEXT *tp, int *redrawp)
+txt_fc(sp, tp, redrawp)
+	SCR *sp;
+	TEXT *tp;
+	int *redrawp;
 {
 	struct stat sb;
 	ARGS **argv;
@@ -2100,7 +2159,10 @@ isdir:		if (tp->owrite == 0) {
  *	Display file names for file name completion.
  */
 static int
-txt_fc_col(SCR *sp, int argc, ARGS **argv)
+txt_fc_col(sp, argc, argv)
+	SCR *sp;
+	int argc;
+	ARGS **argv;
 {
 	ARGS **av;
 	CHAR_T *p;
@@ -2154,8 +2216,8 @@ txt_fc_col(SCR *sp, int argc, ARGS **argv)
 
 	/* If the largest file name is too large, just print them. */
 	if (colwidth > sp->cols) {
+		p = msg_print(sp, av[0]->bp + prefix, &nf);
 		for (ac = argc, av = argv; ac > 0; --ac, ++av) {
-			p = msg_print(sp, av[0]->bp + prefix, &nf);
 			(void)ex_printf(sp, "%s\n", p);
 			if (F_ISSET(gp, G_INTERRUPTED))
 				break;
@@ -2209,7 +2271,10 @@ intr:		F_CLR(gp, G_INTERRUPTED);
  *	Set the end mark on the line.
  */
 static int
-txt_emark(SCR *sp, TEXT *tp, size_t cno)
+txt_emark(sp, tp, cno)
+	SCR *sp;
+	TEXT *tp;
+	size_t cno;
 {
 	CHAR_T ch, *kp;
 	size_t chlen, nlen, olen;
@@ -2259,7 +2324,9 @@ txt_emark(SCR *sp, TEXT *tp, size_t cno)
  *	Handle an error during input processing.
  */
 static void
-txt_err(SCR *sp, TEXTH *tiqh)
+txt_err(sp, tiqh)
+	SCR *sp;
+	TEXTH *tiqh;
 {
 	recno_t lno;
 
@@ -2272,7 +2339,7 @@ txt_err(SCR *sp, TEXTH *tiqh)
 	 * We depend on at least one line number being set in the text
 	 * chain.
 	 */
-	for (lno = TAILQ_FIRST(tiqh)->lno;
+	for (lno = tiqh->cqh_first->lno;
 	    !db_exist(sp, lno) && lno > 0; --lno);
 
 	sp->lno = lno == 0 ? 1 : lno;
@@ -2292,7 +2359,9 @@ txt_err(SCR *sp, TEXTH *tiqh)
  * may not be able to enter.
  */
 static int
-txt_hex(SCR *sp, TEXT *tp)
+txt_hex(sp, tp)
+	SCR *sp;
+	TEXT *tp;
 {
 	CHAR_T savec;
 	size_t len, off;
@@ -2370,7 +2439,11 @@ nothex:		tp->lb[tp->cno] = savec;
  * of the screen space they require, but that it not overwrite other characters.
  */
 static int
-txt_insch(SCR *sp, TEXT *tp, CHAR_T *chp, u_int flags)
+txt_insch(sp, tp, chp, flags)
+	SCR *sp;
+	TEXT *tp;
+	CHAR_T *chp;
+	u_int flags;
 {
 	CHAR_T *kp, savech;
 	size_t chlen, cno, copydown, olen, nlen;
@@ -2482,7 +2555,11 @@ txt_insch(SCR *sp, TEXT *tp, CHAR_T *chp, u_int flags)
  *	Do an incremental search.
  */
 static int
-txt_isrch(SCR *sp, VICMD *vp, TEXT *tp, u_int8_t *is_flagsp)
+txt_isrch(sp, vp, tp, is_flagsp)
+	SCR *sp;
+	VICMD *vp;
+	TEXT *tp;
+	u_int8_t *is_flagsp;
 {
 	MARK start;
 	recno_t lno;
@@ -2602,8 +2679,12 @@ txt_isrch(SCR *sp, VICMD *vp, TEXT *tp, u_int8_t *is_flagsp)
  *	Resolve the input text chain into the file.
  */
 static int
-txt_resolve(SCR *sp, TEXTH *tiqh, u_int32_t flags)
+txt_resolve(sp, tiqh, flags)
+	SCR *sp;
+	TEXTH *tiqh;
+	u_int32_t flags;
 {
+	VI_PRIVATE *vip;
 	TEXT *tp;
 	recno_t lno;
 	int changed;
@@ -2615,23 +2696,24 @@ txt_resolve(SCR *sp, TEXTH *tiqh, u_int32_t flags)
 	 * change, we have to redisplay it, otherwise the information cached
 	 * about the line will be wrong.
 	 */
-	tp = TAILQ_FIRST(tiqh);
+	vip = VIP(sp);
+	tp = tiqh->cqh_first;
 
 	if (LF_ISSET(TXT_AUTOINDENT))
 		txt_ai_resolve(sp, tp, &changed);
 	else
 		changed = 0;
 	if (db_set(sp, tp->lno, tp->lb, tp->len) ||
-	    (changed && vs_change(sp, tp->lno, LINE_RESET)))
+	    changed && vs_change(sp, tp->lno, LINE_RESET))
 		return (1);
 
-	for (lno = tp->lno; (tp = TAILQ_NEXT(tp, q)); ++lno) {
+	for (lno = tp->lno; (tp = tp->q.cqe_next) != (void *)&sp->tiq; ++lno) {
 		if (LF_ISSET(TXT_AUTOINDENT))
 			txt_ai_resolve(sp, tp, &changed);
 		else
 			changed = 0;
 		if (db_append(sp, 0, lno, tp->lb, tp->len) ||
-		    (changed && vs_change(sp, tp->lno, LINE_RESET)))
+		    changed && vs_change(sp, tp->lno, LINE_RESET))
 			return (1);
 	}
 
@@ -2654,11 +2736,16 @@ txt_resolve(SCR *sp, TEXTH *tiqh, u_int32_t flags)
  * I think not.
  */
 static int
-txt_showmatch(SCR *sp, TEXT *tp)
+txt_showmatch(sp, tp)
+	SCR *sp;
+	TEXT *tp;
 {
+	GS *gp;
 	VCS cs;
 	MARK m;
 	int cnt, endc, startc;
+
+	gp = sp->gp;
 
 	/*
 	 * Do a refresh first, in case we haven't done one in awhile,
@@ -2701,7 +2788,7 @@ txt_showmatch(SCR *sp, TEXT *tp)
 	}
 
 	/* If the match is on the screen, move to it. */
-	if (cs.cs_lno < m.lno || (cs.cs_lno == m.lno && cs.cs_cno < m.cno))
+	if (cs.cs_lno < m.lno || cs.cs_lno == m.lno && cs.cs_cno < m.cno)
 		return (0);
 	sp->lno = cs.cs_lno;
 	sp->cno = cs.cs_cno;
@@ -2718,15 +2805,22 @@ txt_showmatch(SCR *sp, TEXT *tp)
  *	Handle margin wrap.
  */
 static int
-txt_margin(SCR *sp, TEXT *tp, TEXT *wmtp, int *didbreak, u_int32_t flags)
+txt_margin(sp, tp, wmtp, didbreak, flags)
+	SCR *sp;
+	TEXT *tp, *wmtp;
+	int *didbreak;
+	u_int32_t flags;
 {
+	VI_PRIVATE *vip;
 	size_t len, off;
-	char *p;
+	char *p, *wp;
 
 	/* Find the nearest previous blank. */
 	for (off = tp->cno - 1, p = tp->lb + off, len = 0;; --off, --p, ++len) {
-		if (isblank(*p))
+		if (isblank(*p)) {
+			wp = p + 1;
 			break;
+		}
 
 		/*
 		 * If reach the start of the line, there's nowhere to break.
@@ -2753,6 +2847,7 @@ txt_margin(SCR *sp, TEXT *tp, TEXT *wmtp, int *didbreak, u_int32_t flags)
 	 * line -- it's going to be used to set the cursor value when we
 	 * move to the new line.
 	 */
+	vip = VIP(sp);
 	wmtp->lb = p + 1;
 	wmtp->offset = len;
 	wmtp->insert = LF_ISSET(TXT_APPENDEOL) ?  tp->insert - 1 : tp->insert;
@@ -2790,7 +2885,11 @@ txt_margin(SCR *sp, TEXT *tp, TEXT *wmtp, int *didbreak, u_int32_t flags)
  *	Resolve the input line for the 'R' command.
  */
 static void
-txt_Rresolve(SCR *sp, TEXTH *tiqh, TEXT *tp, const size_t orig_len)
+txt_Rresolve(sp, tiqh, tp, orig_len)
+	SCR *sp;
+	TEXTH *tiqh;
+	TEXT *tp;
+	const size_t orig_len;
 {
 	TEXT *ttp;
 	size_t input_len, retain;
@@ -2807,9 +2906,10 @@ txt_Rresolve(SCR *sp, TEXTH *tiqh, TEXT *tp, const size_t orig_len)
 	 * Calculate how many characters the user has entered,
 	 * plus the blanks erased by <carriage-return>/<newline>s.
 	 */
-	input_len = 0;
-	TAILQ_FOREACH(ttp, tiqh, q) {
+	for (ttp = tiqh->cqh_first, input_len = 0;;) {
 		input_len += ttp == tp ? tp->cno : ttp->len + ttp->R_erase;
+		if ((ttp = ttp->q.cqe_next) == (void *)&sp->tiq)
+			break;
 	}
 
 	/*
@@ -2827,9 +2927,9 @@ txt_Rresolve(SCR *sp, TEXTH *tiqh, TEXT *tp, const size_t orig_len)
 	 * okay, the user just extended the file.
 	 */
 	if (input_len < orig_len) {
-		retain = MINIMUM(tp->owrite, orig_len - input_len);
+		retain = MIN(tp->owrite, orig_len - input_len);
 		if (db_get(sp,
-		    TAILQ_FIRST(tiqh)->lno, DBG_FATAL | DBG_NOCACHE, &p, NULL))
+		    tiqh->cqh_first->lno, DBG_FATAL | DBG_NOCACHE, &p, NULL))
 			return;
 		memcpy(tp->lb + tp->cno, p + input_len, retain);
 		tp->len -= tp->owrite - retain;
@@ -2843,7 +2943,8 @@ txt_Rresolve(SCR *sp, TEXTH *tiqh, TEXT *tp, const size_t orig_len)
  *	No more characters message.
  */
 static void
-txt_nomorech(SCR *sp)
+txt_nomorech(sp)
+	SCR *sp;
 {
-	msgq(sp, M_BERR, "No more characters to erase");
+	msgq(sp, M_BERR, "194|No more characters to erase");
 }

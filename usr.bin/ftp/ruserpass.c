@@ -1,4 +1,4 @@
-/*	$OpenBSD: ruserpass.c,v 1.30 2015/01/16 06:40:08 deraadt Exp $	*/
+/*	$OpenBSD: ruserpass.c,v 1.11 1998/03/30 06:59:35 deraadt Exp $	*/
 /*	$NetBSD: ruserpass.c,v 1.14 1997/07/20 09:46:01 lukem Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,7 +34,13 @@
  * SUCH DAMAGE.
  */
 
-#ifndef SMALL
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)ruserpass.c	8.4 (Berkeley) 4/27/95";
+#else
+static char rcsid[] = "$OpenBSD: ruserpass.c,v 1.11 1998/03/30 06:59:35 deraadt Exp $";
+#endif
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -45,7 +55,7 @@
 
 #include "ftp_var.h"
 
-static	int token(void);
+static	int token __P((void));
 static	FILE *cfile;
 
 #define	DEFAULT	1
@@ -73,19 +83,22 @@ static struct toktab {
 };
 
 int
-ruserpass(const char *host, char **aname, char **apass, char **aacct)
+ruserpass(host, aname, apass, aacct)
+	const char *host;
+	char **aname, **apass, **aacct;
 {
-	char *hdir, buf[PATH_MAX], *tmp;
-	char myname[HOST_NAME_MAX+1], *mydomain;
+	char *hdir, buf[BUFSIZ], *tmp;
+	char myname[MAXHOSTNAMELEN], *mydomain;
 	int t, i, c, usedefault = 0;
 	struct stat stb;
 
 	hdir = getenv("HOME");
-	if (hdir == NULL || *hdir == '\0')
-		return (0);
-	i = snprintf(buf, sizeof(buf), "%s/.netrc", hdir);
-	if (i < 0 || i >= sizeof(buf)) {
-		warnc(ENAMETOOLONG, "%s/.netrc", hdir);
+	if (hdir == NULL)
+		hdir = ".";
+	if (strlen(hdir) + sizeof(".netrc") < sizeof(buf)) {
+		(void)sprintf(buf, "%s/.netrc", hdir);
+	} else {
+		warnx("%s/.netrc: %s", hdir, strerror(ENAMETOOLONG));
 		return (0);
 	}
 	cfile = fopen(buf, "r");
@@ -99,17 +112,15 @@ ruserpass(const char *host, char **aname, char **apass, char **aacct)
 	if ((mydomain = strchr(myname, '.')) == NULL)
 		mydomain = "";
 next:
-	while ((t = token()) > 0) switch(t) {
+	while ((t = token())) switch(t) {
 
 	case DEFAULT:
 		usedefault = 1;
-		/* FALLTHROUGH */
+		/* FALL THROUGH */
 
 	case MACH:
 		if (!usedefault) {
-			if ((t = token()) == -1)
-				goto bad;
-			if (t != ID)
+			if (token() != ID)
 				continue;
 			/*
 			 * Allow match either for user's input host name
@@ -135,16 +146,14 @@ next:
 			continue;
 		}
 	match:
-		while ((t = token()) > 0 &&
-		    t != MACH && t != DEFAULT) switch(t) {
+		while ((t = token()) && t != MACH && t != DEFAULT) switch(t) {
 
 		case LOGIN:
-			if ((t = token()) == -1)
-				goto bad;
-			if (t) {
+			if (token()) {
 				if (*aname == 0) {
-					if ((*aname = strdup(tokval)) == NULL)
-						err(1, "strdup");
+					*aname = malloc((unsigned)
+					    strlen(tokval) + 1);
+					(void)strcpy(*aname, tokval);
 				} else {
 					if (strcmp(*aname, tokval))
 						goto next;
@@ -159,11 +168,9 @@ next:
 	warnx("Remove password or make file unreadable by others.");
 				goto bad;
 			}
-			if ((t = token()) == -1)
-				goto bad;
-			if (t && *apass == 0) {
-				if ((*apass = strdup(tokval)) == NULL)
-					err(1, "strdup");
+			if (token() && *apass == 0) {
+				*apass = malloc((unsigned) strlen(tokval) + 1);
+				(void)strcpy(*apass, tokval);
 			}
 			break;
 		case ACCOUNT:
@@ -173,11 +180,9 @@ next:
 	warnx("Remove account or make file unreadable by others.");
 				goto bad;
 			}
-			if ((t = token()) == -1)
-				goto bad;
-			if (t && *aacct == 0) {
-				if ((*aacct = strdup(tokval)) == NULL)
-					err(1, "strdup");
+			if (token() && *aacct == 0) {
+				*aacct = malloc((unsigned) strlen(tokval) + 1);
+				(void)strcpy(*aacct, tokval);
 			}
 			break;
 		case MACDEF:
@@ -233,13 +238,9 @@ next:
 				}
 				*tmp = c;
 				if (*tmp == '\n') {
-					if (tmp == macros[macnum].mac_start) {
-						macros[macnum++].mac_end = tmp;
-						break;
-					} else if (*(tmp-1) == '\0') {
-						macros[macnum++].mac_end =
-						    tmp - 1;
-						break;
+					if (*(tmp-1) == '\0') {
+					   macros[macnum++].mac_end = tmp - 1;
+					   break;
 					}
 					*tmp = '\0';
 				}
@@ -257,8 +258,6 @@ next:
 		goto done;
 	}
 done:
-	if (t == -1)
-		goto bad;
 	(void)fclose(cfile);
 	return (0);
 bad:
@@ -267,7 +266,7 @@ bad:
 }
 
 static int
-token(void)
+token()
 {
 	char *cp;
 	int c;
@@ -283,25 +282,17 @@ token(void)
 	cp = tokval;
 	if (c == '"') {
 		while ((c = fgetc(cfile)) != EOF && c != '"') {
-			if (c == '\\' && (c = fgetc(cfile)) == EOF)
-				break;
+			if (c == '\\')
+				c = fgetc(cfile);
 			*cp++ = c;
-			if (cp == tokval + sizeof(tokval)) {
-				warnx("Token in .netrc too long");
-				return (-1);
-			}
 		}
 	} else {
 		*cp++ = c;
 		while ((c = fgetc(cfile)) != EOF
 		    && c != '\n' && c != '\t' && c != ' ' && c != ',') {
-			if (c == '\\' && (c = fgetc(cfile)) == EOF)
-				break;
+			if (c == '\\')
+				c = fgetc(cfile);
 			*cp++ = c;
-			if (cp == tokval + sizeof(tokval)) {
-				warnx("Token in .netrc too long");
-				return (-1);
-			}
 		}
 	}
 	*cp = 0;
@@ -312,6 +303,3 @@ token(void)
 			return (t->tval);
 	return (ID);
 }
-
-#endif /* !SMALL */
-

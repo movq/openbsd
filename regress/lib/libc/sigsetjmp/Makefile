@@ -1,19 +1,17 @@
-#	$OpenBSD: Makefile,v 1.5 2002/09/02 20:01:43 avsm Exp $
+#	$NetBSD: Makefile,v 1.2 1995/04/20 22:40:40 cgd Exp $
 
 PROG=	sigsetjmptest
 SRCS=	jmptest.c
+NOMAN=	noman, no way, man
 
 CFLAGS+= -DTEST_SIGSETJMP
 
 .PATH:	${.CURDIR}/../setjmp
 
-REGRESS_TARGETS=sigsetjmp-save sigsetjmp-nosave
+install:
 
-sigsetjmp-save: ${PROG}
+regress: ${PROG}
 	./${PROG} save
-sigsetjmp-nosave: ${PROG}
 	./${PROG} nosave
 
-.PHONY: ${REGRESS_TARGETS}
-
-.include <bsd.regress.mk>
+.include <bsd.prog.mk>

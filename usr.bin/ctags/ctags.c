@@ -1,4 +1,4 @@
-/*	$OpenBSD: ctags.c,v 1.18 2015/10/09 01:37:07 deraadt Exp $	*/
+/*	$OpenBSD: ctags.c,v 1.4 1999/07/02 18:37:11 deraadt Exp $	*/
 /*	$NetBSD: ctags.c,v 1.4 1995/09/02 05:57:23 jtc Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,6 +33,19 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1987, 1993, 1994, 1995\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)ctags.c	8.4 (Berkeley) 2/7/95";
+#endif
+static char rcsid[] = "$OpenBSD: ctags.c,v 1.4 1999/07/02 18:37:11 deraadt Exp $";
+#endif /* not lint */
 
 #include <err.h>
 #include <limits.h>
@@ -46,7 +63,7 @@
 NODE	*head;			/* head of the sorted binary tree */
 
 				/* boolean "func" (see init()) */
-bool	_wht[256], _itk[256], _btk[256];
+bool	_wht[256], _etk[256], _itk[256], _btk[256], _gd[256];
 
 FILE	*inf;			/* ioptr for current input file */
 FILE	*outf;			/* ioptr for tags file */
@@ -55,6 +72,7 @@ long	lineftell;		/* ftell after getc( inf ) == '\n' */
 
 int	lineno;			/* line number of current line */
 int	dflag;			/* -d: non-macro defines */
+int	tflag;			/* -t: create tags for typedefs */
 int	vflag;			/* -v: vgrind style index output */
 int	wflag;			/* -w: suppress warnings */
 int	xflag;			/* -x: cxref style output */
@@ -63,12 +81,13 @@ char	*curfile;		/* current input file name */
 char	searchar = '/';		/* use /.../ searches by default */
 char	lbuf[LINE_MAX];
 
-void	init(void);
-void	find_entries(char *);
-void	preload_entries(char *, int, char *[]);
+void	init __P((void));
+void	find_entries __P((char *));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int	argc;
+	char	**argv;
 {
 	static char	*outfile = "tags";	/* output file */
 	int	aflag;				/* -a: append to tags */
@@ -76,9 +95,7 @@ main(int argc, char *argv[])
 	int	exit_val;			/* exit value */
 	int	step;				/* step through args */
 	int	ch;				/* getopts char */
-
-	if (pledge("stdio rpath wpath cpath", NULL) == -1)
-		err(1, "pledge");
+	char	cmd[100];			/* too ugly to explain */
 
 	aflag = uflag = NO;
 	while ((ch = getopt(argc, argv, "BFadf:tuwvx")) != -1)
@@ -90,27 +107,27 @@ main(int argc, char *argv[])
 			searchar = '/';
 			break;
 		case 'a':
-			aflag = 1;
+			aflag++;
 			break;
 		case 'd':
-			dflag = 1;
+			dflag++;
 			break;
 		case 'f':
 			outfile = optarg;
 			break;
 		case 't':
-			/* backwards compatibility */
+			tflag++;
 			break;
 		case 'u':
-			uflag = 1;
+			uflag++;
 			break;
 		case 'w':
-			wflag = 1;
+			wflag++;
 			break;
 		case 'v':
-			vflag = 1;
+			vflag++;
 		case 'x':
-			xflag = 1;
+			xflag++;
 			break;
 		case '?':
 		default:
@@ -120,13 +137,11 @@ main(int argc, char *argv[])
 	argc -= optind;
 	if (!argc) {
 usage:		(void)fprintf(stderr,
-			"usage: ctags [-aBdFuvwx] [-f tagsfile] file ...\n");
+			"usage: ctags [-BFadtuwvx] [-f tagsfile] file ...\n");
 		exit(1);
 	}
 
 	init();
-	if (uflag && !vflag && !xflag)
-		preload_entries(outfile, argc, argv);
 
 	for (exit_val = step = 0; step < argc; ++step)
 		if (!(inf = fopen(argv[step], "r"))) {
@@ -143,10 +158,25 @@ usage:		(void)fprintf(stderr,
 		if (xflag)
 			put_entries(head);
 		else {
+			if (uflag) {
+				for (step = 0; step < argc; step++) {
+					(void)sprintf(cmd,
+						"mv %s OTAGS; fgrep -v '\t%s\t' OTAGS >%s; rm OTAGS",
+							outfile, argv[step],
+							outfile);
+					system(cmd);
+				}
+				++aflag;
+			}
 			if (!(outf = fopen(outfile, aflag ? "a" : "w")))
 				err(exit_val, "%s", outfile);
 			put_entries(head);
 			(void)fclose(outf);
+			if (uflag) {
+				(void)sprintf(cmd, "sort -o %s %s",
+						outfile, outfile);
+				system(cmd);
+			}
 		}
 	}
 	exit(exit_val);
@@ -163,22 +193,30 @@ usage:		(void)fprintf(stderr,
  *	the string CWHITE, else NO.
  */
 void
-init(void)
+init()
 {
 	int		i;
 	unsigned char	*sp;
 
-	for (i = 0; i < 256; i++)
-		_wht[i] = _itk[i] = _btk[i] = NO;
+	for (i = 0; i < 256; i++) {
+		_wht[i] = _etk[i] = _itk[i] = _btk[i] = NO;
+		_gd[i] = YES;
+	}
 #define	CWHITE	" \f\t\n"
 	for (sp = CWHITE; *sp; sp++)	/* white space chars */
 		_wht[*sp] = YES;
+#define	CTOKEN	" \t\n\"'#()[]{}=-+%*/&|^~!<>;,.:?"
+	for (sp = CTOKEN; *sp; sp++)	/* token ending chars */
+		_etk[*sp] = YES;
 #define	CINTOK	"ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz0123456789"
 	for (sp = CINTOK; *sp; sp++)	/* valid in-token chars */
 		_itk[*sp] = YES;
 #define	CBEGIN	"ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz"
 	for (sp = CBEGIN; *sp; sp++)	/* token starting chars */
 		_btk[*sp] = YES;
+#define	CNOTGD	",;"
+	for (sp = CNOTGD; *sp; sp++)	/* invalid after-function chars */
+		_gd[*sp] = NO;
 }
 
 /*
@@ -187,12 +225,13 @@ init(void)
  *	which searches the file.
  */
 void
-find_entries(char *file)
+find_entries(file)
+	char	*file;
 {
 	char	*cp;
 
 	lineno = 0;				/* should be 1 ?? KB */
-	if ((cp = strrchr(file, '.'))) {
+	if (cp = strrchr(file, '.')) {
 		if (cp[1] == 'l' && !cp[2]) {
 			int	c;
 
@@ -215,7 +254,7 @@ find_entries(char *file)
 				 * for C references.  This may be wrong.
 				 */
 				toss_yysec();
-				(void)strlcpy(lbuf, "%%$", sizeof lbuf);
+				(void)strcpy(lbuf, "%%$");
 				pfnote("yylex", lineno);
 				rewind(inf);
 			}
@@ -226,7 +265,7 @@ find_entries(char *file)
 			 * for C references.  This may be wrong.
 			 */
 			toss_yysec();
-			(void)strlcpy(lbuf, "%%$", sizeof lbuf);
+			(void)strcpy(lbuf, "%%$");
 			pfnote("yyparse", lineno);
 			y_entries();
 		}
@@ -237,80 +276,4 @@ find_entries(char *file)
 		}
 	}
 /* C */	c_entries();
-}
-
-void
-preload_entries(char *tagsfile, int argc, char *argv[])
-{
-	FILE	*fp;
-	char	 line[LINE_MAX];
-	char	*entry = NULL;
-	char	*file = NULL;
-	char	*pattern = NULL;
-	char	*eol;
-	int	 i;
-
-	in_preload = YES;
-
-	if ((fp = fopen(tagsfile, "r")) == NULL)
-		err(1, "preload_entries: %s", tagsfile);
-
-	while (1) {
-next:
-		if (fgets(line, sizeof(line), fp) == NULL)
-			break;
-
-		if ((eol = strchr(line, '\n')) == NULL)
-			errx(1, "preload_entries: line too long");
-		*eol = '\0';
-
-		/* extract entry */
-		entry = line;
-		if ((file = strchr(line, '\t')) == NULL)
-			errx(1, "preload_entries: couldn't parse entry: %s",
-			    tagsfile);
-		*file = '\0';
-
-		/* extract file */
-		file++;
-		if ((pattern = strchr(file, '\t')) == NULL)
-			errx(1, "preload_entries: couldn't parse filename: %s",
-			    tagsfile);
-		*pattern = '\0';
-
-		/* skip this file ? */
-		for(i = 0; i < argc; i++)
-			if (strcmp(file, argv[i]) == 0)
-				goto next;
-
-		/* rest of string is pattern */
-		pattern++;
-
-		/* grab searchar, and don't keep it around the pattern */
-		if ((pattern[0] == '/' || pattern[0] == '?')
-		    && pattern[1] == '^') {
-
-			i = strlen(pattern);
-			if (pattern[i-1] == pattern[0])
-				/* remove searchar at end */
-				pattern[i-1] = '\0';
-			else
-				errx(1, "preload_entries: couldn't parse "
-				    "pattern: %s", tagsfile);
-
-			/* remove searchar at begin */
-			pattern += 2;
-		}
-
-		/* add entry */
-		if ((curfile = strdup(file)) == NULL)
-			err(1, "preload_entries: strdup");
-		(void)strlcpy(lbuf, pattern, sizeof(lbuf));
-		pfnote(entry, 0);
-	}
-	if (ferror(fp))
-		err(1, "preload_entries: fgets");
-
-	(void)fclose(fp);
-	in_preload = NO;
 }

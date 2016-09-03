@@ -1,4 +1,4 @@
-/* $OpenBSD: pcppi.c,v 1.13 2016/01/08 15:54:13 jcs Exp $ */
+/* $OpenBSD: pcppi.c,v 1.1 1999/01/02 00:02:44 niklas Exp $ */
 /* $NetBSD: pcppi.c,v 1.1 1998/04/15 20:26:18 drochner Exp $ */
 
 /*
@@ -31,9 +31,9 @@
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
+#include <sys/proc.h>
 #include <sys/device.h>
 #include <sys/errno.h>
-#include <sys/timeout.h>
 
 #include <machine/bus.h>
 
@@ -44,30 +44,23 @@
 
 #include <dev/ic/i8253reg.h>
 
-#include "pckbd.h"
-#include "hidkbd.h"
-#if NPCKBD > 0 || NHIDKBD > 0
-#include <dev/ic/pckbcvar.h>
-#include <dev/pckbc/pckbdvar.h>
-#include <dev/hid/hidkbdvar.h>
-void	pcppi_kbd_bell(void *, u_int, u_int, u_int, int);
-#endif
-
 struct pcppi_softc {
 	struct device sc_dv;
 
 	bus_space_tag_t sc_iot;
 	bus_space_handle_t sc_ppi_ioh, sc_pit1_ioh;
 
-	struct timeout sc_bell_timeout;
-
 	int sc_bellactive, sc_bellpitch;
 	int sc_slp;
-	int sc_timeout;
 };
 
-int	pcppi_match(struct device *, void *, void *);
-void	pcppi_attach(struct device *, struct device *, void *);
+#define __BROKEN_INDIRECT_CONFIG /* XXX */
+#ifdef __BROKEN_INDIRECT_CONFIG
+int	pcppi_match __P((struct device *, void *, void *));
+#else
+int	pcppi_match __P((struct device *, struct cfdata *, void *));
+#endif
+void	pcppi_attach __P((struct device *, struct device *, void *));
 
 struct cfattach pcppi_ca = {
 	sizeof(struct pcppi_softc), pcppi_match, pcppi_attach,
@@ -77,14 +70,18 @@ struct cfdriver pcppi_cd = {
 	NULL, "pcppi", DV_DULL
 };
 
-static void pcppi_bell_stop(void *);
+static void pcppi_bell_stop __P((void*));
 
 #define PCPPIPRI (PZERO - 1)
 
 int
 pcppi_match(parent, match, aux)
 	struct device *parent;
+#ifdef __BROKEN_INDIRECT_CONFIG
 	void *match;
+#else
+	struct cfdata *match;
+#endif
 	void *aux;
 {
 	struct isa_attach_args *ia = aux;
@@ -158,8 +155,6 @@ pcppi_attach(parent, self, aux)
 	bus_space_tag_t iot;
 	struct pcppi_attach_args pa;
 
-	timeout_set(&sc->sc_bell_timeout, pcppi_bell_stop, sc);
-
 	sc->sc_iot = iot = ia->ia_iot;
 
 	if (bus_space_map(iot, IO_TIMER1, 4, 0, &sc->sc_pit1_ioh) ||
@@ -170,17 +165,8 @@ pcppi_attach(parent, self, aux)
 
 	sc->sc_bellactive = sc->sc_bellpitch = sc->sc_slp = 0;
 
-	/* Provide a beeper for the keyboard, if there isn't one already. */
-#if NPCKBD > 0
-	pckbd_hookup_bell(pcppi_kbd_bell, sc);
-#endif
-#if NHIDKBD > 0
-	hidkbd_hookup_bell(pcppi_kbd_bell, sc);
-#endif
-
 	pa.pa_cookie = sc;
-	while (config_found(self, &pa, 0))
-		;
+	while (config_found(self, &pa, 0));
 }
 
 void
@@ -194,10 +180,7 @@ pcppi_bell(self, pitch, period, slp)
 
 	s1 = spltty(); /* ??? */
 	if (sc->sc_bellactive) {
-		if (sc->sc_timeout) {
-			sc->sc_timeout = 0;
-			timeout_del(&sc->sc_bell_timeout);
-		}
+		untimeout(pcppi_bell_stop, sc);
 		if (sc->sc_slp)
 			wakeup(pcppi_bell_stop);
 	}
@@ -224,18 +207,11 @@ pcppi_bell(self, pitch, period, slp)
 	sc->sc_bellpitch = pitch;
 
 	sc->sc_bellactive = 1;
-
-	if (slp & PCPPI_BELL_POLL) {
-		delay((period * 1000000) / hz);
-		pcppi_bell_stop(sc);
-	} else {
-		sc->sc_timeout = 1;
-		timeout_add(&sc->sc_bell_timeout, period);
-		if (slp & PCPPI_BELL_SLEEP) {
-			sc->sc_slp = 1;
-			tsleep(pcppi_bell_stop, PCPPIPRI | PCATCH, "bell", 0);
-			sc->sc_slp = 0;
-		}
+	timeout(pcppi_bell_stop, sc, period);
+	if (slp) {
+		sc->sc_slp = 1;
+		tsleep(pcppi_bell_stop, PCPPIPRI | PCATCH, "bell", 0);
+		sc->sc_slp = 0;
 	}
 	splx(s1);
 }
@@ -248,8 +224,6 @@ pcppi_bell_stop(arg)
 	int s;
 
 	s = spltty(); /* ??? */
-	sc->sc_timeout = 0;
-
 	/* disable bell */
 	bus_space_write_1(sc->sc_iot, sc->sc_ppi_ioh, 0,
 			  bus_space_read_1(sc->sc_iot, sc->sc_ppi_ioh, 0)
@@ -259,18 +233,3 @@ pcppi_bell_stop(arg)
 		wakeup(pcppi_bell_stop);
 	splx(s);
 }
-
-#if NPCKBD > 0 || NHIDKBD > 0
-void
-pcppi_kbd_bell(arg, pitch, period, volume, poll)
-	void *arg;
-	u_int pitch, period, volume;
-	int poll;
-{
-	/*
-	 * Comes in as ms, goes out as ticks; volume ignored.
-	 */
-	pcppi_bell(arg, volume ? pitch : 0, (period * hz) / 1000,
-	    poll ? PCPPI_BELL_POLL : 0);
-}
-#endif /* NPCKBD > 0 || NHIDKBD > 0 */

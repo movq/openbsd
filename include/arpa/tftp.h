@@ -1,4 +1,4 @@
-/*	$OpenBSD: tftp.h,v 1.8 2006/07/26 16:43:30 deraadt Exp $	*/
+/*	$OpenBSD: tftp.h,v 1.3 1997/09/21 10:46:04 niklas Exp $	*/
 /*	$NetBSD: tftp.h,v 1.3 1994/10/26 00:56:48 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -39,8 +43,6 @@
  * Trivial File Transfer Protocol (IEN-133)
  */
 #define	SEGSIZE		512		/* data segment size */
-#define SEGSIZE_MIN	8		/* minimal data segment size */
-#define SEGSIZE_MAX	65464		/* maximal data segment size */
 
 /*
  * Packet types.
@@ -50,7 +52,6 @@
 #define	DATA	03			/* data packet */
 #define	ACK	04			/* acknowledgement */
 #define	ERROR	05			/* error code */
-#define	OACK	06			/* option acknowledgement */
 
 struct	tftphdr {
 	u_int16_t th_opcode;		/* packet type */
@@ -78,6 +79,5 @@ struct	tftphdr {
 #define	EBADID		5		/* unknown transfer ID */
 #define	EEXISTS		6		/* file already exists */
 #define	ENOUSER		7		/* no such user */
-#define	EOPTNEG		8		/* option negotiation failed */
 
 #endif /* !_TFTP_H_ */

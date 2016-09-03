@@ -1,4 +1,4 @@
-/*	$OpenBSD: pcmciavar.h,v 1.21 2010/09/04 12:59:27 miod Exp $	*/
+/*	$OpenBSD: pcmciavar.h,v 1.12 1999/08/16 16:51:20 deraadt Exp $	*/
 /*	$NetBSD: pcmciavar.h,v 1.5 1998/07/19 17:28:17 christos Exp $	*/
 
 /*
@@ -124,11 +124,11 @@ struct pcmcia_function {
 #define	pf_ccrh		pf_pcmh.memh
 #define	pf_ccr_mhandle	pf_pcmh.mhandle
 #define	pf_ccr_realsize	pf_pcmh.realsize
-	bus_size_t	pf_ccr_offset;
+	bus_addr_t	pf_ccr_offset;
 	int		pf_ccr_window;
-	bus_addr_t	pf_mfc_iobase;
-	bus_addr_t	pf_mfc_iomax;
-	int		(*ih_fct)(void *);
+	long		pf_mfc_iobase;
+	long		pf_mfc_iomax;
+	int		(*ih_fct) __P((void *));
 	void		*ih_arg;
 	int		ih_ipl;
 	int		pf_flags;
@@ -193,21 +193,20 @@ struct pcmcia_attach_args {
 struct pcmcia_tuple {
 	unsigned int	code;
 	unsigned int	length;
-	unsigned int	addrshift;
-	unsigned int	flags;
-#define	PTF_INDIRECT	0x01
-	bus_size_t	indirect_ptr;
-	bus_size_t	ptr;
+	u_long		mult;
+	bus_addr_t	ptr;
 	bus_space_tag_t	memt;
 	bus_space_handle_t memh;
 };
 
-void	pcmcia_read_cis(struct pcmcia_softc *);
-void	pcmcia_check_cis_quirks(struct pcmcia_softc *);
-void	pcmcia_print_cis(struct pcmcia_softc *);
-int	pcmcia_scan_cis(struct device * dev,
-	    int (*) (struct pcmcia_tuple *, void *), void *);
-uint8_t	pcmcia_cis_read_1(struct pcmcia_tuple *, bus_size_t);
+void	pcmcia_read_cis __P((struct pcmcia_softc *));
+void	pcmcia_check_cis_quirks __P((struct pcmcia_softc *));
+void	pcmcia_print_cis __P((struct pcmcia_softc *));
+int	pcmcia_scan_cis __P((struct device * dev,
+	    int (*) (struct pcmcia_tuple *, void *), void *));
+
+#define	pcmcia_cis_read_1(tuple, idx0)					\
+	(bus_space_read_1((tuple)->memt, (tuple)->memh, (tuple)->mult*(idx0)))
 
 #define	pcmcia_tuple_read_1(tuple, idx1)				\
 	(pcmcia_cis_read_1((tuple), ((tuple)->ptr+(2+(idx1)))))
@@ -236,23 +235,26 @@ uint8_t	pcmcia_cis_read_1(struct pcmcia_tuple *, bus_size_t);
 #define	PCMCIA_SPACE_MEMORY	1
 #define	PCMCIA_SPACE_IO		2
 
-int	pcmcia_ccr_read(struct pcmcia_function *, int);
-void	pcmcia_ccr_write(struct pcmcia_function *, int, int);
+int	pcmcia_ccr_read __P((struct pcmcia_function *, int));
+void	pcmcia_ccr_write __P((struct pcmcia_function *, int, int));
 
-#define	pcmcia_mfc(sc)	(SIMPLEQ_FIRST(&(sc)->card.pf_head) &&		\
-    SIMPLEQ_NEXT(SIMPLEQ_FIRST(&(sc)->card.pf_head), pf_list))
+#define	pcmcia_mfc(sc)	((sc)->card.pf_head.sqh_first &&		\
+			 (sc)->card.pf_head.sqh_first->pf_list.sqe_next)
 
-void	pcmcia_function_init(struct pcmcia_function *,
-	    struct pcmcia_config_entry *);
-int	pcmcia_function_enable(struct pcmcia_function *);
-void	pcmcia_function_disable(struct pcmcia_function *);
+void	pcmcia_function_init __P((struct pcmcia_function *,
+	    struct pcmcia_config_entry *));
+int	pcmcia_function_enable __P((struct pcmcia_function *));
+void	pcmcia_function_disable __P((struct pcmcia_function *));
 
 #define	pcmcia_io_alloc(pf, start, size, align, pciop)			\
 	(pcmcia_chip_io_alloc((pf)->sc->pct, pf->sc->pch, (start),	\
 	 (size), (align), (pciop)))
 
-int	pcmcia_io_map(struct pcmcia_function *, int, bus_addr_t,
-	    bus_size_t, struct pcmcia_io_handle *, int *);
+#define	pcmcia_io_free(pf, pciohp)					\
+	(pcmcia_chip_io_free((pf)->sc->pct, (pf)->sc->pch, (pciohp)))
+
+int	pcmcia_io_map __P((struct pcmcia_function *, int, bus_addr_t,
+	    bus_size_t, struct pcmcia_io_handle *, int *));
 
 #define	pcmcia_io_unmap(pf, window)					\
 	(pcmcia_chip_io_unmap((pf)->sc->pct, (pf)->sc->pch, (window)))
@@ -273,7 +275,6 @@ int	pcmcia_io_map(struct pcmcia_function *, int, bus_addr_t,
 #define	pcmcia_mem_unmap(pf, window)					\
 	(pcmcia_chip_mem_unmap((pf)->sc->pct, (pf)->sc->pch, (window)))
 
-void	*pcmcia_intr_establish(struct pcmcia_function *, int,
-	    int (*) (void *), void *, char *);
-void 	pcmcia_intr_disestablish(struct pcmcia_function *, void *);
-const char *pcmcia_intr_string(struct pcmcia_function *, void *);
+void	*pcmcia_intr_establish __P((struct pcmcia_function *, int,
+	    int (*) (void *), void *));
+void 	pcmcia_intr_disestablish __P((struct pcmcia_function *, void *));

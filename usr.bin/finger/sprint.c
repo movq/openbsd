@@ -1,4 +1,4 @@
-/*	$OpenBSD: sprint.c,v 1.16 2015/08/20 22:32:41 deraadt Exp $	*/
+/*	$OpenBSD: sprint.c,v 1.5 1998/07/10 15:45:18 mickey Exp $	*/
 
 /*
  * Copyright (c) 1989 The Regents of the University of California.
@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,17 +36,22 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+/*static char sccsid[] = "from: @(#)sprint.c	5.8 (Berkeley) 12/4/90";*/
+static char rcsid[] = "$OpenBSD: sprint.c,v 1.5 1998/07/10 15:45:18 mickey Exp $";
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/time.h>
+#include <tzfile.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <err.h>
 #include "finger.h"
 #include "extern.h"
 
 void
-sflag_print(void)
+sflag_print()
 {
 	PERSON *pn;
 	WHERE *w;
@@ -68,20 +77,17 @@ sflag_print(void)
 	 *		office location
 	 *		office phone
 	 */
-#define NAME_WIDTH	8
 #define	MAXREALNAME	20
 #define	MAXHOSTNAME	20
-	(void)printf("%-*.*s %-*s %s %s\n",
-	    NAME_WIDTH, UT_NAMESIZE, "Login", MAXREALNAME,
+	(void)printf("%-*s %-*s %s %s\n", UT_NAMESIZE, "Login", MAXREALNAME,
 	    "Name", "Tty  Idle  Login Time  ",
 	    (oflag) ? "Office     Office Phone" : "Where");
 	for (cnt = 0; cnt < entries; ++cnt) {
 		pn = list[cnt];
 		for (w = pn->whead; w != NULL; w = w->next) {
-			(void)printf("%-*.*s %-*.*s ",
-			    NAME_WIDTH, UT_NAMESIZE, pn->name,
-			    MAXREALNAME, MAXREALNAME,
-			    pn->realname ? pn->realname : "");
+			(void)printf("%-*.*s %-*.*s ", UT_NAMESIZE, UT_NAMESIZE,
+			    vs(pn->name), MAXREALNAME, MAXREALNAME,
+			    pn->realname ? vs(pn->realname) : "");
 			if (!w->loginat) {
 				(void)printf("  *     *  No logins   ");
 				goto office;
@@ -100,12 +106,11 @@ sflag_print(void)
 			} else
 				(void)printf("    *  ");
 			p = ctime(&w->loginat);
-
-			if (now - w->loginat < SECSPERDAY * 6)
+			if (now - w->loginat < SECSPERDAY * (DAYSPERWEEK - 1))
 				(void)printf("   %.3s", p);
 			else
 				(void)printf("%.6s", p + 4);
-			if (now - w->loginat >= SIXMONTHS)
+			if (now - w->loginat >= SECSPERDAY * DAYSPERNYEAR / 2)
 				(void)printf(" %.4s ", p + 20);
 			else
 				(void)printf(" %.5s", p + 11);
@@ -113,12 +118,13 @@ office:
 			putchar(' ');
 			if (oflag) {
 				if (pn->office)
-					(void)printf("%-10.10s", pn->office);
+					(void)printf("%-10.10s",
+					    vs(pn->office));
 				else if (pn->officephone)
 					(void)printf("%-10.10s", " ");
 				if (pn->officephone)
 					(void)printf(" %-.15s",
-					    prphone(pn->officephone));
+					    vs(prphone(pn->officephone)));
 			} else
 				(void)printf("%.*s", MAXHOSTNAME, w->host);
 			putchar('\n');
@@ -127,41 +133,42 @@ office:
 }
 
 PERSON **
-sort(void)
+sort()
 {
 	PERSON *pn, **lp;
 	PERSON **list;
 
-	if (!(list = calloc((u_int)entries, sizeof(PERSON *))))
+	if (!(list = (PERSON **)malloc((u_int)(entries * sizeof(PERSON *)))))
 		err(1, "malloc");
 	for (lp = list, pn = phead; pn != NULL; pn = pn->next)
 		*lp++ = pn;
 	(void)qsort(list, entries, sizeof(PERSON *), psort);
-	return (list);
+	return(list);
 }
 
 int
-psort(const void *p, const void *t)
+psort(p, t)
+	const void *p, *t;
 {
-	return (strcmp((*(PERSON **)p)->name, (*(PERSON **)t)->name));
+	return(strcmp((*(PERSON **)p)->name, (*(PERSON **)t)->name));
 }
 
 void
-stimeprint(WHERE *w)
+stimeprint(w)
+	WHERE *w;
 {
 	struct tm *delta;
 
 	delta = gmtime(&w->idletime);
-	if (!delta->tm_yday) {
-		if (!delta->tm_hour) {
+	if (!delta->tm_yday)
+		if (!delta->tm_hour)
 			if (!delta->tm_min)
 				(void)printf("    -");
 			else
 				(void)printf("%5d", delta->tm_min);
-		 } else {
+		else
 			(void)printf("%2d:%02d",
 			    delta->tm_hour, delta->tm_min);
-		 }
-	} else
+	else
 		(void)printf("%4dd", delta->tm_yday);
 }

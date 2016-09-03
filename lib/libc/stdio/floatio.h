@@ -1,4 +1,4 @@
-/*	$OpenBSD: floatio.h,v 1.5 2015/09/14 12:49:33 guenther Exp $	*/
+/*	$OpenBSD: floatio.h,v 1.2 1996/08/19 08:32:38 tholo Exp $	*/
 
 /*-
  * Copyright (c) 1990, 1993
@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -40,15 +44,3 @@
 #define	MAXEXP		308
 /* 128 bit fraction takes up 39 decimal digits; max reasonable precision */
 #define	MAXFRACT	39
-
-/*
- * MAXEXPDIG is the maximum number of decimal digits needed to store a
- * floating point exponent in the largest supported format.  It should
- * be ceil(log10(LDBL_MAX_10_EXP)) or, if hexadecimal floating point
- * conversions are supported, ceil(log10(LDBL_MAX_EXP)).  But since it
- * is presently never greater than 5 in practice, we fudge it.
- */
-#define	MAXEXPDIG	6
-#if LDBL_MAX_EXP > 999999
-#error "floating point buffers too small"
-#endif

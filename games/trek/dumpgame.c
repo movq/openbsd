@@ -1,4 +1,4 @@
-/*	$OpenBSD: dumpgame.c,v 1.12 2016/01/07 14:37:51 mestre Exp $	*/
+/*	$OpenBSD: dumpgame.c,v 1.4 1999/03/12 03:02:41 pjanzen Exp $	*/
 /*	$NetBSD: dumpgame.c,v 1.4 1995/04/24 12:25:54 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,11 +34,18 @@
  * SUCH DAMAGE.
  */
 
-#include <err.h>
-#include <fcntl.h>
-#include <stdio.h>
-#include <unistd.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)dumpgame.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: dumpgame.c,v 1.4 1999/03/12 03:02:41 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
+#include <stdio.h>
+#include <err.h>
+#include <unistd.h>
+#include <fcntl.h>
 #include "trek.h"
 
 /***  THIS CONSTANT MUST CHANGE AS THE DATA SPACES CHANGE ***/
@@ -61,7 +72,7 @@ struct dump	Dump_template[] =
 	{ NULL,			0 }
 };
 
-static int readdump(int);
+static int readdump __P((int));
 
 /*
 **  DUMP GAME
@@ -74,14 +85,15 @@ static int readdump(int);
 */
 
 void
-dumpgame(int v)
+dumpgame(v)
+	int v;
 {
-	int		version;
-	int		fd;
-	struct dump	*d;
-	int		i;
+	int			version;
+	register int		fd;
+	register struct dump	*d;
+	register int		i;
 
-	if ((fd = open("trek.dump", O_CREAT | O_TRUNC | O_WRONLY, 0644)) < 0)
+	if ((fd = creat("trek.dump", 0644)) < 0)
 	{
 		warn("cannot open `trek.dump'");
 		return;
@@ -113,18 +125,18 @@ dumpgame(int v)
 */
 
 int
-restartgame(void)
+restartgame()
 {
-	int	fd, version;
+	register int	fd;
+	int		version;
 
-	if ((fd = open("trek.dump", O_RDONLY)) == -1 ||
+	if ((fd = open("trek.dump", O_RDONLY)) < 0 ||
 	    read(fd, &version, sizeof version) != sizeof version ||
 	    version != VERSION ||
 	    readdump(fd))
 	{
 		printf("cannot restart\n");
-		if (fd != -1)
-			close(fd);
+		close(fd);
 		return (1);
 	}
 
@@ -143,11 +155,13 @@ restartgame(void)
 */
 
 static int
-readdump(int fd1)
+readdump(fd1)
+	int	fd1;
 {
-	int		fd, i;
-	struct dump	*d;
-	long		junk;
+	register int		fd;
+	register struct dump	*d;
+	register int		i;
+	long			junk;
 
 	fd = fd1;
 

@@ -1,4 +1,4 @@
-/*	$OpenBSD: ypdb.c,v 1.12 2015/01/16 06:40:22 deraadt Exp $ */
+/*	$OpenBSD: ypdb.c,v 1.5 1997/02/09 09:49:36 maja Exp $ */
 
 /*
  * Copyright (c) 1990, 1993
@@ -19,7 +19,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -36,27 +40,47 @@
  * SUCH DAMAGE.
  */
 
+#include <sys/param.h>
 #include <sys/types.h>
 #include <stdio.h>
 #include <string.h>
 
-#include <rpcsvc/yp.h>
-
 #include "ypdb.h"
+
+#ifdef YPDB_PATCH
+extern DBM *__hash_open();
+#else
+extern DBM *__bt_open();
+#endif
 
 /*
  * Returns:
- *	*DBM on success
- *	NULL on failure
+ * 	*DBM on success
+ *	 NULL on failure
  */
+
 extern DBM *
-ypdb_open(const char *file, int flags, int mode)
+ypdb_open(file, flags, mode)
+	const char *file;
+	int flags, mode;
 {
+#ifdef YPDB_PATCH
+	HASHINFO info;
+	char path[MAXPATHLEN];
+
+	info.bsize = 4096;
+	info.ffactor = 40;
+	info.nelem = 1;
+	info.cachesize = NULL;
+	info.hash = NULL;
+	info.lorder = 0;
+	snprintf(path, sizeof(path), "%s%s", file, YPDB_SUFFIX);
+	return ((DBM *)__hash_open(path, flags, mode, &info, 0));
+#else
 	BTREEINFO info;
-	char path[PATH_MAX];
+	char path[MAXPATHLEN];
 	DBM *db;
 
-	memset(&info, 0, sizeof info);
 	info.flags = 0;
 	info.cachesize = 0;
 	info.maxkeypage = 0;
@@ -66,22 +90,36 @@ ypdb_open(const char *file, int flags, int mode)
 	info.prefix = NULL;
 	info.lorder = 0;
 	snprintf(path, sizeof(path), "%s%s", file, YPDB_SUFFIX);
-	db = (DBM *)dbopen(path, flags, mode, DB_BTREE, (void *)&info);
+	db = (DBM *)__bt_open(path, flags, mode, &info, 0);
 	return (db);
+#endif
 }
 
 /*
  * Returns:
- *	*DBM on success
- *	NULL on failure
+ * 	*DBM on success
+ *	 NULL on failure
  */
+
 extern DBM *
-ypdb_open_suf(const char *file, int flags, int mode)
+ypdb_open_suf(file, flags, mode)
+	const char *file;
+	int flags, mode;
 {
+#ifdef YPDB_PATCH
+	HASHINFO info;
+
+	info.bsize = 4096;
+	info.ffactor = 40;
+	info.nelem = 1;
+	info.cachesize = NULL;
+	info.hash = NULL;
+	info.lorder = 0;
+	return ((DBM *)__hash_open(file, flags, mode, &info, 0));
+#else
 	BTREEINFO info;
 	DBM *db;
 
-	memset(&info, 0, sizeof info);
 	info.flags = 0;
 	info.cachesize = 0;
 	info.maxkeypage = 0;
@@ -90,12 +128,14 @@ ypdb_open_suf(const char *file, int flags, int mode)
 	info.compare = NULL;
 	info.prefix = NULL;
 	info.lorder = 0;
-	db = (DBM *)dbopen(file, flags, mode, DB_BTREE, (void *)&info);
+	db = (DBM *)__bt_open(file, flags, mode, &info, 0);
 	return (db);
+#endif
 }
 
 extern void
-ypdb_close(DBM *db)
+ypdb_close(db)
+	DBM *db;
 {
 	(void)(db->close)(db);
 }
@@ -105,23 +145,19 @@ ypdb_close(DBM *db)
  *	DATUM on success
  *	NULL on failure
  */
+
 extern datum
-ypdb_fetch(DBM *db, datum key)
+ypdb_fetch(db, key)
+	DBM *db;
+	datum key;
 {
 	datum retval;
-	DBT nk, nd;
 	int status;
 
-	nk.data = key.dptr;
-	nk.size = key.dsize;
-
-	status = (db->get)(db, &nk, &nd, 0);
+	status = (db->get)(db, (DBT *)&key, (DBT *)&retval, 0);
 	if (status) {
 		retval.dptr = NULL;
 		retval.dsize = 0;
-	} else {
-		retval.dptr = nd.data;
-		retval.dsize = nd.size;
 	}
 	return (retval);
 }
@@ -133,20 +169,15 @@ ypdb_fetch(DBM *db, datum key)
  */
 
 extern datum
-ypdb_firstkey(DBM *db)
+ypdb_firstkey(db)
+	DBM *db;
 {
 	int status;
-	datum retkey;
-	DBT nk, nd;
+	datum retdata, retkey;
 
-	status = (db->seq)(db, &nk, &nd, R_FIRST);
-	if (status) {
+	status = (db->seq)(db, (DBT *)&retkey, (DBT *)&retdata, R_FIRST);
+	if (status)
 		retkey.dptr = NULL;
-		retkey.dsize = 0;
-	} else {
-		retkey.dptr = nk.data;
-		retkey.dsize = nk.size;
-	}
 	return (retkey);
 }
 
@@ -157,20 +188,15 @@ ypdb_firstkey(DBM *db)
  */
 
 extern datum
-ypdb_nextkey(DBM *db)
+ypdb_nextkey(db)
+	DBM *db;
 {
 	int status;
-	datum retkey;
-	DBT nk, nd;
+	datum retdata, retkey;
 
-	status = (db->seq)(db, &nk, &nd, R_NEXT);
-	if (status) {
+	status = (db->seq)(db, (DBT *)&retkey, (DBT *)&retdata, R_NEXT);
+	if (status)
 		retkey.dptr = NULL;
-		retkey.dsize = 0;
-	} else {
-		retkey.dptr = nk.data;
-		retkey.dsize = nk.size;
-	}
 	return (retkey);
 }
 
@@ -181,19 +207,52 @@ ypdb_nextkey(DBM *db)
  */
 
 extern datum
-ypdb_setkey(DBM *db, datum key)
+ypdb_setkey(db, key)
+	DBM *db;
+        datum key;
 {
 	int status;
-	DBT nk, nd;
+	datum retdata;
+#ifdef YPDB_PATCH
+	datum retkey;
 
-	nk.data = key.dptr;
-	nk.size = key.dsize;
-	status = (db->seq)(db, &nk, &nd, R_CURSOR);
-	if (status) {
+	status = (db->seq)(db, (DBT *)&retkey, (DBT *)&retdata, R_FIRST);
+	if (status)
+		retkey.dptr = NULL;
+	while ((retkey.dptr != NULL) &&
+	       ((retkey.dsize != key.dsize) ||
+		(strncmp(key.dptr,retkey.dptr,retkey.dsize) != 0))) {
+	  status = (db->seq)(db, (DBT *)&retkey, (DBT *)&retdata, R_NEXT);
+	  if (status)
+	  	retkey.dptr = NULL;
+	};
+	return (retkey);
+#else
+	status = (db->seq)(db, (DBT *)&key, (DBT *)&retdata, R_CURSOR);
+	if (status)
 		key.dptr = NULL;
-		key.dsize = 0;
-	}
 	return (key);
+#endif
+}
+
+/*
+ * Returns:
+ *	 0 on success
+ *	<0 failure
+ */
+
+int
+ypdb_delete(db, key)
+	DBM *db;
+	datum key;
+{
+	int status;
+
+	status = (db->del)(db, (DBT *)&key, 0);
+	if (status)
+		return (-1);
+	else
+		return (0);
 }
 
 /*
@@ -202,17 +261,14 @@ ypdb_setkey(DBM *db, datum key)
  *	<0 failure
  *	 1 if YPDB_INSERT and entry exists
  */
-int
-ypdb_store(DBM *db, datum key, datum content, int flags)
-{
-	DBT nk, nd;
 
-	if (key.dsize > YPMAXRECORD || content.dsize > YPMAXRECORD)
-		return -1;
-	nk.data = key.dptr;
-	nk.size = key.dsize;
-	nd.data = content.dptr;
-	nd.size = content.dsize;
-	return ((db->put)(db, &nk, &nd,
+int
+ypdb_store(db, key, content, flags)
+	DBM *db;
+	datum key, content;
+	int flags;
+{
+	return ((db->put)(db, (DBT *)&key, (DBT *)&content,
 	    (flags == YPDB_INSERT) ? R_NOOVERWRITE : 0));
 }
+

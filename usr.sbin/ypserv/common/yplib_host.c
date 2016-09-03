@@ -1,4 +1,4 @@
-/*	$OpenBSD: yplib_host.c,v 1.19 2015/09/11 12:42:47 deraadt Exp $ */
+/*	$OpenBSD: yplib_host.c,v 1.9 1998/02/14 10:05:26 maja Exp $ */
 
 /*
  * Copyright (c) 1992, 1993 Theo de Raadt <deraadt@theos.com>
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Theo de Raadt.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
  * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -26,6 +31,11 @@
  * SUCH DAMAGE.
  */
 
+#ifndef LINT
+static char *rcsid = "$OpenBSD: yplib_host.c,v 1.9 1998/02/14 10:05:26 maja Exp $";
+#endif
+
+#include <sys/param.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/file.h>
@@ -36,45 +46,58 @@
 #include <string.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <sys/socket.h>
 #include <netdb.h>
 #include <unistd.h>
 #include <rpc/rpc.h>
 #include <rpc/xdr.h>
 #include <rpcsvc/yp.h>
 #include <rpcsvc/ypclnt.h>
-#include "yplib_host.h"
+
+extern bool_t xdr_domainname(), xdr_ypbind_resp();
+extern bool_t xdr_ypreq_key(), xdr_ypresp_val();
+extern bool_t xdr_ypreq_nokey(), xdr_ypresp_key_val();
+extern bool_t xdr_ypresp_all(), xdr_ypresp_all_seq();
+extern bool_t xdr_ypresp_master();
+
+extern int (*ypresp_allfn)();
+extern void *ypresp_data;
 
 int _yplib_host_timeout = 10;
 
 CLIENT *
-yp_bind_host(char *server, u_long program, u_long version, u_short port,
-    int usetcp)
+yp_bind_host(server,program,version,port,usetcp)
+char *server;
+u_long	program,version;
+u_short port;
+int usetcp;
 {
 	struct sockaddr_in rsrv_sin;
-	static CLIENT *client;
+	int rsrv_sock;
 	struct hostent *h;
 	struct timeval tv;
-	int rsrv_sock;
+	static CLIENT *client;
 
 	memset(&rsrv_sin, 0, sizeof rsrv_sin);
 	rsrv_sin.sin_len = sizeof rsrv_sin;
 	rsrv_sin.sin_family = AF_INET;
 	rsrv_sock = RPC_ANYSOCK;
-	if (port != 0)
+	if (port != 0) {
 		rsrv_sin.sin_port = htons(port);
+	}
 
-	if (*server >= '0' && *server <= '9') {
-		if (inet_aton(server, &rsrv_sin.sin_addr) == 0) {
+	if ((*server >= '0') && (*server <= '9')) {
+		if(inet_aton(server,&rsrv_sin.sin_addr) == 0) {
 			fprintf(stderr, "inet_aton: invalid address %s.\n",
-			    server);
-			exit(1);
+				server);
+	                exit(1);
 		}
 	} else {
 		h = gethostbyname(server);
-		if (h == NULL) {
+		if(h == NULL) {
 			fprintf(stderr, "gethostbyname: unknown host %s.\n",
-			    server);
-			exit(1);
+				server);
+	                exit(1);
 		}
 		rsrv_sin.sin_addr.s_addr = *(u_int32_t *)h->h_addr;
 	}
@@ -82,28 +105,32 @@ yp_bind_host(char *server, u_long program, u_long version, u_short port,
 	tv.tv_sec = 10;
 	tv.tv_usec = 0;
 
-	if (usetcp)
+	if (usetcp) {
 		client = clnttcp_create(&rsrv_sin, program, version,
-		    &rsrv_sock, 0, 0);
-	else
+					&rsrv_sock, 0, 0);
+	} else {
 		client = clntudp_create(&rsrv_sin, program, version, tv,
-		    &rsrv_sock);
+					&rsrv_sock);
+	}
 
 	if (client == NULL) {
 		fprintf(stderr, "clntudp_create: no contact with host %s.\n",
-		    server);
-		exit(1);
+			server);
+	        exit(1);
 	}
+
 	return(client);
+	
 }
 
 CLIENT *
-yp_bind_local(u_long program, u_long version)
+yp_bind_local(program,version)
+u_long	program,version;
 {
 	struct sockaddr_in rsrv_sin;
-	static CLIENT *client;
-	struct timeval tv;
 	int rsrv_sock;
+	struct timeval tv;
+	static CLIENT *client;
 
 	memset(&rsrv_sin, 0, sizeof rsrv_sin);
 	rsrv_sin.sin_len = sizeof rsrv_sin;
@@ -117,18 +144,26 @@ yp_bind_local(u_long program, u_long version)
 	client = clntudp_create(&rsrv_sin, program, version, tv, &rsrv_sock);
 	if (client == NULL) {
 		fprintf(stderr,"clntudp_create: no contact with localhost.\n");
-		exit(1);
+	        exit(1);
 	}
+
 	return(client);
+	
 }
 
 int
-yp_match_host(CLIENT *client, char *indomain, char *inmap, const char *inkey,
-    int inkeylen, char **outval, int *outvallen)
+yp_match_host(client, indomain, inmap, inkey, inkeylen, outval, outvallen)
+CLIENT *client;
+char *indomain;
+char *inmap;
+const char *inkey;
+int inkeylen;
+char **outval;
+int *outvallen;
 {
 	struct ypresp_val yprv;
-	struct ypreq_key yprk;
 	struct timeval tv;
+	struct ypreq_key yprk;
 	int r;
 
 	*outval = NULL;
@@ -145,12 +180,13 @@ yp_match_host(CLIENT *client, char *indomain, char *inmap, const char *inkey,
 	memset(&yprv, 0, sizeof yprv);
 
 	r = clnt_call(client, YPPROC_MATCH,
-	    xdr_ypreq_key, &yprk, xdr_ypresp_val, &yprv, tv);
-	if (r != RPC_SUCCESS)
+		xdr_ypreq_key, &yprk, xdr_ypresp_val, &yprv, tv);
+	if(r != RPC_SUCCESS) {
 		clnt_perror(client, "yp_match_host: clnt_call");
-	if ( !(r = ypprot_err(yprv.stat)) ) {
+	}
+	if( !(r=ypprot_err(yprv.stat)) ) {
 		*outvallen = yprv.val.valdat_len;
-		*outval = malloc(*outvallen+1);
+		*outval = (char *)malloc(*outvallen+1);
 		memcpy(*outval, yprv.val.valdat_val, *outvallen);
 		(*outval)[*outvallen] = '\0';
 	}
@@ -159,8 +195,14 @@ yp_match_host(CLIENT *client, char *indomain, char *inmap, const char *inkey,
 }
 
 int
-yp_first_host(CLIENT *client, char *indomain, char *inmap, char **outkey,
-    int *outkeylen, char **outval, int *outvallen)
+yp_first_host(client, indomain, inmap, outkey, outkeylen, outval, outvallen)
+CLIENT *client;
+char *indomain;
+char *inmap;
+char **outkey;
+int *outkeylen;
+char **outval;
+int *outvallen;
 {
 	struct ypresp_key_val yprkv;
 	struct ypreq_nokey yprnk;
@@ -178,16 +220,17 @@ yp_first_host(CLIENT *client, char *indomain, char *inmap, char **outkey,
 	memset(&yprkv, 0, sizeof yprkv);
 
 	r = clnt_call(client, YPPROC_FIRST,
-	    xdr_ypreq_nokey, &yprnk, xdr_ypresp_key_val, &yprkv, tv);
-	if (r != RPC_SUCCESS)
+		xdr_ypreq_nokey, &yprnk, xdr_ypresp_key_val, &yprkv, tv);
+	if(r != RPC_SUCCESS) {
 		clnt_perror(client, "yp_first_host: clnt_call");
-	if ( !(r = ypprot_err(yprkv.stat)) ) {
+	}
+	if( !(r=ypprot_err(yprkv.stat)) ) {
 		*outkeylen = yprkv.key.keydat_len;
-		*outkey = malloc(*outkeylen+1);
+		*outkey = (char *)malloc(*outkeylen+1);
 		memcpy(*outkey, yprkv.key.keydat_val, *outkeylen);
 		(*outkey)[*outkeylen] = '\0';
 		*outvallen = yprkv.val.valdat_len;
-		*outval = malloc(*outvallen+1);
+		*outval = (char *)malloc(*outvallen+1);
 		memcpy(*outval, yprkv.val.valdat_val, *outvallen);
 		(*outval)[*outvallen] = '\0';
 	}
@@ -196,8 +239,16 @@ yp_first_host(CLIENT *client, char *indomain, char *inmap, char **outkey,
 }
 
 int
-yp_next_host(CLIENT *client, char *indomain, char *inmap, char *inkey,
-    int inkeylen, char **outkey, int *outkeylen, char **outval, int *outvallen)
+yp_next_host(client, indomain, inmap, inkey, inkeylen, outkey, outkeylen, outval, outvallen)
+CLIENT *client;
+char *indomain;
+char *inmap;
+char *inkey;
+int inkeylen;
+char **outkey;
+int *outkeylen;
+char **outval;
+int *outvallen;
 {
 	struct ypresp_key_val yprkv;
 	struct ypreq_key yprk;
@@ -217,16 +268,17 @@ yp_next_host(CLIENT *client, char *indomain, char *inmap, char *inkey,
 	memset(&yprkv, 0, sizeof yprkv);
 
 	r = clnt_call(client, YPPROC_NEXT,
-	    xdr_ypreq_key, &yprk, xdr_ypresp_key_val, &yprkv, tv);
-	if (r != RPC_SUCCESS)
+		xdr_ypreq_key, &yprk, xdr_ypresp_key_val, &yprkv, tv);
+	if(r != RPC_SUCCESS) {
 		clnt_perror(client, "yp_next_host: clnt_call");
-	if ( !(r = ypprot_err(yprkv.stat)) ) {
+	}
+	if( !(r=ypprot_err(yprkv.stat)) ) {
 		*outkeylen = yprkv.key.keydat_len;
-		*outkey = malloc(*outkeylen+1);
+		*outkey = (char *)malloc(*outkeylen+1);
 		memcpy(*outkey, yprkv.key.keydat_val, *outkeylen);
 		(*outkey)[*outkeylen] = '\0';
 		*outvallen = yprkv.val.valdat_len;
-		*outval = malloc(*outvallen+1);
+		*outval = (char *)malloc(*outvallen+1);
 		memcpy(*outval, yprkv.val.valdat_val, *outvallen);
 		(*outval)[*outvallen] = '\0';
 	}
@@ -234,68 +286,12 @@ yp_next_host(CLIENT *client, char *indomain, char *inmap, char *inkey,
 	return r;
 }
 
-int (*ypserv_ypresp_allfn)(u_long, char *, int, char *, int, void *);
-void *ypserv_ypresp_data;
-
-bool_t
-ypserv_xdr_ypresp_all_seq(XDR *xdrs, u_long *objp)
-{
-	struct ypresp_all out;
-	u_long status;
-	char *key, *val;
-	int size;
-	int done = 0;  /* set to 1 when the user does not want more data */
-	bool_t rc = TRUE;  /* FALSE at the end of loop signals failure */
-
-	memset(&out, 0, sizeof out);
-	while (rc && !done) {
-		rc = FALSE;
-		if (!xdr_ypresp_all(xdrs, &out)) {
-			*objp = (u_long)YP_YPERR;
-			goto fail;
-		}
-		if (out.more == 0)
-			goto fail;
-		status = out.ypresp_all_u.val.stat;
-		if (status == YP_TRUE) {
-			size = out.ypresp_all_u.val.key.keydat_len;
-			if ((key = malloc(size + 1)) == NULL) {
-				*objp = (u_long)YP_YPERR;
-				goto fail;
-			}
-			(void)memcpy(key, out.ypresp_all_u.val.key.keydat_val,
-			    size);
-			key[size] = '\0';
-
-			size = out.ypresp_all_u.val.val.valdat_len;
-			if ((val = malloc(size + 1)) == NULL) {
-				free(key);
-				*objp = (u_long)YP_YPERR;
-				goto fail;
-			}
-			(void)memcpy(val, out.ypresp_all_u.val.val.valdat_val,
-			    size);
-			val[size] = '\0';
-
-			done = (*ypserv_ypresp_allfn)(status, key,
-			    out.ypresp_all_u.val.key.keydat_len, val,
-			    out.ypresp_all_u.val.val.valdat_len, ypserv_ypresp_data);
-			free(key);
-			free(val);
-		} else
-			done = 1;
-		if (status != YP_NOMORE)
-			*objp = status;
-		rc = TRUE;
-fail:
-		xdr_free(xdr_ypresp_all, (char *)&out);
-	}
-	return rc;
-}
-
 int
-yp_all_host(CLIENT *client, char *indomain, char *inmap,
-    struct ypall_callback *incallback)
+yp_all_host(client, indomain, inmap, incallback)
+CLIENT *client;
+char *indomain;
+char *inmap;
+struct ypall_callback *incallback;
 {
 	struct ypreq_nokey yprnk;
 	struct timeval tv;
@@ -306,18 +302,23 @@ yp_all_host(CLIENT *client, char *indomain, char *inmap,
 
 	yprnk.domain = indomain;
 	yprnk.map = inmap;
-	ypserv_ypresp_allfn = incallback->foreach;
-	ypserv_ypresp_data = (void *)incallback->data;
+	ypresp_allfn = incallback->foreach;
+	ypresp_data = (void *)incallback->data;
 
 	(void) clnt_call(client, YPPROC_ALL,
-	    xdr_ypreq_nokey, &yprnk, ypserv_xdr_ypresp_all_seq, &status, tv);
-	if (status != YP_FALSE)
+		xdr_ypreq_nokey, &yprnk, xdr_ypresp_all_seq, &status, tv);
+
+	if(status != YP_FALSE)
 		return ypprot_err(status);
 	return 0;
 }
 
 int
-yp_order_host(CLIENT *client, char *indomain, char *inmap, u_int32_t *outorder)
+yp_order_host(client, indomain, inmap, outorder)
+CLIENT *client;
+char *indomain;
+char *inmap;
+u_int32_t *outorder;
 {
 	struct ypresp_order ypro;
 	struct ypreq_nokey yprnk;
@@ -333,16 +334,22 @@ yp_order_host(CLIENT *client, char *indomain, char *inmap, u_int32_t *outorder)
 	memset(&ypro, 0, sizeof ypro);
 
 	r = clnt_call(client, YPPROC_ORDER,
-	    xdr_ypreq_nokey, &yprnk, xdr_ypresp_order, &ypro, tv);
-	if (r != RPC_SUCCESS)
+		xdr_ypreq_nokey, &yprnk, xdr_ypresp_order, &ypro, tv);
+	if(r != RPC_SUCCESS) {
 		clnt_perror(client, "yp_order_host: clnt_call");
+	}
+
 	*outorder = ypro.ordernum;
 	xdr_free(xdr_ypresp_order, (char *)&ypro);
 	return ypprot_err(ypro.stat);
 }
 
 int
-yp_master_host(CLIENT *client, char *indomain, char *inmap, char **outname)
+yp_master_host(client, indomain, inmap, outname)
+CLIENT *client;
+char *indomain;
+char *inmap;
+char **outname;
 {
 	struct ypresp_master yprm;
 	struct ypreq_nokey yprnk;
@@ -351,23 +358,29 @@ yp_master_host(CLIENT *client, char *indomain, char *inmap, char **outname)
 
 	tv.tv_sec = _yplib_host_timeout;
 	tv.tv_usec = 0;
+
 	yprnk.domain = indomain;
 	yprnk.map = inmap;
 
 	memset(&yprm, 0, sizeof yprm);
 
 	r = clnt_call(client, YPPROC_MASTER,
-	    xdr_ypreq_nokey, &yprnk, xdr_ypresp_master, &yprm, tv);
-	if (r != RPC_SUCCESS)
+		xdr_ypreq_nokey, &yprnk, xdr_ypresp_master, &yprm, tv);
+	if(r != RPC_SUCCESS) {
 		clnt_perror(client, "yp_master: clnt_call");
-	if (!(r = ypprot_err(yprm.stat)))
-		*outname = strdup(yprm.peer);
+	}
+	if( !(r=ypprot_err(yprm.stat)) ) {
+		*outname = (char *)strdup(yprm.peer);
+	}
 	xdr_free(xdr_ypresp_master, (char *)&yprm);
 	return r;
 }
 
 int
-yp_maplist_host(CLIENT *client, char *indomain, struct ypmaplist **outmaplist)
+yp_maplist_host(client, indomain, outmaplist)
+CLIENT *client;
+char *indomain;
+struct ypmaplist **outmaplist;
 {
 	struct ypresp_maplist ypml;
 	struct timeval tv;
@@ -379,10 +392,12 @@ yp_maplist_host(CLIENT *client, char *indomain, struct ypmaplist **outmaplist)
 	memset(&ypml, 0, sizeof ypml);
 
 	r = clnt_call(client, YPPROC_MAPLIST,
-	    xdr_domainname, &indomain, xdr_ypresp_maplist, &ypml, tv);
-	if (r != RPC_SUCCESS)
+		xdr_domainname, &indomain, xdr_ypresp_maplist, &ypml, tv);
+	if (r != RPC_SUCCESS) {
 		clnt_perror(client, "yp_maplist: clnt_call");
+	}
 	*outmaplist = ypml.maps;
 	/* NO: xdr_free(xdr_ypresp_maplist, &ypml);*/
 	return ypprot_err(ypml.stat);
 }
+

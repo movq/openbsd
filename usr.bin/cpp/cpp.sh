@@ -1,5 +1,5 @@
-#!/bin/ksh
-#	$OpenBSD: cpp.sh,v 1.9 2013/12/09 02:35:09 guenther Exp $
+#!/bin/sh
+#	$OpenBSD: cpp.sh,v 1.5 1999/06/17 23:27:17 espie Exp $
 
 #
 # Copyright (c) 1990 The Regents of the University of California.
@@ -17,7 +17,11 @@
 # 2. Redistributions in binary form must reproduce the above copyright
 #    notice, this list of conditions and the following disclaimer in the
 #    documentation and/or other materials provided with the distribution.
-# 3. Neither the name of the University nor the names of its contributors
+# 3. All advertising materials mentioning features or use of this software
+#    must display the following acknowledgement:
+#	This product includes software developed by the University of
+#	California, Berkeley and its contributors.
+# 4. Neither the name of the University nor the names of its contributors
 #    may be used to endorse or promote products derived from this software
 #    without specific prior written permission.
 #
@@ -40,12 +44,11 @@
 #	doesn't search gcc-include
 #
 PATH=/usr/bin:/bin
-TRAD=-traditional
-DGNUC="@GNUC@"
-STDINC="-I/usr/include"
-set -A OPTS
-set -A INCS -- "-nostdinc"
-FOUNDFILES=false
+ALST="-traditional -$ -D__GNUC__"
+NSI=no
+OPTS=""
+INCS="-nostdinc"
+FOUNDFILES=no
 
 CPP=/usr/libexec/cpp
 if [ ! -x $CPP ]; then
@@ -63,50 +66,43 @@ do
 
 	case $A in
 	-nostdinc)
-		STDINC=
+		NSI=yes
 		;;
 	-traditional)
-		TRAD=-traditional
-		;;
-	-notraditional)
-		TRAD=
-		;;
-	# options that take an argument and that should be sorted before
-	# the $STDINC option
-	-I | -imacros | -include | -idirafter | -iprefix | -iwithprefix | \
-	-iwithprefixbefore | -isysroot | -imultilib | -isystem | -iquote)
-		INCS[${#INCS[@]}]=$A
-		INCS[${#INCS[@]}]=$1
-		shift
 		;;
 	-I*)
-		INCS[${#INCS[@]}]=$A
-		;;
-	# other options that take an argument
-	-MF | -MT | -MQ | -x | -D | -U | -o | -A)
-		OPTS[${#OPTS[@]}]=$A
-		OPTS[${#OPTS[@]}]=$1
-		shift
+		INCS="$INCS $A"
 		;;
 	-U__GNUC__)
-		DGNUC=
-		OPTS[${#OPTS[@]}]=$A
+		ALST=`echo $ALST | sed -e s/-D__GNUC__//`
+		;;
+	-imacros|-include|-idirafter|-iprefix|-iwithprefix)
+		INCS="$INCS '$A' '$1'"
+		shift
 		;;
 	-*)
-		OPTS[${#OPTS[@]}]=$A
+		OPTS="$OPTS '$A'"
 		;;
 	*)
-		FOUNDFILES=true
-		$CPP $TRAD $DGNUC "${INCS[@]}" $STDINC "${OPTS[@]}" "$A" ||
-			exit
+		FOUNDFILES=yes
+		if [ $NSI = "no" ]
+		then
+			INCS="$INCS -I/usr/include"
+			NSI=skip
+		fi
+		eval $CPP $ALST $INCS $OPTS $A || exit $?
 		;;
 	esac
 done
 
-if ! $FOUNDFILES
+if [ $FOUNDFILES = "no" ]
 then
 	# read standard input
-	exec $CPP $TRAD $DGNUC "${INCS[@]}" $STDINC "${OPTS[@]}"
+	if [ $NSI = "no" ]
+	then
+		INCS="$INCS -I/usr/include"
+	fi
+	eval exec $CPP $ALST $INCS $OPTS
 fi
 
 exit 0

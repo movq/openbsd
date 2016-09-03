@@ -1,4 +1,3 @@
-/*	$OpenBSD: Ovfork.S,v 1.10 2016/05/07 19:05:21 guenther Exp $ */
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
  * All rights reserved.
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,10 +36,34 @@
 
 #include "SYS.h"
 
-SYSENTRY_HIDDEN(vfork)
+#if defined(SYSLIBC_SCCS)
+	.text
+	.asciz "$OpenBSD: Ovfork.S,v 1.3 1998/11/20 11:18:29 d Exp $"
+#endif /* SYSLIB_SCCS */
+
+/*
+ * pid = vfork();
+ *
+ * %edx == 0 in parent process, %edx == 1 in child process.
+ * %eax == pid of child in parent, %eax == pid of parent in child.
+ *
+ */
+SYSENTRY(vfork)
 	popl	%ecx		/* my rta into ecx */
 	movl	$(SYS_vfork),%eax
 	int	$0x80
-	HANDLE_ERRNO()
-	jmp	*%ecx
-SYSCALL_END_HIDDEN(vfork)
+	jc	err
+	decl	%edx
+	andl	%edx,%eax
+	jmp	%ecx
+err:
+#ifdef PIC
+	PIC_PROLOGUE
+	movl	PIC_GOT(_errno),%edx
+	PIC_EPILOGUE
+	movl	%eax,(%edx)
+#else
+	movl	%eax,_errno
+#endif
+	movl	$-1,%eax
+	jmp	%ecx

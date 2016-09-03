@@ -1,4 +1,4 @@
-/* $OpenBSD: keynote.h,v 1.16 2004/06/24 21:34:33 msf Exp $ */
+/* $OpenBSD: keynote.h,v 1.10 1999/10/09 19:47:32 angelos Exp $ */
 /*
  * The author of this code is Angelos D. Keromytis (angelos@dsl.cis.upenn.edu)
  *
@@ -7,7 +7,7 @@
  *
  * Copyright (C) 1998, 1999 by Angelos D. Keromytis.
  *	
- * Permission to use, copy, and modify this software with or without fee
+ * Permission to use, copy, and modify this software without fee
  * is hereby granted, provided that this entire notice is included in
  * all copies of any software which is or includes a copy or
  * modification of this software. 
@@ -21,6 +21,21 @@
 
 #ifndef __KEYNOTE_H__
 #define __KEYNOTE_H__
+
+#include <sys/types.h>
+#include <regex.h>
+
+#include <ssl/crypto.h>
+#include <ssl/dsa.h>
+#include <ssl/rsa.h>
+#include <ssl/sha.h>
+#include <ssl/md5.h>
+#include <ssl/err.h>
+#include <ssl/rand.h>
+#include <ssl/x509.h>
+#include <ssl/pem.h>
+
+#define KEYNOTERNDFILENAME "/dev/urandom"
 
 struct environment
 {
@@ -139,7 +154,6 @@ struct keynote_keylist
 
 extern int keynote_errno;
 
-__BEGIN_DECLS
 /* Session API */
 int    kn_init(void);
 int    kn_add_assertion(int, char *, int, int);
@@ -152,8 +166,6 @@ int    kn_do_query(int, char **, int);
 int    kn_get_failed(int, int, int);
 int    kn_cleanup_action_environment(int);
 int    kn_close(int);
-void   kn_free_key(struct keynote_deckey *);
-char  *kn_get_string(char *);
 
 /* Simple API */
 int    kn_query(struct environment *, char **, int, char **, int *, int,
@@ -179,5 +191,4 @@ char  *kn_encode_key(struct keynote_deckey *, int, int, int);
 /* Crypto API */
 char  *kn_sign_assertion(char *, int, char *, char *, int);
 int    kn_verify_assertion(char *, int);
-__END_DECLS
 #endif /* __KEYNOTE_H__ */

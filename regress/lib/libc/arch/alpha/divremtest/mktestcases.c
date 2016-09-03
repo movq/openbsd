@@ -1,4 +1,3 @@
-/*	$OpenBSD: mktestcases.c,v 1.2 2001/01/29 02:05:40 niklas Exp $	*/
 /*	$NetBSD: mktestcases.c,v 1.1 1995/04/24 05:53:37 cgd Exp $	*/
 
 /*

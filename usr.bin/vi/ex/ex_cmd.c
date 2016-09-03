@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_cmd.c,v 1.10 2015/11/19 07:53:31 bentley Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)ex_cmd.c	10.20 (Berkeley) 10/10/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -66,7 +68,7 @@ EXCMDLIST const cmds[] = {
 	{"&",		ex_subagain,	E_ADDR2,
 	    "s",
 	    "[line [,line]] & [cgr] [count] [#lp]",
-	    "repeat the last substitution"},
+	    "repeat the last subsitution"},
 /* C_STAR */
 	{"*",		ex_at,		0,
 	    "b",
@@ -132,6 +134,11 @@ EXCMDLIST const cmds[] = {
 	    "l1",
 	    "[line [,line]] co[py] line [flags]",
 	    "copy lines elsewhere in the file"},
+/* C_CSCOPE */
+	{"cscope",      ex_cscope,      0,
+	    "!s",
+	    "cs[cope] command [args]",
+	    "create a set of tags using a cscope command"},
 /*
  * !!!
  * Adding new commands starting with 'd' may break the delete command code
@@ -242,6 +249,18 @@ EXCMDLIST const cmds[] = {
 	    "ca1",
 	    "[line [,line]] p[rint] [count] [#l]",
 	    "display lines"},
+/* C_PERLCMD */
+	{"perl",	ex_perl,	E_ADDR2_ALL|E_ADDR_ZERO|
+					    E_ADDR_ZERODEF|E_SECURE,
+	    "s",
+	    "pe[rl] cmd",
+	    "run the perl interpreter with the command"},
+/* C_PERLDOCMD */
+	{"perldo",	ex_perl,	E_ADDR2_ALL|E_ADDR_ZERO|
+					    E_ADDR_ZERODEF|E_SECURE,
+	    "s",
+	    "perld[o] cmd",
+	    "run the perl interpreter with the command, on each line"},
 /* C_PRESERVE */
 	{"preserve",	ex_preserve,	0,
 	    "",
@@ -353,6 +372,12 @@ EXCMDLIST const cmds[] = {
 	    "!",
 	    "tagt[op][!]",
 	    "discard all tags"},
+/* C_TCLCMD */
+	{"tcl",		ex_tcl,		E_ADDR2_ALL|E_ADDR_ZERO|
+					    E_ADDR_ZERODEF|E_SECURE,
+	    "s",
+	    "tc[l] cmd",
+	    "run the tcl interpreter with the command"},
 /* C_UNDO */
 	{"undo",	ex_undo,	E_AUTOPRINT,
 	    "",

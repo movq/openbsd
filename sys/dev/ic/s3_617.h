@@ -1,5 +1,3 @@
-/*	$OpenBSD: s3_617.h,v 1.2 2001/07/04 09:03:04 niklas Exp $	*/
-
 /*
  * Copyright (c) 1998 Constantine Paul Sapuntzakis
  * All rights reserved

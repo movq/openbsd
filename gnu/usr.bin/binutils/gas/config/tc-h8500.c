@@ -1,6 +1,5 @@
-/* tc-h8500.c -- Assemble code for the Renesas H8/500
-   Copyright 1993, 1994, 1995, 1998, 2000, 2001, 2002, 2003
-   Free Software Foundation, Inc.
+/* tc-h8500.c -- Assemble code for the Hitachi H8/500
+   Copyright (C) 1993 Free Software Foundation.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -15,11 +14,13 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with GAS; see the file COPYING.  If not, write to the Free
-   Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+   along with GAS; see the file COPYING.  If not, write to
+   the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
-/* Written By Steve Chamberlain <sac@cygnus.com>.  */
+/*
+  Written By Steve Chamberlain
+  sac@cygnus.com
+  */
 
 #include <stdio.h>
 #include "as.h"
@@ -28,7 +29,7 @@
 #define DEFINE_TABLE
 #define ASSEMBLER_TABLE
 #include "opcodes/h8500-opc.h"
-#include "safe-ctype.h"
+#include <ctype.h>
 
 const char comment_chars[] = "!";
 const char line_separator_chars[] = ";";
@@ -40,6 +41,8 @@ const char line_comment_chars[] = "!#";
    function to call to execute this pseudo-op
    Integer arg to pass to the function
    */
+
+void cons ();
 
 const pseudo_typeS md_pseudo_table[] =
 {
@@ -84,45 +87,22 @@ const char FLT_CHARS[] = "rRsSfFdDxXpP";
 #define WORD_F 32767
 #define WORD_B 32768
 
-relax_typeS md_relax_table[C (END, 0)] = {
-  { 0, 0, 0, 0 },
-  { 0, 0, 0, 0 },
-  { 0, 0, 0, 0 },
-  { 0, 0, 0, 0 },
-
-  /* BRANCH */
-  { 0,      0,       0, 0 },
-  { BYTE_F, BYTE_B,  2, C (BRANCH, WORD_DISP) },
-  { WORD_F, WORD_B,  3, 0 },
-  { 0,      0,       3, 0 },
-
-  /* SCB_F */
-  { 0,      0,       0, 0 },
-  { BYTE_F, BYTE_B,  3, C (SCB_F, WORD_DISP) },
-  { WORD_F, WORD_B,  8, 0 },
-  { 0,      0,       8, 0 },
-
-  /* SCB_TST */
-  { 0,      0,       0, 0 },
-  { BYTE_F, BYTE_B,  3, C (SCB_TST, WORD_DISP) },
-  { WORD_F, WORD_B, 10, 0 },
-  { 0,      0,      10, 0 }
-
-};
+relax_typeS md_relax_table[C (END, 0)];
 
 static struct hash_control *opcode_hash_control;	/* Opcode mnemonics */
 
 /*
   This function is called once, at assembler startup time.  This should
-  set up all the tables, etc. that the MD part of the assembler needs
+  set up all the tables, etc that the MD part of the assembler needs
   */
 
 void
 md_begin ()
 {
-  const h8500_opcode_info *opcode;
+  h8500_opcode_info *opcode;
   char prev_buffer[100];
   int idx = 0;
+  register relax_typeS *table;
 
   opcode_hash_control = hash_new ();
   prev_buffer[0] = 0;
@@ -136,6 +116,40 @@ md_begin ()
 	  idx++;
 	}
     }
+
+  /* Initialize the relax table.  We use a local variable to avoid
+     warnings about modifying a supposedly const data structure.  */
+  table = (relax_typeS *) md_relax_table;
+  table[C (BRANCH, BYTE_DISP)].rlx_forward = BYTE_F;
+  table[C (BRANCH, BYTE_DISP)].rlx_backward = BYTE_B;
+  table[C (BRANCH, BYTE_DISP)].rlx_length = 2;
+  table[C (BRANCH, BYTE_DISP)].rlx_more = C (BRANCH, WORD_DISP);
+
+  table[C (BRANCH, WORD_DISP)].rlx_forward = WORD_F;
+  table[C (BRANCH, WORD_DISP)].rlx_backward = WORD_B;
+  table[C (BRANCH, WORD_DISP)].rlx_length = 3;
+  table[C (BRANCH, WORD_DISP)].rlx_more = 0;
+
+  table[C (SCB_F, BYTE_DISP)].rlx_forward = BYTE_F;
+  table[C (SCB_F, BYTE_DISP)].rlx_backward = BYTE_B;
+  table[C (SCB_F, BYTE_DISP)].rlx_length = 3;
+  table[C (SCB_F, BYTE_DISP)].rlx_more = C (SCB_F, WORD_DISP);
+
+  table[C (SCB_F, WORD_DISP)].rlx_forward = WORD_F;
+  table[C (SCB_F, WORD_DISP)].rlx_backward = WORD_B;
+  table[C (SCB_F, WORD_DISP)].rlx_length = 8;
+  table[C (SCB_F, WORD_DISP)].rlx_more = 0;
+
+  table[C (SCB_TST, BYTE_DISP)].rlx_forward = BYTE_F;
+  table[C (SCB_TST, BYTE_DISP)].rlx_backward = BYTE_B;
+  table[C (SCB_TST, BYTE_DISP)].rlx_length = 3;
+  table[C (SCB_TST, BYTE_DISP)].rlx_more = C (SCB_TST, WORD_DISP);
+
+  table[C (SCB_TST, WORD_DISP)].rlx_forward = WORD_F;
+  table[C (SCB_TST, WORD_DISP)].rlx_backward = WORD_B;
+  table[C (SCB_TST, WORD_DISP)].rlx_length = 10;
+  table[C (SCB_TST, WORD_DISP)].rlx_more = 0;
+
 }
 
 static int rn;			/* register number used by RN */
@@ -146,11 +160,14 @@ static int crw;			/* word sized cr */
 static int cr;			/* unknown size cr */
 
 static expressionS displacement;/* displacement expression */
+static int displacement_size;	/* and size if given */
 
 static int immediate_inpage;
 static expressionS immediate;	/* immediate expression */
+static int immediate_size;	/* and size if given */
 
 static expressionS absolute;	/* absolute expression */
+static int absolute_size;	/* and size if given */
 
 typedef struct
 {
@@ -162,90 +179,81 @@ typedef struct
 
 h8500_operand_info;
 
-/* Try to parse a reg name.  Return the number of chars consumed.  */
-
-static int parse_reg PARAMS ((char *, int *, int *));
-
+/* try and parse a reg name, returns number of chars consumed */
 static int
 parse_reg (src, mode, reg)
      char *src;
      int *mode;
      int *reg;
 {
-  char *end;
-  int len;
-
-  /* Cribbed from get_symbol_end().  */
-  if (!is_name_beginner (*src) || *src == '\001')
-    return 0;
-  end = src + 1;
-  while (is_part_of_name (*end) || *end == '\001')
-    end++;
-  len = end - src;
-
-  if (len == 2 && src[0] == 'r')
+  if (src[0] == 'r')
     {
       if (src[1] >= '0' && src[1] <= '7')
 	{
 	  *mode = RN;
 	  *reg = (src[1] - '0');
-	  return len;
+	  return 2;
 	}
     }
-  if (len == 2 && src[0] == 's' && src[1] == 'p')
+
+  if (src[0] == 's' && src[1] == 'p')
     {
       *mode = RN;
       *reg = 7;
-      return len;
+      return 2;
     }
-  if (len == 3 && src[0] == 'c' && src[1] == 'c' && src[2] == 'r')
+  if (src[0] == 'c' && src[1] == 'c' && src[2] == 'r')
     {
       *mode = CRB;
       *reg = 1;
-      return len;
+      return 3;
     }
-  if (len == 2 && src[0] == 's' && src[1] == 'r')
+  if (src[0] == 's' && src[1] == 'r')
     {
       *mode = CRW;
       *reg = 0;
-      return len;
+      return 2;
     }
-  if (len == 2 && src[0] == 'b' && src[1] == 'r')
+
+  if (src[0] == 'b' && src[1] == 'r')
     {
       *mode = CRB;
       *reg = 3;
-      return len;
+      return 2;
     }
-  if (len == 2 && src[0] == 'e' && src[1] == 'p')
+
+  if (src[0] == 'e' && src[1] == 'p')
     {
       *mode = CRB;
       *reg = 4;
-      return len;
+      return 2;
     }
-  if (len == 2 && src[0] == 'd' && src[1] == 'p')
+
+  if (src[0] == 'd' && src[1] == 'p')
     {
       *mode = CRB;
       *reg = 5;
-      return len;
+      return 2;
     }
-  if (len == 2 && src[0] == 't' && src[1] == 'p')
+
+  if (src[0] == 't' && src[1] == 'p')
     {
       *mode = CRB;
       *reg = 7;
-      return len;
+      return 2;
     }
-  if (len == 2 && src[0] == 'f' && src[1] == 'p')
+
+  if (src[0] == 'f' && src[1] == 'p')
     {
       *mode = RN;
       *reg = 6;
-      return len;
+      return 2;
     }
   return 0;
 }
 
-static char *parse_exp PARAMS ((char *, expressionS *, int *));
-
-static char *
+static
+char *
 parse_exp (s, op, page)
      char *s;
      expressionS *op;
@@ -280,7 +288,7 @@ parse_exp (s, op, page)
 
   expression (op);
   if (op->X_op == O_absent)
-    as_bad (_("missing operand"));
+    as_bad ("missing operand");
   new = input_line_pointer;
   input_line_pointer = save;
   return new;
@@ -291,8 +299,6 @@ typedef enum
     exp_signed, exp_unsigned, exp_sandu
   } sign_type;
 
-static char *skip_colonthing
-  PARAMS ((sign_type, char *, h8500_operand_info *, int, int, int, int));
 
 static char *
 skip_colonthing (sign, ptr, exp, def, size8, size16, size24)
@@ -313,23 +319,23 @@ skip_colonthing (sign, ptr, exp, def, size8, size16, size24)
 	  ptr++;
 	  exp->type = size8;
 	}
-      else if (ptr[0] == '1' && ptr[1] == '6')
+      else if (ptr[0] == '1' & ptr[1] == '6')
 	{
 	  ptr += 2;
 	  exp->type = size16;
 	}
-      else if (ptr[0] == '2' && ptr[1] == '4')
+      else if (ptr[0] == '2' & ptr[1] == '4')
 	{
 	  if (!size24)
 	    {
-	      as_bad (_(":24 not valid for this opcode"));
+	      as_bad (":24 not valid for this opcode");
 	    }
 	  ptr += 2;
 	  exp->type = size24;
 	}
       else
 	{
-	  as_bad (_("expect :8,:16 or :24"));
+	  as_bad ("expect :8,:16 or :24");
 	  exp->type = size16;
 	}
     }
@@ -364,8 +370,6 @@ skip_colonthing (sign, ptr, exp, def, size8, size16, size24)
   return ptr;
 }
 
-static int parse_reglist PARAMS ((char *, h8500_operand_info *));
-
 static int
 parse_reglist (src, op)
      char *src;
@@ -388,7 +392,7 @@ parse_reglist (src, op)
 	}
       else
 	{
-	  as_bad (_("syntax error in reg list"));
+	  as_bad ("syntax error in reg list");
 	  return 0;
 	}
       if (src[idx] == '-')
@@ -406,7 +410,7 @@ parse_reglist (src, op)
 	    }
 	  else
 	    {
-	      as_bad (_("missing final register in range"));
+	      as_bad ("missing final register in range");
 	    }
 	}
       if (src[idx] == ',')
@@ -434,8 +438,6 @@ parse_reglist (src, op)
    #xx[:size]		immediate data
 
    */
-
-static void get_operand PARAMS ((char **, h8500_operand_info *, char));
 
 static void
 get_operand (ptr, op, ispage)
@@ -490,25 +492,25 @@ get_operand (ptr, op, ispage)
 	  /* Disp */
 	  src++;
 
-	  src = skip_colonthing (exp_signed, src,
+	  src = skip_colonthing (exp_signed, src, 
 				 op, RNIND_D16, RNIND_D8, RNIND_D16, 0);
 
 	  if (*src != ',')
 	    {
-	      as_bad (_("expected @(exp, Rn)"));
+	      as_bad ("expected @(exp, Rn)");
 	      return;
 	    }
 	  src++;
 	  len = parse_reg (src, &mode, &op->reg);
 	  if (len == 0 || mode != RN)
 	    {
-	      as_bad (_("expected @(exp, Rn)"));
+	      as_bad ("expected @(exp, Rn)");
 	      return;
 	    }
 	  src += len;
 	  if (*src != ')')
 	    {
-	      as_bad (_("expected @(exp, Rn)"));
+	      as_bad ("expected @(exp, Rn)");
 	      return;
 	    }
 	  *ptr = src + 1;
@@ -524,7 +526,7 @@ get_operand (ptr, op, ispage)
 	      src++;
 	      if (mode != RN)
 		{
-		  as_bad (_("@Rn+ needs word register"));
+		  as_bad ("@Rn+ needs word register");
 		  return;
 		}
 	      op->type = RNINC;
@@ -534,7 +536,7 @@ get_operand (ptr, op, ispage)
 	    }
 	  if (mode != RN)
 	    {
-	      as_bad (_("@Rn needs word register"));
+	      as_bad ("@Rn needs word register");
 	      return;
 	    }
 	  op->type = RNIND;
@@ -565,14 +567,13 @@ get_operand (ptr, op, ispage)
     }
 }
 
-static char *get_operands
-  PARAMS ((h8500_opcode_info *, char *, h8500_operand_info *));
-
-static char *
+static
+char *
 get_operands (info, args, operand)
      h8500_opcode_info *info;
      char *args;
      h8500_operand_info *operand;
+
 {
   char *ptr = args;
 
@@ -606,14 +607,13 @@ get_operands (info, args, operand)
 
 /* Passed a pointer to a list of opcodes which use different
    addressing modes, return the opcode which matches the opcodes
-   provided.  */
+   provided
+   */
 
 int pcrel8;			/* Set when we've seen a pcrel operand */
 
-static h8500_opcode_info *get_specific
-  PARAMS ((h8500_opcode_info *, h8500_operand_info *));
-
-static h8500_opcode_info *
+static
+h8500_opcode_info *
 get_specific (opcode, operands)
      h8500_opcode_info *opcode;
      h8500_operand_info *operands;
@@ -621,7 +621,8 @@ get_specific (opcode, operands)
   h8500_opcode_info *this_try = opcode;
   int found = 0;
   unsigned int noperands = opcode->nargs;
-  int this_index = opcode->idx;
+
+  unsigned int this_index = opcode->idx;
 
   while (this_index == opcode->idx && !found)
     {
@@ -835,7 +836,7 @@ get_specific (opcode, operands)
 		}
 	      break;
 	    default:
-	      printf (_("unhandled %d\n"), this_try->arg_type[i]);
+	      printf ("unhandled %d\n", this_try->arg_type[i]);
 	      break;
 	    }
 
@@ -853,9 +854,7 @@ get_specific (opcode, operands)
     return 0;
 }
 
-static int check PARAMS ((expressionS *, int, int));
-
-static int
+int
 check (operand, low, high)
      expressionS *operand;
      int low;
@@ -865,14 +864,13 @@ check (operand, low, high)
       || operand->X_add_number < low
       || operand->X_add_number > high)
     {
-      as_bad (_("operand must be absolute in range %d..%d"), low, high);
+      as_bad ("operand must be absolute in range %d..%d", low, high);
     }
   return operand->X_add_number;
 }
 
-static void insert PARAMS ((char *, int, expressionS *, int, int));
-
-static void
+static
+void
 insert (output, index, exp, reloc, pcrel)
      char *output;
      int index;
@@ -888,17 +886,14 @@ insert (output, index, exp, reloc, pcrel)
 	       reloc);
 }
 
-static void build_relaxable_instruction
-  PARAMS ((h8500_opcode_info *, h8500_operand_info *));
-
-static void
+void
 build_relaxable_instruction (opcode, operand)
      h8500_opcode_info *opcode;
-     h8500_operand_info *operand ATTRIBUTE_UNUSED;
+     h8500_operand_info *operand;
 {
   /* All relaxable instructions start life as two bytes but can become
-     three bytes long if a lonely branch and up to 9 bytes if long
-     scb.  */
+     three bytes long if a lonely branch and up to 9 bytes if long scb
+     */
   char *p;
   int len;
   int type;
@@ -932,14 +927,13 @@ build_relaxable_instruction (opcode, operand)
     }
 }
 
-/* Now we know what sort of opcodes it is, let's build the bytes.  */
-
-static void build_bytes PARAMS ((h8500_opcode_info *, h8500_operand_info *));
-
+/* Now we know what sort of opcodes it is, lets build the bytes -
+ */
 static void
 build_bytes (opcode, operand)
      h8500_opcode_info *opcode;
      h8500_operand_info *operand;
+
 {
   int index;
 
@@ -960,7 +954,7 @@ build_bytes (opcode, operand)
 	  switch (opcode->bytes[index].insert)
 	    {
 	    default:
-	      printf (_("failed for %d\n"), opcode->bytes[index].insert);
+	      printf ("failed for %d\n", opcode->bytes[index].insert);
 	      break;
 	    case 0:
 	      break;
@@ -969,6 +963,7 @@ build_bytes (opcode, operand)
 	      break;
 	    case RD:
 	    case RDIND:
+	      
 	      output[index] |= rd;
 	      break;
 	    case RS:
@@ -982,32 +977,37 @@ build_bytes (opcode, operand)
 	    case FPIND_D8:
 	      insert (output, index, &displacement, R_H8500_IMM8, 0);
 	      break;
+
 	    case IMM16:
 	      {
 		int p;
-
-		switch (immediate_inpage)
-		  {
-		  case 'p':
-		    p = R_H8500_HIGH16;
-		    break;
-		  case 'h':
-		    p = R_H8500_HIGH16;
-		    break;
-		  default:
-		    p = R_H8500_IMM16;
-		    break;
-		  }
-		insert (output, index, &immediate, p, 0);
+		switch (immediate_inpage) {
+		case 'p':
+		  p = R_H8500_HIGH16;
+		  break;
+		case 'h':		
+		  p = R_H8500_HIGH16;
+		  break;
+		default:
+		  p = R_H8500_IMM16;
+		  break;
+		}
+		
+		insert (output, index, &immediate,p, 0);
 	      }
+		
 	      index++;
 	      break;
 	    case RLIST:
 	    case IMM8:
 	      if (immediate_inpage)
-		insert (output, index, &immediate, R_H8500_HIGH8, 0);
+		{
+		  insert (output, index, &immediate, R_H8500_HIGH8, 0);
+		}
 	      else
-		insert (output, index, &immediate, R_H8500_IMM8, 0);
+		{
+		  insert (output, index, &immediate, R_H8500_IMM8, 0);
+		}
 	      break;
 	    case PCREL16:
 	      insert (output, index, &displacement, R_H8500_PCREL16, 1);
@@ -1020,12 +1020,19 @@ build_bytes (opcode, operand)
 	      output[index] |= check (&immediate, 0, 15);
 	      break;
 	    case CR:
+
 	      output[index] |= cr;
 	      if (cr == 0)
-		output[0] |= 0x8;
+		{
+		  output[0] |= 0x8;
+		}
 	      else
-		output[0] &= ~0x8;
+		{
+		  output[0] &= ~0x8;
+		}
+
 	      break;
+
 	    case CRB:
 	      output[index] |= crb;
 	      output[0] &= ~0x8;
@@ -1067,13 +1074,14 @@ build_bytes (opcode, operand)
     }
 }
 
-/* This is the guts of the machine-dependent assembler.  STR points to
-   a machine dependent instruction.  This function is supposed to emit
-   the frags/bytes it assembles to.  */
+/* This is the guts of the machine-dependent assembler.  STR points to a
+   machine dependent instruction.  This funciton is supposed to emit
+   the frags/bytes it assembles to.
+   */
 
 void
-md_assemble (str)
-     char *str;
+DEFUN (md_assemble, (str),
+       char *str)
 {
   char *op_start;
   char *op_end;
@@ -1084,13 +1092,14 @@ md_assemble (str)
 
   int nlen = 0;
 
-  /* Drop leading whitespace.  */
+  /* Drop leading whitespace */
   while (*str == ' ')
     str++;
 
-  /* Find the op code end.  */
+  /* find the op code end */
   for (op_start = op_end = str;
-       !is_end_of_line[(unsigned char) *op_end] && *op_end != ' ';
+       *op_end &&
+       !is_end_of_line[*op_end] && *op_end != ' ';
        op_end++)
     {
       if (			/**op_end != '.'
@@ -1103,13 +1112,15 @@ md_assemble (str)
   name[nlen] = 0;
 
   if (op_end == op_start)
-    as_bad (_("can't find opcode "));
+    {
+      as_bad ("can't find opcode ");
+    }
 
   opcode = (h8500_opcode_info *) hash_find (opcode_hash_control, name);
 
   if (opcode == NULL)
     {
-      as_bad (_("unknown opcode"));
+      as_bad ("unknown opcode");
       return;
     }
 
@@ -1125,43 +1136,43 @@ md_assemble (str)
 
       where[0] = 0x0;
       where[1] = 0x0;
-      as_bad (_("invalid operands for opcode"));
+      as_bad ("invalid operands for opcode");
       return;
     }
 
   build_bytes (opcode, operand);
+
 }
 
 void
-tc_crawl_symbol_chain (headers)
-     object_headers *headers ATTRIBUTE_UNUSED;
+DEFUN (tc_crawl_symbol_chain, (headers),
+       object_headers * headers)
 {
-  printf (_("call to tc_crawl_symbol_chain \n"));
+  printf ("call to tc_crawl_symbol_chain \n");
 }
 
 symbolS *
-md_undefined_symbol (name)
-     char *name ATTRIBUTE_UNUSED;
+DEFUN (md_undefined_symbol, (name),
+       char *name)
 {
   return 0;
 }
 
 void
-tc_headers_hook (headers)
-     object_headers *headers ATTRIBUTE_UNUSED;
+DEFUN (tc_headers_hook, (headers),
+       object_headers * headers)
 {
-  printf (_("call to tc_headers_hook \n"));
+  printf ("call to tc_headers_hook \n");
 }
 
-/* Various routines to kill one day.  */
-/* Equal to MAX_PRECISION in atof-ieee.c.  */
+/* Various routines to kill one day */
+/* Equal to MAX_PRECISION in atof-ieee.c */
 #define MAX_LITTLENUMS 6
 
-/* Turn a string in input_line_pointer into a floating point constant
-   of type type, and store the appropriate bytes in *LITP.  The number
-   of LITTLENUMS emitted is stored in *SIZEP.  An error message is
-   returned, or NULL on OK.  */
-
+/* Turn a string in input_line_pointer into a floating point constant of type
+   type, and store the appropriate bytes in *litP.  The number of LITTLENUMS
+   emitted is stored in *sizeP .  An error message is returned, or NULL on OK.
+   */
 char *
 md_atof (type, litP, sizeP)
      char type;
@@ -1172,6 +1183,7 @@ md_atof (type, litP, sizeP)
   LITTLENUM_TYPE words[MAX_LITTLENUMS];
   LITTLENUM_TYPE *wordP;
   char *t;
+  char *atof_ieee ();
 
   switch (type)
     {
@@ -1201,7 +1213,7 @@ md_atof (type, litP, sizeP)
 
     default:
       *sizeP = 0;
-      return _("Bad call to MD_ATOF()");
+      return "Bad call to MD_ATOF()";
     }
   t = atof_ieee (input_line_pointer, type, words);
   if (t)
@@ -1216,29 +1228,58 @@ md_atof (type, litP, sizeP)
   return 0;
 }
 
-const char *md_shortopts = "";
+CONST char *md_shortopts = "";
 struct option md_longopts[] = {
   {NULL, no_argument, NULL, 0}
 };
-size_t md_longopts_size = sizeof (md_longopts);
+size_t md_longopts_size = sizeof(md_longopts);
 
 int
 md_parse_option (c, arg)
-     int c ATTRIBUTE_UNUSED;
-     char *arg ATTRIBUTE_UNUSED;
+     int c;
+     char *arg;
 {
   return 0;
 }
 
 void
 md_show_usage (stream)
-     FILE *stream ATTRIBUTE_UNUSED;
+     FILE *stream;
 {
 }
 
-static void wordify_scb PARAMS ((char *, int *, int *));
+int md_short_jump_size;
 
-static void
+void
+tc_aout_fix_to_chars ()
+{
+  printf ("call to tc_aout_fix_to_chars \n");
+  abort ();
+}
+
+void
+md_create_short_jump (ptr, from_addr, to_addr, frag, to_symbol)
+     char *ptr;
+     addressT from_addr;
+     addressT to_addr;
+     fragS *frag;
+     symbolS *to_symbol;
+{
+  as_fatal ("failed sanity check.");
+}
+
+void
+md_create_long_jump (ptr, from_addr, to_addr, frag, to_symbol)
+     char *ptr;
+     addressT from_addr, to_addr;
+     fragS *frag;
+     symbolS *to_symbol;
+{
+  as_fatal ("failed sanity check.");
+}
+
+static
+void
 wordify_scb (buffer, disp_size, inst_size)
      char *buffer;
      int *disp_size;
@@ -1298,18 +1339,18 @@ wordify_scb (buffer, disp_size, inst_size)
   *buffer++ = 0x04;		/* cmp #0xff:8, rn */
   *buffer++ = 0xff;
   *buffer++ = 0x70 | rn;
-  *buffer++ = 0x36;		/* bne ...  */
+  *buffer++ = 0x36;		/* bne ... */
   *buffer++ = 0;
   *buffer++ = 0;
 }
 
-/* Called after relaxing, change the frags so they know how big they
-   are.  */
-
+/*
+called after relaxing, change the frags so they know how big they are
+*/
 void
 md_convert_frag (headers, seg, fragP)
-     object_headers *headers ATTRIBUTE_UNUSED;
-     segT seg ATTRIBUTE_UNUSED;
+     object_headers *headers;
+     segT seg;
      fragS *fragP;
 {
   int disp_size = 0;
@@ -1329,9 +1370,9 @@ md_convert_frag (headers, seg, fragP)
       inst_size = 2;
       break;
 
-      /* Branches to a known 16 bit displacement.  */
+      /* Branches to a known 16 bit displacement */
 
-      /* Turn on the 16bit bit.  */
+      /* Turn on the 16bit bit */
     case C (BRANCH, WORD_DISP):
     case C (SCB_F, WORD_DISP):
     case C (SCB_TST, WORD_DISP):
@@ -1341,8 +1382,8 @@ md_convert_frag (headers, seg, fragP)
     case C (BRANCH, UNDEF_WORD_DISP):
     case C (SCB_F, UNDEF_WORD_DISP):
     case C (SCB_TST, UNDEF_WORD_DISP):
-      /* This tried to be relaxed, but didn't manage it, it now needs
-	 a fix.  */
+      /* This tried to be relaxed, but didn't manage it, it now needs a
+	 fix */
       wordify_scb (buffer, &disp_size, &inst_size);
 
       /* Make a reloc */
@@ -1355,6 +1396,7 @@ md_convert_frag (headers, seg, fragP)
 	       R_H8500_PCREL16);
 
       fragP->fr_fix += disp_size + inst_size;
+      fragP->fr_var = 0;
       return;
       break;
     default:
@@ -1370,6 +1412,7 @@ md_convert_frag (headers, seg, fragP)
 
       md_number_to_chars (buffer + inst_size, disp, disp_size);
       fragP->fr_fix += disp_size + inst_size;
+      fragP->fr_var = 0;
     }
 }
 
@@ -1378,25 +1421,26 @@ md_section_align (seg, size)
      segT seg ;
      valueT size;
 {
-  return ((size + (1 << section_alignment[(int) seg]) - 1)
+  return ((size + (1 << section_alignment[(int) seg]) - 1) 
 	  & (-1 << section_alignment[(int) seg]));
 
 }
 
 void
-md_apply_fix3 (fixP, valP, seg)
+md_apply_fix (fixP, val)
      fixS *fixP;
-     valueT * valP;
-     segT seg ATTRIBUTE_UNUSED;
+     long val;
 {
-  long val = * (long *) valP;
   char *buf = fixP->fx_where + fixP->fx_frag->fr_literal;
 
   if (fixP->fx_r_type == 0)
-    fixP->fx_r_type = fixP->fx_size == 4 ? R_H8500_IMM32 : R_H8500_IMM16;
+    {
+      fixP->fx_r_type = fixP->fx_size == 4 ? R_H8500_IMM32 : R_H8500_IMM16;
+    }
 
   switch (fixP->fx_r_type)
     {
+
     case R_H8500_IMM8:
     case R_H8500_PCREL8:
       *buf++ = val;
@@ -1427,64 +1471,50 @@ md_apply_fix3 (fixP, valP, seg)
       break;
     default:
       abort ();
-    }
 
-  if (fixP->fx_addsy == NULL && fixP->fx_pcrel == 0)
-    fixP->fx_done = 1;
+    }
 }
 
-/* Called just before address relaxation, return the length
-   by which a fragment must grow to reach it's destination.  */
+int md_long_jump_size;
 
+/*
+called just before address relaxation, return the length
+by which a fragment must grow to reach it's destination
+*/
 int
 md_estimate_size_before_relax (fragP, segment_type)
      register fragS *fragP;
      register segT segment_type;
 {
-  int what;
+  int what = GET_WHAT (fragP->fr_subtype);
 
   switch (fragP->fr_subtype)
     {
     default:
       abort ();
-
     case C (BRANCH, UNDEF_BYTE_DISP):
     case C (SCB_F, UNDEF_BYTE_DISP):
     case C (SCB_TST, UNDEF_BYTE_DISP):
-      what = GET_WHAT (fragP->fr_subtype);
       /* used to be a branch to somewhere which was unknown */
       if (S_GET_SEGMENT (fragP->fr_symbol) == segment_type)
 	{
 	  /* Got a symbol and it's defined in this segment, become byte
-	     sized - maybe it will fix up.  */
+	 sized - maybe it will fix up */
 	  fragP->fr_subtype = C (what, BYTE_DISP);
+	  fragP->fr_var = md_relax_table[C (what, BYTE_DISP)].rlx_length;
 	}
       else
 	{
-	  /* Its got a segment, but its not ours, so it will always be
-             long.  */
+	  /* Its got a segment, but its not ours, so it will always be long */
 	  fragP->fr_subtype = C (what, UNDEF_WORD_DISP);
+	  fragP->fr_var = md_relax_table[C (what, WORD_DISP)].rlx_length;
+	  return md_relax_table[C (what, WORD_DISP)].rlx_length;
 	}
-      break;
-
-    case C (BRANCH, BYTE_DISP):
-    case C (BRANCH, WORD_DISP):
-    case C (BRANCH, UNDEF_WORD_DISP):
-    case C (SCB_F, BYTE_DISP):
-    case C (SCB_F, WORD_DISP):
-    case C (SCB_F, UNDEF_WORD_DISP):
-    case C (SCB_TST, BYTE_DISP):
-    case C (SCB_TST, WORD_DISP):
-    case C (SCB_TST, UNDEF_WORD_DISP):
-      /* When relaxing a section for the second time, we don't need to
-	 do anything besides return the current size.  */
-      break;
     }
-
-  return md_relax_table[fragP->fr_subtype].rlx_length;
+  return fragP->fr_var;
 }
 
-/* Put number into target byte order.  */
+/* Put number into target byte order */
 
 void
 md_number_to_chars (ptr, use, nbytes)
@@ -1502,9 +1532,10 @@ md_pcrel_from (fixP)
   return fixP->fx_size + fixP->fx_where + fixP->fx_frag->fr_address;
 }
 
+/*ARGSUSED*/
 void
 tc_coff_symbol_emit_hook (ignore)
-     symbolS *ignore ATTRIBUTE_UNUSED;
+     symbolS *ignore;
 {
 }
 
@@ -1576,10 +1607,8 @@ tc_reloc_mangle (fix_ptr, intr, base)
       dot = segment_info[S_GET_SEGMENT (symbol_ptr)].dot;
       if (dot)
 	{
-#if 0
-	  intr->r_offset -=
-	    segment_info[S_GET_SEGMENT (symbol_ptr)].scnhdr.s_paddr;
-#endif
+	  /*	  intr->r_offset -=
+	    segment_info[S_GET_SEGMENT(symbol_ptr)].scnhdr.s_paddr;*/
 	  intr->r_offset += S_GET_VALUE (symbol_ptr);
 	  intr->r_symndx = dot->sy_number;
 	}
@@ -1596,18 +1625,21 @@ tc_reloc_mangle (fix_ptr, intr, base)
 
 }
 
+
+
 int
 start_label (ptr)
      char *ptr;
 {
   /* Check for :s.w */
-  if (ISALPHA (ptr[1]) && ptr[2] == '.')
+  if (isalpha (ptr[1]) && ptr[2] == '.')
     return 0;
   /* Check for :s */
-  if (ISALPHA (ptr[1]) && !ISALPHA (ptr[2]))
+  if (isalpha (ptr[1]) && !isalpha (ptr[2]))
     return 0;
   return 1;
 }
+
 
 int
 tc_coff_sizemachdep (frag)
@@ -1615,3 +1647,6 @@ tc_coff_sizemachdep (frag)
 {
   return md_relax_table[frag->fr_subtype].rlx_length;
 }
+
+/* end of tc-h8500.c */
+

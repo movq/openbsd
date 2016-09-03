@@ -1,4 +1,4 @@
-.\"	$OpenBSD: getpeername.2,v 1.26 2015/09/10 17:55:21 schwarze Exp $
+.\"	$OpenBSD: getpeername.2,v 1.12 1999/07/21 07:18:26 kjell Exp $
 .\"	$NetBSD: getpeername.2,v 1.6 1995/10/12 15:40:56 jtc Exp $
 .\"
 .\" Copyright (c) 1983, 1991, 1993
@@ -12,7 +12,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -30,21 +34,24 @@
 .\"
 .\"     @(#)getpeername.2	8.1 (Berkeley) 6/4/93
 .\"
-.Dd $Mdocdate: September 10 2015 $
+.Dd July 17, 1999
 .Dt GETPEERNAME 2
 .Os
 .Sh NAME
 .Nm getpeername
 .Nd get name of connected peer
 .Sh SYNOPSIS
-.In sys/socket.h
+.Fd #include <sys/types.h>
+.Fd #include <sys/socket.h>
 .Ft int
 .Fn getpeername "int s" "struct sockaddr *name" "socklen_t *namelen"
 .Sh DESCRIPTION
 .Fn getpeername
-returns the address information of the peer connected to socket
+returns the address information of the peer connected to
+socket
 .Fa s .
-One common use occurs when a process inherits an open socket, such as
+One common
+use occurs when a process inherits an open socket, such as
 TCP servers forked from
 .Xr inetd 8 .
 In this scenario,
@@ -55,29 +62,23 @@ is used to determine the connecting client's IP address.
 takes three parameters:
 .Pp
 .Fa s
-contains the file descriptor of the socket whose peer should be looked up.
+Contains the file descriptor of the socket who's peer should be looked up.
 .Pp
 .Fa name
-points to a
-.Li sockaddr
-structure that will hold the address information for the connected peer.
+Points to a sockaddr structure that will hold the address information
+for the connected peer.
 Normal use requires one to use a structure
-specific to the protocol family in use, such as
-.Li sockaddr_in
-(IPv4) or
-.Li sockaddr_in6
-(IPv6), cast to a (struct sockaddr *).
+specific to the protocol family in use, such as sockaddr_in (IPv4)
+or sockaddr_in6 (IPv6), cast to a (struct sockaddr *).
 .Pp
 For greater portability, especially with the newer protocol families, the new
-.Li struct sockaddr_storage
-should be used.
-.Li sockaddr_storage
-is large enough to hold any of the other sockaddr_* variants.
+struct sockaddr_storage should be used. sockaddr_storage is
+large enough to hold any of the other sockaddr_* variants.
 On return, it can be cast to the correct sockaddr type,
-based on the protocol family contained in its ss_family field.
+based the protocol family contained in its ss_family field.
 .Pp
 .Fa namelen
-indicates the amount of space pointed to by
+Indicates the amount of space pointed to by
 .Fa name ,
 in bytes.
 .Pp
@@ -96,13 +97,9 @@ If the call succeeds, a 0 is returned and
 .Fa namelen
 is set to the actual size of the socket address returned in
 .Fa name .
-Otherwise,
-.Va errno
-is set and a value of \-1 is returned.
+Otherwise, errno is set and a value of \-1 is returned.
 .Sh ERRORS
-On failure,
-.Va errno
-is set to one of the following:
+On failure, errno is set to one of the following:
 .Bl -tag -width Er
 .It Bq Er EBADF
 The argument
@@ -120,8 +117,6 @@ to perform the operation.
 .It Bq Er EFAULT
 The
 .Fa name
-or
-.Fa namelen
 parameter points to memory not in a valid part of the
 process address space.
 .El
@@ -129,13 +124,7 @@ process address space.
 .Xr accept 2 ,
 .Xr bind 2 ,
 .Xr getsockname 2 ,
-.Xr socket 2 ,
-.Xr getpeereid 3
-.Sh STANDARDS
-The
-.Fn getpeername
-function conforms to
-.St -p1003.1-2008 .
+.Xr socket 2
 .Sh HISTORY
 The
 .Fn getpeername

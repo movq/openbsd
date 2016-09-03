@@ -1,4 +1,3 @@
-/*	$OpenBSD: getttyent.c,v 1.15 2015/09/13 11:47:54 guenther Exp $ */
 /*
  * Copyright (c) 1989, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,6 +31,10 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: getttyent.c,v 1.4 1997/07/09 00:28:22 millert Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <ttyent.h>
 #include <stdio.h>
 #include <ctype.h>
@@ -36,13 +43,14 @@
 static char zapchar;
 static FILE *tf;
 
-static char *skip(char *);
-static char *value(char *);
+static char *skip __P((char *));
+static char *value __P((char *));
 
 struct ttyent *
-getttynam(const char *tty)
+getttynam(tty)
+	const char *tty;
 {
-	struct ttyent *t;
+	register struct ttyent *t;
 
 	setttyent();
 	while ((t = getttyent()))
@@ -53,11 +61,11 @@ getttynam(const char *tty)
 }
 
 struct ttyent *
-getttyent(void)
+getttyent()
 {
 	static struct ttyent tty;
-	int c;
-	char *p;
+	register int c;
+	register char *p;
 #define	MAXLINELENGTH	200
 	static char line[MAXLINELENGTH];
 
@@ -68,11 +76,11 @@ getttyent(void)
 			return (NULL);
 		/* skip lines that are too big */
 		if (!strchr(p, '\n')) {
-			while ((c = getc_unlocked(tf)) != '\n' && c != EOF)
+			while ((c = getc(tf)) != '\n' && c != EOF)
 				;
 			continue;
 		}
-		while (isspace((unsigned char)*p))
+		while (isspace(*p))
 			++p;
 		if (*p && *p != '#')
 			break;
@@ -93,8 +101,7 @@ getttyent(void)
 	tty.ty_status = 0;
 	tty.ty_window = NULL;
 
-#define	scmp(e)	!strncmp(p, e, sizeof(e) - 1) && \
-		isspace((unsigned char)p[sizeof(e) - 1])
+#define	scmp(e)	!strncmp(p, e, sizeof(e) - 1) && isspace(p[sizeof(e) - 1])
 #define	vcmp(e)	!strncmp(p, e, sizeof(e) - 1) && p[sizeof(e) - 1] == '='
 	for (; *p; p = skip(p)) {
 		if (scmp(_TTYS_OFF))
@@ -127,7 +134,6 @@ getttyent(void)
 		*p = '\0';
 	return (&tty);
 }
-DEF_WEAK(getttyent);
 
 #define	QUOTED	1
 
@@ -136,10 +142,11 @@ DEF_WEAK(getttyent);
  * the next field.
  */
 static char *
-skip(char *p)
+skip(p)
+	register char *p;
 {
-	char *t;
-	int c, q;
+	register char *t;
+	register int c, q;
 
 	for (q = 0, t = p; (c = *p) != '\0'; p++) {
 		if (c == '"') {
@@ -169,27 +176,27 @@ skip(char *p)
 }
 
 static char *
-value(char *p)
+value(p)
+	register char *p;
 {
 
 	return ((p = strchr(p, '=')) ? ++p : NULL);
 }
 
 int
-setttyent(void)
+setttyent()
 {
 
 	if (tf) {
 		rewind(tf);
 		return (1);
-	} else if ((tf = fopen(_PATH_TTYS, "re")))
+	} else if ((tf = fopen(_PATH_TTYS, "r")))
 		return (1);
 	return (0);
 }
-DEF_WEAK(setttyent);
 
 int
-endttyent(void)
+endttyent()
 {
 	int rval;
 
@@ -200,4 +207,3 @@ endttyent(void)
 	}
 	return (1);
 }
-DEF_WEAK(endttyent);

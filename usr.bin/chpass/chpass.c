@@ -1,4 +1,4 @@
-/*	$OpenBSD: chpass.c,v 1.43 2015/11/26 19:01:47 deraadt Exp $	*/
+/*	$OpenBSD: chpass.c,v 1.13 1998/08/03 17:09:46 millert Exp $	*/
 /*	$NetBSD: chpass.c,v 1.8 1996/05/15 21:50:43 jtc Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,17 +34,30 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/resource.h>
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1988, 1993, 1994\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)chpass.c	8.4 (Berkeley) 4/2/94";
+#else 
+static char rcsid[] = "$OpenBSD: chpass.c,v 1.13 1998/08/03 17:09:46 millert Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/stat.h>
 #include <sys/time.h>
-#include <sys/uio.h>
+#include <sys/resource.h>
 
+#include <ctype.h>
 #include <err.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <paths.h>
 #include <pwd.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -48,33 +65,40 @@
 #include <util.h>
 
 #include "chpass.h"
+#include "pathnames.h"
+
+char *tempname;
+uid_t uid;
 
 extern char *__progname;
 
-enum { NEWSH, LOADENTRY, EDITENTRY } op;
-uid_t uid;
+#ifdef	YP
+int use_yp;
+int force_yp = 0;
+extern struct passwd *ypgetpwnam(), *ypgetpwuid();
+int _yp_check __P((char **));
+int pw_yp __P((struct passwd *, uid_t));
+#endif
 
-void	baduser(void);
-void	kbintr(int);
-void	usage(void);
+void	baduser __P((void));
+void	usage __P((void));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
-	struct passwd *pw = NULL, *opw = NULL, lpw;
-	int i, ch, pfd, tfd, dfd;
-	char *tz, *arg = NULL;
-	sigset_t fullset;
+	enum { NEWSH, LOADENTRY, EDITENTRY } op;
+	struct passwd *pw, lpw;
+	int ch, pfd, tfd, dfd;
+	char *arg, tempname[] = __CONCAT(_PATH_VARTMP,"pw.XXXXXXXX");
 
-	/* We need to use the system timezone for date conversions. */
-	if ((tz = getenv("TZ")) != NULL) {
-	    unsetenv("TZ");
-	    tzset();
-	    setenv("TZ", tz, 1);
-	}
+#ifdef	YP
+	use_yp = _yp_check(NULL);
+#endif
 
 	op = EDITENTRY;
-	while ((ch = getopt(argc, argv, "a:s:")) != -1)
+	while ((ch = getopt(argc, argv, "a:s:ly")) != -1)
 		switch(ch) {
 		case 'a':
 			op = LOADENTRY;
@@ -84,6 +108,18 @@ main(int argc, char *argv[])
 			op = NEWSH;
 			arg = optarg;
 			break;
+#ifdef	YP
+		case 'l':
+			use_yp = 0;
+			break;
+		case 'y':
+			if (!use_yp) {
+				warnx("YP not in use.");
+				usage();
+			}
+			force_yp = 1;
+			break;
+#endif
 		case '?':
 		default:
 			usage();
@@ -91,17 +127,33 @@ main(int argc, char *argv[])
 	argc -= optind;
 	argv += optind;
 
+#ifdef	YP
+	if (op == LOADENTRY && use_yp)
+		errx(1, "cannot load entry using NIS.\n\tUse the -l flag to load local.");
+#endif
 	uid = getuid();
 
 	if (op == EDITENTRY || op == NEWSH)
 		switch(argc) {
 		case 0:
-			pw = getpwuid_shadow(uid);
+			pw = getpwuid(uid);
+#ifdef	YP
+			if (pw && !force_yp)
+				use_yp = 0;
+			else if (use_yp)
+				pw = ypgetpwuid(uid);
+#endif	/* YP */
 			if (!pw)
-				errx(1, "unknown user: uid %u", uid);
+				errx(1, "unknown user: uid %u\n", uid);
 			break;
 		case 1:
-			pw = getpwnam_shadow(*argv);
+			pw = getpwnam(*argv);
+#ifdef	YP
+			if (pw && !force_yp)
+				use_yp = 0;
+			else if (use_yp)
+				pw = ypgetpwnam(*argv);
+#endif	/* YP */
 			if (!pw)
 				errx(1, "unknown user: %s", *argv);
 			if (uid && uid != pw->pw_uid)
@@ -111,57 +163,7 @@ main(int argc, char *argv[])
 			usage();
 		}
 
-	if (op == LOADENTRY) {
-		if (argc != 0)
-			errx(1, "option -a does not accept user argument");
-		if (uid)
-			baduser();
-		pw = &lpw;
-		if (!pw_scan(arg, pw, NULL))
-			exit(1);
-		opw = getpwnam_shadow(pw->pw_name);
-	}
-	if (opw == NULL && (opw = pw_dup(pw)) == NULL)
-		err(1, NULL);
-
-	/* Edit the user passwd information if requested. */
-	if (op == EDITENTRY) {
-		char tempname[] = _PATH_VARTMP "pw.XXXXXXXXXX";
-		int edit_status;
-
-		if ((pw = pw_dup(pw)) == NULL)
-			pw_error(NULL, 1, 1);
-		dfd = mkostemp(tempname, O_CLOEXEC);
-		if (dfd == -1)
-			pw_error(tempname, 1, 1);
-		display(tempname, dfd, pw);
-
-		if (pledge("stdio rpath wpath cpath id proc exec",
-		    NULL) == -1)
-			err(1, "pledge");
-
-		edit_status = edit(tempname, pw);
-		close(dfd);
-		unlink(tempname);
-
-		switch (edit_status) {
-		case EDIT_OK:
-			break;
-		case EDIT_NOCHANGE:
-			pw_error(NULL, 0, 0);
-			break;
-		case EDIT_ERROR:
-		default:
-			pw_error(tempname, 1, 1);
-			break;
-		}
-	}
-
 	if (op == NEWSH) {
-		if (pledge("stdio rpath wpath cpath id proc exec",
-		    NULL) == -1)
-			err(1, "pledge");
-
 		/* protect p_shell -- it thinks NULL is /bin/sh */
 		if (!arg[0])
 			usage();
@@ -169,78 +171,77 @@ main(int argc, char *argv[])
 			pw_error(NULL, 0, 1);
 	}
 
-	/* Drop user's real uid and block all signals to avoid a DoS. */
-	setuid(0);
-	sigfillset(&fullset);
-	sigdelset(&fullset, SIGINT);
-	sigprocmask(SIG_BLOCK, &fullset, NULL);
-
-	if (pledge("stdio rpath wpath cpath proc exec", NULL) == -1)
-		err(1, "pledge");
+	if (op == LOADENTRY) {
+		if (uid)
+			baduser();
+		pw = &lpw;
+		if (!pw_scan(arg, pw, NULL))
+			exit(1);
+	}
 
 	/* Get the passwd lock file and open the passwd file for reading. */
 	pw_init();
-	for (i = 1; (tfd = pw_lock(0)) == -1; i++) {
-		if (i == 4)
-			(void)fputs("Attempting to lock password file, "
-			    "please wait or press ^C to abort", stderr);
-		(void)signal(SIGINT, kbintr);
-		if (i % 16 == 0)
-			fputc('.', stderr);
-		usleep(250000);
-		(void)signal(SIGINT, SIG_IGN);
+	tfd = pw_lock(0);
+	if (tfd == -1 || fcntl(tfd, F_SETFD, 1) == -1) {
+		if (errno == EEXIST)
+			errx(1, "the passwd file is busy.");
+		else
+			err(1, "can't open passwd temp file");
 	}
-	if (i >= 4)
-		fputc('\n', stderr);
-	pfd = open(_PATH_MASTERPASSWD, O_RDONLY|O_CLOEXEC, 0);
-	if (pfd == -1)
+	pfd = open(_PATH_MASTERPASSWD, O_RDONLY, 0);
+	if (pfd == -1 || fcntl(pfd, F_SETFD, 1) == -1)
 		pw_error(_PATH_MASTERPASSWD, 1, 1);
 
-	/* Copy the passwd file to the lock file, updating pw. */
-	pw_copy(pfd, tfd, pw, opw);
+	/* Edit the user passwd information if requested. */
+	if (op == EDITENTRY) {
+		dfd = mkstemp(tempname);
+		if (dfd == -1 || fcntl(dfd, F_SETFD, 1) == -1)
+			pw_error(tempname, 1, 1);
+		display(tempname, dfd, pw);
+		edit(tempname, pw);
+		(void)unlink(tempname);
+	}
 
-	/* If username changed we need to rebuild the entire db. */
-	arg = !strcmp(opw->pw_name, pw->pw_name) ? pw->pw_name : NULL;
+#ifdef	YP
+	if (use_yp) {
+		if (pw_yp(pw, uid)) {
+			pw_error(NULL, 0, 1);
+			exit(1);
+		} else {
+			pw_abort();
+			exit(0);
+		}
+	} else
+#endif	/* YP */
+	{
+		/* Copy the passwd file to the lock file, updating pw. */
+		pw_copy(pfd, tfd, pw);
 
-	/* Now finish the passwd file update. */
-	if (pw_mkdb(arg, 0) == -1)
-		pw_error(NULL, 0, 1);
+		/* Now finish the passwd file update. */
+		if (pw_mkdb() == -1)
+			pw_error(NULL, 0, 1);
+	}
+
 	exit(0);
 }
 
 void
-baduser(void)
+baduser()
 {
 
 	errx(1, "%s", strerror(EACCES));
 }
 
-/* ARGSUSED */
 void
-kbintr(int signo)
-{
-	struct iovec iv[5];
-
-	iv[0].iov_base = "\n";
-	iv[0].iov_len = 1;
-	iv[1].iov_base = __progname;
-	iv[1].iov_len = strlen(__progname);
-	iv[2].iov_base = ": ";
-	iv[2].iov_len = 2;
-	iv[3].iov_base = _PATH_MASTERPASSWD;
-	iv[3].iov_len = sizeof(_PATH_MASTERPASSWD) - 1;
-	iv[4].iov_base = " unchanged\n";
-	iv[4].iov_len = 11;
-	writev(STDERR_FILENO, iv, 5);
-
-	_exit(1);
-}
-
-void
-usage(void)
+usage()
 {
 
-	(void)fprintf(stderr, "usage: %s [-s newshell] [user]\n", __progname);
-	(void)fprintf(stderr, "       %s -a list\n", __progname);
+#ifdef	YP
+	(void)fprintf(stderr, "usage: %s [-a list] [-s shell] [-l]%s [user]\n",
+	    __progname, use_yp?" [-y]":"");
+#else
+	(void)fprintf(stderr, "usage: %s [-a list] [-s shell] [user]\n",
+	    __progname);
+#endif
 	exit(1);
 }

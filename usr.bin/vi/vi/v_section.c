@@ -1,5 +1,3 @@
-/*	$OpenBSD: v_section.c,v 1.7 2014/11/12 04:28:41 bentley Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)v_section.c	10.7 (Berkeley) 3/6/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -57,10 +59,12 @@
  * a section, it did NOT include the matched line.  If it matched a }, it
  * did include the line.  No clue why.
  *
- * PUBLIC: int v_sectionf(SCR *, VICMD *);
+ * PUBLIC: int v_sectionf __P((SCR *, VICMD *));
  */
 int
-v_sectionf(SCR *sp, VICMD *vp)
+v_sectionf(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	recno_t cnt, lno;
 	size_t len;
@@ -78,7 +82,7 @@ v_sectionf(SCR *sp, VICMD *vp)
 	 * check here, because we know that the end is going to be the start
 	 * or end of a line.
 	 */
-	if (ISMOTION(vp)) {
+	if (ISMOTION(vp))
 		if (vp->m_start.cno == 0)
 			F_SET(vp, VM_LMODE);
 		else {
@@ -89,13 +93,12 @@ v_sectionf(SCR *sp, VICMD *vp)
 			if (vp->m_start.cno <= vp->m_stop.cno)
 				F_SET(vp, VM_LMODE);
 		}
-	}
 
 	cnt = F_ISSET(vp, VC_C1SET) ? vp->count : 1;
 	for (lno = vp->m_start.lno; !db_get(sp, ++lno, 0, &p, &len);) {
 		if (len == 0)
 			continue;
-		if (p[0] == '{' || (ISMOTION(vp) && p[0] == '}')) {
+		if (p[0] == '{' || ISMOTION(vp) && p[0] == '}') {
 			if (!--cnt) {
 				if (p[0] == '{')
 					goto adjust1;
@@ -119,7 +122,7 @@ v_sectionf(SCR *sp, VICMD *vp)
 			continue;
 		for (lp = list; *lp != '\0'; lp += 2 * sizeof(*lp))
 			if (lp[0] == p[1] &&
-			    ((lp[1] == ' ' && len == 2) || lp[1] == p[2]) &&
+			    (lp[1] == ' ' && len == 2 || lp[1] == p[2]) &&
 			    !--cnt) {
 				/*
 				 * !!!
@@ -164,10 +167,12 @@ ret2:	if (ISMOTION(vp)) {
  * v_sectionb -- [count][[
  *	Move backward count sections/functions.
  *
- * PUBLIC: int v_sectionb(SCR *, VICMD *);
+ * PUBLIC: int v_sectionb __P((SCR *, VICMD *));
  */
 int
-v_sectionb(SCR *sp, VICMD *vp)
+v_sectionb(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	size_t len;
 	recno_t cnt, lno;
@@ -208,7 +213,7 @@ v_sectionb(SCR *sp, VICMD *vp)
 			continue;
 		for (lp = list; *lp != '\0'; lp += 2 * sizeof(*lp))
 			if (lp[0] == p[1] &&
-			    ((lp[1] == ' ' && len == 2) || lp[1] == p[2]) &&
+			    (lp[1] == ' ' && len == 2 || lp[1] == p[2]) &&
 			    !--cnt) {
 adjust1:			vp->m_stop.lno = lno;
 				vp->m_stop.cno = 0;

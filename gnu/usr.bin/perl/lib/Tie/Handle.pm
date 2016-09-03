@@ -1,12 +1,5 @@
 package Tie::Handle;
 
-use 5.006_001;
-our $VERSION = '4.2';
-
-# Tie::StdHandle used to be inside Tie::Handle.  For backwards compatibility
-# loading Tie::Handle has to make Tie::StdHandle available.
-use Tie::StdHandle;
-
 =head1 NAME
 
 Tie::Handle - base class definitions for tied handles
@@ -15,15 +8,15 @@ Tie::Handle - base class definitions for tied handles
 
     package NewHandle;
     require Tie::Handle;
-
-    @ISA = qw(Tie::Handle);
-
+     
+    @ISA = (Tie::Handle);
+     
     sub READ { ... }		# Provide a needed method
     sub TIEHANDLE { ... }	# Overrides inherited method
-
-
+         
+     
     package main;
-
+    
     tie *FH, 'NewHandle';
 
 =head1 DESCRIPTION
@@ -31,13 +24,15 @@ Tie::Handle - base class definitions for tied handles
 This module provides some skeletal methods for handle-tying classes. See
 L<perltie> for a list of the functions required in tying a handle to a package.
 The basic B<Tie::Handle> package provides a C<new> method, as well as methods
-C<TIEHANDLE>, C<PRINT>, C<PRINTF> and C<GETC>. 
+C<TIESCALAR>, C<FETCH> and C<STORE>. The C<new> method is provided as a means
+of grandfathering, for classes that forget to provide their own C<TIESCALAR>
+method.
 
 For developers wishing to write their own tied-handle classes, the methods
 are summarized below. The L<perltie> section not only documents these, but
 has sample code as well:
 
-=over 4
+=over
 
 =item TIEHANDLE classname, LIST
 
@@ -70,32 +65,6 @@ Read a single line
 
 Get a single character
 
-=item CLOSE this
-
-Close the handle
-
-=item OPEN this, filename
-
-(Re-)open the handle
-
-=item BINMODE this
-
-Specify content is binary
-
-=item EOF this
-
-Test for end of file.
-
-=item TELL this
-
-Return position in the file.
-
-=item SEEK this, offset, whence
-
-Position the file.
-
-Test for end of file.
-
 =item DESTROY this
 
 Free the storage associated with the tied handle referenced by I<this>.
@@ -109,19 +78,9 @@ destruction of an instance.
 
 The L<perltie> section contains an example of tying handles.
 
-=head1 COMPATIBILITY
-
-This version of Tie::Handle is neither related to nor compatible with
-the Tie::Handle (3.0) module available on CPAN. It was due to an
-accident that two modules with the same name appeared. The namespace
-clash has been cleared in favor of this module that comes with the
-perl core in September 2000 and accordingly the version number has
-been bumped up to 4.0.
-
 =cut
 
 use Carp;
-use warnings::register;
 
 sub new {
     my $pkg = shift;
@@ -133,7 +92,8 @@ sub new {
 sub TIEHANDLE {
     my $pkg = shift;
     if (defined &{"{$pkg}::new"}) {
-	warnings::warnif("WARNING: calling ${pkg}->new since ${pkg}->TIEHANDLE is missing");
+	carp "WARNING: calling ${pkg}->new since ${pkg}->TIEHANDLE is missing"
+	    if $^W;
 	$pkg->new(@_);
     }
     else {
@@ -157,7 +117,7 @@ sub PRINTF {
     my $self = shift;
     
     if($self->can('WRITE') != \&WRITE) {
-	my $buf = sprintf(shift,@_);
+	my $buf = sprintf(@_);
 	$self->WRITE($buf,length($buf),0);
     }
     else {

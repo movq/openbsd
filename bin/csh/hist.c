@@ -1,4 +1,4 @@
-/*	$OpenBSD: hist.c,v 1.10 2015/12/26 13:48:38 mestre Exp $	*/
+/*	$OpenBSD: hist.c,v 1.3 1997/07/25 18:58:09 mickey Exp $	*/
 /*	$NetBSD: hist.c,v 1.7 1995/03/21 18:35:44 mycroft Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,22 +34,35 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)hist.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: hist.c,v 1.3 1997/07/25 18:58:09 mickey Exp $";
+#endif
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <stdlib.h>
-#include <stdarg.h>
+#ifdef __STDC__
+# include <stdarg.h>
+#else
+# include <varargs.h>
+#endif
 
 #include "csh.h"
 #include "extern.h"
 
-static void	hfree(struct Hist *);
-static void	dohist1(struct Hist *, int *, int, int);
-static void	phist(struct Hist *, int);
+static void	hfree __P((struct Hist *));
+static void	dohist1 __P((struct Hist *, int *, int, int));
+static void	phist __P((struct Hist *, int));
 
 void
-savehist(struct wordent *sp)
+savehist(sp)
+    struct wordent *sp;
 {
-    struct Hist *hp, *np;
-    int histlen = 0;
+    register struct Hist *hp, *np;
+    register int histlen = 0;
     Char   *cp;
 
     /* throw away null lines */
@@ -53,7 +70,7 @@ savehist(struct wordent *sp)
 	return;
     cp = value(STRhistory);
     if (*cp) {
-	Char *p = cp;
+	register Char *p = cp;
 
 	while (*p) {
 	    if (!Isdigit(*p)) {
@@ -72,9 +89,12 @@ savehist(struct wordent *sp)
 }
 
 struct Hist *
-enthist(int event, struct wordent *lp, bool docopy)
+enthist(event, lp, docopy)
+    int     event;
+    register struct wordent *lp;
+    bool    docopy;
 {
-    struct Hist *np;
+    register struct Hist *np;
 
     np = (struct Hist *) xmalloc((size_t) sizeof(*np));
     np->Hnum = np->Href = event;
@@ -93,16 +113,19 @@ enthist(int event, struct wordent *lp, bool docopy)
 }
 
 static void
-hfree(struct Hist *hp)
+hfree(hp)
+    register struct Hist *hp;
 {
 
     freelex(&hp->Hlex);
-    free(hp);
+    xfree((ptr_t) hp);
 }
 
 void
 /*ARGSUSED*/
-dohist(Char **v, struct command *t)
+dohist(v, t)
+    Char **v;
+    struct command *t;
 {
     int     n, rflg = 0, hflg = 0;
     sigset_t sigset;
@@ -141,7 +164,9 @@ dohist(Char **v, struct command *t)
 }
 
 static void
-dohist1(struct Hist *hp, int *np, int rflg, int hflg)
+dohist1(hp, np, rflg, hflg)
+    struct Hist *hp;
+    int    *np, rflg, hflg;
 {
     bool    print = (*np) > 0;
 
@@ -160,7 +185,9 @@ dohist1(struct Hist *hp, int *np, int rflg, int hflg)
 }
 
 static void
-phist(struct Hist *hp, int hflg)
+phist(hp, hflg)
+    register struct Hist *hp;
+    int     hflg;
 {
     if (hflg == 0)
 	(void) fprintf(cshout, "%6d\t", hp->Hnum);

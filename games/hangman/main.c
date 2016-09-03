@@ -1,4 +1,4 @@
-/*	$OpenBSD: main.c,v 1.19 2016/02/28 06:24:06 tb Exp $	*/
+/*	$OpenBSD: main.c,v 1.6 1999/09/25 20:51:53 pjanzen Exp $	*/
 /*	$NetBSD: main.c,v 1.3 1995/03/23 08:32:50 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,43 +34,46 @@
  * SUCH DAMAGE.
  */
 
-#include <curses.h>
-#include <err.h>
-#include <paths.h>
-#include <signal.h>
-#include <stdlib.h>
-#include <unistd.h>
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1983, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
 
-#include "hangman.h"
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)main.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: main.c,v 1.6 1999/09/25 20:51:53 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
-__dead void	usage(void);
+# include	"hangman.h"
 
 /*
  * This game written by Ken Arnold.
  */
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	int ch;
 
-	if (pledge("stdio rpath tty", NULL) == -1)
-		err(1, "pledge");
+	/* revoke */
+	setegid(getgid());
+	setgid(getgid());
 
-	while ((ch = getopt(argc, argv, "d:hk")) != -1) {
+	while ((ch = getopt(argc, argv, "d:h")) != -1) {
 		switch (ch) {
 		case 'd':
-			if (syms)
-				usage();
-			else
-				Dict_name = optarg;
-			break;
-		case 'k':
-			syms = 1;
-			Dict_name = _PATH_KSYMS;
+			Dict_name = optarg;
 			break;
 		case 'h':
+		case '?':
 		default:
-			usage();
+			(void)fprintf(stderr, "usage: hangman [-d wordlist]\n");
+			exit(1);
 		}
 	}
 
@@ -77,15 +84,12 @@ main(int argc, char *argv[])
 	}
 	signal(SIGINT, die);
 	setup();
-
-	if (pledge("stdio tty", NULL) == -1)
-		err(1, "pledge");
-
 	for (;;) {
 		Wordnum++;
 		playgame();
 		Average = (Average * (Wordnum - 1) + Errors) / Wordnum;
 	}
+	/* NOTREACHED */
 }
 
 /*
@@ -93,17 +97,11 @@ main(int argc, char *argv[])
  *	Die properly.
  */
 void
-die(int dummy)
+die(dummy)
+	int dummy;
 {
 	mvcur(0, COLS - 1, LINES - 1, 0);
 	endwin();
 	putchar('\n');
 	exit(0);
-}
-
-__dead void
-usage(void)
-{
-	(void)fprintf(stderr, "usage: %s [-k] [-d wordlist]\n", getprogname());
-	exit(1);
 }

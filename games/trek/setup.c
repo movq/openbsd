@@ -1,4 +1,4 @@
-/*	$OpenBSD: setup.c,v 1.12 2016/01/07 14:37:51 mestre Exp $	*/
+/*	$OpenBSD: setup.c,v 1.3 1999/07/31 18:48:59 pjanzen Exp $	*/
 /*	$NetBSD: setup.c,v 1.4 1995/04/24 12:26:06 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,14 +34,21 @@
  * SUCH DAMAGE.
  */
 
-#include <err.h>
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)setup.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: setup.c,v 1.3 1999/07/31 18:48:59 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
-#include "getpar.h"
+#include <stdio.h>
+#include <math.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <err.h>
 #include "trek.h"
+#include "getpar.h"
 
 /*
 **  INITIALIZE THE GAME
@@ -71,15 +82,15 @@ const struct cvntab	Skitab[] =
 };
 
 void
-setup(void)
+setup()
 {
 	const struct cvntab	*r;
-	int			i, j;
+	register int		i, j;
 	double			f;
 	int			d;
 	int			klump;
 	int			ix, iy;
-	struct quad		*q;
+	register struct quad	*q;
 	struct event		*e;
 
 	while (1)
@@ -105,7 +116,7 @@ setup(void)
 		d = 0;
 		for (i = 0; Game.passwd[i]; i++)
 			d += Game.passwd[i] << i;
-		srandom_deterministic(d);
+		srand(d);
 	}
 	Param.bases = Now.bases = ranf(6 - Game.skill) + 2;
 	if (Game.skill == 6)
@@ -231,8 +242,6 @@ setup(void)
 			q->scanned = -1;
 			q->stars = ranf(9) + 1;
 			q->holes = ranf(3) - q->stars / 5;
-			if (q->holes < 0)
-				q->holes = 0;
 			q->qsystemname = 0;
 		}
 

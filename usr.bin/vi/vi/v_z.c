@@ -1,5 +1,3 @@
-/*	$OpenBSD: v_z.c,v 1.6 2014/11/12 04:28:41 bentley Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)v_z.c	10.10 (Berkeley) 5/16/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -26,10 +28,12 @@
  * v_z -- [count]z[count][-.+^<CR>]
  *	Move the screen.
  *
- * PUBLIC: int v_z(SCR *, VICMD *);
+ * PUBLIC: int v_z __P((SCR *, VICMD *));
  */
 int
-v_z(SCR *sp, VICMD *vp)
+v_z(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	recno_t lno;
 	u_int value;
@@ -129,10 +133,12 @@ v_z(SCR *sp, VICMD *vp)
  * vs_crel --
  *	Change the relative size of the current screen.
  *
- * PUBLIC: int vs_crel(SCR *, long);
+ * PUBLIC: int vs_crel __P((SCR *, long));
  */
 int
-vs_crel(SCR *sp, long count)
+vs_crel(sp, count)
+	SCR *sp;
+	long count;
 {
 	sp->t_minrows = sp->t_rows = count;
 	if (sp->t_rows > sp->rows - 1)

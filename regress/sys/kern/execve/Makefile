@@ -1,71 +1,47 @@
-#	$OpenBSD: Makefile,v 1.5 2002/09/02 20:01:44 avsm Exp $
+#	$NetBSD: Makefile,v 1.4 1995/04/20 22:43:03 cgd Exp $
 
 PROG=	doexec
+NOMAN=	noman, no way, man
+
 LDSTATIC= -static
 
 RP=	${.OBJDIR}/${PROG}
 TD=	${.CURDIR}/tests
 OD=	${.CURDIR}/good
 
-TESTFILES= empty nonexistshell devnullscript badinterplen goodscript \
-	   scriptarg scriptarg-nospace goodaout truncaout
+all:	${PROG} goodaout truncaout
+CLEANFILES+= goodaout truncaout
 
-CLEANFILES+= ${TESTFILES}
+install:
 
-all:	${PROG} ${TESTFILES}
-
-REGRESS_TARGETS=	test-empty test-nonexist \
+regress:	test-empty test-nonexist \
 		test-nonexistshell test-devnullscript test-badinterplen \
 		test-goodscript test-scriptarg test-scriptarg-nospace \
 		test-goodaout test-truncaout
 
-empty: ${TD}/empty.in
-	${INSTALL} -c -m 755 ${.ALLSRC} ${.TARGET}
-
-test-empty:	${PROG} empty
-	${RP} ${.OBJDIR}/empty | diff - ${OD}/empty
-
-nonexist: ${TD}/nonexist.in
-	${INSTALL} -c -m 755 ${.ALLSRC} ${.TARGET}
+test-empty:	${PROG} ${TD}/empty
+	${RP} ${TD}/empty | diff - ${OD}/empty
 
 test-nonexist:	${PROG}
-	${RP} ${.OBJDIR}/nonexistent | diff - ${OD}/nonexistent
+	${RP} ${TD}/nonexistent | diff - ${OD}/nonexistent
 
-nonexistshell: ${TD}/nonexistshell.in
-	${INSTALL} -c -m 755 ${.ALLSRC} ${.TARGET}
+test-nonexistshell: ${PROG} ${TD}/nonexistshell
+	${RP} ${TD}/nonexistshell | diff - ${OD}/nonexistshell
 
-test-nonexistshell: ${PROG} nonexistshell
-	${RP} ${.OBJDIR}/nonexistshell | diff - ${OD}/nonexistshell
+test-devnullscript: ${PROG} ${TD}/devnullscript
+	${RP} ${TD}/devnullscript | diff - ${OD}/devnullscript
 
-devnullscript: ${TD}/devnullscript.in
-	${INSTALL} -c -m 755 ${.ALLSRC} ${.TARGET}
+test-badinterplen: ${PROG} ${TD}/badinterplen
+	${RP} ${TD}/badinterplen | diff - ${OD}/badinterplen
 
-test-devnullscript: ${PROG} devnullscript
-	${RP} ${.OBJDIR}/devnullscript | diff - ${OD}/devnullscript
+test-goodscript: ${PROG} ${TD}/goodscript
+	${RP} ${TD}/goodscript | diff - ${OD}/goodscript
 
-badinterplen: ${TD}/badinterplen.in
-	${INSTALL} -c -m 755 ${.ALLSRC} ${.TARGET}
+test-scriptarg: ${PROG} ${TD}/scriptarg
+	${RP} ${TD}/scriptarg 2>&1 | diff - ${OD}/scriptarg
 
-test-badinterplen: ${PROG} badinterplen
-	${RP} ${.OBJDIR}/badinterplen | diff - ${OD}/badinterplen
-
-goodscript: ${TD}/goodscript.in
-	${INSTALL} -c -m 755 ${.ALLSRC} ${.TARGET}
-
-test-goodscript: ${PROG} goodscript
-	${RP} ${.OBJDIR}/goodscript | diff - ${OD}/goodscript
-
-scriptarg: ${TD}/scriptarg.in
-	${INSTALL} -c -m 755 ${.ALLSRC} ${.TARGET}
-
-test-scriptarg: ${PROG} scriptarg
-	${RP} ${.OBJDIR}/scriptarg 2>&1 | diff - ${OD}/scriptarg
-
-scriptarg-nospace: ${TD}/scriptarg-nospace.in
-	${INSTALL} -c -m 755 ${.ALLSRC} ${.TARGET}
-
-test-scriptarg-nospace: ${PROG} scriptarg-nospace
-	${RP} ${.OBJDIR}/scriptarg-nospace 2>&1 | diff - ${OD}/scriptarg-nospace
+test-scriptarg-nospace: ${PROG} ${TD}/scriptarg-nospace
+	${RP} ${TD}/scriptarg-nospace 2>&1 | diff - ${OD}/scriptarg-nospace
 
 goodaout: ${TD}/goodaout.c
 	${LINK.c} ${LDSTATIC} -o ${.TARGET} ${TD}/goodaout.c ${LDLIBS}
@@ -81,4 +57,4 @@ truncaout: goodaout
 test-truncaout: ${PROG} truncaout
 	${RP} ${.OBJDIR}/truncaout | diff - ${OD}/truncaout
 
-.include <bsd.regress.mk>
+.include <bsd.prog.mk>

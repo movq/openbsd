@@ -1,6 +1,7 @@
-/*	$OpenBSD: frm_user.c,v 1.8 2015/01/23 22:48:51 krw Exp $	*/
+/*	$OpenBSD: frm_user.c,v 1.5 1999/05/17 03:04:17 millert Exp $	*/
+
 /****************************************************************************
- * Copyright (c) 1998-2003,2004 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -28,12 +29,12 @@
  ****************************************************************************/
 
 /****************************************************************************
- *   Author:  Juergen Pfeifer, 1995,1997                                    *
+ *   Author: Juergen Pfeifer <juergen.pfeifer@gmx.net> 1995,1997            *
  ****************************************************************************/
 
 #include "form.priv.h"
 
-MODULE_ID("$Id: frm_user.c,v 1.8 2015/01/23 22:48:51 krw Exp $")
+MODULE_ID("$From: frm_user.c,v 1.8 1999/05/16 17:22:21 juergen Exp $")
 
 /*---------------------------------------------------------------------------
 |   Facility      :  libnform  
@@ -44,11 +45,8 @@ MODULE_ID("$Id: frm_user.c,v 1.8 2015/01/23 22:48:51 krw Exp $")
 |
 |   Return Values :  E_OK         - on success
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(int)
-set_form_userptr(FORM *form, void *usrptr)
+int set_form_userptr(FORM * form, void *usrptr)
 {
-  T((T_CALLED("set_form_userptr(%p,%p)"), form, usrptr));
-
   Normalize_Form(form)->usrptr = usrptr;
   RETURN(E_OK);
 }
@@ -63,11 +61,9 @@ set_form_userptr(FORM *form, void *usrptr)
 |   Return Values :  Value of pointer. If no such pointer has been set,
 |                    NULL is returned
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(void *)
-form_userptr(const FORM *form)
+void *form_userptr(const FORM * form)
 {
-  T((T_CALLED("form_userptr(%p)"), form));
-  returnVoidPtr(Normalize_Form(form)->usrptr);
+  return Normalize_Form(form)->usrptr;
 }
 
 /* frm_user.c ends here */

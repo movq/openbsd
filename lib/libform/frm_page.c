@@ -1,6 +1,7 @@
-/*	$OpenBSD: frm_page.c,v 1.6 2015/01/23 22:48:51 krw Exp $	*/
+/*	$OpenBSD: frm_page.c,v 1.3 1999/05/17 03:04:17 millert Exp $	*/
+
 /****************************************************************************
- * Copyright (c) 1998-2003,2004 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -28,12 +29,12 @@
  ****************************************************************************/
 
 /****************************************************************************
- *   Author:  Juergen Pfeifer, 1995,1997                                    *
+ *   Author: Juergen Pfeifer <juergen.pfeifer@gmx.net> 1995,1997            *
  ****************************************************************************/
 
 #include "form.priv.h"
 
-MODULE_ID("$Id: frm_page.c,v 1.6 2015/01/23 22:48:51 krw Exp $")
+MODULE_ID("$From: frm_page.c,v 1.5 1999/05/16 17:21:26 juergen Exp $")
 
 /*---------------------------------------------------------------------------
 |   Facility      :  libnform  
@@ -47,38 +48,35 @@ MODULE_ID("$Id: frm_page.c,v 1.6 2015/01/23 22:48:51 krw Exp $")
 |                    E_INVALID_FIELD   - current field can't be left
 |                    E_SYSTEM_ERROR    - system error
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(int)
-set_form_page(FORM *form, int page)
+int set_form_page(FORM * form, int page)
 {
   int err = E_OK;
 
-  T((T_CALLED("set_form_page(%p,%d)"), form, page));
-
-  if (!form || (page < 0) || (page >= form->maxpage))
+  if ( !form || (page<0) || (page>=form->maxpage) )
     RETURN(E_BAD_ARGUMENT);
 
   if (!(form->status & _POSTED))
     {
       form->curpage = page;
       form->current = _nc_First_Active_Field(form);
-    }
+  }
   else
     {
-      if (form->status & _IN_DRIVER)
+      if (form->status & _IN_DRIVER) 
 	err = E_BAD_STATE;
       else
 	{
 	  if (form->curpage != page)
 	    {
-	      if (!_nc_Internal_Validation(form))
+	      if (!_nc_Internal_Validation(form)) 
 		err = E_INVALID_FIELD;
 	      else
 		{
-		  Call_Hook(form, fieldterm);
-		  Call_Hook(form, formterm);
-		  err = _nc_Set_Form_Page(form, page, (FIELD *)0);
-		  Call_Hook(form, forminit);
-		  Call_Hook(form, fieldinit);
+		  Call_Hook(form,fieldterm);
+		  Call_Hook(form,formterm);
+		  err = _nc_Set_Form_Page(form,page,(FIELD *)0);
+		  Call_Hook(form,forminit);
+		  Call_Hook(form,fieldinit);
 		  _nc_Refresh_Current_Field(form);
 		}
 	    }
@@ -96,12 +94,9 @@ set_form_page(FORM *form, int page)
 |   Return Values :  >= 0  : current page number
 |                    -1    : invalid form pointer
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(int)
-form_page(const FORM *form)
+int form_page(const FORM * form)
 {
-  T((T_CALLED("form_page(%p)"), form));
-
-  returnCode(Normalize_Form(form)->curpage);
+  return Normalize_Form(form)->curpage;
 }
 
 /* frm_page.c ends here */

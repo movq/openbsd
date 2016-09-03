@@ -1,4 +1,4 @@
-/*	$OpenBSD: sem.h,v 1.24 2016/09/01 08:33:40 tom Exp $	*/
+/*	$OpenBSD: sem.h,v 1.7 1998/07/20 07:37:22 deraadt Exp $	*/
 /*	$NetBSD: sem.h,v 1.8 1996/02/09 18:25:29 christos Exp $	*/
 
 /*
@@ -10,38 +10,7 @@
 #ifndef _SYS_SEM_H_
 #define _SYS_SEM_H_
 
-#ifndef _SYS_IPC_H_
 #include <sys/ipc.h>
-#endif
-
-#if __BSD_VISIBLE
-
-/* sem-specific sysctl variables corresponding to members of struct seminfo */
-#define	KERN_SEMINFO_SEMMNI	1	/* int: # of semaphore identifiers */
-#define	KERN_SEMINFO_SEMMNS	2	/* int: # of semaphores in system */
-#define	KERN_SEMINFO_SEMMNU	3	/* int: # of undo structures in system */
-#define	KERN_SEMINFO_SEMMSL	4	/* int: max semaphores per id */
-#define	KERN_SEMINFO_SEMOPM	5	/* int: max operations per semop call */
-#define	KERN_SEMINFO_SEMUME	6	/* int: max undo entries per process */
-#define	KERN_SEMINFO_SEMUSZ	7	/* int: size in bytes of struct undo */
-#define	KERN_SEMINFO_SEMVMX	8	/* int: semaphore maximum value */
-#define	KERN_SEMINFO_SEMAEM	9	/* int: adjust on exit max value */
-#define	KERN_SEMINFO_MAXID	10	/* number of valid semaphore sysctls */
-
-#define	CTL_KERN_SEMINFO_NAMES { \
-	{ 0, 0 }, \
-	{ "semmni", CTLTYPE_INT }, \
-	{ "semmns", CTLTYPE_INT }, \
-	{ "semmnu", CTLTYPE_INT }, \
-	{ "semmsl", CTLTYPE_INT }, \
-	{ "semopm", CTLTYPE_INT }, \
-	{ "semume", CTLTYPE_INT }, \
-	{ "semusz", CTLTYPE_INT }, \
-	{ "semvmx", CTLTYPE_INT }, \
-	{ "semaem", CTLTYPE_INT }, \
-}
-
-#endif /* __BSD_VISIBLE */
 
 struct sem {
 	unsigned short	semval;		/* semaphore value */
@@ -63,6 +32,21 @@ struct semid_ds {
 	long		sem_pad3[4];	/* SVABI/386 says I need this here */
 };
 
+#ifdef _KERNEL
+struct osemid_ds {
+	struct oipc_perm sem_perm;	/* operation permission struct */
+	struct sem	*sem_base;	/* pointer to first semaphore in set */
+	unsigned short	sem_nsems;	/* number of sems in set */
+	time_t		sem_otime;	/* last operation time */
+	long		sem_pad1;	/* SVABI/386 says I need this here */
+	time_t		sem_ctime;	/* last change time */
+	    				/* Times measured in secs since */
+	    				/* 00:00:00 GMT, Jan. 1, 1970 */
+	long		sem_pad2;	/* SVABI/386 says I need this here */
+	long		sem_pad3[4];	/* SVABI/386 says I need this here */
+};
+#endif
+
 /*
  * semop's sops parameter structure
  */
@@ -72,6 +56,8 @@ struct sembuf {
 	short		sem_flg;	/* operation flags */
 };
 #define SEM_UNDO	010000
+
+#define MAX_SOPS	5	/* maximum # of sembuf's per semop call */
 
 /*
  * semctl's arg parameter structure
@@ -102,8 +88,6 @@ union semun {
 
 
 #ifdef _KERNEL
-#include <sys/queue.h>
-
 /*
  * Kernel implementation stuff
  */
@@ -114,8 +98,8 @@ union semun {
  * Undo structure (one per process)
  */
 struct sem_undo {
-	SLIST_ENTRY(sem_undo) un_next;	/* ptr to next active undo structure */
-	struct	process *un_proc;	/* owner of this structure */
+	struct	sem_undo *un_next;	/* ptr to next active undo structure */
+	struct	proc *un_proc;		/* owner of this structure */
 	short	un_cnt;			/* # of active entries */
 	struct undo {
 		short	un_adjval;	/* adjust on exit values */
@@ -128,7 +112,8 @@ struct sem_undo {
  * semaphore info struct
  */
 struct seminfo {
-	int	semmni,		/* # of semaphore identifiers */
+	int	semmap,		/* # of entries in semaphore map */
+		semmni,		/* # of semaphore identifiers */
 		semmns,		/* # of semaphores in system */
 		semmnu,		/* # of undo structures in system */
 		semmsl,		/* max # of semaphores per id */
@@ -138,13 +123,11 @@ struct seminfo {
 		semvmx,		/* semaphore maximum value */
 		semaem;		/* adjust on exit max value */
 };
+struct seminfo	seminfo;
 
-struct sem_sysctl_info {
-	struct	seminfo seminfo;
-	struct	semid_ds semids[1];
-};
-
-extern struct seminfo	seminfo;
+/* internal "mode" bits */
+#define	SEM_ALLOC	01000	/* semaphore is allocated */
+#define	SEM_DEST	02000	/* semaphore will be destroyed on last detach */
 
 /*
  * Configuration parameters
@@ -163,6 +146,9 @@ extern struct seminfo	seminfo;
 #endif
 
 /* shouldn't need tuning */
+#ifndef SEMMAP
+#define SEMMAP	30		/* # of entries in semaphore map */
+#endif
 #ifndef SEMMSL
 #define SEMMSL	SEMMNS		/* max # of semaphores per id */
 #endif
@@ -173,26 +159,41 @@ extern struct seminfo	seminfo;
 /* actual size of an undo structure */
 #define SEMUSZ	(sizeof(struct sem_undo)+sizeof(struct undo)*SEMUME)
 
-extern struct	semid_ds **sema;	/* semaphore id list */
+/*
+ * Structures allocated in machdep.c
+ */
+struct	semid_ds *sema;		/* semaphore id pool */
+struct	sem *sem;		/* semaphore pool */
+struct	map *semmap;		/* semaphore allocation map */
+struct	sem_undo *semu_list;	/* list of active undo structures */
+int	*semu;			/* undo structure pool */
 
-struct proc;
+/*
+ * Macro to find a particular sem_undo vector
+ */
+#define SEMU(ix)	((struct sem_undo *)(((long)semu)+ix * SEMUSZ))
 
-void	seminit(void);
-void	semexit(struct process *);
-int	sysctl_sysvsem(int *, u_int, void *, size_t *, void *, size_t);
-int	semctl1(struct proc *, int, int, int, union semun *, register_t *,
-	    int (*)(const void *, void *, size_t),
-	    int (*)(const void *, void *, size_t));
-
+/*
+ * Parameters to the semconfig system call
+ */
+#define	SEM_CONFIG_FREEZE	0	/* Freeze the semaphore facility. */
+#define	SEM_CONFIG_THAW		1	/* Thaw the semaphore facility. */
 #endif /* _KERNEL */
 
 #ifndef _KERNEL
+#include <sys/cdefs.h>
+
 __BEGIN_DECLS
-int	semctl(int, int, int, ...);
-int	__semctl(int, int, int, union semun *);
-int	semget(key_t, int, int);
-int	semop(int, struct sembuf *, size_t);
+int semctl __P((int, int, int, ...));
+int __semctl __P((int, int, int, union semun *));
+int semget __P((key_t, int, int));
+int semop __P((int, struct sembuf *, u_int));
+int semconfig __P((int));
 __END_DECLS
+#else
+void seminit __P((void));
+void semexit __P((struct proc *));
+void semid_n2o __P((struct semid_ds *, struct osemid_ds *));
 #endif /* !_KERNEL */
 
-#endif /* !_SYS_SEM_H_ */
+#endif /* !_SEM_H_ */

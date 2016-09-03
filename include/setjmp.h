@@ -1,4 +1,4 @@
-/*	$OpenBSD: setjmp.h,v 1.7 2016/05/23 00:18:56 guenther Exp $	*/
+/*	$OpenBSD: setjmp.h,v 1.2 1997/09/21 10:45:50 niklas Exp $	*/
 /*	$NetBSD: setjmp.h,v 1.11 1994/12/20 10:35:44 cgd Exp $	*/
 
 /*-
@@ -18,7 +18,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -40,28 +44,30 @@
 #ifndef _SETJMP_H_
 #define _SETJMP_H_
 
-#include <sys/cdefs.h>
 #include <machine/setjmp.h>
 
-#if __BSD_VISIBLE || __POSIX_VISIBLE || __XPG_VISIBLE
+#ifndef _ANSI_SOURCE
 typedef long sigjmp_buf[_JBLEN + 1];
-#endif /* __BSD_VISIBLE || __POSIX_VISIBLE || __XPG_VISIBLE */
+#endif /* not ANSI */
 
 typedef long jmp_buf[_JBLEN];
 
+#include <sys/cdefs.h>
+
 __BEGIN_DECLS
-__returns_twice int	setjmp(jmp_buf);
-__dead void	longjmp(jmp_buf, int);
+int	setjmp __P((jmp_buf));
+void	longjmp __P((jmp_buf, int));
 
-#if __BSD_VISIBLE || __POSIX_VISIBLE || __XPG_VISIBLE
-__returns_twice int	sigsetjmp(sigjmp_buf, int);
-__dead void	siglongjmp(sigjmp_buf, int);
-#endif /* __BSD_VISIBLE || __POSIX_VISIBLE || __XPG_VISIBLE */
+#ifndef _ANSI_SOURCE
+int	sigsetjmp __P((sigjmp_buf, int));
+void	siglongjmp __P((sigjmp_buf, int));
+#endif /* not ANSI */
 
-#if __BSD_VISIBLE || __XPG_VISIBLE
-__returns_twice int	_setjmp(jmp_buf);
-__dead void	_longjmp(jmp_buf, int);
-#endif /* __BSD_VISIBLE || __XPG_VISIBLE */
+#if !defined(_ANSI_SOURCE) && !defined(_POSIX_SOURCE)
+int	_setjmp __P((jmp_buf));
+void	_longjmp __P((jmp_buf, int));
+void	longjmperror __P((void));
+#endif /* neither ANSI nor POSIX */
 __END_DECLS
 
 #endif /* !_SETJMP_H_ */

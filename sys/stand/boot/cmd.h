@@ -1,4 +1,4 @@
-/*	$OpenBSD: cmd.h,v 1.16 2007/06/13 02:17:32 drahn Exp $	*/
+/*	$OpenBSD: cmd.h,v 1.10 1998/05/25 19:17:42 mickey Exp $	*/
 
 /*
  * Copyright (c) 1997 Michael Shalayeff
@@ -12,9 +12,14 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR 
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
  * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
@@ -27,8 +32,6 @@
  *
  */
 
-#define CMD_BUFF_SIZE		133
-#define BOOTDEVLEN		1024
 
 struct cmd_table {
 	char *cmd_name;
@@ -37,11 +40,11 @@ struct cmd_table {
 #define CMDT_VAR 1
 #define CMDT_SET 2
 #define CMDT_MDC 3
-	int (*cmd_exec)(void);
+	int (*cmd_exec) __P((void));
 };
 
 struct cmd_state {
-	char bootdev[BOOTDEVLEN]; /* device */
+	char bootdev[16]; /* device */
 	char image[MAXPATHLEN - 16]; /* image */
 	int  boothowto; /* howto */
 	char *conf; /* /etc/boot.conf normally */
@@ -55,9 +58,6 @@ struct cmd_state {
 };
 extern struct cmd_state cmd;
 
-int getcmd(void);
-int read_conf(void);
-int bootparse(int);
-void boot(dev_t);
-
-int docmd(void);		/* No longer static: needed by regress test */
+int getcmd __P((void));
+int read_conf __P((void));
+int bootparse __P((int));

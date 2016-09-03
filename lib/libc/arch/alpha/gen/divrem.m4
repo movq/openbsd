@@ -1,4 +1,4 @@
-/*	$OpenBSD: divrem.m4,v 1.5 2015/06/01 19:02:11 miod Exp $	*/
+/*	$OpenBSD: divrem.m4,v 1.3 1996/11/13 21:20:09 niklas Exp $	*/
 /*	$NetBSD: divrem.m4,v 1.7 1996/10/17 03:08:04 cgd Exp $	*/
 
 /*
@@ -57,41 +57,16 @@ ifelse(S, `true', `define(NEG, `t4')')
 
 #include <machine/asm.h>
 
-/*
- * These functions use t11 as an input, which makes them incompatible with
- * the secureplt calling sequence. The compiler knows about this, and will
- * ask for a call through a got relocation. But this can only work if the
- * linker omits creating a plt entry for the symbol. In order to achieve
- * this, we need to declare it as `notype' instead of `function', which
- * means that LEAF(NAME, 0) can't be used as it uses .ent which forces the
- * `function' type.
- */
-	.globl	NAME
-	.type	NAME, @notype
-	.usepv	NAME, no
-
-	.cfi_startproc
-	.cfi_return_column ra
-NAME:
-	MCOUNT
+LEAF(NAME, 0)					/* XXX */
 	lda	sp, -64(sp)
-	.cfi_def_cfa_offset 64
 	stq	BIT, 0(sp)
-	.cfi_rel_offset BIT, 0
 	stq	I, 8(sp)
-	.cfi_rel_offset I, 8
 	stq	CC, 16(sp)
-	.cfi_rel_offset CC, 16
 	stq	T_0, 24(sp)
-	.cfi_rel_offset T_0, 24
-ifelse(S, `true',`dnl
-	stq	NEG, 32(sp)
-	.cfi_rel_offset NEG, 32
-')dnl
+ifelse(S, `true',
+`	stq	NEG, 32(sp)')
 	stq	A, 40(sp)
-	.cfi_rel_offset A, 40
 	stq	B, 48(sp)
-	.cfi_rel_offset B, 48
 	mov	zero, RESULT			/* Initialize result to zero */
 
 ifelse(S, `true',
@@ -197,28 +172,19 @@ ifelse(OP, `div',
 ifelse(S, `true',
 `
 	/* Check to see if we should negate it. */
-	subq	zero, RESULT, T_0
+	subqv	zero, RESULT, T_0
 	cmovlbs	NEG, T_0, RESULT
 ')
 
 	ldq	BIT, 0(sp)
-	.cfi_restore BIT
 	ldq	I, 8(sp)
-	.cfi_restore I
 	ldq	CC, 16(sp)
-	.cfi_restore CC
 	ldq	T_0, 24(sp)
-	.cfi_restore T_0
-ifelse(S, `true',`dnl
-	ldq	NEG, 32(sp)
-	.cfi_restore NEG
-')dnl
+ifelse(S, `true',
+`	ldq	NEG, 32(sp)')
 	ldq	A, 40(sp)
-	.cfi_restore A
 	ldq	B, 48(sp)
-	.cfi_restore B
 	lda	sp, 64(sp)
-	.cfi_def_cfa_offset 0
 	ret	zero, (t9), 1
 
 Ldotrap:
@@ -229,9 +195,4 @@ ifelse(OP, `div',
 ')
 	br	zero, Lret_result
 
-/*
- * For the reasons stated above, we can not use END(NAME) either, as it
- * expands to .end which requires a matching .ent.
- */
-	.cfi_endproc
-	.size	NAME, . - NAME
+END(NAME)

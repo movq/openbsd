@@ -1,4 +1,4 @@
-/*	$OpenBSD: exec.h,v 1.4 2003/06/02 21:19:03 maja Exp $ */
+/*	$OpenBSD: exec.h,v 1.1 1999/10/04 20:00:51 deraadt Exp $ */
 
 /*
  * Copyright (c) 1999 Mats O Jansson.  All rights reserved.
@@ -11,6 +11,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Mats O Jansson.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -27,10 +32,10 @@
 #ifndef _EXEC_H
 #define _EXEC_H
 
-void	loadkernel(char *);
-void	savekernel(char *);
-caddr_t	adjust(caddr_t);
-caddr_t	readjust(caddr_t);
+void	loadkernel __P((char *));
+void	savekernel __P((char *));
+caddr_t	adjust __P((caddr_t));
+caddr_t	readjust __P((caddr_t));
 
-#endif /* _EXEC_H */
+#endif _EXEC_H
 

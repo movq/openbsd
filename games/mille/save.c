@@ -1,4 +1,4 @@
-/*	$OpenBSD: save.c,v 1.12 2016/01/08 18:09:59 mestre Exp $	*/
+/*	$OpenBSD: save.c,v 1.4 1999/09/25 15:52:20 pjanzen Exp $	*/
 /*	$NetBSD: save.c,v 1.4 1995/03/24 05:02:13 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,14 +34,15 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/stat.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)save.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: save.c,v 1.4 1999/09/25 15:52:20 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
-#include <err.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <string.h>
-#include <unistd.h>
-
+#include <time.h>
 #include "mille.h"
 
 /*
@@ -51,7 +56,7 @@ typedef	struct stat	STAT;
  *	Returns FALSE if it couldn't be done.
  */
 bool
-save(void)
+save()
 {
 	char	*sp;
 	int	outf;
@@ -72,7 +77,7 @@ over:
 		refresh();
 		sp = buf;
 		while ((*sp = readch()) != '\n' && *sp != '\r' &&
-		    (sp - buf < (int)sizeof(buf))) {
+		    (sp - buf < sizeof(buf))) {
 			if (*sp == killchar())
 				goto over;
 			else if (*sp == erasechar()) {
@@ -107,7 +112,7 @@ over:
 	    && getyn(OVERWRITEFILEPROMPT) == FALSE))
 		return FALSE;
 
-	if ((outf = open(buf, O_CREAT | O_TRUNC | O_WRONLY, 0644)) < 0) {
+	if ((outf = creat(buf, 0644)) < 0) {
 		error(strerror(errno));
 		return FALSE;
 	}
@@ -119,7 +124,7 @@ over:
 	if (!rv)
 		unlink(buf);
 	else {
-		strlcpy(buf, ctime(tp), sizeof buf);
+		strcpy(buf, ctime(tp));
 		for (sp = buf; *sp != '\n'; sp++)
 			continue;
 		*sp = '\0';
@@ -136,7 +141,8 @@ over:
  * be cleaned up before the game starts.
  */
 bool
-rest_f(const char *file)
+rest_f(file)
+	const char	*file;
 {
 	char	*sp;
 	int	inf;
@@ -149,14 +155,14 @@ rest_f(const char *file)
 		err(1, "%s", file);
 	varpush(inf, readv);
 	close(inf);
-	strlcpy(buf, ctime(&sbuf.st_mtime), sizeof buf);
+	strcpy(buf, ctime(&sbuf.st_mtime));
 	for (sp = buf; *sp != '\n'; sp++)
 		continue;
 	*sp = '\0';
 	/*
 	 * initialize some necessary values
 	 */
-	(void)snprintf(Initstr, sizeof Initstr, "%s [%s]\n", file, buf);
+	(void)sprintf(Initstr, "%s [%s]\n", file, buf);
 	Fromfile = file;
 	return !On_exit;
 }

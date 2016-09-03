@@ -1,4 +1,3 @@
-/*	$OpenBSD: brk.S,v 1.12 2016/05/07 19:05:21 guenther Exp $ */
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
  * All rights reserved.
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,23 +36,24 @@
 
 #include "SYS.h"
 
+#if defined(SYSLIBC_SCCS)
+	.text
+	.asciz "$OpenBSD: brk.S,v 1.3 1997/09/17 17:23:38 weingart Exp $"
+#endif /* SYSLIB_SCCS */
+
 	.globl	_end
-	.globl	__curbrk
+	.globl	minbrk
+	.globl	curbrk
 
 	.data
-__minbrk:
-	.long	_end
-	END(__minbrk)
-	.type	__minbrk,@object
+minbrk:	.long	_end
 	.text
 
-	.weak	brk
-
 ENTRY(brk)
-#ifdef __PIC__
+#ifdef PIC
 	movl	4(%esp),%ecx
 	PIC_PROLOGUE
-	movl	PIC_GOT(__minbrk),%edx
+	movl	PIC_GOT(minbrk),%edx
 	PIC_EPILOGUE
 	cmpl	%ecx,(%edx)
 	jb	1f
@@ -58,29 +62,30 @@ ENTRY(brk)
 1:
 	movl	$(SYS_break),%eax
 	int	$0x80
-	jc	2f
+	jc	err
 	PIC_PROLOGUE
-	movl	PIC_GOT(__curbrk),%edx	# set up GOT addressing
+	movl	PIC_GOT(curbrk),%edx	# set up GOT addressing
 	PIC_EPILOGUE
 	xorl	%eax,%eax
 	movl	%ecx,(%edx)
+	ret
+err:
+	jmp	PIC_PLT(cerror)
 
 #else
 
 	movl	4(%esp),%ecx
-	cmpl	%ecx,__minbrk
+	cmpl	%ecx,minbrk
 	jb	1f
-	movl	__minbrk,%ecx
+	movl	minbrk,%ecx
 	movl	%ecx,4(%esp)
 1:
 	movl	$(SYS_break),%eax
 	int	$0x80
-	jc	2f
+	jc	err
 	xorl	%eax,%eax
-	movl	%ecx,__curbrk
+	movl	%ecx,curbrk
+	ret
+err:
+	jmp	cerror
 #endif
-	ret
-2:
-	SET_ERRNO()
-	ret
-END(brk)

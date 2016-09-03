@@ -1,5 +1,5 @@
 /*	$NetBSD: compare.c,v 1.11 1996/09/05 09:56:48 mycroft Exp $	*/
-/*	$OpenBSD: compare.c,v 1.27 2016/08/16 16:41:46 krw Exp $	*/
+/*	$OpenBSD: compare.c,v 1.10 1998/05/18 19:10:06 deraadt Exp $	*/
 
 /*-
  * Copyright (c) 1989, 1993
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +34,15 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)compare.c	8.1 (Berkeley) 6/6/93";
+#else
+static char rcsid[] = "$OpenBSD: compare.c,v 1.10 1998/05/18 19:10:06 deraadt Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <fts.h>
@@ -37,17 +50,15 @@
 #include <stdio.h>
 #include <time.h>
 #include <unistd.h>
-#include <limits.h>
 #include <md5.h>
-#include <rmd160.h>
 #include <sha1.h>
-#include <sha2.h>
+#include <rmd160.h>
 #include "mtree.h"
 #include "extern.h"
 
-extern int lflag, tflag, uflag;
+extern int tflag, uflag;
 
-static char *ftype(u_int);
+static char *ftype __P((u_int));
 
 #define	INDENTNAMELEN	8
 #define	LABEL \
@@ -62,17 +73,11 @@ static char *ftype(u_int);
 		} \
 	}
 
-#define REPLACE_COMMA(x)						\
-	do {								\
-		char *l;						\
-		for (l = x; *l; l++) {					\
-			if (*l == ',')					\
-				*l = ' ';				\
-		}							\
-	} while (0)							\
-
 int
-compare(char *name, NODE *s, FTSENT *p)
+compare(name, s, p)
+	char *name;
+	register NODE *s;
+	register FTSENT *p;
 {
 	u_int32_t len, val;
 	int fd, label;
@@ -143,21 +148,6 @@ typeerr:		LABEL;
 	}
 	if (s->flags & F_MODE &&
 	    s->st_mode != (p->fts_statp->st_mode & MBITS)) {
-		if (lflag) {
-			mode_t tmode, mode;
-
-			tmode = s->st_mode;
-			mode = p->fts_statp->st_mode & MBITS;
-			/*
-			 * if none of the suid/sgid/etc bits are set,
-			 * then if the mode is a subset of the target,
-			 * skip.
-			 */
-			if (!((tmode & ~(S_IRWXU|S_IRWXG|S_IRWXO)) ||
-			    (mode & ~(S_IRWXU|S_IRWXG|S_IRWXO))))
-				if ((mode | tmode) == tmode)
-					goto skip;
-		}
 		LABEL;
 		(void)printf("%spermissions (%#o, %#o",
 		    tab, s->st_mode, p->fts_statp->st_mode & MBITS);
@@ -170,8 +160,6 @@ typeerr:		LABEL;
 		else
 			(void)printf(")\n");
 		tab = "\t";
-	skip:
-		;
 	}
 	if (s->flags & F_NLINK && s->type != F_DIR &&
 	    s->st_nlink != p->fts_statp->st_nlink) {
@@ -182,9 +170,8 @@ typeerr:		LABEL;
 	}
 	if (s->flags & F_SIZE && s->st_size != p->fts_statp->st_size) {
 		LABEL;
-		(void)printf("%ssize (%lld, %lld)\n",
-		    tab, (long long)s->st_size,
-		    (long long)p->fts_statp->st_size);
+		(void)printf("%ssize (%qd, %qd)\n",
+		    tab, s->st_size, p->fts_statp->st_size);
 		tab = "\t";
 	}
 	/*
@@ -212,15 +199,15 @@ typeerr:		LABEL;
 				if (utimes(p->fts_accpath, tv))
 					(void)printf(", not modified: %s)\n",
 					    strerror(errno));
-				else
-					(void)printf(", modified)\n");
+				else  
+					(void)printf(", modified)\n");  
 			} else
 				(void)printf(")\n");
-			tab = "\t";
+			tab = "\t";   
 		}
 	}
-	if (s->flags & F_CKSUM) {
-		if ((fd = open(p->fts_accpath, MTREE_O_FLAGS, 0)) < 0) {
+	if (s->flags & F_CKSUM)
+		if ((fd = open(p->fts_accpath, O_RDONLY, 0)) < 0) {
 			LABEL;
 			(void)printf("%scksum: %s: %s\n",
 			    tab, p->fts_accpath, strerror(errno));
@@ -240,9 +227,8 @@ typeerr:		LABEL;
 			}
 			tab = "\t";
 		}
-	}
 	if (s->flags & F_MD5) {
-		char *new_digest, buf[MD5_DIGEST_STRING_LENGTH];
+		char *new_digest, buf[33];
 
 		new_digest = MD5File(p->fts_accpath, buf);
 		if (!new_digest) {
@@ -258,7 +244,7 @@ typeerr:		LABEL;
 		}
 	}
 	if (s->flags & F_RMD160) {
-		char *new_digest, buf[RMD160_DIGEST_STRING_LENGTH];
+		char *new_digest, buf[41];
 
 		new_digest = RMD160File(p->fts_accpath, buf);
 		if (!new_digest) {
@@ -274,7 +260,7 @@ typeerr:		LABEL;
 		}
 	}
 	if (s->flags & F_SHA1) {
-		char *new_digest, buf[SHA1_DIGEST_STRING_LENGTH];
+		char *new_digest, buf[41];
 
 		new_digest = SHA1File(p->fts_accpath, buf);
 		if (!new_digest) {
@@ -289,66 +275,16 @@ typeerr:		LABEL;
 			tab = "\t";
 		}
 	}
-	if (s->flags & F_SHA256) {
-		char *new_digest, buf[SHA256_DIGEST_STRING_LENGTH];
-
-		new_digest = SHA256File(p->fts_accpath, buf);
-		if (!new_digest) {
-			LABEL;
-			printf("%sSHA256File: %s: %s\n", tab, p->fts_accpath,
-			       strerror(errno));
-			tab = "\t";
-		} else if (strcmp(new_digest, s->sha256digest)) {
-			LABEL;
-			printf("%sSHA256 (%s, %s)\n", tab, s->sha256digest,
-			       new_digest);
-			tab = "\t";
-		}
-	}
 	if (s->flags & F_SLINK && strcmp(cp = rlink(name), s->slink)) {
 		LABEL;
 		(void)printf("%slink ref (%s, %s)\n", tab, cp, s->slink);
-	}
-	if (s->flags & F_FLAGS && s->file_flags != p->fts_statp->st_flags) {
-		char *db_flags = NULL;
-		char *cur_flags = NULL;
-
-		if ((db_flags = fflagstostr(s->file_flags)) == NULL ||
-		    (cur_flags = fflagstostr(p->fts_statp->st_flags)) == NULL) {
-			LABEL;
-			(void)printf("%sflags: %s %s\n", tab, p->fts_accpath,
-				     strerror(errno));
-			tab = "\t";
-			free(db_flags);
-			free(cur_flags);
-		} else {
-			LABEL;
-			REPLACE_COMMA(db_flags);
-			REPLACE_COMMA(cur_flags);
-			printf("%sflags (%s, %s", tab, (*db_flags == '\0') ?
-						  "-" : db_flags,
-						  (*cur_flags == '\0') ?
-						  "-" : cur_flags);
-				tab = "\t";
-			if (uflag)
-				if (chflags(p->fts_accpath, s->file_flags))
-					(void)printf(", not modified: %s)\n",
-						strerror(errno));
-				else
-					(void)printf(", modified)\n");
-			else
-				(void)printf(")\n");
-			tab = "\t";
-
-			free(db_flags);
-			free(cur_flags);
-		}
 	}
 	return (label);
 }
 
 char *
-inotype(u_int type)
+inotype(type)
+	u_int type;
 {
 	switch(type & S_IFMT) {
 	case S_IFBLK:
@@ -372,7 +308,8 @@ inotype(u_int type)
 }
 
 static char *
-ftype(u_int type)
+ftype(type)
+	u_int type;
 {
 	switch(type) {
 	case F_BLOCK:
@@ -396,10 +333,11 @@ ftype(u_int type)
 }
 
 char *
-rlink(char *name)
+rlink(name)
+	char *name;
 {
-	static char lbuf[PATH_MAX];
-	int len;
+	static char lbuf[MAXPATHLEN];
+	register int len;
 
 	if ((len = readlink(name, lbuf, sizeof(lbuf)-1)) == -1)
 		error("%s: %s", name, strerror(errno));

@@ -1,4 +1,4 @@
-/*	$OpenBSD: mailwrapper.c,v 1.22 2015/12/28 16:27:28 jung Exp $	*/
+/*	$OpenBSD: mailwrapper.c,v 1.5 1999/09/28 15:25:45 ho Exp $	*/
 /*	$NetBSD: mailwrapper.c,v 1.2 1999/02/20 22:10:07 thorpej Exp $	*/
 
 /*
@@ -41,83 +41,104 @@
 #include <util.h>
 
 #define _PATH_MAILERCONF	"/etc/mailer.conf"
-#define _PATH_DEFAULTMTA	"/usr/sbin/smtpctl"
+#define _PATH_DEFAULTMTA	"/usr/libexec/sendmail/sendmail"
 
 struct arglist {
 	size_t argc, maxc;
 	char **argv;
 };
 
-int main(int, char *[], char *[]);
+int main __P((int, char *[], char *[]));
 
-static void initarg(struct arglist *);
-static void addarg(struct arglist *, const char *);
+static void initarg __P((struct arglist *));
+static void addarg __P((struct arglist *, const char *, int));
+static void freearg __P((struct arglist *, int));
 
 extern const char *__progname;	/* from crt0.o */
 
 static void
-initarg(struct arglist *al)
+initarg(al)
+	struct arglist *al;
 {
 	al->argc = 0;
 	al->maxc = 10;
-	if ((al->argv = calloc(al->maxc, sizeof(char *))) == NULL)
-		err(1, "malloc");
+	if ((al->argv = malloc(al->maxc * sizeof(char *))) == NULL)
+		err(1, "mailwrapper");
 }
 
 static void
-addarg(struct arglist *al, const char *arg)
+addarg(al, arg, copy)
+	struct arglist *al;
+	const char *arg;
+	int copy;
 {
+	char **argv2;
+ 
 	if (al->argc == al->maxc) {
 		al->maxc <<= 1;
-		al->argv = reallocarray(al->argv, al->maxc, sizeof(char *));
-		if (al->argv == NULL)
-			err(1, "realloc");
-	}
 
-	al->argv[al->argc++] = (char *)arg;
+		if ((argv2 = realloc(al->argv,
+		    al->maxc * sizeof(char *))) == NULL) {
+			if (al->argv)
+				free(al->argv);
+			al->argv = NULL;
+			err(1, "mailwrapper");
+		} else {
+			al->argv = argv2;
+		}
+	}
+	if (copy) {
+		if ((al->argv[al->argc++] = strdup(arg)) == NULL)
+			err(1, "mailwrapper:");
+	} else
+		al->argv[al->argc++] = (char *)arg;
+}
+
+static void
+freearg(al, copy)
+	struct arglist *al;
+	int copy;
+{
+	size_t i;
+	if (copy)
+		for (i = 0; i < al->argc; i++)
+			free(al->argv[i]);
+	free(al->argv);
 }
 
 int
-main(int argc, char *argv[], char *envp[])
+main(argc, argv, envp)
+	int argc;
+	char *argv[];
+	char *envp[];
 {
 	FILE *config;
 	char *line, *cp, *from, *to, *ap;
-	const char *progname;
 	size_t len, lineno = 0;
 	struct arglist al;
 
-	if (pledge("stdio rpath exec", NULL) == -1)
-		err(1, "pledge");
-
-	/* change __progname to mailwrapper so we get sensible error messages */
-	progname = __progname;
-	__progname = "mailwrapper";
-
 	initarg(&al);
 	for (len = 0; len < argc; len++)
-		addarg(&al, argv[len]);
+		addarg(&al, argv[len], 0);
 
-	config = fopen(_PATH_MAILERCONF, "r");
-
-	if (pledge("stdio exec", NULL) == -1)
-		err(1, "pledge");
-
-	if (config == NULL) {
-		addarg(&al, NULL);
-		openlog(__progname, LOG_PID, LOG_MAIL);
-		syslog(LOG_INFO, "cannot open %s, using %s as default MTA",
+	if ((config = fopen(_PATH_MAILERCONF, "r")) == NULL) {
+		openlog("mailwrapper", LOG_PID, LOG_MAIL);
+		syslog(LOG_INFO, "can't open %s, using %s as default MTA",
 		    _PATH_MAILERCONF, _PATH_DEFAULTMTA);
 		closelog();
 		execve(_PATH_DEFAULTMTA, al.argv, envp);
-		err(1, "cannot exec %s", _PATH_DEFAULTMTA);
+		freearg(&al, 0);
+		free(line);
+		err(1, "mailwrapper: execing %s", _PATH_DEFAULTMTA);
 		/*NOTREACHED*/
 	}
 
 	for (;;) {
 		if ((line = fparseln(config, &len, &lineno, NULL, 0)) == NULL) {
 			if (feof(config))
-				errx(1, "no mapping in %s", _PATH_MAILERCONF);
-			err(1, "fparseln");
+				errx(1, "mailwrapper: no mapping in %s",
+				    _PATH_MAILERCONF);
+			err(1, "mailwrapper");
 		}
 
 #define	WS	" \t\n"
@@ -130,7 +151,7 @@ main(int argc, char *argv[], char *envp[])
 			continue;
 		}
 
-		if ((from = strsep(&cp, WS)) == NULL || cp == NULL)
+		if ((from = strsep(&cp, WS)) == NULL)
 			goto parse_error;
 
 		cp += strspn(cp, WS);
@@ -138,11 +159,11 @@ main(int argc, char *argv[], char *envp[])
 		if ((to = strsep(&cp, WS)) == NULL)
 			goto parse_error;
 
-		if (strcmp(from, progname) == 0) {
-			for (ap = strsep(&cp, WS); ap != NULL;
+		if (strcmp(from, __progname) == 0) {
+			for (ap = strsep(&cp, WS); ap != NULL; 
 			    ap = strsep(&cp, WS))
-				if (*ap)
-					addarg(&al, ap);
+			    if (*ap)
+				    addarg(&al, ap, 0);
 			break;
 		}
 
@@ -151,13 +172,15 @@ main(int argc, char *argv[], char *envp[])
 
 	(void)fclose(config);
 
-	addarg(&al, NULL);
-
 	execve(to, al.argv, envp);
-	err(1, "cannot exec %s", to);
+	freearg(&al, 0);
+	free(line);
+	err(1, "mailwrapper: execing %s", to);
 	/*NOTREACHED*/
 parse_error:
-	errx(1, "parse error in %s at line %lu",
+	freearg(&al, 0);
+	free(line);
+	errx(1, "mailwrapper: parse error in %s at line %lu",
 	    _PATH_MAILERCONF, (u_long)lineno);
 	/*NOTREACHED*/
 }

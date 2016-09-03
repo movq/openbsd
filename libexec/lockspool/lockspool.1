@@ -1,20 +1,30 @@
-.\"	$OpenBSD: lockspool.1,v 1.13 2014/09/16 21:11:56 jmc Exp $
 .\"
 .\" Copyright (c) 1998 Todd C. Miller <Todd.Miller@courtesan.com>
+.\" All rights reserved.
 .\"
-.\" Permission to use, copy, modify, and distribute this software for any
-.\" purpose with or without fee is hereby granted, provided that the above
-.\" copyright notice and this permission notice appear in all copies.
+.\" Redistribution and use in source and binary forms, with or without
+.\" modification, are permitted provided that the following conditions
+.\" are met:
+.\" 1. Redistributions of source code must retain the above copyright
+.\"    notice, this list of conditions and the following disclaimer.
+.\" 2. Redistributions in binary form must reproduce the above copyright
+.\"    notice, this list of conditions and the following disclaimer in the
+.\"    documentation and/or other materials provided with the distribution.
+.\" 3. The name of the author may not be used to endorse or promote products
+.\"    derived from this software without specific prior written permission.
 .\"
-.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\" THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
+.\" INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+.\" AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL
+.\" THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+.\" EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+.\" PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+.\" OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+.\" WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+.\" OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+.\" ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: September 16 2014 $
+.Dd August 13, 1998
 .Dt LOCKSPOOL 1
 .Os
 .Sh NAME
@@ -24,54 +34,37 @@
 .Nm lockspool
 .Op Ar username
 .Sh DESCRIPTION
-.Nm
+.Nm Lockspool
 is useful for a client mail program to attain proper locking.
-.Nm
+.Nm Lockspool
 obtains a
-.Pa username.lock
-for the calling user and retains it until stdin is closed or a signal like
-.Dv SIGINT ,
-.Dv SIGTERM ,
-or
-.Dv SIGHUP
-is received.
-Additionally, the superuser may specify the name of a user in order
-to lock a different mailbox.
+.Nm username.lock
+for the calling user and retains it until stdin is closed or a signal
+like SIGINT, SIGTERM, or SIGHUP is received.  Additionally, the superuser
+may specify the name of a user in order to lock a different mailbox.
 .Pp
 If
-.Nm
-is able to create the lock file,
-.Dq 1
-is written to stdout, otherwise
-.Dq 0
-is written and an error message is written to stderr.
-.Nm
+.Nm lockspool
+is able to create the lock file, ``1'' is written to stdout, otherwise
+``0'' is written and an error message is written to stderr.
+.Nm Lockspool
 will try up to 10 times to get the lock (sleeping
 for a short period in between tries).
 .Pp
-Typical usage is for a user mail agent (such as
-.Xr mail 1 )
-to open a pipe to
-.Nm
-when it needs to lock the user's mail spool.
-Closing the pipe will cause
-.Nm
-to release the lock.
+The
+.Nm lockspool
+utility exits 0 on success, and 1 if an error occurs.
 .Sh FILES
 .Bl -tag -width /var/mail/username.lock -compact
 .It Pa /var/mail/username.lock
-user's mail lock file
+user's mail lock file.
 .El
-.Sh EXIT STATUS
-The
-.Nm
-utility exits 0 on success, and 1 if an error occurs.
-.Sh SEE ALSO
-.Xr mail 1 ,
-.Xr mail.local 8 ,
-.Xr smtpd 8
 .Sh HISTORY
 The
-.Nm
+.Nm lockspool
 program appeared in
 .Ox 2.4 .
+.Sh SEE ALSO
+.Xr mail 1 ,
+.Xr mail.local 1 ,
+.Xr sendmail 8

@@ -1,13 +1,29 @@
 /*
- * Copyright (C) 1984-2012  Mark Nudelman
- * Modified for use with illumos by Garrett D'Amore.
- * Copyright 2014 Garrett D'Amore <garrett@damore.org>
+ * Copyright (c) 1984,1985,1989,1994,1995  Mark Nudelman
+ * All rights reserved.
  *
- * You may distribute under the terms of either the GNU General Public
- * License or the Less License, as specified in the README file.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice in the documentation and/or other materials provided with 
+ *    the distribution.
  *
- * For more information, see the README file.
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY
+ * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR 
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR 
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT 
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR 
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE 
+ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN 
+ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
 
 /*
  * Routines dealing with the "position" table.
@@ -15,14 +31,14 @@
  * first char on each currently displayed line.
  *
  * {{ The position table is scrolled by moving all the entries.
- * Would be better to have a circular table
- * and just change a couple of pointers. }}
+ *    Would be better to have a circular table 
+ *    and just change a couple of pointers. }}
  */
 
 #include "less.h"
 #include "position.h"
 
-static off_t *table = NULL;	/* The position table */
+static POSITION *table = NULL;	/* The position table */
 static int table_size;
 
 extern int sc_width, sc_height;
@@ -36,10 +52,12 @@ extern int sc_width, sc_height;
  *	the bottom line on the screen
  *	the line after the bottom line on the screen
  */
-off_t
-position(int where)
+	public POSITION
+position(where)
+	int where;
 {
-	switch (where) {
+	switch (where)
+	{
 	case BOTTOM:
 		where = sc_height - 2;
 		break;
@@ -55,10 +73,11 @@ position(int where)
 /*
  * Add a new file position to the bottom of the position table.
  */
-void
-add_forw_pos(off_t pos)
+	public void
+add_forw_pos(pos)
+	POSITION pos;
 {
-	int i;
+	register int i;
 
 	/*
 	 * Scroll the position table up.
@@ -71,10 +90,11 @@ add_forw_pos(off_t pos)
 /*
  * Add a new file position to the top of the position table.
  */
-void
-add_back_pos(off_t pos)
+	public void
+add_back_pos(pos)
+	POSITION pos;
 {
-	int i;
+	register int i;
 
 	/*
 	 * Scroll the position table down.
@@ -87,20 +107,20 @@ add_back_pos(off_t pos)
 /*
  * Initialize the position table, done whenever we clear the screen.
  */
-void
-pos_clear(void)
+	public void
+pos_clear()
 {
-	int i;
+	register int i;
 
 	for (i = 0;  i < sc_height;  i++)
-		table[i] = -1;
+		table[i] = NULL_POSITION;
 }
 
 /*
  * Allocate or reallocate the position table.
  */
-void
-pos_init(void)
+	public void
+pos_init()
 {
 	struct scrpos scrpos;
 
@@ -110,16 +130,16 @@ pos_init(void)
 	 * If we already have a table, remember the first line in it
 	 * before we free it, so we can copy that line to the new table.
 	 */
-	if (table != NULL) {
+	if (table != NULL)
+	{
 		get_scrpos(&scrpos);
-		free(table);
-	} else {
-		scrpos.pos = -1;
-	}
-	table = ecalloc(sc_height, sizeof (off_t));
+		free((char*)table);
+	} else
+		scrpos.pos = NULL_POSITION;
+	table = (POSITION *) ecalloc(sc_height, sizeof(POSITION));
 	table_size = sc_height;
 	pos_clear();
-	if (scrpos.pos != -1)
+	if (scrpos.pos != NULL_POSITION)
 		table[scrpos.ln-1] = scrpos.pos;
 }
 
@@ -128,10 +148,11 @@ pos_init(void)
  * Check the position table to see if the position falls within its range.
  * Return the position table entry if found, -1 if not.
  */
-int
-onscreen(off_t pos)
+	public int
+onscreen(pos)
+	POSITION pos;
 {
-	int i;
+	register int i;
 
 	if (pos < table[0])
 		return (-1);
@@ -144,19 +165,21 @@ onscreen(off_t pos)
 /*
  * See if the entire screen is empty.
  */
-int
-empty_screen(void)
+	public int
+empty_screen()
 {
 	return (empty_lines(0, sc_height-1));
 }
 
-int
-empty_lines(int s, int e)
+	public int
+empty_lines(s, e)
+	int s;
+	int e;
 {
-	int i;
+	register int i;
 
 	for (i = s;  i <= e;  i++)
-		if (table[i] != -1 && table[i] != 0)
+		if (table[i] != NULL_POSITION)
 			return (0);
 	return (1);
 }
@@ -169,17 +192,19 @@ empty_lines(int s, int e)
  * such that the top few lines are empty, we may have to set
  * the screen line to a number > 0.
  */
-void
-get_scrpos(struct scrpos *scrpos)
+	public void
+get_scrpos(scrpos)
+	struct scrpos *scrpos;
 {
-	int i;
+	register int i;
 
 	/*
 	 * Find the first line on the screen which has something on it,
 	 * and return the screen line number and the file position.
 	 */
 	for (i = 0; i < sc_height;  i++)
-		if (table[i] != -1) {
+		if (table[i] != NULL_POSITION)
+		{
 			scrpos->ln = i+1;
 			scrpos->pos = table[i];
 			return;
@@ -187,7 +212,7 @@ get_scrpos(struct scrpos *scrpos)
 	/*
 	 * The screen is empty.
 	 */
-	scrpos->pos = -1;
+	scrpos->pos = NULL_POSITION;
 }
 
 /*
@@ -199,8 +224,9 @@ get_scrpos(struct scrpos *scrpos)
  * or it may be in { -1 .. -(sc_height-1) } to refer to lines
  * relative to the bottom of the screen.
  */
-int
-adjsline(int sline)
+	public int
+adjsline(sline)
+	int sline;
 {
 	/*
 	 * Negative screen line number means

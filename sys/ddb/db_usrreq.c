@@ -1,4 +1,4 @@
-/*	$OpenBSD: db_usrreq.c,v 1.17 2015/03/14 03:38:46 jsg Exp $	*/
+/*	$OpenBSD: db_usrreq.c,v 1.3 1998/02/05 16:49:22 deraadt Exp $	*/
 
 /*
  * Copyright (c) 1996 Michael Shalayeff.  All rights reserved.
@@ -11,6 +11,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -26,22 +31,23 @@
 
 #include <sys/param.h>
 #include <sys/types.h>
-#include <sys/systm.h>
+#include <sys/kernel.h>
 #include <sys/proc.h>
-#include <sys/tty.h>
+#include <vm/vm.h>
 #include <sys/sysctl.h>
-#include <dev/cons.h>
 
 #include <ddb/db_var.h>
 
-int	db_log = 1;
-
 int
-ddb_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp,
-    size_t newlen, struct proc *p)
+ddb_sysctl(name, namelen, oldp, oldlenp, newp, newlen, p)
+	int	*name;
+	u_int	namelen;
+	void	*oldp;
+	size_t	*oldlenp;
+	void	*newp;
+	size_t	newlen;
+	struct proc *p;
 {
-	int error, ctlval;
-
 	/* All sysctl names at this level are terminal. */
 	if (namelen != 1)
 		return (ENOTDIR);
@@ -57,50 +63,9 @@ ddb_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp,
 	case DBCTL_MAXLINE:
 		return sysctl_int(oldp, oldlenp, newp, newlen, &db_max_line);
 	case DBCTL_PANIC:
-		if (securelevel > 0)
-			return (sysctl_int_lower(oldp, oldlenp, newp, newlen,
-			    &db_panic));
-		else {
-			ctlval = db_panic;
-			if ((error = sysctl_int(oldp, oldlenp, newp, newlen,
-			    &ctlval)) || newp == NULL)
-				return (error);
-			if (ctlval != 1 && ctlval != 0)
-				return (EINVAL);
-			db_panic = ctlval;
-			return (0);
-		}
-		break;
+		return sysctl_int(oldp, oldlenp, newp, newlen, &db_panic);
 	case DBCTL_CONSOLE:
-		if (securelevel > 0)
-			return (sysctl_int_lower(oldp, oldlenp, newp, newlen,
-			    &db_console));
-		else {
-			ctlval = db_console;
-			if ((error = sysctl_int(oldp, oldlenp, newp, newlen,
-			    &ctlval)) || newp == NULL)
-				return (error);
-			if (ctlval != 1 && ctlval != 0)
-				return (EINVAL);
-			db_console = ctlval;
-			return (0);
-		}
-		break;
-	case DBCTL_LOG:
-		return (sysctl_int(oldp, oldlenp, newp, newlen, &db_log));
-	case DBCTL_TRIGGER:
-		if (newp && db_console) {
-			struct process *pr = curproc->p_p;
-
-			if (securelevel < 1 ||
-			    (pr->ps_flags & PS_CONTROLT && cn_tab &&
-			    cn_tab->cn_dev == pr->ps_session->s_ttyp->t_dev)) {
-				Debugger();
-				newp = NULL;
-			} else
-				return (ENODEV);
-		}
-		return (sysctl_rdint(oldp, oldlenp, newp, 0));
+		return sysctl_int(oldp, oldlenp, newp, newlen, &db_console);
 	default:
 		return (EOPNOTSUPP);
 	}

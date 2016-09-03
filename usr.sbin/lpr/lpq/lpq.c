@@ -1,5 +1,4 @@
-/*	$OpenBSD: lpq.c,v 1.23 2016/02/29 17:26:02 jca Exp $	*/
-/*	$NetBSD: lpq.c,v 1.9 1999/12/07 14:54:47 mrg Exp $	*/
+/*	$OpenBSD: lpq.c,v 1.7 1997/01/17 16:12:44 millert Exp $	*/
 
 /*
  * Copyright (c) 1983, 1993
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,6 +34,20 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1983, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)lpq.c	8.3 (Berkeley) 5/10/95";
+#else
+static char rcsid[] = "$OpenBSD: lpq.c,v 1.7 1997/01/17 16:12:44 millert Exp $";
+#endif
+#endif /* not lint */
+
 /*
  * Spool Queue examination program
  *
@@ -41,18 +58,14 @@
  * -P used to identify printer as per lpr/lprm
  */
 
+#include <sys/param.h>
 
-#include <ctype.h>
-#include <signal.h>
+#include <syslog.h>
 #include <dirent.h>
-#include <err.h>
-#include <errno.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <limits.h>
-#include <syslog.h>
-
+#include <ctype.h>
 #include "lp.h"
 #include "lp.local.h"
 #include "pathnames.h"
@@ -62,59 +75,58 @@ int	 requests;		/* # of spool requests */
 char	*user[MAXUSERS];	/* users to process */
 int	 users;			/* # of users in user array */
 
-volatile sig_atomic_t gotintr;
+uid_t	uid, euid;
 
-static __dead void usage(void);
+static int ckqueue __P((char *));
+void usage __P((void));
 
 int
-main(int argc, char **argv)
+main(argc, argv)
+	register int	argc;
+	register char	**argv;
 {
+	extern char	*optarg;
+	extern int	optind;
 	int	ch, aflag, lflag;
 	char	*buf, *cp;
-	long	l;
 
-	effective_uid = geteuid();
-	real_uid = getuid();
-	effective_gid = getegid();
-	real_gid = getgid();
-	PRIV_END;	/* be safe */
-
-	if (gethostname(host, sizeof(host)) != 0)
-		err(1, "gethostname");
-	openlog("lpq", 0, LOG_LPR);
+	euid = geteuid();
+	uid = getuid();
+	seteuid(uid);
+	name = *argv;
+	if (gethostname(host, sizeof(host))) {
+		perror("lpq: gethostname");
+		exit(1);
+	}
+	openlog("lpd", 0, LOG_LPR);
 
 	aflag = lflag = 0;
-	while ((ch = getopt(argc, argv, "alP:w:")) != -1) {
-		switch(ch) {
+	while ((ch = getopt(argc, argv, "alP:")) != -1)
+		switch((char)ch) {
 		case 'a':
-			aflag = 1;
+			++aflag;
 			break;
 		case 'l':			/* long output */
-			lflag = 1;
+			++lflag;
 			break;
 		case 'P':		/* printer name */
 			printer = optarg;
-			break;
-		case 'w':
-			l = strtol(optarg, &cp, 10);
-			if (*cp != '\0' || l < 0 || l >= INT_MAX)
-				errx(1, "wait time must be postive integer: %s",
-				    optarg);
-			wait_time = (u_int)l;
-			if (wait_time < 30)
-				warnx("warning: wait time less than 30 seconds");
 			break;
 		case '?':
 		default:
 			usage();
 		}
+
+	if (!aflag && printer == NULL) {
+		char *p;
+
+		printer = DEFLP;
+		if ((p = getenv("PRINTER")) != NULL)
+			printer = p;
 	}
 
-	if (!aflag && printer == NULL && (printer = getenv("PRINTER")) == NULL)
-		printer = DEFLP;
-
 	for (argc -= optind, argv += optind; argc; --argc, ++argv)
-		if (isdigit((unsigned char)argv[0][0])) {
+		if (isdigit(argv[0][0])) {
 			if (requests >= MAXREQUESTS)
 				fatal("too many requests");
 			requ[requests++] = atoi(*argv);
@@ -147,13 +159,31 @@ main(int argc, char **argv)
 	exit(0);
 }
 
-static __dead void
-usage(void)
+static int
+ckqueue(cap)
+	char *cap;
 {
-	extern char *__progname;
+	register struct dirent *d;
+	DIR *dirp;
+	char *spooldir;
 
-	fprintf(stderr,
-	    "usage: %s [-al] [-Pprinter] [job# ...] [user ...]\n",
-	    __progname);
+	if (cgetstr(cap, "sd", &spooldir) == -1)
+		spooldir = _PATH_DEFSPOOL;
+	if ((dirp = opendir(spooldir)) == NULL)
+		return (-1);
+	while ((d = readdir(dirp)) != NULL) {
+		if (d->d_name[0] != 'c' || d->d_name[1] != 'f')
+			continue;	/* daemon control files only */
+		closedir(dirp);
+		return (1);		/* found something */
+	}
+	closedir(dirp);
+	return (0);
+}
+
+void
+usage()
+{
+	puts("usage: lpq [-a] [-l] [-Pprinter] [user ...] [job ...]");
 	exit(1);
 }

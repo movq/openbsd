@@ -1,4 +1,4 @@
-/*	$OpenBSD: talk.c,v 1.12 2016/03/08 20:07:46 mestre Exp $	*/
+/*	$OpenBSD: talk.c,v 1.4 1998/08/18 04:02:24 millert Exp $	*/
 /*	$NetBSD: talk.c,v 1.3 1994/12/09 02:14:25 jtc Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,12 +34,20 @@
  * SUCH DAMAGE.
  */
 
-#include <err.h>
-#include <string.h>
-#include <unistd.h>
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1983, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)talk.c	8.1 (Berkeley) 6/6/93";
+#endif
+static char rcsid[] = "$OpenBSD: talk.c,v 1.4 1998/08/18 04:02:24 millert Exp $";
+#endif /* not lint */
 
 #include "talk.h"
-#include "talk_ctl.h"
 
 /*
  * talk:	A visual form of write. Using sockets, a two way
@@ -52,11 +64,10 @@
  */
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
-	if (pledge("stdio rpath inet dns getpw tty", NULL) == -1)
-		err(1, "pledge");
-
 	get_names(argc, argv);
 	init_display();
 	open_ctl();
@@ -66,15 +77,5 @@ main(int argc, char *argv[])
 		invite_remote();
 	end_msgs();
 	set_edit_chars();
-
-	if (his_machine_addr.s_addr == my_machine_addr.s_addr) {
-		if (pledge("stdio tty", NULL) == -1)
-			err(1, "pledge");
-	} else {
-		if (pledge("stdio inet tty", NULL) == -1)
-			err(1, "pledge");
-	}
-
 	talk();
-	return (0);
 }

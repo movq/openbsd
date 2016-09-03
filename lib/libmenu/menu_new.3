@@ -1,8 +1,8 @@
 '\" t
-.\" $OpenBSD: menu_new.3,v 1.8 2015/11/15 22:10:16 jmc Exp $
+.\" $OpenBSD: menu_new.3,v 1.6 1999/01/22 03:45:07 millert Exp $
 .\"
 .\"***************************************************************************
-.\" Copyright (c) 1998,2006 Free Software Foundation, Inc.                   *
+.\" Copyright (c) 1998 Free Software Foundation, Inc.                        *
 .\"                                                                          *
 .\" Permission is hereby granted, free of charge, to any person obtaining a  *
 .\" copy of this software and associated documentation files (the            *
@@ -29,10 +29,10 @@
 .\" authorization.                                                           *
 .\"***************************************************************************
 .\"
-.\" $Id: menu_new.3,v 1.8 2015/11/15 22:10:16 jmc Exp $
+.\" $From: menu_new.3x,v 1.7 1998/11/29 01:10:13 Rick.Ohnemus Exp $
 .TH menu_new 3 ""
 .SH NAME
-\fBnew_menu\fR, \fBfree_menu\fR - create and destroy menus
+\fBmenu_new\fR - create and destroy menus
 .SH SYNOPSIS
 \fB#include <menu.h>\fR
 .br
@@ -43,31 +43,24 @@ int free_menu(MENU *menu);
 .SH DESCRIPTION
 The function \fBnew_menu\fR creates a new menu connected to a specified item
 pointer array (which must be \fBNULL\fR-terminated).
-.PP
+
 The function \fBfree_menu\fR disconnects \fImenu\fR from its item array
 and frees the storage allocated for the menu.
 .SH RETURN VALUE
 The function \fBnew_menu\fR returns \fBNULL\fR on error.
-It sets errno according to the function's failure:
-.TP 5
-.B E_NOT_CONNECTED
-No items are connected to the menu.
-.TP 5
-.B E_SYSTEM_ERROR
-System error occurred, e.g., malloc failure.
-.PP
+
 The function \fBfree_menu\fR returns one of the following:
 .TP 5
-.B E_OK
+\fBE_OK\fR
 The routine succeeded.
 .TP 5
-.B E_SYSTEM_ERROR
+\fBE_SYSTEM_ERROR\fR
 System error occurred (see \fBerrno\fR).
 .TP 5
-.B E_BAD_ARGUMENT
+\fBE_BAD_ARGUMENT\fR
 Routine detected an incorrect or out-of-range argument.
 .TP 5
-.B E_POSTED
+\fBE_POSTED\fR
 The menu has already been posted.
 .SH SEE ALSO
 \fBcurses\fR(3), \fBmenu\fR(3).

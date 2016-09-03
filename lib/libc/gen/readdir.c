@@ -1,4 +1,3 @@
-/*	$OpenBSD: readdir.c,v 1.22 2015/09/12 13:34:22 guenther Exp $ */
 /*
  * Copyright (c) 1983, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,55 +31,78 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: readdir.c,v 1.4 1999/09/01 23:19:41 deraadt Exp $";
+#endif /* LIBC_SCCS and not lint */
+
+#include <sys/param.h>
 #include <dirent.h>
+#include <string.h>
 #include <errno.h>
-#include "telldir.h"
 #include "thread_private.h"
 
 /*
  * get next entry in a directory.
  */
-int
-_readdir_unlocked(DIR *dirp, struct dirent **result)
+struct dirent *
+readdir(dirp)
+	register DIR *dirp;
 {
-	struct dirent *dp;
+	register struct dirent *dp;
 
-	*result = NULL;
 	for (;;) {
 		if (dirp->dd_loc >= dirp->dd_size) {
+			if (dirp->dd_flags & __DTF_READALL)
+				return (NULL);
 			dirp->dd_loc = 0;
-			dirp->dd_size = getdents(dirp->dd_fd, dirp->dd_buf,
-			    dirp->dd_len);
-			if (dirp->dd_size == 0)
-				return (0);
-			if (dirp->dd_size < 0)
-				return (-1);
+		}
+		if (dirp->dd_loc == 0 && !(dirp->dd_flags & __DTF_READALL)) {
+			dirp->dd_size = getdirentries(dirp->dd_fd,
+			    dirp->dd_buf, dirp->dd_len, &dirp->dd_seek);
+			if (dirp->dd_size <= 0)
+				return (NULL);
 		}
 		dp = (struct dirent *)(dirp->dd_buf + dirp->dd_loc);
-		if ((long)dp & 03 ||	/* bogus pointer check */
-		    dp->d_reclen <= 0 ||
-		    dp->d_reclen > dirp->dd_len + 1 - dirp->dd_loc) {
-			errno = EINVAL;
-			return (-1);
-		}
+		if ((long)dp & 03)	/* bogus pointer check */
+			return (NULL);
+		if (dp->d_reclen <= 0 ||
+		    dp->d_reclen > dirp->dd_len + 1 - dirp->dd_loc)
+			return (NULL);
 		dirp->dd_loc += dp->d_reclen;
 		if (dp->d_ino == 0)
 			continue;
-		dirp->dd_curpos = dp->d_off;
-		*result = dp;
-		return (0);
+		if (dp->d_type == DT_WHT && (dirp->dd_flags & DTF_HIDEW))
+			continue;
+		return (dp);
 	}
 }
 
-struct dirent *
-readdir(DIR *dirp)
+int
+readdir_r(dirp, entry, result)
+	DIR *dirp;
+	struct dirent *entry;
+	struct dirent **result;
 {
 	struct dirent *dp;
+	int ret;
 
-	_MUTEX_LOCK(&dirp->dd_lock);
-	_readdir_unlocked(dirp, &dp);
-	_MUTEX_UNLOCK(&dirp->dd_lock);
-
-	return (dp);
+	if (dirp->dd_fd < 0) {
+		return EBADF;
+	}
+	if ((ret = _FD_LOCK(dirp->dd_fd, FD_READ, NULL)) != 0)
+		return ret;
+	errno = 0;
+	dp = readdir(dirp);
+	if (dp == NULL && errno != 0) {
+		_FD_UNLOCK(dirp->dd_fd, FD_READ);
+		return errno;
+	}
+	if (dp != NULL) 
+		memcpy(entry, dp, sizeof *entry);
+	_FD_UNLOCK(dirp->dd_fd, FD_READ);
+	if (dp != NULL)
+	*result = entry;
+	else
+		*result = NULL;
+	return 0;
 }
-DEF_WEAK(readdir);

@@ -13,11 +13,19 @@
  * ====================================================
  */
 
+#if defined(LIBM_SCCS) && !defined(lint)
+static char rcsid[] = "$NetBSD: s_sinf.c,v 1.4 1995/05/10 20:48:16 jtc Exp $";
+#endif
+
 #include "math.h"
 #include "math_private.h"
 
-float
-sinf(float x)
+#ifdef __STDC__
+	float sinf(float x)
+#else
+	float sinf(x)
+	float x;
+#endif
 {
 	float y[2],z=0.0;
 	int32_t n, ix;

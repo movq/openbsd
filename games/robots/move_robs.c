@@ -1,4 +1,4 @@
-/*	$OpenBSD: move_robs.c,v 1.9 2016/01/04 17:33:24 mestre Exp $	*/
+/*	$OpenBSD: move_robs.c,v 1.2 1998/07/09 04:34:19 pjanzen Exp $	*/
 /*	$NetBSD: move_robs.c,v 1.3 1995/04/22 10:08:59 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,23 +34,34 @@
  * SUCH DAMAGE.
  */
 
-#include "robots.h"
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)move_robs.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: move_robs.c,v 1.2 1998/07/09 04:34:19 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
+#include	"robots.h"
 
 /*
  * move_robots:
  *	Move the robots around
  */
 void
-move_robots(void)
+move_robots(was_sig)
+	bool	was_sig;
 {
-	COORD	*rp;
+	register COORD	*rp;
 
-#ifdef DEBUG
+	if (Real_time)
+		signal(SIGALRM, move_robots);
+# ifdef DEBUG
 	move(Min.y, Min.x);
 	addch(inch());
 	move(Max.y, Max.x);
 	addch(inch());
-#endif /* DEBUG */
+# endif DEBUG
 	for (rp = Robots; rp < &Robots[MAXROBOTS]; rp++) {
 		if (rp->y < 0)
 			continue;
@@ -94,14 +109,22 @@ move_robots(void)
 				Max.x = rp->x;
 		}
 
-#ifdef DEBUG
+	if (was_sig) {
+		refresh();
+		if (Dead || Num_robots <= 0)
+			longjmp(End_move, 0);
+	}
+
+# ifdef DEBUG
 	standout();
 	move(Min.y, Min.x);
 	addch(inch());
 	move(Max.y, Max.x);
 	addch(inch());
 	standend();
-#endif /* DEBUG */
+# endif DEBUG
+	if (Real_time)
+		alarm(3);
 }
 
 /*
@@ -109,7 +132,8 @@ move_robots(void)
  *	Add a score to the overall point total
  */
 void
-add_score(int add)
+add_score(add)
+	int	add;
 {
 	Score += add;
 	move(Y_SCORE, X_SCORE);
@@ -121,7 +145,8 @@ add_score(int add)
  *	Return the sign of the number
  */
 int
-sign(int n)
+sign(n)
+	int	n;
 {
 	if (n < 0)
 		return -1;

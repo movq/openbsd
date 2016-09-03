@@ -1,4 +1,4 @@
-/*	$OpenBSD: yppush_svc.c,v 1.15 2015/11/17 18:21:48 tedu Exp $ */
+/*	$OpenBSD: yppush_svc.c,v 1.2 1996/05/30 09:53:22 deraadt Exp $ */
 
 /*
  * Copyright (c) 1996 Mats O Jansson <moj@stacken.kth.se>
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Mats O Jansson
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
  * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -26,17 +31,29 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <netdb.h>
-#include <string.h>
-#include <syslog.h>
-#include <rpcsvc/yp.h>
+#ifndef lint
+static char rcsid[] = "$OpenBSD: yppush_svc.c,v 1.2 1996/05/30 09:53:22 deraadt Exp $";
+#endif /* not lint */
 
 #include "yppush.h"
+#include <stdio.h>
+#include <stdlib.h>/* getenv, exit */
+#include <netdb.h>
+#include <signal.h>
+#include <sys/ttycom.h>/* TIOCNOTTY */
+#include <memory.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#ifdef SYSLOG
+#include <syslog.h>
+#else
+#define LOG_ERR 1
+#define openlog(a, b, c)
+#endif
+
+#ifdef __STDC__
+#define SIG_PF void(*)(int)
+#endif
 
 #ifdef DEBUG
 #define RPC_SVC_FG
@@ -48,42 +65,43 @@ int _rpcfdtype;			/* Whether Stream or Datagram ? */
 int _rpcsvcdirty;		/* Still serving ? */
 
 static
-void _msgout(char *msg)
+void _msgout(msg)
+	char *msg;
 {
 #ifdef RPC_SVC_FG
 	if (_rpcpmstart)
-		syslog(LOG_ERR, "%s", msg);
+		syslog(LOG_ERR, msg);
 	else
 		(void) fprintf(stderr, "%s\n", msg);
 #else
-	syslog(LOG_ERR, "%s", msg);
+	syslog(LOG_ERR, msg);
 #endif
 }
 
 void
-yppush_xfrrespprog_1(struct svc_req *rqstp, SVCXPRT *transp)
+yppush_xfrrespprog_1(rqstp, transp)
+	struct svc_req *rqstp;
+	register SVCXPRT *transp;
 {
-	union argument {
+	union {
 		int fill;
 	} argument;
 	char *result;
-	xdrproc_t xdr_argument, xdr_result;
-	char *(*local)(union argument *, struct svc_req *);
+	bool_t (*xdr_argument)(), (*xdr_result)();
+	char *(*local)();
 
 	_rpcsvcdirty = 1;
 	switch (rqstp->rq_proc) {
 	case YPPUSHPROC_NULL:
 		xdr_argument = xdr_void;
 		xdr_result = xdr_void;
-		local = (char *(*)(union argument *, struct svc_req *))
-		    yppushproc_null_1_svc;
+		local = (char *(*)()) yppushproc_null_1_svc;
 		break;
 
 	case YPPUSHPROC_XFRRESP:
 		xdr_argument = xdr_yppushresp_xfr;
 		xdr_result = xdr_void;
-		local = (char *(*)(union argument *, struct svc_req *))
-		    yppushproc_xfrresp_1_svc;
+		local = (char *(*)()) yppushproc_xfrresp_1_svc;
 		break;
 
 	default:
@@ -92,8 +110,8 @@ yppush_xfrrespprog_1(struct svc_req *rqstp, SVCXPRT *transp)
 		exit(1);
 		return;
 	}
-	(void) memset(&argument, 0, sizeof(argument));
-	if (!svc_getargs(transp, xdr_argument, (caddr_t)&argument)) {
+	(void) memset((char *)&argument, 0, sizeof (argument));
+	if (!svc_getargs(transp, xdr_argument, (caddr_t) &argument)) {
 		svcerr_decode(transp);
 		_rpcsvcdirty = 0;
 		exit(1);
@@ -103,11 +121,12 @@ yppush_xfrrespprog_1(struct svc_req *rqstp, SVCXPRT *transp)
 	if (result != NULL && !svc_sendreply(transp, xdr_result, result)) {
 		svcerr_systemerr(transp);
 	}
-	if (!svc_freeargs(transp, xdr_argument, (caddr_t)&argument)) {
+	if (!svc_freeargs(transp, xdr_argument, (caddr_t) &argument)) {
 		_msgout("unable to free arguments");
 		exit(1);
 	}
 	_rpcsvcdirty = 0;
 	if (rqstp->rq_proc!=YPPUSHPROC_NULL)
 		exit(0);
+	return;
 }

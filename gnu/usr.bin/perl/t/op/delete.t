@@ -1,14 +1,8 @@
 #!./perl
 
-BEGIN {
-    chdir 't' if -d 't';
-    @INC = qw(. ../lib);
-}
+# $RCSfile: delete.t,v $$Revision: 4.1 $$Date: 92/08/07 18:27:44 $
 
-require "test.pl";
-plan( tests => 38 );
-
-# delete() on hash elements
+print "1..16\n";
 
 $foo{1} = 'a';
 $foo{2} = 'b';
@@ -18,25 +12,25 @@ $foo{5} = 'e';
 
 $foo = delete $foo{2};
 
-cmp_ok($foo,'eq','b','delete 2');
-ok(!(exists $foo{2}),'b absent');
-cmp_ok($foo{1},'eq','a','a exists');
-cmp_ok($foo{3},'eq','c','c exists');
-cmp_ok($foo{4},'eq','d','d exists');
-cmp_ok($foo{5},'eq','e','e exists');
+if ($foo eq 'b') {print "ok 1\n";} else {print "not ok 1 $foo\n";}
+if ($foo{2} eq '') {print "ok 2\n";} else {print "not ok 2 $foo{2}\n";}
+if ($foo{1} eq 'a') {print "ok 3\n";} else {print "not ok 3\n";}
+if ($foo{3} eq 'c') {print "ok 4\n";} else {print "not ok 4\n";}
+if ($foo{4} eq 'd') {print "ok 5\n";} else {print "not ok 5\n";}
+if ($foo{5} eq 'e') {print "ok 6\n";} else {print "not ok 6\n";}
 
 @foo = delete @foo{4, 5};
 
-cmp_ok(scalar(@foo),'==',2,'deleted slice');
-cmp_ok($foo[0],'eq','d','slice 1');
-cmp_ok($foo[1],'eq','e','slice 2');
-ok(!(exists $foo{4}),'d absent');
-ok(!(exists $foo{5}),'e absent');
-cmp_ok($foo{1},'eq','a','a still exists');
-cmp_ok($foo{3},'eq','c','c still exists');
+if (@foo == 2) {print "ok 7\n";} else {print "not ok 7 ", @foo+0, "\n";}
+if ($foo[0] eq 'd') {print "ok 8\n";} else {print "not ok 8 ", $foo[0], "\n";}
+if ($foo[1] eq 'e') {print "ok 9\n";} else {print "not ok 9 ", $foo[1], "\n";}
+if ($foo{4} eq '') {print "ok 10\n";} else {print "not ok 10 $foo{4}\n";}
+if ($foo{5} eq '') {print "ok 11\n";} else {print "not ok 11 $foo{5}\n";}
+if ($foo{1} eq 'a') {print "ok 12\n";} else {print "not ok 12\n";}
+if ($foo{3} eq 'c') {print "ok 13\n";} else {print "not ok 13\n";}
 
 $foo = join('',values(%foo));
-ok($foo eq 'ac' || $foo eq 'ca','remaining keys');
+if ($foo eq 'ac' || $foo eq 'ca') {print "ok 14\n";} else {print "not ok 14\n";}
 
 foreach $key (keys %foo) {
     delete $foo{$key};
@@ -46,7 +40,7 @@ $foo{'foo'} = 'x';
 $foo{'bar'} = 'y';
 
 $foo = join('',values(%foo));
-ok($foo eq 'xy' || $foo eq 'yx','fresh keys');
+print +($foo eq 'xy' || $foo eq 'yx') ? "ok 15\n" : "not ok 15\n";
 
 $refhash{"top"}->{"foo"} = "FOO";
 $refhash{"top"}->{"bar"} = "BAR";
@@ -54,90 +48,4 @@ $refhash{"top"}->{"bar"} = "BAR";
 delete $refhash{"top"}->{"bar"};
 @list = keys %{$refhash{"top"}};
 
-cmp_ok("@list",'eq',"foo", 'autoviv and delete hashref');
-
-{
-    my %a = ('bar', 33);
-    my($a) = \(values %a);
-    my $b = \$a{bar};
-    my $c = \delete $a{bar};
-
-    ok($a == $b && $b == $c,'a b c equivalent');
-}
-
-# delete() on array elements
-
-@foo = ();
-$foo[1] = 'a';
-$foo[2] = 'b';
-$foo[3] = 'c';
-$foo[4] = 'd';
-$foo[5] = 'e';
-
-$foo = delete $foo[2];
-
-cmp_ok($foo,'eq','b','ary delete 2');
-ok(!(exists $foo[2]),'ary b absent');
-cmp_ok($foo[1],'eq','a','ary a exists');
-cmp_ok($foo[3],'eq','c','ary c exists');
-cmp_ok($foo[4],'eq','d','ary d exists');
-cmp_ok($foo[5],'eq','e','ary e exists');
-
-@bar = delete @foo[4,5];
-
-cmp_ok(scalar(@bar),'==',2,'ary deleted slice');
-cmp_ok($bar[0],'eq','d','ary slice 1');
-cmp_ok($bar[1],'eq','e','ary slice 2');
-ok(!(exists $foo[4]),'ary d absent');
-ok(!(exists $foo[5]),'ary e absent');
-cmp_ok($foo[1],'eq','a','ary a still exists');
-cmp_ok($foo[3],'eq','c','ary c still exists');
-
-$foo = join('',@foo);
-cmp_ok($foo,'eq','ac','ary elems');
-cmp_ok(scalar(@foo),'==',4,'four is the number thou shalt count');
-
-foreach $key (0 .. $#foo) {
-    delete $foo[$key];
-}
-
-cmp_ok(scalar(@foo),'==',0,'and then there were none');
-
-$foo[0] = 'x';
-$foo[1] = 'y';
-
-$foo = "@foo";
-cmp_ok($foo,'eq','x y','two fresh');
-
-$refary[0]->[0] = "FOO";
-$refary[0]->[3] = "BAR";
-
-delete $refary[0]->[3];
-
-cmp_ok( scalar(@{$refary[0]}),'==',1,'one down');
-
-{
-    my @a = 33;
-    my($a) = \(@a);
-    my $b = \$a[0];
-    my $c = \delete $a[bar];
-
-    ok($a == $b && $b == $c,'a b c also equivalent');
-}
-
-{
-    my %h;
-    my ($x,$y) = (1, scalar delete @h{()});
-    ok(!defined($y),q([perl #29127] scalar delete of empty slice returned garbage));
-}
-
-{
-    my $x = 0;
-    sub X::DESTROY { $x++ }
-    {
-	my @a;
-	$a[0] = bless [], 'X';
-	my $y = delete $a[0];
-    }
-    cmp_ok($x,'==',1,q([perl #30733] array delete didn't free returned element));
-}
+print "@list" eq "foo" ? "ok 16\n" : "not ok 16 @list\n";

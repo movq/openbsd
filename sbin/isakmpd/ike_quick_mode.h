@@ -1,8 +1,8 @@
-/* $OpenBSD: ike_quick_mode.h,v 1.6 2004/04/15 18:39:25 deraadt Exp $	 */
-/* $EOM: ike_quick_mode.h,v 1.1 1998/08/02 20:22:44 niklas Exp $	 */
+/*	$OpenBSD: ike_quick_mode.h,v 1.3 1998/11/17 11:10:13 niklas Exp $	*/
+/*	$EOM: ike_quick_mode.h,v 1.1 1998/08/02 20:22:44 niklas Exp $	*/
 
 /*
- * Copyright (c) 1998, 2001 Niklas Hallqvist.  All rights reserved.
+ * Copyright (c) 1998 Niklas Hallqvist.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Ericsson Radio Systems.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -34,7 +39,7 @@
 
 struct message;
 
-extern int      (*ike_quick_mode_initiator[]) (struct message *);
-extern int      (*ike_quick_mode_responder[]) (struct message *);
+extern int (*ike_quick_mode_initiator[]) (struct message *msg);
+extern int (*ike_quick_mode_responder[]) (struct message *msg);
 
-#endif				/* _IKE_QUICK_MODE_H_ */
+#endif /* _IKE_QUICK_MODE_H_ */

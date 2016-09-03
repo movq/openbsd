@@ -1,4 +1,4 @@
-/*	$OpenBSD: siginfo.h,v 1.11 2015/04/14 16:40:46 millert Exp $	*/
+/*	$OpenBSD: siginfo.h,v 1.6 1997/02/03 04:34:33 deraadt Exp $	*/
 
 /*
  * Copyright (c) 1997 Theo de Raadt
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Theo de Raadt.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -27,8 +32,6 @@
 
 #ifndef _SYS_SIGINFO_H
 #define _SYS_SIGINFO_H
-
-#include <sys/cdefs.h>
  
 union sigval {
 	int	sival_int;	/* integer value */
@@ -48,7 +51,7 @@ union sigval {
 #define SI_QUEUE	(-2)	/* user generated signal via sigqueue()*/
 #define SI_TIMER	(-3)	/* from timer expiration */
 
-#if __POSIX_VISIBLE >= 199309 || __XPG_VISIBLE
+#if !defined(_POSIX_C_SOURCE)
 /*
  * The machine dependent signal codes (SIGILL, SIGFPE,
  * SIGSEGV, and SIGBUS)
@@ -85,7 +88,7 @@ union sigval {
 #define BUS_OBJERR	3	/* object specific hardware error */
 #define NSIGBUS		3
 
-#endif /* __POSIX_VISIBLE >= 199309 || __XPG_VISIBLE */
+#endif /* _POSIX_C_SOURCE */
 
 /*
  * SIGTRAP signal codes
@@ -95,7 +98,7 @@ union sigval {
 #define NSIGTRAP	2
 
 /*
- * SIGCHLD signal codes
+ * SIGCLD signal codes
  */
 #define CLD_EXITED	1	/* child has exited */
 #define CLD_KILLED	2	/* child was killed */
@@ -135,7 +138,7 @@ typedef struct {
 	int	si_errno;			/* error from errno.h */
 	union {
 		int	_pad[SI_PAD];		/* for future growth */
-		struct {			/* kill(), SIGCHLD */
+		struct {			/* kill(), SIGCLD, siqqueue() */
 			pid_t	_pid;		/* process ID */
 			union {
 				struct {
@@ -144,8 +147,8 @@ typedef struct {
 				} _kill;
 				struct {
 					clock_t	_utime;
-					clock_t	_stime;
 					int	_status;
+					clock_t	_stime;
 				} _cld;
 			} _pdata;
 		} _proc;
@@ -193,7 +196,7 @@ typedef struct {
 #define si_mstate	_data._prof._mstate
 
 #if defined(_KERNEL)
-void	initsiginfo(siginfo_t *, int, u_long, int, union sigval);
+void	initsiginfo __P((siginfo_t *, int, u_long, int, union sigval));
 #endif
 
 #endif	/* _SYS_SIGINFO_H */

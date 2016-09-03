@@ -1,4 +1,4 @@
-/*	$OpenBSD: check.c,v 1.7 2015/11/30 08:19:25 tb Exp $	*/
+/*	$OpenBSD: check.c,v 1.3 1999/07/31 21:57:40 pjanzen Exp $	*/
 
 /*
  * Copyright (c) 1980, 1993
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,10 +33,18 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)check.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: check.c,v 1.3 1999/07/31 21:57:40 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
 #include "back.h"
 
 void
-getmove(void)
+getmove()
 {
 	int     i, c;
 
@@ -43,26 +55,41 @@ getmove(void)
 		switch (i) {
 		case -1:
 			if (movokay(mvlim)) {
-				move(20, 0);
+				if (tflag)
+					curmove(20, 0);
+				else
+					writec('\n');
 				for (i = 0; i < mvlim; i++)
 					if (h[i])
 						wrhit(g[i]);
 				nexturn();
 				if (*offopp == 15)
 					cturn *= -2;
+				if (tflag && pnum)
+					bflag = pnum;
 				return;
 			}
 		case -4:
 		case 0:
-			refresh();
+			if (tflag)
+				refresh();
 			if (i != 0 && i != -4)
 				break;
-			mvaddstr(20, 0, *Colorptr);
-			if (i == -4)
-				addstr(" must make ");
+			if (tflag)
+				curmove(20, 0);
 			else
-				addstr(" can only make ");
-			printw("%d move%s.\n", mvlim, mvlim > 1 ? "s":"");
+				writec('\n');
+			writel(*Colorptr);
+			if (i == -4)
+				writel(" must make ");
+			else
+				writel(" can only make ");
+			writec(mvlim + '0');
+			writel(" move");
+			if (mvlim > 1)
+				writec('s');
+			writec('.');
+			writec('\n');
 			break;
 
 		case -3:
@@ -70,14 +97,19 @@ getmove(void)
 				return;
 		}
 
-		move(cturn == -1 ? 18 : 19, 39);
-		clrtoeol();
-		c = -1;
+		if (!tflag)
+			proll();
+		else {
+			curmove(cturn == -1 ? 18 : 19, 39);
+			cline();
+			c = -1;
+		}
 	}
 }
 
 int
-movokay(int mv)
+movokay(mv)
+	int     mv;
 {
 	int     i, m;
 
@@ -87,36 +119,39 @@ movokay(int mv)
 	for (i = 0; i < mv; i++) {
 		if (p[i] == g[i]) {
 			moverr(i);
-			mvaddstr(20, 0, "Attempt to move to same location.\n");
+			curmove(20, 0);
+			writel("Attempt to move to same location.\n");
 			return(0);
 		}
 		if (cturn * (g[i] - p[i]) < 0) {
 			moverr(i);
-			mvaddstr(20, 0, "Backwards move.\n");
+			curmove(20, 0);
+			writel("Backwards move.\n");
 			return(0);
 		}
 		if (abs(board[bar]) && p[i] != bar) {
 			moverr(i);
-			mvaddstr(20, 0, "Men still on bar.\n");
+			curmove(20, 0);
+			writel("Men still on bar.\n");
 			return(0);
 		}
 		if ((m = makmove(i))) {
 			moverr(i);
 			switch (m) {
 			case 1:
-				addstr("Move not rolled.\n");
+				writel("Move not rolled.\n");
 				break;
 
 			case 2:
-				addstr("Bad starting position.\n");
+				writel("Bad starting position.\n");
 				break;
 
 			case 3:
-				addstr("Destination occupied.\n");
+				writel("Destination occupied.\n");
 				break;
 
 			case 4:
-				addstr("Can't remove men yet.\n");
+				writel("Can't remove men yet.\n");
 			}
 			return(0);
 		}

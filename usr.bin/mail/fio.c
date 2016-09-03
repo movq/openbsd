@@ -1,4 +1,4 @@
-/*	$OpenBSD: fio.c,v 1.36 2015/10/16 18:21:43 mmcc Exp $	*/
+/*	$OpenBSD: fio.c,v 1.16 1998/06/12 17:51:51 millert Exp $	*/
 /*	$NetBSD: fio.c,v 1.8 1997/07/07 22:57:55 phil Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +34,14 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)fio.c	8.2 (Berkeley) 4/20/95";
+#else
+static char rcsid[] = "$OpenBSD: fio.c,v 1.16 1998/06/12 17:51:51 millert Exp $";
+#endif
+#endif /* not lint */
+
 #include "rcv.h"
 #include <sys/file.h>
 #include <sys/wait.h>
@@ -37,7 +49,6 @@
 #include <unistd.h>
 #include <paths.h>
 #include <errno.h>
-#include <glob.h>
 #include "extern.h"
 
 /*
@@ -46,26 +57,13 @@
  * File I/O.
  */
 
-static volatile sig_atomic_t fiosignal;
-
-/*
- * Wrapper for read() to catch EINTR.
- */
-static ssize_t
-myread(int fd, char *buf, int len)
-{
-	ssize_t nread;
-
-	while ((nread = read(fd, buf, len)) == -1 && errno == EINTR)
-		;
-	return(nread);
-}
-
 /*
  * Set up the input pointers while copying the mail file into /tmp.
  */
 void
-setptr(FILE *ibuf, off_t offset)
+setptr(ibuf, offset)
+	FILE *ibuf;
+	off_t offset;
 {
 	int c, count;
 	char *cp, *cp2;
@@ -84,14 +82,14 @@ setptr(FILE *ibuf, off_t offset)
 		msgCount = 0;
 	} else {
 		/* Seek into the file to get to the new messages */
-		(void)fseeko(ibuf, offset, SEEK_SET);
+		(void)fseek(ibuf, offset, 0);
 		/*
 		 * We need to make "offset" a pointer to the end of
 		 * the temp file that has the copy of the mail file.
 		 * If any messages have been edited, this will be
 		 * different from the offset into the mail file.
 		 */
-		(void)fseeko(otf, (off_t)0, SEEK_END);
+		(void)fseek(otf, 0L, SEEK_END);
 		offset = ftell(otf);
 	}
 	omsgCount = msgCount;
@@ -116,16 +114,13 @@ setptr(FILE *ibuf, off_t offset)
 		 * that reside on a DOS partition.
 		 */
 		if (count >= 2 && linebuf[count-1] == '\n' &&
-		    linebuf[count - 2] == '\r') {
-			linebuf[count - 2] = '\n';
-			linebuf[count - 1] = '\0';
-			count--;
-		}
+		    linebuf[count - 2] == '\r')
+			linebuf[count - 2] = linebuf[--count];
 
 		(void)fwrite(linebuf, sizeof(*linebuf), count, otf);
 		if (ferror(otf))
-			err(1, "%s", pathbuf);
-		if (count && linebuf[count - 1] == '\n')
+			err(1, "/tmp");
+		if (count)
 			linebuf[count - 1] = '\0';
 		if (maybe && linebuf[0] == 'F' && ishead(linebuf)) {
 			msgCount++;
@@ -141,12 +136,12 @@ setptr(FILE *ibuf, off_t offset)
 			inhead = 0;
 		} else if (inhead) {
 			for (cp = linebuf, cp2 = "status";; cp++) {
-				if ((c = (unsigned char)*cp2++) == 0) {
-					while (isspace((unsigned char)*cp++))
+				if ((c = *cp2++) == 0) {
+					while (isspace(*cp++))
 						;
 					if (cp[-1] != ':')
 						break;
-					while ((c = (unsigned char)*cp++) != '\0')
+					while ((c = *cp++) != '\0')
 						if (c == 'R')
 							this.m_flag |= MREAD;
 						else if (c == 'O')
@@ -171,7 +166,10 @@ setptr(FILE *ibuf, off_t offset)
  * characters written, including the newline if requested.
  */
 int
-putline(FILE *obuf, char *linebuf, int outlf)
+putline(obuf, linebuf, outlf)
+	FILE *obuf;
+	char *linebuf;
+	int   outlf;
 {
 	int c;
 
@@ -192,63 +190,22 @@ putline(FILE *obuf, char *linebuf, int outlf)
  * include the newline (or carriage return) at the end.
  */
 int
-readline(FILE *ibuf, char *linebuf, int linesize, int *signo)
+readline(ibuf, linebuf, linesize)
+	FILE *ibuf;
+	char *linebuf;
+	int linesize;
 {
-	struct sigaction act;
-	struct sigaction savetstp;
-	struct sigaction savettou;
-	struct sigaction savettin;
-	struct sigaction saveint;
-	struct sigaction savehup;
-	sigset_t oset;
 	int n;
 
-	/*
-	 * Setup signal handlers if the caller asked us to catch signals.
-	 * Note that we do not restart system calls since we need the
-	 * read to be interruptible.
-	 */
-	if (signo) {
-		fiosignal = 0;
-		sigemptyset(&act.sa_mask);
-		act.sa_flags = 0;
-		act.sa_handler = fioint;
-		if (sigaction(SIGINT, NULL, &saveint) == 0 &&
-		    saveint.sa_handler != SIG_IGN) {
-			(void)sigaction(SIGINT, &act, &saveint);
-			(void)sigprocmask(SIG_UNBLOCK, &intset, &oset);
-		}
-		if (sigaction(SIGHUP, NULL, &savehup) == 0 &&
-		    savehup.sa_handler != SIG_IGN)
-			(void)sigaction(SIGHUP, &act, &savehup);
-		(void)sigaction(SIGTSTP, &act, &savetstp);
-		(void)sigaction(SIGTTOU, &act, &savettou);
-		(void)sigaction(SIGTTIN, &act, &savettin);
-	}
-
 	clearerr(ibuf);
-	if (fgets(linebuf, linesize, ibuf) == NULL) {
-		if (ferror(ibuf))
-			clearerr(ibuf);
-		n = -1;
-	} else {
-		n = strlen(linebuf);
-		if (n > 0 && linebuf[n - 1] == '\n')
-			linebuf[--n] = '\0';
-		if (n > 0 && linebuf[n - 1] == '\r')
-			linebuf[--n] = '\0';
-	}
+	if (fgets(linebuf, linesize, ibuf) == NULL)
+		return(-1);
 
-	if (signo) {
-		(void)sigprocmask(SIG_SETMASK, &oset, NULL);
-		(void)sigaction(SIGINT, &saveint, NULL);
-		(void)sigaction(SIGHUP, &savehup, NULL);
-		(void)sigaction(SIGTSTP, &savetstp, NULL);
-		(void)sigaction(SIGTTOU, &savettou, NULL);
-		(void)sigaction(SIGTTIN, &savettin, NULL);
-		*signo = fiosignal;
-	}
-
+	n = strlen(linebuf);
+	if (n > 0 && linebuf[n - 1] == '\n')
+		linebuf[--n] = '\0';
+	if (n > 0 && linebuf[n - 1] == '\r')
+		linebuf[--n] = '\0';
 	return(n);
 }
 
@@ -257,12 +214,12 @@ readline(FILE *ibuf, char *linebuf, int linesize, int *signo)
  * passed message pointer.
  */
 FILE *
-setinput(struct message *mp)
+setinput(mp)
+	struct message *mp;
 {
 
 	fflush(otf);
-	if (fseek(itf, (long)positionof(mp->m_block, mp->m_offset), SEEK_SET)
-	    < 0)
+	if (fseek(itf, (long)positionof(mp->m_block, mp->m_offset), 0) < 0)
 		err(1, "fseek");
 	return(itf);
 }
@@ -272,24 +229,29 @@ setinput(struct message *mp)
  * a dynamically allocated message structure.
  */
 void
-makemessage(FILE *f, int omsgCount)
+makemessage(f, omsgCount)
+	FILE *f;
+	int omsgCount;
 {
-	size_t size;
-	struct message *nmessage;
+	size_t size = (msgCount + 1) * sizeof(struct message);
 
-	size = (msgCount + 1) * sizeof(struct message);
-	nmessage = realloc(message, size);
-	if (nmessage == 0)
-		err(1, "realloc");
-	if (omsgCount == 0 || message == NULL)
-		dot = nmessage;
-	else
-		dot = nmessage + (dot - message);
-	message = nmessage;
+	if (omsgCount) {
+		message = (struct message *)realloc(message, size);
+		if (message == 0)
+			errx(1, "Insufficient memory for %d messages\n",
+			    msgCount);
+	} else {
+		if (message != 0)
+			(void)free(message);
+		if ((message = (struct message *)malloc(size)) == NULL)
+			errx(1, "Insufficient memory for %d messages",
+			    msgCount);
+		dot = message;
+	}
 	size -= (omsgCount + 1) * sizeof(struct message);
 	fflush(f);
-	(void)lseek(fileno(f), (off_t)sizeof(*message), SEEK_SET);
-	if (myread(fileno(f), (void *) &message[omsgCount], size) != size)
+	(void)lseek(fileno(f), (off_t)sizeof(*message), 0);
+	if (read(fileno(f), (void *) &message[omsgCount], size) != size)
 		errx(1, "Message temporary file corrupted");
 	message[msgCount].m_size = 0;
 	message[msgCount].m_lines = 0;
@@ -301,9 +263,10 @@ makemessage(FILE *f, int omsgCount)
  * If the write fails, return 1, else 0
  */
 int
-append(struct message *mp, FILE *f)
+append(mp, f)
+	struct message *mp;
+	FILE *f;
 {
-
 	return(fwrite((char *) mp, sizeof(*mp), 1, f) != 1);
 }
 
@@ -311,7 +274,8 @@ append(struct message *mp, FILE *f)
  * Delete or truncate a file, but only if the file is a plain file.
  */
 int
-rm(char *name)
+rm(name)
+	char *name;
 {
 	struct stat sb;
 
@@ -323,7 +287,7 @@ rm(char *name)
 	}
 	if (unlink(name) == -1) {
 		if (errno == EPERM)
-			return(truncate(name, (off_t)0));
+			return(truncate(name, 0));
 		else
 			return(-1);
 	}
@@ -336,7 +300,7 @@ static sigset_t nset, oset;
  * Hold signals SIGHUP, SIGINT, and SIGQUIT.
  */
 void
-holdsigs(void)
+holdsigs()
 {
 
 	if (sigdepth++ == 0) {
@@ -352,7 +316,7 @@ holdsigs(void)
  * Release signals SIGHUP, SIGINT, and SIGQUIT.
  */
 void
-relsesigs(void)
+relsesigs()
 {
 
 	if (--sigdepth == 0)
@@ -360,36 +324,12 @@ relsesigs(void)
 }
 
 /*
- * Unblock and ignore a signal
- */
-int
-ignoresig(int sig, struct sigaction *oact, sigset_t *oset)
-{
-	struct sigaction act;
-	sigset_t nset;
-	int error;
-
-	sigemptyset(&act.sa_mask);
-	act.sa_flags = SA_RESTART;
-	act.sa_handler = SIG_IGN;
-	error = sigaction(sig, &act, oact);
-
-	if (error == 0) {
-		sigemptyset(&nset);
-		sigaddset(&nset, sig);
-		(void)sigprocmask(SIG_UNBLOCK, &nset, oset);
-	} else if (oset != NULL)
-		(void)sigprocmask(SIG_BLOCK, NULL, oset);
-
-	return(error);
-}
-
-/*
  * Determine the size of the file possessed by
  * the passed buffer.
  */
 off_t
-fsize(FILE *iob)
+fsize(iob)
+	FILE *iob;
 {
 	struct stat sbuf;
 
@@ -410,13 +350,16 @@ fsize(FILE *iob)
  * Return the file name as a dynamic string.
  */
 char *
-expand(char *name)
+expand(name)
+	char *name;
 {
-	const int flags = GLOB_BRACE|GLOB_TILDE|GLOB_NOSORT;
 	char xname[PATHSIZE];
 	char cmdbuf[PATHSIZE];		/* also used for file names */
-	char *match = NULL;
-	glob_t names;
+	int pid, l;
+	char *cp, *shell;
+	int pivec[2];
+	struct stat sbuf;
+	extern int wait_status;
 
 	/*
 	 * The order of evaluation is "%" and "#" expand into constants.
@@ -446,50 +389,73 @@ expand(char *name)
 		name = savestr(xname);
 	}
 	/* catch the most common shell meta character */
-	if (name[0] == '~' && homedir && (name[1] == '/' || name[1] == '\0')) {
+	if (name[0] == '~' && (name[1] == '/' || name[1] == '\0')) {
 		(void)snprintf(xname, sizeof(xname), "%s%s", homedir, name + 1);
 		name = savestr(xname);
 	}
-	if (strpbrk(name, "~{[*?\\") == NULL)
-		return(savestr(name));
-
-	/* XXX - does not expand enviroment variables. */
-	switch (glob(name, flags, NULL, &names)) {
-	case 0:
-		if (names.gl_pathc == 1)
-			match = savestr(names.gl_pathv[0]);
-		else
-			fprintf(stderr, "\"%s\": Ambiguous.\n", name);
-		break;
-	case GLOB_NOSPACE:
-		fprintf(stderr, "\"%s\": Out of memory.\n", name);
-		break;
-	case GLOB_NOMATCH:
-		fprintf(stderr, "\"%s\": No match.\n", name);
-		break;
-	default:
-		fprintf(stderr, "\"%s\": Expansion failed.\n", name);
-		break;
+	if (!anyof(name, "~{[*?$`'\"\\"))
+		return(name);
+	if (pipe(pivec) < 0) {
+		warn("pipe");
+		return(name);
 	}
-	globfree(&names);
-	return(match);
+	(void)snprintf(cmdbuf, sizeof(cmdbuf), "echo %s", name);
+	if ((shell = value("SHELL")) == NULL)
+		shell = _PATH_CSHELL;
+	pid = start_command(shell, 0, -1, pivec[1], "-c", cmdbuf, NULL);
+	if (pid < 0) {
+		(void)close(pivec[0]);
+		(void)close(pivec[1]);
+		return(NULL);
+	}
+	(void)close(pivec[1]);
+	l = read(pivec[0], xname, PATHSIZE);
+	(void)close(pivec[0]);
+	if (wait_child(pid) < 0 && WIFSIGNALED(wait_status) &&
+	    WTERMSIG(wait_status) != SIGPIPE) {
+		fprintf(stderr, "\"%s\": Expansion failed.\n", name);
+		return(NULL);
+	}
+	if (l < 0) {
+		warn("read");
+		return(NULL);
+	}
+	if (l == 0) {
+		fprintf(stderr, "\"%s\": No match.\n", name);
+		return(NULL);
+	}
+	if (l == PATHSIZE) {
+		fprintf(stderr, "\"%s\": Expansion buffer overflow.\n", name);
+		return(NULL);
+	}
+	xname[l] = '\0';
+	for (cp = &xname[l-1]; *cp == '\n' && cp > xname; cp--)
+		;
+	cp[1] = '\0';
+	if (strchr(xname, ' ') && stat(xname, &sbuf) < 0) {
+		fprintf(stderr, "\"%s\": Ambiguous.\n", name);
+		return(NULL);
+	}
+	return(savestr(xname));
 }
 
 /*
  * Determine the current folder directory name.
  */
 int
-getfold(char *name, int namelen)
+getfold(name, namelen)
+	char *name;
+	int namelen;
 {
 	char *folder;
 
 	if ((folder = value("folder")) == NULL)
 		return(-1);
-	if (*folder == '/')
-		strlcpy(name, folder, namelen);
-	else
-		(void)snprintf(name, namelen, "%s/%s", homedir ? homedir : ".",
-		    folder);
+	if (*folder == '/') {
+		strncpy(name, folder, namelen-1);
+		name[namelen-1] = '\0';
+	} else
+		(void)snprintf(name, namelen, "%s/%s", homedir, folder);
 	return(0);
 }
 
@@ -497,7 +463,7 @@ getfold(char *name, int namelen)
  * Return the name of the dead.letter file.
  */
 char *
-getdeadletter(void)
+getdeadletter()
 {
 	char *cp;
 
@@ -510,15 +476,4 @@ getdeadletter(void)
 		cp = expand(buf);
 	}
 	return(cp);
-}
-
-/*
- * Signal handler used by readline() to catch SIGINT, SIGHUP, SIGTSTP,
- * SIGTTOU, SIGTTIN.
- */
-void
-fioint(int s)
-{
-
-	fiosignal = s;
 }

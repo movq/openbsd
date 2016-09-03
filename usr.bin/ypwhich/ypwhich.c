@@ -1,4 +1,4 @@
-/*	$OpenBSD: ypwhich.c,v 1.23 2015/02/08 23:40:35 deraadt Exp $	*/
+/*	$OpenBSD: ypwhich.c,v 1.11 1999/03/20 15:36:12 maja Exp $	*/
 /*	$NetBSD: ypwhich.c,v 1.6 1996/05/13 02:43:48 thorpej Exp $	*/
 
 /*
@@ -13,6 +13,12 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Theo de Raadt.
+ * 4. The name of the author may not be used to endorse or promote
+ *    products derived from this software without specific prior written
+ *    permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
  * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -27,19 +33,24 @@
  * SUCH DAMAGE.
  */
 
+#ifndef LINT
+static char rcsid[] = "$Id: ypwhich.c,v 1.11 1999/03/20 15:36:12 maja Exp $";
+#endif
+
+#include <sys/param.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 
+#include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#include <ctype.h>
-#include <err.h>
-#include <netdb.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
+#include <stdlib.h>
+#include <ctype.h>
+#include <netdb.h>
+#include <err.h>
 
 #include <rpc/rpc.h>
 #include <rpc/xdr.h>
@@ -61,15 +72,12 @@ struct ypalias {
 	{ "ethers", "ethers.byname" },
 };
 
-int	bind_host(char *dom, struct sockaddr_in *sin);
-
-static void
-usage(void)
+void
+usage()
 {
-	fprintf(stderr,
-	    "usage: ypwhich [-t] [-d domain] [[-h] host]\n"
-	    "       ypwhich [-t] [-d domain] [-h host] -m [mname]\n"
-	    "       ypwhich -x\n");
+	fprintf(stderr, "Usage:\n");
+	fprintf(stderr, "\typwhich [-d domain] [[-h host] [-t] -m [mname] | host]\n");
+	fprintf(stderr, "\typwhich -x\n");
 	exit(1);
 }
 
@@ -78,14 +86,16 @@ usage(void)
  * Like yp_bind except can query a specific host
  */
 int
-bind_host(char *dom, struct sockaddr_in *sin)
+bind_host(dom, sin)
+char *dom;
+struct sockaddr_in *sin;
 {
 	struct hostent *hent = NULL;
 	struct ypbind_resp ypbr;
-	struct in_addr ss_addr;
 	struct timeval tv;
 	CLIENT *client;
 	int sock, r;
+	struct in_addr ss_addr;
 
 	sock = RPC_ANYSOCK;
 	tv.tv_sec = 15;
@@ -129,23 +139,30 @@ bind_host(char *dom, struct sockaddr_in *sin)
 
 	return 0;
 }
-
+	
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
-	char *domain, *master, *map = NULL, *host = NULL;
-	int notrans = 0, mode = 0, c, r, i;
+	char *domain, *master, *map;
 	struct ypmaplist *ypml, *y;
-	struct sockaddr_in sin;
 	struct hostent *hent;
-	CLIENT *client = NULL;
+	struct sockaddr_in sin;
+	int notrans, mode, getmap;
+	int c, r, i;
+	CLIENT *client;
+	char	*host = NULL;
+
+	map = NULL;
+	getmap = notrans = mode = 0;
 
 	yp_get_default_domain(&domain);
 	if (domain == NULL)
 		errx(1, "YP domain name not set");
 
 	while ((c = getopt(argc, argv, "xd:h:mt")) != -1)
-		switch (c) {
+		switch(c) {
 		case 'x':
 			for (i=0; i<sizeof ypaliases/sizeof ypaliases[0]; i++)
 				printf("Use \"%s\" for \"%s\"\n",
@@ -158,10 +175,10 @@ main(int argc, char *argv[])
 			domain = optarg;
 			break;
 		case 't':
-			notrans = 1;
+			notrans++;
 			break;
 		case 'm':
-			mode = 1;
+			mode++;
 			break;
 		default:
 			usage();
@@ -170,7 +187,7 @@ main(int argc, char *argv[])
 	argv += optind;
 
 	if (mode == 0) {
-		switch (argc) {
+		switch(argc) {
 		case 0:
 			memset(&sin, 0, sizeof sin);
 			sin.sin_family = AF_INET;
@@ -189,8 +206,8 @@ main(int argc, char *argv[])
 					    argv[0]);
 					exit(1);
 				}
-				bcopy(hent->h_addr, &sin.sin_addr,
-				    sizeof sin.sin_addr);
+				bcopy((char *)hent->h_addr,
+				    (char *)&sin.sin_addr, sizeof sin.sin_addr);
 			}
 			if (bind_host(domain, &sin))
 				exit(1);
@@ -204,20 +221,21 @@ main(int argc, char *argv[])
 	if (argc > 1)
 		usage();
 
-	if (host != NULL)
-		client = yp_bind_host(host, YPPROG, YPVERS, 0, 1);
-
+	if (host != NULL) {
+		client = yp_bind_host(host,YPPROG,YPVERS,0,1);
+	}
+	
 	if (argv[0]) {
 		map = argv[0];
 		for (i=0; (!notrans) && i<sizeof ypaliases/sizeof ypaliases[0]; i++)
 			if (strcmp(map, ypaliases[i].alias) == 0)
 				map = ypaliases[i].name;
 
-		if (host != NULL)
+		if (host != NULL) {
 			r = yp_master_host(client, domain, map, &master);
-		else
+		} else {
 			r = yp_master(domain, map, &master);
-
+		}
 		switch (r) {
 		case 0:
 			printf("%s\n", master);
@@ -235,13 +253,13 @@ main(int argc, char *argv[])
 	}
 
 	ypml = NULL;
-	if (host != NULL)
+	if (host != NULL) {
 		r = yp_maplist_host(client, domain, &ypml);
-	else
+	} else {
 		r = yp_maplist(domain, &ypml);
-
+	}
 	r = 0;
-	switch (r) {
+	switch(r) {
 	case 0:
 		for (y = ypml; y; ) {
 			ypml = y;
@@ -251,7 +269,7 @@ main(int argc, char *argv[])
 			} else {
 				r = yp_master(domain, ypml->map, &master);
 			}
-			switch (r) {
+			switch(r) {
 			case 0:
 				printf("%s %s\n", ypml->map, master);
 				free(master);

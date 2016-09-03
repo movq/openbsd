@@ -1,5 +1,5 @@
 /* Table of opcodes for the AMD 29000 family.
-   Copyright 1990, 1991, 1993, 1994, 2002 Free Software Foundation, Inc.
+   Copyright 1990, 1991, 1992, 1993 Free Software Foundation, Inc.
 
 This file is part of GDB and GAS.
 
@@ -62,7 +62,11 @@ struct a29k_opcode {
   char *args;
 };
 
-static const struct a29k_opcode a29k_opcodes[] =
+#ifndef CONST
+#define CONST
+#endif /* CONST */
+
+static CONST struct a29k_opcode a29k_opcodes[] =
 {
 
 { "add", 0x14000000, "c,a,b" },
@@ -278,4 +282,4 @@ static const struct a29k_opcode a29k_opcodes[] =
 			   if we've run off the end of the table.  */
 };
 
-const unsigned int num_opcodes = (((sizeof a29k_opcodes) / (sizeof a29k_opcodes[0])) - 1);
+CONST unsigned int num_opcodes = (((sizeof a29k_opcodes) / (sizeof a29k_opcodes[0])) - 1);

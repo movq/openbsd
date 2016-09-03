@@ -1,4 +1,3 @@
-/*	$OpenBSD: psl.h,v 1.20 2013/05/16 19:26:04 kettenis Exp $	*/
 /*	$NetBSD: psl.h,v 1.30 1996/05/13 01:28:05 mycroft Exp $	*/
 
 /*-
@@ -16,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -35,8 +38,8 @@
  *	@(#)psl.h	5.2 (Berkeley) 1/18/91
  */
 
-#ifndef _MACHINE_PSL_H_
-#define _MACHINE_PSL_H_
+#ifndef _I386_PSL_H_
+#define _I386_PSL_H_
 
 /*
  * 386 processor status longword.
@@ -58,7 +61,6 @@
 #define	PSL_VIF		0x00080000	/* virtual interrupt enable flag */
 #define	PSL_VIP		0x00100000	/* virtual interrupt pending flag */
 #define	PSL_ID		0x00200000	/* identification flag */
-#define	PSL_XCRYPT	0x40000000	/* VIA xcrypt: operation loaded */
 
 #define	PSL_MBO		0x00000002	/* must be one bits */
 #define	PSL_MBZ		0xffc08028	/* must be zero bits */
@@ -75,28 +77,22 @@
 
 #ifndef _LOCORE
 
-#include <sys/evcount.h>
-
 /*
  * Interrupt handler chains.  isa_intr_establish() inserts a handler into
  * the list.  The handler is called with its (single) argument.
  */
 
 struct intrhand {
-	int		(*ih_fun)(void *);
-	void		*ih_arg;
-	int		ih_level;
-	int		ih_flags;
-	struct intrhand	*ih_next;
-	int		ih_pin;
-	int		ih_irq;
-	struct evcount	ih_count;
-	int		ih_vec;
+	int	(*ih_fun) __P((void *));
+	void	*ih_arg;
+	u_long	ih_count;
+	struct	intrhand *ih_next;
+	int	ih_level;
+	int	ih_irq;
+	char	*ih_what;
 };
-
-extern int intr_shared_edge;	/* This system has shared edge interrupts */
 
 #endif /* _LOCORE */
 #endif /* _KERNEL */
  
-#endif /* !_MACHINE_PSL_H_ */
+#endif /* !_I386_PSL_H_ */

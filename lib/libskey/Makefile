@@ -1,9 +1,9 @@
-# $OpenBSD: Makefile,v 1.12 2016/03/30 06:38:43 jmc Exp $
+# $Id: Makefile,v 1.4 1997/04/27 20:56:15 millert Exp $
 
 LIB=	skey
 SRCS=	skeylogin.c skeysubr.c put.c
 HDRS=	skey.h
-MAN+=	skey.3 skey.5
+#CFLAGS+= -DSKEY_MDX_DEFAULT=4
 
 includes:
 	@cd ${.CURDIR}; for i in $(HDRS); do \

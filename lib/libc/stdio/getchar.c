@@ -1,4 +1,3 @@
-/*	$OpenBSD: getchar.c,v 1.8 2015/08/31 02:53:57 guenther Exp $ */
 /*-
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,30 +34,18 @@
  * SUCH DAMAGE.
  */
 
-#include <stdio.h>
-
-/*
- * A subroutine version of the macro getchar_unlocked.
- */
-#undef getchar_unlocked
-
-int
-getchar_unlocked(void)
-{
-	return (getc_unlocked(stdin));
-}
-DEF_WEAK(getchar_unlocked);
-
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: getchar.c,v 1.2 1996/08/19 08:32:52 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
 
 /*
  * A subroutine version of the macro getchar.
  */
+#include <stdio.h>
 
 #undef getchar
 
-int
-getchar(void)
+getchar()
 {
 	return (getc(stdin));
 }
-DEF_STRONG(getchar);

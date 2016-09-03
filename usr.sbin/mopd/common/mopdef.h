@@ -1,4 +1,4 @@
-/*	$OpenBSD: mopdef.h,v 1.5 2003/06/02 21:38:39 maja Exp $ */
+/*	$OpenBSD: mopdef.h,v 1.2 1996/09/21 19:11:43 maja Exp $ */
 
 /*
  * Copyright (c) 1993-95 Mats O Jansson.  All rights reserved.
@@ -11,6 +11,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Mats O Jansson.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -23,7 +28,7 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- *	$OpenBSD: mopdef.h,v 1.5 2003/06/02 21:38:39 maja Exp $
+ *	$OpenBSD: mopdef.h,v 1.2 1996/09/21 19:11:43 maja Exp $
  *
  */
 
@@ -183,11 +188,11 @@
 #define L_BBLK			0xf0	/* RSX header block count */
 
 #ifndef MOPDEF_SUPRESS_EXTERN
-extern u_char dl_mcst[];
-extern u_char rc_mcst[];
-extern u_char dl_802_proto[];
-extern u_char rc_802_proto[];
-extern u_char lp_802_proto[];
-#endif /* MOPDEF_SUPRESS_EXTERN */
+extern char dl_mcst[];
+extern char rc_mcst[];
+extern char dl_802_proto[];
+extern char rc_802_proto[];
+extern char lp_802_proto[];
+#endif	MOPDEF_SUPRESS_EXTERN
 
-#endif /* _MOPDEF_H_ */
+#endif _MOPDEF_H_

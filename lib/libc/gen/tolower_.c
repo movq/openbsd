@@ -1,15 +1,20 @@
-/*	$OpenBSD: tolower_.c,v 1.11 2015/09/19 04:02:21 guenther Exp $ */
 /*
  * Written by J.T. Conklin <jtc@netbsd.org>.
  * Public domain.
  */
 
-#define _ANSI_LIBRARY
-#include <ctype.h>
-#include <stdio.h>
-#include "ctype_private.h"
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: tolower_.c,v 1.2 1996/08/19 08:26:52 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
 
-const short _C_tolower_[1 + CTYPE_NUM_CHARS] = {
+#include <stdio.h>
+#include <ctype.h>
+
+#if EOF != -1
+#error "EOF != -1"
+#endif
+
+const short _C_tolower_[1 + 256] = {
 	EOF,
 	0x00,	0x01,	0x02,	0x03,	0x04,	0x05,	0x06,	0x07,
 	0x08,	0x09,	0x0a,	0x0b,	0x0c,	0x0d,	0x0e,	0x0f,
@@ -46,16 +51,11 @@ const short _C_tolower_[1 + CTYPE_NUM_CHARS] = {
 };
 
 const short *_tolower_tab_ = _C_tolower_;
-#if 0
-DEF_STRONG(_tolower_tab_);
-#endif
 
 #undef tolower
 int
-tolower(int c)
+tolower(c)
+	int c;
 {
-	if ((unsigned int)c > 255)
-		return(c);
 	return((_tolower_tab_ + 1)[c]);
 }
-DEF_STRONG(tolower);

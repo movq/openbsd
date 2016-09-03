@@ -1,13 +1,12 @@
-/*	$OpenBSD: uhcireg.h,v 1.15 2013/04/15 09:23:02 mglocker Exp $ */
-/*	$NetBSD: uhcireg.h,v 1.16 2002/07/11 21:14:29 augustss Exp $	*/
-/*	$FreeBSD: src/sys/dev/usb/uhcireg.h,v 1.12 1999/11/17 22:33:42 n_hibma Exp $ */
+/*	$OpenBSD: uhcireg.h,v 1.2 1999/08/27 09:00:29 fgsch Exp $	*/
+/*	$NetBSD: uhcireg.h,v 1.7 1999/08/22 23:19:57 augustss Exp $	*/
 
 /*
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
- * by Lennart Augustsson (lennart@augustsson.net) at
+ * by Lennart Augustsson (augustss@carlstedt.se) at
  * Carlstedt Research & Technology.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -18,6 +17,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -41,7 +47,6 @@
 #define  PCI_USBREV_MASK	0xff
 #define  PCI_USBREV_PRE_1_0	0x00
 #define  PCI_USBREV_1_0		0x10
-#define  PCI_USBREV_1_1		0x11
 
 #define PCI_LEGSUP		0xc0	/* Legacy Support register */
 #define  PCI_LEGSUP_USBPIRQDEN	0x2000	/* USB PIRQ D Enable */
@@ -69,7 +74,6 @@
 #define  UHCI_STS_HSE		0x0008
 #define  UHCI_STS_HCPE		0x0010
 #define  UHCI_STS_HCH		0x0020
-#define  UHCI_STS_ALLINTRS	0x003f
 
 #define UHCI_INTR		0x04
 #define  UHCI_INTR_TOCRCIE	0x0001
@@ -79,7 +83,7 @@
 
 #define UHCI_FRNUM		0x06
 #define  UHCI_FRNUM_MASK	0x03ff
-
+ 
 
 #define UHCI_FLBASEADDR		0x08
 
@@ -101,9 +105,6 @@
 #define UHCI_PORTSC_OCIC	0x0800
 #define UHCI_PORTSC_SUSP	0x1000
 
-#define URWMASK(x) \
-  ((x) & (UHCI_PORTSC_SUSP | UHCI_PORTSC_PR | UHCI_PORTSC_RD | UHCI_PORTSC_PE))
-
 #define UHCI_FRAMELIST_COUNT	1024
 #define UHCI_FRAMELIST_ALIGN	4096
 
@@ -112,19 +113,12 @@
 
 typedef u_int32_t uhci_physaddr_t;
 #define UHCI_PTR_T		0x00000001
-#define UHCI_PTR_TD		0x00000000
-#define UHCI_PTR_QH		0x00000002
+#define UHCI_PTR_Q		0x00000002
 #define UHCI_PTR_VF		0x00000004
 
 /*
- * Wait this long after a QH has been removed.  This gives that HC a
- * chance to stop looking at it before it's recycled.
- */
-#define UHCI_QH_REMOVE_DELAY	5
-
-/*
- * The Queue Heads and Transfer Descriptors are accessed
- * by both the CPU and the USB controller which run
+ * The Queue Heads and Transfer Descriptors and accessed
+ * by both the CPU and the USB controller which runs
  * concurrently.  This means that they have to be accessed
  * with great care.  As long as the data structures are
  * not linked into the controller's frame list they cannot
@@ -134,7 +128,7 @@ typedef u_int32_t uhci_physaddr_t;
  * the controller "owns" the qh_elink field.
  */
 
-struct uhci_td {
+typedef struct {
 	uhci_physaddr_t td_link;
 	u_int32_t td_status;
 #define UHCI_TD_GET_ACTLEN(s)	(((s) + 1) & 0x3ff)
@@ -167,7 +161,7 @@ struct uhci_td {
 #define UHCI_TD_GET_MAXLEN(s)	((((s) >> 21) + 1) & 0x7ff)
 #define UHCI_TD_MAXLEN_MASK	0xffe00000
 	u_int32_t td_buffer;
-};
+} uhci_td_t;
 
 #define UHCI_TD_ERROR (UHCI_TD_BITSTUFF|UHCI_TD_CRCTO|UHCI_TD_BABBLE|UHCI_TD_DBUFFER|UHCI_TD_STALLED)
 
@@ -180,9 +174,9 @@ struct uhci_td {
      UHCI_TD_SET_ENDPT(endp) | UHCI_TD_SET_DEVADDR(dev) | UHCI_TD_PID_IN | \
      UHCI_TD_SET_DT(dt))
 
-struct uhci_qh {
+typedef struct {
 	uhci_physaddr_t qh_hlink;
 	uhci_physaddr_t qh_elink;
-};
+} uhci_qh_t;
 
 #endif /* _DEV_PCI_UHCIREG_H_ */

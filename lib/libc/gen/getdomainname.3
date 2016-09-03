@@ -1,4 +1,4 @@
-.\"	$OpenBSD: getdomainname.3,v 1.25 2014/01/21 03:15:45 schwarze Exp $
+.\"	$OpenBSD: getdomainname.3,v 1.15 1999/07/09 13:35:16 aaron Exp $
 .\"
 .\" Copyright (c) 1983, 1991, 1993
 .\"	The Regents of the University of California.  All rights reserved.
@@ -11,7 +11,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -27,7 +31,7 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: January 21 2014 $
+.Dd May 6, 1994
 .Dt GETDOMAINNAME 3
 .Os
 .Sh NAME
@@ -35,7 +39,7 @@
 .Nm setdomainname
 .Nd get/set YP domain name of current host
 .Sh SYNOPSIS
-.In unistd.h
+.Fd #include <unistd.h>
 .Ft int
 .Fn getdomainname "char *name" "size_t namelen"
 .Ft int
@@ -43,27 +47,27 @@
 .Sh DESCRIPTION
 The
 .Fn getdomainname
-function returns the YP domain name for the current processor, as
+function
+returns the YP domain name for the current processor, as
 previously set by
 .Fn setdomainname .
 The parameter
 .Fa namelen
 specifies the size of the
 .Fa name
-array.
-If insufficient space is provided, the returned name is truncated.
-The returned name is always NUL terminated.
+array.  If insufficient space is provided, the returned name is truncated.
+The returned name is always null terminated.
 .Pp
 .Fn setdomainname
 sets the domain name of the host machine to be
 .Fa name ,
 which has length
 .Fa namelen .
-This call is restricted to the superuser and
+This call is restricted to the super-user and
 is normally used only when the system is bootstrapped.
 .Sh RETURN VALUES
-If the call succeeds a value of 0 is returned.
-If the call fails, a value of \-1 is returned and an error code is
+If the call succeeds a value of 0 is returned.  If the call
+fails, a value of \-1 is returned and an error code is
 placed in the global variable
 .Va errno .
 .Sh ERRORS
@@ -72,10 +76,12 @@ The following errors may be returned by these calls:
 .It Bq Er EFAULT
 The
 .Fa name
+or
+.Fa namelen
 parameter gave an
 invalid address.
 .It Bq Er EPERM
-The caller tried to set the domain name and was not the superuser.
+The caller tried to set the domain name and was not the super-user.
 .El
 .Sh SEE ALSO
 .Xr domainname 1 ,
@@ -84,19 +90,18 @@ The caller tried to set the domain name and was not the superuser.
 .Xr sysctl 3 ,
 .Xr sysctl 8 ,
 .Xr yp 8
+.Sh BUGS
+Domain names are limited to
+.Dv MAXHOSTNAMELEN
+(from
+.Ao Pa sys/param.h Ac )
+characters, currently 256.  This includes the terminating NUL character.
+.Pp
+If the buffer passed to
+.Fn getdomainname
+is too small, other operating systems may not guarantee termination with NUL.
 .Sh HISTORY
 The
 .Nm
 function call appeared in
 SunOS 3.x.
-.Sh BUGS
-Domain names are limited to
-.Dv MAXHOSTNAMELEN
-(from
-.In sys/param.h )
-characters, currently 256.
-This includes the terminating NUL character.
-.Pp
-If the buffer passed to
-.Fn getdomainname
-is too small, other operating systems may not guarantee termination with NUL.

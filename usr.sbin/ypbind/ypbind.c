@@ -1,7 +1,9 @@
-/*	$OpenBSD: ypbind.c,v 1.68 2016/07/08 19:32:26 millert Exp $ */
+/*	$OpenBSD: ypbind.c,v 1.37 1999/02/16 05:54:08 deraadt Exp $ */
 
 /*
- * Copyright (c) 1992, 1993, 1996, 1997, 1998 Theo de Raadt <deraadt@openbsd.org>
+ * Copyright (c) 1997,1998 Theo de Raadt <deraadt@OpenBSD.org>
+ * Copyright (c) 1996 Theo de Raadt <deraadt@theos.com>
+ * Copyright (c) 1992, 1993 Theo de Raadt <deraadt@theos.com>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -12,6 +14,12 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Theo de Raadt.
+ * 4. The name of the author may not be used to endorse or promote
+ *    products derived from this software without specific prior written
+ *    permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
  * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -26,24 +34,31 @@
  * SUCH DAMAGE.
  */
 
+#ifndef LINT
+static char rcsid[] = "$OpenBSD: ypbind.c,v 1.37 1999/02/16 05:54:08 deraadt Exp $";
+#endif
+
+#include <sys/param.h>
 #include <sys/types.h>
+#include <sys/ioctl.h>
+#include <sys/signal.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/file.h>
 #include <sys/fcntl.h>
 #include <sys/uio.h>
 #include <sys/syslog.h>
-#include <net/if.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <limits.h>
 #include <errno.h>
 #include <ctype.h>
+#include <dirent.h>
 #include <netdb.h>
 #include <string.h>
 #include <dirent.h>
 #include <rpc/rpc.h>
 #include <rpc/xdr.h>
+#include <net/if.h>
 #include <arpa/inet.h>
 #include <rpc/pmap_clnt.h>
 #include <rpc/pmap_prot.h>
@@ -52,8 +67,6 @@
 #include <err.h>
 #include <rpcsvc/yp.h>
 #include <rpcsvc/ypclnt.h>
-#include <ifaddrs.h>
-#include <poll.h>
 
 #define SERVERSDIR	"/etc/yp"
 #define BINDINGDIR	"/var/yp/binding"
@@ -72,18 +85,22 @@ struct _dom_binding {
 	int dom_lockfd;
 	int dom_alive;
 	u_int32_t dom_xid;
-	char dom_servlist[PATH_MAX];
+	char dom_servlist[MAXPATHLEN];
 	FILE *dom_servlistfp;
 };
 
-void rpc_received(char *dom, struct sockaddr_in *raddrp, int force);
-void checkwork(void);
-enum clnt_stat handle_replies(void);
-enum clnt_stat handle_ping(void);
-int broadcast(struct _dom_binding *ypdb, char *, int);
-int direct(struct _dom_binding *ypdb, char *, int);
-int ping(struct _dom_binding *ypdb);
-int pings(struct _dom_binding *ypdb);
+extern bool_t xdr_domainname(), xdr_ypbind_resp();
+extern bool_t xdr_ypreq_key(), xdr_ypresp_val();
+extern bool_t xdr_ypbind_setdom();
+
+void rpc_received __P((char *dom, struct sockaddr_in *raddrp, int force));
+void checkwork __P((void));
+enum clnt_stat handle_replies __P((void));
+enum clnt_stat handle_ping __P((void));
+int broadcast __P((struct _dom_binding *ypdb, char *, int));
+int direct __P((struct _dom_binding *ypdb, char *, int));
+int ping __P((struct _dom_binding *ypdb));
+int pings __P((struct _dom_binding *ypdb));
 
 char *domain;
 
@@ -104,23 +121,25 @@ u_long rmtcr_port;
 SVCXPRT *udptransp, *tcptransp;
 SVCXPRT *ludptransp, *ltcptransp;
 
-struct _dom_binding *xid2ypdb(u_int32_t xid);
-u_int32_t unique_xid(struct _dom_binding *ypdb);
+struct _dom_binding *xid2ypdb __P((u_int32_t xid));
+u_int32_t unique_xid __P((struct _dom_binding *ypdb));
 
 /*
  * We name the local RPC functions ypbindproc_XXX_2x() instead
  * of ypbindproc_XXX_2() because we need to pass an additional
  * parameter. ypbindproc_setdom_2x() does a security check, and
  * hence needs the CLIENT *
- *
+ * 
  * We are faced with either making ypbindprog_2() do the security
  * check before calling ypbindproc_setdom_2().. or we can simply
  * declare sun's interface insufficient and roll our own.
  */
 
-/*ARGSUSED*/
-static void *
-ypbindproc_null_2x(SVCXPRT *transp, void *argp, CLIENT *clnt)
+void *
+ypbindproc_null_2x(transp, argp, clnt)
+	SVCXPRT *transp;
+	void *argp;
+	CLIENT *clnt;
 {
 	static char res;
 
@@ -128,13 +147,15 @@ ypbindproc_null_2x(SVCXPRT *transp, void *argp, CLIENT *clnt)
 	return (void *)&res;
 }
 
-/*ARGSUSED*/
-static struct ypbind_resp *
-ypbindproc_domain_2x(SVCXPRT *transp, domainname *argp, CLIENT *clnt)
+struct ypbind_resp *
+ypbindproc_domain_2x(transp, argp, clnt)
+	SVCXPRT *transp;
+	domainname *argp;
+	CLIENT *clnt;
 {
 	static struct ypbind_resp res;
 	struct _dom_binding *ypdb;
-	char path[PATH_MAX];
+	char path[MAXPATHLEN];
 	time_t now;
 	int count = 0;
 
@@ -154,7 +175,7 @@ ypbindproc_domain_2x(SVCXPRT *transp, domainname *argp, CLIENT *clnt)
 			break;
 
 	if (ypdb == NULL) {
-		ypdb = malloc(sizeof *ypdb);
+		ypdb = (struct _dom_binding *)malloc(sizeof *ypdb);
 		if (ypdb == NULL)
 			return NULL;
 		memset(ypdb, 0, sizeof *ypdb);
@@ -211,44 +232,39 @@ ypbindproc_domain_2x(SVCXPRT *transp, domainname *argp, CLIENT *clnt)
 	return &res;
 }
 
-/*ARGSUSED*/
-static bool_t *
-ypbindproc_setdom_2x(SVCXPRT *transp, struct ypbind_setdom *argp, CLIENT *clnt)
+bool_t *
+ypbindproc_setdom_2x(transp, argp, clnt)
+	SVCXPRT *transp;
+	struct ypbind_setdom *argp;
+	CLIENT *clnt;
 {
 	struct sockaddr_in *fromsin, bindsin;
-	static bool_t res = 1;
+	static bool_t res;
 
+	memset(&res, 0, sizeof(res));
 	fromsin = svc_getcaller(transp);
 
 	switch (ypsetmode) {
 	case YPSET_LOCAL:
 		if (transp != ludptransp && transp != ltcptransp) {
 			syslog(LOG_WARNING, "attempted spoof of ypsetme");
-			svcerr_weakauth(transp);
-			return NULL;
+			return (bool_t *)NULL;
 		}
-		if (fromsin->sin_addr.s_addr != htonl(INADDR_LOOPBACK)) {
-			svcerr_weakauth(transp);
-			return NULL;
-		}
+		if (fromsin->sin_addr.s_addr != htonl(INADDR_LOOPBACK))
+			return (bool_t *)NULL;
 		break;
 	case YPSET_ALL:
 		break;
 	case YPSET_NO:
 	default:
-		svcerr_weakauth(transp);
-		return NULL;
+		return &res;
 	}
 
-	if (ntohs(fromsin->sin_port) >= IPPORT_RESERVED) {
-		svcerr_weakauth(transp);
-		return NULL;
-	}
+	if (ntohs(fromsin->sin_port) >= IPPORT_RESERVED)
+		return &res;
 
-	if (argp->ypsetdom_vers != YPVERS) {
-		svcerr_noprog(transp);
-		return NULL;
-	}
+	if (argp->ypsetdom_vers != YPVERS)
+		return &res;
 
 	memset(&bindsin, 0, sizeof bindsin);
 	bindsin.sin_family = AF_INET;
@@ -259,34 +275,35 @@ ypbindproc_setdom_2x(SVCXPRT *transp, struct ypbind_setdom *argp, CLIENT *clnt)
 	    sizeof(argp->ypsetdom_binding.ypbind_binding_port));
 	rpc_received(argp->ypsetdom_domain, &bindsin, 1);
 
+	res = 1;
 	return &res;
 }
 
 static void
-ypbindprog_2(struct svc_req *rqstp, SVCXPRT *transp)
+ypbindprog_2(rqstp, transp)
+	struct svc_req *rqstp;
+	register SVCXPRT *transp;
 {
-	union argument {
+	union {
 		domainname ypbindproc_domain_2_arg;
 		struct ypbind_setdom ypbindproc_setdom_2_arg;
 	} argument;
 	struct authunix_parms *creds;
 	char *result;
-	xdrproc_t xdr_argument, xdr_result;
-	char *(*local)(SVCXPRT *, union argument *, struct svc_req *);
+	bool_t (*xdr_argument)(), (*xdr_result)();
+	char *(*local)();
 
 	switch (rqstp->rq_proc) {
 	case YPBINDPROC_NULL:
 		xdr_argument = xdr_void;
 		xdr_result = xdr_void;
-		local = (char *(*)(SVCXPRT *, union argument *, struct svc_req *))
-		    ypbindproc_null_2x;
+		local = (char *(*)()) ypbindproc_null_2x;
 		break;
 
 	case YPBINDPROC_DOMAIN:
 		xdr_argument = xdr_domainname;
 		xdr_result = xdr_ypbind_resp;
-		local = (char *(*)(SVCXPRT *, union argument *, struct svc_req *))
-		    ypbindproc_domain_2x;
+		local = (char *(*)()) ypbindproc_domain_2x;
 		break;
 
 	case YPBINDPROC_SETDOM:
@@ -305,8 +322,7 @@ ypbindprog_2(struct svc_req *rqstp, SVCXPRT *transp)
 
 		xdr_argument = xdr_ypbind_setdom;
 		xdr_result = xdr_void;
-		local = (char *(*)(SVCXPRT *, union argument *, struct svc_req *))
-		    ypbindproc_setdom_2x;
+		local = (char *(*)()) ypbindproc_setdom_2x;
 		break;
 
 	default:
@@ -325,21 +341,23 @@ ypbindprog_2(struct svc_req *rqstp, SVCXPRT *transp)
 	return;
 }
 
-static void
-usage(void)
+void
+usage()
 {
-	fprintf(stderr, "usage: ypbind [-insecure] [-ypset] [-ypsetme]\n");
-	exit(1);
+	fprintf(stderr, "usage: ypbind [-ypset] [-ypsetme] [-insecure]\n");
+	exit(0);
 }
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
-	char path[PATH_MAX];
+	char path[MAXPATHLEN];
 	struct sockaddr_in sin;
-	struct pollfd *pfd = NULL;
-	int width = 0, nready, lockfd, lsock;
-	socklen_t len;
+	struct timeval tv;
+	fd_set fdsr;
+	int width, lockfd, len, lsock;
 	int evil = 0, one = 1;
 	DIR *dirp;
 	struct dirent *dent;
@@ -389,38 +407,35 @@ main(int argc, char *argv[])
 	}
 #else
 	if ((lockfd = open(YPBINDLOCK, O_CREAT|O_RDWR|O_TRUNC, 0644)) == -1) {
-		fprintf(stderr, "ypbind: cannot create %s.\n", YPBINDLOCK);
+		fprintf(stderr, "ypbind: cannot create %s\n", YPBINDLOCK);
 		exit(1);
 	}
 	flock(lockfd, LOCK_SH);
 #endif
 
-	if (fchmod(lockfd, 0644) == -1)
-		err(1, "fchmod");
-
 	(void)pmap_unset(YPBINDPROG, YPBINDVERS);
 
 	udptransp = svcudp_create(RPC_ANYSOCK);
 	if (udptransp == NULL) {
-		fprintf(stderr, "cannot create udp service.\n");
+		fprintf(stderr, "cannot create udp service.");
 		exit(1);
 	}
 	if (!svc_register(udptransp, YPBINDPROG, YPBINDVERS, ypbindprog_2,
 	    IPPROTO_UDP)) {
 		fprintf(stderr,
-		    "unable to register (YPBINDPROG, YPBINDVERS, udp).\n");
+		    "unable to register (YPBINDPROG, YPBINDVERS, udp).");
 		exit(1);
 	}
 
 	tcptransp = svctcp_create(RPC_ANYSOCK, 0, 0);
 	if (tcptransp == NULL) {
-		fprintf(stderr, "cannot create tcp service.\n");
+		fprintf(stderr, "cannot create tcp service.");
 		exit(1);
 	}
 	if (!svc_register(tcptransp, YPBINDPROG, YPBINDVERS, ypbindprog_2,
 	    IPPROTO_TCP)) {
 		fprintf(stderr,
-		    "unable to register (YPBINDPROG, YPBINDVERS, tcp).\n");
+		    "unable to register (YPBINDPROG, YPBINDVERS, tcp).");
 		exit(1);
 	}
 
@@ -431,7 +446,7 @@ main(int argc, char *argv[])
 			exit(1);
 		}
 		(void)setsockopt(lsock, SOL_SOCKET, SO_REUSEADDR, &one,
-		    (socklen_t)sizeof one);
+		    sizeof one);
 		len = sizeof(sin);
 		if (getsockname(udptransp->xp_sock, (struct sockaddr *)&sin,
 		    &len) == -1) {
@@ -439,13 +454,12 @@ main(int argc, char *argv[])
 			exit(1);
 		}
 		sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-		sin.sin_port = htons(udptransp->xp_port);
 		if (bind(lsock, (struct sockaddr *)&sin, len) != 0) {
 			syslog(LOG_ERR, "cannot bind local udp: %m");
 			exit(1);
 		}
 		if ((ludptransp = svcudp_create(lsock)) == NULL) {
-			fprintf(stderr, "cannot create udp service.\n");
+			fprintf(stderr, "cannot create udp service.");
 			exit(1);
 		}
 
@@ -455,7 +469,7 @@ main(int argc, char *argv[])
 			exit(1);
 		}
 		(void)setsockopt(lsock, SOL_SOCKET, SO_REUSEADDR, &one,
-		    (socklen_t)sizeof one);
+		    sizeof one);
 		len = sizeof(sin);
 		if (getsockname(tcptransp->xp_sock, (struct sockaddr *)&sin,
 		    &len) == -1) {
@@ -463,39 +477,28 @@ main(int argc, char *argv[])
 			exit(1);
 		}
 		sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-		sin.sin_port = htons(tcptransp->xp_port);
 		if (bind(lsock, (struct sockaddr *)&sin, len) == -1) {
-			syslog(LOG_ERR, "cannot bind local tcp: %m");
+			syslog(LOG_ERR, "cannot bind udp: %m");
 			exit(1);
 		}
 		if ((ltcptransp = svctcp_create(lsock, 0, 0)) == NULL) {
-			fprintf(stderr, "cannot create tcp service.\n");
+			fprintf(stderr, "cannot create tcp service.");
 			exit(1);
 		}
 	}
 
-	if ((rpcsock = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0)) < 0) {
+	if ((rpcsock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
 		perror("socket");
 		return -1;
 	}
-	memset(&sin, 0, sizeof sin);
-	sin.sin_family = AF_INET;
-	sin.sin_addr.s_addr = htonl(INADDR_ANY);
-	sin.sin_port = 0;
-	bindresvport(rpcsock, &sin);
-
-	if ((pingsock = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0)) < 0) {
+	if ((pingsock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
 		perror("socket");
 		return -1;
 	}
-	memset(&sin, 0, sizeof sin);
-	sin.sin_family = AF_INET;
-	sin.sin_addr.s_addr = htonl(INADDR_ANY);
-	sin.sin_port = 0;
-	bindresvport(pingsock, &sin);
 
-	setsockopt(rpcsock, SOL_SOCKET, SO_BROADCAST, &one,
-	    (socklen_t)sizeof(one));
+	fcntl(rpcsock, F_SETFL, fcntl(rpcsock, F_GETFL, 0) | FNDELAY);
+	fcntl(pingsock, F_SETFL, fcntl(pingsock, F_GETFL, 0) | FNDELAY);
+	setsockopt(rpcsock, SOL_SOCKET, SO_BROADCAST, &one, sizeof(one));
 	rmtca.prog = YPPROG;
 	rmtca.vers = YPVERS;
 	rmtca.proc = YPPROC_DOMAIN_NONACK;
@@ -509,7 +512,7 @@ main(int argc, char *argv[])
 		errx(1, "bad domainname %s", domain);
 
 	/* build initial domain binding, make it "unsuccessful" */
-	ypbindlist = malloc(sizeof *ypbindlist);
+	ypbindlist = (struct _dom_binding *)malloc(sizeof *ypbindlist);
 	if (ypbindlist == NULL)
 		errx(1, "no memory");
 	memset(ypbindlist, 0, sizeof *ypbindlist);
@@ -529,39 +532,33 @@ main(int argc, char *argv[])
 	checkwork();
 
 	while (1) {
-		if (pfd == NULL || width != svc_max_pollfd + 2) {
-			width = svc_max_pollfd + 2;
-			pfd = reallocarray(pfd, width, sizeof *pfd);
-			if (pfd == NULL)
-				err(1, NULL);
-		}
+		fdsr = svc_fdset;
+		FD_SET(rpcsock, &fdsr);
+		FD_SET(pingsock, &fdsr);
 
-		pfd[0].fd = rpcsock;
-		pfd[0].events = POLLIN;
-		pfd[1].fd = pingsock;
-		pfd[1].events = POLLIN;
-		memcpy(pfd + 2, svc_pollfd, sizeof(*pfd) * svc_max_pollfd);
+		width = svc_maxfd;
+		if (rpcsock > width)
+			width = rpcsock;
+		if (pingsock > width)
+			width = pingsock;
+		width++;
 
-		nready = poll(pfd, width, 1000);
-		switch (nready) {
+		tv.tv_sec = 1;
+		tv.tv_usec = 0;
+
+		switch (select(width, &fdsr, NULL, NULL, &tv)) {
 		case 0:
 			checkwork();
 			break;
 		case -1:
-			if (errno != EINTR)
-				perror("poll");
+			perror("select\n");
 			break;
 		default:
-			/* No need to check for POLLHUP on UDP sockets. */
-			if (pfd[0].revents & POLLIN) {
+			if (FD_ISSET(rpcsock, &fdsr))
 				handle_replies();
-				nready--;
-			}
-			if (pfd[1].revents & POLLIN) {
+			if (FD_ISSET(pingsock, &fdsr))
 				handle_ping();
-				nready--;
-			}
-			svc_getreq_poll(pfd + 2, nready);
+			svc_getreqset(&fdsr);
 			if (check)
 				checkwork();
 			break;
@@ -577,17 +574,17 @@ main(int argc, char *argv[])
 }
 
 /*
- * State transition is done like this:
+ * State transition is done like this: 
  *
  * STATE	EVENT		ACTION			NEWSTATE	TIMEOUT
- * no binding	timeout		broadcast		no binding	5 sec
+ * no binding	timeout		broadcast 		no binding	5 sec
  * no binding	answer		--			binding		60 sec
  * binding	timeout		ping server		checking	5 sec
  * checking	timeout		ping server + broadcast	checking	5 sec
  * checking	answer		--			binding		60 sec
  */
 void
-checkwork(void)
+checkwork()
 {
 	struct _dom_binding *ypdb;
 	time_t t;
@@ -607,7 +604,8 @@ checkwork(void)
 }
 
 int
-ping(struct _dom_binding *ypdb)
+ping(ypdb)
+	struct _dom_binding *ypdb;
 {
 	domainname dom = ypdb->dom_domain;
 	struct rpc_msg msg;
@@ -655,22 +653,23 @@ ping(struct _dom_binding *ypdb)
 	AUTH_DESTROY(rpcua);
 
 	ypdb->dom_alive = 2;
-	if (sendto(pingsock, buf, outlen, 0,
+	if (sendto(pingsock, buf, outlen, 0, 
 	    (struct sockaddr *)&ypdb->dom_server_addr,
-	    (socklen_t)sizeof ypdb->dom_server_addr) < 0)
+	    sizeof ypdb->dom_server_addr) < 0)
 		perror("sendto");
 	return 0;
 
 }
 
 int
-pings(struct _dom_binding *ypdb)
+pings(ypdb)
+	struct _dom_binding *ypdb;
 {
 	domainname dom = ypdb->dom_domain;
 	struct rpc_msg msg;
 	struct sockaddr_in bindsin;
 	char buf[1400];
-	char path[PATH_MAX];
+	char path[MAXPATHLEN];
 	enum clnt_stat st;
 	int outlen;
 	AUTH *rpcua;
@@ -736,7 +735,7 @@ pings(struct _dom_binding *ypdb)
 		bindsin.sin_port = htons(PMAPPORT);
 		bindsin.sin_addr = ypdb->dom_server_addr.sin_addr;
 		if (sendto(rpcsock, buf, outlen, 0, (struct sockaddr *)&bindsin,
-		    (socklen_t)sizeof bindsin) < 0)
+		    sizeof bindsin) < 0)
 			perror("sendto");
 	}
 	if (ypdb->dom_servlistfp)
@@ -745,10 +744,16 @@ pings(struct _dom_binding *ypdb)
 }
 
 int
-broadcast(struct _dom_binding *ypdb, char *buf, int outlen)
+broadcast(ypdb, buf, outlen)
+	struct _dom_binding *ypdb;
+	char *buf;
+	int outlen;
 {
-	struct ifaddrs *ifap, *ifa;
+	char *inbuf = NULL, *ninbuf;
+	int i, sock, len, inlen = 8192;
 	struct sockaddr_in bindsin;
+	struct ifconf ifc;
+	struct ifreq ifreq, *ifr;
 	struct in_addr in;
 
 	memset(&bindsin, 0, sizeof bindsin);
@@ -756,42 +761,86 @@ broadcast(struct _dom_binding *ypdb, char *buf, int outlen)
 	bindsin.sin_len = sizeof(bindsin);
 	bindsin.sin_port = htons(PMAPPORT);
 
-	if (getifaddrs(&ifap) != 0) {
-		perror("getifaddrs");
+	/* find all networks and send the RPC packet out them all */
+	if ((sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
+		perror("socket");
 		return -1;
 	}
-	for (ifa = ifap; ifa; ifa = ifa->ifa_next) {
-		if (ifa->ifa_addr->sa_family != AF_INET)
-			continue;
-		if ((ifa->ifa_flags & IFF_UP) == 0)
-			continue;
+	
+	while (1) {
+		ifc.ifc_len = inlen;
+		ninbuf = realloc(inbuf, inlen);
+		if (ninbuf == NULL) {
+			if (inbuf)
+				free(inbuf);
+			close(sock);
+			return (-1);
+		}
+		ifc.ifc_buf = inbuf = ninbuf;
+		if (ioctl(sock, SIOCGIFCONF, (char *)&ifc) < 0) {
+			(void) close(sock);
+			free(inbuf);
+			perror("ioctl(SIOCGIFCONF)");
+			return (-1);
+		}
+		if (ifc.ifc_len + sizeof(ifreq) < inlen)
+			break;
+		inlen *= 2;
+	}
 
-		switch (ifa->ifa_flags & (IFF_LOOPBACK | IFF_BROADCAST)) {
-		case IFF_BROADCAST:
-			if (!ifa->ifa_broadaddr)
-				continue;
-			if (ifa->ifa_broadaddr->sa_family != AF_INET)
-				continue;
-			in = ((struct sockaddr_in *)ifa->ifa_broadaddr)->sin_addr;
-			break;
-		case IFF_LOOPBACK:
-			in = ((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
-			break;
-		default:
+	ifr = ifc.ifc_req;
+	ifreq.ifr_name[0] = '\0';
+	for (i = 0; i < ifc.ifc_len; i += len,
+	    ifr = (struct ifreq *)((caddr_t)ifr + len)) {
+#if defined(BSD) && BSD >= 199103
+		len = sizeof(ifr->ifr_name) +
+		    (ifr->ifr_addr.sa_len > sizeof(struct sockaddr) ?
+		    ifr->ifr_addr.sa_len : sizeof(struct sockaddr));
+#else
+		len = sizeof ifc.ifc_len / sizeof(struct ifreq);
+#endif
+		ifreq = *ifr;
+		if (ifreq.ifr_addr.sa_family != AF_INET)
+			continue;
+		if (ioctl(sock, SIOCGIFFLAGS, &ifreq) < 0) {
+			perror("ioctl(SIOCGIFFLAGS)");
 			continue;
 		}
+		if ((ifreq.ifr_flags & IFF_UP) == 0)
+			continue;
 
+		ifreq.ifr_flags &= (IFF_LOOPBACK | IFF_BROADCAST);
+		if (ifreq.ifr_flags == IFF_BROADCAST) {
+			ifreq.ifr_addr = ifr->ifr_addr;
+			if (ioctl(sock, SIOCGIFBRDADDR, &ifreq) < 0) {
+				perror("ioctl(SIOCGIFBRDADDR)");
+				continue;
+			}
+		} else if (ifreq.ifr_flags == IFF_LOOPBACK) {
+			ifreq.ifr_addr = ifr->ifr_addr;
+			if (ioctl(sock, SIOCGIFADDR, &ifreq) < 0) {
+				perror("ioctl(SIOCGIFADDR)");
+				continue;
+			}
+		} else
+			continue;
+
+		in = ((struct sockaddr_in *)&ifreq.ifr_addr)->sin_addr;
 		bindsin.sin_addr = in;
 		if (sendto(rpcsock, buf, outlen, 0, (struct sockaddr *)&bindsin,
-		    (socklen_t)bindsin.sin_len) < 0)
+		    sizeof bindsin) < 0)
 			perror("sendto");
 	}
-	freeifaddrs(ifap);
+	close(sock);
+	free(inbuf);
 	return 0;
 }
 
 int
-direct(struct _dom_binding *ypdb, char *buf, int outlen)
+direct(ypdb, buf, outlen)
+	struct _dom_binding *ypdb;
+	char *buf;
+	int outlen;
 {
 	char line[1024], *p;
 	struct hostent *hp;
@@ -827,7 +876,7 @@ direct(struct _dom_binding *ypdb, char *buf, int outlen)
 		}
 		*p = '\0';
 		p = line;
-		while (isspace((unsigned char)*p))
+		while (isspace(*p))
 			p++;
 		if (*p == '#')
 			continue;
@@ -839,8 +888,7 @@ direct(struct _dom_binding *ypdb, char *buf, int outlen)
 			memmove(&bindsin.sin_addr, hp->h_addr_list[0],
 			    hp->h_length);
 			if (sendto(rpcsock, buf, outlen, 0,
-			    (struct sockaddr *)&bindsin,
-			    (socklen_t)sizeof bindsin) < 0) {
+			    (struct sockaddr *)&bindsin, sizeof bindsin) < 0) {
 				perror("sendto");
 				continue;
 			}
@@ -850,11 +898,10 @@ direct(struct _dom_binding *ypdb, char *buf, int outlen)
 }
 
 enum clnt_stat
-handle_replies(void)
+handle_replies()
 {
 	char buf[1400];
-	int inlen;
-	socklen_t fromlen;
+	int fromlen, inlen;
 	struct _dom_binding *ypdb;
 	struct sockaddr_in raddr;
 	struct rpc_msg msg;
@@ -901,11 +948,10 @@ try_again:
 }
 
 enum clnt_stat
-handle_ping(void)
+handle_ping()
 {
 	char buf[1400];
-	int inlen;
-	socklen_t fromlen;
+	int fromlen, inlen;
 	struct _dom_binding *ypdb;
 	struct sockaddr_in raddr;
 	struct rpc_msg msg;
@@ -955,12 +1001,15 @@ try_again:
  * We prefer loopback connections.
  */
 void
-rpc_received(char *dom, struct sockaddr_in *raddrp, int force)
+rpc_received(dom, raddrp, force)
+char *dom;
+struct sockaddr_in *raddrp;
+int force;
 {
 	struct _dom_binding *ypdb;
 	struct iovec iov[2];
 	struct ypbind_resp ybr;
-	char path[PATH_MAX];
+	char path[MAXPATHLEN];
 	int fd;
 
 	if (strchr(dom, '/'))
@@ -980,14 +1029,13 @@ rpc_received(char *dom, struct sockaddr_in *raddrp, int force)
 	if (ypdb == NULL) {
 		if (force == 0)
 			return;
-		ypdb = malloc(sizeof *ypdb);
+		ypdb = (struct _dom_binding *)malloc(sizeof *ypdb);
 		if (ypdb == NULL)
 			return;
 		memset(ypdb, 0, sizeof *ypdb);
 		strncpy(ypdb->dom_domain, dom, sizeof ypdb->dom_domain-1);
 		ypdb->dom_domain[sizeof (ypdb->dom_domain)-1] = '\0';
 		ypdb->dom_lockfd = -1;
-		ypdb->dom_xid = unique_xid(ypdb);
 		ypdb->dom_pnext = ypbindlist;
 		ypbindlist = ypdb;
 	}
@@ -1014,7 +1062,7 @@ rpc_received(char *dom, struct sockaddr_in *raddrp, int force)
 		}
 		return;
 	}
-
+	
 	memcpy(&ypdb->dom_server_addr, raddrp, sizeof ypdb->dom_server_addr);
 	/* recheck binding in 60 seconds */
 	ypdb->dom_check_t = time(NULL) + 60;
@@ -1041,9 +1089,6 @@ rpc_received(char *dom, struct sockaddr_in *raddrp, int force)
 	}
 	flock(fd, LOCK_SH);
 #endif
-
-	if (fchmod(fd, 0644) == -1)
-		err(1, "fchmod");
 
 	/*
 	 * ok, if BINDINGDIR exists, and we can create the binding file,
@@ -1075,7 +1120,8 @@ rpc_received(char *dom, struct sockaddr_in *raddrp, int force)
 }
 
 struct _dom_binding *
-xid2ypdb(u_int32_t xid)
+xid2ypdb(xid)
+	u_int32_t xid;
 {
 	struct _dom_binding *ypdb;
 
@@ -1086,7 +1132,8 @@ xid2ypdb(u_int32_t xid)
 }
 
 u_int32_t
-unique_xid(struct _dom_binding *ypdb)
+unique_xid(ypdb)
+	struct _dom_binding *ypdb;
 {
 	u_int32_t xid;
 

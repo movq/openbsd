@@ -1,4 +1,4 @@
-/*	$OpenBSD: swap.h,v 1.7 2013/09/30 12:02:30 millert Exp $	*/
+/*	$OpenBSD: swap.h,v 1.2 1999/08/23 17:08:37 art Exp $	*/
 /*	$NetBSD: swap.h,v 1.2 1998/09/13 14:46:24 christos Exp $	*/
 
 /*
@@ -28,6 +28,15 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+/* NOTE: This is the current swap.h from NetBSD.  Since we are "upgrading"
+ * to the new vm_swap code now, we will not keep compatibility with the
+ * old vm_swap code that was in NetBSD.  This means that we do not have
+ * an oswapent structure, but instead use a "new" swapent structure, with
+ * no overlay.
+ *
+ * --Toby.
+ */
+
 #ifndef _SYS_SWAP_H_
 #define _SYS_SWAP_H_
 
@@ -40,12 +49,8 @@ struct swapent {
 	int	se_nblks;		/* total blocks */
 	int	se_inuse;		/* blocks in use */
 	int	se_priority;		/* priority of this device */
-	char	se_path[PATH_MAX];	/* path name */
+	char	se_path[PATH_MAX+1];	/* path name */
 };
-
-#ifdef _KERNEL
-#define	NETDEV		(dev_t)(-2)	/* network device (for nfs swap) */
-#endif /* _KERNEL */
 
 #define SWAP_ON		1		/* begin swapping on device */
 #define SWAP_OFF	2		/* (stop swapping on device) */
@@ -58,5 +63,11 @@ struct swapent {
 #define SWF_ENABLE	0x00000002	/* enabled: we can swap here */
 #define SWF_BUSY	0x00000004	/* busy: I/O happening here */
 #define SWF_FAKE	0x00000008	/* fake: still being built */
+
+#if defined(_KERNEL) && !defined(UVM)
+daddr_t swap_alloc __P((int size));
+void swap_free __P((int size, daddr_t addr));
+void swapinit __P((void));
+#endif
 
 #endif /* _SYS_SWAP_H_ */

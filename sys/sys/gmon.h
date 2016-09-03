@@ -1,4 +1,4 @@
-/*	$OpenBSD: gmon.h,v 1.8 2016/05/07 19:30:52 guenther Exp $	*/
+/*	$OpenBSD: gmon.h,v 1.3 1996/04/21 22:31:46 deraadt Exp $	*/
 /*	$NetBSD: gmon.h,v 1.5 1996/04/09 20:55:30 cgd Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -137,6 +141,7 @@ struct gmonparam {
 	u_long		textsize;
 	u_long		hashfraction;
 };
+extern struct gmonparam _gmonparam;
 
 /*
  * Possible states of profiling.
@@ -154,22 +159,4 @@ struct gmonparam {
 #define	GPROF_FROMS	2	/* struct: from location hash bucket */
 #define	GPROF_TOS	3	/* struct: destination/count structure */
 #define	GPROF_GMONPARAM	4	/* struct: profiling parameters (see above) */
-
-#ifdef _KERNEL
-extern int gmoninit;		/* Is the kernel ready for beeing profiled? */
-
-#else /* !_KERNEL */
-
-#include <sys/cdefs.h>
-
-__BEGIN_DECLS
-extern struct gmonparam _gmonparam;
-void	_mcleanup(void);
-void	_monstartup(u_long, u_long);
-void	moncontrol(int);
-void	monstartup(u_long, u_long);
-__END_DECLS
-
-#endif /* !_KERNEL */
-
 #endif /* !_SYS_GMON_H_ */

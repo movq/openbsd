@@ -1,4 +1,4 @@
-/*	$OpenBSD: head.c,v 1.12 2014/01/17 18:42:30 okan Exp $	*/
+/*	$OpenBSD: head.c,v 1.5 1997/11/14 00:23:48 millert Exp $	*/
 /*	$NetBSD: head.c,v 1.6 1996/12/28 07:11:03 tls Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +34,14 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)head.c	8.2 (Berkeley) 4/20/95";
+#else
+static char rcsid[] = "$OpenBSD: head.c,v 1.5 1997/11/14 00:23:48 millert Exp $";
+#endif
+#endif /* not lint */
+
 #include "rcv.h"
 #include "extern.h"
 
@@ -42,10 +54,11 @@
 /*
  * See if the passed line buffer is a mail header.
  * Return true if yes.  Note the extreme pains to
- * accommodate all funny formats.
+ * accomodate all funny formats.
  */
 int
-ishead(char *linebuf)
+ishead(linebuf)
+	char linebuf[];
 {
 	char *cp;
 	struct headline hl;
@@ -72,7 +85,8 @@ ishead(char *linebuf)
 
 /*ARGSUSED*/
 void
-fail(char *linebuf, char *reason)
+fail(linebuf, reason)
+	char linebuf[], reason[];
 {
 
 	/*
@@ -89,7 +103,9 @@ fail(char *linebuf, char *reason)
  * structure.  Actually, it scans.
  */
 void
-parse(char *line, struct headline *hl, char *pbuf)
+parse(line, hl, pbuf)
+	char line[], pbuf[];
+	struct headline *hl;
 {
 	char *cp, *sp;
 	char word[LINESIZE];
@@ -106,7 +122,7 @@ parse(char *line, struct headline *hl, char *pbuf)
 	cp = nextword(cp, word);
 	if (*word)
 		hl->l_from = copyin(word, &sp);
-	if (cp != NULL && strncmp(cp, "tty", 3) == 0) {
+	if (cp != NULL && cp[0] == 't' && cp[1] == 't' && cp[2] == 'y') {
 		cp = nextword(cp, word);
 		hl->l_tty = copyin(word, &sp);
 	}
@@ -121,7 +137,9 @@ parse(char *line, struct headline *hl, char *pbuf)
  * the left string into it.
  */
 char *
-copyin(char *src, char **space)
+copyin(src, space)
+	char *src;
+	char **space;
 {
 	char *cp, *top;
 
@@ -145,43 +163,26 @@ copyin(char *src, char **space)
  * 'a'	A lower case char
  * ' '	A space
  * '0'	A digit
- * 'O'	A digit or space
- * 'p'	A punctuation char
- * 'P'	A punctuation char or space
+ * 'O'	An optional digit or space
  * ':'	A colon
  * 'N'	A new line
  */
-
+char ctype[] = "Aaa Aaa O0 00:00:00 0000";
+char tmztype[] = "Aaa Aaa O0 00:00:00 AAA 0000";
 /*
  * Yuck.  If the mail file is created by Sys V (Solaris),
  * there are no seconds in the time...
  */
-
-/*
- * If the mail is created by another program such as imapd, it might
- * have timezone as <-|+>nnnn (-0800 for instance) at the end.
- */
-
-static char *date_formats[] = {
-	"Aaa Aaa O0 00:00:00 0000",	   /* Mon Jan 01 23:59:59 2001 */
-	"Aaa Aaa O0 00:00:00 AAA 0000",	   /* Mon Jan 01 23:59:59 PST 2001 */
-	"Aaa Aaa O0 00:00:00 0000 p0000",  /* Mon Jan 01 23:59:59 2001 -0800 */
-	"Aaa Aaa O0 00:00 0000",	   /* Mon Jan 01 23:59 2001 */
-	"Aaa Aaa O0 00:00 AAA 0000",	   /* Mon Jan 01 23:59 PST 2001 */
-	"Aaa Aaa O0 00:00 0000 p0000",	   /* Mon Jan 01 23:59 2001 -0800 */
-	""
-};
+char SysV_ctype[] = "Aaa Aaa O0 00:00 0000";
+char SysV_tmztype[] = "Aaa Aaa O0 00:00 AAA 0000";
 
 int
-isdate(char *date)
+isdate(date)
+	char date[];
 {
-	int i;
 
-	for(i = 0; *date_formats[i]; i++) {
-		if (cmatch(date, date_formats[i]))
-			return 1;
-	}
-	return 0;
+	return(cmatch(date, ctype) || cmatch(date, tmztype)
+	    || cmatch(date, SysV_tmztype) || cmatch(date, SysV_ctype));
 }
 
 /*
@@ -189,17 +190,18 @@ isdate(char *date)
  * Return 1 if they match, 0 if they don't
  */
 int
-cmatch(char *cp, char *tp)
+cmatch(cp, tp)
+	char *cp, *tp;
 {
 
 	while (*cp && *tp)
 		switch (*tp++) {
 		case 'a':
-			if (!islower((unsigned char)*cp++))
+			if (!islower(*cp++))
 				return(0);
 			break;
 		case 'A':
-			if (!isupper((unsigned char)*cp++))
+			if (!isupper(*cp++))
 				return(0);
 			break;
 		case ' ':
@@ -207,20 +209,11 @@ cmatch(char *cp, char *tp)
 				return(0);
 			break;
 		case '0':
-			if (!isdigit((unsigned char)*cp++))
+			if (!isdigit(*cp++))
 				return(0);
 			break;
 		case 'O':
-			if (*cp != ' ' && !isdigit((unsigned char)*cp))
-				return(0);
-			cp++;
-			break;
-		case 'p':
-			if (!ispunct((unsigned char)*cp++))
-				return(0);
-			break;
-		case 'P':
-			if (*cp != ' ' && !ispunct((unsigned char)*cp))
+			if (*cp != ' ' && !isdigit(*cp))
 				return(0);
 			cp++;
 			break;
@@ -244,7 +237,8 @@ cmatch(char *cp, char *tp)
  * or NULL if none follow.
  */
 char *
-nextword(char *wp, char *wbuf)
+nextword(wp, wbuf)
+	char *wp, *wbuf;
 {
 	int c;
 
@@ -252,10 +246,10 @@ nextword(char *wp, char *wbuf)
 		*wbuf = 0;
 		return(NULL);
 	}
-	while ((c = (unsigned char)*wp++) && c != ' ' && c != '\t') {
+	while ((c = *wp++) && c != ' ' && c != '\t') {
 		*wbuf++ = c;
 		if (c == '"') {
- 			while ((c = (unsigned char)*wp++) && c != '"')
+ 			while ((c = *wp++) && c != '"')
  				*wbuf++ = c;
  			if (c == '"')
  				*wbuf++ = c;
@@ -264,7 +258,7 @@ nextword(char *wp, char *wbuf)
  		}
 	}
 	*wbuf = '\0';
-	for (; c == ' ' || c == '\t'; c = (unsigned char)*wp++)
+	for (; c == ' ' || c == '\t'; c = *wp++)
 		;
 	if (c == 0)
 		return(NULL);

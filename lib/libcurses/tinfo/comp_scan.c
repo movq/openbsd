@@ -1,7 +1,5 @@
-/* $OpenBSD: comp_scan.c,v 1.15 2010/01/12 23:22:06 nicm Exp $ */
-
 /****************************************************************************
- * Copyright (c) 1998-2006,2008 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -31,7 +29,6 @@
 /****************************************************************************
  *  Author: Zeyd M. Ben-Halim <zmbenhal@netcom.com> 1992,1995               *
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
- *     and: Thomas E. Dickey                        1996 on                 *
  ****************************************************************************/
 
 /*
@@ -50,10 +47,9 @@
 #include <curses.priv.h>
 
 #include <ctype.h>
-#include <term_entry.h>
 #include <tic.h>
 
-MODULE_ID("$Id: comp_scan.c,v 1.15 2010/01/12 23:22:06 nicm Exp $")
+MODULE_ID("$From: comp_scan.c,v 1.34 1998/11/01 00:56:39 tom Exp $")
 
 /*
  * Maximum length of string capability we'll accept before raising an error.
@@ -63,22 +59,11 @@ MODULE_ID("$Id: comp_scan.c,v 1.15 2010/01/12 23:22:06 nicm Exp $")
 
 #define iswhite(ch)	(ch == ' '  ||  ch == '\t')
 
-NCURSES_EXPORT_VAR(int)
-_nc_syntax = 0;			/* termcap or terminfo? */
-NCURSES_EXPORT_VAR(long)
-_nc_curr_file_pos = 0;		/* file offset of current line */
-NCURSES_EXPORT_VAR(long)
-_nc_comment_start = 0;		/* start of comment range before name */
-NCURSES_EXPORT_VAR(long)
-_nc_comment_end = 0;		/* end of comment range before name */
-NCURSES_EXPORT_VAR(long)
-_nc_start_line = 0;		/* start line of current entry */
-
-NCURSES_EXPORT_VAR(struct token)
-_nc_curr_token =
-{
-    0, 0, 0
-};
+int	_nc_syntax;		/* termcap or terminfo? */
+long	_nc_curr_file_pos;	/* file offset of current line */
+long	_nc_comment_start;	/* start of comment range before name */
+long	_nc_comment_end;	/* end of comment range before name */
+long	_nc_start_line;		/* start line of current entry */
 
 /*****************************************************************************
  *
@@ -87,223 +72,24 @@ _nc_curr_token =
  *****************************************************************************/
 
 static bool first_column;	/* See 'next_char()' below */
-static bool had_newline;
 static char separator;		/* capability separator */
 static int pushtype;		/* type of pushback token */
-static char *pushname;
+static char pushname[MAX_NAME_SIZE+1];
 
-#if NCURSES_EXT_FUNCS
-NCURSES_EXPORT_VAR(bool)
-_nc_disable_period = FALSE;	/* used by tic -a option */
-#endif
-
-/*****************************************************************************
- *
- * Character-stream handling
- *
- *****************************************************************************/
-
-#define LEXBUFSIZ	1024
-
-static char *bufptr;		/* otherwise, the input buffer pointer */
-static char *bufstart;		/* start of buffer so we can compute offsets */
-static FILE *yyin;		/* scanner's input file descriptor */
-
-/*
- *	_nc_reset_input()
- *
- *	Resets the input-reading routines.  Used on initialization,
- *	or after a seek has been done.  Exactly one argument must be
- *	non-null.
- */
-
-NCURSES_EXPORT(void)
-_nc_reset_input(FILE *fp, char *buf)
-{
-    pushtype = NO_PUSHBACK;
-    if (pushname != 0)
-	pushname[0] = '\0';
-    yyin = fp;
-    bufstart = bufptr = buf;
-    _nc_curr_file_pos = 0L;
-    if (fp != 0)
-	_nc_curr_line = 0;
-    _nc_curr_col = 0;
-}
-
-/*
- *	int last_char()
- *
- *	Returns the final nonblank character on the current input buffer
- */
-static int
-last_char(void)
-{
-    size_t len = strlen(bufptr);
-    while (len--) {
-	if (!isspace(UChar(bufptr[len])))
-	    return bufptr[len];
-    }
-    return 0;
-}
-
-/*
- *	int next_char()
- *
- *	Returns the next character in the input stream.  Comments and leading
- *	white space are stripped.
- *
- *	The global state variable 'firstcolumn' is set TRUE if the character
- *	returned is from the first column of the input line.
- *
- *	The global variable _nc_curr_line is incremented for each new line.
- *	The global variable _nc_curr_file_pos is set to the file offset of the
- *	beginning of each line.
- */
-
-static int
-next_char(void)
-{
-    static char *result;
-    static size_t allocated;
-    int the_char;
-
-    if (!yyin) {
-	if (result != 0) {
-	    FreeAndNull(result);
-	    FreeAndNull(pushname);
-	    allocated = 0;
-	}
-	/*
-	 * An string with an embedded null will truncate the input.  This is
-	 * intentional (we don't read binary files here).
-	 */
-	if (bufptr == 0 || *bufptr == '\0')
-	    return (EOF);
-	if (*bufptr == '\n') {
-	    _nc_curr_line++;
-	    _nc_curr_col = 0;
-	} else if (*bufptr == '\t') {
-	    _nc_curr_col = (_nc_curr_col | 7);
-	}
-    } else if (!bufptr || !*bufptr) {
-	/*
-	 * In theory this could be recoded to do its I/O one character at a
-	 * time, saving the buffer space.  In practice, this turns out to be
-	 * quite hard to get completely right.  Try it and see.  If you
-	 * succeed, don't forget to hack push_back() correspondingly.
-	 */
-	size_t used;
-	size_t len;
-
-	do {
-	    bufstart = 0;
-	    used = 0;
-	    do {
-		if (used + (LEXBUFSIZ / 4) >= allocated) {
-		    allocated += (allocated + LEXBUFSIZ);
-		    result = typeRealloc(char, allocated, result);
-		    if (result == 0)
-			return (EOF);
-		    bufstart = result;
-		}
-		if (used == 0)
-		    _nc_curr_file_pos = ftell(yyin);
-
-		if (fgets(result + used, (int) (allocated - used), yyin) != 0) {
-		    bufstart = result;
-		    if (used == 0) {
-			_nc_curr_line++;
-			_nc_curr_col = 0;
-		    }
-		} else {
-		    if (used != 0)
-			strlcat(result, "\n", allocated);
-		}
-		if ((bufptr = bufstart) != 0) {
-		    used = strlen(bufptr);
-		    while (iswhite(*bufptr)) {
-			if (*bufptr == '\t') {
-			    _nc_curr_col = (_nc_curr_col | 7) + 1;
-			} else {
-			    _nc_curr_col++;
-			}
-			bufptr++;
-		    }
-
-		    /*
-		     * Treat a trailing <cr><lf> the same as a <newline> so we
-		     * can read files on OS/2, etc.
-		     */
-		    if ((len = strlen(bufptr)) > 1) {
-			if (bufptr[len - 1] == '\n'
-			    && bufptr[len - 2] == '\r') {
-			    len--;
-			    bufptr[len - 1] = '\n';
-			    bufptr[len] = '\0';
-			}
-		    }
-		} else {
-		    return (EOF);
-		}
-	    } while (bufptr[len - 1] != '\n');	/* complete a line */
-	} while (result[0] == '#');	/* ignore comments */
-    } else if (*bufptr == '\t') {
-	_nc_curr_col = (_nc_curr_col | 7);
-    }
-
-    first_column = (bufptr == bufstart);
-    if (first_column)
-	had_newline = FALSE;
-
-    _nc_curr_col++;
-    the_char = *bufptr++;
-    return UChar(the_char);
-}
-
-static void
-push_back(char c)
-/* push a character back onto the input stream */
-{
-    if (bufptr == bufstart)
-	_nc_syserr_abort("Can't backspace off beginning of line");
-    *--bufptr = c;
-    _nc_curr_col--;
-}
-
-static long
-stream_pos(void)
-/* return our current character position in the input stream */
-{
-    return (yyin ? ftell(yyin) : (bufptr ? bufptr - bufstart : 0));
-}
-
-static bool
-end_of_stream(void)
-/* are we at end of input? */
-{
-    return ((yyin ? feof(yyin) : (bufptr && *bufptr == '\0'))
-	    ? TRUE : FALSE);
-}
+static int  last_char(void);
+static int  next_char(void);
+static long stream_pos(void);
+static bool end_of_stream(void);
+static void push_back(char c);
 
 /* Assume we may be looking at a termcap-style continuation */
-static NCURSES_INLINE int
-eat_escaped_newline(int ch)
+static inline int eat_escaped_newline(int ch)
 {
-    if (ch == '\\')
-	while ((ch = next_char()) == '\n' || iswhite(ch))
-	    continue;
-    return ch;
+	if (ch == '\\')
+		while ((ch = next_char()) == '\n'  ||  iswhite(ch))
+			continue;
+	return ch;
 }
-
-#define TOK_BUF_SIZE MAX_ENTRY_SIZE
-
-#define OkToAdd() \
-	((tok_ptr - tok_buf) < (TOK_BUF_SIZE - 2))
-
-#define AddCh(ch) \
-	*tok_ptr++ = (char) ch; \
-	*tok_ptr = '\0'
 
 /*
  *	int
@@ -338,373 +124,316 @@ eat_escaped_newline(int ch)
  *
  */
 
-NCURSES_EXPORT(int)
-_nc_get_token(bool silent)
+int _nc_get_token(void)
 {
-    static const char terminfo_punct[] = "@%&*!#";
-    static char *tok_buf;
+static const char terminfo_punct[] = "@%&*!#";
+long		number;
+int		type;
+int		ch;
+char *		numchk;
+char		numbuf[80];
+unsigned	found;
+static char	buffer[MAX_ENTRY_SIZE];
+char		*ptr;
+int		dot_flag = FALSE;
+long		token_start;
 
-    char *after_list;
-    char *after_name;
-    char *numchk;
-    char *tok_ptr;
-    char *s;
-    char numbuf[80];
-    int ch;
-    int dot_flag = FALSE;
-    int type;
-    long number;
-    long token_start;
-    unsigned found;
-#ifdef TRACE
-    int old_line;
-    int old_col;
-#endif
+	if (pushtype != NO_PUSHBACK)
+	{
+	    int retval = pushtype;
 
-    if (pushtype != NO_PUSHBACK) {
-	int retval = pushtype;
+	    _nc_set_type(pushname);
+	    DEBUG(3, ("pushed-back token: `%s', class %d",
+		      _nc_curr_token.tk_name, pushtype));
 
-	_nc_set_type(pushname != 0 ? pushname : "");
-	DEBUG(3, ("pushed-back token: `%s', class %d",
-		  _nc_curr_token.tk_name, pushtype));
-
-	pushtype = NO_PUSHBACK;
-	if (pushname != 0)
+	    pushtype = NO_PUSHBACK;
 	    pushname[0] = '\0';
 
-	/* currtok wasn't altered by _nc_push_token() */
-	return (retval);
-    }
-
-    if (end_of_stream()) {
-	yyin = 0;
-	next_char();		/* frees its allocated memory */
-	if (tok_buf != 0) {
-	    if (_nc_curr_token.tk_name == tok_buf)
-		_nc_curr_token.tk_name = 0;
-	    FreeAndNull(tok_buf);
-	}
-	return (EOF);
-    }
-
-  start_token:
-    token_start = stream_pos();
-    while ((ch = next_char()) == '\n' || iswhite(ch)) {
-	if (ch == '\n')
-	    had_newline = TRUE;
-	continue;
-    }
-
-    ch = eat_escaped_newline(ch);
-
-#ifdef TRACE
-    old_line = _nc_curr_line;
-    old_col = _nc_curr_col;
-#endif
-    if (ch == EOF)
-	type = EOF;
-    else {
-	/* if this is a termcap entry, skip a leading separator */
-	if (separator == ':' && ch == ':')
-	    ch = next_char();
-
-	if (ch == '.'
-#if NCURSES_EXT_FUNCS
-	    && !_nc_disable_period
-#endif
-	    ) {
-	    dot_flag = TRUE;
-	    DEBUG(8, ("dot-flag set"));
-
-	    while ((ch = next_char()) == '.' || iswhite(ch))
-		continue;
+	    /* currtok wasn't altered by _nc_push_token() */
+	    return(retval);
 	}
 
-	if (ch == EOF) {
+	if (end_of_stream())
+	    return(EOF);
+
+start_token:
+	token_start = stream_pos();
+	while ((ch = next_char()) == '\n'  ||  iswhite(ch))
+	    continue;
+
+	ch = eat_escaped_newline(ch);
+
+	if (ch == EOF)
 	    type = EOF;
-	    goto end_of_token;
-	}
+	else {
+	    /* if this is a termcap entry, skip a leading separator */
+	    if (separator == ':' && ch == ':')
+		ch = next_char();
 
-	/* have to make some punctuation chars legal for terminfo */
-	if (!isalnum(UChar(ch))
-#if NCURSES_EXT_FUNCS
-	    && !(ch == '.' && _nc_disable_period)
-#endif
-	    && !strchr(terminfo_punct, (char) ch)) {
-	    if (!silent)
-		_nc_warning("Illegal character (expected alphanumeric or %s) - '%s'",
-			    terminfo_punct, unctrl((chtype) ch));
-	    _nc_panic_mode(separator);
-	    goto start_token;
-	}
+	    if (ch == '.') {
+			dot_flag = TRUE;
+			DEBUG(8, ("dot-flag set"));
 
-	if (tok_buf == 0)
-	    tok_buf = typeMalloc(char, TOK_BUF_SIZE);
-
-#ifdef TRACE
-	old_line = _nc_curr_line;
-	old_col = _nc_curr_col;
-#endif
-	tok_ptr = tok_buf;
-	AddCh(ch);
-
-	if (first_column) {
-	    _nc_comment_start = token_start;
-	    _nc_comment_end = _nc_curr_file_pos;
-	    _nc_start_line = _nc_curr_line;
-
-	    _nc_syntax = ERR;
-	    after_name = 0;
-	    after_list = 0;
-	    while ((ch = next_char()) != '\n') {
-		if (ch == EOF) {
-		    _nc_err_abort(MSG_NO_INPUTS);
-		} else if (ch == '|') {
-		    after_list = tok_ptr;
-		    if (after_name == 0)
-			after_name = tok_ptr;
-		} else if (ch == ':' && last_char() != ',') {
-		    _nc_syntax = SYN_TERMCAP;
-		    separator = ':';
-		    break;
-		} else if (ch == ',') {
-		    _nc_syntax = SYN_TERMINFO;
-		    separator = ',';
-		    /*
-		     * If we did not see a '|', then we found a name with no
-		     * aliases or description.
-		     */
-		    if (after_name == 0)
-			break;
-		    /*
-		     * If we see a comma, we assume this is terminfo unless we
-		     * subsequently run into a colon.  But we don't stop
-		     * looking for a colon until hitting a newline.  This
-		     * allows commas to be embedded in description fields of
-		     * either syntax.
-		     */
-		} else
-		    ch = eat_escaped_newline(ch);
-
-		if (OkToAdd()) {
-		    AddCh(ch);
-		} else {
-		    ch = EOF;
-		    break;
-		}
-	    }
-	    *tok_ptr = '\0';
-	    if (_nc_syntax == ERR) {
-		/*
-		 * Grrr...what we ought to do here is barf, complaining that
-		 * the entry is malformed.  But because a couple of name fields
-		 * in the 8.2 termcap file end with |\, we just have to assume
-		 * it's termcap syntax.
-		 */
-		_nc_syntax = SYN_TERMCAP;
-		separator = ':';
-	    } else if (_nc_syntax == SYN_TERMINFO) {
-		/* throw away trailing /, *$/ */
-		for (--tok_ptr;
-		     iswhite(*tok_ptr) || *tok_ptr == ',';
-		     tok_ptr--)
-		    continue;
-		tok_ptr[1] = '\0';
+			while ((ch = next_char())=='.' || iswhite(ch))
+			    continue;
 	    }
 
-	    /*
-	     * This is the soonest we have the terminal name fetched.  Set up
-	     * for following warning messages.  If there's no '|', then there
-	     * is no description.
-	     */
-	    if (after_name != 0) {
-		ch = *after_name;
-		*after_name = '\0';
-		_nc_set_type(tok_buf);
-		*after_name = (char) ch;
-	    }
-
-	    /*
-	     * Compute the boundary between the aliases and the description
-	     * field for syntax-checking purposes.
-	     */
-	    if (after_list != 0) {
-		if (!silent) {
-		    if (*after_list == '\0')
-			_nc_warning("empty longname field");
-		    else if (strchr(after_list, ' ') == 0)
-			_nc_warning("older tic versions may treat the description field as an alias");
-		}
-	    } else {
-		after_list = tok_buf + strlen(tok_buf);
-		DEBUG(1, ("missing description"));
-	    }
-
-	    /*
-	     * Whitespace in a name field other than the long name can confuse
-	     * rdist and some termcap tools.  Slashes are a no-no.  Other
-	     * special characters can be dangerous due to shell expansion.
-	     */
-	    for (s = tok_buf; s < after_list; ++s) {
-		if (isspace(UChar(*s))) {
-		    if (!silent)
-			_nc_warning("whitespace in name or alias field");
-		    break;
-		} else if (*s == '/') {
-		    if (!silent)
-			_nc_warning("slashes aren't allowed in names or aliases");
-		    break;
-		} else if (strchr("$[]!*?", *s)) {
-		    if (!silent)
-			_nc_warning("dubious character `%c' in name or alias field", *s);
-		    break;
-		}
-	    }
-
-	    _nc_curr_token.tk_name = tok_buf;
-	    type = NAMES;
-	} else {
-	    if (had_newline && _nc_syntax == SYN_TERMCAP) {
-		_nc_warning("Missing backslash before newline");
-		had_newline = FALSE;
-	    }
-	    while ((ch = next_char()) != EOF) {
-		if (!isalnum(UChar(ch))) {
-		    if (_nc_syntax == SYN_TERMINFO) {
-			if (ch != '_')
-			    break;
-		    } else {	/* allow ';' for "k;" */
-			if (ch != ';')
-			    break;
-		    }
-		}
-		if (OkToAdd()) {
-		    AddCh(ch);
-		} else {
-		    ch = EOF;
-		    break;
-		}
-	    }
-
-	    *tok_ptr++ = '\0';	/* separate name/value in buffer */
-	    switch (ch) {
-	    case ',':
-	    case ':':
-		if (ch != separator)
-		    _nc_err_abort("Separator inconsistent with syntax");
-		_nc_curr_token.tk_name = tok_buf;
-		type = BOOLEAN;
-		break;
-	    case '@':
-		if ((ch = next_char()) != separator && !silent)
-		    _nc_warning("Missing separator after `%s', have %s",
-				tok_buf, unctrl((chtype) ch));
-		_nc_curr_token.tk_name = tok_buf;
-		type = CANCEL;
-		break;
-
-	    case '#':
-		found = 0;
-		while (isalnum(ch = next_char())) {
-		    numbuf[found++] = (char) ch;
-		    if (found >= sizeof(numbuf) - 1)
-			break;
-		}
-		numbuf[found] = '\0';
-		number = strtol(numbuf, &numchk, 0);
-		if (!silent) {
-		    if (numchk == numbuf)
-			_nc_warning("no value given for `%s'", tok_buf);
-		    if ((*numchk != '\0') || (ch != separator))
-			_nc_warning("Missing separator");
-		}
-		_nc_curr_token.tk_name = tok_buf;
-		_nc_curr_token.tk_valnumber = number;
-		type = NUMBER;
-		break;
-
-	    case '=':
-		ch = _nc_trans_string(tok_ptr, tok_buf + TOK_BUF_SIZE);
-		if (!silent && ch != separator)
-		    _nc_warning("Missing separator");
-		_nc_curr_token.tk_name = tok_buf;
-		_nc_curr_token.tk_valstring = tok_ptr;
-		type = STRING;
-		break;
-
-	    case EOF:
+	    if (ch == EOF) {
 		type = EOF;
-		break;
-	    default:
-		/* just to get rid of the compiler warning */
-		type = UNDEF;
-		if (!silent)
-		    _nc_warning("Illegal character - '%s'", unctrl((chtype) ch));
+		goto end_of_token;
 	    }
-	}			/* end else (first_column == FALSE) */
-    }				/* end else (ch != EOF) */
 
-  end_of_token:
+	    /* have to make some punctuation chars legal for terminfo */
+	    if (!isalnum(ch) && !strchr(terminfo_punct, (char)ch)) {
+		 _nc_warning("Illegal character (expected alphanumeric or %s) - %s",
+			terminfo_punct, _tracechar((chtype)ch));
+		 _nc_panic_mode(separator);
+		 goto start_token;
+	    }
+
+	    ptr = buffer;
+	    *(ptr++) = ch;
+
+	    if (first_column) {
+			char	*desc;
+
+			_nc_comment_start = token_start;
+			_nc_comment_end = _nc_curr_file_pos;
+			_nc_start_line = _nc_curr_line;
+
+			_nc_syntax = ERR;
+			while ((ch = next_char()) != '\n')
+			{
+			    if (ch == EOF)
+				_nc_err_abort("premature EOF");
+			    else if (ch == ':' && last_char() != ',')
+			    {
+				_nc_syntax = SYN_TERMCAP;
+				separator = ':';
+				break;
+			    }
+			    else if (ch == ',')
+			    {
+				_nc_syntax = SYN_TERMINFO;
+				separator = ',';
+				/*
+				 * Fall-through here is not an accident.
+				 * The idea is that if we see a comma, we
+				 * figure this is terminfo unless we
+				 * subsequently run into a colon -- but
+				 * we don't stop looking for that colon until
+				 * hitting a newline.  This allows commas to
+				 * be embedded in description fields of
+				 * either syntax.
+				 */
+				/* FALLTHRU */
+			    }
+			    else
+				ch = eat_escaped_newline(ch);
+
+			    *ptr++ = ch;
+			}
+			ptr[0] = '\0';
+			if (_nc_syntax == ERR)
+			{
+			    /*
+			     * Grrr...what we ought to do here is barf,
+			     * complaining that the entry is malformed.
+			     * But because a couple of name fields in the
+			     * 8.2 termcap file end with |\, we just have
+			     * to assume it's termcap syntax.
+			     */
+			    _nc_syntax = SYN_TERMCAP;
+			    separator = ':';
+			}
+			else if (_nc_syntax == SYN_TERMINFO)
+			{
+			    /* throw away trailing /, *$/ */
+			    for (--ptr; iswhite(*ptr) || *ptr == ','; ptr--)
+				continue;
+			    ptr[1] = '\0';
+			}
+
+			/*
+			 * This is the soonest we have the terminal name
+			 * fetched.  Set up for following warning messages.
+			 */
+			ptr = strchr(buffer, '|');
+			if (ptr == (char *)NULL)
+			    ptr = buffer + strlen(buffer);
+			ch = *ptr;
+			*ptr = '\0';
+			_nc_set_type(buffer);
+			*ptr = ch;
+
+			/*
+			 * Compute the boundary between the aliases and the
+			 * description field for syntax-checking purposes.
+			 */
+			desc = strrchr(buffer, '|');
+			if (desc) {
+			    if (*desc == '\0')
+				_nc_warning("empty longname field");
+			    else if (strchr(desc, ' ') == (char *)NULL)
+				_nc_warning("older tic versions may treat the description field as an alias");
+			}
+			if (!desc)
+			    desc = buffer + strlen(buffer);
+
+			/*
+			 * Whitespace in a name field other than the long name
+			 * can confuse rdist and some termcap tools.  Slashes
+			 * are a no-no.  Other special characters can be
+			 * dangerous due to shell expansion.
+			 */
+			for (ptr = buffer; ptr < desc; ptr++)
+			{
+			    if (isspace(*ptr))
+			    {
+				_nc_warning("whitespace in name or alias field");
+				break;
+			    }
+			    else if (*ptr == '/')
+			    {
+				_nc_warning("slashes aren't allowed in names or aliases");
+				break;
+			    }
+			    else if (strchr("$[]!*?", *ptr))
+			    {
+				_nc_warning("dubious character `%c' in name or alias field", *ptr);
+				break;
+			    }
+			}
+
+			ptr = buffer;
+
+			_nc_curr_token.tk_name = buffer;
+			type = NAMES;
+	    } else {
+			while ((ch = next_char()) != EOF) {
+				if (!isalnum(ch)) {
+					if (_nc_syntax == SYN_TERMINFO) {
+						if (ch != '_')
+							break;
+					} else { /* allow ';' for "k;" */
+						if (ch != ';')
+							break;
+					}
+				}
+				*(ptr++) = ch;
+			}
+
+			*ptr++ = '\0';
+			switch (ch) {
+			case ',':
+			case ':':
+				if (ch != separator)
+					_nc_err_abort("Separator inconsistent with syntax");
+				_nc_curr_token.tk_name = buffer;
+				type = BOOLEAN;
+				break;
+			case '@':
+				if ((ch = next_char()) != separator)
+					_nc_warning("Missing separator after `%s', have %s",
+						buffer, _tracechar((chtype)ch));
+				_nc_curr_token.tk_name = buffer;
+				type = CANCEL;
+				break;
+
+			case '#':
+				found  = 0;
+				while (isalnum(ch = next_char())) {
+					numbuf[found++] = ch;
+					if (found >= sizeof(numbuf)-1)
+						break;
+				}
+				numbuf[found] = '\0';
+				number = strtol(numbuf, &numchk, 0);
+				if (numchk == numbuf)
+					_nc_warning("no value given for `%s'", buffer);
+				if ((*numchk != '\0') || (ch != separator))
+					_nc_warning("Missing separator");
+				_nc_curr_token.tk_name = buffer;
+				_nc_curr_token.tk_valnumber = number;
+				type = NUMBER;
+				break;
+
+			case '=':
+				ch = _nc_trans_string(ptr);
+				if (ch != separator)
+					_nc_warning("Missing separator");
+				_nc_curr_token.tk_name = buffer;
+				_nc_curr_token.tk_valstring = ptr;
+				type = STRING;
+				break;
+
+			case EOF:
+				type = EOF;
+				break;
+			default:
+				/* just to get rid of the compiler warning */
+				type = UNDEF;
+				_nc_warning("Illegal character - %s",
+					_tracechar((chtype)ch));
+			}
+		} /* end else (first_column == FALSE) */
+	} /* end else (ch != EOF) */
+
+end_of_token:
 
 #ifdef TRACE
-    if (dot_flag == TRUE)
-	DEBUG(8, ("Commented out "));
+	if (dot_flag == TRUE)
+	    DEBUG(8, ("Commented out "));
 
-    if (_nc_tracing >= DEBUG_LEVEL(8)) {
-	_tracef("parsed %d.%d to %d.%d",
-		old_line, old_col,
-		_nc_curr_line, _nc_curr_col);
-    }
-    if (_nc_tracing >= DEBUG_LEVEL(7)) {
-	switch (type) {
-	case BOOLEAN:
-	    _tracef("Token: Boolean; name='%s'",
-		    _nc_curr_token.tk_name);
-	    break;
+	if (_nc_tracing & TRACE_IEVENT)
+	{
+	    fprintf(stderr, "Token: ");
+	    switch (type)
+	    {
+		case BOOLEAN:
+		    fprintf(stderr, "Boolean; name='%s'\n",
+			    _nc_curr_token.tk_name);
+		    break;
 
-	case NUMBER:
-	    _tracef("Token: Number;  name='%s', value=%d",
-		    _nc_curr_token.tk_name,
-		    _nc_curr_token.tk_valnumber);
-	    break;
+		case NUMBER:
+		    fprintf(stderr, "Number;  name='%s', value=%d\n",
+			    _nc_curr_token.tk_name,
+			    _nc_curr_token.tk_valnumber);
+		    break;
 
-	case STRING:
-	    _tracef("Token: String;  name='%s', value=%s",
-		    _nc_curr_token.tk_name,
-		    _nc_visbuf(_nc_curr_token.tk_valstring));
-	    break;
+		case STRING:
+		    fprintf(stderr, "String;  name='%s', value=%s\n",
+			    _nc_curr_token.tk_name,
+			    _nc_visbuf(_nc_curr_token.tk_valstring));
+		    break;
 
-	case CANCEL:
-	    _tracef("Token: Cancel; name='%s'",
-		    _nc_curr_token.tk_name);
-	    break;
+		case CANCEL:
+		    fprintf(stderr, "Cancel; name='%s'\n",
+			    _nc_curr_token.tk_name);
+		    break;
 
-	case NAMES:
+		case NAMES:
 
-	    _tracef("Token: Names; value='%s'",
-		    _nc_curr_token.tk_name);
-	    break;
+		    fprintf(stderr, "Names; value='%s'\n",
+			    _nc_curr_token.tk_name);
+		    break;
 
-	case EOF:
-	    _tracef("Token: End of file");
-	    break;
+		case EOF:
+		    fprintf(stderr, "End of file\n");
+		    break;
 
-	default:
-	    _nc_warning("Bad token type");
+		default:
+		    _nc_warning("Bad token type");
+	    }
 	}
-    }
 #endif
 
-    if (dot_flag == TRUE)	/* if commented out, use the next one */
-	type = _nc_get_token(silent);
+	if (dot_flag == TRUE)		/* if commented out, use the next one */
+	    type = _nc_get_token();
 
-    DEBUG(3, ("token: `%s', class %d",
-	      ((_nc_curr_token.tk_name != 0)
-	       ? _nc_curr_token.tk_name
-	       : "<null>"),
-	      type));
+	DEBUG(3, ("token: `%s', class %d", _nc_curr_token.tk_name, type));
 
-    return (type);
+	return(type);
 }
 
 /*
@@ -726,168 +455,121 @@ _nc_get_token(bool silent)
  *
  */
 
-NCURSES_EXPORT(int)
-_nc_trans_string(char *ptr, char *last)
+char
+_nc_trans_string(char *ptr)
 {
-    int count = 0;
-    int number = 0;
-    int i, c;
-    chtype ch, last_ch = '\0';
-    bool ignored = FALSE;
-    bool long_warning = FALSE;
+int	count = 0;
+int	number;
+int	i, c;
+chtype	ch, last_ch = '\0';
+bool	ignored = FALSE;
 
-    while ((ch = c = next_char()) != (chtype) separator && c != EOF) {
-	if (ptr >= (last - 1)) {
-	    if (c != EOF) {
-		while ((c = next_char()) != separator && c != EOF) {
-		    ;
+	while ((ch = c = next_char()) != (chtype)separator && c != EOF) {
+	    if ((_nc_syntax == SYN_TERMCAP) && c == '\n')
+		break;
+	    if (ch == '^' && last_ch != '%') {
+		ch = c = next_char();
+		if (c == EOF)
+		    _nc_err_abort("Premature EOF");
+
+		if (! (is7bits(ch) && isprint(ch))) {
+		    _nc_warning("Illegal ^ character - %s",
+			_tracechar((unsigned char)ch));
 		}
-		ch = c;
+		if (ch == '?') {
+		    *(ptr++) = '\177';
+		} else {
+		    if ((ch &= 037) == 0)
+		        ch = 128;
+		    *(ptr++) = (char)(ch);
+		}
 	    }
-	    break;
-	}
-	if ((_nc_syntax == SYN_TERMCAP) && c == '\n')
-	    break;
-	if (ch == '^' && last_ch != '%') {
-	    ch = c = next_char();
-	    if (c == EOF)
-		_nc_err_abort(MSG_NO_INPUTS);
+	    else if (ch == '\\') {
+		ch = c = next_char();
+		if (c == EOF)
+		    _nc_err_abort("Premature EOF");
 
-	    if (!(is7bits(ch) && isprint(ch))) {
-		_nc_warning("Illegal ^ character - '%s'", unctrl(ch));
-	    }
-	    if (ch == '?') {
-		*(ptr++) = '\177';
-		if (_nc_tracing)
-		    _nc_warning("Allow ^? as synonym for \\177");
-	    } else {
-		if ((ch &= 037) == 0)
-		    ch = 128;
-		*(ptr++) = (char) (ch);
-	    }
-	} else if (ch == '\\') {
-	    ch = c = next_char();
-	    if (c == EOF)
-		_nc_err_abort(MSG_NO_INPUTS);
+		if (ch >= '0'  &&  ch <= '7') {
+		    number = ch - '0';
+		    for (i=0; i < 2; i++) {
+			ch = c = next_char();
+			if (c == EOF)
+			    _nc_err_abort("Premature EOF");
 
-	    if (ch >= '0' && ch <= '7') {
-		number = ch - '0';
-		for (i = 0; i < 2; i++) {
-		    ch = c = next_char();
-		    if (c == EOF)
-			_nc_err_abort(MSG_NO_INPUTS);
-
-		    if (c < '0' || c > '7') {
-			if (isdigit(c)) {
-			    _nc_warning("Non-octal digit `%c' in \\ sequence", c);
-			    /* allow the digit; it'll do less harm */
-			} else {
-			    push_back((char) c);
-			    break;
+			if (c < '0'  ||  c > '7') {
+			    if (isdigit(c)) {
+				_nc_warning("Non-octal digit `%c' in \\ sequence", c);
+				/* allow the digit; it'll do less harm */
+			    } else {
+				push_back((char)c);
+				break;
+			    }
 			}
+
+			number = number * 8 + c - '0';
 		    }
 
-		    number = number * 8 + c - '0';
-		}
+		    if (number == 0)
+			number = 0200;
+		    *(ptr++) = (char) number;
+		} else {
+		    switch (c) {
+			case 'E':
+			case 'e':	*(ptr++) = '\033';	break;
 
-		if (number == 0)
-		    number = 0200;
-		*(ptr++) = (char) number;
+			case 'a':	*(ptr++) = '\007';	break;
+
+			case 'l':
+			case 'n':	*(ptr++) = '\n';	break;
+
+			case 'r':	*(ptr++) = '\r';	break;
+
+			case 'b':	*(ptr++) = '\010';	break;
+
+			case 's':	*(ptr++) = ' ';		break;
+
+			case 'f':	*(ptr++) = '\014';	break;
+
+			case 't':	*(ptr++) = '\t';	break;
+
+			case '\\':	*(ptr++) = '\\';	break;
+
+			case '^':	*(ptr++) = '^';		break;
+
+			case ',':	*(ptr++) = ',';		break;
+
+			case ':':	*(ptr++) = ':';		break;
+
+			case '\n':
+			    continue;
+
+			default:
+			    _nc_warning("Illegal character %s in \\ sequence",
+				    _tracechar((unsigned char)ch));
+			    *(ptr++) = (char)ch;
+		    } /* endswitch (ch) */
+		} /* endelse (ch < '0' ||  ch > '7') */
+	    } /* end else if (ch == '\\') */
+	    else if (ch == '\n' && (_nc_syntax == SYN_TERMINFO)) {
+		/* newlines embedded in a terminfo string are ignored */
+		ignored = TRUE;
 	    } else {
-		switch (c) {
-		case 'E':
-		case 'e':
-		    *(ptr++) = '\033';
-		    break;
-
-		case 'a':
-		    *(ptr++) = '\007';
-		    break;
-
-		case 'l':
-		case 'n':
-		    *(ptr++) = '\n';
-		    break;
-
-		case 'r':
-		    *(ptr++) = '\r';
-		    break;
-
-		case 'b':
-		    *(ptr++) = '\010';
-		    break;
-
-		case 's':
-		    *(ptr++) = ' ';
-		    break;
-
-		case 'f':
-		    *(ptr++) = '\014';
-		    break;
-
-		case 't':
-		    *(ptr++) = '\t';
-		    break;
-
-		case '\\':
-		    *(ptr++) = '\\';
-		    break;
-
-		case '^':
-		    *(ptr++) = '^';
-		    break;
-
-		case ',':
-		    *(ptr++) = ',';
-		    break;
-
-		case ':':
-		    *(ptr++) = ':';
-		    break;
-
-		case '\n':
-		    continue;
-
-		default:
-		    _nc_warning("Illegal character '%s' in \\ sequence",
-				unctrl(ch));
-		    /* FALLTHRU */
-		case '|':
-		    *(ptr++) = (char) ch;
-		}		/* endswitch (ch) */
-	    }			/* endelse (ch < '0' ||  ch > '7') */
-	}
-	/* end else if (ch == '\\') */
-	else if (ch == '\n' && (_nc_syntax == SYN_TERMINFO)) {
-	    /*
-	     * Newlines embedded in a terminfo string are ignored, provided
-	     * that the next line begins with whitespace.
-	     */
-	    ignored = TRUE;
-	} else {
-	    *(ptr++) = (char) ch;
-	}
-
-	if (!ignored) {
-	    if (_nc_curr_col <= 1) {
-		push_back((char) ch);
-		ch = '\n';
-		break;
+		*(ptr++) = (char)ch;
 	    }
-	    last_ch = ch;
-	    count++;
-	}
-	ignored = FALSE;
 
-	if (count > MAXCAPLEN && !long_warning) {
-	    _nc_warning("Very long string found.  Missing separator?");
-	    long_warning = TRUE;
-	}
-    }				/* end while */
+	    if (!ignored) {
+		last_ch = ch;
+		count ++;
+	    }
+	    ignored = FALSE;
 
-    *ptr = '\0';
+	    if (count > MAXCAPLEN)
+		_nc_warning("Very long string found.  Missing separator?");
+	} /* end while */
 
-    return (ch);
+	*ptr = '\0';
+
+	return(ch);
 }
 
 /*
@@ -897,50 +579,178 @@ _nc_trans_string(char *ptr, char *last)
  *	get_token() call.
  */
 
-NCURSES_EXPORT(void)
-_nc_push_token(int tokclass)
+void _nc_push_token(int tokclass)
 {
     /*
-     * This implementation is kind of bogus, it will fail if we ever do more
-     * than one pushback at a time between get_token() calls.  It relies on the
-     * fact that _nc_curr_token is static storage that nothing but
-     * _nc_get_token() touches.
+     * This implementation is kind of bogus, it will fail if we ever do
+     * more than one pushback at a time between get_token() calls.  It
+     * relies on the fact that curr_tok is static storage that nothing
+     * but get_token() touches.
      */
     pushtype = tokclass;
-    if (pushname == 0)
-	pushname = typeMalloc(char, MAX_NAME_SIZE + 1);
     _nc_get_type(pushname);
 
     DEBUG(3, ("pushing token: `%s', class %d",
-	      ((_nc_curr_token.tk_name != 0)
-	       ? _nc_curr_token.tk_name
-	       : "<null>"),
-	      pushtype));
+	      _nc_curr_token.tk_name, pushtype));
 }
 
 /*
  * Panic mode error recovery - skip everything until a "ch" is found.
  */
-NCURSES_EXPORT(void)
-_nc_panic_mode(char ch)
+void _nc_panic_mode(char ch)
 {
-    int c;
+	int c;
 
-    for (;;) {
-	c = next_char();
-	if (c == ch)
-	    return;
-	if (c == EOF)
-	    return;
-    }
+	for (;;) {
+		c = next_char();
+		if (c == ch)
+			return;
+		if (c == EOF)
+			return;
+	}
 }
 
-#if NO_LEAKS
-NCURSES_EXPORT(void)
-_nc_comp_scan_leaks(void)
+/*****************************************************************************
+ *
+ * Character-stream handling
+ *
+ *****************************************************************************/
+
+#define LEXBUFSIZ	1024
+
+static char *bufptr;		/* otherwise, the input buffer pointer */
+static char *bufstart;		/* start of buffer so we can compute offsets */
+static FILE *yyin;		/* scanner's input file descriptor */
+
+/*
+ *	_nc_reset_input()
+ *
+ *	Resets the input-reading routines.  Used on initialization,
+ *	or after a seek has been done.  Exactly one argument must be
+ *	non-null.
+ */
+
+void _nc_reset_input(FILE *fp, char *buf)
 {
-    if (pushname != 0) {
-	FreeAndNull(pushname);
-    }
+	pushtype = NO_PUSHBACK;
+	pushname[0] = '\0';
+	yyin = fp;
+	bufstart = bufptr = buf;
+	_nc_curr_file_pos = 0L;
+	if (fp != 0)
+		_nc_curr_line = 0;
+	_nc_curr_col = 0;
 }
-#endif
+
+/*
+ *	int last_char()
+ *
+ *	Returns the final nonblank character on the current input buffer
+ */
+static int
+last_char(void)
+{
+	size_t len = strlen(bufptr);
+	while (len--) {
+		if (!isspace(bufptr[len]))
+			return bufptr[len];
+	}
+	return 0;
+}
+
+/*
+ *	int next_char()
+ *
+ *	Returns the next character in the input stream.  Comments and leading
+ *	white space are stripped.
+ *
+ *	The global state variable 'firstcolumn' is set TRUE if the character
+ *	returned is from the first column of the input line.
+ *
+ *	The global variable _nc_curr_line is incremented for each new line.
+ *	The global variable _nc_curr_file_pos is set to the file offset of the
+ *	beginning of each line.
+ */
+
+static int
+next_char(void)
+{
+    if (!yyin)
+    {
+	if (*bufptr == '\0')
+	    return(EOF);
+	if (*bufptr == '\n') {
+	    _nc_curr_line++;
+	    _nc_curr_col = 0;
+	}
+    }
+    else if (!bufptr || !*bufptr)
+    {
+	/*
+	 * In theory this could be recoded to do its I/O one
+	 * character at a time, saving the buffer space.  In
+	 * practice, this turns out to be quite hard to get
+	 * completely right.  Try it and see.  If you succeed,
+	 * don't forget to hack push_back() correspondingly.
+	 */
+	static char line[LEXBUFSIZ];
+	size_t len;
+
+	do {
+	       _nc_curr_file_pos = ftell(yyin);
+
+	       if ((bufstart = fgets(line, LEXBUFSIZ, yyin)) != NULL) {
+		   _nc_curr_line++;
+		   _nc_curr_col = 0;
+	       }
+	       bufptr = bufstart;
+	   } while
+	       (bufstart != NULL && line[0] == '#');
+
+	if (bufstart == NULL)
+	    return (EOF);
+
+	while (iswhite(*bufptr))
+	    bufptr++;
+
+	/*
+	 * Treat a trailing <cr><lf> the same as a <newline> so we can read
+	 * files on OS/2, etc.
+	 */
+	if ((len = strlen(bufptr)) > 1) {
+	    if (bufptr[len-1] == '\n'
+	     && bufptr[len-2] == '\r') {
+		bufptr[len-2] = '\n';
+		bufptr[len-1] = '\0';
+	    }
+	}
+    }
+
+    first_column = (bufptr == bufstart);
+
+    _nc_curr_col++;
+    return(*bufptr++);
+}
+
+static void push_back(char c)
+/* push a character back onto the input stream */
+{
+    if (bufptr == bufstart)
+	    _nc_syserr_abort("Can't backspace off beginning of line");
+    *--bufptr = c;
+}
+
+static long stream_pos(void)
+/* return our current character position in the input stream */
+{
+    return (yyin ? ftell(yyin) : (bufptr ? bufptr - bufstart : 0));
+}
+
+static bool end_of_stream(void)
+/* are we at end of input? */
+{
+    return ((yyin ? feof(yyin) : (bufptr && *bufptr == '\0'))
+	    ? TRUE : FALSE);
+}
+
+/* comp_scan.c ends here */

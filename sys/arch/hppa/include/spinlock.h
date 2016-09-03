@@ -1,14 +1,10 @@
-/*	$OpenBSD: spinlock.h,v 1.4 2013/06/01 20:47:40 tedu Exp $	*/
+/*	$OpenBSD: spinlock.h,v 1.1 1999/01/08 08:25:34 d Exp $	*/
 
 #ifndef _MACHINE_SPINLOCK_H_
 #define _MACHINE_SPINLOCK_H_
 
-#define _ATOMIC_LOCK_UNLOCKED	(1)
-#define _ATOMIC_LOCK_LOCKED	(0)
-typedef long _atomic_lock_t __attribute__((__aligned__(16)));
-
-#ifndef _KERNEL
-int _atomic_lock(volatile _atomic_lock_t *);
-#endif
+#define _SPINLOCK_UNLOCKED	(1)
+#define _SPINLOCK_LOCKED	(0)
+typedef int _spinlock_lock_t;
 
 #endif

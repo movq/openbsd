@@ -10,6 +10,10 @@
  * ====================================================
  */
 
+#if defined(LIBM_SCCS) && !defined(lint)
+static char rcsid[] = "$NetBSD: s_tan.c,v 1.7 1995/05/10 20:48:18 jtc Exp $";
+#endif
+
 /* tan(x)
  * Return tangent function of x.
  *
@@ -40,13 +44,15 @@
  *	TRIG(x) returns trig(x) nearly rounded 
  */
 
-#include <float.h>
-#include <math.h>
-
+#include "math.h"
 #include "math_private.h"
 
-double
-tan(double x)
+#ifdef __STDC__
+	double tan(double x)
+#else
+	double tan(x)
+	double x;
+#endif
 {
 	double y[2],z=0.0;
 	int32_t n, ix;
@@ -68,7 +74,3 @@ tan(double x)
 							-1 -- n odd */
 	}
 }
-
-#if	LDBL_MANT_DIG == DBL_MANT_DIG
-__strong_alias(tanl, tan);
-#endif	/* LDBL_MANT_DIG == DBL_MANT_DIG */

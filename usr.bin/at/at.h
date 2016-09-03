@@ -1,4 +1,5 @@
-/*	$OpenBSD: at.h,v 1.12 2015/11/13 21:34:06 millert Exp $	*/
+/*	$OpenBSD: at.h,v 1.3 1997/03/01 23:40:09 millert Exp $	*/
+/*	$NetBSD: at.h,v 1.2 1995/03/25 18:13:32 glass Exp $	*/
 
 /*
  *  at.h -  header for at(1)
@@ -20,22 +21,18 @@
  * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
  * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
  * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * THEORY OF LIABILITY, WETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-enum { ATQ, ATRM, AT, BATCH, CAT };	/* what are we running as? */
+extern int fcreated;
+extern char *namep;
+extern char atfile[];
+extern char atverify;
 
-struct atjob {
-	time_t runtimer;
-	time_t ctime;
-	uid_t uid;
-	mode_t mode;
-	char queue;
-};
+#define AT_MAXJOBS	255	/* max jobs outstanding per user */
+#define AT_VERSION	2.9	/* our version number */
 
 #define DEFAULT_BATCH_QUEUE	'E'
 #define DEFAULT_AT_QUEUE	'c'
-
-time_t	parsetime(int, char **);

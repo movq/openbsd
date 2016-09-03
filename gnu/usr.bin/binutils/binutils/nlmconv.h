@@ -1,5 +1,5 @@
 /* nlmconv.h -- header file for NLM conversion program
-   Copyright 1993, 2002, 2003 Free Software Foundation, Inc.
+   Copyright (C) 1993 Free Software Foundation, Inc.
 
 This file is part of GNU Binutils.
 
@@ -44,7 +44,7 @@ extern char *check_procedure;
 /* File named by CUSTOM.  */
 extern char *custom_file;
 /* Whether to generate debugging information (DEBUG).  */
-extern bfd_boolean debug_info;
+extern boolean debug_info;
 /* Procedure named by EXIT.  */
 extern char *exit_procedure;
 /* Exported symbols (EXPORT).  */
@@ -54,7 +54,7 @@ extern struct string_list *input_files;
 /* Map file name (MAP, FULLMAP).  */
 extern char *map_file;
 /* Whether a full map has been requested (FULLMAP).  */
-extern bfd_boolean full_map;
+extern boolean full_map;
 /* File named by HELP.  */
 extern char *help_file;
 /* Imported symbols (IMPORT).  */
@@ -70,7 +70,7 @@ extern char *sharelib_file;
 /* Start procedure name (START).  */
 extern char *start_procedure;
 /* VERBOSE.  */
-extern bfd_boolean verbose;
+extern boolean verbose;
 /* RPC description file (XDCDATA).  */
 extern char *rpc_file;
 
@@ -78,7 +78,7 @@ extern char *rpc_file;
 extern int parse_errors;
 
 /* The parser.  */
-extern int yyparse (void);
+extern int yyparse PARAMS ((void));
 
 /* Tell the lexer what file to read.  */
-extern bfd_boolean nlmlex_file (const char *);
+extern boolean nlmlex_file PARAMS ((const char *));

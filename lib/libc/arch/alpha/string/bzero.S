@@ -1,4 +1,4 @@
-/*	$OpenBSD: bzero.S,v 1.5 2015/08/31 02:53:56 guenther Exp $	*/
+/*	$OpenBSD: bzero.S,v 1.3 1996/11/13 22:05:07 niklas Exp $	*/
 /*	$NetBSD: bzero.S,v 1.2 1996/10/17 03:08:12 cgd Exp $	*/
 
 /*
@@ -28,7 +28,12 @@
  * rights to redistribute these changes.
  */
 
-#include "SYS.h"
+#include <machine/asm.h>
+
+#if defined(LIBC_SCCS)
+	.text
+	.asciz "$OpenBSD: bzero.S,v 1.3 1996/11/13 22:05:07 niklas Exp $"
+#endif
 
 LEAF(bzero,2)
 	ble	a1,bzero_done
@@ -108,4 +113,4 @@ bzero_finish_lp_done:
 bzero_done:
 	RET
 
-	END_WEAK(bzero)
+	END(bzero)

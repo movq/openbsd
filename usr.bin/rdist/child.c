@@ -1,4 +1,4 @@
-/*	$OpenBSD: child.c,v 1.26 2016/03/30 20:12:18 millert Exp $	*/
+/*	$OpenBSD: child.c,v 1.9 1999/02/05 00:39:08 millert Exp $	*/
 
 /*
  * Copyright (c) 1983 Regents of the University of California.
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,21 +33,32 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char RCSid[] = 
+"$From: child.c,v 6.28 1996/02/22 19:30:09 mcooper Exp $";
+#else
+static char RCSid[] = 
+"$OpenBSD: child.c,v 1.9 1999/02/05 00:39:08 millert Exp $";
+#endif
+
+static char sccsid[] = "@(#)docmd.c	5.1 (Berkeley) 6/6/85";
+
+static char copyright[] =
+"@(#) Copyright (c) 1983 Regents of the University of California.\n\
+ All rights reserved.\n";
+#endif /* not lint */
+
 /*
  * Functions for rdist related to children
  */
 
+#include "defs.h"
 #include <sys/types.h>
-#include <sys/select.h>
 #include <sys/wait.h>
-
-#include <errno.h>
-#include <fcntl.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-
-#include "client.h"
+#if	defined(NEED_SYS_SELECT_H)
+#include <sys/select.h>
+#endif	/* NEED_SYS_SELECT_H */
 
 typedef enum _PROCSTATE {
     PSrunning,
@@ -64,24 +79,17 @@ typedef struct _child CHILD;
 
 static CHILD	       *childlist = NULL;	/* List of children */
 int     		activechildren = 0;	/* Number of active children */
+extern int		maxchildren;		/* Max active children */
 static int 		needscan = FALSE;	/* Need to scan children */
-
-static void removechild(CHILD *);
-static CHILD *copychild(CHILD *);
-static void addchild(CHILD *);
-static void readchild(CHILD *);
-static pid_t waitproc(int *, int);
-static void reap(int);
-static void childscan(void);
 
 /*
  * Remove a child that has died (exited) 
  * from the list of active children
  */
-static void
-removechild(CHILD *child)
+static void removechild(child)
+	CHILD *child;
 {
-	CHILD *pc, *prevpc;
+	register CHILD *pc, *prevpc;
 
 	debugmsg(DM_CALL, "removechild(%s, %d, %d) start",
 		 child->c_name, child->c_pid, child->c_readfd);
@@ -101,18 +109,28 @@ removechild(CHILD *child)
 		/*
 		 * Remove the child
 		 */
-		sigset_t set, oset;
+#if	defined(POSIX_SIGNALS)
+		sigset_t set;
 
 		sigemptyset(&set);
 		sigaddset(&set, SIGCHLD);
-		sigprocmask(SIG_BLOCK, &set, &oset);
+		sigprocmask(SIG_BLOCK, &set, NULL);
+#else	/* !POSIX_SIGNALS */
+		int oldmask;
+
+		oldmask = sigblock(sigmask(SIGCHLD));
+#endif	/* POSIX_SIGNALS */
 
 		if (prevpc != NULL)
 			prevpc->c_next = pc->c_next;
 		else
 			childlist = pc->c_next;
 
-		sigprocmask(SIG_SETMASK, &oset, NULL);
+#if	defined(POSIX_SIGNALS)
+		sigprocmask(SIG_UNBLOCK, &set, NULL);
+#else
+		sigsetmask(oldmask);
+#endif	/* POSIX_SIGNALS */
 
 		(void) free(child->c_name);
 		--activechildren;
@@ -126,12 +144,12 @@ removechild(CHILD *child)
 /*
  * Create a totally new copy of a child.
  */
-static CHILD *
-copychild(CHILD *child)
+static CHILD *copychild(child)
+	CHILD *child;
 {
-	CHILD *newc;
+	register CHILD *newc;
 
-	newc = xmalloc(sizeof *newc);
+	newc = (CHILD *) xmalloc(sizeof(CHILD));
 
 	newc->c_name = xstrdup(child->c_name);
 	newc->c_readfd = child->c_readfd;
@@ -145,10 +163,10 @@ copychild(CHILD *child)
 /*
  * Add a child to the list of children.
  */			
-static void
-addchild(CHILD *child)
+static void addchild(child)
+	CHILD *child;
 {
-	CHILD *pc;
+	register CHILD *pc;
 
 	debugmsg(DM_CALL, "addchild() start\n");
 
@@ -166,11 +184,11 @@ addchild(CHILD *child)
 /*
  * Read input from a child process.
  */
-static void
-readchild(CHILD *child)
+static void readchild(child)
+	CHILD *child;
 {
 	char rbuf[BUFSIZ];
-	ssize_t amt;
+	int amt;
 
 	debugmsg(DM_CALL, "[readchild(%s, %d, %d) start]", 
 		 child->c_name, child->c_pid, child->c_readfd);
@@ -189,7 +207,7 @@ readchild(CHILD *child)
 	 */
 	while ((amt = read(child->c_readfd, rbuf, sizeof(rbuf))) > 0) {
 		/* XXX remove these debug calls */
-		debugmsg(DM_MISC, "[readchild(%s, %d, %d) got %zd bytes]", 
+		debugmsg(DM_MISC, "[readchild(%s, %d, %d) got %d bytes]", 
 			 child->c_name, child->c_pid, child->c_readfd, amt);
 
 		(void) xwrite(fileno(stdout), rbuf, amt);
@@ -198,7 +216,7 @@ readchild(CHILD *child)
 			 child->c_name, child->c_pid, child->c_readfd);
 	}
 
-	debugmsg(DM_MISC, "readchild(%s, %d, %d) done: amt = %zd errno = %d\n",
+	debugmsg(DM_MISC, "readchild(%s, %d, %d) done: amt = %d errno = %d\n",
 		 child->c_name, child->c_pid, child->c_readfd, amt, errno);
 
 	/* 
@@ -215,19 +233,29 @@ readchild(CHILD *child)
  * a process does exit, then the pointer "statval" is set to the
  * exit status of the exiting process, if statval is not NULL.
  */
-static pid_t
-waitproc(int *statval, int block)
+static int waitproc(statval, block)
+	int *statval;
+	int block;
 {
-	int status;
-	pid_t pid;
-	int exitval;
+	WAIT_ARG_TYPE status;
+	int pid, exitval;
 
 	debugmsg(DM_CALL, "waitproc() %s, active children = %d...\n", 
 		 (block) ? "blocking" : "nonblocking", activechildren);
 
+#if	WAIT_TYPE == WAIT_WAITPID
 	pid = waitpid(-1, &status, (block) ? 0 : WNOHANG);
+#else
+#if	WAIT_TYPE == WAIT_WAIT3
+	pid = wait3(&status, (block) ? 0 : WNOHANG, NULL);
+#endif	/* WAIT_WAIT3 */
+#endif	/* WAIT_WAITPID */
 
+#if	defined(WEXITSTATUS)
 	exitval = WEXITSTATUS(status);
+#else
+	exitval = status.w_retcode;
+#endif	/* defined(WEXITSTATUS) */
 
 	if (pid > 0 && exitval != 0) {
 		nerrs++;
@@ -249,10 +277,9 @@ waitproc(int *statval, int block)
  * Check to see if any children have exited, and if so, read any unread
  * input and then remove the child from the list of children.
  */
-static void
-reap(int dummy)
+static void reap()
 {
-	CHILD *pc;
+	register CHILD *pc;
 	int save_errno = errno;
 	int status = 0;
 	pid_t pid;
@@ -308,10 +335,9 @@ reap(int dummy)
  * Scan the children list to find the child that just exited, 
  * read any unread input, then remove it from the list of active children.
  */
-static void
-childscan(void)
+static void childscan() 
 {
-	CHILD *pc, *nextpc;
+	register CHILD *pc, *nextpc;
 	
 	debugmsg(DM_CALL, "childscan() start");
 
@@ -328,17 +354,24 @@ childscan(void)
 }
 
 /*
+#if	defined HAVE_SELECT
  *
  * Wait for children to send output for us to read.
  *
+#else	!HAVE_SELECT
+ *
+ * Wait up for children to exit.
+ *
+#endif
  */
-void
-waitup(void)
+extern void waitup()
 {
-	int count;
-	CHILD *pc;
+#if	defined(HAVE_SELECT)
+	register int count;
+	register CHILD *pc;
 	fd_set *rchildfdsp = NULL;
 	int rchildfdsn = 0;
+	size_t bytes;
 
 	debugmsg(DM_CALL, "waitup() start\n");
 
@@ -349,13 +382,16 @@ waitup(void)
 		return;
 
 	/*
-	 * Set up which children we want to select() on.
+	 * Settup which children we want to select() on.
 	 */
 	for (pc = childlist; pc; pc = pc->c_next)
 		if (pc->c_readfd > rchildfdsn)
 			rchildfdsn = pc->c_readfd;
-	rchildfdsp = xcalloc(howmany(rchildfdsn+1, NFDBITS), sizeof(fd_mask));
+	bytes = howmany(rchildfdsn+1, NFDBITS) * sizeof(fd_mask);
+	if ((rchildfdsp = (fd_set *)malloc(bytes)) == NULL)
+		return;
 
+	memset(rchildfdsp, 0, bytes);
 	for (pc = childlist; pc; pc = pc->c_next)
 		if (pc->c_readfd > 0) {
 			debugmsg(DM_MISC, "waitup() select on %d (%s)\n",
@@ -370,7 +406,8 @@ waitup(void)
 	debugmsg(DM_MISC, "waitup() Call select(), activechildren=%d\n", 
 		 activechildren);
 
-	count = select(rchildfdsn+1, rchildfdsp, NULL, NULL, NULL);
+	count = select(rchildfdsn+1, (SELECT_FD_TYPE *) rchildfdsp, 
+		       NULL, NULL, NULL);
 
 	debugmsg(DM_MISC, "waitup() select returned %d activechildren = %d\n", 
 		 count, activechildren);
@@ -422,29 +459,26 @@ waitup(void)
 	}
 	free(rchildfdsp);
 
+#else	/* !defined(HAVE_SELECT) */
+
+	/*
+	 * The non-select() version of waitproc()
+	 */
+	debugmsg(DM_CALL, "waitup() start\n");
+
+	if (waitproc(NULL, TRUE) > 0)
+		--activechildren;
+
+#endif	/* defined(HAVE_SELECT) */
 	debugmsg(DM_CALL, "waitup() end\n");
-}
-
-/*
- * Enable non-blocking I/O.
- */
-static int
-setnonblocking(int fd)
-{
-	int	flags;
-
-	if ((flags = fcntl(fd, F_GETFL)) < 0)
-		return (-1);
-	if (flags & O_NONBLOCK)
-		return (0);
-	return (fcntl(fd, F_SETFL, flags | O_NONBLOCK));
 }
 
 /*
  * Spawn (create) a new child process for "cmd".
  */
-int
-spawn(struct cmd *cmd, struct cmd *cmdlist)
+extern int spawn(cmd, cmdlist)
+	struct cmd *cmd;
+	struct cmd *cmdlist;
 {
 	pid_t pid;
 	int fildes[2];
@@ -466,6 +500,15 @@ spawn(struct cmd *cmd, struct cmd *cmdlist)
 		 */
 		static CHILD newchild;
 
+#if	defined(FORK_MISSES)
+		/*
+		 * XXX Some OS's have a bug where fork does not
+		 * always return properly to the parent
+		 * when a number of forks are done very quicky.
+		 */
+		sleep(2);
+#endif	/* FORK_MISSES */
+
 		/* Receive notification when the child exits */
 		(void) signal(SIGCHLD, reap);
 
@@ -480,7 +523,7 @@ spawn(struct cmd *cmd, struct cmd *cmdlist)
 		(void) close(fildes[PIPE_WRITE]);
 
 		/* Set non-blocking I/O */
-		if (setnonblocking(newchild.c_readfd) < 0) {
+		if (setnonblocking(newchild.c_readfd, TRUE) < 0) {
 			error("Set nonblocking I/O failed: %s", SYSERR);
 			return(-1);
 		}
@@ -518,3 +561,42 @@ spawn(struct cmd *cmd, struct cmd *cmdlist)
 		return(0);
 	}
 }
+
+
+/*
+ * Enable or disable non-blocking I/O mode.
+ *
+ * Code is from INN by Rich Salz.
+ */
+#if	NBIO_TYPE == NBIO_IOCTL
+#include <sys/ioctl.h>
+
+int setnonblocking(fd, flag)
+	int fd;
+	int flag;
+{
+	int state;
+
+	state = flag ? 1 : 0;
+	return(ioctl(fd, FIONBIO, (char *)&state));
+}
+
+#endif	/* NBIO_IOCTL */
+
+
+#if	NBIO_TYPE == NBIO_FCNTL
+int setnonblocking(fd, flag)
+	int fd;
+	int flag;
+{
+	int	mode;
+
+	if ((mode = fcntl(fd, F_GETFL, 0)) < 0)
+		return(-1);
+	if (flag)
+		mode |= FNDELAY;
+	else
+		mode &= ~FNDELAY;
+	return(fcntl(fd, F_SETFL, mode));
+}
+#endif	/* NBIO_FCNTL */

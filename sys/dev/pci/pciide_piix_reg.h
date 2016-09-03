@@ -1,5 +1,5 @@
-/*	$OpenBSD: pciide_piix_reg.h,v 1.12 2010/07/23 07:47:13 jsg Exp $	*/
-/*	$NetBSD: pciide_piix_reg.h,v 1.5 2001/01/05 15:29:40 bouyer Exp $	*/
+/*	$OpenBSD: pciide_piix_reg.h,v 1.2 1999/10/04 22:54:18 deraadt Exp $	*/
+/*	$NetBSD: pciide_piix_reg.h,v 1.2 1998/10/12 16:09:21 bouyer Exp $	*/
 
 /*
  * Copyright (c) 1998 Manuel Bouyer.
@@ -12,30 +12,34 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
  *
  */
-
-#ifndef _DEV_PCI_PCIIDE_PIIX_REG_H_
-#define _DEV_PCI_PCIIDE_PIIX_REG_H_
 
 /*
  * Registers definitions for Intel's PIIX series PCI IDE controllers.
  * See Intel's
- * "82371FB (PIIX) and 82371SB (PIIX3) PCI ISA IDE XCELERATOR"
- * "82371AB PCI-TO-ISA / IDE XCELERATOR (PIIX4)" and
- * "Intel 82801AA (ICH) and Intel 82801AB (ICH0) I/O Controller Hub"
- * available from http://developer.intel.com/
+ * "82371FB (PIIX) and 82371SB (PIIX3) PCI ISA IDE XCELERATOR" and
+ * "82371AB PCI-TO-ISA / IDE XCELERATOR (PIIX4)"
+ * available from http://developers.intel.com/
  */
 
 /*
@@ -47,7 +51,7 @@
 #define PIIX_BMIBA_RTE_IO 0x000000001 /* base addr maps to I/O space */
 
 /*
- * IDE timing register
+ * IDE timing register 
  * 0x40/0x41 is for primary, 0x42/0x43 for secondary channel
  */
 #define PIIX_IDETIM 0x40
@@ -96,15 +100,13 @@
 	(((x) << ((channel * 8) + (drive * 4))) << PIIX_UDMATIM_SHIFT)
 
 /*
- * IDE config register (ICH/ICH0/ICH2 only)
+ * IDE config register (ICH/ICH0 only)
  */
 #define PIIX_CONFIG	0x54
 #define PIIX_CONFIG_PINGPONG	0x0400
-/* The following are only for the 82801AA (ICH) and 82801BA (ICH2) */
+/* The following are only for 82801AA (ICH) */
 #define PIIX_CONFIG_CR(channel, drive) (0x0010 << ((channel) * 2 + (drive)))
 #define PIIX_CONFIG_UDMA66(channel, drive) (0x0001 << ((channel) * 2 + (drive)))
-/* The following are only for the 82801BA (ICH2) */
-#define PIIX_CONFIG_UDMA100(channel, drive) (0x1000 << ((channel) * 2 + (drive)))
 
 /*
  * these tables define the differents values to upload to the
@@ -115,35 +117,5 @@ static int8_t piix_isp_pio[] = {0x00, 0x00, 0x01, 0x02, 0x02};
 static int8_t piix_rtc_pio[] = {0x00, 0x00, 0x00, 0x01, 0x03};
 static int8_t piix_isp_dma[] = {0x00, 0x02, 0x02};
 static int8_t piix_rtc_dma[] = {0x00, 0x02, 0x03};
-static int8_t piix4_sct_udma[] = {0x00, 0x01, 0x02, 0x01, 0x02, 0x01};
+static int8_t piix4_sct_udma[] = {0x00, 0x01, 0x02, 0x01, 0x02};
 
-/*
- * ICH5/ICH5R SATA registers definitions
- */
-#define ICH5_SATA_MAP		0x90 /* Address Map Register */
-#define ICH5_SATA_MAP_MV_MASK	0x07 /* Map Value mask */
-#define ICH5_SATA_MAP_COMBINED	0x04 /* Combined mode */
-
-#define ICH5_SATA_PI		0x09 /* Program Interface register */
-#define ICH5_SATA_PI_PRI_NATIVE	0x01 /* Put Pri IDE channel in native mode */
-#define ICH5_SATA_PI_SEC_NATIVE	0x04 /* Put Sec IDE channel in native mode */
-
-#define ICH_SATA_PCS		0x92 /* Port Control and Status Register */
-#define ICH_SATA_PCS_P0E	0x01 /* Port 0 enabled */
-#define ICH_SATA_PCS_P1E	0x02 /* Port 1 enabled */
-#define ICH_SATA_PCS_P0P	0x10 /* Port 0 present */
-#define ICH_SATA_PCS_P1P	0x20 /* Port 1 present */
-
-/*
- * ICH6/ICH7 SATA registers definitions
- */
-#define ICH6_SATA_MAP_CMB_MASK	0x03 /* Combined mode bits */
-#define ICH6_SATA_MAP_CMB_PRI	0x01 /* Combined mode, IDE Primary */
-#define ICH6_SATA_MAP_CMB_SEC	0x02 /* Combined mode, IDE Secondary */
-#define ICH7_SATA_MAP_SMS_MASK	0xc0 /* SATA Mode Select */
-#define ICH7_SATA_MAP_SMS_IDE	0x00
-#define ICH7_SATA_MAP_SMS_AHCI	0x40
-#define ICH7_SATA_MAP_SMS_RAID	0x80
-
-
-#endif	/* !_DEV_PCI_PCIIDE_PIIX_REG_H_ */

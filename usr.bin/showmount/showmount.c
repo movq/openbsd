@@ -1,4 +1,4 @@
-/*	$OpenBSD: showmount.c,v 1.20 2016/03/16 15:41:11 krw Exp $	*/
+/*	$OpenBSD: showmount.c,v 1.7 1997/09/11 11:09:56 deraadt Exp $	*/
 /*	$NetBSD: showmount.c,v 1.7 1996/05/01 18:14:10 cgd Exp $	*/
 
 /*
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,6 +36,19 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1989, 1993, 1995\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif not lint
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)showmount.c	8.3 (Berkeley) 3/29/95";
+#endif
+static char rcsid[] = "$OpenBSD: showmount.c,v 1.7 1997/09/11 11:09:56 deraadt Exp $";
+#endif not lint
 
 #include <sys/types.h>
 #include <sys/file.h>
@@ -49,7 +66,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <vis.h>
-#include <err.h>
 
 /* Constant defs */
 #define	ALL	1
@@ -80,10 +96,10 @@ static struct mountlist *mntdump;
 static struct exportslist *exports;
 static int type = 0;
 
-void	print_dump(struct mountlist *);
-void	usage(void);
-int	xdr_mntdump(XDR *, struct mountlist **);
-int	xdr_exports(XDR *, struct exportslist **);
+void	print_dump __P((struct mountlist *));
+void	usage __P((void));
+int	xdr_mntdump __P((XDR *, struct mountlist **));
+int	xdr_exports __P((XDR *, struct exportslist **));
 
 /*
  * This command queries the NFS mount daemon for it's mount list and/or
@@ -93,7 +109,9 @@ int	xdr_exports(XDR *, struct exportslist **);
  * for detailed information on the protocol.
  */
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
 	struct exportslist *exp;
 	struct grouplist *grp;
@@ -106,11 +124,8 @@ main(int argc, char *argv[])
 	char *host;
 	int ch, clnt_sock;
 
-	if (pledge("stdio rpath inet dns", NULL) == -1)
-		err(1, "pledge");
-
 	while ((ch = getopt(argc, argv, "ade3")) != -1)
-		switch (ch) {
+		switch((char)ch) {
 		case 'a':
 			if (type == 0) {
 				type = ALL;
@@ -131,6 +146,7 @@ main(int argc, char *argv[])
 		case '3':
 			mntvers = 3;
 			break;
+		case '?':
 		default:
 			usage();
 		}
@@ -163,11 +179,8 @@ main(int argc, char *argv[])
 	timeout.tv_sec = 30;
 	timeout.tv_usec = 0;
 
-	if (pledge("stdio rpath", NULL) == -1)
-		err(1, "pledge");
-
 	if (rpcs & DODUMP) {
-		estat = clnt_call(client, RPCMNT_DUMP, xdr_void, NULL,
+		estat = clnt_call(client, RPCMNT_DUMP, xdr_void, (char *)0,
 		    xdr_mntdump, (char *)&mntdump, timeout);
 		if (estat != RPC_SUCCESS) {
 			fprintf(stderr, "showmount: Can't do Mountdump rpc: ");
@@ -176,7 +189,7 @@ main(int argc, char *argv[])
 		}
 	}
 	if (rpcs & DOEXPORTS) {
-		estat = clnt_call(client, RPCMNT_EXPORT, xdr_void, NULL,
+		estat = clnt_call(client, RPCMNT_EXPORT, xdr_void, (char *)0,
 		    xdr_exports, (char *)&exports, timeout);
 		if (estat != RPC_SUCCESS) {
 			fprintf(stderr, "showmount: Can't do Exports rpc: ");
@@ -197,7 +210,7 @@ main(int argc, char *argv[])
 		default:
 			printf("Hosts on %s:\n", host);
 			break;
-		}
+		};
 		print_dump(mntdump);
 	}
 	if (rpcs & DOEXPORTS) {
@@ -207,15 +220,14 @@ main(int argc, char *argv[])
 		printf("Exports list on %s:\n", host);
 		exp = exports;
 		while (exp) {
-			strnvis(vp, exp->ex_dirp, sizeof vp, VIS_CSTYLE);
-			printf("%-34s ", vp);
+			strvis(vp, exp->ex_dirp, VIS_CSTYLE);
+			printf("%-35s", vp);
 			grp = exp->ex_groups;
 			if (grp == NULL) {
 				printf("Everyone\n");
 			} else {
 				while (grp) {
-					strnvis(vn, grp->gr_name, sizeof vn,
-					    VIS_CSTYLE);
+					strvis(vn, grp->gr_name, VIS_CSTYLE);
 					printf("%s ", vn);
 					grp = grp->gr_next;
 				}
@@ -232,20 +244,22 @@ main(int argc, char *argv[])
  * Xdr routine for retrieving the mount dump list
  */
 int
-xdr_mntdump(XDR *xdrsp, struct mountlist **mlp)
+xdr_mntdump(xdrsp, mlp)
+	XDR *xdrsp;
+	struct mountlist **mlp;
 {
 	struct mountlist *mp, **otp = NULL, *tp;
 	int bool, val, val2;
 	char *strp;
 
-	*mlp = NULL;
+	*mlp = (struct mountlist *)0;
 	if (!xdr_bool(xdrsp, &bool))
 		return (0);
 	while (bool) {
-		mp = malloc(sizeof(struct mountlist));
+		mp = (struct mountlist *)malloc(sizeof(struct mountlist));
 		if (mp == NULL)
 			return (0);
-		mp->ml_left = mp->ml_right = NULL;
+		mp->ml_left = mp->ml_right = (struct mountlist *)0;
 		strp = mp->ml_host;
 		if (!xdr_string(xdrsp, &strp, RPCMNT_NAMELEN))
 			return (0);
@@ -309,28 +323,31 @@ next:
  * Xdr routine to retrieve exports list
  */
 int
-xdr_exports(XDR *xdrsp, struct exportslist **exp)
+xdr_exports(xdrsp, exp)
+	XDR *xdrsp;
+	struct exportslist **exp;
 {
 	struct exportslist *ep;
 	struct grouplist *gp;
 	int bool, grpbool;
 	char *strp;
 
-	*exp = NULL;
+	*exp = (struct exportslist *)0;
 	if (!xdr_bool(xdrsp, &bool))
 		return (0);
 	while (bool) {
-		ep = malloc(sizeof(struct exportslist));
+		ep = (struct exportslist *)malloc(sizeof(struct exportslist));
 		if (ep == NULL)
 			return (0);
-		ep->ex_groups = NULL;
+		ep->ex_groups = (struct grouplist *)0;
 		strp = ep->ex_dirp;
 		if (!xdr_string(xdrsp, &strp, RPCMNT_PATHLEN))
 			return (0);
 		if (!xdr_bool(xdrsp, &grpbool))
 			return (0);
 		while (grpbool) {
-			gp = malloc(sizeof(struct grouplist));
+			gp = (struct grouplist *)malloc(
+			    sizeof(struct grouplist));
 			if (gp == NULL)
 				return (0);
 			strp = gp->gr_name;
@@ -350,10 +367,10 @@ xdr_exports(XDR *xdrsp, struct exportslist **exp)
 }
 
 void
-usage(void)
+usage()
 {
 
-	fprintf(stderr, "usage: showmount [-3ade] [host]\n");
+	fprintf(stderr, "usage: showmount [-ade3] host\n");
 	exit(1);
 }
 
@@ -361,7 +378,8 @@ usage(void)
  * Print the binary tree in inorder so that output is sorted.
  */
 void
-print_dump(struct mountlist *mp)
+print_dump(mp)
+	struct mountlist *mp;
 {
 	char	vn[(RPCMNT_NAMELEN+1)*4];
 	char	vp[(RPCMNT_PATHLEN+1)*4];
@@ -384,7 +402,7 @@ print_dump(struct mountlist *mp)
 		strvis(vn, mp->ml_host, VIS_CSTYLE);
 		printf("%s\n", vn);
 		break;
-	}
+	};
 	if (mp->ml_right)
 		print_dump(mp->ml_right);
 }

@@ -3,7 +3,12 @@
  * Public domain.
  */
 
-#include "SYS.h"
+#include <machine/asm.h>
+
+#if defined(LIBC_SCCS)
+	.text
+	.asciz "$OpenBSD: ldiv.S,v 1.3 1997/07/23 20:55:21 kstailey Exp $"
+#endif
 
 ENTRY(ldiv)
 	movl	4(%esp),%eax
@@ -13,4 +18,3 @@ ENTRY(ldiv)
 	movl	%eax,4(%esp)
 	movl	%edx,8(%esp)
 	ret
-END_STRONG(ldiv)

@@ -1,190 +1,114 @@
-/* $OpenBSD: readpass.c,v 1.51 2015/12/11 00:20:04 mmcc Exp $ */
 /*
- * Copyright (c) 2001 Markus Friedl.  All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
 
-#include <sys/types.h>
-#include <sys/wait.h>
+readpass.c
 
-#include <errno.h>
-#include <fcntl.h>
-#include <paths.h>
-#include <readpassphrase.h>
-#include <signal.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
+Author: Tatu Ylonen <ylo@cs.hut.fi>
+
+Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
+                   All rights reserved
+
+Created: Mon Jul 10 22:08:59 1995 ylo
+
+Functions for reading passphrases and passwords.
+
+*/
+
+#include "includes.h"
+RCSID("$Id: readpass.c,v 1.4 1999/10/11 20:24:54 markus Exp $");
 
 #include "xmalloc.h"
-#include "misc.h"
-#include "pathnames.h"
-#include "log.h"
 #include "ssh.h"
-#include "uidswap.h"
 
-static char *
-ssh_askpass(char *askpass, const char *msg)
+/* Saved old terminal mode for read_passphrase. */
+static struct termios saved_tio;
+
+/* Old interrupt signal handler for read_passphrase. */
+static void (*old_handler)(int sig) = NULL;
+
+/* Interrupt signal handler for read_passphrase. */
+
+void intr_handler(int sig)
 {
-	pid_t pid, ret;
-	size_t len;
-	char *pass;
-	int p[2], status;
-	char buf[1024];
-	void (*osigchld)(int);
-
-	if (fflush(stdout) != 0)
-		error("ssh_askpass: fflush: %s", strerror(errno));
-	if (askpass == NULL)
-		fatal("internal error: askpass undefined");
-	if (pipe(p) < 0) {
-		error("ssh_askpass: pipe: %s", strerror(errno));
-		return NULL;
-	}
-	osigchld = signal(SIGCHLD, SIG_DFL);
-	if ((pid = fork()) < 0) {
-		error("ssh_askpass: fork: %s", strerror(errno));
-		signal(SIGCHLD, osigchld);
-		return NULL;
-	}
-	if (pid == 0) {
-		permanently_drop_suid(getuid());
-		close(p[0]);
-		if (dup2(p[1], STDOUT_FILENO) < 0)
-			fatal("ssh_askpass: dup2: %s", strerror(errno));
-		execlp(askpass, askpass, msg, (char *)NULL);
-		fatal("ssh_askpass: exec(%s): %s", askpass, strerror(errno));
-	}
-	close(p[1]);
-
-	len = 0;
-	do {
-		ssize_t r = read(p[0], buf + len, sizeof(buf) - 1 - len);
-
-		if (r == -1 && errno == EINTR)
-			continue;
-		if (r <= 0)
-			break;
-		len += r;
-	} while (sizeof(buf) - 1 - len > 0);
-	buf[len] = '\0';
-
-	close(p[0]);
-	while ((ret = waitpid(pid, &status, 0)) < 0)
-		if (errno != EINTR)
-			break;
-	signal(SIGCHLD, osigchld);
-	if (ret == -1 || !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-		explicit_bzero(buf, sizeof(buf));
-		return NULL;
-	}
-
-	buf[strcspn(buf, "\r\n")] = '\0';
-	pass = xstrdup(buf);
-	explicit_bzero(buf, sizeof(buf));
-	return pass;
+  /* Restore terminal modes. */
+  tcsetattr(fileno(stdin), TCSANOW, &saved_tio);
+  /* Restore the old signal handler. */
+  signal(sig, old_handler);
+  /* Resend the signal, with the old handler. */
+  kill(getpid(), sig);
 }
 
-/*
- * Reads a passphrase from /dev/tty with echo turned off/on.  Returns the
- * passphrase (allocated with xmalloc).  Exits if EOF is encountered. If
- * RP_ALLOW_STDIN is set, the passphrase will be read from stdin if no
- * tty is available
- */
-char *
-read_passphrase(const char *prompt, int flags)
+/* Reads a passphrase from /dev/tty with echo turned off.  Returns the 
+   passphrase (allocated with xmalloc).  Exits if EOF is encountered. 
+   The passphrase if read from stdin if from_stdin is true (as is the
+   case with ssh-keygen).  */
+
+char *read_passphrase(const char *prompt, int from_stdin)
 {
-	char *askpass = NULL, *ret, buf[1024];
-	int rppflags, use_askpass = 0, ttyfd;
-
-	rppflags = (flags & RP_ECHO) ? RPP_ECHO_ON : RPP_ECHO_OFF;
-	if (flags & RP_USE_ASKPASS)
-		use_askpass = 1;
-	else if (flags & RP_ALLOW_STDIN) {
-		if (!isatty(STDIN_FILENO)) {
-			debug("read_passphrase: stdin is not a tty");
-			use_askpass = 1;
-		}
-	} else {
-		rppflags |= RPP_REQUIRE_TTY;
-		ttyfd = open(_PATH_TTY, O_RDWR);
-		if (ttyfd >= 0)
-			close(ttyfd);
-		else {
-			debug("read_passphrase: can't open %s: %s", _PATH_TTY,
-			    strerror(errno));
-			use_askpass = 1;
-		}
+  char buf[1024], *cp;
+  struct termios tio;
+  FILE *f;
+  
+  if (from_stdin)
+    f = stdin;
+  else
+    {
+      /* Read the passphrase from /dev/tty to make it possible to ask it even 
+	 when stdin has been redirected. */
+      f = fopen("/dev/tty", "r");
+      if (!f)
+	{
+	  /* No controlling terminal and no DISPLAY.  Nowhere to read. */
+	  fprintf(stderr, "You have no controlling tty and no DISPLAY.  Cannot read passphrase.\n");
+	  exit(1);
 	}
+    }
 
-	if ((flags & RP_USE_ASKPASS) && getenv("DISPLAY") == NULL)
-		return (flags & RP_ALLOW_EOF) ? NULL : xstrdup("");
+  /* Display the prompt (on stderr because stdout might be redirected). */
+  fflush(stdout);
+  fprintf(stderr, "%s", prompt);
+  fflush(stderr);
 
-	if (use_askpass && getenv("DISPLAY")) {
-		if (getenv(SSH_ASKPASS_ENV))
-			askpass = getenv(SSH_ASKPASS_ENV);
-		else
-			askpass = _PATH_SSH_ASKPASS_DEFAULT;
-		if ((ret = ssh_askpass(askpass, prompt)) == NULL)
-			if (!(flags & RP_ALLOW_EOF))
-				return xstrdup("");
-		return ret;
-	}
+  /* Get terminal modes. */
+  tcgetattr(fileno(f), &tio);
+  saved_tio = tio;
+  /* Save signal handler and set the new handler. */
+  old_handler = signal(SIGINT, intr_handler);
 
-	if (readpassphrase(prompt, buf, sizeof buf, rppflags) == NULL) {
-		if (flags & RP_ALLOW_EOF)
-			return NULL;
-		return xstrdup("");
-	}
+  /* Set new terminal modes disabling all echo. */
+  tio.c_lflag &= ~(ECHO | ECHOE | ECHOK | ECHONL);
+  tcsetattr(fileno(f), TCSANOW, &tio);
 
-	ret = xstrdup(buf);
-	explicit_bzero(buf, sizeof(buf));
-	return ret;
-}
-
-int
-ask_permission(const char *fmt, ...)
-{
-	va_list args;
-	char *p, prompt[1024];
-	int allowed = 0;
-
-	va_start(args, fmt);
-	vsnprintf(prompt, sizeof(prompt), fmt, args);
-	va_end(args);
-
-	p = read_passphrase(prompt, RP_USE_ASKPASS|RP_ALLOW_EOF);
-	if (p != NULL) {
-		/*
-		 * Accept empty responses and responses consisting
-		 * of the word "yes" as affirmative.
-		 */
-		if (*p == '\0' || *p == '\n' ||
-		    strcasecmp(p, "yes") == 0)
-			allowed = 1;
-		free(p);
-	}
-
-	return (allowed);
+  /* Read the passphrase from the terminal. */
+  if (fgets(buf, sizeof(buf), f) == NULL)
+    {
+      /* Got EOF.  Just exit. */
+      /* Restore terminal modes. */
+      tcsetattr(fileno(f), TCSANOW, &saved_tio);
+      /* Restore the signal handler. */
+      signal(SIGINT, old_handler);
+      /* Print a newline (the prompt probably didn\'t have one). */
+      fprintf(stderr, "\n");
+      /* Close the file. */
+      if (f != stdin)
+	fclose(f);
+      exit(1);
+    }
+  /* Restore terminal modes. */
+  tcsetattr(fileno(f), TCSANOW, &saved_tio);
+  /* Restore the signal handler. */
+  (void)signal(SIGINT, old_handler);
+  /* Remove newline from the passphrase. */
+  if (strchr(buf, '\n'))
+    *strchr(buf, '\n') = 0;
+  /* Allocate a copy of the passphrase. */
+  cp = xstrdup(buf);
+  /* Clear the buffer so we don\'t leave copies of the passphrase laying
+     around. */
+  memset(buf, 0, sizeof(buf));
+  /* Print a newline since the prompt probably didn\'t have one. */
+  fprintf(stderr, "\n");
+  /* Close the file. */
+  if (f != stdin)
+    fclose(f);
+  return cp;
 }

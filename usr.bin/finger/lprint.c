@@ -1,4 +1,4 @@
-/*	$OpenBSD: lprint.c,v 1.12 2015/03/15 00:41:28 millert Exp $	*/
+/*	$OpenBSD: lprint.c,v 1.4 1997/05/30 23:35:52 kstailey Exp $	*/
 
 /*
  * Copyright (c) 1989 The Regents of the University of California.
@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,10 +36,16 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+/*static char sccsid[] = "from: @(#)lprint.c	5.13 (Berkeley) 10/31/90";*/
+static char rcsid[] = "$OpenBSD: lprint.c,v 1.4 1997/05/30 23:35:52 kstailey Exp $";
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <tzfile.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -51,7 +61,7 @@
 #define	_PATH_PROJECT	".project"
 
 void
-lflag_print(void)
+lflag_print()
 {
 	PERSON *pn;
 
@@ -69,7 +79,8 @@ lflag_print(void)
 }
 
 void
-lprint(PERSON *pn)
+lprint(pn)
+	PERSON *pn;
 {
 	struct tm *delta;
 	WHERE *w;
@@ -102,24 +113,26 @@ lprint(PERSON *pn)
 	if (pn->office && pn->officephone &&
 	    strlen(pn->office) + strlen(pn->officephone) +
 	    sizeof(OFFICE_TAG) + 2 <= 5 * TAB_LEN) {
-		(void)snprintf(tbuf, sizeof(tbuf), "%s: %s, %s",
-		    OFFICE_TAG, pn->office, prphone(pn->officephone));
+		(void)snprintf(tbuf, sizeof(tbuf),
+		    "%s: %s, %s", OFFICE_TAG, pn->office,
+		    prphone(pn->officephone));
 		oddfield = demi_print(tbuf, oddfield);
 	} else {
 		if (pn->office) {
-			(void)snprintf(tbuf, sizeof(tbuf), "%s: %s",
-			    OFFICE_TAG, pn->office);
+			(void)snprintf(tbuf, sizeof(tbuf),
+			    "%s: %s", OFFICE_TAG, pn->office);
 			oddfield = demi_print(tbuf, oddfield);
 		}
 		if (pn->officephone) {
-			(void)snprintf(tbuf, sizeof(tbuf), "%s: %s",
-			    OFFICE_PHONE_TAG, prphone(pn->officephone));
+			(void)snprintf(tbuf, sizeof(tbuf),
+			    "%s: %s", OFFICE_PHONE_TAG,
+			    prphone(pn->officephone));
 			oddfield = demi_print(tbuf, oddfield);
 		}
 	}
 	if (pn->homephone) {
-		(void)snprintf(tbuf, sizeof(tbuf), "%s: %s",
-		    "Home Phone", prphone(pn->homephone));
+		(void)snprintf(tbuf, sizeof(tbuf), "%s: %s", "Home Phone",
+		    prphone(pn->homephone));
 		oddfield = demi_print(tbuf, oddfield);
 	}
 	if (oddfield)
@@ -156,7 +169,7 @@ lprint(PERSON *pn)
 			delta = gmtime(&w->idletime);
 			if (delta->tm_yday || delta->tm_hour || delta->tm_min) {
 				cpr += printf("%-*s idle ",
-				    (int)(maxlen - strlen(w->tty) + 1), ",");
+				    maxlen - strlen(w->tty) + 1, ",");
 				if (delta->tm_yday > 0) {
 					cpr += printf("%d day%s ",
 					   delta->tm_yday,
@@ -180,7 +193,7 @@ lprint(PERSON *pn)
 			tp = localtime(&w->loginat);
 			t = asctime(tp);
 			tzn = tp->tm_zone;
-			if (now - w->loginat > SIXMONTHS)
+			if (now - w->loginat > SECSPERDAY * DAYSPERNYEAR / 2)
 				cpr =
 				    printf("Last login %.16s %.4s (%s) on %s",
 				    t, t + 20, tzn, w->tty);
@@ -216,7 +229,9 @@ lprint(PERSON *pn)
 }
 
 int
-demi_print(char *str, int oddfield)
+demi_print(str, oddfield)
+	char *str;
+	int oddfield;
 {
 	static int lenlast;
 	int lenthis, maxlen;
@@ -250,11 +265,12 @@ demi_print(char *str, int oddfield)
 		(void)printf("%s", str);
 	oddfield = !oddfield;			/* toggle odd/even marker */
 	lenlast = lenthis;
-	return (oddfield);
+	return(oddfield);
 }
 
 int
-show_text(char *directory, char *file_name, char *header)
+show_text(directory, file_name, header)
+	char *directory, *file_name, *header;
 {
 	int ch, lastc;
 	FILE *fp;
@@ -262,18 +278,19 @@ show_text(char *directory, char *file_name, char *header)
 	lastc = 0;
 	(void)snprintf(tbuf, sizeof(tbuf), "%s/%s", directory, file_name);
 	if ((fp = fopen(tbuf, "r")) == NULL)
-		return (0);
+		return(0);
 	(void)printf("%s\n", header);
 	while ((ch = getc(fp)) != EOF)
 		vputc(lastc = ch);
 	if (lastc != '\n')
 		(void)putchar('\n');
 	(void)fclose(fp);
-	return (1);
+	return(1);
 }
 
 void
-vputc(int ch)
+vputc(ch)
+	int ch;
 {
 	char visout[5], *s2;
 

@@ -1,4 +1,3 @@
-/*	$OpenBSD: unvis.c,v 1.17 2015/09/13 11:32:51 guenther Exp $ */
 /*-
  * Copyright (c) 1989, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -27,6 +30,10 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: unvis.c,v 1.6 1997/07/25 20:30:05 mickey Exp $";
+#endif /* LIBC_SCCS and not lint */
 
 #include <sys/types.h>
 #include <ctype.h>
@@ -49,7 +56,14 @@
  * unvis - decode characters previously encoded by vis
  */
 int
+#ifdef __STDC__
 unvis(char *cp, char c, int *astate, int flag)
+#else
+unvis(cp, c, astate, flag)
+	char *cp;
+	char c;
+	int *astate, flag;
+#endif
 {
 
 	if (flag & UNVIS_END) {
@@ -73,12 +87,7 @@ unvis(char *cp, char c, int *astate, int flag)
 
 	case S_START:
 		switch(c) {
-		case '-':
-			*cp = 0;
-			*astate = S_GROUND;
-			return (0);
 		case '\\':
-		case '"':
 			*cp = c;
 			*astate = S_GROUND;
 			return (UNVIS_VALID);
@@ -195,7 +204,7 @@ unvis(char *cp, char c, int *astate, int flag)
 		 * we were done, push back passed char
 		 */
 		return (UNVIS_VALIDPUSH);
-
+			
 	default:	
 		/* 
 		 * decoder in unknown state - (probably uninitialized) 
@@ -204,7 +213,6 @@ unvis(char *cp, char c, int *astate, int flag)
 		return (UNVIS_SYNBAD);
 	}
 }
-DEF_WEAK(unvis);
 
 /*
  * strunvis - decode src into dst 
@@ -214,9 +222,11 @@ DEF_WEAK(unvis);
  */
 
 int
-strunvis(char *dst, const char *src)
+strunvis(dst, src)
+	register char *dst;
+	register const char *src;
 {
-	char c;
+	register char c;
 	char *start = dst;
 	int state = 0;
 
@@ -233,7 +243,6 @@ strunvis(char *dst, const char *src)
 		case UNVIS_NOCHAR:
 			break;
 		default:
-			*dst = '\0';
 			return (-1);
 		}
 	}
@@ -242,45 +251,3 @@ strunvis(char *dst, const char *src)
 	*dst = '\0';
 	return (dst - start);
 }
-
-ssize_t
-strnunvis(char *dst, const char *src, size_t sz)
-{
-	char c, p;
-	char *start = dst, *end = dst + sz - 1;
-	int state = 0;
-
-	if (sz > 0)
-		*end = '\0';
-	while ((c = *src++)) {
-	again:
-		switch (unvis(&p, c, &state, 0)) {
-		case UNVIS_VALID:
-			if (dst < end)
-				*dst = p;
-			dst++;
-			break;
-		case UNVIS_VALIDPUSH:
-			if (dst < end)
-				*dst = p;
-			dst++;
-			goto again;
-		case 0:
-		case UNVIS_NOCHAR:
-			break;
-		default:
-			if (dst <= end)
-				*dst = '\0';
-			return (-1);
-		}
-	}
-	if (unvis(&p, c, &state, UNVIS_END) == UNVIS_VALID) {
-		if (dst < end)
-			*dst = p;
-		dst++;
-	}
-	if (dst <= end)
-		*dst = '\0';
-	return (dst - start);
-}
-

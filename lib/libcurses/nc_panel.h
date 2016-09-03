@@ -1,7 +1,7 @@
-/* $OpenBSD: nc_panel.h,v 1.4 2010/01/12 23:21:59 nicm Exp $ */
+/*	$OpenBSD: nc_panel.h,v 1.2 1998/07/23 21:19:56 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2000,2008 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -29,13 +29,13 @@
  ****************************************************************************/
 
 /****************************************************************************
- *  Author: Juergen Pfeifer                        1997                     *
- *     and: Thomas E. Dickey                                                *
+ *  Author: Zeyd M. Ben-Halim <zmbenhal@netcom.com> 1992,1995               *
+ *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
  ****************************************************************************/
 
 
 /*
- * $Id: nc_panel.h,v 1.4 2010/01/12 23:21:59 nicm Exp $
+ * $From: nc_panel.h,v 1.2 1998/02/11 12:13:45 tom Exp $
  *
  *	nc_panel.h
  *
@@ -56,13 +56,10 @@ struct panelhook {
   struct panel*   top_panel;
   struct panel*   bottom_panel;
   struct panel*   stdscr_pseudo_panel;
-#if NO_LEAKS
-  int (*destroy)(struct panel *);
-#endif
 };
 
 /* Retrieve the panelhook of the current screen */
-extern NCURSES_EXPORT(struct panelhook*) _nc_panelhook (void);
+extern struct panelhook* _nc_panelhook(void);
 
 #ifdef __cplusplus
 }

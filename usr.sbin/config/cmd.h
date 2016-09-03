@@ -1,4 +1,4 @@
-/*	$OpenBSD: cmd.h,v 1.7 2003/06/03 00:52:35 weingart Exp $	*/
+/*	$OpenBSD: cmd.h,v 1.1 1999/10/04 20:00:50 deraadt Exp $	*/
 
 /*
  * Copyright (c) 1997 Tobias Weingartner
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *    This product includes software developed by Tobias Weingartner.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -54,25 +59,19 @@ extern cmd_table_t cmd_table[];
 #endif
 
 /* Prototypes */
-int Xhelp(cmd_t *);
-int Xadd(cmd_t *);
-int Xbase(cmd_t *);
-int Xchange(cmd_t *);
-int Xdisable(cmd_t *);
-int Xenable(cmd_t *);
-int Xfind(cmd_t *);
-int Xlines(cmd_t *);
-int Xlist(cmd_t *);
-int Xshow(cmd_t *);
-int Xexit(cmd_t *);
-int Xquit(cmd_t *);
-int Xtimezone(cmd_t *);
-int Xnmbclusters(cmd_t *);
-int Xbufcachepct(cmd_t *);
-int Xnkmempg(cmd_t *);
-int Xshmseg(cmd_t *);
-int Xshmmaxpgs(cmd_t *);
+int Xhelp __P((cmd_t *));
+int Xadd __P((cmd_t *));
+int Xbase __P((cmd_t *));
+int Xchange __P((cmd_t *));
+int Xdisable __P((cmd_t *));
+int Xenable __P((cmd_t *));
+int Xfind __P((cmd_t *));
+int Xlines __P((cmd_t *));
+int Xlist __P((cmd_t *));
+int Xshow __P((cmd_t *));
+int Xexit __P((cmd_t *));
+int Xquit __P((cmd_t *));
 
-#endif /* _CMD_H */
+#endif _CMD_H
 
 

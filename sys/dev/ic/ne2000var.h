@@ -1,4 +1,4 @@
-/*	$OpenBSD: ne2000var.h,v 1.9 2008/06/26 05:42:16 ray Exp $	*/
+/*	$OpenBSD: ne2000var.h,v 1.3 1999/03/26 06:34:27 fgsch Exp $	*/
 /*	$NetBSD: ne2000var.h,v 1.2 1997/10/14 22:54:12 thorpej Exp $	*/
 
 /*-
@@ -17,6 +17,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the NetBSD
+ *	Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -40,20 +47,16 @@ struct ne2000_softc {
 	bus_space_tag_t sc_asict;	/* space tag for ASIC */
 	bus_space_handle_t sc_asich;	/* space handle for ASIC */
 
-	enum {
-		NE2000_TYPE_UNKNOWN = 0,
-		NE2000_TYPE_NE1000,
-		NE2000_TYPE_NE2000,
-		NE2000_TYPE_DL10019,
-		NE2000_TYPE_DL10022,
-		NE2000_TYPE_AX88190,
-		NE2000_TYPE_AX88790
-	} sc_type;
-	int sc_useword;
+	int sc_type;
 };
 
-int	ne2000_attach(struct ne2000_softc *, u_int8_t *);
-int	ne2000_detect(struct ne2000_softc *);
-int	ne2000_detach(struct ne2000_softc *, int);
+/* sc_type */
+#define	NE2000_TYPE_NE1000	1
+#define	NE2000_TYPE_NE2000	2
+#define NE2000_TYPE_DL10019	3
+
+void	ne2000_attach __P((struct ne2000_softc *, u_int8_t *,
+	    int *, int, int));
+int	ne2000_detect __P((struct ne2000_softc *));
 
 #endif /* _DEV_IC_NE2000VAR_H_ */

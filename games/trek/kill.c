@@ -1,4 +1,4 @@
-/*	$OpenBSD: kill.c,v 1.8 2016/01/07 14:37:51 mestre Exp $	*/
+/*	$OpenBSD: kill.c,v 1.3 1999/07/31 18:48:59 pjanzen Exp $	*/
 /*	$NetBSD: kill.c,v 1.3 1995/04/22 10:59:06 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,8 +34,15 @@
  * SUCH DAMAGE.
  */
 
-#include <stdio.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)kill.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: kill.c,v 1.3 1999/07/31 18:48:59 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
+#include <stdio.h>
 #include "trek.h"
 
 /*
@@ -51,9 +62,10 @@
 */
 
 void
-killk(int ix, int iy)
+killk(ix, iy)
+	int	ix, iy;
 {
-	int		i;
+	register int		i;
 
 	printf("   *** Klingon at %d,%d destroyed ***\n", ix, iy);
 
@@ -91,10 +103,11 @@ killk(int ix, int iy)
 */
 
 void
-killb(int qx, int qy)
+killb(qx, qy)
+	int	qx, qy;
 {
-	struct quad	*q;
-	struct xy	*b;
+	register struct quad	*q;
+	register struct xy	*b;
 
 	q = &Quad[qx][qy];
 
@@ -139,16 +152,14 @@ killb(int qx, int qy)
  **	kill an inhabited starsystem
  **/
 
-/* 
- * x, y: quad coords if f == 0, else sector coords
- * f != 0 -- this quad;  f < 0 -- Enterprise's fault
- */
 void
-kills(int x, int y, int f)
+kills(x, y, f)
+	int	x, y;	/* quad coords if f == 0, else sector coords */
+	int	f;	/* f != 0 -- this quad;  f < 0 -- Enterprise's fault */
 {
-	struct quad	*q;
-	struct event	*e;
-	const char	*name;
+	register struct quad	*q;
+	register struct event	*e;
+	const char		*name;
 
 	if (f)
 	{
@@ -185,16 +196,14 @@ kills(int x, int y, int f)
  **	"kill" a distress call
  **/
 
-/* 
- * x, y: quadrant coordinates
- * f: set if user is to be informed
- */
 void
-killd(int x, int y, int f)
+killd(x, y, f)
+	int	x, y;		/* quadrant coordinates */
+	int	f;		/* set if user is to be informed */
 {
-	struct event	*e;
-	int		i;
-	struct quad	*q;
+	register struct event	*e;
+	register int		i;
+	register struct quad	*q;
 
 	q = &Quad[x][y];
 	for (i = 0; i < MAXEVENTS; i++)

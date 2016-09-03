@@ -1,4 +1,4 @@
-/*	$OpenBSD: fpsetsticky.c,v 1.5 2014/04/17 09:01:25 guenther Exp $	*/
+/*	$OpenBSD: fpsetsticky.c,v 1.1 1999/07/23 03:16:27 rahnds Exp $	*/
 /*	$NetBSD: fpsetsticky.c,v 1.1 1999/07/07 01:55:08 danw Exp $	*/
 
 /*
@@ -16,6 +16,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the NetBSD
+ *	Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  * 
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -40,13 +47,9 @@ fpsetsticky(mask)
 	u_int64_t fpscr;
 	fp_rnd old;
 
-	__asm__ volatile("mffs %0" : "=f"(fpscr));
+	__asm__ __volatile("mffs %0" : "=f"(fpscr));
 	old = (fpscr >> 25) & 0x1f;
-	fpscr = (fpscr & 0xe1ffffffULL) | ((mask & 0xf) << 25);
-	if (mask & FP_X_INV)
-		fpscr |= 0x400;
-	else
-		fpscr &= 0xfe07f8ffULL;
-	__asm__ volatile("mtfsf 0xff,%0" :: "f"(fpscr));
+	fpscr = (fpscr & 0xc1ffffff) | (mask << 25);
+	__asm__ __volatile("mtfsf 0xff,%0" :: "f"(fpscr));
 	return (old);
 }

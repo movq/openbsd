@@ -1,10 +1,14 @@
-#	$OpenBSD: Makefile,v 1.12 2016/05/04 19:48:08 jca Exp $
+#	$OpenBSD: Makefile,v 1.5 1999/06/23 12:56:18 art Exp $
 
 PROG=	fstat
-SRCS=	fstat.c fuser.c
-MAN=	fstat.1 fuser.1
 DPADD=	${LIBKVM}
+SRCS=	fstat.c isofs.c
 LDADD=	-lkvm
-LINKS=  ${BINDIR}/fstat ${BINDIR}/fuser
+BINGRP=	kmem
+BINMODE=2555
 
 .include <bsd.prog.mk>
+
+.if (${UVM} == "yes")
+CFLAGS+=-DUVM
+.endif

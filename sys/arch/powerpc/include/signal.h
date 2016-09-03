@@ -1,4 +1,4 @@
-/*	$OpenBSD: signal.h,v 1.9 2016/05/10 18:39:47 deraadt Exp $	*/
+/*	$OpenBSD: signal.h,v 1.3 1997/02/18 15:54:27 rahnds Exp $	*/
 /*	$NetBSD: signal.h,v 1.1 1996/09/30 16:34:34 ws Exp $	*/
 
 /*
@@ -31,15 +31,12 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef	_POWERPC_SIGNAL_H_
-#define	_POWERPC_SIGNAL_H_
-
-#include <sys/cdefs.h>
+#ifndef	_MACHINE_SIGNAL_H_
+#define	_MACHINE_SIGNAL_H_
 
 typedef int sig_atomic_t;
 
-#if __BSD_VISIBLE || __XPG_VISIBLE >= 420
-#include <machine/_types.h>
+#include <machine/types.h>
 
 /*
  * We have to save all registers on every trap, because
@@ -51,22 +48,21 @@ typedef int sig_atomic_t;
  *
  */
 struct trapframe {
-	__register_t fixreg[32];
-	__register_t lr;
-	__register_t cr;
-	__register_t xer;
-	__register_t ctr;
+	u_int32_t fixreg[32];
+	u_int32_t lr;
+	u_int32_t cr;
+	u_int32_t xer;
+	u_int32_t ctr;
 	int srr0;
 	int srr1;
 	int dar;			/* dar & dsisr are only filled on a DSI trap */
 	int dsisr;
-	__register_t exc;
+	u_int32_t exc;
 };
 
 struct sigcontext {
-	long sc_cookie;
+	int sc_onstack;			/* saved onstack flag */
 	int sc_mask;			/* saved signal mask */
 	struct trapframe sc_frame;	/* saved registers */
 };
-#endif /* __BSD_VISIBLE || __XPG_VISIBLE >= 420 */
-#endif	/* _POWERPC_SIGNAL_H_ */
+#endif	/* _MACHINE_SIGNAL_H_ */

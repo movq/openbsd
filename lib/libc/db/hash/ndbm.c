@@ -1,4 +1,4 @@
-/*	$OpenBSD: ndbm.c,v 1.26 2016/05/07 21:58:06 tedu Exp $	*/
+/*	$OpenBSD: ndbm.c,v 1.11 1999/04/18 17:08:07 millert Exp $	*/
 
 /*-
  * Copyright (c) 1990, 1993
@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,9 +36,18 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+#if 0
+static char sccsid[] = "@(#)dbm.c	8.6 (Berkeley) 11/7/95";
+#else
+static char rcsid[] = "$OpenBSD: ndbm.c,v 1.11 1999/04/18 17:08:07 millert Exp $";
+#endif
+#endif /* LIBC_SCCS and not lint */
+
+#include <sys/param.h>
+
 #include <errno.h>
 #include <fcntl.h>
-#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -49,7 +62,129 @@
  */
 static DBM *__cur_db;
 
-static DBM *_dbm_open(const char *, const char *, int, mode_t);
+static DBM *_dbm_open __P((const char *, const char *, int, int));
+
+/*
+ * Returns:
+ * 	 0 on success
+ *	<0 on failure
+ */
+int
+dbminit(file)
+	const char *file;
+{
+
+	if (__cur_db != NULL)
+		(void)dbm_close(__cur_db);
+	if ((__cur_db = _dbm_open(file, ".pag", O_RDWR, 0)) != NULL)
+		return (0);
+	if ((__cur_db = _dbm_open(file, ".pag", O_RDONLY, 0)) != NULL)
+		return (0);
+	return (-1);
+}
+
+/*
+ * Returns:
+ * 	 0 on success
+ *	<0 on failure
+ */
+int
+dbmclose()
+{
+	int rval;
+
+	if (__cur_db == NULL)
+		return (-1);
+	rval = (__cur_db->close)(__cur_db);
+	__cur_db = NULL;
+	return (rval);
+}
+
+/*
+ * Returns:
+ *	DATUM on success
+ *	NULL on failure
+ */
+datum
+fetch(key)
+	datum key;
+{
+	datum item;
+
+	if (__cur_db == NULL) {
+		item.dptr = NULL;
+		item.dsize = 0;
+		return (item);
+	}
+	return (dbm_fetch(__cur_db, key));
+}
+
+/*
+ * Returns:
+ *	DATUM on success
+ *	NULL on failure
+ */
+datum
+firstkey()
+{
+	datum item;
+
+	if (__cur_db == NULL) {
+		item.dptr = NULL;
+		item.dsize = 0;
+		return (item);
+	}
+	return (dbm_firstkey(__cur_db));
+}
+
+/*
+ * Returns:
+ *	DATUM on success
+ *	NULL on failure
+ */
+datum
+nextkey(key)
+	datum key;
+{
+	datum item;
+
+	if (__cur_db == NULL) {
+		item.dptr = NULL;
+		item.dsize = 0;
+		return (item);
+	}
+	return (dbm_nextkey(__cur_db));
+}
+
+/*
+ * Returns:
+ * 	 0 on success
+ *	<0 on failure
+ */
+int
+delete(key)
+	datum key;
+{
+
+	if (__cur_db == NULL || dbm_rdonly(__cur_db))
+		return (-1);
+	return (dbm_delete(__cur_db, key));
+}
+
+/*
+ * Returns:
+ * 	 0 on success
+ *	<0 on failure
+ */
+int
+store(key, dat)
+	datum key, dat;
+{
+
+	if (__cur_db == NULL || dbm_rdonly(__cur_db))
+		return (-1);
+	return (dbm_store(__cur_db, key, dat, DBM_REPLACE));
+}
 
 /*
  * Returns:
@@ -60,22 +195,14 @@ static DBM *
 _dbm_open(file, suff, flags, mode)
 	const char *file;
 	const char *suff;
-	int flags;
-	mode_t mode;
+	int flags, mode;
 {
 	HASHINFO info;
-	char path[PATH_MAX];
-	int len;
+	char path[MAXPATHLEN];
 
-	len = snprintf(path, sizeof path, "%s%s", file, suff);
-	if (len < 0 || len >= sizeof path) {
+	if (strlen(file) + strlen(suff) > sizeof(path) - 1) {
 		errno = ENAMETOOLONG;
 		return (NULL);
-	}
-	/* O_WRONLY not supported by db(3) but traditional ndbm allowed it. */
-	if ((flags & O_ACCMODE) == O_WRONLY) {
-		flags &= ~O_WRONLY;
-		flags |= O_RDWR;
 	}
 	info.bsize = 4096;
 	info.ffactor = 40;
@@ -83,6 +210,8 @@ _dbm_open(file, suff, flags, mode)
 	info.cachesize = 0;
 	info.hash = NULL;
 	info.lorder = 0;
+	(void)strcpy(path, file);
+	(void)strcat(path, suff);
 	return ((DBM *)__hash_open(path, flags, mode, &info, 0));
 }
 
@@ -94,8 +223,7 @@ _dbm_open(file, suff, flags, mode)
 DBM *
 dbm_open(file, flags, mode)
 	const char *file;
-	int flags;
-	mode_t mode;
+	int flags, mode;
 {
 
 	return(_dbm_open(file, DBM_SUFFIX, flags, mode));
@@ -112,7 +240,6 @@ dbm_close(db)
 
 	(void)(db->close)(db);
 }
-DEF_WEAK(dbm_close);
 
 /*
  * Returns:
@@ -139,7 +266,6 @@ dbm_fetch(db, key)
 	retdata.dsize = dbtretdata.size;
 	return (retdata);
 }
-DEF_WEAK(dbm_fetch);
 
 /*
  * Returns:
@@ -161,7 +287,6 @@ dbm_firstkey(db)
 	retkey.dsize = dbtretkey.size;
 	return (retkey);
 }
-DEF_WEAK(dbm_firstkey);
 
 /*
  * Returns:
@@ -183,7 +308,6 @@ dbm_nextkey(db)
 	retkey.dsize = dbtretkey.size;
 	return (retkey);
 }
-DEF_WEAK(dbm_nextkey);
 
 /*
  * Returns:
@@ -206,7 +330,6 @@ dbm_delete(db, key)
 	else
 		return (0);
 }
-DEF_WEAK(dbm_delete);
 
 /*
  * Returns:
@@ -229,7 +352,6 @@ dbm_store(db, key, data, flags)
 	return ((db->put)(db, &dbtkey, &dbtdata,
 	    (flags == DBM_INSERT) ? R_NOOVERWRITE : 0));
 }
-DEF_WEAK(dbm_store);
 
 int
 dbm_error(db)
@@ -238,7 +360,7 @@ dbm_error(db)
 	HTAB *hp;
 
 	hp = (HTAB *)db->internal;
-	return (hp->err);
+	return (hp->errno);
 }
 
 int
@@ -248,7 +370,7 @@ dbm_clearerr(db)
 	HTAB *hp;
 
 	hp = (HTAB *)db->internal;
-	hp->err = 0;
+	hp->errno = 0;
 	return (0);
 }
 
@@ -269,4 +391,3 @@ dbm_rdonly(dbp)
 	/* Could use DBM_RDONLY instead if we wanted... */
 	return ((hashp->flags & O_ACCMODE) == O_RDONLY);
 }
-DEF_WEAK(dbm_rdonly);

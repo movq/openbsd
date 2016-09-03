@@ -1,4 +1,4 @@
-/*	$OpenBSD: setup.c,v 1.30 2016/04/28 12:17:15 krw Exp $	*/
+/*	$OpenBSD: setup.c,v 1.5 1999/08/17 09:13:14 millert Exp $	*/
 /*	$NetBSD: setup.c,v 1.1 1997/06/11 11:22:01 bouyer Exp $	*/
 
 /*
@@ -10,13 +10,17 @@
  * modification, are permitted provided that the following conditions
  * are met:
  * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
+ *	notice, this list of conditions and the following disclaimer.
  * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
+ *	notice, this list of conditions and the following disclaimer in the
+ *	documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *	must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
+ *	may be used to endorse or promote products derived from this software
+ *	without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -31,40 +35,52 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)setup.c	8.5 (Berkeley) 11/23/94";
+#else
+#if 0
+static char rcsid[] = "$NetBSD: setup.c,v 1.1 1997/06/11 11:22:01 bouyer Exp $";
+#else
+static char rcsid[] = "$OpenBSD: setup.c,v 1.5 1999/08/17 09:13:14 millert Exp $";
+#endif
+#endif
+#endif /* not lint */
+
 #define DKTYPENAMES
-#include <sys/param.h>	/* DEV_BSIZE roundup */
+#include <sys/param.h>
 #include <sys/time.h>
 #include <ufs/ext2fs/ext2fs_dinode.h>
 #include <ufs/ext2fs/ext2fs.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
-#include <sys/dkio.h>
 #include <sys/disklabel.h>
 
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
 #include <ctype.h>
-#include <err.h>
 
 #include "fsck.h"
 #include "extern.h"
 #include "fsutil.h"
 
+struct bufarea asblk;
+#define altsblock (*asblk.b_un.b_fs)
 #define POWEROF2(num)	(((num) & ((num) - 1)) == 0)
 
-void badsb(int, char *);
-int calcsb(char *, int, struct m_ext2fs *, struct disklabel *);
-static struct disklabel *getdisklabel(char *, int);
-static int readsb(int);
+void badsb __P((int, char *));
+/* int calcsb __P((char *, int, struct m_ext2fs *)); */
+static struct disklabel *getdisklabel __P((char *, int));
+static int readsb __P((int));
 
 int
-setup(char *dev)
+setup(dev)
+	char *dev;
 {
-	long cg, asked, i;
+	long cg, size, asked, i, j;
 	long bmapsize;
 	struct disklabel *lp;
 	off_t sizepb;
@@ -103,30 +119,19 @@ setup(char *dev)
 	lfdir = 0;
 	initbarea(&sblk);
 	initbarea(&asblk);
-	sblk.b_un.b_buf = malloc(SBSIZE);
-	asblk.b_un.b_buf = malloc(SBSIZE);
+	sblk.b_un.b_buf = malloc(sizeof(struct m_ext2fs));
+	asblk.b_un.b_buf = malloc(sizeof(struct m_ext2fs));
 	if (sblk.b_un.b_buf == NULL || asblk.b_un.b_buf == NULL)
 		errexit("cannot allocate space for superblock\n");
-	if ((lp = getdisklabel(NULL, fsreadfd)) != NULL)
-		secsize = lp->d_secsize;
+	if ((lp = getdisklabel((char *)NULL, fsreadfd)) != NULL)
+		dev_bsize = secsize = lp->d_secsize;
 	else
-		secsize = DEV_BSIZE;
-
-	if (!hotroot()) {
-#ifndef SMALL
-		if (pledge("stdio getpw", NULL) == -1)
-			err(1, "pledge");
-#else
-		if (pledge("stdio", NULL) == -1)
-			err(1, "pledge");
-#endif
-	}
-
+		dev_bsize = secsize = DEV_BSIZE;
 	/*
 	 * Read in the superblock, looking for alternates if necessary
 	 */
 	if (readsb(1) == 0) {
-		if (bflag || preen || calcsb(dev, fsreadfd, &proto, lp) == 0)
+		if (bflag || preen || calcsb(dev, fsreadfd, &proto) == 0)
 			return(0);
 		if (reply("LOOK FOR ALTERNATE SUPERBLOCKS") == 0)
 			return (0);
@@ -138,12 +143,12 @@ setup(char *dev)
 		}
 		if (cg >= proto.e2fs_ncg) {
 			printf("%s %s\n%s %s\n%s %s\n",
-			    "SEARCH FOR ALTERNATE SUPER-BLOCK",
-			    "FAILED. YOU MUST USE THE",
-			    "-b OPTION TO FSCK_FFS TO SPECIFY THE",
-			    "LOCATION OF AN ALTERNATE",
-			    "SUPER-BLOCK TO SUPPLY NEEDED",
-			    "INFORMATION; SEE fsck_ext2fs(8).");
+				"SEARCH FOR ALTERNATE SUPER-BLOCK",
+				"FAILED. YOU MUST USE THE",
+				"-b OPTION TO FSCK_FFS TO SPECIFY THE",
+				"LOCATION OF AN ALTERNATE",
+				"SUPER-BLOCK TO SUPPLY NEEDED",
+				"INFORMATION; SEE fsck_ext2fs(8).");
 			return(0);
 		}
 		doskipclean = 0;
@@ -154,7 +159,7 @@ setup(char *dev)
 	if (sblock.e2fs.e2fs_state == E2FS_ISCLEAN) {
 		if (doskipclean) {
 			pwarn("%sile system is clean; not checking\n",
-			    preen ? "f" : "** F");
+				preen ? "f" : "** F");
 			return (-1);
 		}
 		if (!preen)
@@ -178,7 +183,6 @@ setup(char *dev)
 		if (reply("SET TO DEFAULT") == 1) {
 			sblock.e2fs.e2fs_rbcount = sblock.e2fs.e2fs_bcount * 0.1;
 			sbdirty();
-			dirty(&asblk);
 		}
 	}
 	if (sblock.e2fs.e2fs_bpg != sblock.e2fs.e2fs_fpg) {
@@ -187,16 +191,14 @@ setup(char *dev)
 		return 0;
 	}
 	if (asblk.b_dirty && !bflag) {
-		copyback_sb(&asblk);
+		memcpy(&altsblock, &sblock, (size_t)SBSIZE);
 		flush(fswritefd, &asblk);
 	}
 	/*
 	 * read in the summary info.
 	 */
 
-	sblock.e2fs_gd = calloc(sblock.e2fs_ngdb, sblock.e2fs_bsize);
-	if (sblock.e2fs_gd == NULL)
-		errexit("out of memory\n");
+	sblock.e2fs_gd = malloc(sblock.e2fs_ngdb * sblock.e2fs_bsize);
 	asked = 0;
 	for (i=0; i < sblock.e2fs_ngdb; i++) {
 		if (bread(fsreadfd,(char *)
@@ -225,28 +227,24 @@ setup(char *dev)
 			(unsigned)(maxino + 1));
 		goto badsblabel;
 	}
-	typemap = calloc((unsigned)(maxino + 1), sizeof(u_char));
-	if (typemap == NULL) {
-		printf("cannot alloc %u bytes for typemap\n",
-		    (unsigned)(maxino + 1));
-		goto badsblabel;
-	}
-	lncntp = calloc((unsigned)(maxino + 1), sizeof(int16_t));
+	lncntp = (int16_t *)calloc((unsigned)(maxino + 1), sizeof(int16_t));
 	if (lncntp == NULL) {
-		printf("cannot alloc %u bytes for lncntp\n",
-			(unsigned)((maxino + 1) * sizeof(int16_t)));
+		printf("cannot alloc %u bytes for lncntp\n", 
+			(unsigned)(maxino + 1) * sizeof(int16_t));
 		goto badsblabel;
 	}
 	for (numdirs = 0, cg = 0; cg < sblock.e2fs_ncg; cg++) {
-		numdirs += letoh16(sblock.e2fs_gd[cg].ext2bgd_ndirs);
+		numdirs += sblock.e2fs_gd[cg].ext2bgd_ndirs;
 	}
 	inplast = 0;
 	listmax = numdirs + 10;
-	inpsort = calloc((unsigned)listmax, sizeof(struct inoinfo *));
-	inphead = calloc((unsigned)numdirs, sizeof(struct inoinfo *));
+	inpsort = (struct inoinfo **)calloc((unsigned)listmax,
+		sizeof(struct inoinfo *));
+	inphead = (struct inoinfo **)calloc((unsigned)numdirs,
+		sizeof(struct inoinfo *));
 	if (inpsort == NULL || inphead == NULL) {
-		printf("cannot alloc %u bytes for inphead\n",
-			(unsigned)(numdirs * sizeof(struct inoinfo *)));
+		printf("cannot alloc %u bytes for inphead\n", 
+			(unsigned)numdirs * sizeof(struct inoinfo *));
 		goto badsblabel;
 	}
 	bufinit();
@@ -261,18 +259,15 @@ badsblabel:
  * Read in the super block and its summary info.
  */
 static int
-readsb(int listerr)
+readsb(listerr)
+	int listerr;
 {
-	daddr32_t super = bflag ? bflag : SBOFF / DEV_BSIZE;
+	daddr_t super = bflag ? bflag : SBOFF / dev_bsize;
 
-	if (bread(fsreadfd, (char *)sblk.b_un.b_fs, super, (long)SBSIZE) != 0)
+	if (bread(fsreadfd, (char *)&sblock.e2fs, super, (long)SBSIZE) != 0)
 		return (0);
 	sblk.b_bno = super;
 	sblk.b_size = SBSIZE;
-
-	/* Copy the superblock in memory */
-	e2fs_sbload(sblk.b_un.b_fs, &sblock.e2fs);
-
 	/*
 	 * run a few consistency checks of the super block
 	 */
@@ -281,9 +276,6 @@ readsb(int listerr)
 	}
 	if (sblock.e2fs.e2fs_log_bsize > 2) {
 		badsb(listerr, "BAD LOG_BSIZE"); return (0);
-	}
-	if (sblock.e2fs.e2fs_bpg == 0) {
-		badsb(listerr, "BAD BLOCKS PER GROUP"); return (0);
 	}
 
 	/* compute the dynamic fields of the in-memory sb */
@@ -299,26 +291,25 @@ readsb(int listerr)
 	sblock.e2fs_bmask = ~sblock.e2fs_qbmask;
 	sblock.e2fs_ngdb = howmany(sblock.e2fs_ncg,
 		sblock.e2fs_bsize / sizeof(struct ext2_gd));
-	sblock.e2fs_ipb = sblock.e2fs_bsize / EXT2_DINODE_SIZE(&sblock);
+	sblock.e2fs_ipb = sblock.e2fs_bsize / sizeof(struct ext2fs_dinode);
 	sblock.e2fs_itpg = sblock.e2fs.e2fs_ipg/sblock.e2fs_ipb;
 
+	cgoverhead =	1 /* super block */ +
+					sblock.e2fs_ngdb +
+					1 /* block bitmap */ +
+					1 /* inode bitmap */ +
+					sblock.e2fs_itpg;
+
+	if (debug) /* DDD */
+		printf("cg overhead %d blocks \n", cgoverhead);
 	/*
 	 * Compute block size that the filesystem is based on,
 	 * according to fsbtodb, and adjust superblock block number
 	 * so we can tell if this is an alternate later.
 	 */
-	sblk.b_bno = super / DEV_BSIZE;
-
-	if (sblock.e2fs_ncg == 1) {
-		/* no alternate superblock; assume it's okey */
-		havesb = 1;
-		return 1;
-	}
-
-	getblk(&asblk, 1 * sblock.e2fs.e2fs_bpg + sblock.e2fs.e2fs_first_dblock,
-		(long)SBSIZE);
-	if (asblk.b_errs)
-		return (0);
+	super *= dev_bsize;
+	dev_bsize = sblock.e2fs_bsize / fsbtodb(&sblock, 1);
+	sblk.b_bno = super / dev_bsize;
 	if (bflag) {
 		havesb = 1;
 		return (1);
@@ -329,52 +320,36 @@ readsb(int listerr)
 	 * of whole super block against an alternate super block.
 	 * When an alternate super-block is specified this check is skipped.
 	 */
-	asblk.b_un.b_fs->e2fs_rbcount = sblk.b_un.b_fs->e2fs_rbcount;
-	asblk.b_un.b_fs->e2fs_fbcount = sblk.b_un.b_fs->e2fs_fbcount;
-	asblk.b_un.b_fs->e2fs_ficount = sblk.b_un.b_fs->e2fs_ficount;
-	asblk.b_un.b_fs->e2fs_mtime = sblk.b_un.b_fs->e2fs_mtime;
-	asblk.b_un.b_fs->e2fs_wtime = sblk.b_un.b_fs->e2fs_wtime;
-	asblk.b_un.b_fs->e2fs_mnt_count = sblk.b_un.b_fs->e2fs_mnt_count;
-	asblk.b_un.b_fs->e2fs_max_mnt_count = sblk.b_un.b_fs->e2fs_max_mnt_count;
-	asblk.b_un.b_fs->e2fs_state = sblk.b_un.b_fs->e2fs_state;
-	asblk.b_un.b_fs->e2fs_beh = sblk.b_un.b_fs->e2fs_beh;
-	asblk.b_un.b_fs->e2fs_lastfsck = sblk.b_un.b_fs->e2fs_lastfsck;
-	asblk.b_un.b_fs->e2fs_fsckintv = sblk.b_un.b_fs->e2fs_fsckintv;
-	asblk.b_un.b_fs->e2fs_ruid = sblk.b_un.b_fs->e2fs_ruid;
-	asblk.b_un.b_fs->e2fs_rgid = sblk.b_un.b_fs->e2fs_rgid;
-	asblk.b_un.b_fs->e2fs_block_group_nr =
-	    sblk.b_un.b_fs->e2fs_block_group_nr;
-	asblk.b_un.b_fs->e2fs_features_rocompat &= ~EXT2F_ROCOMPAT_LARGEFILE;
-	asblk.b_un.b_fs->e2fs_features_rocompat |=
-	    sblk.b_un.b_fs->e2fs_features_rocompat & EXT2F_ROCOMPAT_LARGEFILE;
-	if (sblock.e2fs.e2fs_rev > E2FS_REV0 &&
-	    ((sblock.e2fs.e2fs_features_incompat & ~EXT2F_INCOMPAT_SUPP) ||
-	    (sblock.e2fs.e2fs_features_rocompat & ~EXT2F_ROCOMPAT_SUPP))) {
+	getblk(&asblk, 1 * sblock.e2fs.e2fs_bpg + sblock.e2fs.e2fs_first_dblock,
+		(long)SBSIZE);
+	if (asblk.b_errs)
+		return (0);
+	altsblock.e2fs.e2fs_rbcount = sblock.e2fs.e2fs_rbcount;
+	altsblock.e2fs.e2fs_fbcount = sblock.e2fs.e2fs_fbcount;
+	altsblock.e2fs.e2fs_ficount = sblock.e2fs.e2fs_ficount;
+	altsblock.e2fs.e2fs_mtime = sblock.e2fs.e2fs_mtime;
+	altsblock.e2fs.e2fs_wtime = sblock.e2fs.e2fs_wtime;
+	altsblock.e2fs.e2fs_mnt_count = sblock.e2fs.e2fs_mnt_count;
+	altsblock.e2fs.e2fs_max_mnt_count = sblock.e2fs.e2fs_max_mnt_count;
+	altsblock.e2fs.e2fs_state = sblock.e2fs.e2fs_state;
+	altsblock.e2fs.e2fs_beh = sblock.e2fs.e2fs_beh;
+	altsblock.e2fs.e2fs_lastfsck = sblock.e2fs.e2fs_lastfsck;
+	altsblock.e2fs.e2fs_fsckintv = sblock.e2fs.e2fs_fsckintv;
+	altsblock.e2fs.e2fs_ruid = sblock.e2fs.e2fs_ruid;
+	altsblock.e2fs.e2fs_rgid = sblock.e2fs.e2fs_rgid;
+	if (memcmp(&(sblock.e2fs), &(altsblock.e2fs), (int)SBSIZE)) {
 		if (debug) {
-			printf("compat 0x%08x, incompat 0x%08x, compat_ro "
-			    "0x%08x\n",
-			    sblock.e2fs.e2fs_features_compat,
-			    sblock.e2fs.e2fs_features_incompat,
-			    sblock.e2fs.e2fs_features_rocompat);
-		}
-		badsb(listerr,"INCOMPATIBLE FEATURE BITS IN SUPER BLOCK");
-		return 0;
-	}
-	if (memcmp(sblk.b_un.b_fs, asblk.b_un.b_fs, SBSIZE)) {
-		if (debug) {
-			u_int32_t *nlp, *olp, *endlp;
+			long *nlp, *olp, *endlp;
 
 			printf("superblock mismatches\n");
-			nlp = (u_int32_t *)asblk.b_un.b_fs;
-			olp = (u_int32_t *)sblk.b_un.b_fs;
+			nlp = (long *)&altsblock;
+			olp = (long *)&sblock;
 			endlp = olp + (SBSIZE / sizeof *olp);
 			for ( ; olp < endlp; olp++, nlp++) {
 				if (*olp == *nlp)
 					continue;
-				printf("offset %ld, original %ld, alternate %ld\n",
-					(long)(olp - (u_int32_t *)sblk.b_un.b_fs),
-					(long)letoh32(*olp),
-					(long)letoh32(*nlp));
+				printf("offset %d, original %ld, alternate %ld\n",
+					olp - (long *)&sblock, *olp, *nlp);
 			}
 		}
 		badsb(listerr,
@@ -386,39 +361,9 @@ readsb(int listerr)
 }
 
 void
-copyback_sb(struct bufarea *bp)
-{
-	/* Copy the in-memory superblock back to buffer */
-	bp->b_un.b_fs->e2fs_icount = letoh32(sblock.e2fs.e2fs_icount);
-	bp->b_un.b_fs->e2fs_bcount = letoh32(sblock.e2fs.e2fs_bcount);
-	bp->b_un.b_fs->e2fs_rbcount = letoh32(sblock.e2fs.e2fs_rbcount);
-	bp->b_un.b_fs->e2fs_fbcount = letoh32(sblock.e2fs.e2fs_fbcount);
-	bp->b_un.b_fs->e2fs_ficount = letoh32(sblock.e2fs.e2fs_ficount);
-	bp->b_un.b_fs->e2fs_first_dblock =
-					letoh32(sblock.e2fs.e2fs_first_dblock);
-	bp->b_un.b_fs->e2fs_log_bsize = letoh32(sblock.e2fs.e2fs_log_bsize);
-	bp->b_un.b_fs->e2fs_log_fsize = letoh32(sblock.e2fs.e2fs_log_fsize);
-	bp->b_un.b_fs->e2fs_bpg = letoh32(sblock.e2fs.e2fs_bpg);
-	bp->b_un.b_fs->e2fs_fpg = letoh32(sblock.e2fs.e2fs_fpg);
-	bp->b_un.b_fs->e2fs_ipg = letoh32(sblock.e2fs.e2fs_ipg);
-	bp->b_un.b_fs->e2fs_mtime = letoh32(sblock.e2fs.e2fs_mtime);
-	bp->b_un.b_fs->e2fs_wtime = letoh32(sblock.e2fs.e2fs_wtime);
-	bp->b_un.b_fs->e2fs_lastfsck = letoh32(sblock.e2fs.e2fs_lastfsck);
-	bp->b_un.b_fs->e2fs_fsckintv = letoh32(sblock.e2fs.e2fs_fsckintv);
-	bp->b_un.b_fs->e2fs_creator = letoh32(sblock.e2fs.e2fs_creator);
-	bp->b_un.b_fs->e2fs_rev = letoh32(sblock.e2fs.e2fs_rev);
-	bp->b_un.b_fs->e2fs_mnt_count = letoh16(sblock.e2fs.e2fs_mnt_count);
-	bp->b_un.b_fs->e2fs_max_mnt_count =
-					letoh16(sblock.e2fs.e2fs_max_mnt_count);
-	bp->b_un.b_fs->e2fs_magic = letoh16(sblock.e2fs.e2fs_magic);
-	bp->b_un.b_fs->e2fs_state = letoh16(sblock.e2fs.e2fs_state);
-	bp->b_un.b_fs->e2fs_beh = letoh16(sblock.e2fs.e2fs_beh);
-	bp->b_un.b_fs->e2fs_ruid = letoh16(sblock.e2fs.e2fs_ruid);
-	bp->b_un.b_fs->e2fs_rgid = letoh16(sblock.e2fs.e2fs_rgid);
-}
-
-void
-badsb(int listerr, char *s)
+badsb(listerr, s)
+	int listerr;
+	char *s;
 {
 
 	if (!listerr)
@@ -434,40 +379,39 @@ badsb(int listerr, char *s)
  * can be used. Do NOT attempt to use other macros without verifying that
  * their needed information is available!
  */
-int
-calcsb(char *dev, int devfd, struct m_ext2fs *fs, struct disklabel *lp)
-{
-	struct partition *pp;
-	char *cp;
 
-	cp = strchr(dev, '\0');
-	if ((cp == NULL || (cp[-1] < 'a' || cp[-1] >= 'a' + MAXPARTITIONS)) &&
-	    !isdigit((unsigned char)cp[-1])) {
+int
+calcsb(dev, devfd, fs)
+	char *dev;
+	int devfd;
+	register struct m_ext2fs *fs;
+{
+	register struct disklabel *lp;
+	register struct partition *pp;
+	register char *cp;
+	int i;
+
+	cp = strchr(dev, '\0') - 1;
+	if ((cp == (char *)-1 || (*cp < 'a' || *cp > 'h')) && !isdigit(*cp)) {
 		pfatal("%s: CANNOT FIGURE OUT FILE SYSTEM PARTITION\n", dev);
 		return (0);
 	}
-	cp--;
-	if (lp == NULL)
-		pfatal("%s: CANNOT READ DISKLABEL\n", dev);
-	if (isdigit((unsigned char)*cp))
+	lp = getdisklabel(dev, devfd);
+	if (isdigit(*cp))
 		pp = &lp->d_partitions[0];
 	else
 		pp = &lp->d_partitions[*cp - 'a'];
-	if (pp->p_fstype != FS_EXT2FS) {
-		pfatal("%s: NOT LABELED AS A EXT2 FILE SYSTEM (%s)\n",
+	if (pp->p_fstype != FS_BSDFFS) {
+		pfatal("%s: NOT LABELED AS A BSD FILE SYSTEM (%s)\n",
 			dev, pp->p_fstype < FSMAXTYPES ?
 			fstypenames[pp->p_fstype] : "unknown");
 		return (0);
 	}
 	memset(fs, 0, sizeof(struct m_ext2fs));
-	fs->e2fs_bsize = DISKLABELV1_FFS_FSIZE(pp->p_fragblock); /* XXX */
-	if (fs->e2fs_bsize == 0) {
-		pfatal("%s: BLOCK SIZE DETERMINED TO BE ZERO\n", dev);
-		return (0);
-	}
-	fs->e2fs.e2fs_log_bsize = fs->e2fs_bsize / 1024;
+	fs->e2fs_bsize = 1024; /* XXX to look for altenate SP */
+	fs->e2fs.e2fs_log_bsize = 0;
 	fs->e2fs.e2fs_bcount = (pp->p_size * DEV_BSIZE) / fs->e2fs_bsize;
-	fs->e2fs.e2fs_first_dblock = (fs->e2fs.e2fs_log_bsize == 0) ? 1 : 0;
+	fs->e2fs.e2fs_first_dblock = 1;
 	fs->e2fs.e2fs_bpg = fs->e2fs_bsize * NBBY;
 	fs->e2fs_bshift = LOG_MINBSIZE + fs->e2fs.e2fs_log_bsize;
 	fs->e2fs_qbmask = fs->e2fs_bsize - 1;
@@ -479,35 +423,23 @@ calcsb(char *dev, int devfd, struct m_ext2fs *fs, struct disklabel *lp)
 	fs->e2fs_ngdb = howmany(fs->e2fs_ncg,
 		fs->e2fs_bsize / sizeof(struct ext2_gd));
 
+
+
 	return (1);
 }
 
 static struct disklabel *
-getdisklabel(char *s, int fd)
+getdisklabel(s, fd)
+	char *s;
+	int	fd;
 {
 	static struct disklabel lab;
 
 	if (ioctl(fd, DIOCGDINFO, (char *)&lab) < 0) {
 		if (s == NULL)
-			return (NULL);
+			return ((struct disklabel *)NULL);
 		pwarn("ioctl (GCINFO): %s\n", strerror(errno));
 		errexit("%s: can't read disk label\n", s);
 	}
 	return (&lab);
-}
-
-daddr32_t
-cgoverhead(int c)
-{
-	int overh;
-	overh =	1 /* block bitmap */ +
-		1 /* inode bitmap */ +
-		sblock.e2fs_itpg;
-	if (sblock.e2fs.e2fs_rev > E2FS_REV0 &&
-	    sblock.e2fs.e2fs_features_rocompat & EXT2F_ROCOMPAT_SPARSESUPER) {
-		if (cg_has_sb(c) == 0)
-			return overh;
-	}
-	overh += 1 + sblock.e2fs_ngdb;
-	return overh;
 }

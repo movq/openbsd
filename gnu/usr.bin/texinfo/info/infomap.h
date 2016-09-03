@@ -1,7 +1,9 @@
-/* infomap.h -- description of a keymap in Info and related functions.
-   $Id: infomap.h,v 1.1.1.4 2006/07/17 16:03:43 espie Exp $
+/* infomap.h -- Description of a keymap in Info and related functions. */
 
-   Copyright (C) 1993, 2001, 2004 Free Software Foundation, Inc.
+/* This file is part of GNU Info, a program for reading online documentation
+   stored in Info format.
+
+   Copyright (C) 1993 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -50,10 +52,9 @@
    FUNCTION is the address of a function to run, or the
    address of a keymap to indirect through.
    TYPE says which kind of thing FUNCTION is. */
-typedef struct keymap_entry
-{
+typedef struct {
   char type;
-  InfoCommand *function;
+  VFunction *function;
 } KEYMAP_ENTRY;
 
 typedef KEYMAP_ENTRY *Keymap;
@@ -67,16 +68,15 @@ extern Keymap echo_area_keymap;
 
 /* Return a new keymap which has all the uppercase letters mapped to run
    the function info_do_lowercase_version (). */
-extern Keymap keymap_make_keymap (void);
+extern Keymap keymap_make_keymap ();
 
 /* Return a new keymap which is a copy of MAP. */
-extern Keymap keymap_copy_keymap (Keymap map, Keymap rootmap,
-    Keymap newroot);
+extern Keymap keymap_copy_keymap ();
 
 /* Free MAP and it's descendents. */
-extern void keymap_discard_keymap (Keymap map, Keymap rootmap);
+extern void keymap_discard_keymap ();
 
 /* Initialize the info keymaps. */
-extern void initialize_info_keymaps (void);
+extern void initialize_info_keymaps ();
 
 #endif /* not INFOMAP_H */

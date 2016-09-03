@@ -1,4 +1,4 @@
-/*	$OpenBSD: direntry.h,v 1.7 2015/10/23 10:45:31 krw Exp $	*/
+/*	$OpenBSD: direntry.h,v 1.5 1998/01/11 20:39:05 provos Exp $	*/
 /*	$NetBSD: direntry.h,v 1.13 1997/10/17 11:23:45 ws Exp $	*/
 
 /*-
@@ -34,17 +34,17 @@
  */
 /*
  * Written by Paul Popelka (paulp@uts.amdahl.com)
- *
+ * 
  * You can do anything you want with this software, just don't say you wrote
  * it, and don't remove this notice.
- *
+ * 
  * This software is provided "as is".
- *
+ * 
  * The author supplies this software to be publicly redistributed on the
  * understanding that the author is not responsible for the correct
  * functioning of this software in any circumstances and is not liable for
  * any damages caused by this software.
- *
+ * 
  * October 1992
  */
 
@@ -122,13 +122,13 @@ struct winentry {
 #define DD_YEAR_SHIFT		9
 
 #ifdef _KERNEL
-void unix2dostime(struct timespec *tsp, u_int16_t *ddp, u_int16_t *dtp, u_int8_t *dhp);
-void dos2unixtime(u_int dd, u_int dt, u_int dh, struct timespec *tsp);
-int dos2unixfn(u_char dn[11], u_char *un, int lower);
-int unix2dosfn(u_char *un, u_char dn[12], int unlen, u_int gen);
-int unix2winfn(u_char *un, int unlen, struct winentry *wep, int cnt, int chksum);
-int winChkName(u_char *un, int unlen, struct winentry *wep, int chksum);
-int win2unixfn(struct winentry *wep, struct dirent *dp, int chksum);
-u_int8_t winChksum(u_int8_t *name);
-int winSlotCnt(u_char *un, int unlen);
+void unix2dostime __P((struct timespec *tsp, u_int16_t *ddp, u_int16_t *dtp, u_int8_t *dhp));
+void dos2unixtime __P((u_int dd, u_int dt, u_int dh, struct timespec *tsp));
+int dos2unixfn __P((u_char dn[11], u_char *un, int lower));
+int unix2dosfn __P((u_char *un, u_char dn[12], int unlen, u_int gen));
+int unix2winfn __P((u_char *un, int unlen, struct winentry *wep, int cnt, int chksum));
+int winChkName __P((u_char *un, int unlen, struct winentry *wep, int chksum));
+int win2unixfn __P((struct winentry *wep, struct dirent *dp, int chksum));
+u_int8_t winChksum __P((u_int8_t *name));
+int winSlotCnt __P((u_char *un, int unlen));
 #endif	/* _KERNEL */

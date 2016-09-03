@@ -1,4 +1,4 @@
-/*	$OpenBSD: init.c,v 1.10 2016/01/08 18:09:59 mestre Exp $	*/
+/*	$OpenBSD: init.c,v 1.3 1998/09/22 04:08:22 pjanzen Exp $	*/
 /*	$NetBSD: init.c,v 1.5 1995/03/24 05:01:40 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,17 +34,22 @@
  * SUCH DAMAGE.
  */
 
-#include <stdlib.h>
-#include <string.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)init.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: init.c,v 1.3 1998/09/22 04:08:22 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
-#include "mille.h"
+# include	"mille.h"
 
 /*
  * @(#)init.c	1.1 (Berkeley) 4/1/82
  */
 
 void
-init(void)
+init()
 {
 	PLAY	*pp;
 	int	i, j;
@@ -60,7 +69,7 @@ init(void)
 			pp->hand[j] = *--Topcard;
 			if (i == COMP) {
 				account(card = *Topcard);
-				if (is_safety(card))
+				if (issafety(card))
 					pp->safety[card - S_CONV] = S_IN_HAND;
 			}
 		}
@@ -84,13 +93,17 @@ init(void)
 }
 
 void
-shuffle(void)
+shuffle()
 {
 	int	i, r;
 	CARD	temp;
 
-	for (i = DECK_SZ - 1; i > 0; i--) {
-		r = arc4random_uniform(i + 1);
+	for (i = 0; i < DECK_SZ; i++) {
+		r = roll(1, DECK_SZ) - 1;
+		if (r < 0 || r > DECK_SZ - 1) {
+			warnx("shuffle: card no. error: %d", r);
+			die(1);
+		}
 		temp = Deck[r];
 		Deck[r] = Deck[i];
 		Deck[i] = temp;
@@ -99,7 +112,7 @@ shuffle(void)
 }
 
 void
-newboard(void)
+newboard()
 {
 	int		i;
 	PLAY		*pp;
@@ -158,7 +171,7 @@ newboard(void)
 }
 
 void
-newscore(void)
+newscore()
 {
 	int		i, new;
 	PLAY		*pp;

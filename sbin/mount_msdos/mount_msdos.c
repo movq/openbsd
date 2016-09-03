@@ -1,4 +1,4 @@
-/*	$OpenBSD: mount_msdos.c,v 1.33 2016/05/21 19:14:02 jmc Exp $	*/
+/*	$OpenBSD: mount_msdos.c,v 1.12 1999/04/20 23:06:47 millert Exp $	*/
 /*	$NetBSD: mount_msdos.c,v 1.16 1996/10/24 00:12:50 cgd Exp $	*/
 
 /*
@@ -31,7 +31,12 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/types.h>
+#ifndef lint
+static char rcsid[] = "$OpenBSD: mount_msdos.c,v 1.12 1999/04/20 23:06:47 millert Exp $";
+#endif /* not lint */
+
+#include <sys/cdefs.h>
+#include <sys/param.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <ctype.h>
@@ -42,7 +47,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <limits.h>
 #include <errno.h>
 
 #include "mntopts.h"
@@ -50,29 +54,33 @@
 const struct mntopt mopts[] = {
 	MOPT_STDOPTS,
 	MOPT_UPDATE,
-	MOPT_ASYNC,
 	{ NULL }
 };
 
-gid_t	a_gid(char *);
-uid_t	a_uid(char *);
-mode_t	a_mask(char *);
-void	usage(void);
+gid_t	a_gid __P((char *));
+uid_t	a_uid __P((char *));
+mode_t	a_mask __P((char *));
+void	usage __P((void));
 
 int
-main(int argc, char **argv)
+main(argc, argv)
+	int argc;
+	char **argv;
 {
 	struct msdosfs_args args;
 	struct stat sb;
 	int c, mntflags, set_gid, set_uid, set_mask;
-	char *dev, dir[PATH_MAX];
+	char *dev, *dir, ndir[MAXPATHLEN+1];
 	char *errcause;
 
 	mntflags = set_gid = set_uid = set_mask = 0;
 	(void)memset(&args, '\0', sizeof(args));
 
-	while ((c = getopt(argc, argv, "sl9u:g:m:o:")) != -1) {
+	while ((c = getopt(argc, argv, "Gsl9u:g:m:o:")) != -1) {
 		switch (c) {
+		case 'G':
+			args.flags |= MSDOSFSMNT_GEMDOSFS;
+			break;
 		case 's':
 			args.flags |= MSDOSFSMNT_SHORTNAME;
 			break;
@@ -108,15 +116,23 @@ main(int argc, char **argv)
 		usage();
 
 	dev = argv[optind];
-	if (realpath(argv[optind + 1], dir) == NULL)
-		err(1, "realpath %s", argv[optind + 1]);
+	dir = argv[optind + 1];
+	if (dir[0] != '/') {
+		warnx("\"%s\" is a relative path.", dir);
+		if (getcwd(ndir, sizeof(ndir)) == NULL)
+			err(1, "getcwd");
+		strncat(ndir, "/", sizeof(ndir) - strlen(ndir));
+		strncat(ndir, dir, sizeof(ndir) - strlen(ndir));
+		dir = ndir;
+		warnx("using \"%s\" instead.", dir);
+	}
 
 	args.fspec = dev;
-	args.export_info.ex_root = -2;	/* unchecked anyway on DOS fs */
+	args.export.ex_root = -2;	/* unchecked anyway on DOS fs */
 	if (mntflags & MNT_RDONLY)
-		args.export_info.ex_flags = MNT_EXRDONLY;
+		args.export.ex_flags = MNT_EXRDONLY;
 	else
-		args.export_info.ex_flags = 0;
+		args.export.ex_flags = 0;
 	if (!set_gid || !set_uid || !set_mask) {
 		if (stat(dir, &sb) == -1)
 			err(1, "stat %s", dir);
@@ -152,37 +168,48 @@ main(int argc, char **argv)
 }
 
 gid_t
-a_gid(char *s)
+a_gid(s)
+	char *s;
 {
 	struct group *gr;
-	const char *errstr;
+	char *gname;
 	gid_t gid;
 
 	if ((gr = getgrnam(s)) != NULL)
-		return gr->gr_gid;
-	gid = strtonum(s, 0, GID_MAX, &errstr);
-	if (errstr)
-		errx(1, "group is %s: %s", errstr, s);
+		gid = gr->gr_gid;
+	else {
+		for (gname = s; *s && isdigit(*s); ++s);
+		if (!*s)
+			gid = atoi(gname);
+		else
+			errx(1, "unknown group id: %s", gname);
+	}
 	return (gid);
 }
 
 uid_t
-a_uid(char *s)
+a_uid(s)
+	char *s;
 {
 	struct passwd *pw;
-	const char *errstr;
+	char *uname;
 	uid_t uid;
 
 	if ((pw = getpwnam(s)) != NULL)
-		return pw->pw_uid;
-	uid = strtonum(s, 0, UID_MAX, &errstr);
-	if (errstr)
-		errx(1, "user is %s: %s", errstr, s);
+		uid = pw->pw_uid;
+	else {
+		for (uname = s; *s && isdigit(*s); ++s);
+		if (!*s)
+			uid = atoi(uname);
+		else
+			errx(1, "unknown user id: %s", uname);
+	}
 	return (uid);
 }
 
 mode_t
-a_mask(char *s)
+a_mask(s)
+	char *s;
 {
 	int done, rv;
 	char *ep;
@@ -198,10 +225,9 @@ a_mask(char *s)
 }
 
 void
-usage(void)
+usage()
 {
 
-	fprintf(stderr,
-	    "usage: mount_msdos [-9ls] [-g gid] [-m mask] [-o options] [-u uid] special node\n");
+	fprintf(stderr, "usage: mount_msdos [-o options] [-u user] [-g group] [-m mask] bdev dir\n");
 	exit(1);
 }

@@ -1,4 +1,3 @@
-/*	$OpenBSD: exit.c,v 1.13 2015/09/13 08:31:47 guenther Exp $ */
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
  * All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,12 +31,15 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/types.h>
-#include <sys/mman.h>
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: exit.c,v 1.3 1998/11/20 11:18:50 d Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <stdlib.h>
 #include <unistd.h>
 #include "atexit.h"
-#include "thread_private.h"
+
+void (*__cleanup)();
 
 /*
  * This variable is zero until a process has created a thread.
@@ -48,13 +54,16 @@ int     __isthreaded    = 0;
  * Exit, flushing stdio buffers if necessary.
  */
 void
-exit(int status)
+exit(status)
+	int status;
 {
-	/*
-	 * Call functions registered by atexit() or _cxa_atexit()
-	 * (including the stdio cleanup routine) and then _exit().
-	 */
-	__cxa_finalize(NULL);
+	register struct atexit *p;
+	register int n;
+
+	for (p = __atexit; p; p = p->next)
+		for (n = p->ind; --n >= 0;)
+			(*p->fns[n])();
+	if (__cleanup)
+		(*__cleanup)();
 	_exit(status);
 }
-DEF_STRONG(exit);

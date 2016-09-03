@@ -1,4 +1,4 @@
-.\"	$OpenBSD: showmount.8,v 1.13 2007/05/31 19:20:16 jmc Exp $
+.\"	$OpenBSD: showmount.8,v 1.6 1999/05/23 14:11:30 aaron Exp $
 .\"	$NetBSD: showmount.8,v 1.5 1995/08/31 22:26:07 jtc Exp $
 .\"
 .\" Copyright (c) 1989, 1991, 1993
@@ -15,7 +15,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -33,7 +37,7 @@
 .\"
 .\"     @(#)showmount.8	8.3 (Berkeley) 3/29/95
 .\"
-.Dd $Mdocdate: May 31 2007 $
+.Dd March 29, 1995
 .Dt SHOWMOUNT 8
 .Os
 .Sh NAME
@@ -41,10 +45,10 @@
 .Nd show remote NFS mounts on host
 .Sh SYNOPSIS
 .Nm showmount
-.Op Fl 3ade
+.Op Fl ade3
 .Op Ar host
 .Sh DESCRIPTION
-.Nm
+.Nm showmount
 shows status information about the
 .Tn NFS
 server on
@@ -52,8 +56,7 @@ server on
 By default it prints the names of all hosts that have
 .Tn NFS
 file systems mounted
-on the host.
-See
+on the host. See
 .%T "NFS: Network File System Protocol Specification" ,
 RFC 1094,
 Appendix A,
@@ -62,31 +65,33 @@ and
 Appendix I,
 for a detailed description of the protocol.
 .Bl -tag -width Ds
-.It Fl 3
-Use mount protocol Version 3, compatible with NFS Version 3.
 .It Fl a
 List all mount points in the form:
+.Bd -ragged -offset indent -compact
 .Ar host : Ns Ar dirpath .
+.Ed
 .It Fl d
 List directory paths of mount points instead of hosts.
 .It Fl e
 Show the
 .Ar host Ns 's
 exports list.
+.It Fl 3
+Use mount protocol Version 3, compatible with NFS Version 3.
 .El
 .Sh SEE ALSO
 .Xr mount 8 ,
 .Xr mountd 8
-.Sh HISTORY
-The
-.Nm
-utility first appeared in
-.Bx 4.4 .
 .Sh BUGS
 The mount daemon running on the server only has an idea of the actual mounts,
 since the
 .Tn NFS
 server is stateless.
-.Nm
+.Nm showmount
 will only display the information
 as accurately as the mount daemon reports it.
+.Sh HISTORY
+The
+.Nm showmount
+utility first appeared in
+.Bx 4.4 .

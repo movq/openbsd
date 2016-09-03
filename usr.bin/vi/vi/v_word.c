@@ -1,5 +1,3 @@
-/*	$OpenBSD: v_word.c,v 1.7 2014/11/12 04:28:41 bentley Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)v_word.c	10.5 (Berkeley) 3/6/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -64,18 +66,20 @@
 
 enum which {BIGWORD, LITTLEWORD};
 
-static int bword(SCR *, VICMD *, enum which);
-static int eword(SCR *, VICMD *, enum which);
-static int fword(SCR *, VICMD *, enum which);
+static int bword __P((SCR *, VICMD *, enum which));
+static int eword __P((SCR *, VICMD *, enum which));
+static int fword __P((SCR *, VICMD *, enum which));
 
 /*
  * v_wordW -- [count]W
  *	Move forward a bigword at a time.
  *
- * PUBLIC: int v_wordW(SCR *, VICMD *);
+ * PUBLIC: int v_wordW __P((SCR *, VICMD *));
  */
 int
-v_wordW(SCR *sp, VICMD *vp)
+v_wordW(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	return (fword(sp, vp, BIGWORD));
 }
@@ -84,10 +88,12 @@ v_wordW(SCR *sp, VICMD *vp)
  * v_wordw -- [count]w
  *	Move forward a word at a time.
  *
- * PUBLIC: int v_wordw(SCR *, VICMD *);
+ * PUBLIC: int v_wordw __P((SCR *, VICMD *));
  */
 int
-v_wordw(SCR *sp, VICMD *vp)
+v_wordw(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	return (fword(sp, vp, LITTLEWORD));
 }
@@ -97,7 +103,10 @@ v_wordw(SCR *sp, VICMD *vp)
  *	Move forward by words.
  */
 static int
-fword(SCR *sp, VICMD *vp, enum which type)
+fword(sp, vp, type)
+	SCR *sp;
+	VICMD *vp;
+	enum which type;
 {
 	enum { INWORD, NOTWORD } state;
 	VCS cs;
@@ -116,7 +125,7 @@ fword(SCR *sp, VICMD *vp, enum which type)
 	 *	counts as a single word move.  If it's a motion command,
 	 *	don't move off the end of the line.
 	 */
-	if (cs.cs_flags == CS_EMP || (cs.cs_flags == 0 && isblank(cs.cs_ch))) {
+	if (cs.cs_flags == CS_EMP || cs.cs_flags == 0 && isblank(cs.cs_ch)) {
 		if (ISMOTION(vp) && cs.cs_flags != CS_EMP && cnt == 1) {
 			if (ISCMD(vp->rkp, 'c'))
 				return (0);
@@ -232,10 +241,12 @@ ret:	if (!ISMOTION(vp) &&
  * v_wordE -- [count]E
  *	Move forward to the end of the bigword.
  *
- * PUBLIC: int v_wordE(SCR *, VICMD *);
+ * PUBLIC: int v_wordE __P((SCR *, VICMD *));
  */
 int
-v_wordE(SCR *sp, VICMD *vp)
+v_wordE(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	return (eword(sp, vp, BIGWORD));
 }
@@ -244,10 +255,12 @@ v_wordE(SCR *sp, VICMD *vp)
  * v_worde -- [count]e
  *	Move forward to the end of the word.
  *
- * PUBLIC: int v_worde(SCR *, VICMD *);
+ * PUBLIC: int v_worde __P((SCR *, VICMD *));
  */
 int
-v_worde(SCR *sp, VICMD *vp)
+v_worde(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	return (eword(sp, vp, LITTLEWORD));
 }
@@ -257,7 +270,10 @@ v_worde(SCR *sp, VICMD *vp)
  *	Move forward to the end of the word.
  */
 static int
-eword(SCR *sp, VICMD *vp, enum which type)
+eword(sp, vp, type)
+	SCR *sp;
+	VICMD *vp;
+	enum which type;
 {
 	enum { INWORD, NOTWORD } state;
 	VCS cs;
@@ -378,10 +394,12 @@ ret:	if (!ISMOTION(vp) &&
  * v_WordB -- [count]B
  *	Move backward a bigword at a time.
  *
- * PUBLIC: int v_wordB(SCR *, VICMD *);
+ * PUBLIC: int v_wordB __P((SCR *, VICMD *));
  */
 int
-v_wordB(SCR *sp, VICMD *vp)
+v_wordB(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	return (bword(sp, vp, BIGWORD));
 }
@@ -390,10 +408,12 @@ v_wordB(SCR *sp, VICMD *vp)
  * v_wordb -- [count]b
  *	Move backward a word at a time.
  *
- * PUBLIC: int v_wordb(SCR *, VICMD *);
+ * PUBLIC: int v_wordb __P((SCR *, VICMD *));
  */
 int
-v_wordb(SCR *sp, VICMD *vp)
+v_wordb(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	return (bword(sp, vp, LITTLEWORD));
 }
@@ -403,7 +423,10 @@ v_wordb(SCR *sp, VICMD *vp)
  *	Move backward by words.
  */
 static int
-bword(SCR *sp, VICMD *vp, enum which type)
+bword(sp, vp, type)
+	SCR *sp;
+	VICMD *vp;
+	enum which type;
 {
 	enum { INWORD, NOTWORD } state;
 	VCS cs;

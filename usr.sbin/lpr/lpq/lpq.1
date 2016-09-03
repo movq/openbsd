@@ -1,6 +1,3 @@
-.\"	$OpenBSD: lpq.1,v 1.12 2016/03/17 07:18:34 jmc Exp $
-.\"	$NetBSD: lpq.1,v 1.11 2002/01/19 03:23:11 wiz Exp $
-.\"
 .\" Copyright (c) 1983, 1990, 1993
 .\"	The Regents of the University of California.  All rights reserved.
 .\"
@@ -12,7 +9,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -30,7 +31,7 @@
 .\"
 .\"     @(#)lpq.1	8.2 (Berkeley) 4/28/95
 .\"
-.Dd $Mdocdate: March 17 2016 $
+.Dd April 28, 1995
 .Dt LPQ 1
 .Os
 .Sh NAME
@@ -38,46 +39,47 @@
 .Nd spool queue examination program
 .Sh SYNOPSIS
 .Nm lpq
-.Op Fl al
+.Op Fl a
+.Op Fl l
 .Op Fl P Ns Ar printer
 .Op Ar job# Ar ...
 .Op Ar user Ar ...
 .Sh DESCRIPTION
 .Nm lpq
 examines the spooling area used by
-.Xr lpd 8
+.Xr lpd  8
 for printing files on the line printer, and reports the status of the
 specified jobs or all jobs associated with a user.
-.Nm
+.Nm lpq
 invoked
 without any arguments reports on any jobs currently in the queue.
 .Pp
-The options are as follows:
-.Bl -tag -width Ds
-.It Fl a
-Report on the local queues for all printers,
-rather than just the specified printer.
-.It Fl l
-Information about each of the files comprising the job entry
-is printed.
-Normally, only as much information as will fit on one line is displayed.
-.It Fl P Ns Ar printer
+Options:
+.Pp
+.Bl -tag -width indent
+.It Fl P
 Specify a particular printer, otherwise the default
 line printer is used (or the value of the
 .Ev PRINTER
 variable in the
-environment).
-All other arguments supplied are interpreted as user
+environment). All other arguments supplied are interpreted as user
 names or job numbers to filter out only those jobs of interest.
+.It Fl l
+Information about each of the files comprising the job entry
+is printed.
+Normally, only as much information as will fit on one line is displayed.
+.It Fl a
+Report on the local queues for all printers,
+rather than just the specified printer.
 .El
 .Pp
 For each job submitted (i.e., invocation of
-.Xr lpr 1 )
-.Nm
+.Xr lpr  1  )
+.Nm lpq
 reports the user's name, current rank in the queue, the
 names of files comprising the job, the job identifier (a number which
 may be supplied to
-.Xr lprm 1
+.Xr lprm  1
 for removing a specific job), and the total size in bytes.
 Job ordering is dependent on
 the algorithm used to scan the spooling directory and is supposed
@@ -86,44 +88,35 @@ to be
 (First In First Out).
 File names comprising a job may be unavailable
 (when
-.Xr lpr 1
-is used as a sink in a pipeline) in which case the file is indicated as
+.Xr lpr  1
+is used as a sink in a pipeline) in which case the file
+is indicated as
 .Dq (standard input) .
 .Pp
 If
-.Nm
-warns that there is no daemon present (i.e., due to some malfunction), the
-.Xr lpc 8
+.Nm lpq
+warns that there is no daemon present (i.e., due to some malfunction),
+the
+.Xr lpc  8
 command can be used to restart the printer daemon.
 .Sh ENVIRONMENT
-If the following environment variables exist, they are used by
+If the following environment variable exists, it is used by
 .Nm lpq :
 .Bl -tag -width PRINTER
-.It Ev COLUMNS
-If set to a positive integer,
-output is formatted to the given width in columns.
-Otherwise,
-.Nm
-defaults to the terminal width, or 80 columns if the output is not a terminal.
 .It Ev PRINTER
 Specifies an alternate default printer.
 .El
 .Sh FILES
-.Bl -tag -width "/var/spool/output/*/lock" -compact
+.Bl -tag -width "/var/spool/*/lock" -compact
 .It Pa /etc/printcap
-To determine printer characteristics.
+for determining printer characteristics
 .It Pa /var/spool/*
-The spooling directory, as determined from printcap.
-.It Pa /var/spool/output/*/cf*
-Control files specifying jobs.
-.It Pa /var/spool/output/*/lock
-The lock file to obtain the currently active job.
+spooling directory, as determined from printcap
+.It Pa /var/spool/*/cf*
+control files specifying jobs
+.It Pa /var/spool/*/lock
+lock file to obtain the currently active job
 .El
-.Sh DIAGNOSTICS
-Unable to open various files.
-The lock file being malformed.
-Garbage files when there is no daemon active, but files in the
-spooling directory.
 .Sh SEE ALSO
 .Xr lpr 1 ,
 .Xr lprm 1 ,
@@ -135,7 +128,11 @@ appeared in
 .Bx 3 .
 .Sh BUGS
 Due to the dynamic nature of the information in the spooling directory,
-.Nm
+.Nm lpq
 may report unreliably.
 Output formatting is sensitive to the line length of the terminal;
 this can result in widely spaced columns.
+.Sh DIAGNOSTICS
+Unable to open various files.  The lock file being malformed.  Garbage
+files when there is no daemon active, but files in the spooling directory.
+

@@ -1,4 +1,4 @@
-/*	$OpenBSD: mc146818reg.h,v 1.7 2003/10/21 18:58:49 jmc Exp $	*/
+/*	$OpenBSD: mc146818reg.h,v 1.4 1997/04/17 21:13:14 mickey Exp $	*/
 /*	$NetBSD: mc146818reg.h,v 1.1 1995/05/04 19:31:18 cgd Exp $	*/
 
 /*
@@ -28,7 +28,7 @@
 
 /*
  * Definitions for the Motorola MC146818A Real Time Clock.
- * They also apply for the (compatible) Dallas Semiconductor DS1287A RTC.
+ * They also apply for the (compatible) Dallas Semicontuctor DS1287A RTC.
  *
  * Though there are undoubtedly other (better) sources, this material was
  * culled from the DEC "KN121 System Module Programmer's Reference
@@ -85,7 +85,7 @@
 
 #define	MC_REGB		0xb	/* Control register B */
 
-#define	 MC_REGB_DSE	0x01	/* Daylight Saving Enable */
+#define	 MC_REGB_DSE	0x01	/* Daylight Savings Enable */
 #define	 MC_REGB_24HR	0x02	/* 24-hour mode (AM/PM mode when clear) */
 #define	 MC_REGB_BINARY	0x04	/* Binary mode (BCD mode when clear) */
 #define	 MC_REGB_SQWE	0x08	/* Square wave enable, ONLY in BQ3285E */
@@ -148,8 +148,8 @@
  * RTC register/NVRAM read and write functions -- machine-dependent.
  * Appropriately manipulate RTC registers to get/put data values.
  */
-u_int mc146818_read(void *sc, u_int reg);
-void mc146818_write(void *sc, u_int reg, u_int datum);
+u_int mc146818_read __P((void *sc, u_int reg));
+void mc146818_write __P((void *sc, u_int reg, u_int datum));
 
 /*
  * A collection of TOD/Alarm registers.

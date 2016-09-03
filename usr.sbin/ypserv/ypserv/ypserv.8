@@ -1,5 +1,4 @@
-.\"	$OpenBSD: ypserv.8,v 1.29 2015/11/30 17:03:06 jmc Exp $
-.\"
+.\"	$OpenBSD: ypserv.8,v 1.13 1999/06/05 22:18:33 aaron Exp $
 .\" Copyright (c) 1994 Mats O Jansson <moj@stacken.kth.se>
 .\" All rights reserved.
 .\"
@@ -11,6 +10,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by Mats O Jansson
+.\" 4. The name of the author may not be used to endorse or promote products
+.\"    derived from this software without specific prior written permission.
 .\"
 .\" THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
 .\" OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -24,7 +28,7 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: November 30 2015 $
+.Dd June 27, 1994
 .Dt YPSERV 8
 .Os
 .Sh NAME
@@ -32,29 +36,30 @@
 .Nd YP server daemon
 .Sh SYNOPSIS
 .Nm ypserv
-.Op Fl 1dx
+.Op Fl 1
 .Op Fl a Ar aclfile
+.Op Fl d
+.Op Fl x
 .Sh DESCRIPTION
 .Nm
 is a fundamental part of the network information system called YP.
 This server provides information from YP maps to the YP clients
 on the network.
 .Pp
-A YP map is stored on the server as a Berkeley database.
-A number of YP maps are grouped together in a domain.
+A YP map is stored on the server as a
+.Xr db 3
+database. A number of YP maps is grouped together in a domain.
 .Nm
 determines the domains it serves by looking for a directory with
 the domain name in
 .Pa /var/yp .
 .Pp
-YP hasn't been known for high security through the years.
-In recent years
-security has improved by restricting access to the server.
-In SunOS 4.1
+YP hasn't been known for high security through the years. In recent years
+security has improved by restricting access to the server. In SunOS 4.1
 has a new file occurred named
 .Pa /var/yp/securenet .
-It contains networks the server can assume is secure.
-For information about the file format, see
+It contains networks the server can assume is secure. For information about
+file format see
 .Xr securenet 5 .
 .Pp
 Before the author of this server had seen
@@ -63,10 +68,18 @@ another format,
 .Xr ypserv.acl 5 ,
 was implemented.
 This file format makes it possible to allow and deny hosts and networks
-access to the server.
-This file can have any name since it's given by the argument to
+access to the server. This file can have any name since it's given by
+the argument to
 .Fl a
 (use full path).
+.Pp
+The file used can be reread by sending a
+.Dv SIGHUP
+to
+.Nm ypserv .
+The process PID
+can be found in the file
+.Pa /var/run/ypserv.pid .
 .Pp
 If a host isn't secure all queries to the server will result in a YP_NODOM
 result.
@@ -85,18 +98,8 @@ exists), then
 .Nm
 will be automatically started at boot time.
 .Pp
-On receipt of a hangup signal,
-.Dv SIGHUP ,
-.Nm
-will reopen the log file and reread its configuration,
-including both the map files and the
-.Xr ypserv.acl 5
-or
-.Xr securenet 5
-configuration file.
-.Pp
 The options are as follows:
-.Bl -tag -width Ds
+.Bl -tag -width indent
 .It Fl 1
 Allow
 .Nm
@@ -104,12 +107,10 @@ to answer old YP version 1 requests.
 .It Fl a Ar aclfile
 Don't use
 .Pa /var/yp/securenet .
-Use another file with a different file format.
-For further information see
+Use another file with a different file format. For further information see
 .Xr ypserv.acl 5 .
 .It Fl d
-Use Internet Domain Name System.
-If a query to map
+Use Internet Domain Name System. If a query to map
 .Dq hosts.byname
 or
 .Dq hosts.byaddr
@@ -129,13 +130,12 @@ or
 .Bl -tag -width /var/yp/ypserv.log -compact
 .It Pa /var/yp/ypserv.log
 .It Pa /var/yp/securenet
+.It Pa /var/run/ypserv.pid
 .El
 .Sh SEE ALSO
-.Xr dbopen 3 ,
+.Xr ypbind 1 ,
 .Xr securenet 5 ,
 .Xr ypserv.acl 5 ,
-.Xr Makefile.yp 8 ,
-.Xr yp 8 ,
-.Xr ypbind 8
-.Sh AUTHORS
-.An Mats O Jansson Aq Mt moj@stacken.kth.se
+.Xr yp 8
+.Sh AUTHOR
+Mats O Jansson <moj@stacken.kth.se>

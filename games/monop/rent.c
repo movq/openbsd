@@ -1,4 +1,4 @@
-/*	$OpenBSD: rent.c,v 1.7 2016/01/08 18:20:33 mestre Exp $	*/
+/*	$OpenBSD: rent.c,v 1.2 1998/09/20 23:36:55 pjanzen Exp $	*/
 /*	$NetBSD: rent.c,v 1.3 1995/03/23 08:35:11 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,21 +34,28 @@
  * SUCH DAMAGE.
  */
 
-#include <stdio.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)rent.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: rent.c,v 1.2 1998/09/20 23:36:55 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
-#include "monop.ext"
+#include	"monop.ext"
 
 /*
  *	This routine has the player pay rent
  */
 void
-rent(SQUARE *sqp)
+rent(sqp)
+	SQUARE	*sqp;
 {
 	int	rnt;
 	PROP	*pp;
 	PLAY	*plp;
 
-	plp = &play[(int)sqp->owner];
+	plp = &play[sqp->owner];
 	printf("Owned by %s\n", plp->name);
 	if (sqp->desc->morg) {
 		lucky("The thing is mortgaged.  ");
@@ -57,12 +68,11 @@ rent(SQUARE *sqp)
 			if (pp->houses == 0)
 				printf("rent is %d\n", rnt = pp->rent[0] * 2);
 			else if (pp->houses < 5)
-				printf("with %d house%s, rent is %d\n",
-				    pp->houses, pp->houses == 1 ? "" : "s",
-				    rnt = pp->rent[(int)pp->houses]);
+				printf("with %d houses, rent is %d\n",
+				    pp->houses, rnt = pp->rent[pp->houses]);
 			else
 				printf("with a hotel, rent is %d\n",
-				    rnt = pp->rent[(int)pp->houses]);
+				    rnt = pp->rent[pp->houses]);
 		} else
 			printf("rent is %d\n", rnt = pp->rent[0]);
 		break;
@@ -83,10 +93,6 @@ rent(SQUARE *sqp)
 			printf("rent is 4 * roll (%d) = %d\n", rnt, rnt * 4);
 			rnt *= 4;
 		}
-		break;
-	default:	/* Should never be reached */
-		rnt = 0;
-		printf("Warning:  rent() property %d\n", sqp->type);
 		break;
 	}
 	cur_p->money -= rnt;

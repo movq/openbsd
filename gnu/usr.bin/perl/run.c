@@ -1,59 +1,140 @@
 /*    run.c
  *
- *    Copyright (C) 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
- *    2000, 2001, 2004, 2005, 2006, by Larry Wall and others
+ *    Copyright (c) 1991-1999, Larry Wall
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
  *
  */
 
-/* This file contains the main Perl opcode execution loop. It just
- * calls the pp_foo() function associated with each op, and expects that
- * function to return a pointer to the next op to be executed, or null if
- * it's the end of the sub or program or whatever.
- *
- * There is a similar loop in dump.c, Perl_runops_debug(), which does
- * the same, but also checks for various debug flags each time round the
- * loop.
- *
- * Why this function requires a file all of its own is anybody's guess.
- * DAPM.
- */
-
 #include "EXTERN.h"
-#define PERL_IN_RUN_C
 #include "perl.h"
 
 /*
- * 'Away now, Shadowfax!  Run, greatheart, run as you have never run before!
- *  Now we are come to the lands where you were foaled, and every stone you
- *  know.  Run now!  Hope is in speed!'                    --Gandalf
- *
- *     [p.600 of _The Lord of the Rings_, III/xi: "The Palantír"]
+ * "Away now, Shadowfax!  Run, greatheart, run as you have never run before!
+ * Now we are come to the lands where you were foaled, and every stone you
+ * know.  Run now!  Hope is in speed!"  --Gandalf
  */
 
+#ifdef PERL_OBJECT
+#define CALLOP this->*PL_op
+#else
+#define CALLOP *PL_op
+#endif
+
 int
-Perl_runops_standard(pTHX)
+runops_standard(void)
 {
-    dVAR;
-    OP *op = PL_op;
-    OP_ENTRY_PROBE(OP_NAME(op));
-    while ((PL_op = op = op->op_ppaddr(aTHX))) {
-        OP_ENTRY_PROBE(OP_NAME(op));
-    }
-    PERL_ASYNC_CHECK();
+    dTHR;
+
+    while ( PL_op = (CALLOP->op_ppaddr)(ARGS) ) ;
 
     TAINT_NOT;
     return 0;
 }
 
-/*
- * Local variables:
- * c-indentation-style: bsd
- * c-basic-offset: 4
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set ts=8 sts=4 sw=4 et:
- */
+#ifdef DEBUGGING
+
+dEXT char **watchaddr = 0;
+dEXT char *watchok;
+
+#ifndef PERL_OBJECT
+static void debprof _((OP*o));
+#endif
+
+#endif	/* DEBUGGING */
+
+int
+runops_debug(void)
+{
+#ifdef DEBUGGING
+    dTHR;
+    if (!PL_op) {
+	warn("NULL OP IN RUN");
+	return 0;
+    }
+
+    do {
+	if (PL_debug) {
+	    if (watchaddr != 0 && *watchaddr != watchok)
+		PerlIO_printf(Perl_debug_log, "WARNING: %lx changed from %lx to %lx\n",
+		    (long)watchaddr, (long)watchok, (long)*watchaddr);
+	    DEBUG_s(debstack());
+	    DEBUG_t(debop(PL_op));
+	    DEBUG_P(debprof(PL_op));
+	}
+    } while ( PL_op = (CALLOP->op_ppaddr)(ARGS) );
+
+    TAINT_NOT;
+    return 0;
+#else
+    return runops_standard();
+#endif	/* DEBUGGING */
+}
+
+I32
+debop(OP *o)
+{
+#ifdef DEBUGGING
+    SV *sv;
+    STRLEN n_a;
+    deb("%s", op_name[o->op_type]);
+    switch (o->op_type) {
+    case OP_CONST:
+	PerlIO_printf(Perl_debug_log, "(%s)", SvPEEK(cSVOPo->op_sv));
+	break;
+    case OP_GVSV:
+    case OP_GV:
+	if (cGVOPo->op_gv) {
+	    sv = NEWSV(0,0);
+	    gv_fullname3(sv, cGVOPo->op_gv, Nullch);
+	    PerlIO_printf(Perl_debug_log, "(%s)", SvPV(sv, n_a));
+	    SvREFCNT_dec(sv);
+	}
+	else
+	    PerlIO_printf(Perl_debug_log, "(NULL)");
+	break;
+    default:
+	break;
+    }
+    PerlIO_printf(Perl_debug_log, "\n");
+#endif	/* DEBUGGING */
+    return 0;
+}
+
+void
+watch(char **addr)
+{
+#ifdef DEBUGGING
+    watchaddr = addr;
+    watchok = *addr;
+    PerlIO_printf(Perl_debug_log, "WATCHING, %lx is currently %lx\n",
+	(long)watchaddr, (long)watchok);
+#endif	/* DEBUGGING */
+}
+
+STATIC void
+debprof(OP *o)
+{
+#ifdef DEBUGGING
+    if (!PL_profiledata)
+	Newz(000, PL_profiledata, MAXO, U32);
+    ++PL_profiledata[o->op_type];
+#endif /* DEBUGGING */
+}
+
+void
+debprofdump(void)
+{
+#ifdef DEBUGGING
+    unsigned i;
+    if (!PL_profiledata)
+	return;
+    for (i = 0; i < MAXO; i++) {
+	if (PL_profiledata[i])
+	    PerlIO_printf(Perl_debug_log,
+			  "%5lu %s\n", (unsigned long)PL_profiledata[i],
+                                       op_name[i]);
+    }
+#endif	/* DEBUGGING */
+}

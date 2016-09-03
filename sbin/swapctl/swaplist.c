@@ -1,4 +1,3 @@
-/*	$OpenBSD: swaplist.c,v 1.12 2015/12/10 17:27:00 mmcc Exp $	*/
 /*	$NetBSD: swaplist.c,v 1.8 1998/10/08 10:00:31 mrg Exp $	*/
 
 /*
@@ -29,38 +28,49 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/param.h>	/* dbtob */
-#include <sys/types.h>
+#include <sys/param.h>
+#include <sys/stat.h>
 #include <sys/swap.h>
 
+#include <unistd.h>
 #include <err.h>
-#include <stdint.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-
-#include "swapctl.h"
+#include <inttypes.h>
 
 #define	dbtoqb(b) dbtob((int64_t)(b))
 
+/*
+ * NOTE:  This file is separate from swapctl.c so that pstat can grab it.
+ */
+
+#include "swapctl.h"
+
 void
-list_swap(int pri, int kflag, int pflag, int dolong)
+list_swap(pri, kflag, pflag, tflag, dolong)
+	int	pri;
+	int	kflag;
+	int	pflag;
+	int	tflag;
+	int	dolong;
 {
 	struct	swapent *sep, *fsep;
 	long	blocksize;
 	char	*header;
 	size_t	l;
 	int	hlen, totalsize, size, totalinuse, inuse, ncounted, pathmax;
-	int	rnswap, nswap, i;
+	int	rnswap, nswap = swapctl(SWAP_NSWAP, 0, 0), i;
 
-	nswap = swapctl(SWAP_NSWAP, 0, 0);
-	if (nswap < 1)
-		errx(1, "no swap devices configured");
+	if (nswap < 1) {
+		puts("no swap devices configured");
+		exit(0);
+	}
 
-	fsep = sep = calloc(nswap, sizeof(*sep));
+	fsep = sep = (struct swapent *)malloc(nswap * sizeof(*sep));
 	if (sep == NULL)
-		err(1, "calloc");
+		err(1, "malloc");
 	rnswap = swapctl(SWAP_STATS, (void *)sep, nswap);
 	if (rnswap < 0)
 		err(1, "SWAP_STATS");
@@ -69,14 +79,13 @@ list_swap(int pri, int kflag, int pflag, int dolong)
 		    rnswap, nswap);
 
 	pathmax = 11;
-	if (kflag) {
-		header = "1K-blocks";
-		blocksize = 1024;
-		hlen = strlen(header);
-	} else
-		header = getbsize(&hlen, &blocksize);
-
-	if (dolong) {
+	if (dolong && tflag == 0) {
+		if (kflag) {
+			header = "1K-blocks";
+			blocksize = 1024;
+			hlen = strlen(header);
+		} else
+			header = getbsize(&hlen, &blocksize);
 		for (i = rnswap; i-- > 0; sep++)
 			if (pathmax < (l = strlen(sep->se_path)))
 				pathmax = l;
@@ -95,7 +104,7 @@ list_swap(int pri, int kflag, int pflag, int dolong)
 		totalsize += size;
 		totalinuse += inuse;
 
-		if (dolong) {
+		if (dolong && tflag == 0) {
 			(void)printf("%-*s %*ld ", pathmax, sep->se_path, hlen,
 			    (long)(dbtoqb(size) / blocksize));
 
@@ -106,13 +115,16 @@ list_swap(int pri, int kflag, int pflag, int dolong)
 			    sep->se_priority);
 		}
 	}
-	if (dolong == 0)
-		printf("total: %ld %*s allocated, %ld used, "
-		    "%ld available\n",
-		    (long)(dbtoqb(totalsize) / blocksize),
-		    hlen, header,
-		    (long)(dbtoqb(totalinuse) / blocksize),
-		    (long)(dbtoqb(totalsize - totalinuse) / blocksize));
+	if (tflag)
+		(void)printf("%dM/%dM swap space\n",
+		    (int)(dbtoqb(totalinuse) / (1024 * 1024)),
+		    (int)(dbtoqb(totalsize) / (1024 * 1024)));
+	else if (dolong == 0)
+		    printf("total: %ldk bytes allocated = %ldk used, "
+			   "%ldk available\n",
+		    (long)(dbtoqb(totalsize) / 1024),
+		    (long)(dbtoqb(totalinuse) / 1024),
+		    (long)(dbtoqb(totalsize - totalinuse) / 1024));
 	else if (ncounted > 1)
 		(void)printf("%-*s %*ld %8ld %8ld %5.0f%%\n", pathmax, "Total",
 		    hlen,
@@ -120,5 +132,6 @@ list_swap(int pri, int kflag, int pflag, int dolong)
 		    (long)(dbtoqb(totalinuse) / blocksize),
 		    (long)(dbtoqb(totalsize - totalinuse) / blocksize),
 		    (double)(totalinuse) / (double)totalsize * 100.0);
-	free(fsep);
+	if (fsep)
+		(void)free(fsep);
 }

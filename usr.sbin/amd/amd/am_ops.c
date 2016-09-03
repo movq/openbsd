@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,7 +36,7 @@
  * SUCH DAMAGE.
  *
  *	from: @(#)am_ops.c	8.1 (Berkeley) 6/6/93
- *	$Id: am_ops.c,v 1.8 2015/12/05 21:15:01 mmcc Exp $
+ *	$Id: am_ops.c,v 1.1.1.1 1995/10/18 08:47:10 deraadt Exp $
  */
 
 #include "am.h"
@@ -72,8 +76,9 @@ static am_ops *vops[] = {
 	0
 };
 
-void
-ops_showfstypes(FILE *fp)
+void ops_showfstypes P((FILE *fp));
+void ops_showfstypes(fp)
+FILE *fp;
 {
 	struct am_ops **ap;
 	int l = 0;
@@ -93,17 +98,20 @@ ops_showfstypes(FILE *fp)
  * Construct an amd-style line and call the
  * normal amd matcher.
  */
-am_ops *
-sunos4_match(am_opts *fo, char *key, char *g_key, char *path,
-    char *keym, char *map)
+am_ops *sunos4_match(fo, key, g_key, path, keym, map)
+am_opts *fo;
+char *key;
+char *g_key;
+char *path;
+char *keym;
+char *map;
 {
 	char *host = key;
 	char *fs = strchr(host, ':');
 	char *sublink = fs ? strchr(fs+1, ':') : 0;
 	char keybuf[MAXPATHLEN];
 
-	snprintf(keybuf, sizeof(keybuf),
-		"type:=nfs;rhost:=%s;rfs:=%s;sublink:=%s;opts:=%s", host,
+	sprintf(keybuf, "type:=nfs;rhost:=%s;rfs:=%s;sublink:=%s;opts:=%s", host,
 		fs ? fs+1 : "",
 		sublink ? sublink+1  : "",
 		g_key);
@@ -112,9 +120,13 @@ sunos4_match(am_opts *fo, char *key, char *g_key, char *path,
 #endif
 #endif /* SUNOS4_COMPAT */
 
-am_ops *
-ops_match(am_opts *fo, char *key, char *g_key, char *path, char *keym,
-    char *map)
+am_ops *ops_match(fo, key, g_key, path, keym, map)
+am_opts *fo;
+char *key;
+char *g_key;
+char *path;
+char *keym;
+char *map;
 {
 	am_ops **vp;
 	am_ops *rop = 0;
@@ -131,7 +143,7 @@ ops_match(am_opts *fo, char *key, char *g_key, char *path, char *keym,
 		/*
 		 * Next find the correct filesystem type
 		 */
-		for (vp = vops; (rop = *vp); vp++)
+		for (vp = vops; rop = *vp; vp++)
 			if (strcmp(rop->fs_type, fo->opt_type) == 0)
 				break;
 
@@ -153,9 +165,10 @@ ops_match(am_opts *fo, char *key, char *g_key, char *path, char *keym,
 	/*
 	 * Check the filesystem is happy
 	 */
-	free(fo->fs_mtab);
+	if (fo->fs_mtab)
+		free((voidp) fo->fs_mtab);
 
-	if ((fo->fs_mtab = (*rop->fs_match)(fo)))
+	if (fo->fs_mtab = (*rop->fs_match)(fo))
 		return rop;
 
 	/*

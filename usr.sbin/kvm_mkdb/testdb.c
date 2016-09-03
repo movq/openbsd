@@ -1,4 +1,4 @@
-/*	$OpenBSD: testdb.c,v 1.9 2015/01/16 06:40:17 deraadt Exp $	*/
+/*	$OpenBSD: testdb.c,v 1.3 1998/08/19 06:47:55 millert Exp $	*/
 
 /*-
  * Copyright (c) 1992, 1993
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,51 +33,82 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/types.h>
-#include <sys/sysctl.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "from: @(#)testdb.c	8.1 (Berkeley) 6/6/93";
+#else
+static char *rcsid = "$OpenBSD: testdb.c,v 1.3 1998/08/19 06:47:55 millert Exp $";
+#endif
+#endif /* not lint */
 
-#include <db.h>
-#include <fcntl.h>
-#include <kvm.h>
+#include <sys/param.h>
+#include <sys/file.h>
+#include <errno.h>
 #include <limits.h>
-#include <paths.h>
+#include <kvm.h>
+#include <db.h>
 #include <stdio.h>
-#include <string.h>
 #include <unistd.h>
+#include <string.h>
+#include <paths.h>
 
 #include "extern.h"
 
 /* Return true if the db file is valid, else false */
 int
-testdb(char *dbname)
+testdb(dbname)
+	char *dbname;
 {
+	register DB *db;
+	register int cc, kd, ret, dbversionlen;
 	DBT rec;
-	DB *db = NULL;
-	size_t kversionlen;
-	char kversion[LINE_MAX];
-	int mib[2], ret = 0;
+	struct nlist nitem;
+	char dbversion[_POSIX2_LINE_MAX];
+	char kversion[_POSIX2_LINE_MAX];
 
-	/* Read version string of running kernel */
-	mib[0] = CTL_KERN;
-	mib[1] = KERN_VERSION;
-	kversionlen = sizeof(kversion);
-	if (sysctl(mib, 2, kversion, &kversionlen, NULL, 0) < 0)
+	ret = 0;
+	db = NULL;
+
+	if ((kd = open(_PATH_KMEM, O_RDONLY, 0)) < 0)
+		goto close;
+
+	if ((db = dbopen(dbname, O_RDONLY, 0, DB_HASH, NULL)) == NULL)
 		goto close;
 
 	/* Read the version out of the database */
-	if ((db = dbopen(dbname, O_RDONLY, 0, DB_HASH, NULL)) == NULL)
-		goto close;
 	rec.data = VRS_KEY;
 	rec.size = sizeof(VRS_KEY) - 1;
 	if ((db->get)(db, &rec, &rec, 0))
 		goto close;
-	if (rec.data == NULL || rec.size > kversionlen)
+	if (rec.data == 0 || rec.size == 0 || rec.size > sizeof(dbversion))
+		goto close;
+	(void)memcpy(dbversion, rec.data, rec.size);
+	dbversionlen = rec.size;
+
+	/* Read version string from kernel memory */
+	rec.data = VRS_SYM;
+	rec.size = sizeof(VRS_SYM) - 1;
+	if ((db->get)(db, &rec, &rec, 0))
+		goto close;
+	if (rec.data == 0 || rec.size != sizeof(struct nlist))
+		goto close;
+	(void)memcpy(&nitem, rec.data, sizeof(nitem));
+	/*
+	 * Theoretically possible for lseek to be seeking to -1.  Not
+	 * that it's something to lie awake nights about, however.
+	 */
+	errno = 0;
+	if (lseek(kd, (off_t)nitem.n_value, SEEK_SET) == -1 && errno != 0)
+		goto close;
+	cc = read(kd, kversion, sizeof(kversion));
+	if (cc < 0 || cc != sizeof(kversion))
 		goto close;
 
 	/* If they match, we win */
-	ret = memcmp(kversion, rec.data, rec.size) == 0;
+	ret = memcmp(kversion, dbversion, dbversionlen) == 0;
 
-close:
+close:	if (kd >= 0)
+		(void)close(kd);
 	if (db)
 		(void)(db->close)(db);
 	return (ret);

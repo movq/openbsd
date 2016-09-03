@@ -1,5 +1,3 @@
-/*	$OpenBSD: vs_refresh.c,v 1.22 2016/01/30 21:31:08 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -11,13 +9,16 @@
 
 #include "config.h"
 
+#ifndef lint
+static const char sccsid[] = "@(#)vs_refresh.c	10.44 (Berkeley) 10/13/96";
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/queue.h>
 #include <sys/time.h>
 
 #include <bitstring.h>
 #include <ctype.h>
-#include <libgen.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,17 +30,19 @@
 #define	UPDATE_CURSOR	0x01			/* Update the cursor. */
 #define	UPDATE_SCREEN	0x02			/* Flush to screen. */
 
-static void	vs_modeline(SCR *);
-static int	vs_paint(SCR *, u_int);
+static void	vs_modeline __P((SCR *));
+static int	vs_paint __P((SCR *, u_int));
 
 /*
  * v_repaint --
  *	Repaint selected lines from the screen.
  *
- * PUBLIC: int vs_repaint(SCR *, EVENT *);
+ * PUBLIC: int vs_repaint __P((SCR *, EVENT *));
  */
 int
-vs_repaint(SCR *sp, EVENT *evp)
+vs_repaint(sp, evp)
+	SCR *sp;
+	EVENT *evp;
 {
 	SMAP *smp;
 
@@ -56,10 +59,12 @@ vs_repaint(SCR *sp, EVENT *evp)
  * vs_refresh --
  *	Refresh all screens.
  *
- * PUBLIC: int vs_refresh(SCR *, int);
+ * PUBLIC: int vs_refresh __P((SCR *, int));
  */
 int
-vs_refresh(SCR *sp, int forcepaint)
+vs_refresh(sp, forcepaint)
+	SCR *sp;
+	int forcepaint;
 {
 	GS *gp;
 	SCR *tsp;
@@ -75,7 +80,8 @@ vs_refresh(SCR *sp, int forcepaint)
 	 * that we can find, including status lines.
 	 */
 	if (F_ISSET(sp, SC_SCR_REDRAW))
-		TAILQ_FOREACH(tsp, &gp->dq, q)
+		for (tsp = gp->dq.cqh_first;
+		    tsp != (void *)&gp->dq; tsp = tsp->q.cqe_next)
 			if (tsp != sp)
 				F_SET(tsp, SC_SCR_REDRAW | SC_STATUS);
 
@@ -92,7 +98,8 @@ vs_refresh(SCR *sp, int forcepaint)
 	priv_paint = VIP_CUR_INVALID | VIP_N_REFRESH;
 	if (O_ISSET(sp, O_NUMBER))
 		priv_paint |= VIP_N_RENUMBER;
-	TAILQ_FOREACH(tsp, &gp->dq, q)
+	for (tsp = gp->dq.cqh_first;
+	    tsp != (void *)&gp->dq; tsp = tsp->q.cqe_next)
 		if (tsp != sp && !F_ISSET(tsp, SC_EXIT | SC_EXIT_FORCE) &&
 		    (F_ISSET(tsp, pub_paint) ||
 		    F_ISSET(VIP(tsp), priv_paint))) {
@@ -127,8 +134,8 @@ vs_refresh(SCR *sp, int forcepaint)
 	 * And, finally, if we updated any status lines, make sure the cursor
 	 * gets back to where it belongs.
 	 */
-	need_refresh = 0;
-	TAILQ_FOREACH(tsp, &gp->dq, q)
+	for (need_refresh = 0, tsp = gp->dq.cqh_first;
+	    tsp != (void *)&gp->dq; tsp = tsp->q.cqe_next)
 		if (F_ISSET(tsp, SC_STATUS)) {
 			need_refresh = 1;
 			vs_resolve(tsp, sp, 0);
@@ -155,14 +162,16 @@ vs_refresh(SCR *sp, int forcepaint)
  *	what you're doing.  It's subtle and quick to anger.
  */
 static int
-vs_paint(SCR *sp, u_int flags)
+vs_paint(sp, flags)
+	SCR *sp;
+	u_int flags;
 {
 	GS *gp;
 	SMAP *smp, tmp;
 	VI_PRIVATE *vip;
 	recno_t lastline, lcnt;
 	size_t cwtotal, cnt, len, notused, off, y;
-	int ch = 0, didpaint, isempty, leftright_warp;
+	int ch, didpaint, isempty, leftright_warp;
 	char *p;
 
 #define	 LNO	sp->lno			/* Current file line. */
@@ -194,18 +203,9 @@ vs_paint(SCR *sp, u_int flags)
 		else if (F_ISSET(sp, SC_SCR_CENTER)) {
 			if (vs_sm_fill(sp, LNO, P_MIDDLE))
 				return (1);
-		} else {
-			if (LNO == HMAP->lno || LNO == TMAP->lno) {
-				cnt = vs_screens(sp, LNO, &CNO);
-				if (LNO == HMAP->lno && cnt < HMAP->soff)
-					HMAP->soff = cnt;
-				if (LNO == TMAP->lno && cnt > TMAP->soff)
-					TMAP->soff = cnt;
-			}
-
+		} else
 			if (vs_sm_fill(sp, OOBLNO, P_TOP))
 				return (1);
-		}
 		F_SET(sp, SC_SCR_REDRAW);
 	}
 
@@ -247,7 +247,7 @@ vs_paint(SCR *sp, u_int flags)
 	 * screen but the column offset is not, we'll end up in the adjust
 	 * code, when we should probably have compressed the screen.
 	 */
-	if (IS_SMALL(sp)) {
+	if (IS_SMALL(sp))
 		if (LNO < HMAP->lno) {
 			lcnt = vs_sm_nlines(sp, HMAP, LNO, sp->t_maxrows);
 			if (lcnt <= HALFSCREEN(sp))
@@ -284,7 +284,6 @@ small_fill:			(void)gp->scr_move(sp, LASTLINE(sp), 0);
 				goto adjust;
 			}
 		}
-	}
 
 	/*
 	 * 6b: Line down, or current screen.
@@ -396,7 +395,7 @@ top:		if (vs_sm_fill(sp, LNO, P_TOP))
 adjust:	if (!O_ISSET(sp, O_LEFTRIGHT) &&
 	    (LNO == HMAP->lno || LNO == TMAP->lno)) {
 		cnt = vs_screens(sp, LNO, &CNO);
-		if (LNO == HMAP->lno && cnt < HMAP->soff) {
+		if (LNO == HMAP->lno && cnt < HMAP->soff)
 			if ((HMAP->soff - cnt) > HALFTEXT(sp)) {
 				HMAP->soff = cnt;
 				vs_sm_fill(sp, OOBLNO, P_TOP);
@@ -405,8 +404,7 @@ adjust:	if (!O_ISSET(sp, O_LEFTRIGHT) &&
 				while (cnt < HMAP->soff)
 					if (vs_sm_1down(sp))
 						return (1);
-		}
-		if (LNO == TMAP->lno && cnt > TMAP->soff) {
+		if (LNO == TMAP->lno && cnt > TMAP->soff)
 			if ((cnt - TMAP->soff) > HALFTEXT(sp)) {
 				TMAP->soff = cnt;
 				vs_sm_fill(sp, OOBLNO, P_BOTTOM);
@@ -415,7 +413,6 @@ adjust:	if (!O_ISSET(sp, O_LEFTRIGHT) &&
 				while (cnt > TMAP->soff)
 					if (vs_sm_1up(sp))
 						return (1);
-		}
 	}
 
 	/*
@@ -474,7 +471,7 @@ adjust:	if (!O_ISSET(sp, O_LEFTRIGHT) &&
 	/* Sanity checking. */
 	if (CNO >= len && len != 0) {
 		msgq(sp, M_ERR, "Error: %s/%d: cno (%u) >= len (%u)",
-		     basename(__FILE__), __LINE__, CNO, len);
+		     tail(__FILE__), __LINE__, CNO, len);
 		return (1);
 	}
 #endif
@@ -508,7 +505,7 @@ adjust:	if (!O_ISSET(sp, O_LEFTRIGHT) &&
 
 		/*
 		 * Count up the widths of the characters.  If it's a tab
-		 * character, go do it the slow way.
+		 * character, go do it the the slow way.
 		 */
 		for (cwtotal = 0; cnt--; cwtotal += KEY_LEN(sp, ch))
 			if ((ch = *(u_char *)p--) == '\t')
@@ -546,7 +543,7 @@ adjust:	if (!O_ISSET(sp, O_LEFTRIGHT) &&
 
 		/*
 		 * Count up the widths of the characters.  If it's a tab
-		 * character, go do it the slow way.  If we cross a
+		 * character, go do it the the slow way.  If we cross a
 		 * screen boundary, we can quit.
 		 */
 		for (cwtotal = SCNO; cnt--;) {
@@ -616,8 +613,8 @@ slow:	for (smp = HMAP; smp->lno != LNO; ++smp);
 		}
 
 		/* Adjust the window towards the end of the line. */
-		if ((off == 0 && off + SCREEN_COLS(sp) < cnt) ||
-		    (off != 0 && off + sp->cols < cnt)) {
+		if (off == 0 && off + SCREEN_COLS(sp) < cnt ||
+		    off != 0 && off + sp->cols < cnt) {
 			do {
 				off += O_VAL(sp, O_SIDESCROLL);
 			} while (off + sp->cols < cnt);
@@ -695,8 +692,6 @@ done_cursor:
 		abort();
 #else
 	if (vip->sc_smap == NULL) {
-		if (F_ISSET(sp, SC_SCR_REFORMAT))
-			return (0);
 		F_SET(sp, SC_SCR_REFORMAT);
 		return (vs_paint(sp, flags));
 	}
@@ -768,18 +763,19 @@ number:	if (O_ISSET(sp, O_NUMBER) &&
  *	Update the mode line.
  */
 static void
-vs_modeline(SCR *sp)
+vs_modeline(sp)
+	SCR *sp;
 {
 	static char * const modes[] = {
-		"Append",			/* SM_APPEND */
-		"Change",			/* SM_CHANGE */
-		"Command",			/* SM_COMMAND */
-		"Insert",			/* SM_INSERT */
-		"Replace",			/* SM_REPLACE */
+		"215|Append",			/* SM_APPEND */
+		"216|Change",			/* SM_CHANGE */
+		"217|Command",			/* SM_COMMAND */
+		"218|Insert",			/* SM_INSERT */
+		"219|Replace",			/* SM_REPLACE */
 	};
 	GS *gp;
 	size_t cols, curcol, curlen, endpoint, len, midpoint;
-	const char *t = NULL;
+	const char *t;
 	int ellipsis;
 	char *p, buf[20];
 
@@ -857,8 +853,8 @@ vs_modeline(SCR *sp)
 	cols = sp->cols - 1;
 	if (O_ISSET(sp, O_RULER)) {
 		vs_column(sp, &curcol);
-		len = snprintf(buf, sizeof(buf), "%lu,%zu",
-		    (ulong)sp->lno, curcol + 1);
+		len =
+		    snprintf(buf, sizeof(buf), "%lu,%lu", sp->lno, curcol + 1);
 
 		midpoint = (cols - ((len + 1) / 2)) / 2;
 		if (curlen < midpoint) {
@@ -881,8 +877,8 @@ vs_modeline(SCR *sp)
 	if (O_ISSET(sp, O_SHOWMODE)) {
 		if (F_ISSET(sp->ep, F_MODIFIED))
 			--endpoint;
-		t = modes[sp->showmode];
-		endpoint -= (len = strlen(t));
+		t = msg_cat(sp, modes[sp->showmode], &len);
+		endpoint -= len;
 	}
 
 	if (endpoint > curlen + 2) {

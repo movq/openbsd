@@ -1,4 +1,4 @@
-/*	$OpenBSD: lock.c,v 1.33 2016/05/28 16:11:10 tedu Exp $	*/
+/*	$OpenBSD: lock.c,v 1.12 1999/03/06 20:27:40 millert Exp $	*/
 /*	$NetBSD: lock.c,v 1.8 1996/05/07 18:32:31 jtc Exp $	*/
 
 /*
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,6 +37,19 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1980, 1987, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)lock.c	8.1 (Berkeley) 6/6/93";
+#endif
+static char rcsid[] = "$OpenBSD: lock.c,v 1.12 1999/03/06 20:27:40 millert Exp $";
+#endif /* not lint */
+
 /*
  * Lock a terminal up until the given key is entered, until the root
  * password is entered, or the given interval times out.
@@ -41,6 +58,7 @@
  * an argument of the form -time where time is in minutes
  */
 
+#include <sys/param.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <signal.h>
@@ -48,121 +66,112 @@
 #include <ctype.h>
 #include <err.h>
 #include <pwd.h>
-#include <readpassphrase.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <termios.h>
 #include <unistd.h>
-#include <limits.h>
 
-#include <login_cap.h>
-#include <bsd_auth.h>
+#ifdef SKEY
+#include <skey.h>
+#endif
 
 #define	TIMEOUT	15
 
-void bye(int);
-void hi(int);
+void bye	__P((int));
+void hi		__P((int));
+void quit	__P((int));
+int skey_auth	__P((char *));
 
 struct timeval	timeout;
 struct timeval	zerotime;
-time_t	nexttime;			/* keep the timeout time */
+struct termios	tty, ntty;
+long	nexttime;			/* keep the timeout time */
 int	no_timeout;			/* lock terminal forever */
-
-extern	char *__progname;
 
 /*ARGSUSED*/
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
-	char hostname[HOST_NAME_MAX+1], s[BUFSIZ], s1[BUFSIZ], date[256];
-	char *p, *style, *nstyle, *ttynam;
-	struct itimerval ntimer, otimer;
-	int ch, sectimeout, usemine, cnt, tries = 10, backoff = 3;
-	const char *errstr;
 	struct passwd *pw;
+	struct timeval timval;
+	struct itimerval ntimer, otimer;
 	struct tm *timp;
 	time_t curtime;
-	login_cap_t *lc;
+	int ch, sectimeout, usemine;
+	char *ap, *mypw, *ttynam, *tzn;
+	char hostname[MAXHOSTNAMELEN], s[BUFSIZ], s1[BUFSIZ];
 
 	sectimeout = TIMEOUT;
-	style = NULL;
+	mypw = NULL;
 	usemine = 0;
 	no_timeout = 0;
 
-	if (pledge("stdio rpath wpath getpw tty proc exec", NULL) == -1)
-		err(1, "pledge");
-
 	if (!(pw = getpwuid(getuid())))
-		errx(1, "unknown uid %u.", getuid());
-
-	lc = login_getclass(pw->pw_class);
-	if (lc != NULL) {
-		/*
-		 * We allow "login-tries" attempts to login but start
-		 * slowing down after "login-backoff" attempts.
-		 */
-		tries = (int)login_getcapnum(lc, "login-tries", 10, 10);
-		backoff = (int)login_getcapnum(lc, "login-backoff", 3, 3);
-	}
-
-	while ((ch = getopt(argc, argv, "a:npt:")) != -1) {
-		switch (ch) {
-		case 'a':
-			if (lc) {
-				style = login_getstyle(lc, optarg, "auth-lock");
-				if (style == NULL)
-					errx(1,
-					    "invalid authentication style: %s",
-					    optarg);
-			}
-			usemine = 1;
-			break;
+		errx(1, "unknown uid %d.", getuid());
+	
+	while ((ch = getopt(argc, argv, "npt:")) != -1)
+		switch((char)ch) {
 		case 't':
-			sectimeout = (int)strtonum(optarg, 1, INT_MAX, &errstr);
-			if (errstr)
-				errx(1, "timeout %s: %s", errstr, optarg);
+			if ((sectimeout = atoi(optarg)) <= 0)
+				errx(1, "illegal timeout value: %s", optarg);
 			break;
 		case 'p':
 			usemine = 1;
+			mypw = strdup(pw->pw_passwd);
 			break;
 		case 'n':
 			no_timeout = 1;
 			break;
+		case '?':
 		default:
 			(void)fprintf(stderr,
-			    "usage: %s [-np] [-a style] [-t timeout]\n",
-			    __progname);
+			    "usage: lock [-n] [-p] [-t timeout]\n");
 			exit(1);
-		}
 	}
 	timeout.tv_sec = sectimeout * 60;
 
-	gethostname(hostname, sizeof(hostname));
-	if (usemine && lc == NULL)
-		errx(1, "login class not found");
-	if (!(ttynam = ttyname(STDIN_FILENO)))
-		errx(1, "not a terminal?");
-	curtime = time(NULL);
-	nexttime = curtime + (sectimeout * 60);
-	timp = localtime(&curtime);
-	strftime(date, sizeof(date), "%c", timp);
+	seteuid(getuid());		/* discard what privs we can */
 
-	if (!usemine) {
+	if (tcgetattr(0, &tty) < 0)	/* get information for header */
+		exit(1);
+	gethostname(hostname, sizeof(hostname));
+	if (!(ttynam = ttyname(0)))
+		errx(1, "not a terminal?");
+	if (gettimeofday(&timval, (struct timezone *)NULL))
+		err(1, "gettimeofday");
+	curtime = timval.tv_sec;
+	nexttime = timval.tv_sec + (sectimeout * 60);
+	timp = localtime(&curtime);
+	ap = asctime(timp);
+	tzn = timp->tm_zone;
+
+	(void)signal(SIGINT, quit);
+	(void)signal(SIGQUIT, quit);
+	ntty = tty; ntty.c_lflag &= ~ECHO;
+	(void)tcsetattr(0, TCSADRAIN, &ntty);
+
+	if (!mypw) {
 		/* get key and check again */
-		if (!readpassphrase("Key: ", s, sizeof(s), RPP_ECHO_OFF) ||
-		    *s == '\0')
-			exit(0);
+		(void)fputs("Key: ", stdout);
+		if (!fgets(s, sizeof(s), stdin) || *s == '\n')
+			quit(0);
+		(void)fputs("\nAgain: ", stdout);
 		/*
 		 * Don't need EOF test here, if we get EOF, then s1 != s
 		 * and the right things will happen.
 		 */
-		(void)readpassphrase("Again: ", s1, sizeof(s1), RPP_ECHO_OFF);
+		(void)fgets(s1, sizeof(s1), stdin);
+		(void)putchar('\n');
 		if (strcmp(s1, s)) {
-			warnx("\apasswords didn't match.");
+			(void)puts("\alock: passwords didn't match.");
+			(void)tcsetattr(0, TCSADRAIN, &tty);
 			exit(1);
 		}
 		s[0] = '\0';
+		mypw = s1;
 	}
 
 	/* set signal handlers */
@@ -178,76 +187,108 @@ main(int argc, char *argv[])
 
 	/* header info */
 	if (no_timeout) {
-		(void)fprintf(stderr,
-		    "%s: %s on %s. no timeout\ntime now is %s\n",
-		    __progname, ttynam, hostname, date);
+		(void)printf("lock: %s on %s. no timeout\ntime now is %.20s%s%s",
+		    ttynam, hostname, ap, tzn, ap + 19);
 	} else {
-		(void)fprintf(stderr,
-		    "%s: %s on %s. timeout in %d minutes\ntime now is %s\n",
-		    __progname, ttynam, hostname, sectimeout, date);
+		(void)printf("lock: %s on %s. timeout in %d minutes\ntime now is %.20s%s%s",
+		    ttynam, hostname, sectimeout, ap, tzn, ap + 19);
 	}
 
-	for (cnt = 0;;) {
-		if (!readpassphrase("Key: ", s, sizeof(s), RPP_ECHO_OFF) ||
-		    *s == '\0') {
+	for (;;) {
+		(void)fputs("Key: ", stdout);
+		if (!fgets(s, sizeof(s), stdin)) {
+			clearerr(stdin);
 			hi(0);
 			continue;
 		}
 		if (usemine) {
-			/*
-			 * If user entered 's/key' or the style specified via
-			 * the '-a' argument, auth_userokay() will prompt
-			 * for a new password.  Otherwise, use what we have.
-			 */
-			if ((strcmp(s, "s/key") == 0 &&
-			    (nstyle = login_getstyle(lc, "skey", "auth-lock")))
-			    || ((nstyle = style) && strcmp(s, nstyle) == 0))
-				p = NULL;
-			else
-				p = s;
-			if (auth_userokay(pw->pw_name, nstyle, "auth-lock", p))
+			s[strlen(s) - 1] = '\0';
+#ifdef SKEY
+			if (strcasecmp(s, "s/key") == 0) {
+				/* S/Key lookup needs to be done as root */
+				seteuid(0);
+				ch = skey_auth(pw->pw_name);
+				seteuid(getuid());
+				if (ch)
+					break;
+			}
+#endif
+			if (!strcmp(mypw, crypt(s, mypw)))
 				break;
-		} else if (strcmp(s, s1) == 0)
-			break;
-		(void)putc('\a', stderr);
-		cnt %= tries;
-		if (++cnt > backoff) {
-			sigset_t set, oset;
-			sigfillset(&set);
-			sigprocmask(SIG_BLOCK, &set, &oset);
-			sleep((u_int)((cnt - backoff) * tries / 2));
-			sigprocmask(SIG_SETMASK, &oset, NULL);
 		}
+		else if (!strcmp(s, s1))
+			break;
+		(void)puts("\a");
+		if (tcsetattr(0, TCSADRAIN, &ntty) < 0)
+			exit(1);
 	}
 
+	quit(0);
+	exit(0);			/*NOTREACHED*/
+}
+
+#ifdef SKEY
+/*
+ * We can't use libskey's skey_authenticate() since it
+ * handles signals in a way that's inappropriate
+ * for our needs. Instead we roll our own.
+ */
+int
+skey_auth(user)
+	char *user;
+{
+	char s[256], *ask;
+	int ret = 0;
+
+	if (!skey_haskey(user) && (ask = skey_keyinfo(user))) {
+		(void)printf("\n%s\nResponse: ", ask);		
+		if (!fgets(s, sizeof(s), stdin) || *s == '\n')
+			clearerr(stdin);
+		else {
+			rip(s);
+			if (skey_passcheck(user, s) != -1)
+				ret = 1;
+		}
+	} else
+		(void)printf("Sorry, you have no s/key.\n");
+	return(ret);
+}
+#endif
+
+void
+hi(dummy)
+	int dummy;
+{
+	struct timeval timval;
+
+	if (!gettimeofday(&timval, (struct timezone *)NULL)) {
+		(void)printf("lock: type in the unlock key. ");
+		if (no_timeout) {
+			putchar('\n');
+		} else {
+			(void)printf("timeout in %ld:%ld minutes\n",
+			    (nexttime - timval.tv_sec) / 60,
+			    (nexttime - timval.tv_sec) % 60);
+		}
+	}
+}
+
+void
+quit(dummy)
+	int dummy;
+{
+	putchar('\n');
+	(void)tcsetattr(0, TCSADRAIN, &tty);
 	exit(0);
 }
 
-/*ARGSUSED*/
 void
-hi(int signo)
+bye(dummy)
+	int dummy;
 {
-	char buf[1024], buf2[1024];
-	time_t left;
-
-	if (no_timeout)
-		buf2[0] = '\0';
-	else {
-		left = nexttime - time(NULL);
-		(void)snprintf(buf2, sizeof buf2, " timeout in %lld:%d minutes",
-		    (long long)(left / 60), (int)(left % 60));
+	if (!no_timeout) {
+		(void)tcsetattr(0, TCSADRAIN, &tty);
+		(void)puts("lock: timeout");
+		exit(1);
 	}
-	(void)snprintf(buf, sizeof buf, "%s: type in the unlock key.%s\n",
-	    __progname, buf2);
-	(void) write(STDERR_FILENO, buf, strlen(buf));
-}
-
-/*ARGSUSED*/
-void
-bye(int signo)
-{
-
-	if (!no_timeout)
-		warnx("timeout");
-	_exit(1);
 }

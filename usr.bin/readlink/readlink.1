@@ -1,4 +1,4 @@
-.\"	$OpenBSD: readlink.1,v 1.13 2010/09/03 11:09:29 jmc Exp $
+.\"	$OpenBSD: readlink.1,v 1.4 1998/09/27 16:57:50 aaron Exp $
 .\"
 .\" Copyright (c) 1990, 1993
 .\"	The Regents of the University of California.  All rights reserved.
@@ -14,7 +14,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -30,7 +34,7 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: September 3 2010 $
+.Dd August 18, 1997
 .Dt READLINK 1
 .Os
 .Sh NAME
@@ -42,38 +46,29 @@
 .Ar file
 .Sh DESCRIPTION
 The
-.Nm
+.Nm readlink
 utility when invoked with the pathname of a symbolic link as its
 argument dereferences the symbolic link and prints the name of target
-on standard output.
-If the
-.Fl f
-option is not specified and
-.Nm
-is invoked with an argument other
-than the pathname of a symbolic link, it exits with a nonzero exit
+on standard output.  If readlink is invoked with an argument other
+than the pathname of a symbolic link, it exits with a non-zero exit
 code without printing anything.
 .Pp
-The options are as follows:
-.Bl -tag -width Ds
+The following options are available:
+.Bl -tag -width flag
 .It Fl f
 Canonicalize by following every symlink in every component of the given
 path recursively.
-.Nm
-will resolve both absolute and relative paths and
-return the absolute pathname corresponding to
-.Ar file .
-The argument does not need to be a symbolic link.
 .It Fl n
 Do not print a trailing newline character.
 .El
-.Sh EXIT STATUS
-.Ex -std readlink
+.Pp
+The
+.Nm readlink
+utility exits 0 on success or >0 if an error occurred.
 .Sh SEE ALSO
-.Xr readlink 2 ,
-.Xr realpath 3
+.Xr readlink 2
 .Sh HISTORY
 The
-.Nm
+.Nm readlink
 utility first appeared in
 .Ox 2.1 .

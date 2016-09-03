@@ -1,14 +1,18 @@
-/*	$OpenBSD: l64a.c,v 1.5 2005/08/08 08:05:36 espie Exp $ */
 /*
  * Written by J.T. Conklin <jtc@netbsd.org>.
  * Public domain.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: l64a.c,v 1.3 1997/08/17 22:58:34 millert Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <errno.h>
 #include <stdlib.h>
 
 char *
-l64a(long value)
+l64a(value)
+	long value;
 {
 	static char buf[8];
 	char *s = buf;

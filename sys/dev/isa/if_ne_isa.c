@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_ne_isa.c,v 1.17 2015/11/24 17:11:39 mpi Exp $	*/
+/*	$OpenBSD: if_ne_isa.c,v 1.4 1999/04/30 07:20:29 fgsch Exp $	*/
 /*	$NetBSD: if_ne_isa.c,v 1.6 1998/07/05 06:49:13 jonathan Exp $	*/
 
 /*-
@@ -17,6 +17,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the NetBSD
+ *	Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -40,17 +47,36 @@
 #include <sys/ioctl.h>
 #include <sys/errno.h>
 #include <sys/syslog.h>
-#include <sys/selinfo.h>
+#include <sys/select.h>
 #include <sys/device.h>
 
 #include <net/if.h>
+#include <net/if_dl.h>
+#ifdef __NetBSD__
+#include <net/if_ether.h>
+#endif
 #include <net/if_media.h>
 
+#ifdef INET
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
+#include <netinet/in_var.h>
+#include <netinet/ip.h>
+#ifdef __NetBSD__
+#include <netinet/if_inarp.h>
+#else
 #include <netinet/if_ether.h>
+#endif
+#endif
+
+#ifdef NS
+#include <netns/ns.h>
+#include <netns/ns_if.h>
+#endif
 
 #if NBPFILTER > 0
 #include <net/bpf.h>
+#include <net/bpfdesc.h>
 #endif
 
 #include <machine/intr.h>
@@ -67,8 +93,8 @@
 
 #include <dev/isa/isavar.h>
 
-int	ne_isa_match(struct device *, void *, void *);
-void	ne_isa_attach(struct device *, struct device *, void *);
+int	ne_isa_match __P((struct device *, void *, void *));
+void	ne_isa_attach __P((struct device *, struct device *, void *));
 
 struct ne_isa_softc {
 	struct	ne2000_softc sc_ne2000;		/* real "ne2000" softc */
@@ -82,7 +108,9 @@ struct cfattach ne_isa_ca = {
 };
 
 int
-ne_isa_match(struct device *parent, void *match, void *aux)
+ne_isa_match(parent, match, aux)
+	struct device *parent;
+	void *match, *aux;
 {
 	struct ne_isa_softc *isc = match;
 	struct ne2000_softc *nsc = &isc->sc_ne2000;
@@ -130,7 +158,9 @@ ne_isa_match(struct device *parent, void *match, void *aux)
 }
 
 void
-ne_isa_attach(struct device *parent, struct device *self, void *aux)
+ne_isa_attach(parent, self, aux)
+	struct device *parent, *self;
+	void *aux;
 {
 	struct ne_isa_softc *isc = (struct ne_isa_softc *)self;
 	struct ne2000_softc *nsc = &isc->sc_ne2000;
@@ -140,7 +170,16 @@ ne_isa_attach(struct device *parent, struct device *self, void *aux)
 	bus_space_handle_t nich;
 	bus_space_tag_t asict = nict;
 	bus_space_handle_t asich;
+	void (*npp_init_media) __P((struct dp8390_softc *, int **,
+	    int *, int *));
+	int *media, nmedia, defmedia;
 	const char *typestr;
+
+	printf("\n");
+
+	npp_init_media = NULL;
+	media = NULL;
+	nmedia = defmedia = 0;
 
 	/* Map i/o space. */
 	if (bus_space_map(nict, ia->ia_iobase, NE2000_NPORTS, 0, &nich)) {
@@ -168,7 +207,7 @@ ne_isa_attach(struct device *parent, struct device *self, void *aux)
 	case NE2000_TYPE_NE2000:
 		typestr = "NE2000";
 		/*
-		 * Check for a Realtek 8019.
+		 * Check for a RealTek 8019.
 		 */
 		bus_space_write_1(nict, nich, ED_P0_CR,
 		    ED_CR_PAGE_0 | ED_CR_STP);
@@ -177,19 +216,23 @@ ne_isa_attach(struct device *parent, struct device *self, void *aux)
 		    bus_space_read_1(nict, nich, NERTL_RTL0_8019ID1) ==
 								RTL0_8019ID1) {
 			typestr = "NE2000 (RTL8019)";
+			npp_init_media = rtl80x9_init_media;
 			dsc->sc_mediachange = rtl80x9_mediachange;
 			dsc->sc_mediastatus = rtl80x9_mediastatus;
 			dsc->init_card = rtl80x9_init_card;
-			dsc->sc_media_init = rtl80x9_media_init;
 		}
 		break;
 
 	default:
-		printf(": where did the card go?!\n");
+		printf("%s: where did the card go?!\n", dsc->sc_dev.dv_xname);
 		return;
 	}
 
-	printf(", %s", typestr);
+	printf("%s: %s Ethernet\n", dsc->sc_dev.dv_xname, typestr);
+
+	/* Initialize media, if we have it. */
+	if (npp_init_media != NULL)
+		(*npp_init_media)(dsc, &media, &nmedia, &defmedia);
 
 	/* This interface is always enabled. */
 	dsc->sc_enabled = 1;
@@ -198,11 +241,12 @@ ne_isa_attach(struct device *parent, struct device *self, void *aux)
 	 * Do generic NE2000 attach.  This will read the station address
 	 * from the EEPROM.
 	 */
-	ne2000_attach(nsc, NULL);
+	ne2000_attach(nsc, NULL, media, nmedia, defmedia);
 
 	/* Establish the interrupt handler. */
 	isc->sc_ih = isa_intr_establish(ia->ia_ic, ia->ia_irq, IST_EDGE,
 	    IPL_NET, dp8390_intr, dsc, dsc->sc_dev.dv_xname);
 	if (isc->sc_ih == NULL)
-		printf(": couldn't establish interrupt handler\n");
+		printf("%s: couldn't establish interrupt handler\n",
+		    dsc->sc_dev.dv_xname);
 }

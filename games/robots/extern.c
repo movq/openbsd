@@ -1,4 +1,4 @@
-/*	$OpenBSD: extern.c,v 1.9 2016/08/27 02:02:44 guenther Exp $	*/
+/*	$OpenBSD: extern.c,v 1.2 1998/07/09 04:34:12 pjanzen Exp $	*/
 /*	$NetBSD: extern.c,v 1.3 1995/04/22 10:08:49 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,8 +34,15 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/time.h>
-#include "robots.h"
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)extern.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: extern.c,v 1.2 1998/07/09 04:34:12 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
+#include	"robots.h"
 
 bool	Dead;			/* Player is now dead */
 bool	Full_clear = TRUE;	/* Lots of junk for init_field to clear */
@@ -63,9 +74,9 @@ int	Score;			/* Current score */
 int	Start_level = 1;	/* Level on which to start */
 int	Wait_bonus;		/* bonus for waiting */
 
-struct timespec	tv;		/* how long to wait; could be an option */
-
 COORD	Max;			/* Max area robots take up */
 COORD	Min;			/* Min area robots take up */
 COORD	My_pos;			/* Player's current position */
 COORD	Robots[MAXROBOTS];	/* Robots' current positions */
+
+jmp_buf	End_move;		/* Jump to on Real_time */

@@ -1,9 +1,9 @@
-/* $OpenBSD: cert.c,v 1.33 2013/03/21 04:30:14 deraadt Exp $	 */
-/* $EOM: cert.c,v 1.18 2000/09/28 12:53:27 niklas Exp $	 */
+/*	$OpenBSD: cert.c,v 1.11 1999/08/26 22:30:46 niklas Exp $	*/
+/*	$EOM: cert.c,v 1.12 1999/08/12 22:34:26 niklas Exp $	*/
 
 /*
  * Copyright (c) 1998, 1999 Niels Provos.  All rights reserved.
- * Copyright (c) 1999, 2000 Niklas Hallqvist.  All rights reserved.
+ * Copyright (c) 1999 Niklas Hallqvist.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -13,6 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Ericsson Radio Systems.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -30,135 +35,89 @@
  * This code was written under funding by Ericsson Radio Systems.
  */
 
-#include <sys/types.h>
+#include <sys/param.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include <ssl/ssl.h>
+
+#include "sysdep.h"
+
+#include "cert.h"
 #include "isakmp_num.h"
 #include "log.h"
-#include "cert.h"
 #include "x509.h"
 
-#include "policy.h"
-
 struct cert_handler cert_handler[] = {
-    {
-	ISAKMP_CERTENC_X509_SIG,
-	x509_cert_init, x509_crl_init, x509_cert_get, x509_cert_validate,
-	x509_cert_insert, x509_cert_free,
-	x509_certreq_validate, x509_certreq_decode, x509_free_aca,
-	x509_cert_obtain, x509_cert_get_key, x509_cert_get_subjects,
-	x509_cert_dup, x509_serialize, x509_printable, x509_from_printable,
-	x509_ca_count
-    },
-    {
-	ISAKMP_CERTENC_KEYNOTE,
-	keynote_cert_init, NULL, keynote_cert_get, keynote_cert_validate,
-	keynote_cert_insert, keynote_cert_free,
-	keynote_certreq_validate, keynote_certreq_decode, keynote_free_aca,
-	keynote_cert_obtain, keynote_cert_get_key, keynote_cert_get_subjects,
-	keynote_cert_dup, keynote_serialize, keynote_printable,
-	keynote_from_printable, keynote_ca_count
-    },
+#if defined (USE_LIBCRYPTO) || defined (USE_DLOPEN)
+  {
+    ISAKMP_CERTENC_X509_SIG, 
+    x509_cert_init, x509_cert_get, x509_cert_validate, 
+    x509_cert_insert, x509_cert_free,
+    x509_certreq_validate, x509_certreq_decode, x509_free_aca,
+    x509_cert_obtain, x509_cert_get_key, x509_cert_get_subject
+  }
+#endif
 };
 
 /* Initialize all certificate handlers */
-int
-cert_init(void)
-{
-	size_t	i;
-	int	err = 1;
-
-	for (i = 0; i < sizeof cert_handler / sizeof cert_handler[0]; i++)
-		if (cert_handler[i].cert_init &&
-		    !(*cert_handler[i].cert_init)())
-			err = 0;
-
-	return err;
-}
 
 int
-crl_init(void)
+cert_init (void)
 {
-	size_t	i;
-	int	err = 1;
+  int i, err = 1;
 
-	for (i = 0; i < sizeof cert_handler / sizeof cert_handler[0]; i++)
-		if (cert_handler[i].crl_init && !(*cert_handler[i].crl_init)())
-			err = 0;
+  for (i = 0; i < sizeof cert_handler / sizeof cert_handler[0]; i++)
+    if (cert_handler[i].cert_init && !(*cert_handler[i].cert_init) ())
+      err = 0;
 
-	return err;
+  return err;
 }
 
 struct cert_handler *
-cert_get(u_int16_t id)
+cert_get (u_int16_t id)
 {
-	size_t	i;
+  int i;
 
-	for (i = 0; i < sizeof cert_handler / sizeof cert_handler[0]; i++)
-		if (id == cert_handler[i].id)
-			return &cert_handler[i];
-	return 0;
+  for (i = 0; i < sizeof cert_handler / sizeof cert_handler[0]; i++)
+    if (id == cert_handler[i].id)
+      return &cert_handler[i];
+  return 0;
 }
 
-/*
- * Decode the certificate request of type TYPE contained in DATA extending
- * DATALEN bytes.  Return a certreq_aca structure which the caller is
- * responsible for deallocating.
- */
+/* Decode a CERTREQ and return a parsed structure.  */
 struct certreq_aca *
-certreq_decode(u_int16_t type, u_int8_t *data, u_int32_t datalen)
+certreq_decode (u_int16_t type, u_int8_t *data, u_int32_t datalen)
 {
-	struct cert_handler *handler;
-	struct certreq_aca aca, *ret;
+  struct cert_handler *handler;
+  struct certreq_aca aca, *ret;
 
-	handler = cert_get(type);
-	if (!handler)
-		return 0;
+  handler = cert_get (type);
+  if (!handler)
+    return 0;
 
-	aca.id = type;
-	aca.handler = handler;
-	aca.data = aca.raw_ca = NULL;
+  aca.id = type;
+  aca.handler = handler;
 
-	if (datalen > 0) {
-		int rc;
+  if (datalen > 0)
+    {
+      aca.data = handler->certreq_decode (data, datalen);
+      if (!aca.data)
+	return 0;
+    }
+  else
+    aca.data = 0;
 
-		rc = handler->certreq_decode(&aca.data, data, datalen);
-		if (!rc)
-			return 0;
+  ret = malloc (sizeof aca);
+  if (!ret)
+    {
+      log_error ("certreq_decode: malloc (%d) failed", sizeof aca);
+      handler->free_aca (aca.data);
+      return 0;
+    }
 
-		aca.raw_ca = malloc(datalen);
-		if (aca.raw_ca == NULL) {
-			log_error("certreq_decode: malloc (%lu) failed",
-			    (unsigned long)datalen);
-			handler->free_aca(aca.data);
-			return 0;
-		}
+  memcpy (ret, &aca, sizeof aca);
 
-		memcpy(aca.raw_ca, data, datalen);
-	}
-	aca.raw_ca_len = datalen;
-
-	ret = malloc(sizeof aca);
-	if (!ret) {
-		log_error("certreq_decode: malloc (%lu) failed",
-		    (unsigned long)sizeof aca);
-		free(aca.raw_ca);
-		handler->free_aca(aca.data);
-		return 0;
-	}
-	memcpy(ret, &aca, sizeof aca);
-	return ret;
-}
-
-void
-cert_free_subjects(int n, u_int8_t **id, u_int32_t *len)
-{
-	int	i;
-
-	for (i = 0; i < n; i++)
-		free(id[i]);
-	free(id);
-	free(len);
+  return ret;
 }

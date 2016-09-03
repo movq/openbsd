@@ -1,7 +1,7 @@
 %{
 /* arlex.l - Strange script language lexer */
 
-/*   Copyright 1992, 1997, 2000, 2002, 2003 Free Software Foundation, Inc.
+/*   Copyright (C) 1992 Free Software Foundation, Inc.
 
 This file is part of GNU Binutils.
 
@@ -25,20 +25,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 */
 #define DONTDECLARE_MALLOC
-#include "ansidecl.h"
-#include "libiberty.h"
+#include <ansidecl.h>
 #include "arparse.h"
-
-#define YY_NO_UNPUT
-
-extern int yylex (void);
-
+extern char *strdup();
 int linenumber;
 %}
-
-%a 10000
-%o 25000
-
 %%
 
 "ADDLIB"   	{ return ADDLIB; }
@@ -75,8 +66,8 @@ int linenumber;
 "("             { return '('; }
 ")"             { return ')'; }
 ","             { return ','; }
-[A-Za-z0-9/\\$:.\-\_]+  { 	
-		yylval.name =  xstrdup (yytext);
+[A-Za-z0-9/$:.\-\_]+  { 	
+		yylval.name =  strdup(yytext);
 		return FILENAME;
 		}
 "*".* 		{ }
@@ -87,5 +78,5 @@ int linenumber;
 %%
 #ifndef yywrap
 /* Needed for lex, though not flex. */
-int yywrap(void) { return 1; }
+int yywrap() { return 1; }
 #endif

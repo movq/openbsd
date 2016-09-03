@@ -1,4 +1,3 @@
-/*	$OpenBSD: devname.c,v 1.13 2016/07/06 04:35:12 guenther Exp $ */
 /*
  * Copyright (c) 1989, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,76 +31,50 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/stat.h>
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: devname.c,v 1.2 1996/08/19 08:22:18 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
 
 #include <db.h>
-#include <dirent.h>
+#include <err.h>
+#include <errno.h>
 #include <fcntl.h>
-#include <limits.h>
 #include <paths.h>
-#include <stdbool.h>
+#include <stdio.h>
 #include <string.h>
-#include <stdlib.h>
 
-static char *
-devname_nodb(dev_t dev, mode_t type)
-{
-	static char buf[NAME_MAX + 1];
-	char *name = NULL;
-	struct dirent *dp;
-	struct stat sb;
-	DIR *dirp;
-
-	if ((dirp = opendir(_PATH_DEV)) == NULL)
-		return (NULL);
-	while ((dp = readdir(dirp)) != NULL) {
-		if (dp->d_type != DT_UNKNOWN && DTTOIF(dp->d_type) != type)
-			continue;
-		if (fstatat(dirfd(dirp), dp->d_name, &sb, AT_SYMLINK_NOFOLLOW)
-		    || sb.st_rdev != dev || (sb.st_mode & S_IFMT) != type)
-			continue;
-		strlcpy(buf, dp->d_name, sizeof(buf));
-		name = buf;
-		break;
-	}
-	closedir(dirp);
-	return (name);
-}
-
-/*
- * Keys in dev.db are a mode_t followed by a dev_t.  The former is the
- * type of the file (mode & S_IFMT), the latter is the st_rdev field.
- * Note that the structure may contain padding.
- */
 char *
-devname(dev_t dev, mode_t type)
+devname(dev, type)
+	dev_t dev;
+	mode_t type;
 {
-	static DB *db;
-	static bool failure;
 	struct {
 		mode_t type;
 		dev_t dev;
 	} bkey;
+	static DB *db;
+	static int failure;
 	DBT data, key;
-	char *name = NULL;
 
-	if (!db && !failure) {
-		if (!(db = dbopen(_PATH_DEVDB, O_RDONLY, 0, DB_HASH, NULL)))
-			failure = true;
+	if (!db && !failure &&
+	    !(db = dbopen(_PATH_DEVDB, O_RDONLY, 0, DB_HASH, NULL))) {
+		_warn("warning: %s", _PATH_DEVDB);
+		failure = 1;
 	}
-	if (!failure) {
-		/* Be sure to clear any padding that may be found in bkey.  */
-		memset(&bkey, 0, sizeof(bkey));
-		bkey.dev = dev;
-		bkey.type = type;
-		key.data = &bkey;
-		key.size = sizeof(bkey);
-		if ((db->get)(db, &key, &data, 0) == 0)
-			name = data.data;
-	} else {
-		name = devname_nodb(dev, type);
-	}
-	return (name ? name : "??");
+	if (failure)
+		return ("??");
+
+	/*
+	 * Keys are a mode_t followed by a dev_t.  The former is the type of
+	 * the file (mode & S_IFMT), the latter is the st_rdev field.  Be
+	 * sure to clear any padding that may be found in bkey.
+	 */
+	memset(&bkey, 0, sizeof(bkey));
+	bkey.dev = dev;
+	bkey.type = type;
+	key.data = &bkey;
+	key.size = sizeof(bkey);
+	return ((db->get)(db, &key, &data, 0) ? "??" : (char *)data.data);
 }
-DEF_WEAK(devname);

@@ -1,4 +1,4 @@
-/*	$OpenBSD: announce.c,v 1.24 2016/02/01 07:25:51 mestre Exp $	*/
+/*	$OpenBSD: announce.c,v 1.8 1998/08/18 03:42:10 millert Exp $	*/
 
 /*
  * Copyright (c) 1983 Regents of the University of California.
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,45 +33,54 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+/*static char sccsid[] = "from: @(#)announce.c	5.9 (Berkeley) 2/26/91";*/
+static char rcsid[] = "$Id: announce.c,v 1.8 1998/08/18 03:42:10 millert Exp $";
+#endif /* not lint */
+
+#include <sys/param.h>
+#include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/wait.h>
+#include <sys/socket.h>
 #include <protocols/talkd.h>
-
-#include <limits.h>
-#include <paths.h>
-#include <stdio.h>
-#include <string.h>
+#include <errno.h>
+#include <syslog.h>
 #include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <vis.h>
-
+#include <paths.h>
 #include "talkd.h"
 
-static void	print_mesg(FILE *,CTL_MSG *,char *);
+static void	print_mesg __P((FILE *,CTL_MSG *,char *));
 
 /*
  * Announce an invitation to talk.  If the user is
  * accepting messages, announce that a talk is requested.
  */
 int
-announce(CTL_MSG *request, char *remote_machine)
+announce(request, remote_machine)
+	CTL_MSG *request;
+	char *remote_machine;
 {
-	char full_tty[PATH_MAX];
+	int pid, status;
+	char full_tty[MAXPATHLEN];
 	FILE *tf;
 	struct stat stbuf;
 
-	(void)snprintf(full_tty, sizeof(full_tty), "%s/%s", _PATH_DEV,
+	(void)snprintf(full_tty, sizeof full_tty, "%s/%s", _PATH_DEV,
 	    request->r_tty);
 	if (access(full_tty, 0) != 0)
 		return (FAILED);
 	if ((tf = fopen(full_tty, "w")) == NULL)
 		return (PERMISSION_DENIED);
-	if (fstat(fileno(tf), &stbuf) < 0) {
-		fclose(tf);
+	if (fstat(fileno(tf), &stbuf) < 0)
 		return (PERMISSION_DENIED);
-	}
-	if ((stbuf.st_mode & S_IWGRP) == 0) {
-		fclose(tf);
+	if ((stbuf.st_mode&S_IWGRP) == 0)
 		return (PERMISSION_DENIED);
-	}
 	print_mesg(tf, request, remote_machine);
 	fclose(tf);
 	return (SUCCESS);
@@ -78,45 +91,52 @@ announce(CTL_MSG *request, char *remote_machine)
 #define N_CHARS 120
 
 /*
- * Build a block of characters containing the message.
+ * Build a block of characters containing the message. 
  * It is sent blank filled and in a single block to
  * try to keep the message in one piece if the recipient
- * is in vi at the time
+ * in in vi at the time
  */
 static void
-print_mesg(FILE *tf, CTL_MSG *request, char *remote_machine)
+print_mesg(tf, request, remote_machine)
+	FILE *tf;
+	CTL_MSG *request;
+	char *remote_machine;
 {
+	struct timeval clock;
 	time_t clocktime;
+	struct timezone zone;
 	struct tm *localclock;
 	char line_buf[N_LINES][N_CHARS];
 	int sizes[N_LINES];
-	char big_buf[(N_LINES + 1) * N_CHARS];
-	char *bptr, *lptr, vis_user[sizeof(request->l_name) * 4];
+	char big_buf[N_LINES*N_CHARS];
+	char *bptr, *lptr, *vis_user;
 	int i, j, max_size;
 
 	i = 0;
 	max_size = 0;
-	time(&clocktime);
+	gettimeofday(&clock, &zone);
+	clocktime = clock.tv_sec;
 	localclock = localtime(&clocktime);
 	(void)snprintf(line_buf[i], N_CHARS, " ");
 	sizes[i] = strlen(line_buf[i]);
 	max_size = max(max_size, sizes[i]);
 	i++;
-	(void)snprintf(line_buf[i], N_CHARS,
-	    "Message from Talk_Daemon@%s at %d:%02d ...",
-	    hostname, localclock->tm_hour , localclock->tm_min );
+	(void)snprintf(line_buf[i], N_CHARS, 
+		"Message from Talk_Daemon@%s at %d:%02d ...",
+		hostname, localclock->tm_hour , localclock->tm_min );
 	sizes[i] = strlen(line_buf[i]);
 	max_size = max(max_size, sizes[i]);
 	i++;
+	vis_user = (char *) malloc(strlen(request->l_name) * 4 + 1);
 	strvis(vis_user, request->l_name, VIS_CSTYLE);
 	(void)snprintf(line_buf[i], N_CHARS,
-	    "talk: connection requested by %s@%s.",
-	    vis_user, remote_machine);
+		"talk: connection requested by %s@%s.",
+		vis_user, remote_machine);
 	sizes[i] = strlen(line_buf[i]);
 	max_size = max(max_size, sizes[i]);
 	i++;
 	(void)snprintf(line_buf[i], N_CHARS, "talk: respond with:  talk %s@%s",
-	    vis_user, remote_machine);
+		vis_user, remote_machine);
 	sizes[i] = strlen(line_buf[i]);
 	max_size = max(max_size, sizes[i]);
 	i++;
@@ -140,6 +160,6 @@ print_mesg(FILE *tf, CTL_MSG *request, char *remote_machine)
 		*(bptr++) = '\n';
 	}
 	*bptr = '\0';
-	fprintf(tf, "%s", big_buf);
+	fprintf(tf, big_buf);
 	fflush(tf);
 }

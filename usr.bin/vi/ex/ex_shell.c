@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_shell.c,v 1.15 2015/03/28 12:54:37 bcallah Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -11,11 +9,15 @@
 
 #include "config.h"
 
+#ifndef lint
+static const char sccsid[] = "@(#)ex_shell.c	10.38 (Berkeley) 8/19/96";
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/queue.h>
 #include <sys/wait.h>
 
 #include <bitstring.h>
-#include <ctype.h>
 #include <errno.h>
 #include <limits.h>
 #include <signal.h>
@@ -26,20 +28,22 @@
 
 #include "../common/common.h"
 
-#define MINIMUM(a, b)	(((a) < (b)) ? (a) : (b))
+static const char *sigmsg __P((int));
 
 /*
  * ex_shell -- :sh[ell]
  *	Invoke the program named in the SHELL environment variable
  *	with the argument -i.
  *
- * PUBLIC: int ex_shell(SCR *, EXCMD *);
+ * PUBLIC: int ex_shell __P((SCR *, EXCMD *));
  */
 int
-ex_shell(SCR *sp, EXCMD *cmdp)
+ex_shell(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	int rval;
-	char buf[PATH_MAX];
+	char buf[MAXPATHLEN];
 
 	/* We'll need a shell. */
 	if (opts_empty(sp, O_SHELL, 0))
@@ -74,11 +78,15 @@ ex_shell(SCR *sp, EXCMD *cmdp)
  * ex_exec_proc --
  *	Run a separate process.
  *
- * PUBLIC: int ex_exec_proc(SCR *, EXCMD *, char *, const char *, int);
+ * PUBLIC: int ex_exec_proc __P((SCR *, EXCMD *, char *, const char *, int));
  */
 int
-ex_exec_proc(SCR *sp, EXCMD *cmdp, char *cmd, const char *msg,
-    int need_newline)
+ex_exec_proc(sp, cmdp, cmd, msg, need_newline)
+	SCR *sp;
+	EXCMD *cmdp;
+	char *cmd;
+	const char *msg;
+	int need_newline;
 {
 	GS *gp;
 	const char *name;
@@ -118,12 +126,12 @@ ex_exec_proc(SCR *sp, EXCMD *cmdp, char *cmd, const char *msg,
 			name = O_STR(sp, O_SHELL);
 		else
 			++name;
-		execl(O_STR(sp, O_SHELL), name, "-c", cmd, (char *)NULL);
+		execl(O_STR(sp, O_SHELL), name, "-c", cmd, NULL);
 		msgq_str(sp, M_SYSERR, O_STR(sp, O_SHELL), "execl: %s");
 		_exit(127);
 		/* NOTREACHED */
 	default:			/* Parent. */
-		return (proc_wait(sp, pid, cmd, 0, 0));
+		return (proc_wait(sp, (long)pid, cmd, 0, 0));
 	}
 	/* NOTREACHED */
 }
@@ -138,10 +146,14 @@ ex_exec_proc(SCR *sp, EXCMD *cmdp, char *cmd, const char *msg,
  * rules get you.  I'm using a long based on the belief that nobody is
  * going to make it unsigned and it's unlikely to be a quad.
  *
- * PUBLIC: int proc_wait(SCR *, pid_t, const char *, int, int);
+ * PUBLIC: int proc_wait __P((SCR *, long, const char *, int, int));
  */
 int
-proc_wait(SCR *sp, pid_t pid, const char *cmd, int silent, int okpipe)
+proc_wait(sp, pid, cmd, silent, okpipe)
+	SCR *sp;
+	long pid;
+	const char *cmd;
+	int silent, okpipe;
 {
 	size_t len;
 	int nf, pstat;
@@ -150,7 +162,7 @@ proc_wait(SCR *sp, pid_t pid, const char *cmd, int silent, int okpipe)
 	/* Wait for the utility, ignoring interruptions. */
 	for (;;) {
 		errno = 0;
-		if (waitpid(pid, &pstat, 0) != -1)
+		if (waitpid((pid_t)pid, &pstat, 0) != -1)
 			break;
 		if (errno != EINTR) {
 			msgq(sp, M_SYSERR, "waitpid");
@@ -168,8 +180,8 @@ proc_wait(SCR *sp, pid_t pid, const char *cmd, int silent, int okpipe)
 		p = msg_print(sp, cmd, &nf);
 		len = strlen(p);
 		msgq(sp, M_ERR, "%.*s%s: received signal: %s%s",
-		    MINIMUM(len, 20), p, len > 20 ? " ..." : "",
-		    strsignal(WTERMSIG(pstat)),
+		    MIN(len, 20), p, len > 20 ? " ..." : "",
+		    sigmsg(WTERMSIG(pstat)),
 		    WCOREDUMP(pstat) ? "; core dumped" : "");
 		if (nf)
 			FREE_SPACE(sp, p, 0);
@@ -190,7 +202,7 @@ proc_wait(SCR *sp, pid_t pid, const char *cmd, int silent, int okpipe)
 			p = msg_print(sp, cmd, &nf);
 			len = strlen(p);
 			msgq(sp, M_ERR, "%.*s%s: exited with status %d",
-			    MINIMUM(len, 20), p, len > 20 ? " ..." : "",
+			    MIN(len, 20), p, len > 20 ? " ..." : "",
 			    WEXITSTATUS(pstat));
 			if (nf)
 				FREE_SPACE(sp, p, 0);
@@ -198,4 +210,169 @@ proc_wait(SCR *sp, pid_t pid, const char *cmd, int silent, int okpipe)
 		return (1);
 	}
 	return (0);
+}
+
+/*
+ * XXX
+ * The sys_siglist[] table in the C library has this information, but there's
+ * no portable way to get to it.  (Believe me, I tried.)
+ */
+typedef struct _sigs {
+	int	 number;		/* signal number */
+	char	*message;		/* related message */
+} SIGS;
+
+SIGS const sigs[] = {
+#ifdef SIGABRT
+	SIGABRT,	"Abort trap",
+#endif
+#ifdef SIGALRM
+	SIGALRM,	"Alarm clock",
+#endif
+#ifdef SIGBUS
+	SIGBUS,		"Bus error",
+#endif
+#ifdef SIGCLD
+	SIGCLD,		"Child exited or stopped",
+#endif
+#ifdef SIGCHLD
+	SIGCHLD,	"Child exited",
+#endif
+#ifdef SIGCONT
+	SIGCONT,	"Continued",
+#endif
+#ifdef SIGDANGER
+	SIGDANGER,	"System crash imminent",
+#endif
+#ifdef SIGEMT
+	SIGEMT,		"EMT trap",
+#endif
+#ifdef SIGFPE
+	SIGFPE,		"Floating point exception",
+#endif
+#ifdef SIGGRANT
+	SIGGRANT,	"HFT monitor mode granted",
+#endif
+#ifdef SIGHUP
+	SIGHUP,		"Hangup",
+#endif
+#ifdef SIGILL
+	SIGILL,		"Illegal instruction",
+#endif
+#ifdef SIGINFO
+	SIGINFO,	"Information request",
+#endif
+#ifdef SIGINT
+	SIGINT,		"Interrupt",
+#endif
+#ifdef SIGIO
+	SIGIO,		"I/O possible",
+#endif
+#ifdef SIGIOT
+	SIGIOT,		"IOT trap",
+#endif
+#ifdef SIGKILL
+	SIGKILL,	"Killed",
+#endif
+#ifdef SIGLOST
+	SIGLOST,	"Record lock",
+#endif
+#ifdef SIGMIGRATE
+	SIGMIGRATE,	"Migrate process to another CPU",
+#endif
+#ifdef SIGMSG
+	SIGMSG,		"HFT input data pending",
+#endif
+#ifdef SIGPIPE
+	SIGPIPE,	"Broken pipe",
+#endif
+#ifdef SIGPOLL
+	SIGPOLL,	"I/O possible",
+#endif
+#ifdef SIGPRE
+	SIGPRE,		"Programming error",
+#endif
+#ifdef SIGPROF
+	SIGPROF,	"Profiling timer expired",
+#endif
+#ifdef SIGPWR
+	SIGPWR,		"Power failure imminent",
+#endif
+#ifdef SIGRETRACT
+	SIGRETRACT,	"HFT monitor mode retracted",
+#endif
+#ifdef SIGQUIT
+	SIGQUIT,	"Quit",
+#endif
+#ifdef SIGSAK
+	SIGSAK,		"Secure Attention Key",
+#endif
+#ifdef SIGSEGV
+	SIGSEGV,	"Segmentation fault",
+#endif
+#ifdef SIGSOUND
+	SIGSOUND,	"HFT sound sequence completed",
+#endif
+#ifdef SIGSTOP
+	SIGSTOP,	"Suspended (signal)",
+#endif
+#ifdef SIGSYS
+	SIGSYS,		"Bad system call",
+#endif
+#ifdef SIGTERM
+	SIGTERM,	"Terminated",
+#endif
+#ifdef SIGTRAP
+	SIGTRAP,	"Trace/BPT trap",
+#endif
+#ifdef SIGTSTP
+	SIGTSTP,	"Suspended",
+#endif
+#ifdef SIGTTIN
+	SIGTTIN,	"Stopped (tty input)",
+#endif
+#ifdef SIGTTOU
+	SIGTTOU,	"Stopped (tty output)",
+#endif
+#ifdef SIGURG
+	SIGURG,		"Urgent I/O condition",
+#endif
+#ifdef SIGUSR1
+	SIGUSR1,	"User defined signal 1",
+#endif
+#ifdef SIGUSR2
+	SIGUSR2,	"User defined signal 2",
+#endif
+#ifdef SIGVTALRM
+	SIGVTALRM,	"Virtual timer expired",
+#endif
+#ifdef SIGWINCH
+	SIGWINCH,	"Window size changes",
+#endif
+#ifdef SIGXCPU
+	SIGXCPU,	"Cputime limit exceeded",
+#endif
+#ifdef SIGXFSZ
+	SIGXFSZ,	"Filesize limit exceeded",
+#endif
+};
+
+/*
+ * sigmsg --
+ * 	Return a pointer to a message describing a signal.
+ */
+static const char *
+sigmsg(signo)
+	int signo;
+{
+	static char buf[40];
+	const SIGS *sigp;
+	int n;
+
+	for (n = 0,
+	    sigp = &sigs[0]; n < sizeof(sigs) / sizeof(sigs[0]); ++n, ++sigp)
+		if (sigp->number == signo)
+			return (sigp->message);
+	(void)snprintf(buf, sizeof(buf), "Unknown signal: %d", signo);
+	return (buf);
 }

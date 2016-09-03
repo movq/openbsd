@@ -1,4 +1,4 @@
-/* $OpenBSD: join.c,v 1.27 2015/10/09 01:37:07 deraadt Exp $	*/
+/* $Id: join.c,v 1.12 1999/07/23 23:37:34 aaron Exp $	*/
 
 /*-
  * Copyright (c) 1991, 1993, 1994
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,13 +37,26 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1991, 1993, 1994\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+/*static char sccsid[] = "@(#)join.c	8.6 (Berkeley) 5/4/95"; */
+static char rcsid[] = "$Id: join.c,v 1.12 1999/07/23 23:37:34 aaron Exp $";
+#endif /* not lint */
+
+#include <sys/param.h>
+
+#include <ctype.h>
 #include <err.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-
-#define MAXIMUM(a, b)	(((a) > (b)) ? (a) : (b))
 
 /*
  * There's a structure per input file which encapsulates the state of the
@@ -61,7 +78,7 @@ typedef struct {
 	FILE *fp;			/* file descriptor */
 	u_long joinf;			/* join field (-1, -2, -j) */
 	int unpair;			/* output unpairable lines (-a) */
-	u_long number;			/* 1 for file 1, 2 for file 2 */
+	int number;			/* 1 for file 1, 2 for file 2 */
 	LINE *set;			/* set of lines with same field */
 	int pushbool;			/* if pushback is set */
 	u_long pushback;		/* line on the stack */
@@ -69,8 +86,8 @@ typedef struct {
 	u_long setalloc;		/* set allocated count */
 	u_long setusedc;		/* sets used  */
 } INPUT;
-INPUT input1 = { NULL, 0, 0, 1, NULL, 0, 0, 0, 0, 0 },
-      input2 = { NULL, 0, 0, 2, NULL, 0, 0, 0, 0, 0 };
+INPUT input1 = { NULL, 0, 0, 1, NULL, 0, 0, 0, },
+      input2 = { NULL, 0, 0, 2, NULL, 0, 0, 0, };
 
 typedef struct {
 	u_long	filenum;	/* file number */
@@ -86,26 +103,25 @@ int spans = 1;			/* span multiple delimiters (-t) */
 char *empty;			/* empty field replacement string (-e) */
 char *tabchar = " \t";		/* delimiter characters (-t) */
 
-int  cmp(LINE *, u_long, LINE *, u_long);
-void fieldarg(char *);
-void joinlines(INPUT *, INPUT *);
-void obsolete(char **);
-void outfield(LINE *, u_long, int);
-void outoneline(INPUT *, LINE *);
-void outtwoline(INPUT *, LINE *, INPUT *, LINE *);
-void slurp(INPUT *);
-void slurpit(INPUT *);
-void usage(void);
+int  cmp __P((LINE *, u_long, LINE *, u_long));
+void fieldarg __P((char *));
+void joinlines __P((INPUT *, INPUT *));
+void obsolete __P((char **));
+void outfield __P((LINE *, u_long, int));
+void outoneline __P((INPUT *, LINE *));
+void outtwoline __P((INPUT *, LINE *, INPUT *, LINE *));
+void slurp __P((INPUT *));
+void slurpit __P((INPUT *));
+void usage __P((void));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	INPUT *F1, *F2;
 	int aflag, ch, cval, vflag;
 	char *end;
-
-	if (pledge("stdio rpath", NULL) == -1)
-		err(1, "pledge");
 
 	F1 = &input1;
 	F2 = &input2;
@@ -211,9 +227,6 @@ main(int argc, char *argv[])
 	if (F1->fp == stdin && F2->fp == stdin)
 		errx(1, "only one input file may be stdin");
 
-	if (pledge("stdio", NULL) == -1)
-		err(1, "pledge");
-
 	F1->setusedc = 0;
 	F2->setusedc = 0;
 	slurp(F1);
@@ -241,7 +254,7 @@ main(int argc, char *argv[])
 				joinlines(F1, NULL);
 				slurp(F1);
 			}
-			else if (cval < 0)
+			else if (cval < 0)	
 				/* File 1 takes the lead... */
 				slurp(F1);
 			if (F2->unpair
@@ -274,14 +287,15 @@ main(int argc, char *argv[])
 }
 
 /* wrapper around slurpit() to keep track of what field we are on */
-void slurp(INPUT *F)
+void slurp(F)
+	INPUT *F;
 {
 	long fpos;
 	u_long cfieldc;
 
 	if (F->set == NULL) {
 		fpos = 0;
-		cfieldc = 0;
+		cfieldc = 0;	
 	}
 	else {
 		fpos = F->set->fpos;
@@ -292,14 +306,15 @@ void slurp(INPUT *F)
 		return;
 	else if (fpos != F->set->fpos)
 		F->set->cfieldc = cfieldc+1;
-}
+}	
 
 void
-slurpit(INPUT *F)
+slurpit(F)
+	INPUT *F;
 {
 	LINE *lp, *lastlp, tmp;
 	size_t len;
-	u_long cnt;
+	int cnt;
 	char *bp, *fieldp;
 	long fpos;
 	/*
@@ -315,14 +330,11 @@ slurpit(INPUT *F)
 		 * is new space.
 		 */
 		if (F->setcnt == F->setalloc) {
-			LINE *p;
-			u_long newsize = F->setalloc + 50;
 			cnt = F->setalloc;
-			if ((p = reallocarray(F->set, newsize, sizeof(LINE)))
-			    == NULL)
+			F->setalloc += 50;
+			if ((F->set = realloc(F->set,
+			    F->setalloc * sizeof(LINE))) == NULL)
 				err(1, NULL);
-			F->set = p;
-			F->setalloc = newsize;
 			memset(F->set + cnt, 0, 50 * sizeof(LINE));
 			/* re-set lastlp in case it moved */
 			if (lastlp != NULL)
@@ -334,6 +346,7 @@ slurpit(INPUT *F)
 		 * the two structures so that we don't lose space allocated to
 		 * either structure.  This could be avoided by doing another
 		 * level of indirection, but it's probably okay as is.
+		 * but it's probably okay as is.
 		 */
 		lp = &F->set[F->setcnt];
 		if (F->pushbool) {
@@ -351,13 +364,10 @@ slurpit(INPUT *F)
 		*/
 		fpos = ftell(F->fp) - len;
 		if (lp->linealloc <= len + 1) {
-			char *p;
-			u_long newsize = lp->linealloc +
-			    MAXIMUM(100, len + 1 - lp->linealloc);
-			if ((p = realloc(lp->line, newsize)) == NULL)
+			lp->linealloc += MAX(100, len + 1 - lp->linealloc);
+			if ((lp->line = realloc(lp->line, lp->linealloc))
+			== NULL)
 				err(1, NULL);
-			lp->line = p;
-			lp->linealloc = newsize;
 		}
 		F->setusedc++;
 		memmove(lp->line, bp, len);
@@ -375,13 +385,10 @@ slurpit(INPUT *F)
 			if (spans && *fieldp == '\0')
 				continue;
 			if (lp->fieldcnt == lp->fieldalloc) {
-				char **p;
-				u_long newsize = lp->fieldalloc + 50;
-				if ((p = reallocarray(lp->fields, newsize,
-				    sizeof(char *))) == NULL)
+				lp->fieldalloc += 50;
+				if ((lp->fields = realloc(lp->fields,
+				    lp->fieldalloc * sizeof(char *))) == NULL)
 					err(1, NULL);
-				lp->fields = p;
-				lp->fieldalloc = newsize;
 			}
 			lp->fields[lp->fieldcnt++] = fieldp;
 		}
@@ -396,7 +403,9 @@ slurpit(INPUT *F)
 }
 
 int
-cmp(LINE *lp1, u_long fieldno1, LINE *lp2, u_long fieldno2)
+cmp(lp1, fieldno1, lp2, fieldno2)
+	LINE *lp1, *lp2;
+	u_long fieldno1, fieldno2;
 {
 	if (lp1->fieldcnt <= fieldno1)
 		return (-1);
@@ -406,9 +415,10 @@ cmp(LINE *lp1, u_long fieldno1, LINE *lp2, u_long fieldno2)
 }
 
 void
-joinlines(INPUT *F1, INPUT *F2)
+joinlines(F1, F2)
+	INPUT *F1, *F2;
 {
-	u_long cnt1, cnt2;
+	int cnt1, cnt2;
 
 	/*
 	 * Output the results of a join comparison.  The output may be from
@@ -426,9 +436,11 @@ joinlines(INPUT *F1, INPUT *F2)
 }
 
 void
-outoneline(INPUT *F, LINE *lp)
+outoneline(F, lp)
+	INPUT *F;
+	LINE *lp;
 {
-	u_long cnt;
+	int cnt;
 
 	/*
 	 * Output a single line from one of the files, according to the
@@ -439,21 +451,12 @@ outoneline(INPUT *F, LINE *lp)
 		for (cnt = 0; cnt < olistcnt; ++cnt) {
 			if (olist[cnt].filenum == F->number)
 				outfield(lp, olist[cnt].fieldno, 0);
-			else if (olist[cnt].filenum == 0)
-				outfield(lp, F->joinf, 0);
 			else
 				outfield(lp, 0, 1);
 		}
-	else {
-		/*
-		 * Output the join field, then the remaining fields from F
-		 */
-		outfield(lp, F->joinf, 0);
+	else
 		for (cnt = 0; cnt < lp->fieldcnt; ++cnt)
-			if (F->joinf != cnt)
-				outfield(lp, cnt, 0);
-	}
-
+			outfield(lp, cnt, 0);
 	putchar('\n');
 	if (ferror(stdout))
 		err(1, "stdout");
@@ -461,19 +464,16 @@ outoneline(INPUT *F, LINE *lp)
 }
 
 void
-outtwoline(INPUT *F1, LINE *lp1, INPUT *F2, LINE *lp2)
+outtwoline(F1, lp1, F2, lp2)
+	INPUT *F1, *F2;
+	LINE *lp1, *lp2;
 {
-	u_long cnt;
+	int cnt;
 
 	/* Output a pair of lines according to the join list (if any). */
 	if (olist) {
 		for (cnt = 0; cnt < olistcnt; ++cnt)
-			if (olist[cnt].filenum == 0) {
-				if (lp1->fieldcnt >= F1->joinf)
-					outfield(lp1, F1->joinf, 0);
-				else
-					outfield(lp2, F2->joinf, 0);
-			} else if (olist[cnt].filenum == 1)
+			if (olist[cnt].filenum == 1)
 				outfield(lp1, olist[cnt].fieldno, 0);
 			else /* if (olist[cnt].filenum == 2) */
 				outfield(lp2, olist[cnt].fieldno, 0);
@@ -497,7 +497,10 @@ outtwoline(INPUT *F1, LINE *lp1, INPUT *F2, LINE *lp2)
 }
 
 void
-outfield(LINE *lp, u_long fieldno, int out_empty)
+outfield(lp, fieldno, out_empty)
+	LINE *lp;
+	u_long fieldno;
+	int out_empty;
 {
 	if (needsep++)
 		putchar((int)*tabchar);
@@ -520,46 +523,39 @@ outfield(LINE *lp, u_long fieldno, int out_empty)
  * fields.
  */
 void
-fieldarg(char *option)
+fieldarg(option)
+	char *option;
 {
-	u_long fieldno, filenum;
+	u_long fieldno;
 	char *end, *token;
 
 	while ((token = strsep(&option, ", \t")) != NULL) {
 		if (*token == '\0')
 			continue;
-		if (token[0] == '0')
-			filenum = fieldno = 0;
-		else if ((token[0] == '1' || token[0] == '2') &&
-		    token[1] == '.') {
-			filenum = token[0] - '0';
-			fieldno = strtol(token + 2, &end, 10);
-			if (*end)
-				errx(1, "malformed -o option field");
-			if (fieldno == 0)
-				errx(1, "field numbers are 1 based");
-			--fieldno;
-		} else
+		if ((token[0] != '1' && token[0] != '2') || token[1] != '.')
 			errx(1, "malformed -o option field");
+		fieldno = strtol(token + 2, &end, 10);
+		if (*end)
+			errx(1, "malformed -o option field");
+		if (fieldno == 0)
+			errx(1, "field numbers are 1 based");
 		if (olistcnt == olistalloc) {
-			OLIST *p;
-			u_long newsize = olistalloc + 50;
-			if ((p = reallocarray(olist, newsize, sizeof(OLIST)))
-			    == NULL)
+			olistalloc += 50;
+			if ((olist = realloc(olist,
+			    olistalloc * sizeof(OLIST))) == NULL)
 				err(1, NULL);
-			olist = p;
-			olistalloc = newsize;
 		}
-		olist[olistcnt].filenum = filenum;
-		olist[olistcnt].fieldno = fieldno;
+		olist[olistcnt].filenum = token[0] - '0';
+		olist[olistcnt].fieldno = fieldno - 1;
 		++olistcnt;
 	}
 }
 
 void
-obsolete(char **argv)
+obsolete(argv)
+	char **argv;
 {
-	size_t len;
+	int len;
 	char **p, *ap, *t;
 
 	while ((ap = *++argv) != NULL) {
@@ -571,7 +567,7 @@ obsolete(char **argv)
 			continue;
 		switch (ap[1]) {
 		case 'a':
-			/*
+			/* 
 			 * The original join allowed "-a", which meant the
 			 * same as -a1 plus -a2.  POSIX 1003.2, Draft 11.2
 			 * only specifies this as "-a 1" and "a -2", so we
@@ -580,13 +576,8 @@ obsolete(char **argv)
 			 * on the command line.  (Well, we could reallocate
 			 * the argv array, but that hardly seems worthwhile.)
 			 */
-			if (ap[2] == '\0' && (argv[1] == NULL ||
-			    (strcmp(argv[1], "1") != 0 &&
-			    strcmp(argv[1], "2") != 0))) {
+			if (ap[2] == '\0')
 				ap[1] = '\01';
-				warnx("-a option used without an argument; "
-				    "reverting to historical behavior");
-			}
 			break;
 		case 'j':
 			/*
@@ -596,16 +587,21 @@ obsolete(char **argv)
 			 */
 			switch(ap[2]) {
 			case '1':
+				if (ap[3] != '\0')
+					goto jbad;
+				ap[1] = '1';
+				ap[2] = '\0';
+				break;
 			case '2':
 				if (ap[3] != '\0')
 					goto jbad;
-				ap[1] = ap[2];
+				ap[1] = '2';
 				ap[2] = '\0';
 				break;
 			case '\0':
 				break;
 			default:
-jbad:				warnx("unknown option -- %s", ap + 1);
+jbad:				errx(1, "illegal option -- %s", ap);
 				usage();
 			}
 			break;
@@ -614,11 +610,10 @@ jbad:				warnx("unknown option -- %s", ap + 1);
 			 * The original join allowed "-o arg arg".
 			 * Convert to "-o arg -o arg".
 			 */
-			if (ap[2] != '\0' || argv[1] == NULL)
+			if (ap[2] != '\0')
 				break;
 			for (p = argv + 2; *p != NULL; ++p) {
-				if (p[0][0] == '0' || ((p[0][0] != '1' &&
-				    p[0][0] != '2') || p[0][1] != '.'))
+				if ((p[0][0] != '1' && p[0][0] != '2') || p[0][1] != '.')
 					break;
 				len = strlen(*p);
 				if (len - 2 != strspn(*p + 2, "0123456789"))
@@ -637,15 +632,10 @@ jbad:				warnx("unknown option -- %s", ap + 1);
 }
 
 void
-usage(void)
+usage()
 {
-	int len;
-	extern char *__progname;
-
-	len = strlen(__progname) + sizeof("usage: ");
-	(void)fprintf(stderr, "usage: %s [-1 field] [-2 field] "
-	    "[-a file_number | -v file_number] [-e string]\n"
-	    "%*s[-o list] [-t char] file1 file2\n",
-	    __progname, len, "");
+	(void)fprintf(stderr, "%s%s\n",
+	    "usage: join [-a fileno | -v fileno ] [-e string] [-1 field] ",
+	    "[-2 field]\n            [-o list] [-t char] file1 file2");
 	exit(1);
 }

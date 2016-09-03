@@ -1,4 +1,4 @@
-/*	$OpenBSD: trek.h,v 1.13 2013/06/02 04:28:39 schwarze Exp $	*/
+/*	$OpenBSD: trek.h,v 1.5 1999/07/31 18:49:00 pjanzen Exp $	*/
 /*	$NetBSD: trek.h,v 1.3 1995/04/22 10:59:36 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,6 +35,8 @@
  *
  *	@(#)trek.h	8.1 (Berkeley) 5/31/93
  */
+
+#include <sys/cdefs.h>
 
 /*
 **  Global Declarations
@@ -54,14 +60,14 @@
 
 /* galactic parameters */
 #define	NSECTS		10	/* dimensions of quadrant in sectors */
-#define	NQUADS		8	/* dimension of galaxy in quadrants */
+#define	NQUADS		8	/* dimension of galazy in quadrants */
 #define	NINHAB		32	/* number of quadrants which are inhabited */
 
 struct quad		/* definition for each quadrant */
 {
 	unsigned char	bases;	/* number of bases in this quadrant */
 	char	klings;		/* number of Klingons in this quadrant */
-	signed   char	holes;	/* number of black holes in this quadrant */
+	char	holes;		/* number of black holes in this quadrant */
 	int	scanned;	/* star chart entry (see below) */
 	short	stars;		/* number of stars in this quadrant */
 	char	qsystemname;	/* starsystem name (see below) */
@@ -131,7 +137,7 @@ struct device
 	const char	*person;	/* the person who fixes it */
 };
 
-extern const struct device	Device[NDEV];
+const struct device	Device[NDEV];
 
 /***************************  EVENTS  ****************************/
 
@@ -208,6 +214,9 @@ struct xy
 	unsigned char	x, y;		/* coordinates */
 };
 
+
+extern const struct cvntab	Skitab[];
+extern const struct cvntab	Lentab[];
 
 /*
  *	note that much of the stuff in the following structs CAN NOT
@@ -338,7 +347,7 @@ struct
  *	scheduled event of each type.  Zero if no such event scheduled.
  */
 
-/* Klingon move indices */
+/* Klingon move indicies */
 #define	KM_OB		0	/* Old quadrant, Before attack */
 #define	KM_OA		1	/* Old quadrant, After attack */
 #define	KM_EB		2	/* Enter quadrant, Before attack */
@@ -370,152 +379,152 @@ int	Trace;
 #endif
 
 /* abandon.c */
-void abandon(int);
+void abandon __P((int));
 
 /* attack.c */
-void attack(int);
+void attack __P((int));
 
 /* autover.c */
-void autover(void);
+void autover __P((void));
 
 /* capture.c */
-void capture(int);
-struct kling *selectklingon(void);
+void capture __P((int));
+struct kling *selectklingon __P((void));
 
 /* check_out.c */
-int check_out(int);
+int check_out __P((int));
 
 /* checkcond.c */
-void checkcond(void);
+void checkcond __P((void));
 
 /* compkl.c */
-void compkldist(int);
+void compkldist __P((int));
 
 /* computer.c */
-void computer(int);
+void computer __P((int));
 
 /* damage.c */
-void damage(int, double);
+void damage __P((int, double));
 
 /* damaged.c */
-int damaged(int);
+int damaged __P((int));
 
 /* dcrept.c */
-void dcrept(int);
+void dcrept __P((int));
 
 /* destruct.c */
-void destruct(int);
+void destruct __P((int));
 
 /* dock.c */
-void dock(int);
-void undock(int);
+void dock __P((int));
+void undock __P((int));
 
 /* dumpgame.c */
-void dumpgame(int);
-int restartgame(void);
+void dumpgame __P((int));
+int restartgame __P((void));
 
 /* dumpme.c */
-void dumpme(int);
+void dumpme __P((int));
 
 /* dumpssradio.c */
-int dumpssradio(void);
+int dumpssradio __P((void));
 
 /* events.c */
-int events(int);
+int events __P((int));
 
 /* externs.c */
 
 /* getcodi.c */
-int getcodi(int *, double *);
+int getcodi __P((int *, double *));
 
 /* help.c */
-void help(int);
+void help __P((int));
 
 /* impulse.c */
-void impulse(int);
+void impulse __P((int));
 
 /* initquad.c */
-void initquad(int);
-void sector(int *, int *);
+void initquad __P((int));
+void sector __P((int *, int *));
 
 /* kill.c */
-void killk(int, int );
-void killb(int, int );
-void kills(int, int , int);
-void killd(int, int , int);
+void killk __P((int, int ));
+void killb __P((int, int ));
+void kills __P((int, int , int));
+void killd __P((int, int , int));
 
 /* klmove.c */
-void klmove(int);
+void klmove __P((int));
 
 /* lose.c */
-void lose(int);
+void lose __P((int));
 
 /* lrscan.c */
-void lrscan(int);
+void lrscan __P((int));
 
 /* move.c */
-double move(int, int, double, double);
+double move __P((int, int, double, double));
 
 /* nova.c */
-void nova(int, int );
+void nova __P((int, int ));
 
 /* out.c */
-void out(int);
+void out __P((int));
 
 /* phaser.c */
-void phaser(int);
+void phaser __P((int));
 
 /* play.c */
-void myreset(int);
-void play(void);
+void myreset __P((int));
+void play __P((void));
 
 /* ram.c */
-void ram(int, int );
+void ram __P((int, int ));
 
 /* ranf.c */
-int ranf(int);
-double franf(void);
+int ranf __P((int));
+double franf __P((void));
 
 /* rest.c */
-void rest(int);
+void rest __P((int));
 
 /* schedule.c */
-struct event *schedule(int, double, int, int , int);
-void reschedule(struct event *, double);
-void unschedule(struct event *);
-struct event *xsched(int, int, int, int , int );
-void xresched(struct event *, int, int);
+struct event *schedule __P((int, double, int, int , int));
+void reschedule __P((struct event *, double));
+void unschedule __P((struct event *));
+struct event *xsched __P((int, int, int, int , int ));
+void xresched __P((struct event *, int, int));
 
 /* score.c */
-long score(void);
+long score __P((void));
 
 /* setup.c */
-void setup(void);
+void setup __P((void));
 
 /* setwarp.c */
-void setwarp(int);
+void setwarp __P((int));
 
 /* shield.c */
-void shield(int);
+void shield __P((int));
 
 /* snova.c */
-void snova(int, int );
+void snova __P((int, int ));
 
 /* srscan.c */
-void srscan(int);
+void srscan __P((int));
 
 /* systemname.c */
-const char *systemname(const struct quad *);
+const char *systemname __P((const struct quad *));
 
 /* torped.c */
-void torped(int);
+void torped __P((int));
 
 /* visual.c */
-void visual(int);
+void visual __P((int));
 
 /* warp.c */
-void dowarp(int);
-void warp(int, int, double);
+void dowarp __P((int));
+void warp __P((int, int, double));
 
 /* win.c */
-void win(void);
+void win __P((void));

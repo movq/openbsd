@@ -1,5 +1,5 @@
-/* $OpenBSD: prom_disp.s,v 1.7 2008/01/13 20:59:52 kettenis Exp $ */
-/* $NetBSD: prom_disp.s,v 1.8 1997/11/03 04:22:03 ross Exp $ */
+/*	$OpenBSD: prom_disp.s,v 1.4 1996/10/30 22:38:24 niklas Exp $	*/
+/*	$NetBSD: prom_disp.s,v 1.5 1996/09/17 21:17:14 cgd Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995, 1996 Carnegie-Mellon University.
@@ -27,9 +27,6 @@
  * any improvements or extensions that they make and grant Carnegie the
  * rights to redistribute these changes.
  */
-
-.file	2 __FILE__
-.loc	2 __LINE__
 
 #ifndef _LOCORE
 #include <machine/asm.h>

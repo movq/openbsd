@@ -1,6 +1,7 @@
-/*	$OpenBSD: frm_sub.c,v 1.6 2015/01/23 22:48:51 krw Exp $	*/
+/*	$OpenBSD: frm_sub.c,v 1.3 1999/05/17 03:04:17 millert Exp $	*/
+
 /****************************************************************************
- * Copyright (c) 1998-2003,2004 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -28,12 +29,12 @@
  ****************************************************************************/
 
 /****************************************************************************
- *   Author:  Juergen Pfeifer, 1995,1997                                    *
+ *   Author: Juergen Pfeifer <juergen.pfeifer@gmx.net> 1995,1997            *
  ****************************************************************************/
 
 #include "form.priv.h"
 
-MODULE_ID("$Id: frm_sub.c,v 1.6 2015/01/23 22:48:51 krw Exp $")
+MODULE_ID("$From: frm_sub.c,v 1.4 1999/05/16 17:22:11 juergen Exp $")
 
 /*---------------------------------------------------------------------------
 |   Facility      :  libnform  
@@ -44,17 +45,14 @@ MODULE_ID("$Id: frm_sub.c,v 1.6 2015/01/23 22:48:51 krw Exp $")
 |   Return Values :  E_OK       - success
 |                    E_POSTED   - form is posted
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(int)
-set_form_sub(FORM *form, WINDOW *win)
+int set_form_sub(FORM * form, WINDOW * win)
 {
-  T((T_CALLED("set_form_sub(%p,%p)"), form, win));
-
-  if (form && (form->status & _POSTED))
+  if (form && (form->status & _POSTED))	
     RETURN(E_POSTED);
 
-  Normalize_Form(form)->sub = win;
+  Normalize_Form( form )->sub = win;
   RETURN(E_OK);
-}
+}	
 
 /*---------------------------------------------------------------------------
 |   Facility      :  libnform  
@@ -64,15 +62,10 @@ set_form_sub(FORM *form, WINDOW *win)
 |
 |   Return Values :  The pointer to the Subwindow.
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(WINDOW *)
-form_sub(const FORM *form)
+WINDOW *form_sub(const FORM * form)
 {
-  const FORM *f;
-
-  T((T_CALLED("form_sub(%p)"), form));
-
-  f = Normalize_Form(form);
-  returnWin(Get_Form_Window(f));
+  const FORM* f = Normalize_Form( form );
+  return Get_Form_Window(f);
 }
 
 /* frm_sub.c ends here */

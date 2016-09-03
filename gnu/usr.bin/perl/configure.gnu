@@ -1,8 +1,10 @@
 #! /bin/sh
 #
+# $Id: configure,v 3.0.1.1 1995/07/25 14:16:21 ram Exp $
+#
 # GNU configure-like front end to metaconfig's Configure.
 #
-# Written by Andy Dougherty <doughera@lafayette.edu>
+# Written by Andy Dougherty <doughera@lafcol.lafayette.edu>
 # and Matthew Green <mrg@mame.mu.oz.au>.
 #
 # Reformatted and modified for inclusion in the dist-3.0 package by
@@ -63,12 +65,6 @@ EOM
 		opts="$opts $arg"
 		shift
 		;;
-	--prefix)
-		shift
-		arg="-Dprefix=$1"
-		opts="$opts $arg"
-		shift
-		;;
  	--cache-file=*)
  		shift		# Just ignore it.
  		;;
@@ -90,7 +86,7 @@ EOM
 		exit 1
 		;;
 	*)
-		opts="$opts '$1'"
+		opts="$opts $1"
 		shift
 		;;
 	esac
@@ -115,14 +111,6 @@ case "$ccflags" in
 '') ;;
 *) opts="$opts -Dccflags='$ccflags'";;
 esac
-case "$LDFLAGS" in
-'') ;;
-*) ldflags="$ldflags $LDFLAGS";;
-esac
-case "$ldflags" in
-'') ;;
-*) opts="$opts -Dldflags='$ldflags'";;
-esac
 
 # Don't use -s if they want verbose mode
 case "$verbose" in
@@ -130,7 +118,7 @@ case "$verbose" in
 *) copt="$copt -d";;
 esac
 
-eval "set X sh Configure $copt $create $opts"
+set X sh Configure $copt $create $opts
 shift
 echo "$@"
 exec "$@"

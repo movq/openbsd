@@ -1,4 +1,4 @@
-/*	$OpenBSD: pr_tbl.c,v 1.6 2016/01/04 11:58:35 mestre Exp $	*/
+/*	$OpenBSD: pr_tbl.c,v 1.2 1999/09/25 15:52:20 pjanzen Exp $	*/
 /*	$NetBSD: pr_tbl.c,v 1.3 1995/03/23 08:35:52 cgd Exp $	*/
 
 /*
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,6 +37,14 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)pr_tbl.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: pr_tbl.c,v 1.2 1999/09/25 15:52:20 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
 /*
  * prime - prime table
  *
@@ -43,8 +55,6 @@
  * We are able to sieve 2^32-1 because this table has primes up to 65537 
  * and 65537^2 > 2^32-1.
  */
-
-#include <sys/types.h>
 
 #include "primes.h"
 
@@ -540,4 +550,4 @@ const ubig prime[] = {
 };
 
 /* pr_limit - largest prime in the prime table */
-const ubig *pr_limit = &prime[(sizeof(prime)/sizeof(prime[0]))-1];
+const unsigned long *pr_limit = &prime[(sizeof(prime)/sizeof(prime[0]))-1];

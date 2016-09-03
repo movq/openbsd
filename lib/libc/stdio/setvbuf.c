@@ -1,4 +1,3 @@
-/*	$OpenBSD: setvbuf.c,v 1.13 2015/08/31 02:53:57 guenther Exp $ */
 /*-
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,6 +34,10 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: setvbuf.c,v 1.2 1996/08/19 08:33:05 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include "local.h"
@@ -39,10 +46,13 @@
  * Set one of the three kinds of buffering, optionally including
  * a buffer.
  */
-int
-setvbuf(FILE *fp, char *buf, int mode, size_t size)
+setvbuf(fp, buf, mode, size)
+	register FILE *fp;
+	char *buf;
+	register int mode;
+	register size_t size;
 {
-	int ret, flags;
+	register int ret, flags;
 	size_t iosize;
 	int ttyflag;
 
@@ -61,12 +71,10 @@ setvbuf(FILE *fp, char *buf, int mode, size_t size)
 	 * malloc()ed.  We also clear any eof condition, as if this were
 	 * a seek.
 	 */
-	FLOCKFILE(fp);
 	ret = 0;
 	(void)__sflush(fp);
 	if (HASUB(fp))
 		FREEUB(fp);
-	WCIO_FREE(fp);
 	fp->_r = fp->_lbfsize = 0;
 	flags = fp->_flags;
 	if (flags & __SMBF)
@@ -108,18 +116,10 @@ nbf:
 			fp->_w = 0;
 			fp->_bf._base = fp->_p = fp->_nbuf;
 			fp->_bf._size = 1;
-			FUNLOCKFILE(fp);
 			return (ret);
 		}
 		flags |= __SMBF;
 	}
-
-	/*
-	 * We're committed to buffering from here, so make sure we've
-	 * registered to flush buffers on exit.
-	 */
-	if (!__sdidinit)
-		__sinit();
 
 	/*
 	 * Kill any seek optimization if the buffer is not the
@@ -154,8 +154,7 @@ nbf:
 		/* begin/continue reading, or stay in intermediate state */
 		fp->_w = 0;
 	}
-	FUNLOCKFILE(fp);
+	__cleanup = _cleanup;
 
 	return (ret);
 }
-DEF_STRONG(setvbuf);

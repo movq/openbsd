@@ -1,4 +1,4 @@
-/*	$OpenBSD: cmd2.c,v 1.22 2015/10/16 17:56:07 mmcc Exp $	*/
+/*	$OpenBSD: cmd2.c,v 1.8 1997/11/14 00:23:43 millert Exp $	*/
 /*	$NetBSD: cmd2.c,v 1.7 1997/05/17 19:55:10 pk Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +34,14 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)cmd2.c	8.1 (Berkeley) 6/6/93";
+#else
+static char rcsid[] = "$OpenBSD: cmd2.c,v 1.8 1997/11/14 00:23:43 millert Exp $";
+#endif
+#endif /* not lint */
+
 #include "rcv.h"
 #include <sys/wait.h>
 #include "extern.h"
@@ -39,7 +51,7 @@
  *
  * More user commands.
  */
-static int igcomp(const void *, const void *);
+static int igcomp __P((const void *, const void *));
 
 /*
  * If any arguments were given, go to the next applicable argument
@@ -47,28 +59,32 @@ static int igcomp(const void *, const void *);
  * If given as first command with no arguments, print first message.
  */
 int
-next(void *v)
+next(v)
+	void *v;
 {
 	struct message *mp;
 	int *msgvec = v;
 	int *ip, *ip2, list[2], mdot;
 
-	if (*msgvec != 0) {
+	if (*msgvec != NULL) {
+
 		/*
 		 * If some messages were supplied, find the
 		 * first applicable one following dot using
 		 * wrap around.
 		 */
+
 		mdot = dot - &message[0] + 1;
 
 		/*
 		 * Find the first message in the supplied
 		 * message list which follows dot.
 		 */
-		for (ip = msgvec; *ip != 0; ip++)
+
+		for (ip = msgvec; *ip != NULL; ip++)
 			if (*ip > mdot)
 				break;
-		if (*ip == 0)
+		if (*ip == NULL)
 			ip = msgvec;
 		ip2 = ip;
 		do {
@@ -77,9 +93,9 @@ next(void *v)
 				dot = mp;
 				goto hitit;
 			}
-			if (*ip2 != 0)
+			if (*ip2 != NULL)
 				ip2++;
-			if (*ip2 == 0)
+			if (*ip2 == NULL)
 				ip2 = msgvec;
 		} while (ip2 != ip);
 		puts("No messages applicable");
@@ -90,6 +106,7 @@ next(void *v)
 	 * If this is the first command, select message 1.
 	 * Note that this must exist for us to get here at all.
 	 */
+
 	if (!sawcom)
 		goto hitit;
 
@@ -97,6 +114,7 @@ next(void *v)
 	 * Just find the next good message after dot, no
 	 * wraparound.
 	 */
+
 	for (mp = dot+1; mp < &message[msgCount]; mp++)
 		if ((mp->m_flag & (MDELETED|MSAVED)) == 0)
 			break;
@@ -109,8 +127,9 @@ hitit:
 	/*
 	 * Print dot.
 	 */
+
 	list[0] = dot - &message[0] + 1;
-	list[1] = 0;
+	list[1] = NULL;
 	return(type(list));
 }
 
@@ -119,7 +138,8 @@ hitit:
  * so we can discard when the user quits.
  */
 int
-save(void *v)
+save(v)
+	void *v;
 {
 	char *str = v;
 
@@ -130,7 +150,8 @@ save(void *v)
  * Copy a message to a file without affected its saved-ness
  */
 int
-copycmd(void *v)
+copycmd(v)
+	void *v;
 {
 	char *str = v;
 
@@ -142,7 +163,11 @@ copycmd(void *v)
  * If mark is true, mark the message "saved."
  */
 int
-save1(char *str, int mark, char *cmd, struct ignoretab *ignore)
+save1(str, mark, cmd, ignore)
+	char str[];
+	int mark;
+	char *cmd;
+	struct ignoretab *ignore;
 {
 	struct message *mp;
 	char *file, *disp;
@@ -154,11 +179,11 @@ save1(char *str, int mark, char *cmd, struct ignoretab *ignore)
 		return(1);
 	if (!f) {
 		*msgvec = first(0, MMNORM);
-		if (*msgvec == 0) {
+		if (*msgvec == NULL) {
 			printf("No messages to %s.\n", cmd);
 			return(1);
 		}
-		msgvec[1] = 0;
+		msgvec[1] = NULL;
 	}
 	if (f && getmsglist(str, msgvec, 0) < 0)
 		return(1);
@@ -166,7 +191,7 @@ save1(char *str, int mark, char *cmd, struct ignoretab *ignore)
 		return(1);
 	printf("\"%s\" ", file);
 	fflush(stdout);
-	if (access(file, F_OK) >= 0)
+	if (access(file, 0) >= 0)
 		disp = "[Appended]";
 	else
 		disp = "[New file]";
@@ -177,7 +202,7 @@ save1(char *str, int mark, char *cmd, struct ignoretab *ignore)
 	for (ip = msgvec; *ip && ip-msgvec < msgCount; ip++) {
 		mp = &message[*ip - 1];
 		touch(mp);
-		if (sendmessage(mp, obuf, ignore, NULL) < 0) {
+		if (send(mp, obuf, ignore, NULL) < 0) {
 			warn("%s", file);
 			(void)Fclose(obuf);
 			return(1);
@@ -198,7 +223,8 @@ save1(char *str, int mark, char *cmd, struct ignoretab *ignore)
  * file name, minus header and trailing blank line.
  */
 int
-swrite(void *v)
+swrite(v)
+	void *v;
 {
 	char *str = v;
 
@@ -213,8 +239,11 @@ swrite(void *v)
  * unless the file name is the only thing on the line, in
  * which case, return 0 in the reference flag variable.
  */
+
 char *
-snarf(char *linebuf, int *flag)
+snarf(linebuf, flag)
+	char linebuf[];
+	int *flag;
 {
 	char *cp;
 
@@ -224,20 +253,22 @@ snarf(char *linebuf, int *flag)
 	/*
 	 * Strip away trailing blanks.
 	 */
-	while (cp > linebuf && isspace((unsigned char)*cp))
+
+	while (cp > linebuf && isspace(*cp))
 		cp--;
 	*++cp = 0;
 
 	/*
 	 * Now search for the beginning of the file name.
 	 */
-	while (cp > linebuf && !isspace((unsigned char)*cp))
+
+	while (cp > linebuf && !isspace(*cp))
 		cp--;
 	if (*cp == '\0') {
 		puts("No file specified.");
 		return(NULL);
 	}
-	if (isspace((unsigned char)*cp))
+	if (isspace(*cp))
 		*cp++ = 0;
 	else
 		*flag = 0;
@@ -248,10 +279,10 @@ snarf(char *linebuf, int *flag)
  * Delete messages.
  */
 int
-deletecmd(void *v)
+delete(v)
+	void *v;
 {
 	int *msgvec = v;
-
 	delm(msgvec);
 	return(0);
 }
@@ -260,7 +291,8 @@ deletecmd(void *v)
  * Delete messages, then type the new dot.
  */
 int
-deltype(void *v)
+deltype(v)
+	void *v;
 {
 	int *msgvec = v;
 	int list[2];
@@ -271,7 +303,7 @@ deltype(void *v)
 		list[0] = dot - &message[0] + 1;
 		if (list[0] > lastdot) {
 			touch(dot);
-			list[1] = 0;
+			list[1] = NULL;
 			return(type(list));
 		}
 		puts("At EOF");
@@ -286,23 +318,24 @@ deltype(void *v)
  * Internal interface.
  */
 int
-delm(int *msgvec)
+delm(msgvec)
+	int *msgvec;
 {
 	struct message *mp;
 	int *ip, last;
 
-	last = 0;
-	for (ip = msgvec; *ip != 0; ip++) {
+	last = NULL;
+	for (ip = msgvec; *ip != NULL; ip++) {
 		mp = &message[*ip - 1];
 		touch(mp);
 		mp->m_flag |= MDELETED|MTOUCH;
 		mp->m_flag &= ~(MPRESERVE|MSAVED|MBOX);
 		last = *ip;
 	}
-	if (last != 0) {
+	if (last != NULL) {
 		dot = &message[last-1];
 		last = first(0, MDELETED);
-		if (last != 0) {
+		if (last != NULL) {
 			dot = &message[last-1];
 			return(0);
 		}
@@ -313,8 +346,9 @@ delm(int *msgvec)
 	}
 
 	/*
-	 * Following can't happen
+	 * Following can't happen -- it keeps lint happy
 	 */
+
 	return(-1);
 }
 
@@ -322,7 +356,8 @@ delm(int *msgvec)
  * Undelete the indicated messages.
  */
 int
-undeletecmd(void *v)
+undeletecmd(v)
+	void *v;
 {
 	int *msgvec = v;
 	int *ip;
@@ -338,11 +373,75 @@ undeletecmd(void *v)
 }
 
 /*
+ * Interactively dump core on "core"
+ */
+int
+core(v)
+	void *v;
+{
+	int pid;
+	extern int wait_status;
+
+	switch (pid = vfork()) {
+	case -1:
+		warn("vfork");
+		return(1);
+	case 0:
+		abort();
+		_exit(1);
+	}
+	fputs("Okie dokie", stdout);
+	fflush(stdout);
+	wait_child(pid);
+	if (WIFSIGNALED(wait_status) && WCOREDUMP(wait_status))
+		puts(" -- Core dumped.");
+	else
+		puts(" -- Can't dump core.");
+	return(0);
+}
+
+/*
+ * Clobber as many bytes of stack as the user requests.
+ */
+int
+clobber(v)
+	void *v;
+{
+	char **argv = v;
+	int times;
+
+	if (argv[0] == 0)
+		times = 1;
+	else
+		times = (atoi(argv[0]) + 511) / 512;
+	clob1(times);
+	return(0);
+}
+
+/*
+ * Clobber the stack.
+ */
+void
+clob1(n)
+	int n;
+{
+	char buf[512];
+	char *cp;
+
+	if (n <= 0)
+		return;
+	for (cp = buf; cp < &buf[512]; *cp++ = 0xFF)
+		;
+	clob1(n - 1);
+}
+
+/*
  * Add the given header fields to the retained list.
  * If no arguments, print the current list of retained fields.
  */
 int
-retfield(void *v)
+retfield(v)
+	void *v;
 {
 	char **list = v;
 
@@ -354,7 +453,8 @@ retfield(void *v)
  * If no arguments, print the current list of ignored fields.
  */
 int
-igfield(void *v)
+igfield(v)
+	void *v;
 {
 	char **list = v;
 
@@ -362,7 +462,8 @@ igfield(void *v)
 }
 
 int
-saveretfield(void *v)
+saveretfield(v)
+	void *v;
 {
 	char **list = v;
 
@@ -370,7 +471,8 @@ saveretfield(void *v)
 }
 
 int
-saveigfield(void *v)
+saveigfield(v)
+	void *v;
 {
 	char **list = v;
 
@@ -378,7 +480,10 @@ saveigfield(void *v)
 }
 
 int
-ignore1(char **list, struct ignoretab *tab, char *which)
+ignore1(list, tab, which)
+	char *list[];
+	struct ignoretab *tab;
+	char *which;
 {
 	char field[LINESIZE];
 	char **ap;
@@ -388,16 +493,13 @@ ignore1(char **list, struct ignoretab *tab, char *which)
 	if (*list == NULL)
 		return(igshow(tab, which));
 	for (ap = list; *ap != 0; ap++) {
-		istrlcpy(field, *ap, sizeof(field));
+		istrncpy(field, *ap, sizeof(field));
 		if (member(field, tab))
 			continue;
 		h = hash(field);
-		igp = calloc(1, sizeof(struct ignore));
-		if (igp == NULL)
-			err(1, "calloc");
-		igp->i_field = strdup(field);
-		if (igp->i_field == NULL)
-			err(1, "strdup");
+		igp = (struct ignore *)calloc(1, sizeof(struct ignore));
+		igp->i_field = (char *)calloc(strlen(field) + 1, sizeof(char));
+		strcpy(igp->i_field, field);
 		igp->i_link = tab->i_head[h];
 		tab->i_head[h] = igp;
 		tab->i_count++;
@@ -409,7 +511,9 @@ ignore1(char **list, struct ignoretab *tab, char *which)
  * Print out all currently retained fields.
  */
 int
-igshow(struct ignoretab *tab, char *which)
+igshow(tab, which)
+	struct ignoretab *tab;
+	char *which;
 {
 	int h;
 	struct ignore *igp;
@@ -435,8 +539,8 @@ igshow(struct ignoretab *tab, char *which)
  * Compare two names for sorting ignored field list.
  */
 static int
-igcomp(const void *l, const void *r)
+igcomp(l, r)
+	const void *l, *r;
 {
-
 	return(strcmp(*(char **)l, *(char **)r));
 }

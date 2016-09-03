@@ -1,4 +1,4 @@
-/*	$OpenBSD: raw_usrreq.c,v 1.22 2015/12/05 10:07:55 tedu Exp $	*/
+/*	$OpenBSD: raw_usrreq.c,v 1.3 1998/09/17 12:29:55 deraadt Exp $	*/
 /*	$NetBSD: raw_usrreq.c,v 1.11 1996/02/13 22:00:43 christos Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -41,15 +45,17 @@
 #include <sys/errno.h>
 #include <sys/systm.h>
 
+#include <net/if.h>
+#include <net/route.h>
 #include <net/netisr.h>
 #include <net/raw_cb.h>
 
-#include <sys/stdarg.h>
+#include <machine/stdarg.h>
 /*
  * Initialize raw connection block q.
  */
 void
-raw_init(void)
+raw_init()
 {
 
 	LIST_INIT(&rawcb);
@@ -65,14 +71,20 @@ raw_init(void)
  * Raw protocol interface.
  */
 void
+#if __STDC__
 raw_input(struct mbuf *m0, ...)
+#else
+raw_input(m0, va_alist)
+	struct mbuf *m0;
+	va_dcl
+#endif
 {
-	struct rawcb *rp;
-	struct mbuf *m = m0;
-	int sockets = 0;
+	register struct rawcb *rp;
+	register struct mbuf *m = m0;
+	register int sockets = 0;
 	struct socket *last;
 	va_list ap;
-	struct sockproto *proto;
+	register struct sockproto *proto;
 	struct sockaddr *src, *dst;
 	
 	va_start(ap, m0);
@@ -82,9 +94,7 @@ raw_input(struct mbuf *m0, ...)
 	va_end(ap);
 
 	last = 0;
-	LIST_FOREACH(rp, &rawcb, rcb_list) {
-		if (rp->rcb_socket->so_state & SS_CANTRCVMORE)
-			continue;
+	for (rp = rawcb.lh_first; rp != 0; rp = rp->rcb_list.le_next) {
 		if (rp->rcb_proto.sp_family != proto->sp_family)
 			continue;
 		if (rp->rcb_proto.sp_protocol  &&
@@ -106,9 +116,9 @@ raw_input(struct mbuf *m0, ...)
 			continue;
 		if (last) {
 			struct mbuf *n;
-			if ((n = m_copym(m, 0, M_COPYALL, M_NOWAIT)) != NULL) {
+			if ((n = m_copy(m, 0, (int)M_COPYALL)) != NULL) {
 				if (sbappendaddr(&last->so_rcv, src,
-				    n, (struct mbuf *)NULL) == 0)
+				    n, (struct mbuf *)0) == 0)
 					/* should notify about lost packet */
 					m_freem(n);
 				else {
@@ -121,7 +131,7 @@ raw_input(struct mbuf *m0, ...)
 	}
 	if (last) {
 		if (sbappendaddr(&last->so_rcv, src,
-		    m, (struct mbuf *)NULL) == 0)
+		    m, (struct mbuf *)0) == 0)
 			m_freem(m);
 		else {
 			sorwakeup(last);
@@ -131,23 +141,30 @@ raw_input(struct mbuf *m0, ...)
 		m_freem(m);
 }
 
+/*ARGSUSED*/
 void *
-raw_ctlinput(int cmd, struct sockaddr *arg, u_int rdomain, void *d)
+raw_ctlinput(cmd, arg, d)
+	int cmd;
+	struct sockaddr *arg;
+	void *d;
 {
 
-	if (cmd < 0 || cmd >= PRC_NCMDS)
+	if (cmd < 0 || cmd > PRC_NCMDS)
 		return NULL;
 	return NULL;
 	/* INCOMPLETE */
 }
 
+/*ARGSUSED*/
 int
-raw_usrreq(struct socket *so, int req, struct mbuf *m, struct mbuf *nam,
-    struct mbuf *control, struct proc *p)
+raw_usrreq(so, req, m, nam, control)
+	struct socket *so;
+	int req;
+	struct mbuf *m, *nam, *control;
 {
-	struct rawcb *rp = sotorawcb(so);
-	int error = 0;
-	int len, s;
+	register struct rawcb *rp = sotorawcb(so);
+	register int error = 0;
+	int len;
 
 	if (req == PRU_CONTROL)
 		return (EOPNOTSUPP);
@@ -159,7 +176,6 @@ raw_usrreq(struct socket *so, int req, struct mbuf *m, struct mbuf *nam,
 		error = EINVAL;
 		goto release;
 	}
-	s = splsoftnet();
 	switch (req) {
 
 	/*
@@ -217,7 +233,7 @@ raw_usrreq(struct socket *so, int req, struct mbuf *m, struct mbuf *nam,
 #endif
 	case PRU_CONNECT2:
 		error = EOPNOTSUPP;
-		break;
+		goto release;
 
 	case PRU_DISCONNECT:
 		if (rp->rcb_faddr == 0) {
@@ -266,7 +282,6 @@ raw_usrreq(struct socket *so, int req, struct mbuf *m, struct mbuf *nam,
 		/*
 		 * stat: don't bother with a blocksize.
 		 */
-		splx(s);
 		return (0);
 
 	/*
@@ -274,8 +289,7 @@ raw_usrreq(struct socket *so, int req, struct mbuf *m, struct mbuf *nam,
 	 */
 	case PRU_RCVOOB:
 	case PRU_RCVD:
-		splx(s);
-		return (EOPNOTSUPP);
+		return(EOPNOTSUPP);
 
 	case PRU_LISTEN:
 	case PRU_ACCEPT:
@@ -306,8 +320,8 @@ raw_usrreq(struct socket *so, int req, struct mbuf *m, struct mbuf *nam,
 	default:
 		panic("raw_usrreq");
 	}
-	splx(s);
 release:
-	m_freem(m);
+	if (m != NULL)
+		m_freem(m);
 	return (error);
 }

@@ -1,116 +1,150 @@
-/* $OpenBSD: buffer.c,v 1.36 2014/04/30 05:29:56 djm Exp $ */
-
 /*
- * Copyright (c) 2012 Damien Miller <djm@mindrot.org>
- *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- */
 
-/* Emulation wrappers for legacy OpenSSH buffer API atop sshbuf */
+buffer.c
 
-#include <sys/types.h>
+Author: Tatu Ylonen <ylo@cs.hut.fi>
 
+Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
+                   All rights reserved
+
+Created: Sat Mar 18 04:15:33 1995 ylo
+
+Functions for manipulating fifo buffers (that can grow if needed).
+
+*/
+
+#include "includes.h"
+RCSID("$Id: buffer.c,v 1.1 1999/09/26 20:53:34 deraadt Exp $");
+
+#include "xmalloc.h"
 #include "buffer.h"
-#include "log.h"
-#include "ssherr.h"
+#include "ssh.h"
 
-void
-buffer_append(Buffer *buffer, const void *data, u_int len)
+/* Initializes the buffer structure. */
+
+void buffer_init(Buffer *buffer)
 {
-	int ret;
-
-	if ((ret = sshbuf_put(buffer, data, len)) != 0)
-		fatal("%s: %s", __func__, ssh_err(ret));
+  buffer->alloc = 4096;
+  buffer->buf = xmalloc(buffer->alloc);
+  buffer->offset = 0;
+  buffer->end = 0;
 }
 
-void *
-buffer_append_space(Buffer *buffer, u_int len)
-{
-	int ret;
-	u_char *p;
+/* Frees any memory used for the buffer. */
 
-	if ((ret = sshbuf_reserve(buffer, len, &p)) != 0)
-		fatal("%s: %s", __func__, ssh_err(ret));
-	return p;
+void buffer_free(Buffer *buffer)
+{
+  memset(buffer->buf, 0, buffer->alloc);
+  xfree(buffer->buf);
 }
 
-int
-buffer_check_alloc(Buffer *buffer, u_int len)
-{
-	int ret = sshbuf_check_reserve(buffer, len);
+/* Clears any data from the buffer, making it empty.  This does not actually
+   zero the memory. */
 
-	if (ret == 0)
-		return 1;
-	if (ret == SSH_ERR_NO_BUFFER_SPACE)
-		return 0;
-	fatal("%s: %s", __func__, ssh_err(ret));
+void buffer_clear(Buffer *buffer)
+{
+  buffer->offset = 0;
+  buffer->end = 0;
 }
 
-int
-buffer_get_ret(Buffer *buffer, void *buf, u_int len)
-{
-	int ret;
+/* Appends data to the buffer, expanding it if necessary. */
 
-	if ((ret = sshbuf_get(buffer, buf, len)) != 0) {
-		error("%s: %s", __func__, ssh_err(ret));
-		return -1;
-	}
-	return 0;
+void buffer_append(Buffer *buffer, const char *data, unsigned int len)
+{
+  char *cp;
+  buffer_append_space(buffer, &cp, len);
+  memcpy(cp, data, len);
 }
 
-void
-buffer_get(Buffer *buffer, void *buf, u_int len)
+/* Appends space to the buffer, expanding the buffer if necessary.
+   This does not actually copy the data into the buffer, but instead
+   returns a pointer to the allocated region. */
+
+void buffer_append_space(Buffer *buffer, char **datap, unsigned int len)
 {
-	if (buffer_get_ret(buffer, buf, len) == -1)
-		fatal("%s: buffer error", __func__);
+  /* If the buffer is empty, start using it from the beginning. */
+  if (buffer->offset == buffer->end)
+    {
+      buffer->offset = 0;
+      buffer->end = 0;
+    }
+
+ restart:
+  /* If there is enough space to store all data, store it now. */
+  if (buffer->end + len < buffer->alloc)
+    {
+      *datap = buffer->buf + buffer->end;
+      buffer->end += len;
+      return;
+    }
+
+  /* If the buffer is quite empty, but all data is at the end, move the
+     data to the beginning and retry. */
+  if (buffer->offset > buffer->alloc / 2)
+    {
+      memmove(buffer->buf, buffer->buf + buffer->offset,
+	      buffer->end - buffer->offset);
+      buffer->end -= buffer->offset;
+      buffer->offset = 0;
+      goto restart;
+    }
+
+  /* Increase the size of the buffer and retry. */
+  buffer->alloc += len + 32768;
+  buffer->buf = xrealloc(buffer->buf, buffer->alloc);
+  goto restart;
 }
 
-int
-buffer_consume_ret(Buffer *buffer, u_int bytes)
-{
-	int ret = sshbuf_consume(buffer, bytes);
+/* Returns the number of bytes of data in the buffer. */
 
-	if (ret == 0)
-		return 0;
-	if (ret == SSH_ERR_MESSAGE_INCOMPLETE)
-		return -1;
-	fatal("%s: %s", __func__, ssh_err(ret));
+unsigned int buffer_len(Buffer *buffer)
+{
+  return buffer->end - buffer->offset;
 }
 
-void
-buffer_consume(Buffer *buffer, u_int bytes)
+/* Gets data from the beginning of the buffer. */
+
+void buffer_get(Buffer *buffer, char *buf, unsigned int len)
 {
-	if (buffer_consume_ret(buffer, bytes) == -1)
-		fatal("%s: buffer error", __func__);
+  if (len > buffer->end - buffer->offset)
+    fatal("buffer_get trying to get more bytes than in buffer");
+  memcpy(buf, buffer->buf + buffer->offset, len);
+  buffer->offset += len;
 }
 
-int
-buffer_consume_end_ret(Buffer *buffer, u_int bytes)
-{
-	int ret = sshbuf_consume_end(buffer, bytes);
+/* Consumes the given number of bytes from the beginning of the buffer. */
 
-	if (ret == 0)
-		return 0;
-	if (ret == SSH_ERR_MESSAGE_INCOMPLETE)
-		return -1;
-	fatal("%s: %s", __func__, ssh_err(ret));
+void buffer_consume(Buffer *buffer, unsigned int bytes)
+{
+  if (bytes > buffer->end - buffer->offset)
+    fatal("buffer_get trying to get more bytes than in buffer");
+  buffer->offset += bytes;
+}  
+
+/* Consumes the given number of bytes from the end of the buffer. */
+
+void buffer_consume_end(Buffer *buffer, unsigned int bytes)
+{
+  if (bytes > buffer->end - buffer->offset)
+    fatal("buffer_get trying to get more bytes than in buffer");
+  buffer->end -= bytes;
+}  
+
+/* Returns a pointer to the first used byte in the buffer. */
+
+char *buffer_ptr(Buffer *buffer)
+{
+  return buffer->buf + buffer->offset;
 }
 
-void
-buffer_consume_end(Buffer *buffer, u_int bytes)
+/* Dumps the contents of the buffer to stderr. */
+
+void buffer_dump(Buffer *buffer)
 {
-	if (buffer_consume_end_ret(buffer, bytes) == -1)
-		fatal("%s: buffer error", __func__);
+  int i;
+  unsigned char *ucp = (unsigned char *)buffer->buf;
+  
+  for (i = buffer->offset; i < buffer->end; i++)
+    fprintf(stderr, " %02x", ucp[i]);
+  fprintf(stderr, "\n");
 }
-
-

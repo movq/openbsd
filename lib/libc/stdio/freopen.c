@@ -1,4 +1,3 @@
-/*	$OpenBSD: freopen.c,v 1.15 2015/08/31 02:53:57 guenther Exp $ */
 /*-
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,11 +34,14 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: freopen.c,v 1.4 1998/11/10 22:10:21 deraadt Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
-#include <limits.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,9 +53,11 @@
  * all possible, no matter what.
  */
 FILE *
-freopen(const char *file, const char *mode, FILE *fp)
+freopen(file, mode, fp)
+	const char *file, *mode;
+	register FILE *fp;
 {
-	int f;
+	register int f;
 	int flags, isopen, oflags, sverrno, wantfd;
 
 	if ((flags = __sflags(mode, &oflags)) == 0) {
@@ -59,8 +67,6 @@ freopen(const char *file, const char *mode, FILE *fp)
 
 	if (!__sdidinit)
 		__sinit();
-
-	FLOCKFILE(fp);
 
 	/*
 	 * There are actually programs that depend on being able to "freopen"
@@ -115,15 +121,13 @@ freopen(const char *file, const char *mode, FILE *fp)
 	fp->_lbfsize = 0;
 	if (HASUB(fp))
 		FREEUB(fp);
-	_UB(fp)._size = 0;
-	WCIO_FREE(fp);
+	fp->_ub._size = 0;
 	if (HASLB(fp))
 		FREELB(fp);
 	fp->_lb._size = 0;
 
 	if (f < 0) {			/* did not get it after all */
 		fp->_flags = 0;		/* set it free */
-		FUNLOCKFILE(fp);
 		errno = sverrno;	/* restore in case _close clobbered */
 		return (NULL);
 	}
@@ -134,18 +138,10 @@ freopen(const char *file, const char *mode, FILE *fp)
 	 * assume stderr is always fd STDERR_FILENO, even if being freopen'd.
 	 */
 	if (wantfd >= 0 && f != wantfd) {
-		if (dup3(f, wantfd, oflags & O_CLOEXEC) >= 0) {
+		if (dup2(f, wantfd) >= 0) {
 			(void) close(f);
 			f = wantfd;
 		}
-	}
-
-	/* _file is only a short */
-	if (f > SHRT_MAX) {
-		fp->_flags = 0;		/* set it free */
-		FUNLOCKFILE(fp);
-		errno = EMFILE;
-		return (NULL);
 	}
 
 	fp->_flags = flags;
@@ -166,7 +162,5 @@ freopen(const char *file, const char *mode, FILE *fp)
 	 */
 	if (oflags & O_APPEND)
 		(void) __sseek((void *)fp, (fpos_t)0, SEEK_END);
-	FUNLOCKFILE(fp);
 	return (fp);
 }
-DEF_STRONG(freopen);

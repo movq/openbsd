@@ -1,4 +1,4 @@
-/*	$OpenBSD: res_comp.c,v 1.20 2016/05/01 15:17:29 millert Exp $	*/
+/*	$OpenBSD: res_comp.c,v 1.8 1997/07/09 01:08:49 millert Exp $	*/
 
 /*
  * ++Copyright++ 1985, 1993
@@ -14,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ * 	This product includes software developed by the University of
+ * 	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  * 
@@ -51,7 +55,17 @@
  * --Copyright--
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+#if 0
+static char sccsid[] = "@(#)res_comp.c	8.1 (Berkeley) 6/4/93";
+static char rcsid[] = "$From: res_comp.c,v 8.11 1996/12/02 09:17:22 vixie Exp $";
+#else
+static char rcsid[] = "$OpenBSD: res_comp.c,v 1.8 1997/07/09 01:08:49 millert Exp $";
+#endif
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
+#include <sys/param.h>
 #include <netinet/in.h>
 #include <arpa/nameser.h>
 
@@ -60,32 +74,34 @@
 #include <ctype.h>
 
 #include <unistd.h>
-#include <limits.h>
 #include <string.h>
 
-static int dn_find(u_char *, u_char *, u_char **, u_char **);
+static int	dn_find __P((u_char *exp_dn, u_char *msg,
+			     u_char **dnptrs, u_char **lastdnptr));
 
 /*
  * Expand compressed domain name 'comp_dn' to full domain name.
- * 'msg' is a pointer to the beginning of the message,
+ * 'msg' is a pointer to the begining of the message,
  * 'eomorig' points to the first location after the message,
  * 'exp_dn' is a pointer to a buffer of size 'length' for the result.
  * Return size of compressed name or -1 if there was an error.
  */
 int
-dn_expand(const u_char *msg, const u_char *eomorig, const u_char *comp_dn,
-    char *exp_dn, int length)
+dn_expand(msg, eomorig, comp_dn, exp_dn, length)
+	const u_char *msg, *eomorig, *comp_dn;
+	char *exp_dn;
+	int length;
 {
-	const u_char *cp;
-	char *dn;
-	int n, c;
+	register const u_char *cp;
+	register char *dn;
+	register int n, c;
 	char *eom;
 	int len = -1, checked = 0;
 
 	dn = exp_dn;
 	cp = comp_dn;
-	if (length > HOST_NAME_MAX)
-		length = HOST_NAME_MAX;
+	if (length > MAXHOSTNAMELEN-1)
+		length = MAXHOSTNAMELEN-1;
 	eom = exp_dn + length;
 	/*
 	 * fetch next label in domain name
@@ -141,7 +157,6 @@ dn_expand(const u_char *msg, const u_char *eomorig, const u_char *comp_dn,
 		len = cp - comp_dn;
 	return (len);
 }
-DEF_WEAK(dn_expand);
 
 /*
  * Compress domain name 'exp_dn' into 'comp_dn'.
@@ -156,11 +171,13 @@ DEF_WEAK(dn_expand);
  * is NULL, we don't update the list.
  */
 int
-dn_comp(const char *exp_dn, u_char *comp_dn, int length, u_char **dnptrs,
-    u_char **lastdnptr)
+dn_comp(exp_dn, comp_dn, length, dnptrs, lastdnptr)
+	const char *exp_dn;
+	u_char *comp_dn, **dnptrs, **lastdnptr;
+	int length;
 {
-	u_char *cp, *dn;
-	int c, l;
+	register u_char *cp, *dn;
+	register int c, l;
 	u_char **cpp, **lpp, *sp, *eob;
 	u_char *msg;
 
@@ -234,10 +251,11 @@ dn_comp(const char *exp_dn, u_char *comp_dn, int length, u_char **dnptrs,
  * Skip over a compressed domain name. Return the size or -1.
  */
 int
-__dn_skipname(const u_char *comp_dn, const u_char *eom)
+__dn_skipname(comp_dn, eom)
+	const u_char *comp_dn, *eom;
 {
-	const u_char *cp;
-	int n;
+	register const u_char *cp;
+	register int n;
 
 	cp = comp_dn;
 	while (cp < eom && (n = *cp++)) {
@@ -262,7 +280,8 @@ __dn_skipname(const u_char *comp_dn, const u_char *eom)
 }
 
 static int
-mklower(int ch)
+mklower(ch)
+	register int ch;
 {
 	if (isascii(ch) && isupper(ch))
 		return (tolower(ch));
@@ -276,10 +295,12 @@ mklower(int ch)
  * not the pointer to the start of the message.
  */
 static int
-dn_find(u_char *exp_dn, u_char *msg, u_char **dnptrs, u_char **lastdnptr)
+dn_find(exp_dn, msg, dnptrs, lastdnptr)
+	u_char *exp_dn, *msg;
+	u_char **dnptrs, **lastdnptr;
 {
-	u_char *dn, *cp, **cpp;
-	int n;
+	register u_char *dn, *cp, **cpp;
+	register int n;
 	u_char *sp;
 
 	for (cpp = dnptrs; cpp < lastdnptr; cpp++) {
@@ -333,7 +354,6 @@ dn_find(u_char *exp_dn, u_char *msg, u_char **dnptrs, u_char **lastdnptr)
 #define PERIOD 0x2e
 #define	hyphenchar(c) ((c) == 0x2d)
 #define bslashchar(c) ((c) == 0x5c)
-#define underscorechar(c) ((c) == 0x5f)
 #define periodchar(c) ((c) == PERIOD)
 #define asterchar(c) ((c) == 0x2a)
 #define alphachar(c) (((c) >= 0x41 && (c) <= 0x5a) \
@@ -341,11 +361,12 @@ dn_find(u_char *exp_dn, u_char *msg, u_char **dnptrs, u_char **lastdnptr)
 #define digitchar(c) ((c) >= 0x30 && (c) <= 0x39)
 
 #define borderchar(c) (alphachar(c) || digitchar(c))
-#define middlechar(c) (borderchar(c) || hyphenchar(c) || underscorechar(c))
+#define middlechar(c) (borderchar(c) || hyphenchar(c))
 #define	domainchar(c) ((c) > 0x20 && (c) < 0x7f)
 
 int
-__res_hnok(const char *dn)
+res_hnok(dn)
+	const char *dn;
 {
 	int pch = PERIOD, ch = *dn++;
 
@@ -368,14 +389,14 @@ __res_hnok(const char *dn)
 	}
 	return (1);
 }
-DEF_STRONG(__res_hnok);
 
 /*
  * hostname-like (A, MX, WKS) owners can have "*" as their first label
  * but must otherwise be as a host name.
  */
 int
-res_ownok(const char *dn)
+res_ownok(dn)
+	const char *dn;
 {
 	if (asterchar(dn[0])) {
 		if (periodchar(dn[1]))
@@ -391,7 +412,8 @@ res_ownok(const char *dn)
  * label, but the rest of the name has to look like a host name.
  */
 int
-res_mailok(const char *dn)
+res_mailok(dn)
+	const char *dn;
 {
 	int ch, escaped = 0;
 
@@ -420,7 +442,8 @@ res_mailok(const char *dn)
  * recommendations.
  */
 int
-res_dnok(const char *dn)
+res_dnok(dn)
+	const char *dn;
 {
 	int ch;
 
@@ -435,33 +458,53 @@ res_dnok(const char *dn)
  */
 
 u_int16_t
-_getshort(const u_char *msgp)
+_getshort(msgp)
+	register const u_char *msgp;
 {
-	u_int16_t u;
+	register u_int16_t u;
 
 	GETSHORT(u, msgp);
 	return (u);
 }
-DEF_STRONG(_getshort);
+
+#ifdef NeXT
+/*
+ * nExt machines have some funky library conventions, which we must maintain.
+ */
+u_int16_t
+res_getshort(msgp)
+	register const u_char *msgp;
+{
+	return (_getshort(msgp));
+}
+#endif
 
 u_int32_t
-_getlong(const u_char *msgp)
+_getlong(msgp)
+	register const u_char *msgp;
 {
-	u_int32_t u;
+	register u_int32_t u;
 
 	GETLONG(u, msgp);
 	return (u);
 }
-DEF_STRONG(_getlong);
 
 void
-__putshort(u_int16_t s, u_char *msgp)
+#if defined(__STDC__) || defined(__cplusplus)
+__putshort(register u_int16_t s, register u_char *msgp)	/* must match proto */
+#else
+__putshort(s, msgp)
+	register u_int16_t s;
+	register u_char *msgp;
+#endif
 {
 	PUTSHORT(s, msgp);
 }
 
 void
-__putlong(u_int32_t l, u_char *msgp)
+__putlong(l, msgp)
+	register u_int32_t l;
+	register u_char *msgp;
 {
 	PUTLONG(l, msgp);
 }

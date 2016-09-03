@@ -1,83 +1,51 @@
-/*	$OpenBSD: auth.c,v 1.38 2016/06/24 17:22:56 tedu Exp $	*/
+/*	$OpenBSD: auth.c,v 1.16 1999/08/06 20:41:07 deraadt Exp $	*/
 
 /*
  * auth.c - PPP authentication and phase control.
  *
- * Copyright (c) 1989-2002 Paul Mackerras. All rights reserved.
+ * Copyright (c) 1993 The Australian National University.
+ * All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ * Redistribution and use in source and binary forms are permitted
+ * provided that the above copyright notice and this paragraph are
+ * duplicated in all such forms and that any documentation,
+ * advertising materials, and other materials related to such
+ * distribution and use acknowledge that the software was developed
+ * by the Australian National University.  The name of the University
+ * may not be used to endorse or promote products derived from this
+ * software without specific prior written permission.
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
+ * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
+ * Copyright (c) 1989 Carnegie Mellon University.
+ * All rights reserved.
  *
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- *
- * 3. The name(s) of the authors of this software must not be used to
- *    endorse or promote products derived from this software without
- *    prior written permission.
- *
- * 4. Redistributions of any form whatsoever must retain the following
- *    acknowledgment:
- *    "This product includes software developed by Paul Mackerras
- *     <paulus@samba.org>".
- *
- * THE AUTHORS OF THIS SOFTWARE DISCLAIM ALL WARRANTIES WITH REGARD TO
- * THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
- * AND FITNESS, IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY
- * SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
- * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
- * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- *
- * Copyright (c) 1984-2000 Carnegie Mellon University. All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- *
- * 3. The name "Carnegie Mellon University" must not be used to
- *    endorse or promote products derived from this software without
- *    prior written permission. For permission or any legal
- *    details, please contact
- *      Office of Technology Transfer
- *      Carnegie Mellon University
- *      5000 Forbes Avenue
- *      Pittsburgh, PA  15213-3890
- *      (412) 268-4387, fax: (412) 268-7395
- *      tech-transfer@andrew.cmu.edu
- *
- * 4. Redistributions of any form whatsoever must retain the following
- *    acknowledgment:
- *    "This product includes software developed by Computing Services
- *     at Carnegie Mellon University (http://www.cmu.edu/computing/)."
- *
- * CARNEGIE MELLON UNIVERSITY DISCLAIMS ALL WARRANTIES WITH REGARD TO
- * THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
- * AND FITNESS, IN NO EVENT SHALL CARNEGIE MELLON UNIVERSITY BE LIABLE
- * FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
- * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
- * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Redistribution and use in source and binary forms are permitted
+ * provided that the above copyright notice and this paragraph are
+ * duplicated in all such forms and that any documentation,
+ * advertising materials, and other materials related to such
+ * distribution and use acknowledge that the software was developed
+ * by Carnegie Mellon University.  The name of the
+ * University may not be used to endorse or promote products derived
+ * from this software without specific prior written permission.
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
+ * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
+
+#ifndef lint
+#if 0
+static char rcsid[] = "Id: auth.c,v 1.37 1998/03/26 04:46:03 paulus Exp $";
+#else
+static char rcsid[] = "$OpenBSD: auth.c,v 1.16 1999/08/06 20:41:07 deraadt Exp $";
+#endif
+#endif
 
 #include <stdio.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <limits.h>
 #include <syslog.h>
 #include <pwd.h>
 #include <string.h>
@@ -94,7 +62,16 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#ifdef USE_PAM
+#include <security/pam_appl.h>
+#endif
 
+#ifdef HAS_SHADOW
+#include <shadow.h>
+#ifndef PW_PPP
+#define PW_PPP PW_LOGIN
+#endif
+#endif
 
 #include "pppd.h"
 #include "fsm.h"
@@ -152,25 +129,25 @@ static int passwd_from_file;
 #define CHAP_WITHPEER	4
 #define CHAP_PEER	8
 
-extern char *crypt(const char *, const char *);
+extern char *crypt __P((const char *, const char *));
 
 /* Prototypes for procedures local to this file. */
 
-static void network_phase(int);
-static void check_idle(void *);
-static void connect_time_expired(void *);
-static int  plogin(char *, char *, char **, int *);
-static void plogout(void);
-static int  null_login(int);
-static int  get_pap_passwd(char *);
-static int  have_pap_secret(void);
-static int  have_chap_secret(char *, char *, u_int32_t);
-static int  ip_addr_check(u_int32_t, struct wordlist *);
-static int  scan_authfile(FILE *, char *, char *, u_int32_t, char *,
-		struct wordlist **, char *);
-static void free_wordlist(struct wordlist *);
-static void auth_script(char *);
-static void set_allowed_addrs(int, struct wordlist *);
+static void network_phase __P((int));
+static void check_idle __P((void *));
+static void connect_time_expired __P((void *));
+static int  plogin __P((char *, char *, char **, int *));
+static void plogout __P((void));
+static int  null_login __P((int));
+static int  get_pap_passwd __P((char *));
+static int  have_pap_secret __P((void));
+static int  have_chap_secret __P((char *, char *, u_int32_t));
+static int  ip_addr_check __P((u_int32_t, struct wordlist *));
+static int  scan_authfile __P((FILE *, char *, char *, u_int32_t, char *,
+			       struct wordlist **, char *));
+static void free_wordlist __P((struct wordlist *));
+static void auth_script __P((char *));
+static void set_allowed_addrs __P((int, struct wordlist *));
 
 /*
  * An Open on LCP has requested a change from Dead to Establish phase.
@@ -544,9 +521,9 @@ auth_check_options()
 
     /* Default our_name to hostname, and user to our_name */
     if (our_name[0] == 0 || usehostname)
-	strlcpy(our_name, hostname, HOST_NAME_MAX+1);
+	strcpy(our_name, hostname);
     if (user[0] == 0)
-	strlcpy(user, our_name, MAXNAMELEN);
+	strcpy(user, our_name);
 
     /* If authentication is required, ask peer for CHAP or PAP. */
     if (auth_required && !wo->neg_chap && !wo->neg_upap) {
@@ -725,6 +702,69 @@ check_passwd(unit, auser, userlen, apasswd, passwdlen, msg, msglen)
 }
 
 /*
+ * This function is needed for PAM.
+ */
+
+#ifdef USE_PAM
+static char *PAM_username = "";
+static char *PAM_password = "";
+
+#ifdef PAM_ESTABLISH_CRED       /* new PAM defines :(^ */
+#define MY_PAM_STRERROR(err_code)  (char *) pam_strerror(pamh,err_code)
+#else
+#define MY_PAM_STRERROR(err_code)  (char *) pam_strerror(err_code)
+#endif
+
+static int pam_conv (int num_msg,
+                     const struct pam_message **msg,
+                     struct pam_response **resp,
+                     void *appdata_ptr)
+{
+    int count = 0, replies = 0;
+    struct pam_response *reply = NULL;
+    int size = 0;
+
+    for (count = 0; count < num_msg; count++)
+      {
+	size += sizeof (struct pam_response);
+	reply = realloc (reply, size); /* ANSI: is malloc() if reply==NULL */
+	if (!reply)
+	    return PAM_CONV_ERR;
+
+	switch (msg[count]->msg_style)
+	  {
+	case PAM_PROMPT_ECHO_ON:
+	    reply[replies].resp_retcode = PAM_SUCCESS;
+	    reply[replies++].resp = strdup(PAM_username); /* never NULL */
+	    break;
+
+	case PAM_PROMPT_ECHO_OFF:
+	    reply[replies].resp_retcode = PAM_SUCCESS;
+	    reply[replies++].resp = strdup(PAM_password); /* never NULL */
+	    break;
+
+	case PAM_TEXT_INFO:
+	    reply[replies].resp_retcode = PAM_SUCCESS;
+	    reply[replies++].resp = NULL;
+	    break;
+
+	case PAM_ERROR_MSG:
+	default:
+	    free (reply);
+	    return PAM_CONV_ERR;
+	  }
+      }
+
+    if (resp)
+        *resp = reply;
+    else
+        free (reply);
+
+    return PAM_SUCCESS;
+}
+#endif
+
+/*
  * plogin - Check the user name and password against the system
  * password database, and login the user if OK.
  *
@@ -741,12 +781,102 @@ plogin(user, passwd, msg, msglen)
     char **msg;
     int *msglen;
 {
+
+#ifdef USE_PAM
+
+    struct pam_conv pam_conversation;
+    pam_handle_t *pamh;
+    int pam_error;
+/*
+ * Fill the pam_conversion structure
+ */
+    memset (&pam_conversation, '\0', sizeof (struct pam_conv));
+    pam_conversation.conv = &pam_conv;
+
+    pam_error = pam_start ("ppp", user, &pam_conversation, &pamh);
+
+    if (pam_error != PAM_SUCCESS) {
+	*msg = MY_PAM_STRERROR (pam_error);
+	return UPAP_AUTHNAK;
+    }
+/*
+ * Define the fields for the credintial validation
+ */
+    (void) pam_set_item (pamh, PAM_TTY, devnam);
+    PAM_username = user;
+    PAM_password = passwd;
+/*
+ * Validate the user
+ */
+    pam_error = pam_authenticate (pamh, PAM_SILENT);
+    if (pam_error == PAM_SUCCESS) {
+        pam_error = pam_acct_mgmt (pamh, PAM_SILENT);
+
+	/* start a session for this user. Session closed when link ends. */
+	if (pam_error == PAM_SUCCESS)
+	    (void) pam_open_session (pamh, PAM_SILENT);
+    }
+
+    *msg = MY_PAM_STRERROR (pam_error);
+
+    PAM_username =
+    PAM_password = "";
+/*
+ * Clean up the mess
+ */
+    (void) pam_end (pamh, pam_error);
+
+    if (pam_error != PAM_SUCCESS)
+        return UPAP_AUTHNAK;
+/*
+ * Use the non-PAM methods directly
+ */
+#else /* #ifdef USE_PAM */
+
     struct passwd *pw;
     char *tty;
 
-    pw = getpwnam_shadow(user);
-    if (crypt_checkpass(passwd, pw ? pw->pw_passwd : NULL))
-	    return UPAP_AUTHNAK;
+#ifdef HAS_SHADOW
+    struct spwd *spwd;
+    struct spwd *getspnam();
+#endif
+
+    pw = getpwnam(user);
+    endpwent();
+    if (pw == NULL) {
+	return (UPAP_AUTHNAK);
+    }
+
+#ifdef HAS_SHADOW
+    spwd = getspnam(user);
+    endspent();
+    if (spwd) {
+	/* check the age of the password entry */
+	long now = time(NULL) / 86400L;
+
+	if ((spwd->sp_expire > 0 && now >= spwd->sp_expire)
+	    || ((spwd->sp_max >= 0 && spwd->sp_max < 10000)
+		&& spwd->sp_lstchg >= 0
+		&& now >= spwd->sp_lstchg + spwd->sp_max)) {
+	    syslog(LOG_WARNING, "Password for %s has expired", user);
+	    return (UPAP_AUTHNAK);
+	}
+	pw->pw_passwd = spwd->sp_pwdp;
+    }
+#endif
+
+    /*
+     * If no passwd, don't let them login.
+     */
+    if (pw->pw_passwd == NULL || *pw->pw_passwd == '\0'
+	|| strcmp(crypt(passwd, pw->pw_passwd), pw->pw_passwd) != 0)
+	return (UPAP_AUTHNAK);
+
+    /* These functions are not enabled for PAM. The reason for this is that */
+    /* there is not necessarily a "passwd" entry for this user. That is     */
+    /* real purpose of 'PAM' -- to virtualize the account data from the     */
+    /* application. If you want to do the same thing, write the entry in    */
+    /* the 'session' hook.                                                  */
 
     /*
      * Write a wtmp entry for this user.
@@ -762,17 +892,18 @@ plogin(user, passwd, msg, msglen)
 	    struct lastlog ll;
 	    int fd;
 
-	    if ((fd = open(_PATH_LASTLOG, O_RDWR)) >= 0) {
-		memset(&ll, 0, sizeof(ll));
+	    if ((fd = open(_PATH_LASTLOG, O_RDWR, 0)) >= 0) {
+		(void)lseek(fd, (off_t)(pw->pw_uid * sizeof(ll)), SEEK_SET);
+		memset((void *)&ll, 0, sizeof(ll));
 		(void)time(&ll.ll_time);
 		(void)strncpy(ll.ll_line, tty, sizeof(ll.ll_line));
-		(void)pwrite(fd, &ll, sizeof(ll), (off_t)pw->pw_uid *
-		    sizeof(ll));
+		(void)write(fd, (char *)&ll, sizeof(ll));
 		(void)close(fd);
 	    }
     }
 #endif
 
+#endif /* #ifdef USE_PAM */
 
     syslog(LOG_INFO, "user %s logged in", user);
     logged_in = TRUE;
@@ -786,12 +917,33 @@ plogin(user, passwd, msg, msglen)
 static void
 plogout()
 {
+#ifdef USE_PAM
+    struct pam_conv pam_conversation;
+    pam_handle_t *pamh;
+    int pam_error;
+/*
+ * Fill the pam_conversion structure. The PAM specification states that the
+ * session must be able to be closed by a totally different handle from which
+ * it was created. Hold the PAM group to their own specification!
+ */
+    memset (&pam_conversation, '\0', sizeof (struct pam_conv));
+    pam_conversation.conv = &pam_conv;
+
+    pam_error = pam_start ("ppp", user, &pam_conversation, &pamh);
+    if (pam_error == PAM_SUCCESS) {
+        (void) pam_set_item (pamh, PAM_TTY, devnam);
+        (void) pam_close_session (pamh, PAM_SILENT);
+	(void) pam_end (pamh, PAM_SUCCESS);
+    }
+
+#else
     char *tty;
 
     tty = devnam;
     if (strncmp(tty, "/dev/", 5) == 0)
 	tty += 5;
     logwtmp(tty, "", "");		/* Wipe out utmp logout entry */
+#endif
 
     logged_in = FALSE;
 }
@@ -849,9 +1001,11 @@ get_pap_passwd(passwd)
     char *filename;
     FILE *f;
     int ret;
+    struct wordlist *addrs;
     char secret[MAXWORDLEN];
 
     filename = _PATH_UPAPFILE;
+    addrs = NULL;
     f = fopen(filename, "r");
     if (f == NULL)
 	return 0;
@@ -862,8 +1016,10 @@ get_pap_passwd(passwd)
     fclose(f);
     if (ret < 0)
 	return 0;
-    if (passwd != NULL)
-	strlcpy(passwd, secret, MAXSECRETLEN);
+    if (passwd != NULL) {
+	strncpy(passwd, secret, MAXSECRETLEN - 1);
+	passwd[MAXSECRETLEN - 1] = '\0';
+    }
     BZERO(secret, sizeof(secret));
     return 1;
 }
@@ -1003,15 +1159,17 @@ set_allowed_addrs(unit, addrs)
     if (addrs != NULL && addrs->next == NULL) {
 	char *p = addrs->word;
 	struct ipcp_options *wo = &ipcp_wantoptions[unit];
-	struct in_addr ina;
+	u_int32_t a;
 	struct hostent *hp;
 
 	if (*p != '!' && *p != '-' && !ISWILD(p) && strchr(p, '/') == NULL) {
 	    hp = gethostbyname(p);
 	    if (hp != NULL && hp->h_addrtype == AF_INET)
-		wo->hisaddr = *(u_int32_t *)hp->h_addr;
-	    else if (inet_aton(p, &ina) == 1)
-		wo->hisaddr = ina.s_addr;
+		a = *(u_int32_t *)hp->h_addr;
+	    else
+		a = inet_addr(p);
+	    if (a != (u_int32_t) -1)
+		wo->hisaddr = a;
 	}
     }
 }
@@ -1038,6 +1196,7 @@ ip_addr_check(addr, addrs)
     int accept, r = 1;
     char *ptr_word, *ptr_mask;
     struct hostent *hp;
+    struct netent *np;
 
     /* don't allow loopback or multicast address */
     if (bad_ip_adrs(addr))
@@ -1079,8 +1238,13 @@ ip_addr_check(addr, addrs)
 	hp = gethostbyname(ptr_word);
 	if (hp != NULL && hp->h_addrtype == AF_INET) {
 	    ina.s_addr = *(u_int32_t *)hp->h_addr;
+	    mask = ~ (u_int32_t) 0;	/* are we sure we want this? */
 	} else {
-	    r = inet_aton (ptr_word, &ina);
+	    np = getnetbyname (ptr_word);
+	    if (np != NULL && np->n_addrtype == AF_INET)
+		ina.s_addr = htonl (np->n_net);
+	    else
+		r = inet_aton (ptr_word, &ina);
 	    if (ptr_mask == NULL) {
 		/* calculate appropriate mask for net */
 		ah = ntohl(ina.s_addr);
@@ -1226,7 +1390,7 @@ scan_authfile(f, client, server, ipaddr, secret, addrs, filename)
 	 * Special syntax: @filename means read secret from file.
 	 */
 	if (word[0] == '@') {
-	    strlcpy(atfile, word+1, sizeof atfile);
+	    strcpy(atfile, word+1);
 	    if ((sf = fopen(atfile, "r")) == NULL) {
 		syslog(LOG_WARNING, "can't open indirect secret file %s",
 		       atfile);
@@ -1242,25 +1406,21 @@ scan_authfile(f, client, server, ipaddr, secret, addrs, filename)
 	    fclose(sf);
 	}
 	if (secret != NULL)
-	    strlcpy(lsecret, word, sizeof lsecret);
+	    strcpy(lsecret, word);
 
 	/*
 	 * Now read address authorization info and make a wordlist.
 	 */
 	alist = alast = NULL;
 	for (;;) {
-	    size_t wordlen;
-
 	    if (!getword(f, word, &newline, filename) || newline)
 		break;
-	    wordlen = strlen(word);	/* NUL in struct wordlist */
-	    ap = (struct wordlist *) malloc(sizeof(struct wordlist) +
-		wordlen);
-
+	    ap = (struct wordlist *) malloc(sizeof(struct wordlist)
+					    + strlen(word));
 	    if (ap == NULL)
 		novm("authorized addresses");
 	    ap->next = NULL;
-	    strlcpy(ap->word, word, wordlen + 1);
+	    strcpy(ap->word, word);
 	    if (alist == NULL)
 		alist = ap;
 	    else
@@ -1284,7 +1444,7 @@ scan_authfile(f, client, server, ipaddr, secret, addrs, filename)
 	    free_wordlist(addr_list);
 	addr_list = alist;
 	if (secret != NULL)
-	    strlcpy(secret, lsecret, MAXWORDLEN);
+	    strcpy(secret, lsecret);
 
 	if (!newline)
 	    break;
@@ -1331,10 +1491,10 @@ auth_script(script)
     if ((pw = getpwuid(getuid())) != NULL && pw->pw_name != NULL)
 	user_name = pw->pw_name;
     else {
-	snprintf(struid, sizeof struid, "%u", getuid());
+	sprintf(struid, "%u", getuid());
 	user_name = struid;
     }
-    snprintf(strspeed, sizeof strspeed, "%d", baud_rate);
+    sprintf(strspeed, "%d", baud_rate);
 
     argv[0] = script;
     argv[1] = ifname;

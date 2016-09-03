@@ -36,23 +36,13 @@ $Config{startperl}
 
 print OUT <<'!NO!SUBS!';
 
-BEGIN { pop @INC if $INC[-1] eq '.' }
-
-use strict;
-
 use Config;
 use File::Path qw(mkpath);
 use Getopt::Std;
 
-# Make sure read permissions for all are set:
-if (defined umask && (umask() & 0444)) {
-    umask (umask() & ~0444);
-}
-
-getopts('Dd:rlhaQe');
-use vars qw($opt_D $opt_d $opt_r $opt_l $opt_h $opt_a $opt_Q $opt_e);
+getopts('Dd:rlhaQ');
 die "-r and -a options are mutually exclusive\n" if ($opt_r and $opt_a);
-my @inc_dirs = inc_dirs() if $opt_a;
+@inc_dirs = inc_dirs() if $opt_a;
 
 my $Exit = 0;
 
@@ -60,35 +50,22 @@ my $Dest_dir = $opt_d || $Config{installsitearch};
 die "Destination directory $Dest_dir doesn't exist or isn't a directory\n"
     unless -d $Dest_dir;
 
-my @isatype = qw(
+@isatype = split(' ',<<END);
 	char	uchar	u_char
 	short	ushort	u_short
 	int	uint	u_int
 	long	ulong	u_long
 	FILE	key_t	caddr_t
-	float	double	size_t
-);
+END
 
-my %isatype;
 @isatype{@isatype} = (1) x @isatype;
-my $inif = 0;
-my %Is_converted;
-my %bad_file = ();
+$inif = 0;
 
 @ARGV = ('-') unless @ARGV;
 
 build_preamble_if_necessary();
 
-sub reindent($) {
-    my($text) = shift;
-    $text =~ s/\n/\n    /g;
-    $text =~ s/        /\t/g;
-    $text;
-}
-
-my ($t, $tab, %curargs, $new, $eval_index, $dir, $name, $args, $outfile);
-my ($incl, $incl_type, $incl_quote, $next);
-while (defined (my $file = next_file())) {
+while (defined ($file = next_file())) {
     if (-l $file and -d $file) {
         link_if_possible($file) if ($opt_l);
         next;
@@ -98,7 +75,7 @@ while (defined (my $file = next_file())) {
     $t = '';
     $tab = 0;
 
-    # $eval_index goes into '#line' directives, to help locate syntax errors:
+    # $eval_index goes into ``#line'' directives, to help locate syntax errors:
     $eval_index = 1;
 
     if ($file eq '-') {
@@ -123,79 +100,99 @@ while (defined (my $file = next_file())) {
 	open(OUT,">$Dest_dir/$outfile") || die "Can't create $outfile: $!\n";
     }
 
-    print OUT
-        "require '_h2ph_pre.ph';\n\n",
-        "no warnings qw(redefine misc);\n\n";
+    print OUT "require '_h2ph_pre.ph';\n\n";
+    while (<IN>) {
+	chop;
+	while (/\\$/) {
+	    chop;
+	    $_ .= <IN>;
+	    chop;
+	}
+	print OUT "# $_\n" if $opt_D;
 
-    while (defined (local $_ = next_line($file))) {
+	if (s:/\*:\200:g) {
+	    s:\*/:\201:g;
+	    s/\200[^\201]*\201//g;	# delete single line comments
+	    if (s/\200.*//) {		# begin multi-line comment?
+		$_ .= '/*';
+		$_ .= <IN>;
+		redo;
+	    }
+	}
 	if (s/^\s*\#\s*//) {
 	    if (s/^define\s+(\w+)//) {
 		$name = $1;
 		$new = '';
 		s/\s+$//;
-		s/\(\w+\s*\(\*\)\s*\(\w*\)\)\s*(-?\d+)/$1/; # (int (*)(foo_t))0
 		if (s/^\(([\w,\s]*)\)//) {
 		    $args = $1;
-		    my $proto = '() ';
+    	    	    my $proto = '() ';
 		    if ($args ne '') {
-			$proto = '';
-			foreach my $arg (split(/,\s*/,$args)) {
+    	    	    	$proto = '';
+			foreach $arg (split(/,\s*/,$args)) {
 			    $arg =~ s/^\s*([^\s].*[^\s])\s*$/$1/;
 			    $curargs{$arg} = 1;
 			}
 			$args =~ s/\b(\w)/\$$1/g;
-			$args = "my($args) = \@_;\n$t    ";
+			$args = "local($args) = \@_;\n$t    ";
 		    }
 		    s/^\s+//;
 		    expr();
 		    $new =~ s/(["\\])/\\$1/g;       #"]);
-		    EMIT($proto);
+		    $new = reindent($new);
+		    $args = reindent($args);
+		    if ($t ne '') {
+			$new =~ s/(['\\])/\\$1/g;   #']);
+			if ($opt_h) {
+			    print OUT $t,
+                            "eval \"\\n#line $eval_index $outfile\\n\" . 'sub $name $proto\{\n$t    ${args}eval q($new);\n$t}' unless defined(\&$name);\n";
+                            $eval_index++;
+			} else {
+			    print OUT $t,
+                            "eval 'sub $name $proto\{\n$t    ${args}eval q($new);\n$t}' unless defined(\&$name);\n";
+			}
+		    } else {
+                      print OUT "unless(defined(\&$name)) {\n    sub $name $proto\{\n\t${args}eval q($new);\n    }\n}\n";
+		    }
+		    %curargs = ();
 		} else {
 		    s/^\s+//;
 		    expr();
-
 		    $new = 1 if $new eq '';
-
-		    # Shunt around such directives as '#define FOO FOO':
-		    next if $new =~ /^\s*&\Q$name\E\s*\z/;
-
 		    $new = reindent($new);
 		    $args = reindent($args);
-		    $new =~ s/(['\\])/\\$1/g;        #']);
+		    if ($t ne '') {
+			$new =~ s/(['\\])/\\$1/g;        #']);
 
-	    	    print OUT $t, 'eval ';
-		    if ($opt_h) {
-			print OUT "\"\\n#line $eval_index $outfile\\n\" . ";
-			$eval_index++;
+			if ($opt_h) {
+			    print OUT $t,"eval \"\\n#line $eval_index $outfile\\n\" . 'sub $name () {",$new,";}' unless defined(\&$name);\n";
+			    $eval_index++;
+			} else {
+			    print OUT $t,"eval 'sub $name () {",$new,";}' unless defined(\&$name);\n";
+			}
+		    } else {
+		    	# Shunt around such directives as `#define FOO FOO':
+		    	next if " \&$name" eq $new;
+
+                      print OUT $t,"unless(defined(\&$name)) {\n    sub $name () {\t",$new,";}\n}\n";
 		    }
-		    print OUT "'sub $name () {$new;}' unless defined(&$name);\n";
 		}
-	    } elsif (/^(include|import|include_next)\s*([<\"])(.*)[>\"]/) {
-                $incl_type = $1;
-                $incl_quote = $2;
-                $incl = $3;
-                if (($incl_type eq 'include_next') ||
-                    ($opt_e && exists($bad_file{$incl}))) {
-                    $incl =~ s/\.h$/.ph/;
+	    } elsif (/^(include|import)\s*[<"](.*)[>"]/) {
+		($incl = $2) =~ s/\.h$/.ph/;
+		print OUT $t,"require '$incl';\n";
+	    } elsif(/^include_next\s*[<"](.*)[>"]/) {
+		($incl = $1) =~ s/\.h$/.ph/;
 		print OUT ($t,
 			   "eval {\n");
                 $tab += 4;
                 $t = "\t" x ($tab / 8) . ' ' x ($tab % 8);
-                    print OUT ($t, "my(\@REM);\n");
-                    if ($incl_type eq 'include_next') {
 		print OUT ($t,
 			   "my(\%INCD) = map { \$INC{\$_} => 1 } ",
-			           "(grep { \$_ eq \"$incl\" } ",
-                                   "keys(\%INC));\n");
+			   "(grep { \$_ eq \"$incl\" } keys(\%INC));\n");
 		print OUT ($t,
-			           "\@REM = map { \"\$_/$incl\" } ",
+			   "my(\@REM) = map { \"\$_/$incl\" } ",
 			   "(grep { not exists(\$INCD{\"\$_/$incl\"})",
-			           " and -f \"\$_/$incl\" } \@INC);\n");
-                    } else {
-                        print OUT ($t,
-                                   "\@REM = map { \"\$_/$incl\" } ",
-                                   "(grep {-r \"\$_/$incl\" } \@INC);\n");
-                    }
+			   "and -f \"\$_/$incl\" } \@INC);\n");
 		print OUT ($t,
 			   "require \"\$REM[0]\" if \@REM;\n");
                 $tab -= 4;
@@ -204,14 +201,6 @@ while (defined (my $file = next_file())) {
 			   "};\n");
 		print OUT ($t,
 			   "warn(\$\@) if \$\@;\n");
-                } else {
-                    $incl =~ s/\.h$/.ph/;
-                    # copy the prefix in the quote syntax (#include "x.h") case
-                    if ($incl !~ m|/| && $incl_quote eq q{"} && $file =~ m|^(.*)/|) {
-                        $incl = "$1/$incl";
-                    }
-		    print OUT $t,"require '$incl';\n";
-                }
 	    } elsif (/^ifdef\s+(\w+)/) {
 		print OUT $t,"if(defined(&$1)) {\n";
 		$tab += 4;
@@ -259,27 +248,20 @@ while (defined (my $file = next_file())) {
 	    } elsif(/^ident\s+(.*)/) {
 		print OUT $t, "# $1\n";
 	    }
-	} elsif (/^\s*(typedef\s*)?enum\s*(\s+[a-zA-Z_]\w*\s*)?/) { # { for vi
-	    until(/\{[^}]*\}.*;/ || /;/) {
-		last unless defined ($next = next_line($file));
-		chomp $next;
-		# drop "#define FOO FOO" in enums
-		$next =~ s/^\s*#\s*define\s+(\w+)\s+\1\s*$//;
-		# #defines in enums (aliases)
-		$next =~ s/^\s*#\s*define\s+(\w+)\s+(\w+)\s*$/$1 = $2,/;
+ 	} elsif(/^\s*(typedef\s*)?enum\s*(\s+[a-zA-Z_]\w*\s*)?\{/) {
+	    until(/\}.*?;/) {
+		chomp($next = <IN>);
 		$_ .= $next;
 		print OUT "# $next\n" if $opt_D;
 	    }
-	    s/#\s*if.*?#\s*endif//g; # drop #ifdefs
 	    s@/\*.*?\*/@@g;
 	    s/\s+/ /g;
-	    next unless /^\s?(typedef\s?)?enum\s?([a-zA-Z_]\w*)?\s?\{(.*)\}\s?([a-zA-Z_]\w*)?\s?;/;
-	    (my $enum_subs = $3) =~ s/\s//g;
-	    my @enum_subs = split(/,/, $enum_subs);
-	    my $enum_val = -1;
-	    foreach my $enum (@enum_subs) {
-		my ($enum_name, $enum_value) = $enum =~ /^([a-zA-Z_]\w*)(=.+)?$/;
-		$enum_name or next;
+	    /^\s?(typedef\s?)?enum\s?([a-zA-Z_]\w*)?\s?\{(.*)\}\s?([a-zA-Z_]\w*)?\s?;/;
+	    ($enum_subs = $3) =~ s/\s//g;
+	    @enum_subs = split(/,/, $enum_subs);
+	    $enum_val = -1;
+	    for $enum (@enum_subs) {
+		($enum_name, $enum_value) = $enum =~ /^([a-zA-Z_]\w*)(=.+)?$/;
 		$enum_value =~ s/^=//;
 		$enum_val = (length($enum_value) ? $enum_value : $enum_val + 1);
 		if ($opt_h) {
@@ -294,146 +276,33 @@ while (defined (my $file = next_file())) {
 			       "unless defined(\&$enum_name);\n");
 		}
 	    }
-	} elsif (/^(?:__extension__\s+)?(?:extern|static)\s+(?:__)?inline(?:__)?\s+/
-	    and !/;\s*$/ and !/{\s*}\s*$/)
-	{ # { for vi
-	    # This is a hack to parse the inline functions in the glibc headers.
-	    # Warning: massive kludge ahead. We suppose inline functions
-	    # are mainly constructed like macros.
-	    while (1) {
-		last unless defined ($next = next_line($file));
-		chomp $next;
-		undef $_, last if $next =~ /__THROW\s*;/
-			       or $next =~ /^(__extension__|extern|static)\b/;
-		$_ .= " $next";
-		print OUT "# $next\n" if $opt_D;
-		last if $next =~ /^}|^{.*}\s*$/;
-	    }
-	    next if not defined; # because it's only a prototype
-	    s/\b(__extension__|extern|static|(?:__)?inline(?:__)?)\b//g;
-	    # violently drop #ifdefs
-	    s/#\s*if.*?#\s*endif//g
-		and print OUT "# some #ifdef were dropped here -- fill in the blanks\n";
-	    if (s/^(?:\w|\s|\*)*\s(\w+)\s*//) {
-		$name = $1;
-	    } else {
-		warn "name not found"; next; # shouldn't occur...
-	    }
-	    my @args;
-	    if (s/^\(([^()]*)\)\s*(\w+\s*)*//) {
-		for my $arg (split /,/, $1) {
-		    if ($arg =~ /(\w+)\s*$/) {
-			$curargs{$1} = 1;
-			push @args, $1;
-		    }
-		}
-	    }
-	    $args = (
-		@args
-		? "my(" . (join ',', map "\$$_", @args) . ") = \@_;\n$t    "
-		: ""
-	    );
-	    my $proto = @args ? '' : '() ';
-	    $new = '';
-	    s/\breturn\b//g; # "return" doesn't occur in macros usually...
-	    expr();
-	    # try to find and perlify local C variables
-	    our @local_variables = (); # needs to be a our(): (?{...}) bug workaround
-	    {
-		use re "eval";
-		my $typelist = join '|', keys %isatype;
-		$new =~ s['
-		  (?:(?:__)?const(?:__)?\s+)?
-		  (?:(?:un)?signed\s+)?
-		  (?:long\s+)?
-		  (?:$typelist)\s+
-		  (\w+)
-		  (?{ push @local_variables, $1 })
-		  ']
-		 [my \$$1]gx;
-		$new =~ s['
-		  (?:(?:__)?const(?:__)?\s+)?
-		  (?:(?:un)?signed\s+)?
-		  (?:long\s+)?
-		  (?:$typelist)\s+
-		  ' \s+ &(\w+) \s* ;
-		  (?{ push @local_variables, $1 })
-		  ]
-		 [my \$$1;]gx;
-	     }
-	    $new =~ s/&$_\b/\$$_/g for @local_variables;
-	    $new =~ s/(["\\])/\\$1/g;       #"]);
-	    # now that's almost like a macro (we hope)
-	    EMIT($proto);
 	}
     }
-    $Is_converted{$file} = 1;
-    if ($opt_e && exists($bad_file{$file})) {
-        unlink($Dest_dir . '/' . $outfile);
-        $next = '';
-    } else {
-        print OUT "1;\n";
-	queue_includes_from($file) if $opt_a;
-    }
-}
+    print OUT "1;\n";
 
-if ($opt_e && (scalar(keys %bad_file) > 0)) {
-    warn "Was unable to convert the following files:\n";
-    warn "\t" . join("\n\t",sort(keys %bad_file)) . "\n";
+    $is_converted{$file} = 1;
+    queue_includes_from($file) if ($opt_a);
 }
 
 exit $Exit;
 
-sub EMIT {
-    my $proto = shift;
-
-    $new = reindent($new);
-    $args = reindent($args);
-    if ($t ne '') {
-    $new =~ s/(['\\])/\\$1/g;   #']);
-    if ($opt_h) {
-        print OUT $t,
-                    "eval \"\\n#line $eval_index $outfile\\n\" . 'sub $name $proto\{\n$t    ${args}eval q($new);\n$t}' unless defined(\&$name);\n";
-                    $eval_index++;
-    } else {
-        print OUT $t,
-                    "eval 'sub $name $proto\{\n$t    ${args}eval q($new);\n$t}' unless defined(\&$name);\n";
-    }
-    } else {
-              print OUT "unless(defined(\&$name)) {\n    sub $name $proto\{\n\t${args}eval q($new);\n    }\n}\n";
-    }
-    %curargs = ();
-    return;
+sub reindent($) {
+    my($text) = shift;
+    $text =~ s/\n/\n    /g;
+    $text =~ s/        /\t/g;
+    $text;
 }
 
 sub expr {
-    if (/\b__asm__\b/) {	# freak out
-	$new = '"(assembly code)"';
-	return
-    }
-    my $joined_args;
     if(keys(%curargs)) {
-	$joined_args = join('|', keys(%curargs));
+	my($joined_args) = join('|', keys(%curargs));
     }
     while ($_ ne '') {
 	s/^\&\&// && do { $new .= " &&"; next;}; # handle && operator
 	s/^\&([\(a-z\)]+)/$1/i;	# hack for things that take the address of
 	s/^(\s+)//		&& do {$new .= ' '; next;};
-	s/^0X([0-9A-F]+)[UL]*//i
-	    && do {my $hex = $1;
-		   $hex =~ s/^0+//;
-		   if (length $hex > 8 && !$Config{use64bitint}) {
-		       # Croak if nv_preserves_uv_bits < 64 ?
-		       $new .=         hex(substr($hex, -8)) +
-			       2**32 * hex(substr($hex,  0, -8));
-		       # The above will produce "erroneous" code
-		       # if the hex constant was e.g. inside UINT64_C
-		       # macro, but then again, h2ph is an approximation.
-		   } else {
-		       $new .= lc("0x$hex");
-		   }
-		   next;};
-	s/^(-?\d+\.\d+E[-+]?\d+)[FL]?//i	&& do {$new .= $1; next;};
+	s/^(0X[0-9A-F]+)[UL]*//i	&& do {$new .= lc($1); next;};
+	s/^(-?\d+\.\d+E[-+]\d+)F?//i	&& do {$new .= $1; next;};
 	s/^(\d+)\s*[LU]*//i	&& do {$new .= $1; next;};
 	s/^("(\\"|[^"])*")//	&& do {$new .= $1; next;};
 	s/^'((\\"|[^"])*)'//	&& do {
@@ -471,20 +340,14 @@ sub expr {
         };
 	# Eliminate typedefs
 	/\(([\w\s]+)[\*\s]*\)\s*[\w\(]/ && do {
-	    my $doit = 1;
 	    foreach (split /\s+/, $1) {  # Make sure all the words are types,
-	        unless($isatype{$_} or $_ eq 'struct' or $_ eq 'union'){
-		    $doit = 0;
-		    last;
-		}
+		last unless ($isatype{$_} or $_ eq 'struct');
 	    }
-	    if( $doit ){
-		s/\([\w\s]+[\*\s]*\)// && next;      # then eliminate them.
-	    }
+	    s/\([\w\s]+[\*\s]*\)// && next;      # then eliminate them.
 	};
 	# struct/union member, including arrays:
 	s/^([_A-Z]\w*(\[[^\]]+\])?((\.|->)[_A-Z]\w*(\[[^\]]+\])?)+)//i && do {
-	    my $id = $1;
+	    $id = $1;
 	    $id =~ s/(\.|(->))([^\.\-]*)/->\{$3\}/g;
 	    $id =~ s/\b([^\$])($joined_args)/$1\$$2/g if length($joined_args);
 	    while($id =~ /\[\s*([^\$\&\d\]]+)\]/) {
@@ -500,8 +363,8 @@ sub expr {
 	    $new .= " (\$$id)";
 	};
 	s/^([_a-zA-Z]\w*)//	&& do {
-	    my $id = $1;
-	    if ($id eq 'struct' || $id eq 'union') {
+	    $id = $1;
+	    if ($id eq 'struct') {
 		s/^\s+(\w+)//;
 		$id .= ' ' . $1;
 		$isatype{$id} = 1;
@@ -514,11 +377,11 @@ sub expr {
 		$new .= '->' if /^[\[\{]/;
 	    } elsif ($id eq 'defined') {
 		$new .= 'defined';
-	    } elsif (/^\s*\(/) {
-		s/^\s*\((\w),/("$1",/ if $id =~ /^_IO[WR]*$/i;	# cheat
+	    } elsif (/^\(/) {
+		s/^\((\w),/("$1",/ if $id =~ /^_IO[WR]*$/i;	# cheat
 		$new .= " &$id";
 	    } elsif ($isatype{$id}) {
-		if ($new =~ /\{\s*$/) {
+		if ($new =~ /{\s*$/) {
 		    $new .= "'$id'";
 		} elsif ($new =~ /\(\s*$/ && /^[\s*]*\)/) {
 		    $new =~ s/\(\s*$//;
@@ -527,14 +390,8 @@ sub expr {
 		    $new .= q(').$id.q(');
 		}
 	    } else {
-		if ($inif) {
-		    if ($new =~ /defined\s*$/) {
-			$new .= '(&' . $id . ')';
-		    } elsif ($new =~ /defined\s*\($/) {
-			$new .= '&' . $id;
-		    } else {
-			$new .= '(defined(&' . $id . ') ? &' . $id . ' : undef)';
-		    }
+		if ($inif && $new !~ /defined\s*\($/) {
+		    $new .= '(defined(&' . $id . ') ? &' . $id . ' : 0)';
 		} elsif (/^\[/) {
 		    $new .= " \$$id";
 		} else {
@@ -545,103 +402,6 @@ sub expr {
 	};
 	s/^(.)// && do { if ($1 ne '#') { $new .= $1; } next;};
     }
-}
-
-
-sub next_line
-{
-    my $file = shift;
-    my ($in, $out);
-    my $pre_sub_tri_graphs = 1;
-
-    READ: while (not eof IN) {
-        $in  .= <IN>;
-        chomp $in;
-        next unless length $in;
-
-        while (length $in) {
-            if ($pre_sub_tri_graphs) {
-                # Preprocess all tri-graphs
-                # including things stuck in quoted string constants.
-                $in =~ s/\?\?=/#/g;                         # | ??=|  #|
-                $in =~ s/\?\?\!/|/g;                        # | ??!|  ||
-                $in =~ s/\?\?'/^/g;                         # | ??'|  ^|
-                $in =~ s/\?\?\(/[/g;                        # | ??(|  [|
-                $in =~ s/\?\?\)/]/g;                        # | ??)|  ]|
-                $in =~ s/\?\?\-/~/g;                        # | ??-|  ~|
-                $in =~ s/\?\?\//\\/g;                       # | ??/|  \|
-                $in =~ s/\?\?</{/g;                         # | ??<|  {|
-                $in =~ s/\?\?>/}/g;                         # | ??>|  }|
-            }
-	    if ($in =~ s/^\#ifdef __LANGUAGE_PASCAL__//) {
-		# Tru64 disassembler.h evilness: mixed C and Pascal.
-		while (<IN>) {
-		    last if /^\#endif/;
-		}
-		$in = "";
-		next READ;
-	    }
-	    # Skip inlined functions in headers
-	    if ($in =~ s/^(extern|static) (__inline__|inline) .*[^;]\s*$//) {
-		while (<IN>) {
-		    last if /^}/;
-		}
-		$in = "";
-		next READ;
-	    }
-            if ($in =~ s/\\$//) {                           # \-newline
-                $out    .= ' ';
-                next READ;
-            } elsif ($in =~ s/^([^"'\\\/]+)//) {            # Passthrough
-                $out    .= $1;
-            } elsif ($in =~ s/^(\\.)//) {                   # \...
-                $out    .= $1;
-            } elsif ($in =~ /^'/) {                         # '...
-                if ($in =~ s/^('(\\.|[^'\\])*')//) {
-                    $out    .= $1;
-                } else {
-                    next READ;
-                }
-            } elsif ($in =~ /^"/) {                         # "...
-                if ($in =~ s/^("(\\.|[^"\\])*")//) {
-                    $out    .= $1;
-                } else {
-                    next READ;
-                }
-            } elsif ($in =~ s/^\/\/.*//) {                  # //...
-                # fall through
-            } elsif ($in =~ m/^\/\*/) {                     # /*...
-                # C comment removal adapted from perlfaq6:
-                if ($in =~ s/^\/\*[^*]*\*+([^\/*][^*]*\*+)*\///) {
-                    $out    .= ' ';
-                } else {                                    # Incomplete /* */
-                    next READ;
-                }
-            } elsif ($in =~ s/^(\/)//) {                    # /...
-                $out    .= $1;
-            } elsif ($in =~ s/^([^\'\"\\\/]+)//) {
-                $out    .= $1;
-            } elsif ($^O eq 'linux' &&
-                     $file =~ m!(?:^|/)linux/byteorder/pdp_endian\.h$! &&
-                     $in   =~ s!\'T KNOW!!) {
-                $out    =~ s!I DON$!I_DO_NOT_KNOW!;
-            } else {
-                if ($opt_e) {
-                    warn "Cannot parse $file:\n$in\n";
-                    $bad_file{$file} = 1;
-                    $in = '';
-                    $out = undef;
-                    last READ;
-                } else {
-		die "Cannot parse:\n$in\n";
-                }
-            }
-        }
-
-        last READ if $out =~ /\S/;
-    }
-
-    return $out;
 }
 
 
@@ -660,12 +420,12 @@ sub next_file
             if ($opt_r) {
                 expand_glob($file);
             } else {
-                print STDERR "Skipping directory '$file'\n";
+                print STDERR "Skipping directory `$file'\n";
             }
         } elsif ($opt_a) {
             return $file;
         } else {
-            print STDERR "Skipping '$file':  not a file or directory\n";
+            print STDERR "Skipping `$file':  not a file or directory\n";
         }
     }
 
@@ -744,13 +504,8 @@ sub queue_includes_from
                 $line .= <HEADER>;
             }
 
-            if ($line =~ /^#\s*include\s+([<"])(.*?)[>"]/) {
-                my ($delimiter, $new_file) = ($1, $2);
-                # copy the prefix in the quote syntax (#include "x.h") case
-                if ($delimiter eq q{"} && $file =~ m|^(.*)/|) {
-                    $new_file = "$1/$new_file";
-                }
-                push(@ARGV, $new_file) unless $Is_converted{$new_file};
+            if ($line =~ /^#\s*include\s+<(.*?)>/) {
+                push(@ARGV, $1) unless $is_converted{$1};
             }
         }
     close HEADER;
@@ -758,11 +513,13 @@ sub queue_includes_from
 
 
 # Determine include directories; $Config{usrinc} should be enough for (all
-# non-GCC?) C compilers, but gcc uses additional include directories.
+# non-GCC?) C compilers, but gcc uses an additional include directory.
 sub inc_dirs
 {
-    my $from_gcc   = `LC_ALL=C $Config{cc} -v -E - < /dev/null 2>&1 | awk '/^#include/, /^End of search list/' | grep '^ '`;
-    length($from_gcc) ? (split(' ', $from_gcc), $Config{usrinc}) : ($Config{usrinc});
+    my $from_gcc    = `$Config{cc} -v 2>&1`;
+    $from_gcc       =~ s:^Reading specs from (.*?)/specs\b.*:$1/include:s;
+
+    length($from_gcc) ? ($from_gcc, $Config{usrinc}) : ($Config{usrinc});
 }
 
 
@@ -771,7 +528,7 @@ sub inc_dirs
 sub build_preamble_if_necessary
 {
     # Increment $VERSION every time this function is modified:
-    my $VERSION     = 4;
+    my $VERSION     = 1;
     my $preamble    = "$Dest_dir/_h2ph_pre.ph";
 
     # Can we skip building the preamble file?
@@ -789,66 +546,22 @@ sub build_preamble_if_necessary
     my (%define) = _extract_cc_defines();
 
     open  PREAMBLE, ">$preamble" or die "Cannot open $preamble:  $!";
-	print PREAMBLE "# This file was created by h2ph version $VERSION\n";
-        # Prevent non-portable hex constants from warning.
-        #
-        # We still produce an overflow warning if we can't represent
-        # a hex constant as an integer.
-        print PREAMBLE "no warnings qw(portable);\n";
+        print PREAMBLE "# This file was created by h2ph version $VERSION\n";
 
-	foreach (sort keys %define) {
-	    if ($opt_D) {
-		print PREAMBLE "# $_=$define{$_}\n";
-	    }
-	    if ($define{$_} =~ /^\((.*)\)$/) {
-		# parenthesized value:  d=(v)
-		$define{$_} = $1;
-	    }
-	    if (/^(\w+)\((\w)\)$/) {
-		my($macro, $arg) = ($1, $2);
-		my $def = $define{$_};
-		$def =~ s/$arg/\$\{$arg\}/g;
-		print PREAMBLE <<DEFINE;
-unless (defined &$macro) { sub $macro(\$) { my (\$$arg) = \@_; \"$def\" } }
+        foreach (sort keys %define) {
+            if ($opt_D) {
+                print PREAMBLE "# $_=$define{$_}\n";
+            }
 
-DEFINE
-	    } elsif
-		($define{$_} =~ /^([+-]?(\d+)?\.\d+([eE][+-]?\d+)?)[FL]?$/) {
-		# float:
-		print PREAMBLE
-		    "unless (defined &$_) { sub $_() { $1 } }\n\n";
-	    } elsif ($define{$_} =~ /^([+-]?\d+)U?L{0,2}$/i) {
-		# integer:
-		print PREAMBLE
-		    "unless (defined &$_) { sub $_() { $1 } }\n\n";
-            } elsif ($define{$_} =~ /^([+-]?0x[\da-f]+)U?L{0,2}$/i) {
-                # hex integer
-                # Special cased, since perl warns on hex integers
-                # that can't be represented in a UV.
-                #
-                # This way we get the warning at time of use, so the user
-                # only gets the warning if they happen to use this
-                # platform-specific definition.
-                my $code = $1;
-                $code = "hex('$code')" if length $code > 10;
+            if ($define{$_} =~ /^\d+$/) {
                 print PREAMBLE
-                    "unless (defined &$_) { sub $_() { $code } }\n\n";
-	    } elsif ($define{$_} =~ /^\w+$/) {
-		my $def = $define{$_};
-		if ($isatype{$def}) {
-		  print PREAMBLE
-		    "unless (defined &$_) { sub $_() { \"$def\" } }\n\n";
-		} else {
-		  print PREAMBLE
-		    "unless (defined &$_) { sub $_() { &$def } }\n\n";
-	        }
-	    } else {
-		print PREAMBLE
-		    "unless (defined &$_) { sub $_() { \"",
-		    quotemeta($define{$_}), "\" } }\n\n";
-	    }
-	}
-	print PREAMBLE "\n1;\n";  # avoid 'did not return a true value' when empty
+                    "unless (defined &$_) { sub $_() { $define{$_} } }\n\n";
+            } else {
+                print PREAMBLE
+                    "unless (defined &$_) { sub $_() { \"",
+                    quotemeta($define{$_}), "\" } }\n\n";
+            }
+        }
     close PREAMBLE               or die "Cannot close $preamble:  $!";
 }
 
@@ -859,15 +572,16 @@ DEFINE
 sub _extract_cc_defines
 {
     my %define;
-    my $allsymbols  = join " ",
-	@Config{'ccsymbols', 'cppsymbols', 'cppccsymbols'};
+    my $allsymbols = join " ", @Config{ccsymbols, cppsymbols, cppccsymbols};
 
-    # Split compiler pre-definitions into 'key=value' pairs:
-    while ($allsymbols =~ /([^\s]+)=((\\\s|[^\s])+)/g) {
-	$define{$1} = $2;
-	if ($opt_D) {
-	    print STDERR "$_:  $1 -> $2\n";
-	}
+    # Split compiler pre-definitions into `key=value' pairs:
+    foreach (split /\s+/, $allsymbols) {
+        /(.*?)=(.*)/;
+        $define{$1} = $2;
+
+        if ($opt_D) {
+            print STDERR "$_:  $1 -> $2\n";
+        }
     }
 
     return %define;
@@ -885,8 +599,7 @@ h2ph - convert .h C header files to .ph Perl header files
 
 =head1 SYNOPSIS
 
-B<h2ph [-d destination directory] [-r | -a] [-l] [-h] [-e] [-D] [-Q]
-[headerfiles]>
+B<h2ph [-d destination directory] [-r | -a] [-l] [headerfiles]>
 
 =head1 DESCRIPTION
 
@@ -896,10 +609,6 @@ format.
 It is most easily run while in /usr/include:
 
 	cd /usr/include; h2ph * sys/*
-
-or
-
-	cd /usr/include; h2ph * sys/* arpa/* netinet/*
 
 or
 
@@ -918,7 +627,7 @@ If run with no arguments, filters standard input to standard output.
 =item -d destination_dir
 
 Put the resulting B<.ph> files beneath B<destination_dir>, instead of
-beneath the default Perl library location (C<$Config{'installsitearch'}>).
+beneath the default Perl library location (C<$Config{'installsitsearch'}>).
 
 =item -r
 
@@ -940,7 +649,7 @@ is not specified, then links are skipped over.
 
 =item -h
 
-Put 'hints' in the .ph files which will help in locating problems with
+Put ``hints'' in the .ph files which will help in locating problems with
 I<h2ph>.  In those cases when you B<require> a B<.ph> file containing syntax
 errors, instead of the cryptic
 
@@ -952,11 +661,6 @@ you will see the slightly more helpful
 
 However, the B<.ph> files almost double in size when built using B<-h>.
 
-=item -e
-
-If an error is encountered during conversion, output file will be removed and
-a warning emitted instead of terminating the conversion immediately.
-
 =item -D
 
 Include the code from the B<.h> file as a comment in the B<.ph> file.
@@ -964,7 +668,7 @@ This is primarily used for debugging I<h2ph>.
 
 =item -Q
 
-'Quiet' mode; don't print out the names of the files being converted.
+``Quiet'' mode; don't print out the names of the files being converted.
 
 =back
 
@@ -1002,16 +706,18 @@ that it can translate.
 It's only intended as a rough tool.
 You may need to dicker with the files produced.
 
+Doesn't run with C<use strict>
+
 You have to run this program by hand; it's not run as part of the Perl
 installation.
 
 Doesn't handle complicated expressions built piecemeal, a la:
 
     enum {
-	FIRST_VALUE,
-	SECOND_VALUE,
+        FIRST_VALUE,
+        SECOND_VALUE,
     #ifdef ABC
-	THIRD_VALUE
+        THIRD_VALUE
     #endif
     };
 

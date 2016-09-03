@@ -1,4 +1,4 @@
-/*	$OpenBSD: C.c,v 1.15 2014/12/08 03:58:56 jsg Exp $	*/
+/*	$OpenBSD: C.c,v 1.4 1997/07/21 23:18:45 deraadt Exp $	*/
 /*	$NetBSD: C.c,v 1.3 1995/03/26 20:14:02 glass Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,23 +34,31 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)C.c	8.4 (Berkeley) 4/2/94";
+#else
+static char rcsid[] = "$OpenBSD: C.c,v 1.4 1997/07/21 23:18:45 deraadt Exp $";
+#endif
+#endif /* not lint */
+
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "ctags.h"
 
-static int	func_entry(void);
-static void	hash_entry(void);
-static void	skip_string(int);
-static int	str_entry(int);
+static int	func_entry __P((void));
+static void	hash_entry __P((void));
+static void	skip_string __P((int));
+static int	str_entry __P((int));
 
 /*
  * c_entries --
  *	read .c and .h files and call appropriate routines
  */
 void
-c_entries(void)
+c_entries()
 {
 	int	c;			/* current character */
 	int	level;			/* brace level */
@@ -89,7 +101,7 @@ c_entries(void)
 			 * the above 3 cases are similar in that they
 			 * are special characters that also end tokens.
 			 */
-endtok:			if (sp > tok) {
+	endtok:			if (sp > tok) {
 				*sp = EOS;
 				token = YES;
 				sp = tok;
@@ -114,10 +126,7 @@ endtok:			if (sp > tok) {
 		 */
 		case '/':
 			if (GETC(==, '*')) {
-				skip_comment(c);
-				continue;
-			} else if (c == '/') {
-				skip_comment(c);
+				skip_comment();
 				continue;
 			}
 			(void)ungetc(c, inf);
@@ -137,14 +146,6 @@ endtok:			if (sp > tok) {
 		 * level zero indicates a function.
 		 */
 		case '(':
-			do {
-				if (GETC(==, EOF))
-					return;
-			} while (iswhite(c));
-			if (c == '*')
-				break;
-			else
-				ungetc(c, inf);
 			if (!level && token) {
 				int	curline;
 
@@ -156,7 +157,7 @@ endtok:			if (sp > tok) {
 				 *	foo\n
 				 *	(arg1,
 				 */
-				get_line();
+				getline();
 				curline = lineno;
 				if (func_entry()) {
 					++level;
@@ -185,7 +186,7 @@ endtok:			if (sp > tok) {
 		case ';':
 			if (t_def && level == t_level) {
 				t_def = NO;
-				get_line();
+				getline();
 				if (sp != tok)
 					*sp = EOS;
 				pfnote(tok, lineno);
@@ -218,36 +219,34 @@ endtok:			if (sp > tok) {
 				if (sp == tok)
 					break;
 				*sp = EOS;
-				/* no typedefs inside typedefs */
-				if (!t_def &&
-					   !memcmp(tok, "typedef",8)) {
-					t_def = YES;
-					t_level = level;
-					break;
-				}
-				/* catch "typedef struct" */
-				if ((!t_def || t_level < level)
-				    && (!memcmp(tok, "struct", 7)
-				    || !memcmp(tok, "union", 6)
-				    || !memcmp(tok, "enum", 5))) {
-					/*
-					 * get line immediately;
-					 * may change before '{'
-					 */
-					get_line();
-					if (str_entry(c))
-						++level;
-					break;
-					/* } */
+				if (tflag) {
+					/* no typedefs inside typedefs */
+					if (!t_def &&
+						   !memcmp(tok, "typedef",8)) {
+						t_def = YES;
+						t_level = level;
+						break;
+					}
+					/* catch "typedef struct" */
+					if ((!t_def || t_level < level)
+					    && (!memcmp(tok, "struct", 7)
+					    || !memcmp(tok, "union", 6)
+					    || !memcmp(tok, "enum", 5))) {
+						/*
+						 * get line immediately;
+						 * may change before '{'
+						 */
+						getline();
+						if (str_entry(c))
+							++level;
+						break;
+						/* } */
+					}
 				}
 				sp = tok;
 			}
 			else if (sp != tok || begtoken(c)) {
-				/* hell... truncate it */
-				if (sp == tok + sizeof tok - 1)
-					*sp = EOS;
-				else 
-					*sp++ = c;
+				*sp++ = c;
 				token = YES;
 			}
 			continue;
@@ -263,13 +262,10 @@ endtok:			if (sp > tok) {
  *	handle a function reference
  */
 static int
-func_entry(void)
+func_entry()
 {
 	int	c;			/* current character */
 	int	level = 0;		/* for matching '()' */
-	static char attribute[] = "__attribute__";
-	char maybe_attribute[sizeof attribute + 1];
-	char *anext;
 
 	/*
 	 * Find the end of the assumed function declaration.
@@ -286,9 +282,7 @@ func_entry(void)
 		case '/':
 			/* skip comments */
 			if (GETC(==, '*'))
-				skip_comment(c);
-			else if (c == '/')
-				skip_comment(c);
+				skip_comment();
 			break;
 		case '(':
 			level++;
@@ -309,43 +303,14 @@ fnd:
 	 * is a token character if it's a function and a non-token
 	 * character if it's a declaration.  Comments don't count...
 	 */
-	for (anext = maybe_attribute;;) {
+	for (;;) {
 		while (GETC(!=, EOF) && iswhite(c))
 			if (c == '\n')
 				SETLINE;
-		if (c == EOF)
-			return NO;
-		/*
-		 * Recognize the GNU __attribute__ extension, which would
-		 * otherwise make the heuristic test DTWT
-		 */
-		if (anext == maybe_attribute) {
-			if (intoken(c)) {
-				*anext++ = c;
-				continue;
-			}
-		} else {
-			if (intoken(c)) {
-				if (anext - maybe_attribute < (int)(sizeof attribute - 1))
-					*anext++ = c;
-				else
-					break;
-				continue;
-			} else {
-				*anext++ = '\0';
-				if (strcmp(maybe_attribute, attribute) == 0) {
-					(void)ungetc(c, inf);
-					return NO;
-				}
-				break;
-			}
-		}
 		if (intoken(c) || c == '{')
 			break;
 		if (c == '/' && GETC(==, '*'))
-			skip_comment(c);
-		else if (c == '/')
-			skip_comment(c);
+			skip_comment();
 		else {				/* don't ever "read" '/' */
 			(void)ungetc(c, inf);
 			return (NO);
@@ -361,7 +326,7 @@ fnd:
  *	handle a line starting with a '#'
  */
 static void
-hash_entry(void)
+hash_entry()
 {
 	int	c;			/* character read */
 	int	curline;		/* line started on */
@@ -382,11 +347,7 @@ hash_entry(void)
 			return;
 		if (iswhite(c))
 			break;
-		/* hell... truncate it */
-		if (sp == tok + sizeof tok - 1)
-			*sp = EOS;
-		else 
-			*sp++ = c;
+		*sp++ = c;
 	}
 	*sp = EOS;
 	if (memcmp(tok, "define", 6))	/* only interested in #define's */
@@ -398,11 +359,7 @@ hash_entry(void)
 			break;
 	}
 	for (sp = tok;;) {		/* get next token */
-		/* hell... truncate it */
-		if (sp == tok + sizeof tok - 1)
-			*sp = EOS;
-		else 
-			*sp++ = c;
+		*sp++ = c;
 		if (GETC(==, EOF))
 			return;
 		/*
@@ -414,7 +371,7 @@ hash_entry(void)
 	}
 	*sp = EOS;
 	if (dflag || c == '(') {	/* only want macros */
-		get_line();
+		getline();
 		pfnote(tok, curline);
 	}
 skip:	if (c == '\n') {		/* get rid of rest of define */
@@ -430,7 +387,8 @@ skip:	if (c == '\n') {		/* get rid of rest of define */
  *	handle a struct, union or enum entry
  */
 static int
-str_entry(int c)
+str_entry(c)
+	int	c;			/* current character */
 {
 	int	curline;		/* line started on */
 	char	*sp;			/* buffer pointer */
@@ -443,11 +401,7 @@ str_entry(int c)
 	if (c == '{')		/* it was "struct {" */
 		return (YES);
 	for (sp = tok;;) {		/* get next token */
-		/* hell... truncate it */
-		if (sp == tok + sizeof tok - 1)
-			*sp = EOS;
-		else 
-			*sp++ = c;
+		*sp++ = c;
 		if (GETC(==, EOF))
 			return (NO);
 		if (!intoken(c))
@@ -479,7 +433,7 @@ str_entry(int c)
  *	skip over comment
  */
 void
-skip_comment(int commenttype)
+skip_comment()
 {
 	int	c;			/* character read */
 	int	star;			/* '*' flag */
@@ -491,17 +445,10 @@ skip_comment(int commenttype)
 			star = YES;
 			break;
 		case '/':
-			if (commenttype == '*' && star)
+			if (star)
 				return;
 			break;
 		case '\n':
-			if (commenttype == '/') {
-				/* We don't really parse C, so sometimes it
-				 * is necessary to see the newline
-				 */
-				ungetc(c, inf);
-				return;
-			}
 			SETLINE;
 			/*FALLTHROUGH*/
 		default:
@@ -514,8 +461,9 @@ skip_comment(int commenttype)
  * skip_string --
  *	skip to the end of a string or character constant.
  */
-static void
-skip_string(int key)
+void
+skip_string(key)
+	int	key;
 {
 	int	c,
 		skip;
@@ -540,7 +488,8 @@ skip_string(int key)
  *	skip to next char "key"
  */
 int
-skip_key(int key)
+skip_key(key)
+	int	key;
 {
 	int	c,
 		skip,
@@ -563,10 +512,7 @@ skip_key(int key)
 		case '/':
 			/* skip comments */
 			if (GETC(==, '*')) {
-				skip_comment(c);
-				break;
-			} else if (c == '/') {
-				skip_comment(c);
+				skip_comment();
 				break;
 			}
 			(void)ungetc(c, inf);

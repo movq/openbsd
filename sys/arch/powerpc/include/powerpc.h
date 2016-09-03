@@ -1,4 +1,4 @@
-/*	$OpenBSD: powerpc.h,v 1.8 2014/04/01 20:42:39 mpi Exp $	*/
+/*	$OpenBSD: powerpc.h,v 1.4 1999/07/05 21:01:19 rahnds Exp $	*/
 /*	$NetBSD: powerpc.h,v 1.1 1996/09/30 16:34:30 ws Exp $	*/
 
 /*
@@ -31,23 +31,50 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-
-#ifndef	_POWERPC_POWERPC_H_
-#define	_POWERPC_POWERPC_H_
+#ifndef	_MACHINE_POWERPC_H_
+#define	_MACHINE_POWERPC_H_
 
 struct mem_region {
-	vaddr_t start;
-	vsize_t size;
+	vm_offset_t start;
+	vm_size_t size;
 };
 
-void ppc_mem_regions(struct mem_region **, struct mem_region **);
+void mem_regions __P((struct mem_region **, struct mem_region **));
 
-struct dumpmem {
-	vaddr_t         start;
-	vsize_t         end;
+/*
+ * These two functions get used solely in boot() in machdep.c.
+ *
+ * Not sure whether boot itself should be implementation dependent instead.	XXX
+ */
+typedef void (exit_f) __P((void)) /*__attribute__((__noreturn__))*/ ;
+typedef void (boot_f) __P((char *bootspec)) /* __attribute__((__noreturn__))*/ ;
+typedef void (vmon_f) __P((void));
+
+/* firmware interface.
+ * regardless of type of firmware used several items
+ * are need from firmware to boot up.
+ * these include:
+ *	memory information
+ *	vmsetup for firmware calls.
+ *	default character print mechanism ???
+ *	firmware exit (return)
+ *	firmware boot (reset)
+ *	vmon - tell firmware the bsd vm is active.
+ */
+
+typedef void (mem_regions_f)__P((struct mem_region **memp,
+	struct mem_region **availp));
+
+struct firmware {
+	mem_regions_f	*mem_regions;
+	exit_f		*exit;
+	boot_f		*boot;
+	vmon_f		*vmon;
+	
+#ifdef FW_HAS_PUTC
+	boot_f		*putc;
+#endif
 };
+extern  struct firmware *fw;
 
-extern struct dumpmem dumpmem[VM_PHYSSEG_MAX];
-extern u_int ndumpmem;
-
-#endif	/* _POWERPC_POWERPC_H_ */
+#endif	/* _MACHINE_POWERPC_H_ */

@@ -1,4 +1,4 @@
-/*	$OpenBSD: fsutil.h,v 1.7 2014/10/08 16:27:53 deraadt Exp $	*/
+/*	$OpenBSD: fsutil.h,v 1.1 1996/10/20 08:36:25 tholo Exp $	*/
 /*	$NetBSD: fsutil.h,v 1.3 1996/10/03 20:06:31 christos Exp $	*/
 
 /*
@@ -30,29 +30,29 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-void xperror(const char *);
-void errexit(const char *, ...)
-    __attribute__((__noreturn__,__format__(__printf__,1,2)));
-void pfatal(const char *, ...)
-    __attribute__((__format__(__printf__,1,2)));
-void pwarn(const char *, ...)
-    __attribute__((__format__(__printf__,1,2)));
-void panic(const char *, ...)
-    __attribute__((__noreturn__,__format__(__printf__,1,2)));
-char *rawname(char *);
-char *unrawname(char *);
-char *blockcheck(char *);
-const char *cdevname(void);
-void setcdevname(const char *, const char *, int);
-int  hotroot(void);
-void *emalloc(size_t);
-void *ereallocarray(void *, size_t, size_t);
-char *estrdup(const char *);
+void perror __P((const char *));
+void errexit __P((const char *, ...))
+    __attribute__((__noreturn__,__format__(__printf__,1,2)));  
+void pfatal __P((const char *, ...))
+    __attribute__((__format__(__printf__,1,2)));  
+void pwarn __P((const char *, ...))
+    __attribute__((__format__(__printf__,1,2)));  
+void panic __P((const char *, ...))
+    __attribute__((__noreturn__,__format__(__printf__,1,2)));  
+char *rawname __P((char *));
+char *unrawname __P((char *));
+char *blockcheck __P((char *));
+const char *cdevname __P((void));
+void setcdevname __P((const char *, int));
+int  hotroot __P((void));
+void *emalloc __P((size_t));
+void *erealloc __P((void *, size_t));
+char *estrdup __P((const char *));
 
 #define CHECK_PREEN	1
 #define	CHECK_VERBOSE	2
 #define	CHECK_DEBUG	4
 
 struct fstab;
-int checkfstab(int, int, void *(*)(struct fstab *),
-    int (*) (const char *, const char *, const char *, void *, pid_t *));
+int checkfstab __P((int, int, void *(*)(struct fstab *), 
+    int (*) (const char *, const char *, const char *, void *, pid_t *)));

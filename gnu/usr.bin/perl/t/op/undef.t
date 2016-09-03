@@ -1,185 +1,61 @@
 #!./perl
 
-BEGIN {
-    chdir 't' if -d 't';
-    @INC = '../lib';
-    require './test.pl';
-}
+print "1..23\n";
 
-use strict;
-
-use vars qw(@ary %ary %hash);
-
-plan 86;
-
-ok !defined($a);
+print defined($a) ? "not ok 1\n" : "ok 1\n";
 
 $a = 1+1;
-ok defined($a);
+print defined($a) ? "ok 2\n" : "not ok 2\n";
 
 undef $a;
-ok !defined($a);
+print defined($a) ? "not ok 3\n" : "ok 3\n";
 
 $a = "hi";
-ok defined($a);
+print defined($a) ? "ok 4\n" : "not ok 4\n";
 
 $a = $b;
-ok !defined($a);
+print defined($a) ? "not ok 5\n" : "ok 5\n";
 
 @ary = ("1arg");
 $a = pop(@ary);
-ok defined($a);
+print defined($a) ? "ok 6\n" : "not ok 6\n";
 $a = pop(@ary);
-ok !defined($a);
+print defined($a) ? "not ok 7\n" : "ok 7\n";
 
 @ary = ("1arg");
 $a = shift(@ary);
-ok defined($a);
+print defined($a) ? "ok 8\n" : "not ok 8\n";
 $a = shift(@ary);
-ok !defined($a);
+print defined($a) ? "not ok 9\n" : "ok 9\n";
 
 $ary{'foo'} = 'hi';
-ok defined($ary{'foo'});
-ok !defined($ary{'bar'});
+print defined($ary{'foo'}) ? "ok 10\n" : "not ok 10\n";
+print defined($ary{'bar'}) ? "not ok 11\n" : "ok 11\n";
 undef $ary{'foo'};
-ok !defined($ary{'foo'});
+print defined($ary{'foo'}) ? "not ok 12\n" : "ok 12\n";
 
-{
-    no warnings 'deprecated';
-    ok defined(@ary);
-    ok defined(%ary);
-}
-ok %ary;
+print defined(@ary) ? "ok 13\n" : "not ok 13\n";
+print defined(%ary) ? "ok 14\n" : "not ok 14\n";
 undef @ary;
-{
-    no warnings 'deprecated';
-    ok !defined(@ary);
-}
+print defined(@ary) ? "not ok 15\n" : "ok 15\n";
 undef %ary;
-{
-    no warnings 'deprecated';
-    ok !defined(%ary);
-}
-ok !%ary;
+print defined(%ary) ? "not ok 16\n" : "ok 16\n";
 @ary = (1);
-{
-    no warnings 'deprecated';
-    ok defined @ary;
-}
+print defined @ary ? "ok 17\n" : "not ok 17\n";
 %ary = (1,1);
-{
-    no warnings 'deprecated';
-    ok defined %ary;
-}
-ok %ary;
+print defined %ary ? "ok 18\n" : "not ok 18\n";
 
-sub foo { pass; 1 }
+sub foo { print "ok 19\n"; }
 
-&foo || fail;
+&foo || print "not ok 19\n";
 
-ok defined &foo;
+print defined &foo ? "ok 20\n" : "not ok 20\n";
 undef &foo;
-ok !defined(&foo);
+print defined(&foo) ? "not ok 21\n" : "ok 21\n";
 
 eval { undef $1 };
-like $@, qr/^Modification of a read/;
+print $@ =~ /^Modification of a read/ ? "ok 22\n" : "not ok 22\n";
 
 eval { $1 = undef };
-like $@, qr/^Modification of a read/;
+print $@ =~ /^Modification of a read/ ? "ok 23\n" : "not ok 23\n";
 
-{
-    require Tie::Hash;
-    tie my %foo, 'Tie::StdHash';
-    no warnings 'deprecated';
-    ok defined %foo;
-    %foo = ( a => 1 );
-    ok defined %foo;
-}
-
-{
-    require Tie::Array;
-    tie my @foo, 'Tie::StdArray';
-    no warnings 'deprecated';
-    ok defined @foo;
-    @foo = ( a => 1 );
-    ok defined @foo;
-}
-
-{
-    # [perl #17753] segfault when undef'ing unquoted string constant
-    eval 'undef tcp';
-    like $@, qr/^Can't modify constant item/;
-}
-
-# bugid 3096
-# undefing a hash may free objects with destructors that then try to
-# modify the hash. Ensure that the hash remains consistent
-
-{
-    my (%hash, %mirror);
-
-    my $iters = 5;
-
-    for (1..$iters) {
-	$hash{"k$_"} = bless ["k$_"], 'X';
-	$mirror{"k$_"} = "k$_";
-    }
-
-
-    my $c = $iters;
-    my $events;
-
-    sub X::DESTROY {
-	my $key = $_[0][0];
-	$events .= 'D';
-	note("----- DELETE($key) ------");
-	delete $mirror{$key};
-
-	is join('-', sort keys %hash), join('-', sort keys %mirror),
-	    "$key: keys";
-	is join('-', sort map $_->[0], values %hash),
-	    join('-', sort values %mirror), "$key: values";
-
-	# don't know exactly what we'll get from the iterator, but
-	# it must be a sensible value
-	my ($k, $v) = each %hash;
-	ok defined $k ? exists($mirror{$k}) : (keys(%mirror) == 0),
-	    "$key: each 1";
-
-	is delete $hash{$key}, undef, "$key: delete";
-	($k, $v) = each %hash;
-	ok defined $k ? exists($mirror{$k}) : (keys(%mirror) <= 1),
-	    "$key: each 2";
-
-	$c++;
-	if ($c <= $iters * 2) {
-	    $hash{"k$c"} = bless ["k$c"], 'X';
-	    $mirror{"k$c"} = "k$c";
-	}
-	$events .= 'E';
-    }
-
-    each %hash; # set eiter
-    undef %hash;
-
-    is scalar keys %hash, 0, "hash empty at end";
-    is $events, ('DE' x ($iters*2)), "events";
-    my ($k, $v) = each %hash;
-    is $k, undef, 'each undef at end';
-}
-
-# part of #105906: inlined undef constant getting copied
-BEGIN { $::{z} = \undef }
-for (z,z) {
-    push @_, \$_;
-}
-is $_[0], $_[1], 'undef constants preserve identity';
-
-# this will segfault if it fails
-
-sub PVBM () { 'foo' }
-{ my $dummy = index 'foo', PVBM }
-
-my $pvbm = PVBM;
-undef $pvbm;
-ok !defined $pvbm;

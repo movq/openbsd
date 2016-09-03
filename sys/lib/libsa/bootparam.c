@@ -1,4 +1,4 @@
-/*	$OpenBSD: bootparam.c,v 1.12 2014/07/13 15:31:20 mpi Exp $	*/
+/*	$OpenBSD: bootparam.c,v 1.8 1998/05/31 23:39:16 mickey Exp $	*/
 /*	$NetBSD: bootparam.c,v 1.10 1996/10/14 21:16:55 thorpej Exp $	*/
 
 /*
@@ -41,6 +41,7 @@
 #include <net/if.h>
 
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
 
 #include <nfs/rpcv2.h>
 
@@ -57,7 +58,7 @@
 #endif
 
 struct in_addr	bp_server_addr;	/* net order */
-u_int16_t	bp_server_port;	/* net order */
+n_short		bp_server_port;	/* net order */
 
 /*
  * RPC definitions for bootparamd
@@ -76,11 +77,11 @@ struct xdr_inaddr {
 	int32_t	addr[4];
 };
 
-int xdr_inaddr_encode(char **p, struct in_addr ia);
-int xdr_inaddr_decode(char **p, struct in_addr *ia);
+int xdr_inaddr_encode __P((char **p, struct in_addr ia));
+int xdr_inaddr_decode __P((char **p, struct in_addr *ia));
 
-int xdr_string_encode(char **p, char *str, int len);
-int xdr_string_decode(char **p, char *str, int *len_p);
+int xdr_string_encode __P((char **p, char *str, int len));
+int xdr_string_decode __P((char **p, char *str, int *len_p));
 
 
 /*
@@ -99,7 +100,8 @@ int xdr_string_decode(char **p, char *str, int *len_p);
  * know about us (don't want to broadcast a getport call).
  */
 int
-bp_whoami(int sockfd)
+bp_whoami(sockfd)
+	int sockfd;
 {
 	/* RPC structures for PMAPPROC_CALLIT */
 	struct args {
@@ -114,14 +116,14 @@ bp_whoami(int sockfd)
 		u_int16_t port;
 		u_int32_t encap_len;
 		/* encapsulated data here */
-		u_int32_t  capsule[64];
+		n_long  capsule[64];
 	} *repl;
 	struct {
-		u_int32_t	h[RPC_HEADER_WORDS];
+		n_long	h[RPC_HEADER_WORDS];
 		struct args d;
 	} sdata;
 	struct {
-		u_int32_t	h[RPC_HEADER_WORDS];
+		n_long	h[RPC_HEADER_WORDS];
 		struct repl d;
 	} rdata;
 	char *send_tail, *recv_head;
@@ -144,7 +146,7 @@ bp_whoami(int sockfd)
 	args->vers = htonl(BOOTPARAM_VERS);
 	args->proc = htonl(BOOTPARAM_WHOAMI);
 	args->arglen = htonl(sizeof(struct xdr_inaddr));
-	send_tail = (char *)&args->xina;
+	send_tail = (char*) &args->xina;
 
 	/*
 	 * append encapsulated data (client IP address)
@@ -158,8 +160,8 @@ bp_whoami(int sockfd)
 	/* rpc_call will set d->destport */
 
 	len = rpc_call(d, PMAPPROG, PMAPVERS, PMAPPROC_CALLIT,
-	    args, send_tail - (char *)args,
-	    repl, sizeof(*repl));
+				  args, send_tail - (char*)args,
+				  repl, sizeof(*repl));
 	if (len < 8) {
 		printf("bootparamd: 'whoami' call failed\n");
 		return (-1);
@@ -179,8 +181,10 @@ bp_whoami(int sockfd)
 	    inet_ntoa(bp_server_addr), ntohs(bp_server_port)));
 
 	/* We have just done a portmap call, so cache the portnum. */
-	rpc_pmap_putcache(bp_server_addr, BOOTPARAM_PROG, BOOTPARAM_VERS,
-	    (int)ntohs(bp_server_port));
+	rpc_pmap_putcache(bp_server_addr,
+			  BOOTPARAM_PROG,
+			  BOOTPARAM_VERS,
+			  (int)ntohs(bp_server_port));
 
 	/*
 	 * Parse the encapsulated results from bootparam/whoami
@@ -190,7 +194,7 @@ bp_whoami(int sockfd)
 		printf("bp_whoami: short reply, %d < %d\n", len, x);
 		return (-1);
 	}
-	recv_head = (char *)repl->capsule;
+	recv_head = (char*) repl->capsule;
 
 	/* client name */
 	hostnamelen = MAXHOSTNAMELEN-1;
@@ -225,15 +229,19 @@ bp_whoami(int sockfd)
  *	server pathname
  */
 int
-bp_getfile(int sockfd, char *key, struct in_addr *serv_addr, char *pathname)
+bp_getfile(sockfd, key, serv_addr, pathname)
+	int sockfd;
+	char *key;
+	char *pathname;
+	struct in_addr *serv_addr;
 {
 	struct {
-		u_int32_t	h[RPC_HEADER_WORDS];
-		u_int32_t  d[64];
+		n_long	h[RPC_HEADER_WORDS];
+		n_long  d[64];
 	} sdata;
 	struct {
-		u_int32_t	h[RPC_HEADER_WORDS];
-		u_int32_t  d[128];
+		n_long	h[RPC_HEADER_WORDS];
+		n_long  d[128];
 	} rdata;
 	char serv_name[FNAME_SIZE];
 	char *send_tail, *recv_head;
@@ -246,8 +254,8 @@ bp_getfile(int sockfd, char *key, struct in_addr *serv_addr, char *pathname)
 		return (-1);
 	}
 
-	send_tail = (char *)sdata.d;
-	recv_head = (char *)rdata.d;
+	send_tail = (char*) sdata.d;
+	recv_head = (char*) rdata.d;
 
 	/*
 	 * Build request message.
@@ -272,14 +280,14 @@ bp_getfile(int sockfd, char *key, struct in_addr *serv_addr, char *pathname)
 
 	rlen = rpc_call(d,
 		BOOTPARAM_PROG, BOOTPARAM_VERS, BOOTPARAM_GETFILE,
-		sdata.d, send_tail - (char *)sdata.d,
+		sdata.d, send_tail - (char*)sdata.d,
 		rdata.d, sizeof(rdata.d));
 	if (rlen < 4) {
 		RPC_PRINTF(("bp_getfile: short reply\n"));
 		errno = EBADRPC;
 		return (-1);
 	}
-	recv_head = (char *)rdata.d;
+	recv_head = (char*) rdata.d;
 
 	/*
 	 * Parse result message.
@@ -315,8 +323,12 @@ bp_getfile(int sockfd, char *key, struct in_addr *serv_addr, char *pathname)
  * (but with non-standard args...)
  */
 
+
 int
-xdr_string_encode(char **pkt, char *str, int len)
+xdr_string_encode(pkt, str, len)
+	char **pkt;
+	char *str;
+	int len;
 {
 	u_int32_t *lenp;
 	char *datap;
@@ -335,7 +347,10 @@ xdr_string_encode(char **pkt, char *str, int len)
 }
 
 int
-xdr_string_decode(char **pkt, char *str, int *len_p)
+xdr_string_decode(pkt, str, len_p)
+	char **pkt;
+	char *str;
+	int *len_p;		/* bufsize - 1 */
 {
 	u_int32_t *lenp;
 	char *datap;
@@ -360,14 +375,17 @@ xdr_string_decode(char **pkt, char *str, int *len_p)
 	return (0);
 }
 
+
 int
-xdr_inaddr_encode(char **pkt, struct in_addr ia)
+xdr_inaddr_encode(pkt, ia)
+	char **pkt;
+	struct in_addr ia;		/* network order */
 {
 	struct xdr_inaddr *xi;
 	u_char *cp;
 	int32_t *ip;
 	union {
-		u_int32_t l;	/* network order */
+		n_long l;	/* network order */
 		u_char c[4];
 	} uia;
 
@@ -392,13 +410,15 @@ xdr_inaddr_encode(char **pkt, struct in_addr ia)
 }
 
 int
-xdr_inaddr_decode(char **pkt, struct in_addr *ia)
+xdr_inaddr_decode(pkt, ia)
+	char **pkt;
+	struct in_addr *ia;		/* network order */
 {
 	struct xdr_inaddr *xi;
 	u_char *cp;
 	int32_t *ip;
 	union {
-		u_int32_t l;	/* network order */
+		n_long l;	/* network order */
 		u_char c[4];
 	} uia;
 

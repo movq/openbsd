@@ -1,4 +1,4 @@
-/*	$OpenBSD: pcmcia_cis_quirks.c,v 1.12 2015/03/14 03:38:49 jsg Exp $	*/
+/*	$OpenBSD: pcmcia_cis_quirks.c,v 1.3 1999/10/06 13:35:47 fgsch Exp $	*/
 /*	$NetBSD: pcmcia_cis_quirks.c,v 1.3 1998/12/29 09:00:28 marc Exp $	*/
 
 /*
@@ -33,11 +33,12 @@
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/systm.h>
-#include <sys/malloc.h>
 #include <sys/device.h>
+#include <sys/mbuf.h>
 
 #include <dev/pcmcia/pcmciadevs.h>
 #include <dev/pcmcia/pcmciareg.h>
+#include <dev/pcmcia/pcmciachip.h>
 #include <dev/pcmcia/pcmciavar.h>
 
 /* There are cards out there whose CIS flat-out lies.  This file
@@ -88,67 +89,6 @@ static struct pcmcia_config_entry pcmcia_3cxem556_func1_cfe0 = {
 	0,			/* maxtwins */
 };
 
-struct pcmcia_function pcmcia_megahertz_xjem1144_func0 = {
-	0,			/* function number */
-	PCMCIA_FUNCTION_NETWORK,
-	0x07,			/* last cfe number */
-	0x200,			/* ccr_base */
-	0x63,			/* ccr_mask */
-};
-
-struct pcmcia_config_entry pcmcia_megahertz_xjem1144_func0_cfe0 = {
-	0x07,			/* cfe number */
-	PCMCIA_CFE_IO8 | PCMCIA_CFE_IO16 | PCMCIA_CFE_IRQLEVEL,
-	PCMCIA_IFTYPE_IO,
-	1,			/* num_iospace */
-	4,			/* iomask */
-	{ { 0x0010, 0 } },	/* iospace */
-	0xffff,			/* irqmask */
-	0,			/* num_memspace */
-	{ },			/* memspace */
-	0,			/* maxtwins */
-};
-
-static struct pcmcia_function pcmcia_megahertz_xjem1144_func1 = {
-	1,			/* function number */
-	PCMCIA_FUNCTION_SERIAL,
-	0x35,			/* last cfe number */
-	0x300,			/* ccr_base */
-	0x3,			/* ccr_mask */
-};
-
-static struct pcmcia_config_entry pcmcia_megahertz_xjem1144_func1_cfe0 = {
-	0x35,			/* cfe number */
-	PCMCIA_CFE_IO8 | PCMCIA_CFE_IRQLEVEL, PCMCIA_IFTYPE_IO,
-	1,			/* num_iospace */
-	0,			/* iomask */
-	{ { 0x0008, 0x2f8 } },	/* iospace */
-	0xffff,			/* irqmask */
-	0,			/* num_memspace */
-	{ },			/* memspace */
-	0,			/* maxtwins */
-};
-
-static struct pcmcia_function pcmcia_sierra_a555_func1 = {
-	1,			/* function number */
-	PCMCIA_FUNCTION_SERIAL,
-	0x24,			/* last cfe number */
-	0x700,			/* ccr_base */
-	0x73,			/* ccr_mask */
-};
-
-static struct pcmcia_config_entry pcmcia_sierra_a555_func1_cfe0 = {
-	0x20,			/* cfe number */
-	PCMCIA_CFE_IO8 | PCMCIA_CFE_IRQLEVEL, PCMCIA_IFTYPE_IO,
-	1,			/* num_iospace */
-	0,			/* iomask */
-	{ { 0x0008, 0x3f8 } },	/* iospace */
-	0x3fbc,			/* irqmask */
-	0,			/* num_memspace */
-	{ },			/* memspace */
-	0,			/* maxtwins */
-};
-
 static struct pcmcia_function pcmcia_sveclancard_func0 = {
 	0,			/* function number */
 	PCMCIA_FUNCTION_NETWORK,
@@ -172,38 +112,15 @@ static struct pcmcia_config_entry pcmcia_sveclancard_func0_cfe0 = {
 };
 
 static struct pcmcia_cis_quirk pcmcia_cis_quirks[] = {
-	{ PCMCIA_VENDOR_3COM, PCMCIA_PRODUCT_3COM_3CXEM556, PCMCIA_CIS_INVALID,
+	{ PCMCIA_VENDOR_3COM, PCMCIA_PRODUCT_3COM_3CXEM556, PCMCIA_CIS_INVALID, 
 	  &pcmcia_3cxem556_func0, &pcmcia_3cxem556_func0_cfe0 },
 	{ PCMCIA_VENDOR_3COM, PCMCIA_PRODUCT_3COM_3CXEM556, PCMCIA_CIS_INVALID,
 	  &pcmcia_3cxem556_func1, &pcmcia_3cxem556_func1_cfe0 },
-	{ PCMCIA_VENDOR_3COM, PCMCIA_PRODUCT_3COM_3CXEM556B,
-	  PCMCIA_CIS_INVALID,
+	{ PCMCIA_VENDOR_3COM, PCMCIA_PRODUCT_3COM_3CXEM556B, PCMCIA_CIS_INVALID,
 	  &pcmcia_3cxem556_func0, &pcmcia_3cxem556_func0_cfe0 },
-	{ PCMCIA_VENDOR_3COM, PCMCIA_PRODUCT_3COM_3CXEM556B,
-	  PCMCIA_CIS_INVALID,
+	{ PCMCIA_VENDOR_3COM, PCMCIA_PRODUCT_3COM_3CXEM556B, PCMCIA_CIS_INVALID,
 	  &pcmcia_3cxem556_func1, &pcmcia_3cxem556_func1_cfe0 },
-	{ PCMCIA_VENDOR_MEGAHERTZ2, PCMCIA_PRODUCT_MEGAHERTZ2_XJEM1144,
-	  PCMCIA_CIS_INVALID, 
-	  &pcmcia_megahertz_xjem1144_func0,
-	  &pcmcia_megahertz_xjem1144_func0_cfe0 },
-	{ PCMCIA_VENDOR_MEGAHERTZ2, PCMCIA_PRODUCT_MEGAHERTZ2_XJEM1144,
-	  PCMCIA_CIS_INVALID, 
-	  &pcmcia_megahertz_xjem1144_func1,
-	  &pcmcia_megahertz_xjem1144_func1_cfe0 },
-	{ PCMCIA_VENDOR_SIERRA, PCMCIA_PRODUCT_SIERRA_A550,
-	  PCMCIA_CIS_INVALID, 
-	  &pcmcia_sierra_a555_func1, &pcmcia_sierra_a555_func1_cfe0 },
-	{ PCMCIA_VENDOR_SIERRA, PCMCIA_PRODUCT_SIERRA_A555,
-	  PCMCIA_CIS_INVALID, 
-	  &pcmcia_sierra_a555_func1, &pcmcia_sierra_a555_func1_cfe0 },
-	{ PCMCIA_VENDOR_SIERRA, PCMCIA_PRODUCT_SIERRA_A710,
-	  PCMCIA_CIS_INVALID, 
-	  &pcmcia_sierra_a555_func1, &pcmcia_sierra_a555_func1_cfe0 },
-	{ PCMCIA_VENDOR_SIERRA, PCMCIA_PRODUCT_SIERRA_AC710,
-	  PCMCIA_CIS_INVALID, 
-	  &pcmcia_sierra_a555_func1, &pcmcia_sierra_a555_func1_cfe0 },
-	{ PCMCIA_VENDOR_INVALID, PCMCIA_PRODUCT_INVALID,
-	  PCMCIA_CIS_SVEC_LANCARD,
+	{ PCMCIA_VENDOR_INVALID, PCMCIA_PRODUCT_INVALID, PCMCIA_CIS_SVEC_LANCARD,
 	  &pcmcia_sveclancard_func0, &pcmcia_sveclancard_func0_cfe0 },
 };
 
@@ -219,7 +136,7 @@ void pcmcia_check_cis_quirks(sc)
 	pf_last = NULL;
 
 	
-	for (i = 0; i < nitems(pcmcia_cis_quirks);
+	for (i = 0; i < sizeof(pcmcia_cis_quirks)/sizeof(pcmcia_cis_quirks[0]);
 	    i++) {
 		if ((sc->card.manufacturer == pcmcia_cis_quirks[i].manufacturer) &&
 			(sc->card.product == pcmcia_cis_quirks[i].product) &&
@@ -251,10 +168,10 @@ void pcmcia_check_cis_quirks(sc)
 					for (cfe = SIMPLEQ_FIRST(&pf->cfe_head); cfe != NULL;
 					     cfe = cfe_next) {
 						cfe_next = SIMPLEQ_NEXT(cfe, cfe_list);
-						free(cfe, M_DEVBUF, 0);
+						free(cfe, M_DEVBUF);
 					}
 					pf_next = SIMPLEQ_NEXT(pf, pf_list);
-					free(pf, M_DEVBUF, 0);
+					free(pf, M_DEVBUF);
 				}
 
 				SIMPLEQ_INIT(&sc->card.pf_head);
@@ -263,21 +180,15 @@ void pcmcia_check_cis_quirks(sc)
 
 			if (pf_last == pcmcia_cis_quirks[i].pf) {
 				cfe = malloc(sizeof(*cfe), M_DEVBUF, M_NOWAIT);
-				if (cfe == NULL)
-					return;
 				*cfe = *pcmcia_cis_quirks[i].cfe;
 
 				SIMPLEQ_INSERT_TAIL(&pf->cfe_head, cfe, cfe_list);
 			} else {
 				pf = malloc(sizeof(*pf), M_DEVBUF, M_NOWAIT);
-				if (pf == NULL)
-					return;
 				*pf = *pcmcia_cis_quirks[i].pf;
 				SIMPLEQ_INIT(&pf->cfe_head);
 
 				cfe = malloc(sizeof(*cfe), M_DEVBUF, M_NOWAIT);
-				if (cfe == NULL)
-					return;
 				*cfe = *pcmcia_cis_quirks[i].cfe;
 
 				SIMPLEQ_INSERT_TAIL(&pf->cfe_head, cfe, cfe_list);

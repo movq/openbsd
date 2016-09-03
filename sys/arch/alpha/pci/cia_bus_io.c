@@ -1,4 +1,4 @@
-/*	$OpenBSD: cia_bus_io.c,v 1.8 2001/11/06 19:53:13 miod Exp $	*/
+/*	$OpenBSD: cia_bus_io.c,v 1.6 1997/01/24 19:57:37 niklas Exp $	*/
 /*	$NetBSD: cia_bus_io.c,v 1.6 1996/11/25 03:46:07 cgd Exp $	*/
 
 /*
@@ -33,7 +33,7 @@
 #include <sys/malloc.h>
 #include <sys/syslog.h>
 #include <sys/device.h>
-#include <uvm/uvm_extern.h>
+#include <vm/vm.h>
 
 #include <machine/bus.h>
 
@@ -65,4 +65,4 @@
 #define CHIP_IO_W2_SYS_END(v)						\
 	    (CIA_PCI_SIO2 + ((HAE_IO_REG2_MASK + 1) << 5) - 1)
 
-#include "pci_swiz_bus_io_chipdep.c"
+#include "pcs_bus_io_common.c"

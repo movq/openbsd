@@ -1,4 +1,4 @@
-/*	$OpenBSD: login.c,v 1.11 2015/12/28 20:11:36 guenther Exp $	*/
+/*	$OpenBSD: login.c,v 1.5 1998/07/13 02:11:12 millert Exp $	*/
 /*
  * Copyright (c) 1988, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +11,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,6 +32,11 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+/* from: static char sccsid[] = "@(#)login.c	8.1 (Berkeley) 6/4/93"; */
+static char *rcsid = "$Id: login.c,v 1.5 1998/07/13 02:11:12 millert Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
 
 #include <fcntl.h>
@@ -35,37 +44,36 @@
 #include <stdlib.h>
 #include <utmp.h>
 #include <stdio.h>
-#include <string.h>
 
 #include "util.h"
 
 void
-login(struct utmp *utp)
+login(utp)
+	struct utmp *utp;
 {
 	struct utmp old_ut;
-	int fd, tty;
-	off_t pos;
+	register int fd;
+	int tty;
 
 	tty = ttyslot();
-	if (tty > 0 && (fd = open(_PATH_UTMP, O_RDWR|O_CREAT|O_CLOEXEC, 0644))
-	    >= 0) {
+	if (tty > 0 && (fd = open(_PATH_UTMP, O_RDWR|O_CREAT, 0644)) >= 0) {
+		(void)lseek(fd, (off_t)(tty * sizeof(struct utmp)), SEEK_SET);
 		/*
 		 * Prevent luser from zero'ing out ut_host.
 		 * If the new ut_line is empty but the old one is not
 		 * and ut_line and ut_name match, preserve the old ut_line.
 		 */
-		pos = (off_t)tty * sizeof(struct utmp);
-		if (utp->ut_host[0] == '\0' &&
-		    pread(fd, &old_ut, sizeof(struct utmp), pos) ==
-		    sizeof(struct utmp) &&
+		if (read(fd, &old_ut, sizeof(struct utmp)) ==
+		    sizeof(struct utmp) && utp->ut_host[0] == '\0' &&
 		    old_ut.ut_host[0] != '\0' &&
 		    strncmp(old_ut.ut_line, utp->ut_line, UT_LINESIZE) == 0 &&
 		    strncmp(old_ut.ut_name, utp->ut_name, UT_NAMESIZE) == 0)
 			(void)memcpy(utp->ut_host, old_ut.ut_host, UT_HOSTSIZE);
-		(void)pwrite(fd, utp, sizeof(struct utmp), pos);
+		(void)lseek(fd, (off_t)(tty * sizeof(struct utmp)), SEEK_SET);
+		(void)write(fd, utp, sizeof(struct utmp));
 		(void)close(fd);
 	}
-	if ((fd = open(_PATH_WTMP, O_WRONLY|O_APPEND|O_CLOEXEC)) >= 0) {
+	if ((fd = open(_PATH_WTMP, O_WRONLY|O_APPEND, 0)) >= 0) {
 		(void)write(fd, utp, sizeof(struct utmp));
 		(void)close(fd);
 	}

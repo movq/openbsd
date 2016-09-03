@@ -1,7 +1,7 @@
-/*	$OpenBSD: dev_hppa.c,v 1.17 2014/07/13 09:26:08 jasper Exp $	*/
+/*	$OpenBSD: dev_hppa.c,v 1.5 1999/04/20 20:01:01 mickey Exp $	*/
 
 /*
- * Copyright (c) 1998-2004 Michael Shalayeff
+ * Copyright (c) 1998 Michael Shalayeff
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -12,18 +12,24 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHOR OR HIS RELATIVES BE LIABLE FOR ANY DIRECT,
- * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF MIND, USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
- * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
- * THE POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR 
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ *
  */
 
 #include "libsa.h"
@@ -42,14 +48,14 @@ const char cdevs[][4] = {
 	"ite", "", "", "", "", "", "", "",
 	"", "", "", "", ""
 };
-const int ncdevs = nitems(cdevs);
+const int ncdevs = NENTS(cdevs);
 
 const struct pdc_devs {
 	char	name[3];
 	int	dev_type;
 } pdc_devs[] = {
-	{ "dk",  0 },
-	{ "ct",  1 },
+	{ "ct",  0 },
+	{ "dk",  1 },
 	{ "lf",  2 },
 	{ "",   -1 },
 	{ "rd", -1 },
@@ -64,27 +70,27 @@ devopen(f, fname, file)
 	const char *fname;
 	char **file;
 {
-	struct hppa_dev *hpd;
-	const struct pdc_devs *dp = pdc_devs;
-	int rc = 1;
+	register struct hppa_dev *hpd;
+	register const struct pdc_devs *dp = pdc_devs;
+	register int rc = 1;
 
 	if (!(*file = strchr(fname, ':')))
 		return ENODEV;
 	else
 		(*file)++;
 
-#ifdef DEBUG
+#ifdef DEBUGBUG
 	if (debug)
 		printf("devopen: ");
 #endif
 
-	for (dp = pdc_devs; dp < &pdc_devs[nitems(pdc_devs)]; dp++)
+	for (dp = pdc_devs; dp < &pdc_devs[NENTS(pdc_devs)]; dp++)
 		if (!strncmp(fname, dp->name, sizeof(dp->name)-1))
 			break;
 
-	if (dp >= &pdc_devs[nitems(pdc_devs)] || dp->dev_type < 0)
+	if (dp >= &pdc_devs[NENTS(pdc_devs)] || dp->dev_type < 0)
 		return ENODEV;
-#ifdef DEBUG
+#ifdef DEBUGBUG
 	if (debug)
 		printf("%s\n", dp->name);
 #endif
@@ -121,19 +127,17 @@ devboot(dev, p)
 	dev_t dev;
 	char *p;
 {
-	const char *q;
-	int unit;
-
+	register const char *q;
 	if (!dev) {
-		int type;
+		int type, unit;
 
 		switch (PAGE0->mem_boot.pz_class) {
 		case PCL_RANDOM:
-			type = 0;
+			type = 1;
 			unit = PAGE0->mem_boot.pz_layers[0];
 			break;
 		case PCL_SEQU:
-			type = 1;
+			type = 0;
 			unit = PAGE0->mem_boot.pz_layers[0];
 			break;
 		case PCL_NET_MASK|PCL_SEQU:
@@ -145,7 +149,7 @@ devboot(dev, p)
 			unit = 0;
 			break;
 		}
-		dev = bootdev = MAKEBOOTDEV(type, 0, 0, unit, B_PARTITION(dev));
+		dev = bootdev = MAKEBOOTDEV(type, 0, 0, unit, 0);
 	}
 #ifdef _TEST
 	*p++ = '/';
@@ -157,24 +161,65 @@ devboot(dev, p)
 #endif
 	/* quick copy device name */
 	for (q = pdc_devs[B_TYPE(dev)].name; (*p++ = *q++););
-	unit = B_UNIT(dev);
-	if (unit >= 10) {
-		p[-1] = '0' + unit / 10;
-		*p++ = '0' + (unit % 10);
-	} else
-		p[-1] = '0' + unit;
+	p[-1] = '0' + B_UNIT(dev);
 	*p++ = 'a' + B_PARTITION(dev);
 	*p = '\0';
 }
 
-char ttyname_buf[8];
+int pch_pos;
 
+void
+putchar(c)
+	int c;
+{
+	switch(c) {
+	case '\177':	/* DEL erases */
+		cnputc('\b');
+		cnputc(' ');
+	case '\b':
+		cnputc('\b');
+		if (pch_pos)
+			pch_pos--;
+		break;
+	case '\t':
+		do
+			cnputc(' ');
+		while(++pch_pos % 8);
+		break;
+	case '\n':
+	case '\r':
+		cnputc(c);
+		pch_pos=0;
+		break;
+	default:
+		cnputc(c);
+		pch_pos++;
+		break;
+	}
+}
+
+int
+getchar()
+{
+	register int c = cngetc();
+
+	if (c == '\r')
+		c = '\n';
+
+	if ((c < ' ' && c != '\n') || c == '\177')
+		return(c);
+
+	putchar(c);
+
+	return(c);
+}
+
+char ttyname_buf[8];
 char *
 ttyname(fd)
 	int fd;
 {
-	snprintf(ttyname_buf, sizeof ttyname_buf, "%s%d",
-	    cdevs[major(cn_tab->cn_dev)],
+	sprintf(ttyname_buf, "%s%d", cdevs[major(cn_tab->cn_dev)],
 	    minor(cn_tab->cn_dev));
 	return (ttyname_buf);
 }

@@ -1,4 +1,4 @@
-/*	$OpenBSD: scan_ffs.c,v 1.21 2015/11/23 19:19:30 deraadt Exp $	*/
+/*	$OpenBSD: scan_ffs.c,v 1.5 1999/06/08 19:13:53 niklas Exp $	*/
 
 /*
  * Copyright (c) 1998 Niklas Hallqvist, Tobias Weingartner
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *    This product includes software developed by Tobias Weingartner.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -26,6 +31,7 @@
  */
 
 #include <sys/types.h>
+#include <sys/param.h>
 #include <sys/fcntl.h>
 #include <ufs/ffs/fs.h>
 #include <unistd.h>
@@ -33,7 +39,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
-#include <limits.h>
 #include <err.h>
 #include <util.h>
 
@@ -44,10 +49,11 @@
 #define FLAG_SMART		2
 #define FLAG_LABELS		4
 
-static void usage(void);
-
-static int
-ufsscan(int fd, daddr_t beg, daddr_t end, int flags)
+int
+ufsscan(fd, beg, end, flags)
+	int fd;
+	daddr_t beg, end;
+	int flags;
 {
 	static char lastmount[MAXMNTLEN];
 	static u_int8_t buf[SBSIZE * SBCOUNT];
@@ -58,47 +64,37 @@ ufsscan(int fd, daddr_t beg, daddr_t end, int flags)
 	lastblk = -1;
 	memset(lastmount, 0, MAXMNTLEN);
 
-	for (blk = beg; blk <= ((end<0)?blk:end); blk += (SBCOUNT*SBSIZE/512)){
+	for(blk = beg; blk <= ((end<0)?blk:end); blk += (SBCOUNT*SBSIZE/512)){
 		memset(buf, 0, SBSIZE * SBCOUNT);
 		if (lseek(fd, (off_t)blk * 512, SEEK_SET) < 0)
 		    err(1, "lseek");
 		if (read(fd, buf, SBSIZE * SBCOUNT) < 0)
 			err(1, "read");
 
-		for (n = 0; n < (SBSIZE * SBCOUNT); n += 512){
+		for(n = 0; n < (SBSIZE * SBCOUNT); n += 512){
 			sb = (struct fs*)(&buf[n]);
 			if (sb->fs_magic == FS_MAGIC) {
 				if (flags & FLAG_VERBOSE)
-					printf("block %lld id %x,%x size %d\n",
-					    (long long)(blk + (n/512)),
-					    sb->fs_id[0], sb->fs_id[1],
-					    sb->fs_ffs1_size);
+					printf("block %d id %x,%x size %d\n",
+					    blk + (n/512), sb->fs_id[0],
+					    sb->fs_id[1], sb->fs_size);
 
 				if (((blk+(n/512)) - lastblk) == (SBSIZE/512)) {
 					if (flags & FLAG_LABELS ) {
-						printf("X: %lld %lld 4.2BSD %d %d %d # %s\n",
-						    ((off_t)sb->fs_ffs1_size *
-						    sb->fs_fsize / 512),
-						    (long long)(blk + (n/512) -
-						    (2*SBSIZE/512)),
+						printf("X: %d %d 4.2BSD %d %d %d # %s\n",
+						    (daddr_t)((off_t)sb->fs_size * sb->fs_fsize / 512),
+						    blk+(n/512)-(2*SBSIZE/512),
 						    sb->fs_fsize, sb->fs_bsize,
 						    sb->fs_cpg, lastmount);
 					} else {
-						/* XXX 2038 */
-						time_t t = sb->fs_ffs1_time;
-
-						printf("ffs at %lld size %lld "
-						    "mount %s time %s",
-						    (long long)(blk+(n/512) -
-						    (2*SBSIZE/512)),
-						    (long long)(off_t)sb->fs_ffs1_size *
-						    sb->fs_fsize,
-						    lastmount, ctime(&t));
+						printf("ffs at %d size %qd mount %s time %s",
+						    blk+(n/512)-(2*SBSIZE/512),
+						    (off_t)sb->fs_size * sb->fs_fsize,
+						    lastmount, ctime(&sb->fs_time));
 					}
 
 					if (flags & FLAG_SMART) {
-						off_t size = (off_t)sb->fs_ffs1_size *
-						    sb->fs_fsize;
+						off_t size = (off_t)sb->fs_size * sb->fs_fsize;
 
 						if ((n + size) < (SBSIZE * SBCOUNT))
 							n += size;
@@ -120,38 +116,29 @@ ufsscan(int fd, daddr_t beg, daddr_t end, int flags)
 }
 
 
-static void
-usage(void)
+void
+usage()
 {
-	extern char *__progname;
-
-	fprintf(stderr, "usage: %s [-lsv] [-b begin] [-e end] device\n",
-	    __progname);
+	fprintf(stderr, "usage: scan_ffs [-lsv] [-b begin] [-e end] <device>\n");
 	exit(1);
 }
 
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	int ch, fd, flags = 0;
 	daddr_t beg = 0, end = -1;
-	const char *errstr;
-
-	if (pledge("stdio rpath disklabel", NULL) == -1)
-		err(1, "pledge");
 
 	while ((ch = getopt(argc, argv, "lsvb:e:")) != -1)
 		switch(ch) {
 		case 'b':
-			beg = strtonum(optarg, 0, LLONG_MAX, &errstr);
-			if (errstr)
-				errx(1, "%s: %s", optarg, errstr);
+			beg = atoi(optarg);
 			break;
 		case 'e':
-			end = strtonum(optarg, 0, LLONG_MAX, &errstr);
-			if (errstr)
-				errx(1, "%s: %s", optarg, errstr);
+			end = atoi(optarg);
 			break;
 		case 'v':
 			flags |= FLAG_VERBOSE;
@@ -164,7 +151,6 @@ main(int argc, char *argv[])
 			break;
 		default:
 			usage();
-			/* NOTREACHED */
 	}
 	argc -= optind;
 	argv += optind;
@@ -174,10 +160,7 @@ main(int argc, char *argv[])
 
 	fd = opendev(argv[0], O_RDONLY, OPENDEV_PART, NULL);
 	if (fd < 0)
-		err(1, "%s", argv[0]);
-
-	if (pledge("stdio", NULL) == -1)
-		err(1, "pledge");
+		err(1, "%s", argv[1]);
 
 	return (ufsscan(fd, beg, end, flags));
 }

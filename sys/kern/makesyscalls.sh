@@ -1,5 +1,5 @@
 #! /bin/sh -
-#	$OpenBSD: makesyscalls.sh,v 1.12 2016/09/01 12:50:53 akfaew Exp $
+#	$OpenBSD: makesyscalls.sh,v 1.6 1998/02/08 22:30:41 tholo Exp $
 #	$NetBSD: makesyscalls.sh,v 1.26 1998/01/09 06:17:51 thorpej Exp $
 #
 # Copyright (c) 1994,1996 Christopher G. Demetriou
@@ -175,22 +175,8 @@ NR == 1 {
 	printf " * created from%s\n */\n\n", $0 > sysnumhdr
 
 	printf " * created from%s\n */\n\n", $0 > sysarghdr
-	printf "#ifdef\tsyscallarg\n" > sysarghdr
-	printf "#undef\tsyscallarg\n" > sysarghdr
-	printf "#endif\n\n" > sysarghdr
-	printf "#define\tsyscallarg(x)\t\t\t\t\t\t\t\\\n" > sysarghdr
-	printf "\tunion {\t\t\t\t\t\t\t\t\\\n" > sysarghdr
-	printf "\t\tregister_t pad;\t\t\t\t\t\t\\\n" > sysarghdr
-	printf "\t\tstruct { x datum; } le;\t\t\t\t\t\\\n" > sysarghdr
-	printf "\t\tstruct {\t\t\t\t\t\t\\\n" > sysarghdr
-	printf "\t\t\tint8_t pad[ (sizeof (register_t) < sizeof (x))\t\\\n" \
+	printf "#define\tsyscallarg(x)\tunion { x datum; register_t pad; }\n" \
 		> sysarghdr
-	printf "\t\t\t\t? 0\t\t\t\t\t\\\n" > sysarghdr
-	printf "\t\t\t\t: sizeof (register_t) - sizeof (x)];\t\\\n" \
-		> sysarghdr
-	printf "\t\t\tx datum;\t\t\t\t\t\\\n" > sysarghdr
-	printf "\t\t} be;\t\t\t\t\t\t\t\\\n" > sysarghdr
-	printf "\t}\n" > sysarghdr
 	next
 }
 NF == 0 || $1 ~ /^;/ {
@@ -247,7 +233,6 @@ function parserr(was, wanted) {
 }
 function parseline() {
 	f=3			# toss number and type
-	sycall_flags="0"
 	if ($NF != "}") {
 		funcalias=$NF
 		end=NF-1
@@ -255,14 +240,6 @@ function parseline() {
 		funcalias=""
 		end=NF
 	}
-	if ($f == "NOLOCK") {		# syscall does not need locks
-		sycall_flags = sprintf("SY_NOLOCK | %s", sycall_flags)
-		f++
-	}
-	if ($f ~ /^[a-z0-9_]*$/) {      # allow syscall alias
-		funcalias=$f
-		f++
-	}	
 	if ($f != "{")
 		parserr($f, "{")
 	f++
@@ -353,19 +330,19 @@ function putent(nodefs, compatwrap) {
 	# get none, since they always have sys_nosys() for their table
 	# entries.
 	if (nodefs != "INDIR") {
-		prototype = "(struct proc *, void *, register_t *)"
+		prototype = "__P((struct proc *, void *, register_t *))"
 		if (compatwrap == "")
-			printf("int\t%s%s;\n", funcname,
+			printf("int\t%s\t%s;\n", funcname,
 			    prototype) > sysprotos
 		else
-			printf("int\t%s_%s%s;\n", compatwrap, funcname,
+			printf("int\t%s_%s\t%s;\n", compatwrap, funcname,
 			    prototype) > sysprotos
 	}
 
 	# output syscall switch entry
 	if (nodefs == "INDIR") {
-		printf("\t{ 0, 0, %s,\n\t    sys_nosys },\t\t\t/* %d = %s (indir) */\n", \
-		    sycall_flags, syscall, funcalias) > sysent
+		printf("\t{ 0, 0,\n\t    sys_nosys },\t\t\t/* %d = %s (indir) */\n", \
+		    syscall, funcalias) > sysent
 	} else {
 #		printf("\t{ { %d", argc) > sysent
 #		for (i = 1; i <= argc; i++) {
@@ -387,7 +364,7 @@ function putent(nodefs, compatwrap) {
 			wfn = sprintf("%s", funcname);
 		else
 			wfn = sprintf("%s(%s)", compatwrap, funcname);
-		printf(", %s,\n\t    %s },", sycall_flags, wfn) > sysent
+		printf(",\n\t    %s },", wfn) > sysent
 		for (i = 0; i < (33 - length(wfn)) / 8; i++)
 			printf("\t") > sysent
 		if (compatwrap == "")
@@ -456,7 +433,7 @@ $2 == "OBSOL" || $2 == "UNIMPL" {
 	for (i = 3; i <= NF; i++)
 		comment=comment " " $i
 
-	printf("\t{ 0, 0, 0,\n\t    sys_nosys },\t\t\t/* %d = %s */\n", \
+	printf("\t{ 0, 0,\n\t    sys_nosys },\t\t\t/* %d = %s */\n", \
 	    syscall, comment) > sysent
 	printf("\t\"#%d (%s)\",\t\t/* %d = %s */\n", \
 	    syscall, comment, syscall, comment) > sysnames

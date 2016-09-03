@@ -1,7 +1,7 @@
-/* $OpenBSD: term_entry.h,v 1.12 2010/01/12 23:21:59 nicm Exp $ */
+/*	$OpenBSD: term_entry.h,v 1.8 1999/05/17 03:03:57 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2005,2008 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -31,17 +31,15 @@
 /****************************************************************************
  *  Author: Zeyd M. Ben-Halim <zmbenhal@netcom.com> 1992,1995               *
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
- *     and: Thomas E. Dickey                        1998-on                 *
  ****************************************************************************/
 
-/* $Id: term_entry.h,v 1.12 2010/01/12 23:21:59 nicm Exp $ */
 
 /*
  *	term_entry.h -- interface to entry-manipulation code
  */
 
-#ifndef NCURSES_TERM_ENTRY_H_incl
-#define NCURSES_TERM_ENTRY_H_incl 1
+#ifndef _TERM_ENTRY_H
+#define _TERM_ENTRY_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -50,20 +48,16 @@ extern "C" {
 #include <term.h>
 
 #define MAX_USES	32
-#define MAX_CROSSLINKS	16
 
 typedef struct entry {
 	TERMTYPE	tterm;
-	unsigned	nuses;
+	int		nuses;
 	struct
         {
-	    char		*name;
-	    struct entry	*link;
-	    long		line;
+	    void	*parent;	/* (char *) or (ENTRY *) */
+	    long	line;
         }
 	uses[MAX_USES];
-	int		ncrosslinks;
-	struct entry	*crosslinks[MAX_CROSSLINKS];
 	long		cstart, cend;
 	long		startline;
 	struct entry	*next;
@@ -93,8 +87,7 @@ ENTRY;
 #define ExtNumname(tp,i,names)  EXT_NAMES(tp, i, NUMCOUNT, (i - (tp->num_Numbers - tp->ext_Numbers)) + tp->ext_Booleans, names)
 #define ExtStrname(tp,i,names)  EXT_NAMES(tp, i, STRCOUNT, (i - (tp->num_Strings - tp->ext_Strings)) + (tp->ext_Numbers + tp->ext_Booleans), names)
 
-extern NCURSES_EXPORT_VAR(ENTRY *) _nc_head;
-extern NCURSES_EXPORT_VAR(ENTRY *) _nc_tail;
+extern ENTRY	*_nc_head, *_nc_tail;
 #define for_entry_list(qp)	for (qp = _nc_head; qp; qp = qp->next)
 
 #define MAX_LINE	132
@@ -120,48 +113,42 @@ extern NCURSES_EXPORT_VAR(ENTRY *) _nc_tail;
 		}
 
 /* alloc_entry.c: elementary allocation code */
-extern NCURSES_EXPORT(ENTRY *) _nc_copy_entry (ENTRY *oldp);
-extern NCURSES_EXPORT(char *) _nc_save_str (const char *const);
-extern NCURSES_EXPORT(void) _nc_init_entry (TERMTYPE *const);
-extern NCURSES_EXPORT(void) _nc_merge_entry (TERMTYPE *const, TERMTYPE *const);
-extern NCURSES_EXPORT(void) _nc_wrap_entry (ENTRY *const, bool);
+extern ENTRY *_nc_copy_entry(ENTRY *oldp);
+extern char *_nc_save_str(const char *const);
+extern void _nc_init_entry(TERMTYPE *const);
+extern void _nc_merge_entry(TERMTYPE *const, TERMTYPE *const);
+extern void _nc_wrap_entry(ENTRY *const);
 
 /* alloc_ttype.c: elementary allocation code */
-extern NCURSES_EXPORT(void) _nc_align_termtype (TERMTYPE *, TERMTYPE *);
-extern NCURSES_EXPORT(void) _nc_copy_termtype (TERMTYPE *, TERMTYPE *);
+extern void _nc_align_termtype(TERMTYPE *, TERMTYPE *);
+extern void _nc_copy_termtype(TERMTYPE *, TERMTYPE *);
 
 /* free_ttype.c: elementary allocation code */
-extern NCURSES_EXPORT(void) _nc_free_termtype (TERMTYPE *);
+extern void _nc_free_termtype(TERMTYPE *);
 
 /* lib_acs.c */
-extern NCURSES_EXPORT(void) _nc_init_acs (void);	/* corresponds to traditional 'init_acs()' */
-
-/* lib_termcap.c: trim sgr0 string for termcap users */
-extern NCURSES_EXPORT(char *) _nc_trim_sgr0 (TERMTYPE *);
+extern void _nc_init_acs(void);	/* corresponds to traditional 'init_acs()' */
 
 /* parse_entry.c: entry-parsing code */
 #if NCURSES_XNAMES
-extern NCURSES_EXPORT_VAR(bool) _nc_user_definable;
-extern NCURSES_EXPORT_VAR(bool) _nc_disable_period;
+extern bool _nc_user_definable;
 #endif
-extern NCURSES_EXPORT(int) _nc_parse_entry (ENTRY *, int, bool);
-extern NCURSES_EXPORT(int) _nc_capcmp (const char *, const char *);
+extern int _nc_parse_entry(ENTRY *, int, bool);
+extern int _nc_capcmp(const char *, const char *);
 
 /* write_entry.c: writing an entry to the file system */
-extern NCURSES_EXPORT(void) _nc_set_writedir (char *);
-extern NCURSES_EXPORT(void) _nc_write_entry (TERMTYPE *const);
+extern void _nc_set_writedir(char *);
+extern void _nc_write_entry(TERMTYPE *const);
 
 /* comp_parse.c: entry list handling */
-extern NCURSES_EXPORT(void) _nc_read_entry_source (FILE*, char*, int, bool, bool (*)(ENTRY*));
-extern NCURSES_EXPORT(bool) _nc_entry_match (char *, char *);
-extern NCURSES_EXPORT(int) _nc_resolve_uses (bool); /* obs 20040705 */
-extern NCURSES_EXPORT(int) _nc_resolve_uses2 (bool, bool);
-extern NCURSES_EXPORT(void) _nc_free_entries (ENTRY *);
-extern NCURSES_IMPEXP void NCURSES_API (*_nc_check_termtype)(TERMTYPE *); /* obs 20040705 */
-extern NCURSES_IMPEXP void NCURSES_API (*_nc_check_termtype2)(TERMTYPE *, bool);
+extern void _nc_read_entry_source(FILE*, char*, int, bool, bool (*)(ENTRY*));
+extern bool _nc_entry_match(char *, char *);
+extern int _nc_resolve_uses(void);
+extern void _nc_free_entries(ENTRY *);
+extern void (*_nc_check_termtype)(TERMTYPE *);
 
 /* trace_xnames.c */
-extern NCURSES_EXPORT(void) _nc_trace_xnames (TERMTYPE *);
+extern void _nc_trace_xnames(TERMTYPE *);
 
 #ifdef __OpenBSD__
 /* read_bsd_terminfo.c: terminfo.db reading */
@@ -173,4 +160,4 @@ extern int _nc_read_bsd_terminfo_file(const char * const, TERMTYPE *const);
 }
 #endif
 
-#endif /* NCURSES_TERM_ENTRY_H_incl */
+#endif /* _TERM_ENTRY_H */

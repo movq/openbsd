@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_at.c,v 1.14 2016/05/27 09:18:12 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)ex_at.c	10.12 (Berkeley) 9/15/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -29,10 +31,12 @@
  *
  *	Execute the contents of the buffer.
  *
- * PUBLIC: int ex_at(SCR *, EXCMD *);
+ * PUBLIC: int ex_at __P((SCR *, EXCMD *));
  */
 int
-ex_at(SCR *sp, EXCMD *cmdp)
+ex_at(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	CB *cbp;
 	CHAR_T name;
@@ -79,9 +83,9 @@ ex_at(SCR *sp, EXCMD *cmdp)
 	 * the  range, continue to execute after a file/screen switch, which
 	 * means @ buffers are still useful in a multi-screen environment.
 	 */
-	CALLOC_RET(sp, ecp, 1, sizeof(EXCMD));
-	TAILQ_INIT(&ecp->rq);
-	CALLOC_RET(sp, rp, 1, sizeof(RANGE));
+	CALLOC_RET(sp, ecp, EXCMD *, 1, sizeof(EXCMD));
+	CIRCLEQ_INIT(&ecp->rq);
+	CALLOC_RET(sp, rp, RANGE *, 1, sizeof(RANGE));
 	rp->start = cmdp->addr1.lno;
 	if (F_ISSET(cmdp, E_ADDR_DEF)) {
 		rp->stop = rp->start;
@@ -90,7 +94,7 @@ ex_at(SCR *sp, EXCMD *cmdp)
 		rp->stop = cmdp->addr2.lno;
 		FL_SET(ecp->agv_flags, AGV_AT);
 	}
-	TAILQ_INSERT_HEAD(&ecp->rq, rp, q);
+	CIRCLEQ_INSERT_HEAD(&ecp->rq, rp, q);
 
 	/*
 	 * Buffers executed in ex mode or from the colon command line in vi
@@ -100,19 +104,18 @@ ex_at(SCR *sp, EXCMD *cmdp)
 	 * Build two copies of the command.  We need two copies because the
 	 * ex parser may step on the command string when it's parsing it.
 	 */
-	len = 0;
-	TAILQ_FOREACH_REVERSE(tp, &cbp->textq, _texth, q) {
+	for (len = 0, tp = cbp->textq.cqh_last;
+	    tp != (void *)&cbp->textq; tp = tp->q.cqe_prev)
 		len += tp->len + 1;
-	}
 
-	MALLOC_RET(sp, ecp->cp, len * 2);
+	MALLOC_RET(sp, ecp->cp, char *, len * 2);
 	ecp->o_cp = ecp->cp;
 	ecp->o_clen = len;
 	ecp->cp[len] = '\0';
 
 	/* Copy the buffer into the command space. */
-	p = ecp->cp + len;
-	TAILQ_FOREACH_REVERSE(tp, &cbp->textq, _texth, q) {
+	for (p = ecp->cp + len, tp = cbp->textq.cqh_last;
+	    tp != (void *)&cbp->textq; tp = tp->q.cqe_prev) {
 		memcpy(p, tp->lb, tp->len);
 		p += tp->len;
 		*p++ = '\n';

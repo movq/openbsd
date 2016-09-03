@@ -1,5 +1,5 @@
-/* $OpenBSD: tcvar.h,v 1.16 2010/11/11 17:54:54 miod Exp $ */
-/* $NetBSD: tcvar.h,v 1.17 2000/06/04 19:15:15 cgd Exp $ */
+/*	$OpenBSD: tcvar.h,v 1.6 1996/12/08 01:03:07 niklas Exp $	*/
+/*	$NetBSD: tcvar.h,v 1.7 1996/10/22 21:37:31 cgd Exp $	*/
 
 /*
  * Copyright (c) 1995 Carnegie-Mellon University.
@@ -32,36 +32,69 @@
 #define __DEV_TC_TCVAR_H__
 
 /*
- * Definitions for TURBOchannel autoconfiguration.
+ * Definitions for TurboChannel autoconfiguration.
  */
 
+#ifdef __alpha__	/* XXX pmax does not yet have machine/bus.h */
 #include <machine/bus.h>
+#endif
 #include <dev/tc/tcreg.h>
 
 /*
  * Machine-dependent definitions.
  */
+#if (alpha + pmax != 1)
+ERROR: COMPILING FOR UNSUPPORTED MACHINE, OR MORE THAN ONE.
+#endif
+#if alpha
+#include <alpha/tc/tc_machdep.h>
+#endif
+#if pmax
 #include <machine/tc_machdep.h>
-
-struct tc_softc {
-	struct	device sc_dv;
-
-	int	sc_speed;
-	int	sc_nslots;
-	struct tc_slotdesc *sc_slots;
-
-	void	(*sc_intr_establish)(struct device *, void *,
-			int, int (*)(void *), void *, const char *);
-	void	(*sc_intr_disestablish)(struct device *, void *, const char *);
-	bus_dma_tag_t (*sc_get_dma_tag)(int);
-};
+#endif
 
 /*
- * Arguments used to attach TURBOchannel busses.
+ * In the long run, the following block will go completely away
+ * (i.e. both parts of the #if, including the #include, etc.).
+ * For now, the MI TC code still uses the old definitions provided
+ * by the pmax port, and not the new definitions provided by the
+ * alpha port.
+ */
+#ifdef __alpha__
+/*
+ * On the alpha, map the new definitions to the old.
+ */
+#include <machine/intr.h>
+
+#define tc_intrlevel_t	int
+
+#define	TC_IPL_NONE	IPL_NONE
+#define	TC_IPL_BIO	IPL_BIO
+#define	TC_IPL_NET	IPL_NET
+#define	TC_IPL_TTY	IPL_TTY
+#define	TC_IPL_CLOCK	IPL_CLOCK
+
+#else
+/*
+ * On the pmax, we still need the old definitions.
+ */
+typedef enum {
+	TC_IPL_NONE,			/* block only this interrupt */
+	TC_IPL_BIO,			/* block disk interrupts */
+	TC_IPL_NET,			/* block network interrupts */
+	TC_IPL_TTY,			/* block terminal interrupts */
+	TC_IPL_CLOCK,			/* block clock interrupts */
+} tc_intrlevel_t;
+#endif
+
+/*
+ * Arguments used to attach TurboChannel busses.
  */
 struct tcbus_attach_args {
 	char		*tba_busname;		/* XXX should be common */
+#ifdef __alpha__ /* XXX */
 	bus_space_tag_t tba_memt;
+#endif
 
 	/* Bus information */
 	u_int		tba_speed;		/* see TC_SPEED_* below */
@@ -72,18 +105,18 @@ struct tcbus_attach_args {
 	
 
 	/* TC bus resource management; XXX will move elsewhere eventually. */
-	void	(*tba_intr_establish)(struct device *, void *,
-			int, int (*)(void *), void *, const char *);
-	void	(*tba_intr_disestablish)(struct device *, void *, const char *);
-	bus_dma_tag_t (*tba_get_dma_tag)(int);
+	void	(*tba_intr_establish) __P((struct device *, void *,
+		    tc_intrlevel_t, int (*)(void *), void *));
+	void	(*tba_intr_disestablish) __P((struct device *, void *));
 };
 
 /*
- * Arguments used to attach TURBOchannel devices.
+ * Arguments used to attach TurboChannel devices.
  */
 struct tc_attach_args {
+#ifdef __alpha__ /* XXX */
 	bus_space_tag_t ta_memt;
-	bus_dma_tag_t	ta_dmat;
+#endif
 
 	char		ta_modname[TC_ROM_LLEN+1];
 	u_int		ta_slot;
@@ -94,8 +127,8 @@ struct tc_attach_args {
 };
 
 /*
- * Description of TURBOchannel slots, provided by machine-dependent
- * code to the TURBOchannel bus driver.
+ * Description of TurboChannel slots, provided by machine-dependent
+ * code to the TurboChannel bus driver.
  */
 struct tc_slotdesc {
 	tc_addr_t	tcs_addr;
@@ -104,8 +137,8 @@ struct tc_slotdesc {
 };
 
 /*
- * Description of built-in TURBOchannel devices, provided by
- * machine-dependent code to the TURBOchannel bus driver.
+ * Description of built-in TurboChannel devices, provided by
+ * machine-dependent code to the TurboChannel bus driver.
  */
 struct tc_builtin {
 	char		*tcb_modname;
@@ -117,15 +150,12 @@ struct tc_builtin {
 /*
  * Interrupt establishment functions.
  */
-int	tc_checkslot(tc_addr_t, char *);
-void	tc_devinfo(const char *, char *, size_t);
-void	tcattach(struct device *, struct device *, void *);
-void	tc_intr_establish(struct device *, void *, int, int (*)(void *),
-	    void *, const char *);
-void	tc_intr_disestablish(struct device *, void *, const char *);
+void	tc_intr_establish __P((struct device *, void *, tc_intrlevel_t,
+	    int (*)(void *), void *));
+void	tc_intr_disestablish __P((struct device *, void *));
 
 /*
- * Easy to remember names for TURBOchannel device locators.
+ * Easy to remember names for TurboChannel device locators.
  */
 #define	tccf_slot	cf_loc[0]		/* slot */
 #define	tccf_offset	cf_loc[1]		/* offset */
@@ -136,10 +166,13 @@ void	tc_intr_disestablish(struct device *, void *, const char *);
 /*
  * Miscellaneous definitions.
  */
-#define	TC_SPEED_12_5_MHZ	25		/* 12.5MHz TC bus */
-#define	TC_SPEED_22_5_MHZ	45		/* 22.5MHz TC bus */
-#define	TC_SPEED_25_MHZ		50		/* 25MHz TC bus */
+#define	TC_SPEED_12_5_MHZ	0		/* 12.5MHz TC bus */
+#define	TC_SPEED_25_MHZ		1		/* 25MHz TC bus */
 
-#define	TC_SPEED_TO_KHZ(s)	((s) * (1000 / 2))
+/*
+ * The TurboChannel bus cfdriver, so that subdevices can more
+ * easily tell what bus they're on.
+ */
+extern struct cfdriver tc_cd;
 
 #endif /* __DEV_TC_TCVAR_H__ */

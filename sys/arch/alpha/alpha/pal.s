@@ -1,5 +1,5 @@
-/* $OpenBSD: pal.s,v 1.7 2008/01/13 20:59:52 kettenis Exp $ */
-/* $NetBSD: pal.s,v 1.14 1999/12/02 22:08:04 thorpej Exp $ */
+/*	$OpenBSD: pal.s,v 1.4 1996/10/30 22:38:18 niklas Exp $	*/
+/*	$NetBSD: pal.s,v 1.5 1996/07/14 04:21:53 cgd Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Carnegie-Mellon University.
@@ -28,66 +28,60 @@
  * rights to redistribute these changes.
  */
 
-.file	3 __FILE__
-.loc	3 __LINE__
-
 /*
  * The various OSF PALcode routines.
  *
- * The following code is originally derived from pages: (I) 6-5 - (I) 6-7
- * and (III) 2-1 - (III) 2-25 of "Alpha Architecture Reference Manual" by
+ * The following code is derived from pages: (I) 6-5 - (I) 6-7 and
+ * (III) 2-1 - (III) 2-25 of "Alpha Architecture Reference Manual" by
  * Richard L. Sites.
- *
- * Updates taken from pages: (II-B) 2-1 - (II-B) 2-33 of "Alpha AXP
- * Architecture Reference Manual, Second Edition" by Richard L. Sites
- * and Richard T. Witek.
  */
 
 /*
- * alpha_amask: read architecture features (XXX INSTRUCTION, NOT PALcode OP)
- *
- * Arguments:
- *	a0	bitmask of features to test
- *
- * Returns:
- *	v0	bitmask - bit is _cleared_ if feature is supported
+ * alpha_rpcc: read process cycle counter (XXX INSTRUCTION, NOT PALcode OP)
  */
-	.text
-LEAF(alpha_amask,1)
-	amask	a0, v0
-	RET
-	END(alpha_amask)
+        .text
+LEAF(alpha_rpcc,1)
+        rpcc    v0
+        RET
+        END(alpha_rpcc)
 
 /*
- * alpha_implver: read implementation version (XXX INSTRUCTION, NOT PALcode OP)
- *
- * Returns:
- *	v0	implementation version - see <machine/alpha_cpu.h>
+ * alpha_mb: memory barrier (XXX INSTRUCTION, NOT PALcode OP)
  */
 	.text
-LEAF(alpha_implver,0)
-#if 0
-	implver	0x1, v0
-#else
-	.long	0x47e03d80	/* XXX gas(1) does the Wrong Thing */
-#endif
+LEAF(alpha_mb,0)
+	mb
 	RET
-	END(alpha_implver)
+	END(alpha_mb)
 
 /*
- * alpha_pal_cflush: Cache flush [PRIVILEGED]
- *
- * Flush the entire physical page specified by the PFN specified in
- * a0 from any data caches associated with the current processor.
- *
- * Arguments:
- *	a0	page frame number of page to flush
+ * alpha_wmb: write memory barrier (XXX INSTRUCTION, NOT PALcode OP)
  */
 	.text
-LEAF(alpha_pal_cflush,1)
-	call_pal PAL_cflush
+LEAF(alpha_wmb,0)
+	/* wmb XXX */
+	mb /* XXX */
 	RET
-	END(alpha_pal_cflush)
+	END(alpha_wmb)
+
+/*
+ * alpha_pal_imb: I-Stream memory barrier. [UNPRIVILEGED]
+ * (Makes instruction stream coherent with data stream.)
+ */
+	.text
+LEAF(alpha_pal_imb,0)
+	call_pal PAL_imb
+	RET
+	END(alpha_pal_imb)
+
+/*
+ * alpha_pal_draina: Drain aborts. [PRIVILEGED]
+ */
+	.text
+LEAF(alpha_pal_draina,0)
+	call_pal PAL_draina
+	RET
+	END(alpha_pal_draina)
 
 /*
  * alpha_pal_halt: Halt the processor. [PRIVILEGED]
@@ -100,16 +94,28 @@ LEAF(alpha_pal_halt,0)
 	END(alpha_pal_halt)
 
 /*
- * alpha_pal_rdps: Read processor status. [PRIVILEGED]
+ * alpha_pal_rdmces: Read MCES processor register. [PRIVILEGED]
  *
  * Return:
- *	v0	current PS value
+ *	v0	current MCES value
  */
 	.text
-LEAF(alpha_pal_rdps,0)
-	call_pal PAL_OSF1_rdps
+LEAF(alpha_pal_rdmces,1)
+	call_pal PAL_OSF1_rdmces
 	RET
-	END(alpha_pal_rdps)
+	END(alpha_pal_rdmces)
+
+/*
+ * alpha_pal_rdusp: Read user stack pointer. [PRIVILEGED]
+ *
+ * Return:
+ *	v0	current user stack pointer
+ */
+	.text
+LEAF(alpha_pal_rdusp,0)
+	call_pal PAL_OSF1_rdusp
+	RET
+	END(alpha_pal_rdusp)
 
 /*
  * alpha_pal_swpipl: Swap Interrupt priority level. [PRIVILEGED]
@@ -133,6 +139,31 @@ LEAF_NOPROFILE(_alpha_pal_swpipl,1)
 	END(_alpha_pal_swpipl)
 
 /*
+ * alpha_pal_tbi: Translation buffer invalidate. [PRIVILEGED]
+ *
+ * Arguments:
+ *	a0	operation selector
+ *	a1	address to operate on (if necessary)
+ */
+	.text
+LEAF(alpha_pal_tbi,2)
+	call_pal PAL_OSF1_tbi
+	RET
+	END(alpha_pal_tbi)
+
+/*
+ * alpha_pal_whami: Who am I? [PRIVILEGED]
+ *
+ * Return:
+ *	v0	processor number
+ */
+	.text
+LEAF(alpha_pal_whami,0)
+	call_pal PAL_OSF1_whami
+	RET
+	END(alpha_pal_whami)
+
+/*
  * alpha_pal_wrent: Write system entry address. [PRIVILEGED]
  *
  * Arguments:
@@ -146,6 +177,30 @@ LEAF(alpha_pal_wrent,2)
 	END(alpha_pal_wrent)
 
 /*
+ * alpha_pal_wrfen: Write floating-point enable. [PRIVILEGED]
+ *
+ * Arguments:
+ *	a0	new enable value (val & 0x1 -> enable).
+ */
+	.text
+LEAF(alpha_pal_wrfen,1)
+	call_pal PAL_OSF1_wrfen
+	RET
+	END(alpha_pal_wrfen)
+
+/*
+ * alpha_pal_wrusp: Write user stack pointer. [PRIVILEGED]
+ *
+ * Arguments:
+ *	a0	new user stack pointer
+ */
+	.text
+LEAF(alpha_pal_wrusp,1)
+	call_pal PAL_OSF1_wrusp
+	RET
+	END(alpha_pal_wrusp)
+
+/*
  * alpha_pal_wrvptptr: Write virtual page table pointer. [PRIVILEGED]
  *
  * Arguments:
@@ -156,3 +211,15 @@ LEAF(alpha_pal_wrvptptr,1)
 	call_pal PAL_OSF1_wrvptptr
 	RET
 	END(alpha_pal_wrvptptr)
+
+/*
+ * alpha_pal_wrmces: Write MCES processor register. [PRIVILEGED]
+ *
+ * Arguments:
+ *	a0	value to write to MCES
+ */
+	.text
+LEAF(alpha_pal_wrmces,1)
+	call_pal PAL_OSF1_wrmces
+	RET
+	END(alpha_pal_wrmces)

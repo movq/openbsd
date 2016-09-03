@@ -1,4 +1,4 @@
-/*	$OpenBSD: ophandlers.c,v 1.14 2015/08/20 22:39:29 deraadt Exp $	*/
+/*	$OpenBSD: ophandlers.c,v 1.4 1996/08/31 13:12:12 deraadt Exp $	*/
 /*	$NetBSD: ophandlers.c,v 1.2 1996/02/28 01:13:30 thorpej Exp $	*/
 
 /*-
@@ -16,6 +16,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -37,10 +44,9 @@
 #include <fcntl.h>
 #include <string.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <vis.h>
+#include <string.h>
 
+#include <machine/eeprom.h>
 #include <machine/openpromio.h>
 
 #include "defs.h"
@@ -51,8 +57,7 @@ extern	int verbose;
 
 static	char err_str[BUFSIZE];
 
-static	void op_notsupp(struct extabent *, struct opiocdesc *, char *);
-static	void op_print(char *);
+static	void op_notsupp __P((struct extabent *, struct opiocdesc *, char *));
 
 /*
  * There are several known fields that I either don't know how to
@@ -72,7 +77,8 @@ static	struct extabent opextab[] = {
 };
 
 char *
-op_handler(char *keyword, char *arg)
+op_handler(keyword, arg)
+	char *keyword, *arg;
 {
 	struct opiocdesc opio;
 	struct extabent *ex;
@@ -106,14 +112,14 @@ op_handler(char *keyword, char *arg)
 				BARF("OPIOCGET", strerror(errno));
 
 			if (opio.op_buflen <= 0) {
-				printf("nothing available for %s\n", keyword);
+				printf("nothing available for %s\n");
 				goto out;
 			}
 
 			if (ex->ex_keyword != NULL)
 				(*ex->ex_handler)(ex, &opio, NULL);
 			else
-				op_print(opio.op_buf);
+				printf("%s\n", opio.op_buf);
 		}
  out:
 		if (ex->ex_keyword != NULL)
@@ -131,7 +137,7 @@ op_handler(char *keyword, char *arg)
 			if (ex->ex_keyword != NULL)
 				(*ex->ex_handler)(ex, &opio, NULL);
 			else
-				op_print(opio.op_buf);
+				printf("%s\n", opio.op_buf);
 		}
 	} else {
 		opio.op_buf = &opio_buf[0];
@@ -148,10 +154,8 @@ op_handler(char *keyword, char *arg)
 
 		if (ex->ex_keyword != NULL)
 			(*ex->ex_handler)(ex, &opio, NULL);
-		else {
-			printf("%s=", keyword);
-			op_print(opio.op_buf);
-		}
+		else
+			printf("%s=%s\n", keyword, opio.op_buf);
 	}
 
 	(void)close(fd);
@@ -160,7 +164,10 @@ op_handler(char *keyword, char *arg)
 
 /* ARGSUSED */
 static void
-op_notsupp(struct extabent *exent, struct opiocdesc *opiop, char *arg)
+op_notsupp(exent, opiop, arg)
+	struct extabent *exent;
+	struct opiocdesc *opiop;
+	char *arg;
 {
 
 	warnx("property `%s' not yet supported", exent->ex_keyword);
@@ -171,7 +178,7 @@ op_notsupp(struct extabent *exent, struct opiocdesc *opiop, char *arg)
  * (Really!  This is the only way I could get it to work!)
  */
 void
-op_dump(void)
+op_dump()
 {
 	struct opiocdesc opio1, opio2;
 	struct extabent *ex;
@@ -222,7 +229,7 @@ op_dump(void)
 		 * of opio1.  If the length of the name is 0, there
 		 * are no more properties left.
 		 */
-		strlcpy(opio2.op_name, opio1.op_buf, sizeof(buf3));
+		sprintf(opio2.op_name, opio1.op_buf);
 		opio2.op_namelen = strlen(opio2.op_name);
 
 		if (opio2.op_namelen == 0) {
@@ -242,10 +249,8 @@ op_dump(void)
 
 		if (ex->ex_keyword != NULL)
 			(*ex->ex_handler)(ex, &opio2, NULL);
-		else {
-			printf("%s=", opio2.op_name);
-			op_print(opio2.op_buf);
-		}
+		else
+			printf("%s=%s\n", opio2.op_name, opio2.op_buf);
 
 		/*
 		 * Place the name of the last read value back into
@@ -253,24 +258,7 @@ op_dump(void)
 		 */
 		bzero(opio1.op_name, sizeof(buf1));
 		bzero(opio1.op_buf, sizeof(buf2));
-		strlcpy(opio1.op_name, opio2.op_name, sizeof(buf1));
+		sprintf(opio1.op_name, opio2.op_name);
 	}
 	/* NOTREACHED */
-}
-
-static void
-op_print(char *op_buf)
-{
-	char *vistr;
-	size_t size;
-
-	size = 1 + 4 * strlen(op_buf);
-	vistr = malloc(size);
-	if (vistr == NULL)
-		printf("(out of memory)\n");
-	else {
-		strnvis(vistr, op_buf, size, VIS_NL | VIS_TAB | VIS_OCTAL);
-		printf("%s\n", vistr);
-		free(vistr);
-	}
 }

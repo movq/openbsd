@@ -1,4 +1,4 @@
-.\"	$OpenBSD: gprof.1,v 1.22 2011/12/23 17:00:47 jmc Exp $
+.\"	$OpenBSD: gprof.1,v 1.12 1999/07/04 11:53:54 aaron Exp $
 .\"	$NetBSD: gprof.1,v 1.6 1995/11/21 22:24:55 jtc Exp $
 .\"
 .\" Copyright (c) 1983, 1990, 1993
@@ -12,7 +12,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -30,7 +34,7 @@
 .\"
 .\"	@(#)gprof.1	8.1 (Berkeley) 6/6/93
 .\"
-.Dd $Mdocdate: December 23 2011 $
+.Dd June 6, 1993
 .Dt GPROF 1
 .Os
 .Sh NAME
@@ -38,16 +42,8 @@
 .Nd display call graph profile data
 .Sh SYNOPSIS
 .Nm gprof
-.Bk -words
-.Op Fl abcsz
-.Op Fl C Ar count
-.Op Fl E Ar name
-.Op Fl e Ar name
-.Op Fl F Ar name
-.Op Fl f Ar name
-.Op Fl k Ar from-name to-name
+.Op options
 .Op Ar a.out Op Ar gmon.out ...
-.Ek
 .Sh DESCRIPTION
 .Nm
 produces an execution profile of C, Pascal, or Fortran77 programs.
@@ -59,16 +55,16 @@ that are compiled with the
 .Fl pg
 option of
 .Xr cc 1 ,
-.Xr pc ,
+.Xr pc 1 ,
 and
-.Xr f77 .
+.Xr f77 1 .
 The
 .Fl pg
 option also links in versions of the library routines
 that are compiled for profiling.
 .Nm
 reads the given object file (the default is
-.Pa a.out )
+.Pa a.out)
 and establishes the relation between its symbol table
 and the call graph profile from
 .Pa gmon.out .
@@ -84,11 +80,11 @@ Cycles are discovered, and calls into a cycle are made to share the time
 of the cycle.
 The first listing shows the functions
 sorted according to the time they represent
-including the time of their call graph descendants.
+including the time of their call graph descendents.
 Below each function entry is shown its (direct) call graph children,
 and how their times are propagated to this function.
 A similar display above the function shows how this function's time and the
-time of its descendants is propagated to its (direct) call graph parents.
+time of its descendents is propagated to its (direct) call graph parents.
 .Pp
 Cycles are also shown, with an entry for the cycle as a whole and
 a listing of the members of the cycle and their contributions to the
@@ -96,16 +92,16 @@ time and call counts of the cycle.
 .Pp
 Second, a flat profile is given,
 similar to that provided by
-.Xr prof .
+.Xr prof  1  .
 This listing gives the total execution times, the call counts,
 the time in milliseconds the call spent in the routine itself, and
 the time in milliseconds the call spent in the routine itself including
-its descendants.
+its descendents.
 .Pp
 Finally, an index of the function names is provided.
 .Pp
-The options are as follows:
-.Bl -tag -width Ds
+The following options are available:
+.Bl -tag -width Fl
 .It Fl a
 Suppresses the printing of statically declared functions.
 If this option is given, all relevant information about the static function
@@ -115,6 +111,11 @@ belongs to the function loaded just before the static function in the
 file.
 .It Fl b
 Suppresses the printing of a description of each field in the profile.
+.It Fl c
+The static call graph of the program is discovered by a heuristic
+that examines the text space of the object file.
+Static-only parents or children are shown
+with call counts of 0.
 .It Fl C Ar count
 Find a minimal set of arcs that can be broken to eliminate all cycles with
 .Ar count
@@ -123,25 +124,6 @@ Caution: the algorithm used to break cycles is exponential,
 so using this option may cause
 .Nm
 to run for a very long time.
-.It Fl c
-The static call graph of the program is discovered by a heuristic
-that examines the text space of the object file.
-Static-only parents or children are shown
-with call counts of 0.
-.It Fl E Ar name
-Suppresses the printing of the graph profile entry for routine
-.Ar name
-(and its descendants) as
-.Fl e ,
-above, and also excludes the time spent in
-.Ar name
-(and its descendants) from the total and percentage time computations.
-(For example,
-.Fl E
-.Ar mcount
-.Fl E
-.Ar mcleanup
-is the default.)
 .It Fl e Ar name
 Suppresses the printing of the graph profile entry for routine
 .Ar name
@@ -154,6 +136,32 @@ Only one
 .Ar name
 may be given with each
 .Fl e
+option.
+.It Fl E Ar name
+Suppresses the printing of the graph profile entry for routine
+.Ar name
+(and its descendants) as
+.Fl e  ,
+above, and also excludes the time spent in
+.Ar name
+(and its descendants) from the total and percentage time computations.
+(For example,
+.Fl E
+.Ar mcount
+.Fl E
+.Ar mcleanup
+is the default.)
+.It Fl f Ar name
+Prints the graph profile entry of only the specified routine
+.Ar name
+and its descendants.
+More than one
+.Fl f
+option may be given.
+Only one
+.Ar name
+may be given with each
+.Fl f
 option.
 .It Fl F Ar name
 Prints the graph profile entry of only the routine
@@ -177,23 +185,11 @@ overrides
 the
 .Fl E
 option.
-.It Fl f Ar name
-Prints the graph profile entry of only the specified routine
-.Ar name
-and its descendants.
-More than one
-.Fl f
-option may be given.
-Only one
-.Ar name
-may be given with each
-.Fl f
-option.
-.It Fl k Ar from-name Ar to-name
+.It Fl k Ar fromname Ar toname
 Will delete any arcs from routine
-.Ar from-name
+.Ar fromname
 to routine
-.Ar to-name .
+.Ar toname .
 This can be used to break undesired cycles.
 More than one
 .Fl k
@@ -224,7 +220,9 @@ option for discovering which routines were never called.
 .Sh ENVIRONMENT
 .Bl -tag -width PROFDIR
 .It Ev PROFDIR
-Directory to place profiling information in a file named
+If the environment variable
+.Ev PROFDIR
+is set, profiling information is placed in that directory in a file named
 .Pa pid.progname .
 If it is set to a null value, no profiling information is output.
 Otherwise, profiling information is placed in the file

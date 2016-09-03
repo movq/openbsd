@@ -1,4 +1,4 @@
-/*	$OpenBSD: iso.h,v 1.15 2013/05/30 17:35:01 guenther Exp $	*/
+/*	$OpenBSD: iso.h,v 1.9 1999/07/01 02:20:22 d Exp $	*/
 /*	$NetBSD: iso.h,v 1.20 1997/07/07 22:45:34 cgd Exp $	*/
 
 /*-
@@ -18,7 +18,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -42,8 +46,6 @@
  * the functions necessary to access fields of ISO9660 file system
  * structures.
  */
-
-typedef uint32_t cdino_t;
 
 #define ISODCL(from, to) (to - from + 1)
 
@@ -177,25 +179,35 @@ struct iso_extended_attributes {
 	u_char len_au			[ISODCL (247, 250)]; /* 723 */
 };
 
-static __inline int isonum_711(u_char *) __attribute__ ((__unused__));
-static __inline int isonum_712(char *) __attribute__ ((__unused__));
-static __inline int isonum_721(u_char *) __attribute__ ((__unused__));
-static __inline int isonum_722(u_char *) __attribute__ ((__unused__));
-static __inline int isonum_723(u_char *) __attribute__ ((__unused__));
-static __inline int isonum_731(u_char *) __attribute__ ((__unused__));
-static __inline int isonum_732(u_char *) __attribute__ ((__unused__));
-static __inline int isonum_733(u_char *) __attribute__ ((__unused__));
+static __inline int isonum_711 __P((u_char *)) __attribute__ ((unused));
+static __inline int isonum_712 __P((char *)) __attribute__ ((unused));
+static __inline int isonum_721 __P((u_char *)) __attribute__ ((unused));
+static __inline int isonum_722 __P((u_char *)) __attribute__ ((unused));
+static __inline int isonum_723 __P((u_char *)) __attribute__ ((unused));
+static __inline int isonum_731 __P((u_char *)) __attribute__ ((unused));
+static __inline int isonum_732 __P((u_char *)) __attribute__ ((unused));
+static __inline int isonum_733 __P((u_char *)) __attribute__ ((unused));
 
 /* 7.1.1: unsigned char */
 static __inline int
+#if __STDC__
 isonum_711(u_char *p)
+#else
+isonum_711(p)
+	u_char *p;
+#endif
 {
 	return *p;
 }
 
 /* 7.1.2: signed(?) char */
 static __inline int
+#if __STDC__
 isonum_712(char *p)
+#else
+isonum_712(p)
+	char *p;
+#endif
 {
 	return *p;
 }
@@ -205,8 +217,8 @@ static __inline int
 isonum_721(p)
 	u_char *p;
 {
-#if !defined(__STRICT_ALIGNMENT) && (BYTE_ORDER == LITTLE_ENDIAN)
-	return *(u_int16_t *)p;
+#if defined(UNALIGNED_ACCESS) && (BYTE_ORDER == LITTLE_ENDIAN)
+	return *(u_int16t *)p;
 #else
 	return *p|((char)p[1] << 8);
 #endif
@@ -217,8 +229,8 @@ static __inline int
 isonum_722(p)
 	unsigned char *p;
 {
-#if !defined(__STRICT_ALIGNMENT) && (BYTE_ORDER == BIG_ENDIAN)
-	return *(u_int16_t *)p;
+#if defined(UNALIGNED_ACCESS) && (BYTE_ORDER == BIG_ENDIAN)
+	return *(u_int16t *)p;
 #else
 	return ((char)*p << 8)|p[1];
 #endif
@@ -226,16 +238,21 @@ isonum_722(p)
 
 /* 7.2.3: unsigned both-endian (little, then big) 16-bit value */
 static __inline int
+#if __STDC__
 isonum_723(u_char *p)
+#else
+isonum_723(p)
+	u_char *p;
+#endif
 {
-#if !defined(__STRICT_ALIGNMENT) && \
+#if defined(UNALIGNED_ACCESS) && \
     ((BYTE_ORDER == LITTLE_ENDIAN) || (BYTE_ORDER == BIG_ENDIAN))
 #if BYTE_ORDER == LITTLE_ENDIAN
-	return *(u_int16_t *)p;
+	return *(u_int16t *)p;
 #else
-	return *(u_int16_t *)(p + 2);
+	return *(u_int16t *)(p + 2);
 #endif
-#else /* __STRICT_ALIGNMENT or weird byte order */
+#else /* !UNALIGNED_ACCESS or weird byte order */
 	return *p|(p[1] << 8);
 #endif
 }
@@ -245,8 +262,8 @@ static __inline int
 isonum_731(p)
 	u_char *p;
 {
-#if !defined(__STRICT_ALIGNMENT) && (BYTE_ORDER == LITTLE_ENDIAN)
-	return *(u_int32_t *)p;
+#if defined(UNALIGNED_ACCESS) && (BYTE_ORDER == LITTLE_ENDIAN)
+	return *(u_int32t *)p;
 #else
 	return *p|(p[1] << 8)|(p[2] << 16)|(p[3] << 24);
 #endif
@@ -257,8 +274,8 @@ static __inline int
 isonum_732(p)
 	unsigned char *p;
 {
-#if !defined(__STRICT_ALIGNMENT) && (BYTE_ORDER == BIG_ENDIAN)
-	return *(u_int32_t *)p;
+#if defined(UNALIGNED_ACCESS) && (BYTE_ORDER == BIG_ENDIAN)
+	return *(u_int32t *)p;
 #else
 	return (*p << 24)|(p[1] << 16)|(p[2] << 8)|p[3];
 #endif
@@ -266,16 +283,21 @@ isonum_732(p)
 
 /* 7.3.3: unsigned both-endian (little, then big) 32-bit value */
 static __inline int
+#if __STDC__
 isonum_733(u_char *p)
+#else
+isonum_733(p)
+	u_char *p;
+#endif
 {
-#if !defined(__STRICT_ALIGNMENT) && \
+#if defined(UNALIGNED_ACCESS) && \
     ((BYTE_ORDER == LITTLE_ENDIAN) || (BYTE_ORDER == BIG_ENDIAN))
 #if BYTE_ORDER == LITTLE_ENDIAN
-	return *(u_int32_t *)p;
+	return *(u_int32t *)p;
 #else
-	return *(u_int32_t *)(p + 4);
+	return *(u_int32t *)(p + 4);
 #endif
-#else /* __STRICT_ALIGNMENT or weird byte order */
+#else /* !UNALIGNED_ACCESS or weird byte order */
 	return *p|(p[1] << 8)|(p[2] << 16)|(p[3] << 24);
 #endif
 }

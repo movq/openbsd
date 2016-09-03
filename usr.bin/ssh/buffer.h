@@ -1,94 +1,66 @@
-/* $OpenBSD: buffer.h,v 1.25 2014/04/30 05:29:56 djm Exp $ */
-
 /*
- * Copyright (c) 2012 Damien Miller <djm@mindrot.org>
- *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- */
 
-/* Emulation wrappers for legacy OpenSSH buffer API atop sshbuf */
+buffer.h
+
+Author: Tatu Ylonen <ylo@cs.hut.fi>
+
+Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
+                   All rights reserved
+
+Created: Sat Mar 18 04:12:25 1995 ylo
+
+Code for manipulating FIFO buffers.
+
+*/
+
+/* RCSID("$Id: buffer.h,v 1.1 1999/09/26 20:53:34 deraadt Exp $"); */
 
 #ifndef BUFFER_H
 #define BUFFER_H
 
-#include "sshbuf.h"
+typedef struct
+{
+  char *buf;			/* Buffer for data. */
+  unsigned int alloc;		/* Number of bytes allocated for data. */
+  unsigned int offset;		/* Offset of first byte containing data. */
+  unsigned int end;		/* Offset of last byte containing data. */
+} Buffer;
 
-typedef struct sshbuf Buffer;
+/* Initializes the buffer structure. */
+void buffer_init(Buffer *buffer);
 
-#define buffer_init(b)		sshbuf_init(b)
-#define buffer_clear(b)		sshbuf_reset(b)
-#define buffer_free(b)		sshbuf_free(b)
-#define buffer_dump(b)		sshbuf_dump(b, stderr)
+/* Frees any memory used for the buffer. */
+void buffer_free(Buffer *buffer);
 
-/* XXX cast is safe: sshbuf never stores more than len 2^31 */
-#define buffer_len(b)		((u_int) sshbuf_len(b))
-#define	buffer_ptr(b)		sshbuf_mutable_ptr(b)
+/* Clears any data from the buffer, making it empty.  This does not actually
+   zero the memory. */
+void buffer_clear(Buffer *buffer);
 
-void	 buffer_append(Buffer *, const void *, u_int);
-void	*buffer_append_space(Buffer *, u_int);
-int	 buffer_check_alloc(Buffer *, u_int);
-void	 buffer_get(Buffer *, void *, u_int);
+/* Appends data to the buffer, expanding it if necessary. */
+void buffer_append(Buffer *buffer, const char *data, unsigned int len);
 
-void	 buffer_consume(Buffer *, u_int);
-void	 buffer_consume_end(Buffer *, u_int);
+/* Appends space to the buffer, expanding the buffer if necessary.
+   This does not actually copy the data into the buffer, but instead
+   returns a pointer to the allocated region. */
+void buffer_append_space(Buffer *buffer, char **datap, unsigned int len);
 
+/* Returns the number of bytes of data in the buffer. */
+unsigned int buffer_len(Buffer *buffer);
 
-int	 buffer_get_ret(Buffer *, void *, u_int);
-int	 buffer_consume_ret(Buffer *, u_int);
-int	 buffer_consume_end_ret(Buffer *, u_int);
+/* Gets data from the beginning of the buffer. */
+void buffer_get(Buffer *buffer, char *buf, unsigned int len);
 
-void    buffer_put_bignum(Buffer *, const BIGNUM *);
-void    buffer_put_bignum2(Buffer *, const BIGNUM *);
-void	buffer_get_bignum(Buffer *, BIGNUM *);
-void	buffer_get_bignum2(Buffer *, BIGNUM *);
-void	buffer_put_bignum2_from_string(Buffer *, const u_char *, u_int);
+/* Consumes the given number of bytes from the beginning of the buffer. */
+void buffer_consume(Buffer *buffer, unsigned int bytes);
 
-u_short	buffer_get_short(Buffer *);
-void	buffer_put_short(Buffer *, u_short);
+/* Consumes the given number of bytes from the end of the buffer. */
+void buffer_consume_end(Buffer *buffer, unsigned int bytes);
 
-u_int	buffer_get_int(Buffer *);
-void    buffer_put_int(Buffer *, u_int);
+/* Returns a pointer to the first used byte in the buffer. */
+char *buffer_ptr(Buffer *buffer);
 
-u_int64_t buffer_get_int64(Buffer *);
-void	buffer_put_int64(Buffer *, u_int64_t);
+/* Dumps the contents of the buffer to stderr in hex.  This intended for
+   debugging purposes only. */
+void buffer_dump(Buffer *buffer);
 
-int     buffer_get_char(Buffer *);
-void    buffer_put_char(Buffer *, int);
-
-void   *buffer_get_string(Buffer *, u_int *);
-const void *buffer_get_string_ptr(Buffer *, u_int *);
-void    buffer_put_string(Buffer *, const void *, u_int);
-char   *buffer_get_cstring(Buffer *, u_int *);
-void	buffer_put_cstring(Buffer *, const char *);
-
-#define buffer_skip_string(b) (void)buffer_get_string_ptr(b, NULL);
-
-int	buffer_put_bignum_ret(Buffer *, const BIGNUM *);
-int	buffer_get_bignum_ret(Buffer *, BIGNUM *);
-int	buffer_put_bignum2_ret(Buffer *, const BIGNUM *);
-int	buffer_get_bignum2_ret(Buffer *, BIGNUM *);
-int	buffer_get_short_ret(u_short *, Buffer *);
-int	buffer_get_int_ret(u_int *, Buffer *);
-int	buffer_get_int64_ret(u_int64_t *, Buffer *);
-void	*buffer_get_string_ret(Buffer *, u_int *);
-char	*buffer_get_cstring_ret(Buffer *, u_int *);
-const void *buffer_get_string_ptr_ret(Buffer *, u_int *);
-int	buffer_get_char_ret(char *, Buffer *);
-
-int	buffer_put_ecpoint_ret(Buffer *, const EC_GROUP *, const EC_POINT *);
-void	buffer_put_ecpoint(Buffer *, const EC_GROUP *, const EC_POINT *);
-int	buffer_get_ecpoint_ret(Buffer *, const EC_GROUP *, EC_POINT *);
-void	buffer_get_ecpoint(Buffer *, const EC_GROUP *, EC_POINT *);
-
-#endif	/* BUFFER_H */
-
+#endif /* BUFFER_H */

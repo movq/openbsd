@@ -1,13 +1,29 @@
 /*
- * Copyright (C) 1984-2012  Mark Nudelman
- * Modified for use with illumos by Garrett D'Amore.
- * Copyright 2014 Garrett D'Amore <garrett@damore.org>
+ * Copyright (c) 1984,1985,1989,1994,1995  Mark Nudelman
+ * All rights reserved.
  *
- * You may distribute under the terms of either the GNU General Public
- * License or the Less License, as specified in the README file.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice in the documentation and/or other materials provided with 
+ *    the distribution.
  *
- * For more information, see the README file.
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY
+ * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR 
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR 
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT 
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR 
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE 
+ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN 
+ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
 
 /*
  * High level routines dealing with the output to the screen.
@@ -15,29 +31,28 @@
 
 #include "less.h"
 
-int errmsgs;	/* Count of messages displayed by error() */
+public int errmsgs;	/* Count of messages displayed by error() */
+public int need_clr;
 
-extern volatile sig_atomic_t sigs;
+extern int sigs;
 extern int sc_width;
 extern int so_s_width, so_e_width;
 extern int screen_trashed;
 extern int any_display;
-extern int is_tty;
-extern int oldbot;
-
-static int need_clr;
 
 /*
  * Display the line which is in the line buffer.
  */
-void
-put_line(void)
+	public void
+put_line()
 {
-	int c;
-	int i;
+	register int c;
+	register int i;
 	int a;
+	int curr_attr;
 
-	if (ABORT_SIGS()) {
+	if (ABORT_SIGS())
+	{
 		/*
 		 * Don't output if a signal is pending.
 		 */
@@ -45,18 +60,51 @@ put_line(void)
 		return;
 	}
 
-	for (i = 0;  (c = gline(i, &a)) != '\0';  i++) {
-		at_switch(a);
+	curr_attr = AT_NORMAL;
+
+	for (i = 0;  (c = gline(i, &a)) != '\0';  i++)
+	{
+		if (a != curr_attr)
+		{
+			/*
+			 * Changing attributes.
+			 * Display the exit sequence for the old attribute
+			 * and the enter sequence for the new one.
+			 */
+			switch (curr_attr)
+			{
+			case AT_UNDERLINE:	ul_exit();	break;
+			case AT_BOLD:		bo_exit();	break;
+			case AT_BLINK:		bl_exit();	break;
+			case AT_STANDOUT:	so_exit();	break;
+			}
+			switch (a)
+			{
+			case AT_UNDERLINE:	ul_enter();	break;
+			case AT_BOLD:		bo_enter();	break;
+			case AT_BLINK:		bl_enter();	break;
+			case AT_STANDOUT:	so_enter();	break;
+			}
+			curr_attr = a;
+		}
+		if (curr_attr == AT_INVIS)
+			continue;
 		if (c == '\b')
 			putbs();
 		else
-			(void) putchr(c);
+			putchr(c);
 	}
 
-	at_exit();
+	switch (curr_attr)
+	{
+	case AT_UNDERLINE:	ul_exit();	break;
+	case AT_BOLD:		bo_exit();	break;
+	case AT_BLINK:		bl_exit();	break;
+	case AT_STANDOUT:	so_exit();	break;
+	}
 }
 
-static char obuf[OUTBUF_SIZE];
+static char obuf[1024];
 static char *ob = obuf;
 
 /*
@@ -75,141 +123,129 @@ static char *ob = obuf;
  * sure these messages can be seen before they are
  * overwritten or scrolled away.
  */
-void
-flush(int ignore_errors)
+	public void
+flush()
 {
-	int n;
-	int fd;
-	ssize_t nwritten;
+	register int n;
+	register int fd;
 
-	n = (intptr_t)ob - (intptr_t)obuf;
+#if MSOFTC
+	*ob = '\0';
+	_outtext(obuf);
+	ob = obuf;
+#else
+	n = ob - obuf;
 	if (n == 0)
 		return;
-
-	fd = (any_display) ? STDOUT_FILENO : STDERR_FILENO;
-	nwritten = write(fd, obuf, n);
-	if (nwritten != n) {
-		if (nwritten == -1 && !ignore_errors)
-			quit(QUIT_ERROR);
+	fd = (any_display) ? 1 : 2;
+	if (write(fd, obuf, n) != n)
 		screen_trashed = 1;
-	}
 	ob = obuf;
+#endif
 }
 
 /*
  * Output a character.
  */
-int
-putchr(int c)
+	public int
+putchr(c)
+	int c;
 {
-	if (need_clr) {
+	if (ob >= &obuf[sizeof(obuf)])
+		flush();
+	if (need_clr)
+	{
 		need_clr = 0;
 		clear_bot();
 	}
-	/*
-	 * Some versions of flush() write to *ob, so we must flush
-	 * when we are still one char from the end of obuf.
-	 */
-	if (ob >= &obuf[sizeof (obuf)-1])
-		flush(0);
-	*ob++ = (char)c;
+#if MSOFTC
+	if (c == '\n')
+		putchr('\r');
+#endif
+	*ob++ = c;
 	return (c);
 }
 
 /*
  * Output a string.
  */
-void
-putstr(const char *s)
+	public void
+putstr(s)
+	register char *s;
 {
 	while (*s != '\0')
-		(void) putchr(*s++);
+		putchr(*s++);
 }
 
-
-/*
- * Convert an integral type to a string.
- */
-#define	TYPE_TO_A_FUNC(funcname, type)		\
-void						\
-funcname(type num, char *buf, size_t len)	\
-{						\
-	int neg = (num < 0);			\
-	char tbuf[23];	\
-	char *s = tbuf + sizeof (tbuf);		\
-	if (neg)				\
-		num = -num;			\
-	*--s = '\0';				\
-	do {					\
-		*--s = (num % 10) + '0';	\
-	} while ((num /= 10) != 0);		\
-	if (neg)				\
-		 *--s = '-';			\
-	(void) strlcpy(buf, s, len);		\
-}
-
-TYPE_TO_A_FUNC(postoa, off_t)
-TYPE_TO_A_FUNC(inttoa, int)
 
 /*
  * Output an integer in a given radix.
  */
-static int
-iprint_int(int num)
+	static int
+iprintnum(num, radix)
+	int num;
+	int radix;
 {
-	char buf[11];
+	register char *s;
+	int r;
+	int neg;
+	char buf[10];
 
-	inttoa(num, buf, sizeof (buf));
-	putstr(buf);
-	return (strlen(buf));
-}
+	if (neg = (num < 0))
+		num = -num;
 
-/*
- * Output a line number in a given radix.
- */
-static int
-iprint_linenum(off_t num)
-{
-	char buf[21];
+	s = buf;
+	do
+	{
+		*s++ = (num % radix) + '0';
+	} while ((num /= radix) != 0);
 
-	postoa(num, buf, sizeof(buf));
-	putstr(buf);
-	return (strlen(buf));
+	if (neg)
+		*s++ = '-';
+	r = s - buf;
+
+	while (s > buf)
+		putchr(*--s);
+	return (r);
 }
 
 /*
  * This function implements printf-like functionality
  * using a more portable argument list mechanism than printf's.
  */
-static int
-less_printf(const char *fmt, PARG *parg)
+	static int
+iprintf(fmt, parg)
+	register char *fmt;
+	PARG *parg;
 {
-	char *s;
-	int col;
+	register char *s;
+	register int n;
+	register int col;
 
 	col = 0;
-	while (*fmt != '\0') {
-		if (*fmt != '%') {
-			(void) putchr(*fmt++);
+	while (*fmt != '\0')
+	{
+		if (*fmt != '%')
+		{
+			putchr(*fmt++);
 			col++;
-		} else {
+		} else
+		{
 			++fmt;
 			switch (*fmt++) {
 			case 's':
 				s = parg->p_string;
 				parg++;
-				while (*s != '\0') {
-					(void) putchr(*s++);
+				while (*s != '\0')
+				{
+					putchr(*s++);
 					col++;
 				}
 				break;
 			case 'd':
-				col += iprint_int(parg->p_int);
+				n = parg->p_int;
 				parg++;
-				break;
-			case 'n':
-				col += iprint_linenum(parg->p_linenum);
-				parg++;
+				col += iprintnum(n, 10);
 				break;
 			}
 		}
@@ -218,55 +254,50 @@ less_printf(const char *fmt, PARG *parg)
 }
 
 /*
- * Get a RETURN.
- * If some other non-trivial char is pressed, unget it, so it will
- * become the next command.
- */
-void
-get_return(void)
-{
-	int c;
-
-	c = getchr();
-	if (c != '\n' && c != '\r' && c != ' ' && c != READ_INTR)
-		ungetcc(c);
-}
-
-/*
  * Output a message in the lower left corner of the screen
  * and wait for carriage return.
  */
-void
-error(const char *fmt, PARG *parg)
+	public void
+error(fmt, parg)
+	char *fmt;
+	PARG *parg;
 {
+	int c;
 	int col = 0;
 	static char return_to_continue[] = "  (press RETURN)";
 
 	errmsgs++;
 
-	if (any_display && is_tty) {
-		if (!oldbot)
-			squish_check();
-		at_exit();
+	if (any_display)
+	{
 		clear_bot();
-		at_enter(AT_STANDOUT);
+		so_enter();
 		col += so_s_width;
 	}
 
-	col += less_printf(fmt, parg);
+	col += iprintf(fmt, parg);
 
-	if (!(any_display && is_tty)) {
-		(void) putchr('\n');
+	if (!any_display)
+	{
+		putchr('\n');
 		return;
 	}
 
 	putstr(return_to_continue);
-	at_exit();
-	col += sizeof (return_to_continue) + so_e_width;
+	so_exit();
+	col += sizeof(return_to_continue) + so_e_width;
 
-	get_return();
+#if ONLY_RETURN
+	while ((c = getchr()) != '\n' && c != '\r')
+		bell();
+#else
+	c = getchr();
+	if (c == 'q')
+		quit(QUIT_OK);
+	if (c != '\n' && c != '\r' && c != ' ' && c != READ_INTR)
+		ungetcc(c);
+#endif
 	lower_left();
-	clear_eol();
 
 	if (col >= sc_width)
 		/*
@@ -276,7 +307,7 @@ error(const char *fmt, PARG *parg)
 		 */
 		screen_trashed = 1;
 
-	flush(0);
+	flush();
 }
 
 static char intr_to_abort[] = "... (interrupt to abort)";
@@ -287,16 +318,17 @@ static char intr_to_abort[] = "... (interrupt to abort)";
  * Usually used to warn that we are beginning a potentially
  * time-consuming operation.
  */
-void
-ierror(const char *fmt, PARG *parg)
+	public void
+ierror(fmt, parg)
+	char *fmt;
+	PARG *parg;
 {
-	at_exit();
 	clear_bot();
-	at_enter(AT_STANDOUT);
-	(void) less_printf(fmt, parg);
+	so_enter();
+	(void) iprintf(fmt, parg);
 	putstr(intr_to_abort);
-	at_exit();
-	flush(0);
+	so_exit();
+	flush();
 	need_clr = 1;
 }
 
@@ -304,27 +336,30 @@ ierror(const char *fmt, PARG *parg)
  * Output a message in the lower left corner of the screen
  * and return a single-character response.
  */
-int
-query(const char *fmt, PARG *parg)
+	public int
+query(fmt, parg)
+	char *fmt;
+	PARG *parg;
 {
-	int c;
+	register int c;
 	int col = 0;
 
-	if (any_display && is_tty)
+	if (any_display)
 		clear_bot();
 
-	(void) less_printf(fmt, parg);
+	(void) iprintf(fmt, parg);
 	c = getchr();
 
-	if (!(any_display && is_tty)) {
-		(void) putchr('\n');
+	if (!any_display)
+	{
+		putchr('\n');
 		return (c);
 	}
 
 	lower_left();
 	if (col >= sc_width)
 		screen_trashed = 1;
-	flush(0);
+	flush();
 
 	return (c);
 }

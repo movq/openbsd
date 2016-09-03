@@ -1,4 +1,4 @@
-.\"	$OpenBSD: apm.4,v 1.33 2016/02/27 20:57:32 natano Exp $
+.\"	$OpenBSD: apm.4,v 1.7 1999/10/05 20:53:11 aaron Exp $
 .\"
 .\"	Copyright (c) 1998 Marco S. Hyman
 .\"
@@ -9,47 +9,32 @@
 .\"	LIMITATION, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
 .\"	FOR A PARTICULAR PURPOSE.
 .\"
-.Dd $Mdocdate: February 27 2016 $
-.Dt APM 4 i386
+.Dd July 17, 1998
+.Dt APM 4
 .Os
 .Sh NAME
 .Nm apm
-.Nd advanced power management device interface
+.Nd
+advanced power management device interface
 .Sh SYNOPSIS
-.Cd "apm0 at bios0 flags 0x0000"
+.Cd apm0 at bios0
 .Sh DESCRIPTION
 The
 .Nm
 driver provides an interface to the Advanced Power Management
-.Pq APM
-BIOS functions.
-The driver supports versions 1.0, 1.1, and 1.2 interface specifications.
-.Pp
-This driver also provides an interface to
-.Xr acpi 4
-on some machines.
-.Pp
-The low two bytes of the flags specify the version of the specification
-driver should conform to in binary decimal notation.
-The value of 0x0101 would specify version 1.1 of the interface
-specification to be used.
-.Pp
-The value of 0x10000 specifies whether to leave interrupts enabled
-when calling APM BIOS routines.
-This is needed for some
-.Tn IBM
-laptops, the symptoms are
-hangs and freezes on suspend, stand by, and hibernation activities.
-.Pp
-The value of 0x20000 specifies to swap the bytes of the battery
-life estimation (the DX register) as given from the APM BIOS.
-This is needed for some
-.Tn SONY VAIO
-laptops, such as some 505 models.
+.Pq Tn APM
+.Tn BIOS
+functions.  The driver supports both the v1.0 and v1.1 interface
+specifications.
 .Pp
 Configuration options:
 .Pp
-.Bl -tag -width DIAGNOSTIC -compact -offset indent
+.Bl -tag -width APM_V10_ONLY -compact -offset indent
+.It Dv APM_V10_ONLY
+Disable support for v1.1 of the
+.Tn APM
+.Tn BIOS
+interface.
 .It Dv APMDEBUG
 Enable various driver status messages.
 .It Dv DIAGNOSTIC
@@ -62,9 +47,9 @@ The
 .Nm
 driver implements the following
 .Xr ioctl 2
-calls.
-They are defined in
-.In machine/apmvar.h .
+calls.  They are defined in
+.Aq Pa machine/apmvar.h .
+.Pp
 .Bl -tag -width Ds
 .It Dv APM_IOC_REJECT
 .Em Not implemented . DO NOT USE .
@@ -78,15 +63,9 @@ mode.
 Request
 .Dq suspend
 mode.
-.It Dv APM_IOC_HIBERNATE
-.Pq Li "no parameters"
-Request
-.Dq hibernate
-mode.
 .It Dv APM_IOC_GETPOWER
 .Pq Li "struct apm_power_info"
-Request the current power state.
-The argument structure is as follows:
+Request the current power state. The argument structure is as follows:
 .Bd -literal -offset indent
 struct apm_power_info {
 	u_char battery_state;
@@ -104,13 +83,13 @@ The following values are defined for
 .It Dv APM_BATT_HIGH
 Battery has a high state of charge.
 .It Dv APM_BATT_LOW
-Battery has a low state of charge.
+Battery has a low state of charge
 .It Dv APM_BATT_CRITICAL
-Battery has a critical state of charge.
+Battery
 .It Dv APM_BATT_CHARGING
-Battery is not high, low, or critical and is currently charging.
+Battery is not high, low, or critical and is current charging.
 .It Dv APM_BATT_UNKNOWN
-Cannot read the current battery state.
+Can not read the current battery state.
 .It Dv APM_BATTERY_ABSENT
 No battery installed.
 .El
@@ -139,16 +118,17 @@ value contains the estimated number of minutes of battery life
 remaining.
 .It Dv APM_IOC_NEXTEVENT
 .Pq Li "struct apm_event_info"
-The APM driver stores up to
+The
+.Tn APM
+driver stores up to
 .Dv APM_NEVENTS
-events.
-This was defined as 16 at the time this documentation was written.
-If the event list is full when a new event is detected the new event is lost.
+events. This was defined as 16 at the time this documentation was written.
+If the event list is full when a new event is detected the new event is
+lost.
 .Dv APM_IOC_NEXTEVENT
 ioctl returns the next event on the list or
 .Er EAGAIN
-if the event list is empty.
-The format of the returned event is:
+if the event list is empty.  The format of the returned event is:
 .Bd -literal -offset indent
 struct apm_event_info {
 	u_int type;
@@ -178,8 +158,8 @@ is one of:
 .It Dv APM_IOC_DEV_CTL
 .Pq Li "struct apm_ctl"
 Allows an application to directly set the
-APM operating mode.
-The argument structure is as follows:
+.Tm APM
+operating mode.   The argument structure is as follows:
 .Bd -literal -offset indent
 struct apm_ctl {
 	u_int dev;
@@ -192,9 +172,8 @@ indicates the device, typically
 .Dv APM_DEV_ALLDEVS .
 .Pp
 .Va mode
-indicates the desired operating mode.
-Possible values are
-.Bl -tag -width Ds -compact -offset indent
+indicates the desired operating mode.  Possible values are
+.Bl -tag -compact -offset indent
 .It Dv APM_SYS_READY
 .It Dv APM_SYS_STANDBY
 .It Dv APM_SYS_SUSPEND
@@ -206,13 +185,14 @@ Possible values are
 .Pq Li "int"
 This
 .Xr ioctl 2
-controls message output by the APM
-driver when a power change event is detected.
-The integer parameter is one of:
+controls message output by the
+.Tn APM
+driver when a power change event is detected.  The integer parameter is one
+of:
 .Bl -tag -width Ds
 .It Dv APM_PRINT_ON
-All power change events result in a message.
-This is the normal operating mode for the driver.
+All power change events result in a message.  This is the normal
+operating mode for the driver.
 .It Dv APM_PRINT_OFF
 Power change event messages are suppressed.
 .It Dv APM_PRINT_PCT
@@ -231,66 +211,32 @@ to zero disables all warnings regardless of the
 .Dv APM_IOC_PRN_CTL
 setting.
 .El
-.Pp
-As noted above, the operation of the APM
-driver can be modified using the
-.Dv machdep.apmwarn
-.Xr sysctl 8
-variable.
-Another driver modifier is the
-.Dv machdep.apmhalt
-variable.
-When
-.Dv machdep.apmhalt
-is set to 1 the APM
-power down code is modified in a way necessary for correct operation on
-some systems, mainly
-.Tn IBM
-laptops.
-If your system does not power down when given the command
-.Li "halt -p"
-try setting
-.Dv machdep.apmhalt
-to 1 using
-.Xr sysctl 8 .
-The variable can be set at boot time in
-.Xr sysctl.conf 5 .
 .Sh FILES
-.Bl -tag -width "/dev/apmctlXXX"
-.It /dev/apm
-Power management data device.
-May only be opened read-only.
-May be opened by multiple concurrent users.
-.It /dev/apmctl
-Power management control device.
-May be opened read-write or write-only.
-May only be opened by one user at a time.
-An attempt to open the file when in use will fail, returning
+.Bl -tag -width /dev/apmctl -compat
+.It Pa /dev/apm
+.Tn APM
+data device.  May only be opened read-only.  May be opened by multiple
+concurrent users.
+.It Pa /dev/apmctl
+.Tn APM
+control device.  May be opened read-write or write-only.  May only be
+opened by one user at a time.  An attempt to open the file when in
+use will fail, returning
 .Er EBUSY .
 .El
 .Sh SEE ALSO
-.Xr acpi 4 ,
-.Xr intro 4 ,
-.Xr sysctl.conf 5 ,
 .Xr apm 8 ,
-.Xr apmd 8 ,
-.Xr halt 8 ,
-.Xr sysctl 8
+.Xr apmd 8
+.Pp
+http://developer.intel.com/ial/powermgm/apmv12.pdf
 .Sh HISTORY
 The
 .Nm
 driver source code contains these copyrights:
-.Pp
 .Bl -item -compact
 .It
 .Li Copyright (c) 1995 John T. Kohl.  All rights reserved.
 .It
 .Li Copyright (C) 1994 by HOSOKAWA Tatsumi <hosokawa@mt.cs.keio.ac.jp>
 .El
-.Pp
-\&...and has been hacked on by many others since.
-.Sh BUGS
-Not all the BIOSes support power down the way we are attempting
-to execute it.
-.Pp
-Not all BIOS vendors even read the specification.
+and has been hacked on by many others since.

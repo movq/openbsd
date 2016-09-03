@@ -1,19 +1,32 @@
-#	$OpenBSD: Makefile,v 1.24 2010/02/09 08:55:31 markus Exp $
-
 .PATH:		${.CURDIR}/..
 
 PROG=	ssh-agent
 BINOWN=	root
-BINGRP=	_sshagnt
 
-BINMODE?=2555
+.if (${MACHINE_ARCH} == "alpha" || ${MACHINE_ARCH} == "powerpc" || \
+	${MACHINE_ARCH} == "hppa")
+BINMODE=0000
+.else
+BINMODE?=555
+.endif
 
 BINDIR=	/usr/bin
+LDADD=	-lcrypto -lutil -lz
+DPADD=	${LIBCRYPTO} ${LIBDES} ${LIBUTIL} ${LIBZ}
 MAN=	ssh-agent.1
 
-SRCS=	ssh-agent.c ssh-pkcs11-client.c
+SRCS=	ssh-agent.c log-client.c rsa.c buffer.c xmalloc.c bufaux.c \
+	authfd.c authfile.c mpaux.c cipher.c
 
 .include <bsd.prog.mk>
 
-LDADD+=	-lcrypto
-DPADD+=	${LIBCRYPTO}
+.if (${KERBEROS} == "yes")
+CFLAGS+= -DKRB4 -I/usr/include/kerberosIV
+LDADD+=	 -lkrb
+DPADD+=	 ${LIBKRB}
+.if (${AFS} == "yes")
+CFLAGS+= -DAFS
+LDADD+=  -lkafs
+DPADD+=  ${LIBKRBAFS}
+.endif # AFS
+.endif # KERBEROS

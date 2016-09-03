@@ -1,4 +1,4 @@
-/*	$OpenBSD: locking.c,v 1.12 2015/01/16 06:39:50 deraadt Exp $	*/
+/*	$OpenBSD: locking.c,v 1.2 1998/08/15 23:11:30 millert Exp $	*/
 
 /*
  * Copyright (c) 1996-1998 Theo de Raadt <deraadt@theos.com>
@@ -28,26 +28,27 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/types.h>
+#ifndef lint
+static char rcsid[] = "$OpenBSD: locking.c,v 1.2 1998/08/15 23:11:30 millert Exp $";
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <pwd.h>
 #include <syslog.h>
 #include <time.h>
 #include <unistd.h>
-#include <limits.h>
 #include <errno.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <stdarg.h>
 #include "pathnames.h"
 #include "mail.local.h"
 
-static char lpath[PATH_MAX];
+static char lpath[MAXPATHLEN];
 
 void
-rellock(void)
+rellock()
 {
 
 	if (lpath[0])
@@ -55,7 +56,9 @@ rellock(void)
 }
 
 int
-getlock(char *name, struct passwd *pw)
+getlock(name, pw)
+	char *name;
+	struct passwd *pw;
 {
 	struct stat sb, fsb;
 	int lfd=-1;
@@ -84,7 +87,7 @@ getlock(char *name, struct passwd *pw)
 			 */
 			if (readlink(lpath, buf, sizeof buf-1) != -1) {
 				if (lstat(lpath, &sb) != -1 &&
-				    S_ISLNK(sb.st_mode)) {
+				    S_ISLNK(fsb.st_mode)) {
 					seteuid(sb.st_uid);
 					unlink(lpath);
 					seteuid(pw->pw_uid);
@@ -96,7 +99,7 @@ getlock(char *name, struct passwd *pw)
 				break;
 again:
 			if (tries > 10) {
-				merr(NOTFATAL, "%s: %s", lpath,
+				err(NOTFATAL, "%s: %s", lpath,
 				    strerror(errno));
 				seteuid(0);
 				return(-1);
@@ -113,9 +116,8 @@ again:
 						seteuid(pw->pw_uid);
 					}
 				}
-				close(lfd);
 			}
-			sleep(1U << tries);
+			sleep(1 << tries);
 			tries++;
 			continue;
 		}
@@ -129,10 +131,10 @@ again:
 			    S_IRUSR|S_IWUSR)) != -1)
 				break;
 			if (tries > 9) {
-				merr(NOTFATAL, "%s: %s", lpath, strerror(errno));
+				err(NOTFATAL, "%s: %s", lpath, strerror(errno));
 				return(-1);
 			}
-			sleep(1U << tries);
+			sleep(1 << tries);
 			tries++;
 		}
 	}
@@ -140,31 +142,46 @@ again:
 }
 
 void
-baditem(char *path)
+baditem(path)
+	char *path;
 {
-	char npath[PATH_MAX];
-	int fd;
+	char npath[MAXPATHLEN];
 
 	if (unlink(path) == 0)
 		return;
 	snprintf(npath, sizeof npath, "%s/mailXXXXXXXXXX", _PATH_MAILDIR);
-	if ((fd = mkstemp(npath)) == -1)
+	if (mktemp(npath) == NULL)
 		return;
-	close(fd);
 	if (rename(path, npath) == -1)
 		unlink(npath);
 	else
-		merr(NOTFATAL, "nasty spool item %s renamed to %s",
+		err(NOTFATAL, "nasty spool item %s renamed to %s",
 		    path, npath);
 	/* XXX if we fail to rename, another attempt will happen later */
 }
 
+#ifdef __STDC__
+#include <stdarg.h>
+#else
+#include <varargs.h>
+#endif
+
 void
-merr(int isfatal, const char *fmt, ...)
+#ifdef __STDC__
+err(int isfatal, const char *fmt, ...)
+#else
+err(isfatal, fmt)
+	int isfatal;
+	char *fmt;
+	va_dcl
+#endif
 {
 	va_list ap;
-
+#ifdef __STDC__
 	va_start(ap, fmt);
+#else
+	va_start(ap);
+#endif
 	vsyslog(LOG_ERR, fmt, ap);
 	va_end(ap);
 	if (isfatal)

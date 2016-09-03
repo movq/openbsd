@@ -1,4 +1,3 @@
-/*	$OpenBSD: parseconf.c,v 1.13 2016/05/29 02:19:02 guenther Exp $	*/
 /*	$NetBSD: parseconf.c,v 1.4 1995/10/06 05:12:16 thorpej Exp $	*/
 
 /*
@@ -21,7 +20,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -43,10 +46,18 @@
  * Author: Jeff Forys, University of Utah CSS
  */
 
+#ifndef lint
+/*static char sccsid[] = "@(#)parseconf.c	8.1 (Berkeley) 6/4/93";*/
+static char rcsid[] = "$NetBSD: parseconf.c,v 1.4 1995/10/06 05:12:16 thorpej Exp $";
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/stat.h>
 
 #include <ctype.h>
 #include <dirent.h>
+#include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -70,13 +81,15 @@
 **		  to create a linked list of default boot files.
 */
 int
-ParseConfig(void)
+ParseConfig()
 {
-	char line[C_LINELEN], *cp, *bcp;
-	int i, j, linecnt = 0;
-	u_int8_t *addr;
-	CLIENT *client;
 	FILE *fp;
+	CLIENT *client;
+	u_int8_t *addr;
+	char line[C_LINELEN];
+	register char *cp, *bcp;
+	register int i, j;
+	int omask, linecnt = 0;
 
 	if (BootAny)				/* ignore config file */
 		return(1);
@@ -85,22 +98,28 @@ ParseConfig(void)
 
 	if ((fp = fopen(ConfigFile, "r")) == NULL) {
 		syslog(LOG_ERR, "ParseConfig: can't open config file (%s)",
-		    ConfigFile);
+		       ConfigFile);
 		return(0);
 	}
+
+	/*
+	 *  We've got to block SIGHUP to prevent reconfiguration while
+	 *  dealing with the linked list of Clients.  This can be done
+	 *  when actually linking the new client into the list, but
+	 *  this could have unexpected results if the server was HUP'd
+	 *  whilst reconfiguring.  Hence, it is done here.
+	 */
+	omask = sigblock(sigmask(SIGHUP));
 
 	/*
 	 *  GETSTR positions `bcp' at the start of the current token,
 	 *  and null terminates it.  `cp' is positioned at the start
 	 *  of the next token.  spaces & commas are separators.
 	 */
-#define GETSTR	while (isspace((unsigned char)*cp) || *cp == ',')	\
-			cp++;						\
-		bcp = cp;						\
-		while (*cp && *cp!=',' && !isspace((unsigned char)*cp))	\
-			cp++;						\
-		if (*cp)						\
-			*cp++ = '\0'
+#define GETSTR	while (isspace(*cp) || *cp == ',') cp++;	\
+		bcp = cp;					\
+		while (*cp && *cp!=',' && !isspace(*cp)) cp++;	\
+		if (*cp) *cp++ = '\0'
 
 	/*
 	 *  For each line, parse it into a new CLIENT struct.
@@ -124,8 +143,8 @@ ParseConfig(void)
 		 */
 		if ((addr = ParseAddr(bcp)) == NULL) {
 			syslog(LOG_ERR,
-			    "ParseConfig: line %d: cant parse <%s>",
-			    linecnt, bcp);
+			       "ParseConfig: line %d: cant parse <%s>",
+			       linecnt, bcp);
 			continue;
 		}
 
@@ -137,13 +156,13 @@ ParseConfig(void)
 		/*
 		 *  If no boot files are spec'd, use the default list.
 		 *  Otherwise, validate each file (`bcp') against the
-		 *  list of bootable files.
+		 *  list of boot-able files.
 		 */
 		i = 0;
-		if (bcp == cp) {			/* no files spec'd */
+		if (bcp == cp)				/* no files spec'd */
 			for (; i < C_MAXFILE && BootFiles[i] != NULL; i++)
 				client->files[i] = BootFiles[i];
-		} else {
+		else {
 			do {
 				/*
 				 *  For each boot file spec'd, make sure it's
@@ -152,9 +171,8 @@ ParseConfig(void)
 				 */
 				for (j = 0; ; j++) {
 					if (j==C_MAXFILE||BootFiles[j]==NULL) {
-						syslog(LOG_ERR,
-						    "ParseConfig: line %d: no boot file (%s)",
-						    linecnt, bcp);
+						syslog(LOG_ERR, "ParseConfig: line %d: no boot file (%s)",
+						       linecnt, bcp);
 						break;
 					}
 					if (STREQN(BootFiles[j], bcp)) {
@@ -177,7 +195,7 @@ ParseConfig(void)
 			 *  the entire record is invalidated.
 			 */
 			if (i == 0) {
-				FreeClient(client);
+				FreeClient(client);	
 				continue;
 			}
 		}
@@ -192,6 +210,9 @@ ParseConfig(void)
 	}
 
 	(void) fclose(fp);				/* close config file */
+
+	(void) sigsetmask(omask);			/* reset signal mask */
+
 	return(1);					/* return success */
 }
 
@@ -225,12 +246,13 @@ ParseConfig(void)
 **		  be copied if it's to be saved.
 */
 u_int8_t *
-ParseAddr(char *str)
+ParseAddr(str)
+	char *str;
 {
 	static u_int8_t addr[RMP_ADDRLEN];
-	int part, subpart;
-	unsigned int i;
-	char *cp;
+	register char *cp;
+	register unsigned i;
+	register int part, subpart;
 
 	bzero((char *)&addr[0], RMP_ADDRLEN);	/* zero static buffer */
 
@@ -249,11 +271,10 @@ ParseAddr(char *str)
 		/*
 		 *  Convert hex character to an integer.
 		 */
-		if (isdigit((unsigned char)*cp))
+		if (isdigit(*cp))
 			i = *cp - '0';
 		else {
-			i = (isupper((unsigned char)*cp) ?
-			    tolower((unsigned char)*cp) : *cp) - 'a' + 10;
+			i = (isupper(*cp)? tolower(*cp): *cp) - 'a' + 10;
 			if (i < 10 || i > 15)		/* not a hex char */
 				return(NULL);
 		}
@@ -289,12 +310,12 @@ ParseAddr(char *str)
 **		  called to re-order it's list of boot file pointers.
 */
 int
-GetBootFiles(void)
+GetBootFiles()
 {
-	struct stat statb;
-	struct dirent *dp;
 	DIR *dfd;
-	int i;
+	struct stat statb;
+	register struct dirent *dp;
+	register int i;
 
 	/*
 	 *  Free the current list of boot files.

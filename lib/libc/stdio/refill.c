@@ -1,4 +1,3 @@
-/*	$OpenBSD: refill.c,v 1.11 2009/11/09 00:18:27 kurt Exp $ */
 /*-
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,16 +34,22 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: refill.c,v 1.4 1999/08/07 17:35:58 millert Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "local.h"
 
-static int
-lflush(FILE *fp)
+static
+lflush(fp)
+	FILE *fp;
 {
+
 	if ((fp->_flags & (__SLBF|__SWR)) == (__SLBF|__SWR))
-		return (__sflush_locked(fp));	/* ignored... */
+		return (__sflush(fp));
 	return (0);
 }
 
@@ -48,8 +57,8 @@ lflush(FILE *fp)
  * Refill a stdio buffer.
  * Return EOF on eof or error, 0 otherwise.
  */
-int
-__srefill(FILE *fp)
+__srefill(fp)
+	register FILE *fp;
 {
 
 	/* make sure stdio is set up */
@@ -102,16 +111,8 @@ __srefill(FILE *fp)
 	 * flush all line buffered output files, per the ANSI C
 	 * standard.
 	 */
-	if (fp->_flags & (__SLBF|__SNBF)) {
-		/* Ignore this file in _fwalk to avoid potential deadlock. */
-		fp->_flags |= __SIGN;
+	if (fp->_flags & (__SLBF|__SNBF))
 		(void) _fwalk(lflush);
-		fp->_flags &= ~__SIGN;
-
-		/* Now flush this file without locking it. */
-		if ((fp->_flags & (__SLBF|__SWR)) == (__SLBF|__SWR))
-			__sflush(fp);
-	}
 	fp->_p = fp->_bf._base;
 	fp->_r = (*fp->_read)(fp->_cookie, (char *)fp->_p, fp->_bf._size);
 	fp->_flags &= ~__SMOD;	/* buffer contents are again pristine */

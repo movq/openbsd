@@ -1,4 +1,4 @@
-/*	$OpenBSD: getname.c,v 1.8 2009/10/27 23:59:40 deraadt Exp $	*/
+/*	$OpenBSD: getname.c,v 1.4 1997/07/14 00:24:27 millert Exp $	*/
 /*	$NetBSD: getname.c,v 1.4 1996/06/08 19:48:23 christos Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,17 +34,26 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)getname.c	8.1 (Berkeley) 6/6/93";
+#else
+static char rcsid[] = "$OpenBSD: getname.c,v 1.4 1997/07/14 00:24:27 millert Exp $";
+#endif
+#endif /* not lint */
+
 #include "rcv.h"
 #include <pwd.h>
 #include "extern.h"
 
-/* Getname / getuserid for those with hashed passwd data base. */
+/* Getname / getuserid for those with hashed passwd data base). */
 
 /*
  * Search the passwd file for a uid.  Return name on success, NULL on failure
  */
 char *
-getname(uid_t uid)
+getname(uid)
+	int uid;
 {
 	struct passwd *pw;
 
@@ -53,12 +66,13 @@ getname(uid_t uid)
  * Convert the passed name to a user id and return it.  Return -1
  * on error.
  */
-uid_t
-getuserid(char *name)
+int
+getuserid(name)
+	char name[];
 {
 	struct passwd *pw;
 
 	if ((pw = getpwnam(name)) == NULL)
-		return(UID_MAX);
+		return(-1);
 	return(pw->pw_uid);
 }

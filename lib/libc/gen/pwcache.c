@@ -1,4 +1,3 @@
-/*	$OpenBSD: pwcache.c,v 1.13 2015/11/25 23:16:01 jcs Exp $ */
 /*
  * Copyright (c) 1989, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,104 +31,83 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: pwcache.c,v 1.3 1997/07/09 00:28:23 millert Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
 
 #include <grp.h>
 #include <pwd.h>
 #include <stdio.h>
 #include <string.h>
+#include <utmp.h>
 
-#define	NCACHE	16			/* power of 2 */
-#define	NLINES	4			/* associativity */
+#define	NCACHE	64			/* power of 2 */
 #define	MASK	(NCACHE - 1)		/* bits to store with */
-#define	IDX(x, i)	((x & MASK) + i * NCACHE)
 
 char *
-user_from_uid(uid_t uid, int nouser)
+user_from_uid(uid, nouser)
+	uid_t uid;
+	int nouser;
 {
 	static struct ncache {
 		uid_t	uid;
-		short	noname;
-		char	name[_PW_NAME_LEN + 1];
-	} c_uid[NLINES * NCACHE];
-	char pwbuf[_PW_BUF_LEN];
-	struct passwd pwstore, *pw;
-	struct ncache *cp;
-	unsigned int i;
+		char	name[UT_NAMESIZE + 1];
+	} c_uid[NCACHE];
+	static int pwopen;
+	static char nbuf[15];		/* 32 bits == 10 digits */
+	register struct passwd *pw;
+	register struct ncache *cp;
 
-	for (i = 0; i < NLINES; i++) {
-		cp = &c_uid[IDX(uid, i)];
-		if (!*cp->name) {
-fillit:
-			cp->uid = uid;
-			pw = NULL;
-			getpwuid_r(uid, &pwstore, pwbuf, sizeof(pwbuf), &pw);
-			if (pw == NULL) {
-				snprintf(cp->name, sizeof(cp->name), "%u", uid);
-				cp->noname = 1;
-			} else {
-				strlcpy(cp->name, pw->pw_name, sizeof(cp->name));
-			}
+	cp = c_uid + (uid & MASK);
+	if (cp->uid != uid || !*cp->name) {
+		if (pwopen == 0) {
+			setpassent(1);
+			pwopen = 1;
 		}
-		if (cp->uid == uid) {
-			if (nouser && cp->noname)
-				return NULL;
-			return cp->name;
+		if ((pw = getpwuid(uid)) == NULL) {
+			if (nouser)
+				return (NULL);
+			(void)snprintf(nbuf, sizeof(nbuf), "%u", uid);
+			return (nbuf);
 		}
+		cp->uid = uid;
+		(void)strncpy(cp->name, pw->pw_name, UT_NAMESIZE);
+		cp->name[UT_NAMESIZE] = '\0';
 	}
-	/* move everybody down a slot */
-	for (i = 0; i < NLINES - 1; i++) {
-		struct ncache *next;
-
-		cp = &c_uid[IDX(uid, i)];
-		next = &c_uid[IDX(uid, i + 1)];
-		memcpy(next, cp, sizeof(*cp));
-	}
-	cp = &c_uid[IDX(uid, 0)];
-	goto fillit;
+	return (cp->name);
 }
 
 char *
-group_from_gid(gid_t gid, int nogroup)
+group_from_gid(gid, nogroup)
+	gid_t gid;
+	int nogroup;
 {
 	static struct ncache {
 		gid_t	gid;
-		short 	noname;
-		char	name[_PW_NAME_LEN + 1];
-	} c_gid[NLINES * NCACHE];
-	char grbuf[_GR_BUF_LEN];
-	struct group grstore, *gr;
+		char	name[UT_NAMESIZE + 1];
+	} c_gid[NCACHE];
+	static int gropen;
+	static char nbuf[15];		/* 32 bits == 10 digits */
+	struct group *gr;
 	struct ncache *cp;
-	unsigned int i;
 
-	for (i = 0; i < NLINES; i++) {
-		cp = &c_gid[IDX(gid, i)];
-		if (!*cp->name) {
-fillit:
-			cp->gid = gid;
-			gr = NULL;
-			getgrgid_r(gid, &grstore, grbuf, sizeof(grbuf), &gr);
-			if (gr == NULL) {
-				snprintf(cp->name, sizeof(cp->name), "%u", gid);
-				cp->noname = 1;
-			} else {
-				strlcpy(cp->name, gr->gr_name, sizeof(cp->name));
-			}
+	cp = c_gid + (gid & MASK);
+	if (cp->gid != gid || !*cp->name) {
+		if (gropen == 0) {
+			setgroupent(1);
+			gropen = 1;
 		}
-		if (cp->gid == gid) {
-			if (nogroup && cp->noname)
-				return NULL;
-			return cp->name;
+		if ((gr = getgrgid(gid)) == NULL) {
+			if (nogroup)
+				return (NULL);
+			(void)snprintf(nbuf, sizeof(nbuf), "%u", gid);
+			return (nbuf);
 		}
+		cp->gid = gid;
+		(void)strncpy(cp->name, gr->gr_name, UT_NAMESIZE);
+		cp->name[UT_NAMESIZE] = '\0';
 	}
-	/* move everybody down a slot */
-	for (i = 0; i < NLINES - 1; i++) {
-		struct ncache *next;
-
-		cp = &c_gid[IDX(gid, i)];
-		next = &c_gid[IDX(gid, i + 1)];
-		memcpy(next, cp, sizeof(*cp));
-	}
-	cp = &c_gid[IDX(gid, 0)];
-	goto fillit;
+	return (cp->name);
 }

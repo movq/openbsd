@@ -1,5 +1,5 @@
-/*	$OpenBSD: lxtphy.c,v 1.20 2015/03/14 03:38:48 jsg Exp $	*/
-/*	$NetBSD: lxtphy.c,v 1.19 2000/02/02 23:34:57 thorpej Exp $	*/
+/*	$OpenBSD: lxtphy.c,v 1.3 1999/07/23 12:39:11 deraadt Exp $	*/
+/*	$NetBSD: lxtphy.c,v 1.9.6.1 1999/04/23 15:41:43 perry Exp $	*/
 
 /*-
  * Copyright (c) 1998, 1999 The NetBSD Foundation, Inc.
@@ -17,6 +17,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the NetBSD
+ *	Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -30,7 +37,7 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-
+ 
 /*
  * Copyright (c) 1997 Manuel Bouyer.  All rights reserved.
  *
@@ -42,6 +49,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Manuel Bouyer.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -56,18 +68,19 @@
  */
 
 /*
- * driver for Level One's LXT-970/971 ethernet 10/100 PHY
+ * driver for Level One's LXT-970 ethernet 10/100 PHY
  * datasheet from www.level1.com
  */
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/kernel.h>
 #include <sys/device.h>
+#include <sys/malloc.h>
 #include <sys/socket.h>
 #include <sys/errno.h>
 
 #include <net/if.h>
-#include <net/if_var.h>
 #include <net/if_media.h>
 
 #include <dev/mii/mii.h>
@@ -76,48 +89,40 @@
 
 #include <dev/mii/lxtphyreg.h>
 
-int	lxtphymatch(struct device *, void *, void *);
-void	lxtphyattach(struct device *, struct device *, void *);
+#ifdef __NetBSD__
+int	lxtphymatch __P((struct device *, struct cfdata *, void *));
+#else
+int	lxtphymatch __P((struct device *, void *, void *));
+#endif
+void	lxtphyattach __P((struct device *, struct device *, void *));
 
 struct cfattach lxtphy_ca = {
-	sizeof(struct mii_softc), lxtphymatch, lxtphyattach, mii_phy_detach
+	sizeof(struct mii_softc), lxtphymatch, lxtphyattach
 };
 
+#ifdef __OpenBSD__
 struct cfdriver lxtphy_cd = {
 	NULL, "lxtphy", DV_DULL
 };
+#endif
 
-int	lxtphy_service(struct mii_softc *, struct mii_data *, int);
-void	lxtphy_status(struct mii_softc *);
-void	lxtphy_reset(struct mii_softc *);
-
-const struct mii_phy_funcs lxtphy_funcs = {
-	lxtphy_service, lxtphy_status, lxtphy_reset,
-};
-
-const struct mii_phy_funcs lxtphy971_funcs = {
-	lxtphy_service, ukphy_status, lxtphy_reset,
-};
-
-static const struct mii_phydesc lxtphys[] = {
-	{ MII_OUI_xxLEVEL1,		MII_MODEL_xxLEVEL1_LXT970,
-	  MII_STR_xxLEVEL1_LXT970 },
-	{ MII_OUI_xxLEVEL1a,		MII_MODEL_xxLEVEL1a_LXT971,
-	  MII_STR_xxLEVEL1a_LXT971 },
-
-	{ 0,			0,
-	  NULL },
-};
+int	lxtphy_service __P((struct mii_softc *, struct mii_data *, int));
+void	lxtphy_status __P((struct mii_softc *));
 
 int
 lxtphymatch(parent, match, aux)
 	struct device *parent;
+#ifdef __NetBSD__
+	struct cfdata *match;
+#else
 	void *match;
+#endif
 	void *aux;
 {
 	struct mii_attach_args *ma = aux;
 
-	if (mii_phy_match(ma, lxtphys) != NULL)
+	if (MII_OUI(ma->mii_id1, ma->mii_id2) == MII_OUI_LEVEL1 &&
+	    MII_MODEL(ma->mii_id2) == MII_MODEL_LEVEL1_LXT970)
 		return (10);
 
 	return (0);
@@ -131,31 +136,30 @@ lxtphyattach(parent, self, aux)
 	struct mii_softc *sc = (struct mii_softc *)self;
 	struct mii_attach_args *ma = aux;
 	struct mii_data *mii = ma->mii_data;
-	const struct mii_phydesc *mpd;
 
-	if (MII_OUI(ma->mii_id1, ma->mii_id2) == MII_OUI_xxLEVEL1 &&
-	    MII_MODEL(ma->mii_id2) == MII_MODEL_xxLEVEL1_LXT970) {
-		sc->mii_funcs = &lxtphy_funcs;
-	}
-	if (MII_OUI(ma->mii_id1, ma->mii_id2) == MII_OUI_xxLEVEL1a &&
-	    MII_MODEL(ma->mii_id2) == MII_MODEL_xxLEVEL1a_LXT971) {
-		sc->mii_funcs = &lxtphy971_funcs;
-	}
-
-	mpd = mii_phy_match(ma, lxtphys);
-	printf(": %s, rev. %d\n", mpd->mpd_name, MII_REV(ma->mii_id2));
+	printf(": %s, rev. %d\n", MII_STR_LEVEL1_LXT970,
+	    MII_REV(ma->mii_id2));
 
 	sc->mii_inst = mii->mii_instance;
 	sc->mii_phy = ma->mii_phyno;
+	sc->mii_service = lxtphy_service;
 	sc->mii_pdata = mii;
-	sc->mii_flags = ma->mii_flags;
 
-	PHY_RESET(sc);
+#define	ADD(m, c)	ifmedia_add(&mii->mii_media, (m), (c), NULL)
+
+	ADD(IFM_MAKEWORD(IFM_ETHER, IFM_NONE, 0, sc->mii_inst),
+	    BMCR_ISO);
+	ADD(IFM_MAKEWORD(IFM_ETHER, IFM_100_TX, IFM_LOOP, sc->mii_inst),
+	    BMCR_LOOP|BMCR_S100);
+
+	mii_phy_reset(sc);
 
 	sc->mii_capabilities =
 	    PHY_READ(sc, MII_BMSR) & ma->mii_capmask;
 	if (sc->mii_capabilities & BMSR_MEDIAMASK)
-		mii_phy_add_media(sc);
+		mii_add_media(mii, sc->mii_capabilities,
+		    sc->mii_inst);
+#undef ADD
 }
 
 int
@@ -166,9 +170,6 @@ lxtphy_service(sc, mii, cmd)
 {
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
 	int reg;
-
-	if ((sc->mii_dev.dv_flags & DVF_ACTIVE) == 0)
-		return (ENXIO);
 
 	switch (cmd) {
 	case MII_POLLSTAT:
@@ -196,7 +197,28 @@ lxtphy_service(sc, mii, cmd)
 		if ((mii->mii_ifp->if_flags & IFF_UP) == 0)
 			break;
 
-		mii_phy_setmedia(sc);
+		switch (IFM_SUBTYPE(ife->ifm_media)) {
+		case IFM_AUTO:
+			/*
+			 * If we're already in auto mode, just return.
+			 */
+			if (PHY_READ(sc, MII_BMCR) & BMCR_AUTOEN)
+				return (0);
+			(void) mii_phy_auto(sc, 1);
+			break;
+		case IFM_100_T4:
+			/*
+			 * XXX Not supported as a manual setting right now.
+			 */
+			return (EINVAL);
+		default:
+			/*
+			 * BMCR data is stored in the ifmedia entry.
+			 */
+			PHY_WRITE(sc, MII_ANAR,
+			    mii_anar(ife->ifm_media));
+			PHY_WRITE(sc, MII_BMCR, ife->ifm_data);
+		}
 		break;
 
 	case MII_TICK:
@@ -206,20 +228,50 @@ lxtphy_service(sc, mii, cmd)
 		if (IFM_INST(ife->ifm_media) != sc->mii_inst)
 			return (0);
 
-		if (mii_phy_tick(sc) == EJUSTRETURN)
+		/*
+		 * Only used for autonegotiation.
+		 */
+		if (IFM_SUBTYPE(ife->ifm_media) != IFM_AUTO)
+			return (0);
+
+		/*
+		 * Is the interface even up?
+		 */
+		if ((mii->mii_ifp->if_flags & IFF_UP) == 0)
+			return (0);
+
+		/*
+		 * Check to see if we have link.  If we do, we don't
+		 * need to restart the autonegotiation process.  Use
+		 * the LXT CSR instead of the BMSR, since the CSR's
+		 * link indication is dynamic, not latched, so only
+		 * one register read is required.
+		 */
+		reg = PHY_READ(sc, MII_LXTPHY_CSR);
+		if (reg & CSR_LINK)
+			return (0);
+
+		/*
+		 * Only retry autonegotiation every 5 seconds.
+		 */
+		if (++sc->mii_ticks != 5)
+			return (0);
+
+		sc->mii_ticks = 0;
+		mii_phy_reset(sc);
+		if (mii_phy_auto(sc, 0) == EJUSTRETURN)
 			return (0);
 		break;
-
-	case MII_DOWN:
-		mii_phy_down(sc);
-		return (0);
 	}
 
 	/* Update the media status. */
-	mii_phy_status(sc);
+	lxtphy_status(sc);
 
 	/* Callback if something changed. */
-	mii_phy_update(sc, cmd);
+	if (sc->mii_active != mii->mii_media_active || cmd == MII_MEDIACHG) {
+		(*mii->mii_statchg)(sc->mii_dev.dv_parent);
+		sc->mii_active = mii->mii_media_active;
+	}
 	return (0);
 }
 
@@ -228,8 +280,7 @@ lxtphy_status(sc)
 	struct mii_softc *sc;
 {
 	struct mii_data *mii = sc->mii_pdata;
-	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
-	int bmcr, bmsr, csr;
+	int bmcr, csr;
 
 	mii->mii_media_status = IFM_AVALID;
 	mii->mii_media_active = IFM_ETHER;
@@ -254,8 +305,7 @@ lxtphy_status(sc)
 		mii->mii_media_active |= IFM_LOOP;
 
 	if (bmcr & BMCR_AUTOEN) {
-		bmsr = PHY_READ(sc, MII_BMSR) | PHY_READ(sc, MII_BMSR);
-		if ((bmsr & BMSR_ACOMP) == 0) {
+		if ((csr & CSR_ACOMP) == 0) {
 			/* Erg, still trying, I guess... */
 			mii->mii_media_active |= IFM_NONE;
 			return;
@@ -264,20 +314,8 @@ lxtphy_status(sc)
 			mii->mii_media_active |= IFM_100_TX;
 		else
 			mii->mii_media_active |= IFM_10_T;
-
 		if (csr & CSR_DUPLEX)
 			mii->mii_media_active |= IFM_FDX;
-		else
-			mii->mii_media_active |= IFM_HDX;
 	} else
-		mii->mii_media_active = ife->ifm_media;
-}
-
-void
-lxtphy_reset(sc)
-	struct mii_softc *sc;
-{
-	mii_phy_reset(sc);
-	PHY_WRITE(sc, MII_LXTPHY_IER,
-	    PHY_READ(sc, MII_LXTPHY_IER) & ~IER_INTEN);
+		mii->mii_media_active = mii_media_from_bmcr(bmcr);
 }

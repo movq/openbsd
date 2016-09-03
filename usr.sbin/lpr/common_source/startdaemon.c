@@ -1,5 +1,4 @@
-/*	$OpenBSD: startdaemon.c,v 1.17 2015/10/27 15:23:28 millert Exp $	*/
-/*	$NetBSD: startdaemon.c,v 1.10 1998/07/18 05:04:39 lukem Exp $	*/
+/*	$OpenBSD: startdaemon.c,v 1.3 1997/01/17 16:11:38 millert Exp $	*/
 
 /*
  * Copyright (c) 1983, 1993, 1994
@@ -13,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,79 +33,90 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)startdaemon.c	8.2 (Berkeley) 4/17/94";
+#else
+static char rcsid[] = "$OpenBSD: startdaemon.c,v 1.3 1997/01/17 16:11:38 millert Exp $";
+#endif
+#endif /* not lint */
+
+
+#include <sys/param.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 
 #include <dirent.h>
-#include <err.h>
 #include <errno.h>
 #include <stdio.h>
 #include <unistd.h>
-#include <limits.h>
 #include <string.h>
-#include <signal.h>
-
 #include "lp.h"
 #include "pathnames.h"
+
+extern uid_t	uid, euid;
+
+static void perr __P((char *));
 
 /*
  * Tell the printer daemon that there are new files in the spool directory.
  */
+
 int
-startdaemon(char *printer)
+startdaemon(printer)
+	char *printer;
 {
 	struct sockaddr_un un;
-	int s;
-	size_t n;
+	register int s, n;
 	char buf[BUFSIZ];
 
 	s = socket(AF_UNIX, SOCK_STREAM, 0);
 	if (s < 0) {
-		warn("socket");
+		perr("socket");
 		return(0);
 	}
 	memset(&un, 0, sizeof(un));
 	un.sun_family = AF_UNIX;
-	strlcpy(un.sun_path, _PATH_SOCKETNAME, sizeof(un.sun_path));
-	siginterrupt(SIGINT, 1);
-	PRIV_START;
-	if (connect(s, (struct sockaddr *)&un, sizeof(un)) < 0) {
-		int saved_errno = errno;
-		if (errno == EINTR && gotintr) {
-			PRIV_END;
-			siginterrupt(SIGINT, 0);
-			close(s);
-			return(0);
-		}
-		PRIV_END;
-		siginterrupt(SIGINT, 0);
-		warnc(saved_errno, "connect");
-		(void)close(s);
+	strcpy(un.sun_path, _PATH_SOCKETNAME);
+#ifndef SUN_LEN
+#define SUN_LEN(unp) (strlen((unp)->sun_path) + 2)
+#endif
+	seteuid(euid);
+	if (connect(s, (struct sockaddr *)&un, SUN_LEN(&un)) < 0) {
+		seteuid(uid);
+		perr("connect");
+		(void) close(s);
 		return(0);
 	}
-	PRIV_END;
-	siginterrupt(SIGINT, 0);
-	if ((n = snprintf(buf, sizeof(buf), "\1%s\n", printer)) >= sizeof(buf) ||
-	    n == -1) {
+	seteuid(uid);
+	if (snprintf(buf, sizeof buf, "\1%s\n", printer) > sizeof buf-1) {
 		close(s);
 		return (0);
 	}
-
-	/* XXX atomicio inside siginterrupt? */
+	n = strlen(buf);
 	if (write(s, buf, n) != n) {
-		warn("write");
-		(void)close(s);
+		perr("write");
+		(void) close(s);
 		return(0);
 	}
 	if (read(s, buf, 1) == 1) {
 		if (buf[0] == '\0') {		/* everything is OK */
-			(void)close(s);
+			(void) close(s);
 			return(1);
 		}
 		putchar(buf[0]);
 	}
 	while ((n = read(s, buf, sizeof(buf))) > 0)
 		fwrite(buf, 1, n, stdout);
-	(void)close(s);
+	(void) close(s);
 	return(0);
+}
+
+static void
+perr(msg)
+	char *msg;
+{
+	extern char *name;
+
+	(void)printf("%s: %s: %s\n", name, msg, strerror(errno));
 }

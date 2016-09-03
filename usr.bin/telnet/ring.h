@@ -1,4 +1,4 @@
-/*	$OpenBSD: ring.h,v 1.9 2014/07/20 08:12:46 guenther Exp $	*/
+/*	$OpenBSD: ring.h,v 1.4 1998/05/15 03:16:42 art Exp $	*/
 /*	$NetBSD: ring.h,v 1.5 1996/02/28 21:04:09 thorpej Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,6 +36,9 @@
  *	from: @(#)ring.h	8.1 (Berkeley) 6/6/93
  */
 
+#include <sys/cdefs.h>
+#define P __P
+
 /*
  * This defines a structure for a ring buffer.
  *
@@ -43,36 +50,57 @@
  *
  */
 typedef struct {
-	unsigned char	*consume;	/* where data comes out of */
-	unsigned char	*supply;	/* where data comes in to */
-	unsigned char	*bottom;	/* lowest address in buffer */
-	unsigned char	*top;		/* highest address+1 in buffer */
-	unsigned char	*mark;		/* marker (user defined) */
-	int		size;		/* size in bytes of buffer */
-	unsigned long	consumetime;	/* help us keep straight full, empty, etc. */
-	unsigned long	supplytime;
+    unsigned char	*consume,	/* where data comes out of */
+			*supply,	/* where data comes in to */
+			*bottom,	/* lowest address in buffer */
+			*top,		/* highest address+1 in buffer */
+			*mark;		/* marker (user defined) */
+#if    defined(ENCRYPTION)
+    unsigned char	*clearto;       /* Data to this point is clear text */
+    unsigned char	*encryyptedto;  /* Data is encrypted to here */
+#endif
+    int		size;		/* size in bytes of buffer */
+    u_long	consumetime,	/* help us keep straight full, empty, etc. */
+		supplytime;
 } Ring;
 
 /* Here are some functions and macros to deal with the ring buffer */
 
 /* Initialization routine */
-void	ring_init(Ring *ring, unsigned char *buffer, int size);
+extern int
+	ring_init P((Ring *ring, unsigned char *buffer, int count));
 
 /* Data movement routines */
-void	ring_supply_data(Ring *ring, unsigned char *buffer, int count);
+extern void
+	ring_supply_data P((Ring *ring, unsigned char *buffer, int count));
+#ifdef notdef
+extern void
+	ring_consume_data P((Ring *ring, unsigned char *buffer, int count));
+#endif
 
 /* Buffer state transition routines */
-void	ring_supplied(Ring *ring, int count);
-void	ring_consumed(Ring *ring, int count);
+extern void
+	ring_supplied P((Ring *ring, int count)),
+	ring_consumed P((Ring *ring, int count));
 
 /* Buffer state query routines */
-int	ring_empty_count(Ring *ring);
-int	ring_empty_consecutive(Ring *ring);
-int	ring_full_count(Ring *ring);
-int	ring_full_consecutive(Ring *ring);
+extern int
+	ring_empty_count P((Ring *ring)),
+	ring_empty_consecutive P((Ring *ring)),
+	ring_full_count P((Ring *ring)),
+	ring_full_consecutive P((Ring *ring));
 
-/* Buffer urgent data handling */
-void	ring_clear_mark(Ring *);
-void	ring_mark(Ring *);
-int	ring_at_mark(Ring *);
+#if    defined(ENCRYPTION)
+extern void
+	ring_encrypt (Ring *ring, void (*func)()),
+	ring_clearto (Ring *ring);
+#endif
 
+
+extern void
+    ring_clear_mark P((Ring *)),
+    ring_mark P((Ring *));
+
+
+extern int
+    ring_at_mark P((Ring *));

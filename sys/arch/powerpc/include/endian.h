@@ -1,4 +1,4 @@
-/*	$OpenBSD: endian.h,v 1.21 2014/10/22 23:56:47 dlg Exp $ */
+/*	$OpenBSD: endian.h,v 1.10 1999/05/10 16:02:15 espie Exp $ */
 
 /*-
  * Copyright (c) 1997 Niklas Hallqvist.  All rights reserved.
@@ -11,6 +11,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Niklas Hallqvist.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -27,77 +32,7 @@
 #ifndef _POWERPC_ENDIAN_H_
 #define _POWERPC_ENDIAN_H_
 
-#ifdef _KERNEL
-
-static inline __uint16_t
-__mswap16(volatile const __uint16_t *m)
-{
-	__uint16_t v;
-
-	__asm("lhbrx %0, 0, %1"
-	    : "=r" (v)
-            : "r" (m), "m" (*m));
-
-	return (v);
-}
-
-static inline __uint32_t
-__mswap32(volatile const __uint32_t *m)
-{
-	__uint32_t v;
-
-	__asm("lwbrx %0, 0, %1"
-	    : "=r" (v)
-            : "r" (m), "m" (*m));
-
-	return (v);
-}
-
-static inline __uint64_t
-__mswap64(volatile const __uint64_t *m)
-{
-	__uint32_t *a = (__uint32_t *)m;
-	__uint64_t v;
-
-	v = (__uint64_t)__mswap32(a + 1) << 32 |
-	    (__uint64_t)__mswap32(a);
-
-	return (v);
-}
-
-static inline void
-__swapm16(volatile __uint16_t *m, __uint16_t v)
-{
-	__asm("sthbrx %1, 0, %2"
-	    : "=m" (*m)
-	    : "r" (v), "r" (m));
-}
-
-static inline void
-__swapm32(volatile __uint32_t *m, __uint32_t v)
-{
-	__asm("stwbrx %1, 0, %2"
-	    : "=m" (*m)
-	    : "r" (v), "r" (m));
-}
-
-static inline void
-__swapm64(volatile __uint64_t *m, __uint64_t v)
-{
-	__uint32_t *a = (__uint32_t *)m;
-
-	__swapm32(a + 1, v >> 32);
-	__swapm32(a, v);
-}
-
-#define __HAVE_MD_SWAPIO
-#endif /* _KERNEL */
-
-#undef _BIG_ENDIAN	/* XXX - gcc may define _BIG_ENDIAN too */
-#define _BYTE_ORDER _BIG_ENDIAN
-
-#ifndef __FROM_SYS__ENDIAN
+#define BYTE_ORDER BIG_ENDIAN
 #include <sys/endian.h>
-#endif
 
 #endif /* _POWERPC_ENDIAN_H_ */

@@ -1,4 +1,4 @@
-/*	$OpenBSD: bt_page.c,v 1.9 2005/08/05 13:02:59 espie Exp $	*/
+/*	$OpenBSD: bt_page.c,v 1.5 1999/02/15 05:11:23 millert Exp $	*/
 
 /*-
  * Copyright (c) 1990, 1993, 1994
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,6 +32,14 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
+#if defined(LIBC_SCCS) && !defined(lint)
+#if 0
+static char sccsid[] = "@(#)bt_page.c	8.3 (Berkeley) 7/14/94";
+#else
+static char rcsid[] = "$OpenBSD: bt_page.c,v 1.5 1999/02/15 05:11:23 millert Exp $";
+#endif
+#endif /* LIBC_SCCS and not lint */
 
 #include <sys/types.h>
 
@@ -51,7 +63,9 @@
  *	mpool_put's the page.
  */
 int
-__bt_free(BTREE *t, PAGE *h)
+__bt_free(t, h)
+	BTREE *t;
+	PAGE *h;
 {
 	/* Insert the page at the head of the free list. */
 	h->prevpg = P_INVALID;
@@ -75,7 +89,9 @@ __bt_free(BTREE *t, PAGE *h)
  *	Pointer to a page, NULL on error.
  */
 PAGE *
-__bt_new(BTREE *t, pgno_t *npg)
+__bt_new(t, npg)
+	BTREE *t;
+	pgno_t *npg;
 {
 	PAGE *h;
 

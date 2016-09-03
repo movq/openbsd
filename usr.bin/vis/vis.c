@@ -1,4 +1,4 @@
-/*	$OpenBSD: vis.c,v 1.20 2016/08/31 09:45:00 jsg Exp $	*/
+/*	$OpenBSD: vis.c,v 1.3 1997/01/15 23:43:33 millert Exp $	*/
 /*	$NetBSD: vis.c,v 1.4 1994/12/20 16:13:03 jtc Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,41 +34,43 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1989, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)vis.c	8.1 (Berkeley) 6/6/93";
+#endif
+static char rcsid[] = "$OpenBSD: vis.c,v 1.3 1997/01/15 23:43:33 millert Exp $";
+#endif /* not lint */
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <limits.h>
 #include <err.h>
 #include <vis.h>
 
-int eflags, fold, foldwidth=80, none, markeol;
+int eflags, fold, foldwidth=80, none, markeol, debug;
 
-#ifdef DEBUG
-int debug;
-#endif
-
-int foldit(char *, int, int);
-void process(FILE *);
-__dead void usage(void);
+int foldit __P((char *, int, int));
+void process __P((FILE *, char *));
 
 int
-main(int argc, char *argv[])
+main(argc, argv) 
+	int argc;
+	char *argv[];
 {
-	const char *errstr;
 	FILE *fp;
 	int ch;
 
-	if (pledge("stdio rpath", NULL) == -1)
-		err(1, "pledge");
-
-	while ((ch = getopt(argc, argv, "anwctsobfF:ld")) != -1)
-		switch(ch) {
-		case 'a':
-			eflags |= VIS_ALL;
-			break;
+	while ((ch = getopt(argc, argv, "nwctsobfF:ld")) != -1)
+		switch((char)ch) {
 		case 'n':
-			none = 1;
+			none++;
 			break;
 		case 'w':
 			eflags |= VIS_WHITE;
@@ -85,53 +91,52 @@ main(int argc, char *argv[])
 			eflags |= VIS_NOSLASH;
 			break;
 		case 'F':
-			foldwidth = strtonum(optarg, 1, INT_MAX, &errstr);
-			if (errstr)
-				errx(1, "%s: %s", optarg, errstr);
-			if (foldwidth < 5)
+			if ((foldwidth = atoi(optarg))<5) {
 				errx(1, "can't fold lines to less than 5 cols");
+				/* NOTREACHED */
+			}
 			/*FALLTHROUGH*/
 		case 'f':
-			fold = 1;	/* fold output lines to 80 cols */
+			fold++;		/* fold output lines to 80 cols */
 			break;		/* using hidden newline */
 		case 'l':
-			markeol = 1;	/* mark end of line with \$ */
+			markeol++;	/* mark end of line with \$ */
 			break;
 #ifdef DEBUG
 		case 'd':
-			debug = 1;
+			debug++;
 			break;
 #endif
 		case '?':
 		default:
-			usage();
+			fprintf(stderr, 
+		"usage: vis [-nwctsobf] [-F foldwidth]\n");
+			exit(1);
 		}
 	argc -= optind;
 	argv += optind;
 
 	if (*argv)
 		while (*argv) {
-			if ((fp=fopen(*argv, "r")) != NULL) {
-				process(fp);
-				fclose(fp);
-			} else
+			if ((fp=fopen(*argv, "r")) != NULL)
+				process(fp, *argv);
+			else
 				warn("%s", *argv);
 			argv++;
 		}
-	else {
-		if (pledge("stdio", NULL) == -1)
-			err(1, "pledge");
-		process(stdin);
-	}
+	else
+		process(stdin, "<stdin>");
 	exit(0);
 }
 	
 void
-process(FILE *fp)
+process(fp, filename)
+	FILE *fp;
+	char *filename;
 {
 	static int col = 0;
-	char *cp = "\0"+1;	/* so *(cp-1) starts out != '\n' */
-	int c, rachar; 
+	register char *cp = "\0"+1;	/* so *(cp-1) starts out != '\n' */
+	register int c, rachar; 
 	char buff[5];
 	
 	c = getc(fp);
@@ -175,14 +180,4 @@ process(FILE *fp)
 	 */
 	if (fold && *(cp-1) != '\n')
 		printf("\\\n");
-}
-
-__dead void
-usage(void)
-{
-	extern char *__progname;
-
-	fprintf(stderr, "usage: %s [-abcflnostw] [-F foldwidth] [file ...]\n",
-	    __progname);
-	exit(1);
 }

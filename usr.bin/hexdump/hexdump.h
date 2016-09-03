@@ -1,9 +1,7 @@
-/*	$OpenBSD: hexdump.h,v 1.12 2016/03/15 04:19:13 mmcc Exp $	*/
-/*	$NetBSD: hexdump.h,v 1.7 2001/12/07 15:14:29 bjh21 Exp $	*/
-
+/* *	$OpenBSD: hexdump.h,v 1.2 1996/06/26 05:34:19 deraadt Exp $*/
 /*
- * Copyright (c) 1989, 1993
- *	The Regents of the University of California.  All rights reserved.
+ * Copyright (c) 1989 The Regents of the University of California.
+ * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -13,7 +11,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,7 +31,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- *	from: @(#)hexdump.h	8.1 (Berkeley) 6/6/93
+ *	from: @(#)hexdump.h	5.4 (Berkeley) 6/1/90
  */
 
 typedef struct _pr {
@@ -69,26 +71,7 @@ typedef struct _fs {			/* format strings */
 	int bcnt;
 } FS;
 
-enum _vflag { ALL, DUP, FIRST, WAIT };	/* -v values */
-
-extern int blocksize;			/* data block size */
-extern int odmode;			/* od compatibility */
-extern FU *endfu;			/* format at end-of-data */
-extern int exitval;			/* final exit value */
 extern FS *fshead;			/* head of format strings list */
-extern long length;			/* max bytes to read */
-extern off_t skip;			/* bytes to skip */
-extern char *iobuf;			/* stdio I/O buffer */
-extern size_t iobufsiz;			/* size of stdio I/O buffer */
-extern enum _vflag vflag;
-
-void	 add(const char *);
-void	 addfile(char *);
-void	 conv_c(PR *, u_char *);
-void	 conv_u(PR *, u_char *);
-void	 display(void);
-void	 newsyntax(int, char ***);
-int	 next(char **);
-void	 oldsyntax(int, char ***);
-void	 rewrite(FS *);
-int	 size(FS *);
+extern int blocksize;			/* data block size */
+enum _vflag { ALL, DUP, FIRST, WAIT };	/* -v values */
+char *emalloc();

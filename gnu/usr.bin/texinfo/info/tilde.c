@@ -1,8 +1,11 @@
-/* tilde.c -- tilde expansion code (~/foo := $HOME/foo).
-   $Id: tilde.c,v 1.4 2006/07/17 16:12:36 espie Exp $
+/* tilde.c -- Tilde expansion code (~/foo := $HOME/foo).
+   $Id: tilde.c,v 1.2 1999/01/11 16:38:10 espie Exp $
 
-   Copyright (C) 1988, 1989, 1990, 1991, 1992, 1993, 1996, 1998, 1999,
-   2002, 2004 Free Software Foundation, Inc.
+   This file is part of GNU Info, a program for reading online documentation
+   stored in Info format.
+
+   Copyright (C) 1988, 89, 90, 91, 92, 93, 96, 98
+   Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,9 +23,26 @@
 
    Written by Brian Fox (bfox@ai.mit.edu). */
 
+/* Indent #pragma so that older Cpp's don't try to parse it. */
+#ifdef _AIX
+ #pragma alloca
+#endif /* _AIX */
+
 /* Include config.h before doing alloca.  */
 #include "info.h"
-#include "tilde.h"
+
+#ifdef __GNUC__
+# undef alloca
+# define alloca __builtin_alloca
+#else
+# ifdef HAVE_ALLOCA_H
+#  include <alloca.h>
+# else
+#  ifndef _AIX
+char *alloca ();
+#  endif
+# endif
+#endif
 
 #if defined (TEST) || defined (STATIC_MALLOC)
 static void *xmalloc (), *xrealloc ();
@@ -60,7 +80,9 @@ char **tilde_additional_suffixes = default_suffixes;
    the tilde which starts the expansion.  Place the length of the text
    which identified this tilde starter in LEN, excluding the tilde itself. */
 static int
-tilde_find_prefix (char *string, int *len)
+tilde_find_prefix (string, len)
+     char *string;
+     int *len;
 {
   register int i, j, string_len;
   register char **prefixes = tilde_additional_prefixes;
@@ -91,7 +113,8 @@ tilde_find_prefix (char *string, int *len)
 /* Find the end of a tilde expansion in STRING, and return the index of
    the character which ends the tilde definition.  */
 static int
-tilde_find_suffix (char *string)
+tilde_find_suffix (string)
+     char *string;
 {
   register int i, j, string_len;
   register char **suffixes = tilde_additional_suffixes;
@@ -100,7 +123,7 @@ tilde_find_suffix (char *string)
 
   for (i = 0; i < string_len; i++)
     {
-      if (IS_SLASH (string[i]) || !string[i])
+      if (string[i] == '/' || !string[i])
         break;
 
       for (j = 0; suffixes && suffixes[j]; j++)
@@ -114,9 +137,10 @@ tilde_find_suffix (char *string)
 
 /* Return a new string which is the result of tilde expanding STRING. */
 char *
-tilde_expand (char *string)
+tilde_expand (string)
+     char *string;
 {
-  char *result;
+  char *result, *tilde_expand_word ();
   int result_size, result_index;
 
   result_size = result_index = 0;
@@ -176,14 +200,17 @@ tilde_expand (char *string)
 /* Do the work of tilde expansion on FILENAME.  FILENAME starts with a
    tilde.  If there is no expansion, call tilde_expansion_failure_hook. */
 char *
-tilde_expand_word (char *filename)
+tilde_expand_word (filename)
+     char *filename;
 {
-  char *dirname = filename ? xstrdup (filename) : NULL;
+  char *dirname;
+
+  dirname = filename ? xstrdup (filename) : (char *)NULL;
 
   if (dirname && *dirname == '~')
     {
       char *temp_name;
-      if (!dirname[1] || IS_SLASH (dirname[1]))
+      if (!dirname[1] || dirname[1] == '/')
         {
           /* Prepend $HOME to the rest of the string. */
           char *temp_home = getenv ("HOME");
@@ -199,31 +226,30 @@ tilde_expand_word (char *filename)
                 temp_home = entry->pw_dir;
             }
 
-          temp_name = xmalloc (1 + strlen (&dirname[1])
-                               + (temp_home ? strlen (temp_home) : 0));
+          temp_name = (char *)
+            alloca (1 + strlen (&dirname[1])
+                    + (temp_home ? strlen (temp_home) : 0));
+          temp_name[0] = '\0';
           if (temp_home)
             strcpy (temp_name, temp_home);
-          else
-            temp_name[0] = 0;
           strcat (temp_name, &dirname[1]);
           free (dirname);
           dirname = xstrdup (temp_name);
-          free (temp_name);
         }
       else
         {
           struct passwd *user_entry;
-          char *username = xmalloc (257);
+          char *username = (char *)alloca (257);
           int i, c;
 
           for (i = 1; (c = dirname[i]); i++)
             {
-              if (IS_SLASH (c))
+              if (c == '/')
                 break;
               else
                 username[i - 1] = c;
             }
-          username[i - 1] = 0;
+          username[i - 1] = '\0';
 
           if (!(user_entry = (struct passwd *) getpwnam (username)))
             {
@@ -232,12 +258,14 @@ tilde_expand_word (char *filename)
                  expansion, then let them try. */
               if (tilde_expansion_failure_hook)
                 {
-                  char *expansion = (*tilde_expansion_failure_hook) (username);
+                  char *expansion;
+
+                  expansion = (*tilde_expansion_failure_hook) (username);
 
                   if (expansion)
                     {
-                      temp_name = xmalloc (1 + strlen (expansion)
-                                           + strlen (&dirname[i])); 
+                      temp_name = (char *)alloca
+                        (1 + strlen (expansion) + strlen (&dirname[i]));
                       strcpy (temp_name, expansion);
                       strcat (temp_name, &dirname[i]);
                       free (expansion);
@@ -248,22 +276,18 @@ tilde_expand_word (char *filename)
             }
           else
             {
-              temp_name = xmalloc (1 + strlen (user_entry->pw_dir)
-                                   + strlen (&dirname[i])); 
+              temp_name = (char *)alloca
+                (1 + strlen (user_entry->pw_dir) + strlen (&dirname[i]));
               strcpy (temp_name, user_entry->pw_dir);
               strcat (temp_name, &dirname[i]);
-
             return_name:
               free (dirname);
               dirname = xstrdup (temp_name);
-              free (temp_name);
             }
-
-          endpwent ();
-          free (username);
+            endpwent ();
         }
     }
-  return dirname;
+  return (dirname);
 }
 
 
@@ -298,7 +322,7 @@ main (argc, argv)
       printf ("  --> %s\n", result);
       free (result);
     }
-  xexit (0);
+  exit (0);
 }
 
 static void memory_error_and_abort ();

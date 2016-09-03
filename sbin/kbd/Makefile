@@ -1,21 +1,21 @@
-#	$OpenBSD: Makefile,v 1.40 2016/05/11 21:52:49 deraadt Exp $
+#	$OpenBSD: Makefile,v 1.7 1999/07/20 15:10:51 deraadt Exp $
 
-#
-# Be sure to change src/distrib/special/kbd/Makefile as well if you add or
-# remove architectures on this list!
-#
-.if ${MACHINE} != "octeon"
-    
 PROG=	kbd
+MAN=	kbd.8
 
-SRCS=	main.c kbd_wscons.c
-LDADD=	-lkvm
-DPADD=	${LIBKVM}
+SRCS=	main.c
+CFLAGS+=-I${.CURDIR}
 
-.else
-NOPROG=	Yes
+.if (${MACHINE} == "i386")
+CFLAGS+=-DHAVEPCVT
 .endif
 
-MAN=		kbd.8
+.if (${MACHINE} == "i386") || (${MACHINE} == "arc")
+SRCS+=	kbd_i386.c
+.elif (${MACHINE} == "sparc")
+SRCS+=	kbd_sparc.c
+.else
+SRCS+=	kbd_void.c
+.endif
 
 .include <bsd.prog.mk>

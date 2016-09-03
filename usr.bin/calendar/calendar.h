@@ -1,4 +1,4 @@
-/*	$OpenBSD: calendar.h,v 1.15 2015/12/07 18:46:35 espie Exp $	*/
+/*	$OpenBSD: calendar.h,v 1.4 1998/12/13 07:31:07 pjanzen Exp $	*/
 
 /*
  * Copyright (c) 1989, 1993, 1994
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,12 +36,10 @@
 
 extern struct passwd *pw;
 extern int doall;
-extern int daynames;
-extern int bodun_always;
 extern time_t f_time;
+extern struct iovec header[];
 extern struct tm *tp;
 extern char *calendarFile;
-extern char *calendarHome;
 extern char *optarg;
 
 struct fixs {
@@ -45,11 +47,9 @@ struct fixs {
 	int len;
 };
 
-#define PRINT_DATE_BASE_LEN 35
-
 struct event {
 	time_t	when;
-	char	print_date[PRINT_DATE_BASE_LEN+1];
+	char	print_date[31];
 	char	**desc;
 	char	*ldesc;
 	struct event	*next;
@@ -57,8 +57,7 @@ struct event {
 
 struct match {
 	time_t	when;
-	char	print_date[PRINT_DATE_BASE_LEN];
-	int	bodun;
+	char	print_date[30];
 	int	var;
 	struct match	*next;
 };
@@ -68,27 +67,26 @@ struct specialev {
 	int nlen;
 	char *uname;
 	int ulen;
-	int (*getev)(int);
+	int (*getev) __P((int));
 };
 
-void	 cal(void);
-void	 closecal(FILE *);
-int	 getday(char *);
-int	 getdayvar(char *);
-int	 getfield(char *, char **, int *);
-int	 getmonth(char *);
-int	 pesach(int);
-int	 easter(int);
-int	 paskha(int);
-void	 insert(struct event **, struct event *);
-struct match	*isnow(char *, int);
-FILE	*opencal(void);
-void	 settime(time_t *);
-time_t	 Mktime(char *);
-void	 usage(void);
-int	 foy(int);
-void	 variable_weekday(int *, int, int);
-void	 setnnames(void);
+void	 cal __P((void));
+void	 closecal __P((FILE *));
+int	 getday __P((char *));
+int	 getdayvar __P((char *));
+int	 getfield __P((char *, char **, int *));
+int	 getmonth __P((char *));
+int	 easter __P((int));
+int	 paskha __P((int));
+void	 insert __P((struct event **, struct event *));
+struct match	*isnow __P((char *));
+FILE	*opencal __P((void));
+void	 settime __P((time_t *));
+time_t	 Mktime __P((char *));
+void	 usage __P((void));
+int	 foy __P((int));
+void	 variable_weekday __P((int *, int, int));
+void	 setnnames __P((void));
 
 /* some flags */
 #define	F_ISMONTH	0x01 /* month (Januar ...) */
@@ -98,31 +96,15 @@ void	 setnnames(void);
 			      * calendar time--e.g.  Easter or easter depending
 			      * days */
 
-#define	SECSPERDAY	(24 * 60 * 60)
-#define	isleap(y) (((y) % 4) == 0 && (((y) % 100) != 0 || ((y) % 400) == 0))
-
 extern int f_dayAfter;	/* days after current date */
 extern int f_dayBefore;	/* days before current date */
-extern int f_SetdayAfter; /* calendar invoked with -A */
 
 /* Special events; see also setnnames() in day.c */
 /* '=' is not a valid character in a special event name */
-#define PESACH "pesach"
-#define PESACHLEN (sizeof(PESACH) - 1)
 #define EASTER "easter"
 #define EASTERNAMELEN (sizeof(EASTER) - 1)
 #define PASKHA "paskha"
 #define PASKHALEN (sizeof(PASKHA) - 1)
 
-/* calendars */
-extern enum calendars { GREGORIAN = 0, JULIAN, LUNAR } calendar;
-extern u_long julian;
-
-#define NUMEV 3	/* Total number of such special events */
+#define NUMEV 2	/* Total number of such special events */
 extern struct specialev spev[NUMEV];
-
-/* For calendar -a, specify a maximum time (in seconds) to spend parsing
- * each user's calendar files.  This prevents them from hanging calendar
- * (e.g. by using named pipes)
- */
-#define USERTIMEOUT 20

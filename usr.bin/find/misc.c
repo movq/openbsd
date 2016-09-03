@@ -1,4 +1,4 @@
-/*	$OpenBSD: misc.c,v 1.15 2015/07/14 17:18:48 millert Exp $	*/
+/*	$OpenBSD: misc.c,v 1.4 1997/06/30 23:54:08 millert Exp $	*/
 
 /*-
  * Copyright (c) 1990, 1993
@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,14 +36,17 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+/*static char sccsid[] = "from: @(#)misc.c	8.1 (Berkeley) 6/6/93";*/
+static char rcsid[] = "$OpenBSD: misc.c,v 1.4 1997/06/30 23:54:08 millert Exp $";
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/uio.h>
 
 #include <err.h>
 #include <errno.h>
 #include <fts.h>
-#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -52,26 +59,19 @@
  *	Replace occurrences of {} in s1 with s2 and return the result string.
  */
 void
-brace_subst(char *orig, char **store, char *path, int len)
+brace_subst(orig, store, path, len)
+	char *orig, **store, *path;
+	int len;
 {
-	int plen;
-	char ch, *p;
+	register int plen;
+	register char ch, *p;
 
 	plen = strlen(path);
 	for (p = *store; (ch = *orig); ++orig)
 		if (ch == '{' && orig[1] == '}') {
-			while ((p - *store) + plen > len) {
-				ptrdiff_t p_off;
-				char *newstore;
-
-				p_off = (p - *store);
-				newstore = reallocarray(*store, len, 2);
-				if (newstore == NULL)
+			while ((p - *store) + plen > len)
+				if (!(*store = realloc(*store, len *= 2)))
 					err(1, NULL);
-				p = newstore + p_off;
-				*store = newstore;
-				len *= 2;
-			}
 			memmove(p, path, plen);
 			p += plen;
 			++orig;
@@ -86,7 +86,8 @@ brace_subst(char *orig, char **store, char *path, int len)
  *	input. If the input is 'y' then 1 is returned.
  */
 int
-queryuser(char **argv)
+queryuser(argv)
+	register char **argv;
 {
 	int ch, first, nl;
 
@@ -119,21 +120,12 @@ queryuser(char **argv)
  *	malloc with error checking.
  */
 void *
-emalloc(size_t len)
+emalloc(len)
+	u_int len;
 {
 	void *p;
 
 	if ((p = malloc(len)))
-		return (p);
-	err(1, NULL);
-}
-
-void *
-ereallocarray(void *oldp, size_t sz1, size_t sz2)
-{
-	void *p;
-
-	if ((p = reallocarray(oldp, sz1, sz2)) != NULL)
 		return (p);
 	err(1, NULL);
 }
@@ -144,20 +136,12 @@ ereallocarray(void *oldp, size_t sz1, size_t sz2)
  */
 /* ARGSUSED */
 void
-show_path(int signo)
+show_path(sig)
+	int sig;
 {
-	int save_errno = errno;
 	extern FTSENT *entry;
-	struct iovec iov[3];
 
-	if (entry != NULL) {
-		iov[0].iov_base = "find path: ";
-		iov[0].iov_len = strlen(iov[0].iov_base);
-		iov[1].iov_base = entry->fts_path;
-		iov[1].iov_len = entry->fts_pathlen;
-		iov[2].iov_base = "\n";
-		iov[2].iov_len = strlen(iov[2].iov_base);
-		writev(STDERR_FILENO, iov, 3);
-		errno = save_errno;
-	}
+	write(STDERR_FILENO, "find path: ", 11);
+	write(STDERR_FILENO, entry->fts_path, entry->fts_pathlen);
+	write(STDERR_FILENO, "\n", 1);
 }

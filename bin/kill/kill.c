@@ -1,4 +1,4 @@
-/*	$OpenBSD: kill.c,v 1.13 2015/10/10 21:15:25 doug Exp $	*/
+/*	$OpenBSD: kill.c,v 1.3 1997/02/06 13:29:08 deraadt Exp $	*/
 /*	$NetBSD: kill.c,v 1.11 1995/09/07 06:30:27 jtc Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +34,20 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1988, 1993, 1994\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)kill.c	8.4 (Berkeley) 4/28/95";
+#else
+static char rcsid[] = "$OpenBSD: kill.c,v 1.3 1997/02/06 13:29:08 deraadt Exp $";
+#endif
+#endif /* not lint */
+
 #include <ctype.h>
 #include <err.h>
 #include <errno.h>
@@ -37,23 +55,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
-extern	char *__progname;
-
-void nosig(char *);
-void printsignals(FILE *);
-int signame_to_signum(char *);
-void usage(void);
+void nosig __P((char *));
+void printsignals __P((FILE *));
+int signame_to_signum __P((char *));
+void usage __P((void));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	int errors, numsig, pid;
 	char *ep;
-
-	if (pledge("stdio proc", NULL) == -1)
-		err(1, "pledge");
 
 	if (argc < 2)
 		usage();
@@ -63,15 +77,13 @@ main(int argc, char *argv[])
 	argc--, argv++;
 	if (!strcmp(*argv, "-l")) {
 		argc--, argv++;
-		if (argc > 0 && !strcmp(*argv, "--"))
-			argc--, argv++;
 		if (argc > 1)
 			usage();
 		if (argc == 1) {
-			if (!isdigit((unsigned char)**argv))
+			if (!isdigit(**argv))
 				usage();
 			numsig = strtol(*argv, &ep, 10);
-			if (*ep)
+			if (!*argv || *ep)
 				errx(1, "illegal signal number: %s", *argv);
 			if (numsig >= 128)
 				numsig -= 128;
@@ -86,8 +98,6 @@ main(int argc, char *argv[])
 
 	if (!strcmp(*argv, "-s")) {
 		argc--, argv++;
-		if (argc > 0 && !strcmp(*argv, "--"))
-			argc--, argv++;
 		if (argc < 1) {
 			warnx("option requires an argument -- s");
 			usage();
@@ -99,20 +109,18 @@ main(int argc, char *argv[])
 			numsig = 0;
 		argc--, argv++;
 	} else if (**argv == '-') {
-		if (strcmp(*argv, "--")) {
-			++*argv;
-			if (isalpha((unsigned char)**argv)) {
-				if ((numsig = signame_to_signum(*argv)) < 0)
-					nosig(*argv);
-			} else if (isdigit((unsigned char)**argv)) {
-				numsig = strtol(*argv, &ep, 10);
-				if (*ep)
-					errx(1, "illegal signal number: %s", *argv);
-				if (numsig < 0 || numsig >= NSIG)
-					nosig(*argv);
-			} else
+		++*argv;
+		if (isalpha(**argv)) {
+			if ((numsig = signame_to_signum(*argv)) < 0)
 				nosig(*argv);
-		}
+		} else if (isdigit(**argv)) {
+			numsig = strtol(*argv, &ep, 10);
+			if (*ep)
+				errx(1, "illegal signal number: %s", *argv);
+			if (numsig < 0 || numsig >= NSIG)
+				nosig(*argv);
+		} else
+			nosig(*argv);
 		argc--, argv++;
 	}
 
@@ -134,7 +142,8 @@ main(int argc, char *argv[])
 }
 
 int
-signame_to_signum(char *sig)
+signame_to_signum(sig)
+	char *sig;
 {
 	int n;
 
@@ -148,7 +157,8 @@ signame_to_signum(char *sig)
 }
 
 void
-nosig(char *name)
+nosig(name)
+	char *name;
 {
 
 	warnx("unknown signal %s; valid signals:", name);
@@ -157,7 +167,8 @@ nosig(char *name)
 }
 
 void
-printsignals(FILE *fp)
+printsignals(fp)
+	FILE *fp;
 {
 	int n;
 
@@ -171,14 +182,12 @@ printsignals(FILE *fp)
 }
 
 void
-usage(void)
+usage()
 {
-	(void)fprintf(stderr, "usage: %s [-s signal_name] pid ...\n",
-	    __progname);
-	(void)fprintf(stderr, "       %s -l [exit_status]\n", __progname);
-	(void)fprintf(stderr, "       %s -signal_name pid ...\n",
-	    __progname);
-	(void)fprintf(stderr, "       %s -signal_number pid ...\n",
-	    __progname);
+
+	(void)fprintf(stderr, "usage: kill [-s signal_name] pid ...\n");
+	(void)fprintf(stderr, "       kill -l [exit_status]\n");
+	(void)fprintf(stderr, "       kill -signal_name pid ...\n");
+	(void)fprintf(stderr, "       kill -signal_number pid ...\n");
 	exit(1);
 }

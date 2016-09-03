@@ -1,3 +1,3 @@
-/*	$OpenBSD: version.h,v 1.5 2015/11/19 19:43:40 tedu Exp $	*/
+/*	$OpenBSD: version.h,v 1.4 1996/12/10 22:22:03 millert Exp $	*/
 
-#define FLEX_VERSION VERSION
+#define FLEX_VERSION "2.5.4"

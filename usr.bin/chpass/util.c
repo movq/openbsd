@@ -1,4 +1,4 @@
-/*	$OpenBSD: util.c,v 1.13 2015/03/15 00:41:28 millert Exp $	*/
+/*	$OpenBSD: util.c,v 1.4 1998/03/30 06:59:34 deraadt Exp $	*/
 /*	$NetBSD: util.c,v 1.4 1995/03/26 04:55:35 glass Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +34,14 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)util.c	8.4 (Berkeley) 4/2/94";
+#else
+static char rcsid[] = "$OpenBSD: util.c,v 1.4 1998/03/30 06:59:34 deraadt Exp $";
+#endif
+#endif /* not lint */
+
 #include <sys/types.h>
 
 #include <ctype.h>
@@ -38,32 +50,47 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <tzfile.h>
 #include <unistd.h>
 
 #include "chpass.h"
+#include "pathnames.h"
 
 char *
-ttoa(char *buf, size_t len, time_t tval)
+ttoa(buf, len, tval)
+	char *buf;
+	size_t len;
+	time_t tval;
 {
 	if (tval) {
 		struct tm *tp = localtime(&tval);
 
 		(void) strftime(buf, len, "%B %d, %Y", tp);
 		buf[len - 1] = '\0';
-	} else if (len > 0)
+	}
+	else if (len > 0)
 		*buf = '\0';
 	return (buf);
-}
+} 
 
 int
-atot(char *p, time_t *store)
+atot(p, store)
+	char *p;
+	time_t *store;
 {
+	static struct tm *lt;
 	struct tm tm;
 	char *t;
+	time_t tval;
 
 	if (!*p) {
 		*store = 0;
 		return (0);
+	}
+	if (!lt) {
+		unsetenv("TZ");
+		(void)time(&tval);
+		lt = localtime(&tval);
 	}
 	(void) memset(&tm, 0, sizeof(tm));
 	for (t = p; (t = strchr(t, ',')) != NULL; t++)
@@ -71,28 +98,25 @@ atot(char *p, time_t *store)
 	t = strptime(p, "%B %d %Y", &tm);
 	if (t == NULL || (*t != '\0' && *t != '\n'))
 		return 1;
-	tm.tm_isdst = -1;
 	*store = mktime(&tm);
 	if (*store == (time_t) -1)
 		return 1;
 	return (0);
 }
 
-int
-ok_shell(char *name, char **out)
+char *
+ok_shell(name)
+	char *name;
 {
 	char *p, *sh;
 
 	setusershell();
 	while ((sh = getusershell()) != NULL) {
 		if (!strcmp(name, sh))
-			break;
+			return (name);
 		/* allow just shell name, but use "real" path */
 		if ((p = strrchr(sh, '/')) && strcmp(name, p + 1) == 0)
-			break;
+			return (sh);
 	}
-	if (sh && out)
-		*out = strdup(sh);
-	endusershell();
-	return (sh != NULL);
+	return (NULL);
 }

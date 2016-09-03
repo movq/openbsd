@@ -1,19 +1,12 @@
-#	$OpenBSD: Makefile,v 1.5 2004/07/22 19:29:42 kettenis Exp $
+#	$NetBSD: Makefile,v 1.1 1995/04/26 00:27:25 jtc Exp $
 
-PROG=except
+PROG=	except
+SRCS=	except.c
+NOMAN=
 
-REGRESS_TARGETS+= fltdiv fltinv fltovf fltund
+install:
 
-fltdiv: ${PROG}
-	./${PROG} fltdiv
+regress: ${PROG}
+	./${PROG}
 
-fltinv: ${PROG}
-	./${PROG} fltinv
-
-fltovf: ${PROG}
-	./${PROG} fltovf
-
-fltund: ${PROG}
-	./${PROG} fltund
-
-.include <bsd.regress.mk>
+.include <bsd.prog.mk>

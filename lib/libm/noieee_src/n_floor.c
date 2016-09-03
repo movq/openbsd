@@ -1,5 +1,4 @@
-/*	$OpenBSD: n_floor.c,v 1.19 2013/07/05 05:44:10 espie Exp $	*/
-/*	$NetBSD: n_floor.c,v 1.1 1995/10/10 23:36:48 ragge Exp $	*/
+/*      $NetBSD: n_floor.c,v 1.1 1995/10/10 23:36:48 ragge Exp $ */
 /*
  * Copyright (c) 1985, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -12,7 +11,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,12 +32,19 @@
  * SUCH DAMAGE.
  */
 
-#include <math.h>
+#ifndef lint
+static char sccsid[] = "@(#)floor.c	8.1 (Berkeley) 6/4/93";
+#endif /* not lint */
 
 #include "mathimpl.h"
 
-static const double L = 36028797018963968.0E0;	/* 2**55 */
-static const float F = 8388608E0f;		/* 2**23 */
+vc(L, 4503599627370496.0E0 ,0000,5c00,0000,0000, 55, 1.0) /* 2**55 */
+
+ic(L, 4503599627370496.0E0, 52, 1.0)			  /* 2**52 */
+
+#ifdef vccast
+#define	L	vccast(L)
+#endif
 
 /*
  * floor(x) := the largest integer no larger than x;
@@ -44,11 +54,16 @@ static const float F = 8388608E0f;		/* 2**23 */
  *	customary for IEEE 754.  No other signal can be emitted.
  */
 double
-floor(double x)
+floor(x)
+double x;
 {
 	volatile double y;
 
-	if (isnan(x) ||	x >= L)		/* already an even integer */
+	if (
+#if !defined(vax)&&!defined(tahoe)
+		x != x ||	/* NaN */
+#endif	/* !defined(vax)&&!defined(tahoe) */
+		x >= L)		/* already an even integer */
 		return x;
 	else if (x < (double)0)
 		return -ceil(-x);
@@ -59,14 +74,17 @@ floor(double x)
 	}
 }
 
-__strong_alias(floorl, floor);
-
 double
-ceil(double x)
+ceil(x)
+double x;
 {
 	volatile double y;
 
-	if (isnan(x) ||	x >= L)		/* already an even integer */
+	if (
+#if !defined(vax)&&!defined(tahoe)
+		x != x ||	/* NaN */
+#endif	/* !defined(vax)&&!defined(tahoe) */
+		x >= L)		/* already an even integer */
 		return x;
 	else if (x < (double)0)
 		return -floor(-x);
@@ -77,39 +95,7 @@ ceil(double x)
 	}
 }
 
-__strong_alias(ceill, ceil);
-
-float
-floorf(float x)
-{
-	volatile float y;
-
-	if (isnanf(x) || x >= F)	/* already an even integer */
-		return x;
-	else if (x < (float)0)
-		return -ceilf(-x);
-	else {			/* now 0 <= x < F */
-		y = F+x;		/* destructive store must be forced */
-		y -= F;			/* an integer, and |x-y| < 1 */
-		return x < y ? y-(float)1 : y;
-	}
-}
-
-float
-ceilf(float x)
-{
-	volatile float y;
-
-	if (isnanf(x) || x >= F)	/* already an even integer */
-		return x;
-	else if (x < (float)0)
-		return -floorf(-x);
-	else {			/* now 0 <= x < F */
-		y = F+x;		/* destructive store must be forced */
-		y -= F;			/* an integer, and |x-y| < 1 */
-		return x > y ? y+(float)1 : y;
-	}
-}
+#ifndef ns32000			/* rint() is in ./NATIONAL/support.s */
 /*
  * algorithm for rint(x) in pseudo-pascal form ...
  *
@@ -121,7 +107,7 @@ ceilf(float x)
  * 	  = 2**52; for IEEE 754 Double
  * real	s,t;
  * begin
- * 	if isnan(x) then return x;		... NaN
+ * 	if x != x then return x;		... NaN
  * 	if |x| >= L then return x;		... already an integer
  * 	s := copysign(L,x);
  * 	t := x + s;				... = (x+s) rounded to integer
@@ -132,40 +118,21 @@ ceilf(float x)
  *	customary for IEEE 754.  No other signal can be emitted.
  */
 double
-rint(double x)
+rint(x)
+double x;
 {
 	double s;
 	volatile double t;
 	const double one = 1.0;
 
-	if (isnan(x))
+#if !defined(vax)&&!defined(tahoe)
+	if (x != x)				/* NaN */
 		return (x);
-
-	if (copysign(x, one) >= L)	/* already an integer */
-		return (x);
-
+#endif	/* !defined(vax)&&!defined(tahoe) */
+	if (copysign(x,one) >= L)		/* already an integer */
+	    return (x);
 	s = copysign(L,x);
 	t = x + s;				/* x+s rounded to integer */
 	return (t - s);
 }
-
-__strong_alias(rintl, rint);
-
-float
-rintf(float x)
-{
-	float s;
-	volatile float t;
-	const float one = 1.0f;
-
-	if (isnanf(x))
-		return (x);
-
-	if (copysignf(x, one) >= F)	/* already an integer */
-		return (x);
-
-	s = copysignf(F,x);
-	t = x + s;				/* x+s rounded to integer */
-	return (t - s);
-}
-
+#endif	/* not national */

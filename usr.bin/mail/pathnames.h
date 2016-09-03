@@ -1,4 +1,4 @@
-/*	$OpenBSD: pathnames.h,v 1.7 2003/06/03 02:56:11 millert Exp $	*/
+/*	$OpenBSD: pathnames.h,v 1.4 1998/08/15 23:17:22 millert Exp $	*/
 /*	$NetBSD: pathnames.h,v 1.4 1996/06/08 19:48:34 christos Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -35,15 +39,9 @@
 
 #include <paths.h>
 
-/* executables */
-#define _PATH_EX	"/usr/bin/ex"
-#define _PATH_MORE	"/usr/bin/more"
-#define _PATH_LS	"/bin/ls"
-#define _PATH_LOCKSPOOL	"/usr/libexec/lockspool"
-
-/* directories & files */
-#define _PATH_MAILDIR	"/var/mail"
-#define _PATH_HELP	"/usr/share/misc/mail.help"
-#define _PATH_TILDE	"/usr/share/misc/mail.tildehelp"
-#define _PATH_MASTER_RC	"/etc/mail.rc"
-#define _PATH_LOCTMP	"/tmp/local.XXXXXXXXXX"
+#define	_PATH_EX	"/usr/bin/ex"
+#define	_PATH_HELP	"/usr/share/misc/mail.help"
+#define	_PATH_TILDE	"/usr/share/misc/mail.tildehelp"
+#define	_PATH_MASTER_RC	"/etc/mail.rc"
+#define	_PATH_MORE	"/usr/bin/more"
+#define	_PATH_LOCKSPOOL	"/usr/libexec/lockspool"

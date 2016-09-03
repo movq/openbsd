@@ -10,7 +10,11 @@
  * ====================================================
  */
 
-/* remainder(x,p)
+#if defined(LIBM_SCCS) && !defined(lint)
+static char rcsid[] = "$NetBSD: e_remainder.c,v 1.8 1995/05/10 20:46:05 jtc Exp $";
+#endif
+
+/* __ieee754_remainder(x,p)
  * Return :                  
  * 	returns  x REM p  =  x - [x/p]*p as if in infinite 
  * 	precise arithmetic, where [x/p] is the (infinite bit) 
@@ -19,16 +23,22 @@
  *	Based on fmod() return x-[x/p]chopped*p exactlp.
  */
 
-#include <float.h>
-#include <math.h>
-
+#include "math.h"
 #include "math_private.h"
 
+#ifdef __STDC__
 static const double zero = 0.0;
+#else
+static double zero = 0.0;
+#endif
 
 
-double
-remainder(double x, double p)
+#ifdef __STDC__
+	double __ieee754_remainder(double x, double p)
+#else
+	double __ieee754_remainder(x,p)
+	double x,p;
+#endif
 {
 	int32_t hx,hp;
 	u_int32_t sx,lx,lp;
@@ -48,7 +58,7 @@ remainder(double x, double p)
 	    return (x*p)/(x*p);
 
 
-	if (hp<=0x7fdfffff) x = fmod(x,p+p);	/* now x < 2p */
+	if (hp<=0x7fdfffff) x = __ieee754_fmod(x,p+p);	/* now x < 2p */
 	if (((hx-hp)|(lx-lp))==0) return zero*x;
 	x  = fabs(x);
 	p  = fabs(p);
@@ -68,7 +78,3 @@ remainder(double x, double p)
 	SET_HIGH_WORD(x,hx^sx);
 	return x;
 }
-
-#if	LDBL_MANT_DIG == DBL_MANT_DIG
-__strong_alias(remainderl, remainder);
-#endif	/* LDBL_MANT_DIG == DBL_MANT_DIG */

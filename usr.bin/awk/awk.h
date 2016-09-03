@@ -1,4 +1,4 @@
-/*	$OpenBSD: awk.h,v 1.13 2008/10/06 20:38:33 millert Exp $	*/
+/*	$OpenBSD: awk.h,v 1.6 1999/04/20 17:31:28 millert Exp $	*/
 /****************************************************************
 Copyright (C) Lucent Technologies 1997
 All Rights Reserved
@@ -23,18 +23,14 @@ ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ****************************************************************/
 
-#include <assert.h>
-
 typedef double	Awkfloat;
 
 /* unsigned char is more trouble than it's worth */
 
 typedef	unsigned char uschar;
 
-#define	xfree(a)	{ if ((a) != NULL) { free((void *) (a)); (a) = NULL; } }
+#define	xfree(a)	{ if ((a) != NULL) { free((char *) a); a = NULL; } }
 
-#define	NN(p)	((p) ? (p) : "(null)")	/* guaranteed non-null for dprintf 
-*/
 #define	DEBUG
 #ifdef	DEBUG
 			/* uses have to be doubly parenthesized */
@@ -42,6 +38,12 @@ typedef	unsigned char uschar;
 #else
 #	define	dprintf(x)
 #endif
+
+extern	char	errbuf[];
+#define	ERROR	sprintf(errbuf,
+#define	FATAL	), error(1, errbuf)
+#define	WARNING	), error(0, errbuf)
+#define	SYNTAX	), yyerror(errbuf)
 
 extern int	compile_time;	/* 1 if compiling, 0 if running */
 extern int	safe;		/* 0 => unsafe, 1 => safe */
@@ -127,12 +129,6 @@ extern Cell	*rlengthloc;	/* RLENGTH */
 #define	FTOUPPER 12
 #define	FTOLOWER 13
 #define	FFLUSH	14
-#define FAND	15
-#define FFOR	16
-#define FXOR	17
-#define FCOMPL	18
-#define FLSHIFT	19
-#define FRSHIFT	20
 
 /* Node:  parse tree is made of nodes, with Cell's at bottom */
 
@@ -192,7 +188,8 @@ extern	int	pairstack[], paircnt;
 #define isexit(n)	((n)->csub == JEXIT)
 #define	isbreak(n)	((n)->csub == JBREAK)
 #define	iscont(n)	((n)->csub == JCONT)
-#define	isnext(n)	((n)->csub == JNEXT || (n)->csub == JNEXTFILE)
+#define	isnext(n)	((n)->csub == JNEXT)
+#define	isnextfile(n)	((n)->csub == JNEXTFILE)
 #define	isret(n)	((n)->csub == JRET)
 #define isrec(n)	((n)->tval & REC)
 #define isfld(n)	((n)->tval & FLD)
@@ -208,7 +205,7 @@ extern	int	pairstack[], paircnt;
 
 /* structures used by regular expression matching machinery, mostly b.c: */
 
-#define NCHARS	(256+3)		/* 256 handles 8-bit chars; 128 does 7-bit */
+#define NCHARS	(256+1)		/* 256 handles 8-bit chars; 128 does 7-bit */
 				/* watch out in match(), etc. */
 #define NSTATES	32
 
@@ -217,7 +214,7 @@ typedef struct rrow {
 	union {
 		int i;
 		Node *np;
-		uschar *up;
+		char *up;
 	} lval;		/* because Al stores a pointer in it! */
 	int	*lfollow;
 } rrow;
@@ -225,7 +222,7 @@ typedef struct rrow {
 typedef struct fa {
 	uschar	gototab[NSTATES][NCHARS];
 	uschar	out[NSTATES];
-	uschar	*restr;
+	char	*restr;
 	int	*posns[NSTATES];
 	int	anchor;
 	int	use;

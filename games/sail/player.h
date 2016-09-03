@@ -1,4 +1,4 @@
-/*	$OpenBSD: player.h,v 1.8 2015/12/31 16:44:22 mestre Exp $	*/
+/*	$OpenBSD: player.h,v 1.5 1999/01/18 06:20:53 pjanzen Exp $	*/
 /*	$NetBSD: player.h,v 1.4 1995/04/22 10:37:22 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,6 +37,7 @@
  */
 
 #include <curses.h>
+#include "extern.h"
 
 /* sizes and coordinates for the screen */
 
@@ -94,22 +99,22 @@
 #define SCREENTEST()	(initscr() != NULL && STAT_R < COLS && SCROLL_Y > 0)
 #endif
 
-extern WINDOW *view_w;
-extern WINDOW *slot_w;
-extern WINDOW *scroll_w;
-extern WINDOW *stat_w;
-extern WINDOW *turn_w;
+WINDOW *view_w;
+WINDOW *slot_w;
+WINDOW *scroll_w;
+WINDOW *stat_w;
+WINDOW *turn_w;
 
-extern char done_curses;
-extern char loaded, fired, changed, repaired;
-extern char dont_adjust;
-extern int viewrow, viewcol;
-extern char movebuf[sizeof SHIP(0)->file->movebuf];
+char done_curses;
+char loaded, fired, changed, repaired;
+char dont_adjust;
+int viewrow, viewcol;
+char movebuf[sizeof SHIP(0)->file->movebuf];
 extern char version[];
-extern int player;
-extern struct ship *ms;		/* memorial structure, &cc->ship[player] */
-extern struct File *mf;		/* ms->file */
-extern struct shipspecs *mc;		/* ms->specs */
+int player;
+struct ship *ms;		/* memorial structure, &cc->ship[player] */
+struct File *mf;		/* ms->file */
+struct shipspecs *mc;		/* ms->specs */
 
 /* condition codes for leave() */
 #define LEAVE_QUIT	0

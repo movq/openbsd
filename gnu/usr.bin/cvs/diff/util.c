@@ -235,7 +235,7 @@ begin_output ()
 	      close (pipes[0]);
 	    }
 
-	  execl (PR_PROGRAM, PR_PROGRAM, "-f", "-h", name, (char *)NULL);
+	  execl (PR_PROGRAM, PR_PROGRAM, "-f", "-h", name, 0);
 	  pfatal_with_name (PR_PROGRAM);
 	}
       else
@@ -366,7 +366,7 @@ printf_output (format, va_alist)
       char *str;
       int num;
       int ch;
-      char buf[100];
+      unsigned char buf[100];
 
       while ((q = strchr (p, '%')) != NULL)
 	{

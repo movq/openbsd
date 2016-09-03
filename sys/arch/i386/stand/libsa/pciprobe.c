@@ -1,4 +1,4 @@
-/*	$OpenBSD: pciprobe.c,v 1.10 2014/03/29 18:09:29 guenther Exp $	*/
+/*	$OpenBSD: pciprobe.c,v 1.3 1999/08/25 00:54:19 mickey Exp $	*/
 
 /*
  * Copyright (c) 1997 Tobias Weingartner
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Tobias Weingartner.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR 
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
@@ -35,20 +40,20 @@
 #define PCI_SIG 0x20494350		/* PCI Signature */
 
 void
-pciprobe(void)
+pciprobe()
 {
 	bios_pciinfo_t bpi;
 	u_int32_t hw_chars, rev, rc, sig;
 	u_int32_t entry32;
 
 	/* PCI BIOS v2.0c+ - Installation Check */
-	__asm volatile(DOINT(0x1A) "; shll $8,%2; setc %b2"
+	__asm __volatile(DOINT(0x1A) ";shll $8,%2; setc %b2"
 		: "=a" (hw_chars), "=b" (rev), "=c" (rc),
 		  "=d" (sig), "=D" (entry32)
 		: "0" (0xB101), "4" (0x0)
 		: "cc");
 
-	if (rc & 0xff || hw_chars & 0xff00)
+	if (rc & 0xff00 || hw_chars & 0xff00)
 		return;
 	if (sig != PCI_SIG)
 		return;
@@ -66,3 +71,4 @@ pciprobe(void)
 
 	addbootarg(BOOTARG_PCIINFO, sizeof(bios_pciinfo_t), &bpi);
 }
+

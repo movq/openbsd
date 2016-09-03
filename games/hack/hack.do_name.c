@@ -1,84 +1,22 @@
-/*	$OpenBSD: hack.do_name.c,v 1.11 2016/01/09 18:33:15 mestre Exp $	*/
-
 /*
- * Copyright (c) 1985, Stichting Centrum voor Wiskunde en Informatica,
- * Amsterdam
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- * - Redistributions of source code must retain the above copyright notice,
- * this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above copyright
- * notice, this list of conditions and the following disclaimer in the
- * documentation and/or other materials provided with the distribution.
- *
- * - Neither the name of the Stichting Centrum voor Wiskunde en
- * Informatica, nor the names of its contributors may be used to endorse or
- * promote products derived from this software without specific prior
- * written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
- * IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
- * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER
- * OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Copyright (c) Stichting Mathematisch Centrum, Amsterdam, 1985.
  */
 
-/*
- * Copyright (c) 1982 Jay Fenlason <hack@gnu.org>
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
- * AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL
- * THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
-
-#include <stdio.h>
-#include <stdlib.h>
+#ifndef lint
+static char rcsid[] = "$NetBSD: hack.do_name.c,v 1.3 1995/03/23 08:29:56 cgd Exp $";
+#endif /* not lint */
 
 #include "hack.h"
-
+#include <stdio.h>
 extern char plname[];
-static void do_oname(struct obj *);
-static char *lmonnam(struct monst *);
-static char *visctrl(char);
 
 coord
-getpos(int force, char *goal)
-{
-	int cx,cy,i,c;
-	extern char sdir[];		/* defined in hack.c */
-	extern schar xdir[], ydir[];	/* idem */
-	coord cc;
-
+getpos(force,goal) int force; char *goal; {
+register cx,cy,i,c;
+extern char sdir[];		/* defined in hack.c */
+extern schar xdir[], ydir[];	/* idem */
+extern char *visctrl();		/* see below */
+coord cc;
 	pline("(For instructions type a ?)");
 	cx = u.ux;
 	cy = u.uy;
@@ -111,15 +49,12 @@ getpos(int force, char *goal)
 	return(cc);
 }
 
-int
-do_mname(void)
-{
-	char buf[BUFSZ];
-	coord cc;
-	int cx,cy,lth,i;
-	struct monst *mtmp, *mtmp2;
-	extern char *lmonnam();
-
+do_mname(){
+char buf[BUFSZ];
+coord cc;
+register int cx,cy,lth,i;
+register struct monst *mtmp, *mtmp2;
+extern char *lmonnam();
 	cc = getpos(0, "the monster you want to name");
 	cx = cc.x;
 	cy = cc.y;
@@ -156,7 +91,7 @@ do_mname(void)
 	for(i=0; i<mtmp->mxlth; i++)
 		((char *) mtmp2->mextra)[i] = ((char *) mtmp->mextra)[i];
 	mtmp2->mnamelth = lth;
-	(void) strlcpy(NAME(mtmp2), buf, lth);
+	(void) strcpy(NAME(mtmp2), buf);
 	replmon(mtmp,mtmp2);
 	return(1);
 }
@@ -166,13 +101,10 @@ do_mname(void)
  * when there might be pointers around in unknown places. For now: only
  * when  obj  is in the inventory.
  */
-static void
-do_oname(struct obj *obj)
-{
-	struct obj *otmp, *otmp2;
-	int lth;
-	char buf[BUFSZ];
-
+do_oname(obj) register struct obj *obj; {
+register struct obj *otmp, *otmp2;
+register lth;
+char buf[BUFSZ];
 	pline("What do you want to name %s? ", doname(obj));
 	getlin(buf);
 	clrlin();
@@ -186,7 +118,7 @@ do_oname(struct obj *obj)
 	otmp2 = newobj(lth);
 	*otmp2 = *obj;
 	otmp2->onamelth = lth;
-	(void) strlcpy(ONAME(otmp2), buf, lth);
+	(void) strcpy(ONAME(otmp2), buf);
 
 	setworn((struct obj *) 0, obj->owornmask);
 	setworn(otmp2, otmp2->owornmask);
@@ -203,13 +135,12 @@ do_oname(struct obj *obj)
 		}
 	}
 	/* obfree(obj, otmp2);*//* now unnecessary: no pointers on bill */
-	free(obj);		/* let us hope nobody else saved a pointer */
+	free((char *) obj);	/* let us hope nobody else saved a pointer */
 }
 
-int
-ddocall(void)
+ddocall()
 {
-	struct obj *obj;
+	register struct obj *obj;
 
 	pline("Do you want to name an individual object? [ny] ");
 	switch(readchar()) {
@@ -226,14 +157,14 @@ ddocall(void)
 	return(0);
 }
 
-void
-docall(struct obj *obj)
+docall(obj)
+register struct obj *obj;
 {
 	char buf[BUFSZ];
 	struct obj otemp;
-	char **str1;
-	char *str;
-	size_t len;
+	register char **str1;
+	extern char *xname();
+	register char *str;
 
 	otemp = *obj;
 	otemp.quan = 1;
@@ -244,9 +175,8 @@ docall(struct obj *obj)
 	clrlin();
 	if(!*buf || *buf == '\033')
 		return;
-	len = strlen(buf) + 1;
-	str = newstring(len);
-	(void) strlcpy(str, buf, len);
+	str = newstring(strlen(buf)+1);
+	(void) strcpy(str,buf);
 	str1 = &(objects[obj->otyp].oc_uname);
 	if(*str1) free(*str1);
 	*str1 = str;
@@ -260,90 +190,86 @@ char *ghostnames[] = {		/* these names should have length < PL_NSIZ */
 };
 
 char *
-xmonnam(struct monst *mtmp, int vb)
-{
-	static char buf[BUFSZ];		/* %% */
-
+xmonnam(mtmp, vb) register struct monst *mtmp; int vb; {
+static char buf[BUFSZ];		/* %% */
+extern char *shkname();
 	if(mtmp->mnamelth && !vb) {
-		(void) strlcpy(buf, NAME(mtmp), sizeof buf);
+		(void) strcpy(buf, NAME(mtmp));
 		return(buf);
 	}
 	switch(mtmp->data->mlet) {
 	case ' ':
-		{ char *gn = (char *) mtmp->mextra;
+		{ register char *gn = (char *) mtmp->mextra;
 		  if(!*gn) {		/* might also look in scorefile */
 		    gn = ghostnames[rn2(SIZE(ghostnames))];
 		    if(!rn2(2)) (void)
-		      strlcpy((char *) mtmp->mextra, !rn2(5) ? plname : gn,
-			mtmp->mxlth);
+		      strcpy((char *) mtmp->mextra, !rn2(5) ? plname : gn);
 		  }
-		  (void) snprintf(buf, sizeof buf, "%s's ghost", gn);
+		  (void) sprintf(buf, "%s's ghost", gn);
 		}
 		break;
 	case '@':
 		if(mtmp->isshk) {
-			(void) strlcpy(buf, shkname(mtmp), sizeof buf);
+			(void) strcpy(buf, shkname(mtmp));
 			break;
 		}
 		/* fall into next case */
 	default:
-		(void) snprintf(buf, sizeof buf, "the %s%s",
+		(void) sprintf(buf, "the %s%s",
 			mtmp->minvis ? "invisible " : "",
 			mtmp->data->mname);
 	}
 	if(vb && mtmp->mnamelth) {
-		(void) strlcat(buf, " called ", sizeof buf);
-		(void) strlcat(buf, NAME(mtmp), sizeof buf);
+		(void) strcat(buf, " called ");
+		(void) strcat(buf, NAME(mtmp));
 	}
 	return(buf);
 }
 
-static char *
-lmonnam(struct monst *mtmp)
-{
+char *
+lmonnam(mtmp) register struct monst *mtmp; {
 	return(xmonnam(mtmp, 1));
 }
 
 char *
-monnam(struct monst *mtmp)
-{
+monnam(mtmp) register struct monst *mtmp; {
 	return(xmonnam(mtmp, 0));
 }
 
 char *
-Monnam(struct monst *mtmp)
-{
-	char *bp = monnam(mtmp);
-
+Monnam(mtmp) register struct monst *mtmp; {
+register char *bp = monnam(mtmp);
 	if('a' <= *bp && *bp <= 'z') *bp += ('A' - 'a');
 	return(bp);
 }
 
 char *
-amonnam(struct monst *mtmp, char *adj)
+amonnam(mtmp,adj)
+register struct monst *mtmp;
+register char *adj;
 {
-	char *bp = monnam(mtmp);
+	register char *bp = monnam(mtmp);
 	static char buf[BUFSZ];		/* %% */
 
 	if(!strncmp(bp, "the ", 4)) bp += 4;
-	(void) snprintf(buf, sizeof buf, "the %s %s", adj, bp);
+	(void) sprintf(buf, "the %s %s", adj, bp);
 	return(buf);
 }
 
 char *
-Amonnam(struct monst *mtmp, char *adj)
+Amonnam(mtmp, adj)
+register struct monst *mtmp;
+register char *adj;
 {
-	char *bp = amonnam(mtmp,adj);
+	register char *bp = amonnam(mtmp,adj);
 
 	*bp = 'T';
 	return(bp);
 }
 
 char *
-Xmonnam(struct monst *mtmp)
-{
-	char *bp = Monnam(mtmp);
-
+Xmonnam(mtmp) register struct monst *mtmp; {
+register char *bp = Monnam(mtmp);
 	if(!strncmp(bp, "The ", 4)) {
 		bp += 2;
 		*bp = 'A';
@@ -351,8 +277,9 @@ Xmonnam(struct monst *mtmp)
 	return(bp);
 }
 
-static char *
-visctrl(char c)
+char *
+visctrl(c)
+char c;
 {
 static char ccc[3];
 	if(c < 040) {

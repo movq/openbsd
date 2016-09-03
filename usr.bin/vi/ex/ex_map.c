@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_map.c,v 1.9 2016/05/27 09:18:12 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)ex_map.c	10.9 (Berkeley) 3/6/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -37,10 +39,12 @@
  *	put the map in a .exrc file, things would often work much better.
  *	No clue why.
  *
- * PUBLIC: int ex_map(SCR *, EXCMD *);
+ * PUBLIC: int ex_map __P((SCR *, EXCMD *));
  */
 int
-ex_map(SCR *sp, EXCMD *cmdp)
+ex_map(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	seq_t stype;
 	CHAR_T *input, *p;
@@ -51,8 +55,8 @@ ex_map(SCR *sp, EXCMD *cmdp)
 	case 0:
 		if (seq_dump(sp, stype, 1) == 0)
 			msgq(sp, M_INFO, stype == SEQ_INPUT ?
-			    "No input map entries" :
-			    "No command map entries");
+			    "132|No input map entries" :
+			    "133|No command map entries");
 		return (0);
 	case 2:
 		input = cmdp->argv[0]->bp;
@@ -88,7 +92,7 @@ nofunc:	if (stype == SEQ_COMMAND && input[1] == '\0')
 		case K_ESCAPE:
 		case K_NL:
 			msgq(sp, M_ERR,
-			    "The %s character may not be remapped",
+			    "134|The %s character may not be remapped",
 			    KEY_NAME(sp, input[0]));
 			return (1);
 		}
@@ -100,15 +104,17 @@ nofunc:	if (stype == SEQ_COMMAND && input[1] == '\0')
  * ex_unmap -- (:unmap[!] key)
  *	Unmap a key.
  *
- * PUBLIC: int ex_unmap(SCR *, EXCMD *);
+ * PUBLIC: int ex_unmap __P((SCR *, EXCMD *));
  */
 int
-ex_unmap(SCR *sp, EXCMD *cmdp)
+ex_unmap(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	if (seq_delete(sp, cmdp->argv[0]->bp, cmdp->argv[0]->len,
 	    FL_ISSET(cmdp->iflags, E_C_FORCE) ? SEQ_INPUT : SEQ_COMMAND)) {
 		msgq_str(sp, M_INFO,
-		    cmdp->argv[0]->bp, "\"%s\" isn't currently mapped");
+		    cmdp->argv[0]->bp, "135|\"%s\" isn't currently mapped");
 		return (1);
 	}
 	return (0);

@@ -1,4 +1,4 @@
-.\"	$OpenBSD: mountd.8,v 1.20 2015/12/15 18:24:18 tim Exp $
+.\"	$OpenBSD: mountd.8,v 1.12 1998/12/15 01:20:39 aaron Exp $
 .\"	$NetBSD: mountd.8,v 1.11 1996/02/18 11:57:51 fvdl Exp $
 .\"
 .\" Copyright (c) 1989, 1991, 1993
@@ -12,7 +12,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -30,34 +34,48 @@
 .\"
 .\"     @(#)mountd.8	8.4 (Berkeley) 4/28/95
 .\"
-.Dd $Mdocdate: December 15 2015 $
+.Dd April 28, 1995
 .Dt MOUNTD 8
 .Os
 .Sh NAME
 .Nm mountd
-.Nd service remote NFS mount requests
+.Nd service remote
+.Tn NFS
+mount requests
 .Sh SYNOPSIS
 .Nm mountd
-.Op Fl d
+.Op Fl dn
 .Op Ar exportsfile
 .Sh DESCRIPTION
 .Nm
-is the server for NFS mount requests from other client machines.
+is the server for
+.Tn NFS
+mount requests from other client machines.
 .Nm
-listens for service requests at the port indicated in the NFS
+listens for service requests at the port indicated in the
+.Tn NFS
 server specification; see
 .%T "Network File System Protocol Specification" ,
-RFC 1094, Appendix A and
+RFC1094, Appendix A and
 .%T "NFS: Network File System Version 3 Protocol Specification" ,
-RFC 1813, Appendix I.
+Appendix I.
 .Pp
-The options are as follows:
+Options and operands available for
+.Nm mountd :
 .Bl -tag -width Ds
 .It Fl d
 Enable debugging mode.
 .Nm
 will not detach from the controlling terminal and will print
 debugging messages to stderr.
+.It Fl n
+Do not require that clients make mount requests from reserved ports.
+(Normally, only mount requests from reserved ports are accepted.)
+This option should only be specified if there are clients, such as PCs,
+that need it.
+The use of
+.Fl n
+is STRONGLY discouraged, as it opens up a wide range of security problems.
 .It Ar exportsfile
 The
 .Ar exportsfile
@@ -88,8 +106,6 @@ errors in the exports file.
 .Bl -tag -width /var/run/mountd.pid -compact
 .It Pa /etc/exports
 list of exported filesystems
-.It Pa /var/db/mountdtab
-list of exported filesystems currently mounted
 .It Pa /var/run/mountd.pid
 PID of the currently running
 .Nm
@@ -105,12 +121,3 @@ The
 .Nm
 utility first appeared in
 .Bx 4.4 .
-.Pp
-The
-.Fl n
-flag historically allowed clients to use non-reserved ports
-when communicating with
-.Nm .
-In
-.Ox ,
-a reserved port is always used.

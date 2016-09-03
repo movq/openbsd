@@ -1,4 +1,3 @@
-/*	$OpenBSD: drand48.c,v 1.7 2015/09/14 13:30:17 guenther Exp $ */
 /*
  * Copyright (c) 1993 Martin Birgmeier
  * All rights reserved.
@@ -12,19 +11,16 @@
  * to anyone/anything when using this software.
  */
 
-#include <math.h>
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: drand48.c,v 1.2 1996/08/19 08:33:29 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include "rand48.h"
+
+extern unsigned short __rand48_seed[3];
 
 double
 drand48(void)
 {
-	if (__rand48_deterministic == 0) {
-		unsigned short rseed[3];
-
-		arc4random_buf(rseed, sizeof rseed);
-		return ldexp((double) rseed[0], -48) +
-		       ldexp((double) rseed[1], -32) +
-		       ldexp((double) rseed[2], -16);
-	}
 	return erand48(__rand48_seed);
 }

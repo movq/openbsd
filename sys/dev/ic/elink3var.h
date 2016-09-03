@@ -1,4 +1,4 @@
-/*	$OpenBSD: elink3var.h,v 1.19 2009/11/23 16:36:22 claudio Exp $	*/
+/*	$OpenBSD: elink3var.h,v 1.12 1999/07/26 12:31:44 niklas Exp $	*/
 /*	$NetBSD: elink3var.h,v 1.12 1997/03/30 22:47:11 jonathan Exp $	*/
 
 /*
@@ -37,16 +37,20 @@
 struct ep_softc {
 	struct device sc_dev;
 	void *sc_ih;
-	struct timeout sc_epmbuffill_tmo;
 
+#ifdef __NetBSD__
+	struct ethercom sc_ethercom;	/* Ethernet common part		*/
+#else
 	struct arpcom sc_arpcom;	/* Ethernet common part		*/
-	struct mii_data sc_mii;		/* MII/media control		*/
+#endif
+	struct ifmedia sc_media;	/* media control		*/
 	bus_space_tag_t sc_iot;		/* bus cookie			*/
 	bus_space_handle_t sc_ioh;	/* bus i/o handle		*/
 	u_int	ep_connectors;		/* Connectors on this card.	*/
 #define MAX_MBS	8			/* # of mbufs we keep around	*/
 	struct mbuf *mb[MAX_MBS];	/* spare mbuf storage.		*/
 	int	next_mb;		/* Which mbuf to use next. 	*/
+	int	last_mb;		/* Last mbuf.			*/
 	int	tx_start_thresh;	/* Current TX_start_thresh.	*/
 	int	tx_succ_ok;		/* # packets sent in sequence   */
 					/* w/o underrun			*/
@@ -74,7 +78,6 @@ struct ep_softc {
 #define EP_CHIPSET_VORTEX		0x02	/* 100mbit, single-pkt dma */
 #define EP_CHIPSET_BOOMERANG		0x03	/* Saner dma plus PIO */
 #define EP_CHIPSET_BOOMERANG2		0x04	/* Saner dma, no PIO */
-#define EP_CHIPSET_ROADRUNNER		0x05	/* Like Boomerang, but PCMCIA */
 
 	u_char	bustype;
 #define EP_BUS_ISA	  	0x0
@@ -87,9 +90,7 @@ struct ep_softc {
 	u_char	txashift;		/* shift in SET_TX_AVAIL_THRESH */
 };
 
-u_int16_t epreadeeprom(bus_space_tag_t, bus_space_handle_t, int);
-void	epconfig(struct ep_softc *, u_short, u_int8_t *);
-int	epintr(void *);
-void	epstop(struct ep_softc *);
-void	epinit(struct ep_softc *);
-int	ep_detach(struct device *);
+u_int16_t epreadeeprom __P((bus_space_tag_t, bus_space_handle_t, int));
+void	epconfig __P((struct ep_softc *, u_short, u_int8_t *));
+int	epintr __P((void *));
+void	epstop __P((struct ep_softc *));

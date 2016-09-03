@@ -117,7 +117,7 @@ static struct option const longopts[] =
     {"ignore-matching-lines", 1, 0, 'I'},
     {"label", 1, 0, 'L'},
     {"new-file", 0, 0, 'N'},
-    {"initial-tab", 0, 0, 'T'},
+    {"initial-tab", 0, 0, 148},
     {"width", 1, 0, 'W'},
     {"text", 0, 0, 'a'},
     {"ignore-space-change", 0, 0, 'b'},
@@ -138,7 +138,7 @@ static struct option const longopts[] =
     {"report-identical-files", 0, 0, 's'},
     {"expand-tabs", 0, 0, 't'},
     {"ignore-all-space", 0, 0, 'w'},
-    {"side-by-side", 0, 0, 'y'},
+    {"side-by-side", 0, 0, 147},
     {"unified", 2, 0, 146},
     {"left-column", 0, 0, 129},
     {"suppress-common-lines", 0, 0, 130},
@@ -186,6 +186,28 @@ static struct option const longopts[] =
    mostly to ignore -q.  Maybe this should be fixed, but I think it's
    a larger issue than the changes included here.  */
 
+static void strcat_and_allocate PROTO ((char **, size_t *, const char *));
+
+/* *STR is a pointer to a malloc'd string.  *LENP is its allocated
+   length.  Add SRC to the end of it, reallocating if necessary.  */
+static void
+strcat_and_allocate (str, lenp, src)
+    char **str;
+    size_t *lenp;
+    const char *src;
+{
+    size_t new_size;
+
+    new_size = strlen (*str) + strlen (src) + 1;
+    if (*str == NULL || new_size >= *lenp)
+    {
+	while (new_size >= *lenp)
+	    *lenp *= 2;
+	*str = xrealloc (*str, *lenp);
+    }
+    strcat (*str, src);
+}
+
 int
 diff (argc, argv)
     int argc;
@@ -224,19 +246,18 @@ diff (argc, argv)
 
     optind = 0;
     while ((c = getopt_long (argc, argv,
-	       "+abcdefhilnpstuwy0123456789BHNRTC:D:F:I:L:U:V:W:k:r:",
+	       "+abcdefhilnpstuw0123456789BHNRC:D:F:I:L:U:V:W:k:r:",
 			     longopts, &option_index)) != -1)
     {
 	switch (c)
 	{
 	    case 'a': case 'b': case 'c': case 'd': case 'e': case 'f':
 	    case 'h': case 'i': case 'n': case 'p': case 's': case 't':
-	    case 'u': case 'w': case 'y':
-            case '0': case '1': case '2': case '3': case '4': case '5':
-            case '6': case '7': case '8': case '9':
-	    case 'B': case 'H': case 'T':
+	    case 'u': case 'w': case '0': case '1': case '2':
+	    case '3': case '4': case '5': case '6': case '7': case '8':
+	    case '9': case 'B': case 'H':
 		(void) sprintf (tmp, " -%c", (char) c);
-		allocate_and_strcat (&opts, &opts_allocated, tmp);
+		strcat_and_allocate (&opts, &opts_allocated, tmp);
 		break;
 	    case 'L':
 		if (have_rev1_label++)
@@ -246,31 +267,32 @@ diff (argc, argv)
 			break;
 		    }
 
-	        allocate_and_strcat (&opts, &opts_allocated, " -L");
-	        allocate_and_strcat (&opts, &opts_allocated, optarg);
+	        strcat_and_allocate (&opts, &opts_allocated, " -L");
+	        strcat_and_allocate (&opts, &opts_allocated, optarg);
 		break;
 	    case 'C': case 'F': case 'I': case 'U': case 'V': case 'W':
 		(void) sprintf (tmp, " -%c", (char) c);
-		allocate_and_strcat (&opts, &opts_allocated, tmp);
-		allocate_and_strcat (&opts, &opts_allocated, optarg);
+		strcat_and_allocate (&opts, &opts_allocated, tmp);
+		strcat_and_allocate (&opts, &opts_allocated, optarg);
 		break;
 	    case 131:
 		/* --ifdef.  */
-		allocate_and_strcat (&opts, &opts_allocated, " --ifdef=");
-		allocate_and_strcat (&opts, &opts_allocated, optarg);
+		strcat_and_allocate (&opts, &opts_allocated, " --ifdef=");
+		strcat_and_allocate (&opts, &opts_allocated, optarg);
 		break;
 	    case 129: case 130:           case 132: case 133: case 134:
 	    case 135: case 136: case 137: case 138: case 139: case 140:
 	    case 141: case 142: case 143: case 144: case 145: case 146:
-		allocate_and_strcat (&opts, &opts_allocated, " --");
-		allocate_and_strcat (&opts, &opts_allocated,
+	    case 147: case 148:
+		strcat_and_allocate (&opts, &opts_allocated, " --");
+		strcat_and_allocate (&opts, &opts_allocated,
 				     longopts[option_index].name);
 		if (longopts[option_index].has_arg == 1
 		    || (longopts[option_index].has_arg == 2
 			&& optarg != NULL))
 		{
-		    allocate_and_strcat (&opts, &opts_allocated, "=");
-		    allocate_and_strcat (&opts, &opts_allocated, optarg);
+		    strcat_and_allocate (&opts, &opts_allocated, "=");
+		    strcat_and_allocate (&opts, &opts_allocated, optarg);
 		}
 		break;
 	    case 'R':
@@ -319,7 +341,7 @@ diff (argc, argv)
 	options = xstrdup ("");
 
 #ifdef CLIENT_SUPPORT
-    if (current_parsed_root->isremote) {
+    if (client_active) {
 	/* We're the client side.  Fire up the remote server.  */
 	start_server ();
 	
@@ -400,8 +422,6 @@ diff_fileproc (callerdat, finfo)
     char *tmp;
     char *tocvsPath;
     char *fname;
-    char *label1;
-    char *label2;
 
     /* Initialize these solely to avoid warnings from gcc -Wall about
        variables that might be used uninitialized.  */
@@ -612,53 +632,24 @@ diff_fileproc (callerdat, finfo)
 	copy_file (tocvsPath, finfo->file);
     }
 
-    /* Set up file labels appropriate for compatibility with the Larry Wall
-     * implementation of patch if the user didn't specify.  This is irrelevant
-     * according to the POSIX.2 specification.
-     */
-    label1 = NULL;
-    label2 = NULL;
-    if (!have_rev1_label)
-    {
-	if (empty_file == DIFF_ADDED)
-	    label1 =
-		make_file_label (DEVNULL, NULL, NULL);
-	else
-	    label1 =
-		make_file_label (finfo->fullname, use_rev1, vers ? vers->srcfile : NULL);
-    }
-
-    if (!have_rev2_label)
-    {
-	if (empty_file == DIFF_REMOVED)
-	    label2 =
-		make_file_label (DEVNULL, NULL, NULL);
-	else
-	    label2 =
-		make_file_label (finfo->fullname, use_rev2, vers ? vers->srcfile : NULL);
-    }
-
     if (empty_file == DIFF_ADDED || empty_file == DIFF_REMOVED)
     {
-	/* This is fullname, not file, possibly despite the POSIX.2
-	 * specification, because that's the way all the Larry Wall
-	 * implementations of patch (are there other implementations?) want
-	 * things and the POSIX.2 spec appears to leave room for this.
-	 */
+	/* This is file, not fullname, because it is the "Index:" line which
+	   is supposed to contain the directory.  */
 	cvs_output ("\
 ===================================================================\n\
 RCS file: ", 0);
-	cvs_output (finfo->fullname, 0);
+	cvs_output (finfo->file, 0);
 	cvs_output ("\n", 1);
 
 	cvs_output ("diff -N ", 0);
-	cvs_output (finfo->fullname, 0);
+	cvs_output (finfo->file, 0);
 	cvs_output ("\n", 1);
 
 	if (empty_file == DIFF_ADDED)
 	{
 	    if (use_rev2 == NULL)
-		status = diff_exec (DEVNULL, finfo->file, label1, label2, opts, RUN_TTY);
+		status = diff_exec (DEVNULL, finfo->file, opts, RUN_TTY);
 	    else
 	    {
 		int retcode;
@@ -677,7 +668,7 @@ RCS file: ", 0);
 		    return err;
 		}
 
-		status = diff_exec (DEVNULL, tmp, label1, label2, opts, RUN_TTY);
+		status = diff_exec (DEVNULL, tmp, opts, RUN_TTY);
 	    }
 	}
 	else
@@ -696,11 +687,22 @@ RCS file: ", 0);
 		return err;
 	    }
 
-	    status = diff_exec (tmp, DEVNULL, label1, label2, opts, RUN_TTY);
+	    status = diff_exec (tmp, DEVNULL, opts, RUN_TTY);
 	}
     }
     else
     {
+	char *label1 = NULL;
+	char *label2 = NULL;
+
+	if (!have_rev1_label)
+	    label1 =
+		make_file_label (finfo->fullname, use_rev1, vers->srcfile);
+
+	if (!have_rev2_label)
+	    label2 =
+		make_file_label (finfo->fullname, use_rev2, vers->srcfile);
+
 	status = RCS_exec_rcsdiff (vers->srcfile, opts,
 				   *options ? options : vers->options,
 				   use_rev1, use_rev2,
@@ -869,7 +871,7 @@ diff_file_nodiff (finfo, vers, empty_file)
 	    /* The first revision does not exist.  If EMPTY_FILES is
                true, treat this as an added file.  Otherwise, warn
                about the missing tag.  */
-	    if (use_rev2 == NULL || RCS_isdead( vers->srcfile, use_rev2 ) )
+	    if (use_rev2 == NULL)
 		/* At least in the case where DIFF_REV1 and DIFF_REV2
 		   are both numeric, we should be returning some kind
 		   of error (see basicb-8a0 in testsuite).  The symbolic

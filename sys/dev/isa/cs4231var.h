@@ -1,4 +1,4 @@
-/* $OpenBSD: cs4231var.h,v 1.4 2008/06/26 05:42:16 ray Exp $ */
+/* $OpenBSD: cs4231var.h,v 1.2 1996/03/08 16:42:53 niklas Exp $ */
 /* $NetBSD: cs4231var.h,v 1.2 1996/02/05 02:21:51 jtc Exp $ */
 
 /*-
@@ -16,6 +16,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD 
+ *	  Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its 
+ *    contributors may be used to endorse or promote products derived 
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -42,10 +49,10 @@ struct cs4231_softc {
 #define CS4231_MUX_LINE_IN	3
 };
 
-int	cs4231_set_linein_gain(struct ad1848_softc *, struct ad1848_volume *);
-int	cs4231_get_linein_gain(struct ad1848_softc *, struct ad1848_volume *);
-int	cs4231_set_mono_gain(struct ad1848_softc *, struct ad1848_volume *);
-int	cs4231_get_mono_gain(struct ad1848_softc *, struct ad1848_volume *);
-void	cs4231_mute_mono(struct ad1848_softc *, int /* onoff */);
-void	cs4231_mute_line(struct ad1848_softc *, int /* onoff */);
-void	cs4231_mute_monitor(struct ad1848_softc *, int /* onoff */);
+int	cs4231_set_linein_gain __P((struct ad1848_softc *, struct ad1848_volume *));
+int	cs4231_get_linein_gain __P((struct ad1848_softc *, struct ad1848_volume *));
+int	cs4231_set_mono_gain __P((struct ad1848_softc *, struct ad1848_volume *));
+int	cs4231_get_mono_gain __P((struct ad1848_softc *, struct ad1848_volume *));
+void	cs4231_mute_mono __P((struct ad1848_softc *, int /* onoff */));
+void	cs4231_mute_line __P((struct ad1848_softc *, int /* onoff */));
+void	cs4231_mute_monitor __P((struct ad1848_softc *, int /* onoff */));

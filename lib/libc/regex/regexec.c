@@ -1,4 +1,3 @@
-/*	$OpenBSD: regexec.c,v 1.13 2014/10/11 04:23:12 doug Exp $ */
 /*-
  * Copyright (c) 1992, 1993, 1994 Henry Spencer.
  * Copyright (c) 1992, 1993, 1994
@@ -15,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,6 +36,14 @@
  *
  *	@(#)regexec.c	8.3 (Berkeley) 3/20/94
  */
+
+#if defined(LIBC_SCCS) && !defined(lint)
+#if 0
+static char sccsid[] = "@(#)regexec.c	8.3 (Berkeley) 3/20/94";
+#else
+static char rcsid[] = "$OpenBSD: regexec.c,v 1.7 1997/04/30 05:51:10 tholo Exp $";
+#endif
+#endif /* LIBC_SCCS and not lint */
 
 /*
  * the outer shell of regexec()
@@ -109,8 +120,7 @@
 #define	ASSIGN(d, s)	memcpy(d, s, m->g->nstates)
 #define	EQ(a, b)	(memcmp(a, b, m->g->nstates) == 0)
 #define	STATEVARS	long vn; char *space
-#define	STATESETUP(m, nv)	{ (m)->space = reallocarray(NULL, 	    \
-    				(m)->g->nstates, (nv));			    \
+#define	STATESETUP(m, nv)	{ (m)->space = malloc((nv)*(m)->g->nstates); \
 				if ((m)->space == NULL) return(REG_ESPACE); \
 				(m)->vn = 0; }
 #define	STATETEARDOWN(m)	{ free((m)->space); }
@@ -131,18 +141,28 @@
 
 /*
  - regexec - interface for matching
+ = extern int regexec(const regex_t *, const char *, size_t, \
+ =					regmatch_t [], int);
+ = #define	REG_NOTBOL	00001
+ = #define	REG_NOTEOL	00002
+ = #define	REG_STARTEND	00004
+ = #define	REG_TRACE	00400	// tracing of execution
+ = #define	REG_LARGE	01000	// force large representation
+ = #define	REG_BACKR	02000	// force use of backref code
  *
  * We put this here so we can exploit knowledge of the state representation
  * when choosing which matcher to call.  Also, by this point the matchers
  * have been prototyped.
  */
 int				/* 0 success, REG_NOMATCH failure */
-regexec(const regex_t *preg, const char *string, size_t nmatch,
-    regmatch_t pmatch[], int eflags)
+regexec(preg, string, nmatch, pmatch, eflags)
+const regex_t *preg;
+const char *string;
+size_t nmatch;
+regmatch_t pmatch[];
+int eflags;
 {
-	struct re_guts *g = preg->re_g;
-	char *s = (char *)string; /* XXX fucking gcc XXX */
-
+	register struct re_guts *g = preg->re_g;
 #ifdef REDEBUG
 #	define	GOODFLAGS(f)	(f)
 #else
@@ -157,7 +177,7 @@ regexec(const regex_t *preg, const char *string, size_t nmatch,
 	eflags = GOODFLAGS(eflags);
 
 	if (g->nstates <= CHAR_BIT*sizeof(states1) && !(eflags&REG_LARGE))
-		return(smatcher(g, s, nmatch, pmatch, eflags));
+		return(smatcher(g, (char *)string, nmatch, pmatch, eflags));
 	else
-		return(lmatcher(g, s, nmatch, pmatch, eflags));
+		return(lmatcher(g, (char *)string, nmatch, pmatch, eflags));
 }

@@ -1,4 +1,4 @@
-/*	$OpenBSD: pas.c,v 1.27 2014/09/14 14:17:25 jsg Exp $	*/
+/*	$OpenBSD: pas.c,v 1.20 1999/01/24 15:58:54 mickey Exp $	*/
 /*	$NetBSD: pas.c,v 1.37 1998/01/12 09:43:43 thorpej Exp $	*/
 
 /*
@@ -43,7 +43,7 @@
  */
 /*
  * Todo:
- * 	- look at other PAS drivers (for PAS native support)
+ * 	- look at other PAS drivers (for PAS native suport)
  * 	- use common sb.c once emulation is setup
  */
 
@@ -53,6 +53,7 @@
 #include <sys/ioctl.h>
 #include <sys/syslog.h>
 #include <sys/device.h>
+#include <sys/proc.h>
 
 #include <machine/cpu.h>
 #include <machine/intr.h>
@@ -101,8 +102,8 @@ struct pas_softc {
 
 };
 
-int	pas_getdev(void *, struct audio_device *);
-void	pasconf(int, int, int, int);
+int	pas_getdev __P((void *, struct audio_device *));
+void	pasconf __P((int, int, int, int));
 
 
 /*
@@ -135,8 +136,7 @@ struct audio_hw_if pas_hw_if = {
         sb_mappage,
 	sbdsp_get_props,
 	sbdsp_trigger_output,
-	sbdsp_trigger_input,
-	NULL
+	sbdsp_trigger_input
 };
 
 /* The Address Translation code is used to convert I/O register addresses to
@@ -240,8 +240,8 @@ pasconf(model, sbbase, sbirq, sbdrq)
 	paswrite(P_M_MV508_INPUTMIX | 30, PARALLEL_MIXER);
 }
 
-int	pasprobe(struct device *, void *, void *);
-void	pasattach(struct device *, struct device *, void *);
+int	pasprobe __P((struct device *, void *, void *));
+void	pasattach __P((struct device *, struct device *, void *));
 
 struct cfattach pas_ca = {
 	sizeof(struct pas_softc), pasprobe, pasattach
@@ -380,7 +380,6 @@ pasprobe(parent, match, aux)
 	sc->sc_sbdsp.sc_irq = ia->ia_irq;
 	sc->sc_sbdsp.sc_drq8 = ia->ia_drq;
 	sc->sc_sbdsp.sc_drq16 = -1; /* XXX */
-	sc->sc_sbdsp.sc_ic = ia->ia_ic;
 	
 	if (sbdsp_probe(&sc->sc_sbdsp) == 0) {
 		DPRINTF(("pas: sbdsp probe failed\n"));
@@ -408,20 +407,16 @@ pasattach(parent, self, aux)
 	struct isa_attach_args *ia = (struct isa_attach_args *)aux;
 	int iobase = ia->ia_iobase;
 	
-	sc->sc_sbdsp.sc_isa = parent;
 	sc->sc_sbdsp.sc_iobase = iobase;
-	sc->sc_sbdsp.sc_ih = isa_intr_establish(ia->ia_ic, ia->ia_irq,
-	    IST_EDGE, IPL_AUDIO | IPL_MPSAFE,
-	    sbdsp_intr, &sc->sc_sbdsp, sc->sc_sbdsp.sc_dev.dv_xname);
+	sc->sc_sbdsp.sc_ih = isa_intr_establish(ia->ia_ic, ia->ia_irq, IST_EDGE,
+	    IPL_AUDIO, sbdsp_intr, &sc->sc_sbdsp, sc->sc_sbdsp.sc_dev.dv_xname);
 
 	printf(" ProAudio Spectrum %s [rev %d] ", pasnames[sc->model], sc->rev);
 	
 	sbdsp_attach(&sc->sc_sbdsp);
 
-	snprintf(pas_device.name, sizeof pas_device.name, "pas,%s",
-	    pasnames[sc->model]);
-	snprintf(pas_device.version, sizeof pas_device.version, "%d",
-	    sc->rev);
+	sprintf(pas_device.name, "pas,%s", pasnames[sc->model]);
+	sprintf(pas_device.version, "%d", sc->rev);
 
 	audio_attach_mi(&pas_hw_if, &sc->sc_sbdsp, &sc->sc_sbdsp.sc_dev);
 }

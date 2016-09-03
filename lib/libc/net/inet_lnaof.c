@@ -1,4 +1,3 @@
-/*	$OpenBSD: inet_lnaof.c,v 1.7 2015/01/16 16:48:51 deraadt Exp $ */
 /*
  * Copyright (c) 1983, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,6 +31,11 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: inet_lnaof.c,v 1.3 1997/04/05 21:13:11 millert Exp $";
+#endif /* LIBC_SCCS and not lint */
+
+#include <sys/param.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
@@ -37,9 +45,10 @@
  * number formats.
  */
 in_addr_t
-inet_lnaof(struct in_addr in)
+inet_lnaof(in)
+	struct in_addr in;
 {
-	in_addr_t i = ntohl(in.s_addr);
+	register in_addr_t i = ntohl(in.s_addr);
 
 	if (IN_CLASSA(i))
 		return ((i)&IN_CLASSA_HOST);

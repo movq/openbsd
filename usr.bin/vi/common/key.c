@@ -1,5 +1,3 @@
-/*	$OpenBSD: key.c,v 1.18 2016/05/27 09:18:11 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1991, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -11,6 +9,11 @@
 
 #include "config.h"
 
+#ifndef lint
+static const char sccsid[] = "@(#)key.c	10.33 (Berkeley) 9/24/96";
+#endif /* not lint */
+
+#include <sys/types.h>
 #include <sys/queue.h>
 #include <sys/time.h>
 
@@ -27,13 +30,11 @@
 #include "common.h"
 #include "../vi/vi.h"
 
-#define MAXIMUM(a, b)	(((a) > (b)) ? (a) : (b))
-
-static int	v_event_append(SCR *, EVENT *);
-static int	v_event_grow(SCR *, int);
-static int	v_key_cmp(const void *, const void *);
-static void	v_keyval(SCR *, int, scr_keyval_t);
-static void	v_sync(SCR *, int);
+static int	v_event_append __P((SCR *, EVENT *));
+static int	v_event_grow __P((SCR *, int));
+static int	v_key_cmp __P((const void *, const void *));
+static void	v_keyval __P((SCR *, int, scr_keyval_t));
+static void	v_sync __P((SCR *, int));
 
 /*
  * !!!
@@ -96,12 +97,13 @@ static int nkeylist =
  * v_key_init --
  *	Initialize the special key lookup table.
  *
- * PUBLIC: int v_key_init(SCR *);
+ * PUBLIC: int v_key_init __P((SCR *));
  */
 int
-v_key_init(SCR *sp)
+v_key_init(sp)
+	SCR *sp;
 {
-	u_int ch;
+	CHAR_T ch;
 	GS *gp;
 	KEYLIST *kp;
 	int cnt;
@@ -114,6 +116,16 @@ v_key_init(SCR *sp)
 	 * character set, as long as nul isn't a character.
 	 */
 	(void)setlocale(LC_ALL, "");
+#if __linux__
+	/*
+	 * In libc 4.5.26, setlocale(LC_ALL, ""), doesn't setup the table
+	 * for ctype(3c) correctly.  This bug is fixed in libc 4.6.x.
+	 *
+	 * This code works around this problem for libc 4.5.x users.
+	 * Note that this code is harmless if you're using libc 4.6.x.
+	 */
+	(void)setlocale(LC_CTYPE, "");
+#endif
 	v_key_ilookup(sp);
 
 	v_keyval(sp, K_CNTRLD, KEY_VEOF);
@@ -139,7 +151,7 @@ v_key_init(SCR *sp)
 			break;
 		}
 	if (ch != gp->noprint) {
-		msgq(sp, M_ERR, "No non-printable character found");
+		msgq(sp, M_ERR, "079|No non-printable character found");
 		return (1);
 	}
 	return (0);
@@ -154,7 +166,10 @@ v_key_init(SCR *sp)
  * in the table, so we check for that first.
  */
 static void
-v_keyval(SCR *sp, int val, scr_keyval_t name)
+v_keyval(sp, val, name)
+	SCR *sp;
+	int val;
+	scr_keyval_t name;
 {
 	KEYLIST *kp;
 	CHAR_T ch;
@@ -185,10 +200,11 @@ v_keyval(SCR *sp, int val, scr_keyval_t name)
  * v_key_ilookup --
  *	Build the fast-lookup key display array.
  *
- * PUBLIC: void v_key_ilookup(SCR *);
+ * PUBLIC: void v_key_ilookup __P((SCR *));
  */
 void
-v_key_ilookup(SCR *sp)
+v_key_ilookup(sp)
+	SCR *sp;
 {
 	CHAR_T ch, *p, *t;
 	GS *gp;
@@ -205,10 +221,12 @@ v_key_ilookup(SCR *sp)
  *	Return the length of the string that will display the key.
  *	This routine is the backup for the KEY_LEN() macro.
  *
- * PUBLIC: size_t v_key_len(SCR *, CHAR_T);
+ * PUBLIC: size_t v_key_len __P((SCR *, ARG_CHAR_T));
  */
 size_t
-v_key_len(SCR *sp, CHAR_T ch)
+v_key_len(sp, ch)
+	SCR *sp;
+	ARG_CHAR_T ch;
 {
 	(void)v_key_name(sp, ch);
 	return (sp->clen);
@@ -219,16 +237,20 @@ v_key_len(SCR *sp, CHAR_T ch)
  *	Return the string that will display the key.  This routine
  *	is the backup for the KEY_NAME() macro.
  *
- * PUBLIC: CHAR_T *v_key_name(SCR *, CHAR_T);
+ * PUBLIC: CHAR_T *v_key_name __P((SCR *, ARG_CHAR_T));
  */
 CHAR_T *
-v_key_name(SCR *sp, CHAR_T ch)
+v_key_name(sp, ach)
+	SCR *sp;
+	ARG_CHAR_T ach;
 {
 	static const CHAR_T hexdigit[] = "0123456789abcdef";
 	static const CHAR_T octdigit[] = "01234567";
-	CHAR_T *chp, mask;
+	CHAR_T ch, *chp, mask;
 	size_t len;
 	int cnt, shift;
+
+	ch = ach;
 
 	/* See if the character was explicitly declared printable or not. */
 	if ((chp = O_STR(sp, O_PRINT)) != NULL)
@@ -296,10 +318,12 @@ done:	sp->cname[sp->clen = len] = '\0';
  *	Fill in the value for a key.  This routine is the backup
  *	for the KEY_VAL() macro.
  *
- * PUBLIC: int v_key_val(SCR *, CHAR_T);
+ * PUBLIC: int v_key_val __P((SCR *, ARG_CHAR_T));
  */
 int
-v_key_val(SCR *sp, CHAR_T ch)
+v_key_val(sp, ch)
+	SCR *sp;
+	ARG_CHAR_T ch;
 {
 	KEYLIST k, *kp;
 
@@ -318,10 +342,15 @@ v_key_val(SCR *sp, CHAR_T ch)
  * an associated flag value, which indicates if it has already been quoted,
  * and if it is the result of a mapping or an abbreviation.
  *
- * PUBLIC: int v_event_push(SCR *, EVENT *, CHAR_T *, size_t, u_int);
+ * PUBLIC: int v_event_push __P((SCR *, EVENT *, CHAR_T *, size_t, u_int));
  */
 int
-v_event_push(SCR *sp, EVENT *p_evp, CHAR_T *p_s, size_t nitems, u_int flags)
+v_event_push(sp, p_evp, p_s, nitems, flags)
+	SCR *sp;
+	EVENT *p_evp;			/* Push event. */
+	CHAR_T *p_s;			/* Push characters. */
+	size_t nitems;			/* Number of items to push. */
+	u_int flags;			/* CH_* flags. */
 {
 	EVENT *evp;
 	GS *gp;
@@ -343,7 +372,7 @@ v_event_push(SCR *sp, EVENT *p_evp, CHAR_T *p_s, size_t nitems, u_int flags)
 	 */
 #define	TERM_PUSH_SHIFT	30
 	total = gp->i_cnt + gp->i_next + nitems + TERM_PUSH_SHIFT;
-	if (total >= gp->i_nelem && v_event_grow(sp, MAXIMUM(total, 64)))
+	if (total >= gp->i_nelem && v_event_grow(sp, MAX(total, 64)))
 		return (1);
 	if (gp->i_cnt)
 		MEMMOVE(gp->i_event + TERM_PUSH_SHIFT + nitems,
@@ -370,7 +399,9 @@ copy:	gp->i_cnt += nitems;
  *	Append events onto the tail of the buffer.
  */
 static int
-v_event_append(SCR *sp, EVENT *argp)
+v_event_append(sp, argp)
+	SCR *sp;
+	EVENT *argp;
 {
 	CHAR_T *s;			/* Characters. */
 	EVENT *evp;
@@ -382,7 +413,7 @@ v_event_append(SCR *sp, EVENT *argp)
 	gp = sp->gp;
 	if (gp->i_event == NULL ||
 	    nevents > gp->i_nelem - (gp->i_next + gp->i_cnt))
-		v_event_grow(sp, MAXIMUM(nevents, 64));
+		v_event_grow(sp, MAX(nevents, 64));
 	evp = gp->i_event + gp->i_next + gp->i_cnt;
 	gp->i_cnt += nevents;
 
@@ -401,10 +432,10 @@ v_event_append(SCR *sp, EVENT *argp)
 
 /* Remove events from the queue. */
 #define	QREM(len) {							\
-	if ((gp->i_cnt -= (len)) == 0)					\
+	if ((gp->i_cnt -= len) == 0)					\
 		gp->i_next = 0;						\
 	else								\
-		gp->i_next += (len);					\
+		gp->i_next += len;					\
 }
 
 /*
@@ -492,10 +523,14 @@ v_event_append(SCR *sp, EVENT *argp)
  * point.  Given that this might make the log grow unacceptably (consider that
  * cursor keys are done with maps), for now we leave any changes made in place.
  *
- * PUBLIC: int v_event_get(SCR *, EVENT *, int, u_int32_t);
+ * PUBLIC: int v_event_get __P((SCR *, EVENT *, int, u_int32_t));
  */
 int
-v_event_get(SCR *sp, EVENT *argp, int timeout, u_int32_t flags)
+v_event_get(sp, argp, timeout, flags)
+	SCR *sp;
+	EVENT *argp;
+	int timeout;
+	u_int32_t flags;
 {
 	EVENT *evp, ev;
 	GS *gp;
@@ -595,7 +630,7 @@ newmap:	evp = &gp->i_event[gp->i_next];
 	 */
 	if (istimeout || F_ISSET(&evp->e_ch, CH_NOMAP) ||
 	    !LF_ISSET(EC_MAPCOMMAND | EC_MAPINPUT) ||
-	    (evp->e_c < MAX_BIT_SEQ && !bit_test(gp->seqb, evp->e_c)))
+	    evp->e_c < MAX_BIT_SEQ && !bit_test(gp->seqb, evp->e_c))
 		goto nomap;
 
 	/* Search the map. */
@@ -709,14 +744,16 @@ not_digit:	argp->e_c = CH_NOT_DIGIT;
  *	Walk the screen lists, sync'ing files to their backup copies.
  */
 static void
-v_sync(SCR *sp, int flags)
+v_sync(sp, flags)
+	SCR *sp;
+	int flags;
 {
 	GS *gp;
 
 	gp = sp->gp;
-	TAILQ_FOREACH(sp, &gp->dq, q)
+	for (sp = gp->dq.cqh_first; sp != (void *)&gp->dq; sp = sp->q.cqe_next)
 		rcv_sync(sp, flags);
-	TAILQ_FOREACH(sp, &gp->hq, q)
+	for (sp = gp->hq.cqh_first; sp != (void *)&gp->hq; sp = sp->q.cqe_next)
 		rcv_sync(sp, flags);
 }
 
@@ -724,38 +761,40 @@ v_sync(SCR *sp, int flags)
  * v_event_err --
  *	Unexpected event.
  *
- * PUBLIC: void v_event_err(SCR *, EVENT *);
+ * PUBLIC: void v_event_err __P((SCR *, EVENT *));
  */
 void
-v_event_err(SCR *sp, EVENT *evp)
+v_event_err(sp, evp)
+	SCR *sp;
+	EVENT *evp;
 {
 	switch (evp->e_event) {
 	case E_CHARACTER:
-		msgq(sp, M_ERR, "Unexpected character event");
+		msgq(sp, M_ERR, "276|Unexpected character event");
 		break;
 	case E_EOF:
-		msgq(sp, M_ERR, "Unexpected end-of-file event");
+		msgq(sp, M_ERR, "277|Unexpected end-of-file event");
 		break;
 	case E_INTERRUPT:
-		msgq(sp, M_ERR, "Unexpected interrupt event");
+		msgq(sp, M_ERR, "279|Unexpected interrupt event");
 		break;
 	case E_QUIT:
-		msgq(sp, M_ERR, "Unexpected quit event");
+		msgq(sp, M_ERR, "280|Unexpected quit event");
 		break;
 	case E_REPAINT:
-		msgq(sp, M_ERR, "Unexpected repaint event");
+		msgq(sp, M_ERR, "281|Unexpected repaint event");
 		break;
 	case E_STRING:
-		msgq(sp, M_ERR, "Unexpected string event");
+		msgq(sp, M_ERR, "285|Unexpected string event");
 		break;
 	case E_TIMEOUT:
-		msgq(sp, M_ERR, "Unexpected timeout event");
+		msgq(sp, M_ERR, "286|Unexpected timeout event");
 		break;
 	case E_WRESIZE:
-		msgq(sp, M_ERR, "Unexpected resize event");
+		msgq(sp, M_ERR, "316|Unexpected resize event");
 		break;
 	case E_WRITE:
-		msgq(sp, M_ERR, "Unexpected write event");
+		msgq(sp, M_ERR, "287|Unexpected write event");
 		break;
 
 	/*
@@ -778,10 +817,12 @@ v_event_err(SCR *sp, EVENT *evp)
  * v_event_flush --
  *	Flush any flagged keys, returning if any keys were flushed.
  *
- * PUBLIC: int v_event_flush(SCR *, u_int);
+ * PUBLIC: int v_event_flush __P((SCR *, u_int));
  */
 int
-v_event_flush(SCR *sp, u_int flags)
+v_event_flush(sp, flags)
+	SCR *sp;
+	u_int flags;
 {
 	GS *gp;
 	int rval;
@@ -797,7 +838,9 @@ v_event_flush(SCR *sp, u_int flags)
  *	Grow the terminal queue.
  */
 static int
-v_event_grow(SCR *sp, int add)
+v_event_grow(sp, add)
+	SCR *sp;
+	int add;
 {
 	GS *gp;
 	size_t new_nelem, olen;
@@ -815,7 +858,8 @@ v_event_grow(SCR *sp, int add)
  *	Compare two keys for sorting.
  */
 static int
-v_key_cmp(const void *ap, const void *bp)
+v_key_cmp(ap, bp)
+	const void *ap, *bp;
 {
 	return (((KEYLIST *)ap)->ch - ((KEYLIST *)bp)->ch);
 }

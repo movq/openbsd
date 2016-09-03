@@ -1,4 +1,4 @@
-/*	$OpenBSD: midi_if.h,v 1.9 2015/05/16 10:04:20 ratchov Exp $	*/
+/*	$OpenBSD: midi_if.h,v 1.1 1999/01/02 00:02:37 niklas Exp $	*/
 /*	$NetBSD: midi_if.h,v 1.3 1998/11/25 22:17:07 augustss Exp $	*/
 
 /*
@@ -16,6 +16,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -40,18 +47,24 @@ struct midi_info {
 #define MIDI_PROP_OUT_INTR  1
 #define MIDI_PROP_CAN_INPUT 2
 
+struct midi_softc;
+
 struct midi_hw_if {
-	int	(*open)(void *, int, 	/* open hardware */
-			void (*)(void *, int), /* input callback */
-			void (*)(void *), /* output callback */
-			void *);
-	void	(*close)(void *);	/* close hardware */
-	int	(*output)(void *, int);	/* output a byte */
-	void	(*flush)(void *);	/* flush the output */
-	void	(*getinfo)(void *, struct midi_info *);
-	int	(*ioctl)(void *, u_long, caddr_t, int, struct proc *);
+	int	(*open)__P((void *, int, 	/* open hardware */
+			    void (*)__P((void *, int)), /* input callback */
+			    void (*)__P((void *)), /* output callback */
+			    void *));
+	void	(*close)__P((void *));		/* close hardware */
+	int	(*output)__P((void *, int));	/* output a byte */
+	void	(*getinfo)__P((void *, struct midi_info *));
+	int	(*ioctl)__P((void *, u_long, caddr_t, int, struct proc *));
 };
 
-struct device *midi_attach_mi(struct midi_hw_if *, void *, struct device *);
+void	midi_attach __P((struct midi_softc *, struct device *));
+void	midi_attach_mi __P((struct midi_hw_if *, void *, struct device *));
+
+int	midi_unit_count __P((void));
+void	midi_getinfo __P((dev_t, struct midi_info *));
+int	midi_writebytes __P((int, u_char *, int));
 
 #endif /* _SYS_DEV_MIDI_IF_H_ */

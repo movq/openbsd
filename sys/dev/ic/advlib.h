@@ -1,4 +1,4 @@
-/*	$OpenBSD: advlib.h,v 1.11 2011/04/03 12:42:36 krw Exp $	*/
+/*	$OpenBSD: advlib.h,v 1.4 1998/11/17 06:08:15 downsj Exp $	*/
 /*      $NetBSD: advlib.h,v 1.5 1998/10/28 20:39:46 dante Exp $        */
 
 /*
@@ -18,6 +18,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -317,7 +324,7 @@
 
 
 /*
- * SCSI Inquiry structure
+ * SCSI Iquiry structure
  */
 
 typedef struct
@@ -442,10 +449,10 @@ typedef struct asc_scisq_1
 	u_int8_t	sg_queue_cnt;	/* number of SG entries */
 	u_int8_t	target_id;
 	u_int8_t	target_lun;
-	u_int32_t	data_addr; /* physical address of first segment to transfer */
+	u_int32_t	data_addr; /* physical address of first segment to transef */
 	u_int32_t	data_cnt;  /* byte count of first segment to transfer */
 	u_int32_t	sense_addr; /* physical address of the sense buffer */
-	u_int8_t	sense_len; /* length of sense buffer */
+	u_int8_t	sense_len; /* lenght of sense buffer */
 	u_int8_t	extra_bytes;
 } ASC_SCSIQ_1;
 
@@ -835,8 +842,9 @@ typedef struct asc_softc
 	struct adv_control	*sc_control; /* control structures */
 	TAILQ_HEAD(, adv_ccb)	sc_free_ccb, sc_waiting_ccb;
 	struct scsi_link	sc_link;     /* prototype for devs */
-	struct mutex		sc_ccb_mtx;
-	struct scsi_iopool	sc_iopool;
+
+	LIST_HEAD(, scsi_xfer)	sc_queue;
+	struct scsi_xfer	*sc_queuelast;
 
 	u_int8_t		*overrun_buf;
 
@@ -1313,20 +1321,22 @@ typedef struct asceep_config
 /******************************************************************************/
 
 
-void AscInitASC_SOFTC(ASC_SOFTC *);
-u_int16_t AscInitFromEEP(ASC_SOFTC *);
-u_int16_t AscInitFromASC_SOFTC(ASC_SOFTC *);
-int AscInitDriver(ASC_SOFTC *);
-void AscReInitLram(ASC_SOFTC *);
-int AscFindSignature(bus_space_tag_t, bus_space_handle_t);
-int AscISR(ASC_SOFTC *);
-int AscExeScsiQueue(ASC_SOFTC *, ASC_SCSI_Q *);
-void AscInquiryHandling(ASC_SOFTC *, u_int8_t, ASC_SCSI_INQUIRY *);
-int AscAbortCCB(ASC_SOFTC *, u_int32_t);
-int AscResetBus(ASC_SOFTC *);
-int AscResetDevice(ASC_SOFTC *, u_char);
+void AscInitASC_SOFTC __P((ASC_SOFTC *));
+u_int16_t AscInitFromEEP __P((ASC_SOFTC *));
+u_int16_t AscInitFromASC_SOFTC __P((ASC_SOFTC *));
+int AscInitDriver __P((ASC_SOFTC *));
+void AscReInitLram __P((ASC_SOFTC *));
+int AscFindSignature __P((bus_space_tag_t, bus_space_handle_t));
+int AscISR __P((ASC_SOFTC *));
+int AscExeScsiQueue __P((ASC_SOFTC *, ASC_SCSI_Q *));
+void AscInquiryHandling __P((ASC_SOFTC *, u_int8_t, ASC_SCSI_INQUIRY *));
+int AscAbortCCB __P((ASC_SOFTC *, u_int32_t));
+int AscResetBus __P((ASC_SOFTC *));
+int AscResetDevice __P((ASC_SOFTC *, u_char));
 
 
 /******************************************************************************/
+
+#define offsetof(type, member) ((size_t)(&((type *)0)->member))
 
 #endif	/* _ADVANSYS_NARROW_LIBRARY_H_ */

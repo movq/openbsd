@@ -1,4 +1,4 @@
-/*	$OpenBSD: number.c,v 1.20 2016/03/07 12:07:56 mestre Exp $	*/
+/*	$OpenBSD: number.c,v 1.7 1999/09/25 15:52:20 pjanzen Exp $	*/
 
 /*
  * Copyright (c) 1988, 1993, 1994
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,6 +32,22 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1988, 1993, 1994\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)number.c	8.3 (Berkeley) 5/4/95";
+#else
+static char rcsid[] = "$OpenBSD: number.c,v 1.7 1999/09/25 15:52:20 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/types.h>
 
 #include <ctype.h>
 #include <err.h>
@@ -61,23 +81,27 @@ static const char	*const name1[] = {
 	"novemdecillion",		"vigintillion",
 };
 
-void	convert(char *);
-void	convertexp(char *);
-int	number(const char *, int);
-void	pfract(int);
-int	unit(int, const char *);
-__dead void	usage(void);
+void	convert __P((char *));
+void	convertexp __P((char *));
+int	number __P((const char *, int));
+void	pfract __P((int));
+void	toobig __P((void));
+int	unit __P((int, const char *));
+void	usage __P((void));
 
 int lflag;
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	int ch, first;
 	char line[LINELEN];
 
-	if (pledge("stdio", NULL) == -1)
-		err(1, "pledge");
+	/* revoke */
+	setegid(getgid());
+	setgid(getgid());
 
 	lflag = 0;
 	while ((ch = getopt(argc, argv, "hl")) != -1)
@@ -85,6 +109,7 @@ main(int argc, char *argv[])
 		case 'l':
 			lflag = 1;
 			break;
+		case '?':
 		case 'h':
 		default:
 			usage();
@@ -111,29 +136,30 @@ main(int argc, char *argv[])
 			if (lflag)
 				(void)printf("\n");
 		}
-	return 0;
+	exit(0);
 }
 
 void
-convert(char *line)
+convert(line)
+	char *line;
 {
 	int flen, len, rval;
 	char *p, *fraction;
 
 	/* strip trailing and leading whitespace */
 	len = strlen(line) - 1;
-	while ((isblank((unsigned char)line[len])) || (line[len] == '\n'))
+	while ((isblank(line[len])) || (line[len] == '\n'))
 		line[len--] = '\0';
-	while ((isblank((unsigned char)line[0])) || (line[0] == '\n'))
+	while ((isblank(line[0])) || (line[0] == '\n'))
 		line++;
 	if (strchr(line, 'e') || strchr(line, 'E'))
 		convertexp(line);
 	else {
 	fraction = NULL;
 	for (p = line; *p != '\0' && *p != '\n'; ++p) {
-		if (isblank((unsigned char)*p))
+		if (isblank(*p))
 			goto badnum;
-		if (isdigit((unsigned char)*p))
+		if (isdigit(*p))
 			continue;
 		switch (*p) {
 		case '.':
@@ -155,8 +181,8 @@ badnum:			errx(1, "illegal number: %s", line);
 	*p = '\0';
 
 	if ((len = strlen(line)) > MAXNUM ||
-	    ((fraction != NULL) && (flen = strlen(fraction)) > MAXNUM))
-		errx(1, "number too long (max %d digits).", MAXNUM);
+	    ((fraction != NULL) && (flen = strlen(fraction))) > MAXNUM)
+		errx(1, "number too large (max %d digits).", MAXNUM);
 
 	if (*line == '-') {
 		(void)printf("minus%s", lflag ? " " : "\n");
@@ -191,7 +217,8 @@ badnum:			errx(1, "illegal number: %s", line);
 }
 
 void
-convertexp(char *line)
+convertexp(line)
+	char *line;
 {
 	char locline[LINELEN];
 	char *part1, *part2, *part3, *part4;
@@ -211,7 +238,7 @@ convertexp(char *line)
 	 */
 	j = strlen(line);
 	for (i = 0; i < j; i++)
-		if ((!isdigit((unsigned char)locline[i])) && (locline[i]))
+		if ((!isdigit(locline[i])) && (locline[i]))
 			if (((locline[i] != '+') && (locline[i] != '-')) ||
 				((i != 0) && (i != part3 - locline)))
 				errx(1, "illegal number: %s", line);
@@ -234,7 +261,9 @@ convertexp(char *line)
 }
 
 int
-unit(int len, const char *p)
+unit(len, p)
+	int len;
+	const char *p;
 {
 	int off, rval;
 
@@ -268,7 +297,9 @@ unit(int len, const char *p)
 }
 
 int
-number(const char *p, int len)
+number(p, len)
+	const char *p;
+	int len;
 {
 	int val, rval;
 
@@ -306,27 +337,27 @@ number(const char *p, int len)
 }
 
 void
-pfract(int len)
+pfract(len)
+	int len;
 {
 	static const char *const pref[] = { "", "ten-", "hundred-" };
 
 	switch(len) {
 	case 1:
-		(void)printf("tenths%s", lflag ? "" : ".\n");
+		(void)printf("tenths.\n");
 		break;
 	case 2:
-		(void)printf("hundredths%s", lflag ? "" : ".\n");
+		(void)printf("hundredths.\n");
 		break;
 	default:
-		(void)printf("%s%sths%s", pref[len % 3], name3[len / 3],
-		    lflag ? "" : ".\n");
+		(void)printf("%s%sths.\n", pref[len % 3], name3[len / 3]);
 		break;
 	}
 }
 
 void
-usage(void)
+usage()
 {
-	(void)fprintf(stderr, "usage: %s [-l] [--] [# ...]\n", getprogname());
+	(void)fprintf(stderr, "usage: number [-l] [--] [# ...]\n");
 	exit(1);
 }

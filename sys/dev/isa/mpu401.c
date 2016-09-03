@@ -1,4 +1,4 @@
-/*	$OpenBSD: mpu401.c,v 1.15 2015/03/14 03:38:47 jsg Exp $	*/
+/*	$OpenBSD: mpu401.c,v 1.4 1999/08/05 05:32:40 deraadt Exp $	*/
 /*	$NetBSD: mpu401.c,v 1.3 1998/11/25 22:17:06 augustss Exp $	*/
 
 /*
@@ -16,6 +16,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -36,18 +43,24 @@
 #include <sys/ioctl.h>
 #include <sys/syslog.h>
 #include <sys/device.h>
+#include <sys/proc.h>
 #include <sys/buf.h>
+#include <vm/vm.h>
 
 #include <machine/cpu.h>
 #include <machine/intr.h>
 #include <machine/bus.h>
 
-#include <dev/audio_if.h>
 #include <dev/midi_if.h>
 
 #include <dev/isa/isavar.h>
+#include <dev/isa/isadmavar.h>
 
 #include <dev/ic/mpuvar.h>
+
+#ifndef splaudio
+#define splaudio() splbio()	/* XXX found in audio_if.h normally */
+#endif
 
 #ifdef AUDIO_DEBUG
 #define DPRINTF(x)	if (mpu401debug) printf x
@@ -58,21 +71,28 @@ int	mpu401debug = 0;
 #define DPRINTFN(n,x)
 #endif
 
+#define MPU401_NPORT	2
+#define MPU_DATA		0
+#define MPU_COMMAND	1
+#define  MPU_RESET	0xff
+#define  MPU_UART_MODE	0x3f
+#define  MPU_ACK		0xfe
+#define MPU_STATUS	1
+#define  MPU_OUTPUT_BUSY	0x40
+#define  MPU_INPUT_EMPTY	0x80
+
+#define MPU_MAXWAIT	10000	/* usec/10 to wait */
+
 #define MPU_GETSTATUS(iot, ioh) (bus_space_read_1(iot, ioh, MPU_STATUS))
 
 int	mpu_reset(struct mpu_softc *);
 static	__inline int mpu_waitready(struct mpu_softc *);
 void	mpu_readinput(struct mpu_softc *);
 
-struct cfdriver mpu_cd = {
-	NULL, "mpu", DV_DULL
-};
-
 struct midi_hw_if mpu_midi_hw_if = {
 	mpu_open,
 	mpu_close,
 	mpu_output,
-	0,			/* flush */
 	mpu_getinfo,
 	0,                      /* ioctl */
 };
@@ -116,21 +136,22 @@ mpu_reset(sc)
 	bus_space_tag_t iot = sc->iot;
 	bus_space_handle_t ioh = sc->ioh;
 	int i;
+	int s;
 
 	if (mpu_waitready(sc)) {
 		DPRINTF(("mpu_reset: not ready\n"));
 		return EIO;
 	}
-	mtx_enter(&audio_lock);	/* Don't let the interrupt get our ACK. */
+	s = splaudio();		/* Don't let the interrupt get our ACK. */
 	bus_space_write_1(iot, ioh, MPU_COMMAND, MPU_RESET);
 	for(i = 0; i < 2*MPU_MAXWAIT; i++) {
 		if (!(MPU_GETSTATUS(iot, ioh) & MPU_INPUT_EMPTY) &&
 		    bus_space_read_1(iot, ioh, MPU_DATA) == MPU_ACK) {
-			mtx_leave(&audio_lock);
+			splx(s);
 			return 0;
 		}
 	}
-	mtx_leave(&audio_lock);
+	splx(s);
 	DPRINTF(("mpu_reset: No ACK\n"));
 	return EIO;
 }
@@ -139,8 +160,8 @@ int
 mpu_open(v, flags, iintr, ointr, arg)
 	void *v;
 	int flags;
-	void (*iintr)(void *, int);
-	void (*ointr)(void *);
+	void (*iintr)__P((void *, int));
+	void (*ointr)__P((void *));
 	void *arg;
 {
 	struct mpu_softc *sc = v;
@@ -188,26 +209,26 @@ mpu_readinput(sc)
 	}
 }
 
-/*
- * called with audio_lock
- */
 int
 mpu_output(v, d)
 	void *v;
 	int d;
 {
 	struct mpu_softc *sc = v;
+	int s;
 
 	DPRINTFN(3, ("mpu_output: sc=%p 0x%02x\n", sc, d));
 	if (!(MPU_GETSTATUS(sc->iot, sc->ioh) & MPU_INPUT_EMPTY)) {
+		s = splaudio();
 		mpu_readinput(sc);
+		splx(s);
 	}
-	if (MPU_GETSTATUS(sc->iot, sc->ioh) & MPU_OUTPUT_BUSY)
-		delay(10);
-	if (MPU_GETSTATUS(sc->iot, sc->ioh) & MPU_OUTPUT_BUSY)
-		return 0;
+	if (mpu_waitready(sc)) {
+		DPRINTF(("mpu_output: not ready\n"));
+		return EIO;
+	}
 	bus_space_write_1(sc->iot, sc->ioh, MPU_DATA, d);
-	return 1;
+	return 0;
 }
 
 void
@@ -225,13 +246,10 @@ mpu_intr(v)
 {
 	struct mpu_softc *sc = v;
 
-	mtx_enter(&audio_lock);
 	if (MPU_GETSTATUS(sc->iot, sc->ioh) & MPU_INPUT_EMPTY) {
-		mtx_leave(&audio_lock);
 		DPRINTF(("mpu_intr: no data\n"));
 		return 0;
 	}
 	mpu_readinput(sc);
-	mtx_leave(&audio_lock);
 	return 1;
 }

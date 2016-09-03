@@ -1,4 +1,3 @@
-/*	$OpenBSD: lockf.c,v 1.5 2008/06/26 05:42:05 ray Exp $	*/
 /*	$NetBSD: lockf.c,v 1.1 1997/12/20 20:23:18 kleink Exp $	*/
 
 /*-
@@ -16,6 +15,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -30,12 +36,19 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$NetBSD: lockf.c,v 1.1 1997/12/20 20:23:18 kleink Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
 
 int
-lockf(int filedes, int function, off_t size)
+lockf(filedes, function, size)
+	int filedes;
+	int function;
+	off_t size;
 {
 	struct flock fl;
 	int cmd;

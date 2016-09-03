@@ -1,4 +1,3 @@
-/*	$OpenBSD: wsetup.c,v 1.7 2005/08/08 08:05:36 espie Exp $ */
 /*-
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,6 +34,10 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: wsetup.c,v 1.2 1996/08/19 08:33:16 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include "local.h"
@@ -40,8 +47,8 @@
  * because either _flags does not include __SWR, or _buf is NULL.
  * _wsetup returns 0 if OK to write, nonzero otherwise.
  */
-int
-__swsetup(FILE *fp)
+__swsetup(fp)
+	register FILE *fp;
 {
 	/* make sure stdio is set up */
 	if (!__sdidinit)
@@ -67,11 +74,8 @@ __swsetup(FILE *fp)
 	/*
 	 * Make a buffer if necessary, then set _w.
 	 */
-	if (fp->_bf._base == NULL) {
-		if ((fp->_flags & (__SSTR | __SALC)) == __SSTR)
-			return (EOF);
+	if (fp->_bf._base == NULL)
 		__smakebuf(fp);
-	}
 	if (fp->_flags & __SLBF) {
 		/*
 		 * It is line buffered, so make _lbfsize be -_bufsize

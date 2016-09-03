@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_preserve.c,v 1.7 2016/01/06 22:28:52 millert Exp $	*/
-
 /*-
  * Copyright (c) 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)ex_preserve.c	10.12 (Berkeley) 4/27/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -26,17 +28,19 @@
  * ex_preserve -- :pre[serve]
  *	Push the file to recovery.
  *
- * PUBLIC: int ex_preserve(SCR *, EXCMD *);
+ * PUBLIC: int ex_preserve __P((SCR *, EXCMD *));
  */
 int
-ex_preserve(SCR *sp, EXCMD *cmdp)
+ex_preserve(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	recno_t lno;
 
 	NEEDFILE(sp, cmdp);
 
 	if (!F_ISSET(sp->ep, F_RCV_ON)) {
-		msgq(sp, M_ERR, "Preservation of this file not possible");
+		msgq(sp, M_ERR, "142|Preservation of this file not possible");
 		return (1);
 	}
 
@@ -52,7 +56,7 @@ ex_preserve(SCR *sp, EXCMD *cmdp)
 	if (rcv_sync(sp, RCV_SNAPSHOT))
 		return (1);
 
-	msgq(sp, M_INFO, "File preserved");
+	msgq(sp, M_INFO, "143|File preserved");
 	return (0);
 }
 
@@ -60,10 +64,12 @@ ex_preserve(SCR *sp, EXCMD *cmdp)
  * ex_recover -- :rec[over][!] file
  *	Recover the file.
  *
- * PUBLIC: int ex_recover(SCR *, EXCMD *);
+ * PUBLIC: int ex_recover __P((SCR *, EXCMD *));
  */
 int
-ex_recover(SCR *sp, EXCMD *cmdp)
+ex_recover(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	ARGS *ap;
 	FREF *frp;

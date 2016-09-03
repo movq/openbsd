@@ -1,7 +1,7 @@
-/*	$OpenBSD: vars.c,v 1.15 2014/07/11 12:33:12 jasper Exp $	*/
+/*	$OpenBSD: vars.c,v 1.4 1999/06/12 01:22:47 todd Exp $	*/
 
 /*
- * Copyright (c) 1998-2000 Michael Shalayeff
+ * Copyright (c) 1998 Michael Shalayeff
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -12,14 +12,19 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR 
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
  * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF MIND, USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
  * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
@@ -30,45 +35,41 @@
 #include <sys/param.h>
 #include <libsa.h>
 #include <sys/reboot.h>
-#include <lib/libkern/funcs.h>
 #include "cmd.h"
 
-extern char prog_ident[];
+extern const char version[];
 extern int debug;
-int db_console = -1;
 
-static int Xaddr(void);
-static int Xdevice(void);
+static int Xaddr __P((void));
+static int Xdevice __P((void));
 #ifdef DEBUG
-static int Xdebug(void);
+static int Xdebug __P((void));
 #endif
-static int Xdb_console(void);
-static int Ximage(void);
-static int Xhowto(void);
-static int Xtty(void);
-static int Xtimeout(void);
-int Xset(void);
-int Xenv(void);
+static int Ximage __P((void));
+static int Xhowto __P((void));
+static int Xtty __P((void));
+static int Xtimeout __P((void));
+int Xset __P((void));
+int Xenv __P((void));
 
 const struct cmd_table cmd_set[] = {
 	{"addr",   CMDT_VAR, Xaddr},
 	{"howto",  CMDT_VAR, Xhowto},
-#ifdef DEBUG
+#ifdef DEBUG	
 	{"debug",  CMDT_VAR, Xdebug},
 #endif
 	{"device", CMDT_VAR, Xdevice},
 	{"tty",    CMDT_VAR, Xtty},
 	{"image",  CMDT_VAR, Ximage},
 	{"timeout",CMDT_VAR, Xtimeout},
-	{"db_console", CMDT_VAR, Xdb_console},
 	{NULL,0}
 };
 
 #ifdef DEBUG
 static int
-Xdebug(void)
+Xdebug()
 {
-	if (cmd.argc != 2)
+	if (cmd.argc !=2)
 		printf( "o%s\n", debug? "n": "ff" );
 	else
 		debug = (cmd.argv[1][0] == '0' ||
@@ -78,50 +79,24 @@ Xdebug(void)
 }
 #endif
 
-int
-Xdb_console(void)
-{
-	if (cmd.argc != 2) {
-		switch (db_console) {
-		case 0:
-			printf("off\n");
-			break;
-		case 1:
-			printf("on\n");
-			break;
-		default:
-			printf("unset\n");
-			break;
-		}
-	} else {
-		if (strcmp(cmd.argv[1], "0") == 0 ||
-		    strcmp(cmd.argv[1], "off") == 0)
-			db_console = 0;
-		else if (strcmp(cmd.argv[1], "1") == 0 ||
-		    strcmp(cmd.argv[1], "on") == 0)
-			db_console = 1;
-	}
-
-	return (0);
-}
-
 static int
-Xtimeout(void)
+Xtimeout()
 {
-	if (cmd.argc != 2)
+	if (cmd.argc !=2)
 		printf( "%d\n", cmd.timeout );
 	else
-		cmd.timeout = (int)strtol( cmd.argv[1], (char **)NULL, 0 );
+		if( (cmd.argv[1][0] >= 48) && (cmd.argv[1][0] <= 57) )
+			cmd.timeout = cmd.argv[1][0] - 48;
 	return 0;
 }
 
 /* called only w/ no arguments */
 int
-Xset(void)
+Xset()
 {
-	const struct cmd_table *ct;
+	register const struct cmd_table *ct;
 
-	printf("%s\n", prog_ident);
+	printf(">> OpenBSD/" MACHINE_ARCH " BOOT %s\n", version);
 	for (ct = cmd_set; ct->cmd_name != NULL; ct++) {
 		printf("%s\t ", ct->cmd_name);
 		(*ct->cmd_exec)();
@@ -130,27 +105,27 @@ Xset(void)
 }
 
 static int
-Xdevice(void)
+Xdevice()
 {
 	if (cmd.argc != 2)
 		printf("%s\n", cmd.bootdev);
 	else
-		strlcpy(cmd.bootdev, cmd.argv[1], sizeof(cmd.bootdev));
+		strncpy(cmd.bootdev, cmd.argv[1], sizeof(cmd.bootdev));
 	return 0;
 }
 
 static int
-Ximage(void)
+Ximage()
 {
 	if (cmd.argc != 2)
 		printf("%s\n", cmd.image);
 	else
-		strlcpy(cmd.image, cmd.argv[1], sizeof(cmd.image));
+		strncpy(cmd.image, cmd.argv[1], sizeof(cmd.image));
 	return 0;
 }
 
 static int
-Xaddr(void)
+Xaddr()
 {
 	if (cmd.argc != 2)
 		printf("%p\n", cmd.addr);
@@ -160,7 +135,7 @@ Xaddr(void)
 }
 
 static int
-Xtty(void)
+Xtty()
 {
 	dev_t dev;
 
@@ -174,22 +149,22 @@ Xtty(void)
 			printf("switching console to %s\n", cmd.argv[1]);
 			if (cnset(dev))
 				printf("%s console not present\n",
-				    cmd.argv[1]);
-			else
-				printf("%s\n", prog_ident);
+				       cmd.argv[1]);
 		}
 	}
 	return 0;
 }
 
 static int
-Xhowto(void)
+Xhowto()
 {
 	if (cmd.argc == 1) {
 		if (cmd.boothowto) {
 			putchar('-');
 			if (cmd.boothowto & RB_ASKNAME)
 				putchar('a');
+			if (cmd.boothowto & RB_HALT)
+				putchar('b');
 			if (cmd.boothowto & RB_CONFIG)
 				putchar('c');
 			if (cmd.boothowto & RB_SINGLE)
@@ -204,9 +179,10 @@ Xhowto(void)
 }
 
 int
-bootparse(int i)
+bootparse(i)
+	int i;
 {
-	char *cp;
+	register char *cp;
 	int howto = cmd.boothowto;
 
 	for (; i < cmd.argc; i++) {
@@ -216,6 +192,9 @@ bootparse(int i)
 				switch (*cp) {
 				case 'a':
 					howto |= RB_ASKNAME;
+					break;
+				case 'b':
+					howto |= RB_HALT;
 					break;
 				case 'c':
 					howto |= RB_CONFIG;
@@ -246,38 +225,33 @@ bootparse(int i)
  * terminated by the usual '\0'
  */
 char *environ;
-
 int
-Xenv(void)
+Xenv()
 {
 	if (cmd.argc == 1) {
 		if (environ)
-			printf("%s", environ);
+			printf(environ);
 		else
 			printf("empty\n");
 	} else {
-		char *p, *q;
+		register char *p, *q;
 		int l;
-
 		for (p = environ; p && *p; p = q) {
 			l = strlen(cmd.argv[1]);
-			for (q = p; *q != '='; q++)
-				;
+			for (q = p; *q != '='; q++);
 			l = max(l, q - p) + 1;
-			for (q = p; *q != '\n'; q++)
-				;
+			for (q = p; *q != '\n'; q++);
 			if (*q)
 				q++;
 			if (!strncmp(p, cmd.argv[1], l)) {
-				while((*p++ = *q++))
-					;
+				while((*p++ = *q++));
 				p--;
 			}
 		}
 		if (!p)
-			p = environ = alloc(4096);
-		snprintf(p, environ + 4096 - p, "%s=%s\n",
-		    cmd.argv[1], (cmd.argc==3?cmd.argv[2]:""));
+			p = environ = alloc(NBPG);
+		sprintf(p, "%s=%s\n",
+			cmd.argv[1], (cmd.argc==3?cmd.argv[2]:""));
 	}
 
 	return 0;

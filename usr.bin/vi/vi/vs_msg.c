@@ -1,5 +1,3 @@
-/*	$OpenBSD: vs_msg.c,v 1.18 2016/05/27 09:18:12 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -11,6 +9,10 @@
 
 #include "config.h"
 
+#ifndef lint
+static const char sccsid[] = "@(#)vs_msg.c	10.77 (Berkeley) 10/13/96";
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/queue.h>
 #include <sys/time.h>
@@ -20,7 +22,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 #include <unistd.h>
 
 #include "../common/common.h"
@@ -36,11 +37,11 @@ typedef enum {
 					 */
 } sw_t;
 
-static void	vs_divider(SCR *);
-static void	vs_msgsave(SCR *, mtype_t, char *, size_t);
-static void	vs_output(SCR *, mtype_t, const char *, int);
-static void	vs_scroll(SCR *, int *, sw_t);
-static void	vs_wait(SCR *, int *, sw_t);
+static void	vs_divider __P((SCR *));
+static void	vs_msgsave __P((SCR *, mtype_t, char *, size_t));
+static void	vs_output __P((SCR *, mtype_t, const char *, int));
+static void	vs_scroll __P((SCR *, int *, sw_t));
+static void	vs_wait __P((SCR *, int *, sw_t));
 
 /*
  * vs_busy --
@@ -52,16 +53,20 @@ static void	vs_wait(SCR *, int *, sw_t);
  * messages, e.g. X11 clock icons, should set their scr_busy function to the
  * correct function before calling the main editor routine.
  *
- * PUBLIC: void vs_busy(SCR *, const char *, busy_t);
+ * PUBLIC: void vs_busy __P((SCR *, const char *, busy_t));
  */
 void
-vs_busy(SCR *sp, const char *msg, busy_t btype)
+vs_busy(sp, msg, btype)
+	SCR *sp;
+	const char *msg;
+	busy_t btype;
 {
 	GS *gp;
 	VI_PRIVATE *vip;
 	static const char flagc[] = "|/-\\";
-	struct timespec ts, ts_diff;
+	struct timeval tv;
 	size_t len, notused;
+	const char *p;
 
 	/* Ex doesn't display busy messages. */
 	if (F_ISSET(sp, SC_EX | SC_SCR_EXWROTE))
@@ -84,14 +89,15 @@ vs_busy(SCR *sp, const char *msg, busy_t btype)
 
 		/* Initialize state for updates. */
 		vip->busy_ch = 0;
-		(void)clock_gettime(CLOCK_MONOTONIC, &vip->busy_ts);
+		(void)gettimeofday(&vip->busy_tv, NULL);
 
 		/* Save the current cursor. */
 		(void)gp->scr_cursor(sp, &vip->busy_oldy, &vip->busy_oldx);
 
 		/* Display the busy message. */
+		p = msg_cat(sp, msg, &len);
 		(void)gp->scr_move(sp, LASTLINE(sp), 0);
-		(void)gp->scr_addstr(sp, msg, strlen(msg));
+		(void)gp->scr_addstr(sp, p, len);
 		(void)gp->scr_cursor(sp, &notused, &vip->busy_fx);
 		(void)gp->scr_clrtoeol(sp);
 		(void)gp->scr_move(sp, LASTLINE(sp), vip->busy_fx);
@@ -116,18 +122,11 @@ vs_busy(SCR *sp, const char *msg, busy_t btype)
 			break;
 
 		/* Update no more than every 1/8 of a second. */
-		(void)clock_gettime(CLOCK_MONOTONIC, &ts);
-		ts_diff = ts;
-		ts_diff.tv_sec -= vip->busy_ts.tv_sec;
-		ts_diff.tv_nsec -= vip->busy_ts.tv_nsec;
-		if (ts_diff.tv_nsec < 0) {
-			ts_diff.tv_sec--;
-			ts_diff.tv_nsec += 1000000000;
-		}
-		if ((ts_diff.tv_sec == 0 && ts_diff.tv_nsec < 125000000) ||
-		    ts_diff.tv_sec < 0)
+		(void)gettimeofday(&tv, NULL);
+		if (((tv.tv_sec - vip->busy_tv.tv_sec) * 1000000 +
+		    (tv.tv_usec - vip->busy_tv.tv_usec)) < 125000)
 			return;
-		vip->busy_ts = ts;
+		vip->busy_tv = tv;
 
 		/* Display the update. */
 		if (vip->busy_ch == sizeof(flagc) - 1)
@@ -144,10 +143,11 @@ vs_busy(SCR *sp, const char *msg, busy_t btype)
  * vs_home --
  *	Home the cursor to the bottom row, left-most column.
  *
- * PUBLIC: void vs_home(SCR *);
+ * PUBLIC: void vs_home __P((SCR *));
  */
 void
-vs_home(SCR *sp)
+vs_home(sp)
+	SCR *sp;
 {
 	(void)sp->gp->scr_move(sp, LASTLINE(sp), 0);
 	(void)sp->gp->scr_refresh(sp, 0);
@@ -157,10 +157,12 @@ vs_home(SCR *sp)
  * vs_update --
  *	Update a command.
  *
- * PUBLIC: void vs_update(SCR *, const char *, const char *);
+ * PUBLIC: void vs_update __P((SCR *, const char *, const char *));
  */
 void
-vs_update(SCR *sp, const char *m1, const char *m2)
+vs_update(sp, m1, m2)
+	SCR *sp;
+	const char *m1, *m2;
 {
 	GS *gp;
 	size_t len, mlen, oldx, oldy;
@@ -223,10 +225,14 @@ vs_update(SCR *sp, const char *m1, const char *m2)
  * alternate method of displaying messages, e.g. dialog boxes, should set their
  * scr_msg function to the correct function before calling the editor.
  *
- * PUBLIC: void vs_msg(SCR *, mtype_t, char *, size_t);
+ * PUBLIC: void vs_msg __P((SCR *, mtype_t, char *, size_t));
  */
 void
-vs_msg(SCR *sp, mtype_t mtype, char *line, size_t len)
+vs_msg(sp, mtype, line, len)
+	SCR *sp;
+	mtype_t mtype;
+	char *line;
+	size_t len;
 {
 	GS *gp;
 	VI_PRIVATE *vip;
@@ -242,13 +248,12 @@ vs_msg(SCR *sp, mtype_t mtype, char *line, size_t len)
 	 * XXX
 	 * Shouldn't we save this, too?
 	 */
-	if (F_ISSET(sp, SC_TINPUT_INFO) || F_ISSET(gp, G_BELLSCHED)) {
+	if (F_ISSET(sp, SC_TINPUT_INFO) || F_ISSET(gp, G_BELLSCHED))
 		if (F_ISSET(sp, SC_SCR_VI)) {
 			F_CLR(gp, G_BELLSCHED);
 			(void)gp->scr_bell(sp);
 		} else
 			F_SET(gp, G_BELLSCHED);
-	}
 
 	/*
 	 * If vi is using the error line for text input, there's no screen
@@ -274,14 +279,13 @@ vs_msg(SCR *sp, mtype_t mtype, char *line, size_t len)
 	 * the screen, so previous opinions are ignored.
 	 */
 	if (F_ISSET(sp, SC_EX | SC_SCR_EXWROTE)) {
-		if (!F_ISSET(sp, SC_SCR_EX)) {
+		if (!F_ISSET(sp, SC_SCR_EX))
 			if (F_ISSET(sp, SC_SCR_EXWROTE)) {
 				if (sp->gp->scr_screen(sp, SC_EX))
 					return;
 			} else
 				if (ex_init(sp))
 					return;
-		}
 
 		if (mtype == M_ERR)
 			(void)gp->scr_attr(sp, SA_INVERSE, 1);
@@ -343,14 +347,13 @@ vs_msg(SCR *sp, mtype_t mtype, char *line, size_t len)
 	padding += 2;
 
 	maxcols = sp->cols - 1;
-	if (vip->lcontinue != 0) {
+	if (vip->lcontinue != 0)
 		if (len + vip->lcontinue + padding > maxcols)
 			vs_output(sp, vip->mtype, ".\n", 2);
 		else  {
 			vs_output(sp, vip->mtype, ";", 1);
 			vs_output(sp, M_NONE, " ", 1);
 		}
-	}
 	vip->mtype = mtype;
 	for (s = line;; s = t) {
 		for (; len > 0 && isblank(*s); --len, ++s);
@@ -391,19 +394,23 @@ ret:	(void)gp->scr_move(sp, oldy, oldx);
  *	Output the text to the screen.
  */
 static void
-vs_output(SCR *sp, mtype_t mtype, const char *line, int llen)
+vs_output(sp, mtype, line, llen)
+	SCR *sp;
+	mtype_t mtype;
+	const char *line;
+	int llen;
 {
 	CHAR_T *kp;
 	GS *gp;
 	VI_PRIVATE *vip;
 	size_t chlen, notused;
-	int ch, len, tlen;
+	int ch, len, rlen, tlen;
 	const char *p, *t;
 	char *cbp, *ecbp, cbuf[128];
 
 	gp = sp->gp;
 	vip = VIP(sp);
-	for (p = line; llen > 0;) {
+	for (p = line, rlen = llen; llen > 0;) {
 		/* Get the next physical line. */
 		if ((p = memchr(line, '\n', llen)) == NULL)
 			len = llen;
@@ -513,10 +520,12 @@ vs_output(SCR *sp, mtype_t mtype, const char *line, int llen)
  * This routine is called when exiting a colon command to resolve any ex
  * output that may have occurred.
  *
- * PUBLIC: int vs_ex_resolve(SCR *, int *);
+ * PUBLIC: int vs_ex_resolve __P((SCR *, int *));
  */
 int
-vs_ex_resolve(SCR *sp, int *continuep)
+vs_ex_resolve(sp, continuep)
+	SCR *sp;
+	int *continuep;
 {
 	EVENT ev;
 	GS *gp;
@@ -589,7 +598,7 @@ vs_ex_resolve(SCR *sp, int *continuep)
 	 * If we're not the bottom of the split screen stack, the screen
 	 * image itself is wrong, so redraw everything.
 	 */
-	if (TAILQ_NEXT(sp, q))
+	if (sp->q.cqe_next != (void *)&sp->gp->dq)
 		F_SET(sp, SC_SCR_REDRAW);
 
 	/* If ex changed the underlying file, the map itself is wrong. */
@@ -637,10 +646,12 @@ vs_ex_resolve(SCR *sp, int *continuep)
  * vs_resolve --
  *	Deal with message output.
  *
- * PUBLIC: int vs_resolve(SCR *, SCR *, int);
+ * PUBLIC: int vs_resolve __P((SCR *, SCR *, int));
  */
 int
-vs_resolve(SCR *sp, SCR *csp, int forcewait)
+vs_resolve(sp, csp, forcewait)
+	SCR *sp, *csp;
+	int forcewait;
 {
 	EVENT ev;
 	GS *gp;
@@ -685,10 +696,10 @@ vs_resolve(SCR *sp, SCR *csp, int forcewait)
 	 * messages.)  Once this is done, don't trust the cursor.  That
 	 * extra refresh screwed the pooch.
 	 */
-	if (LIST_FIRST(&gp->msgq) != NULL) {
+	if (gp->msgq.lh_first != NULL) {
 		if (!F_ISSET(sp, SC_SCR_VI) && vs_refresh(sp, 1))
 			return (1);
-		while ((mp = LIST_FIRST(&gp->msgq)) != NULL) {
+		while ((mp = gp->msgq.lh_first) != NULL) {
 			gp->scr_msg(sp, mp->mtype, mp->buf, mp->len);
 			LIST_REMOVE(mp, q);
 			free(mp->buf);
@@ -747,7 +758,10 @@ vs_resolve(SCR *sp, SCR *csp, int forcewait)
  *	Scroll the screen for output.
  */
 static void
-vs_scroll(SCR *sp, int *continuep, sw_t wtype)
+vs_scroll(sp, continuep, wtype)
+	SCR *sp;
+	int *continuep;
+	sw_t wtype;
 {
 	GS *gp;
 	VI_PRIVATE *vip;
@@ -765,7 +779,7 @@ vs_scroll(SCR *sp, int *continuep, sw_t wtype)
 		(void)gp->scr_deleteln(sp);
 
 		/* If there are screens below us, push them back into place. */
-		if (TAILQ_NEXT(sp, q)) {
+		if (sp->q.cqe_next != (void *)&sp->gp->dq) {
 			(void)gp->scr_move(sp, LASTLINE(sp), 0);
 			(void)gp->scr_insertln(sp);
 		}
@@ -780,7 +794,10 @@ vs_scroll(SCR *sp, int *continuep, sw_t wtype)
  *	Prompt the user to continue.
  */
 static void
-vs_wait(SCR *sp, int *continuep, sw_t wtype)
+vs_wait(sp, continuep, wtype)
+	SCR *sp;
+	int *continuep;
+	sw_t wtype;
 {
 	EVENT ev;
 	VI_PRIVATE *vip;
@@ -851,7 +868,8 @@ vs_wait(SCR *sp, int *continuep, sw_t wtype)
  *	Draw a dividing line between the screen and the output.
  */
 static void
-vs_divider(SCR *sp)
+vs_divider(sp)
+	SCR *sp;
 {
 	GS *gp;
 	size_t len;
@@ -870,7 +888,11 @@ vs_divider(SCR *sp)
  *	Save a message for later display.
  */
 static void
-vs_msgsave(SCR *sp, mtype_t mt, char *p, size_t len)
+vs_msgsave(sp, mt, p, len)
+	SCR *sp;
+	mtype_t mt;
+	char *p;
+	size_t len;
 {
 	GS *gp;
 	MSGS *mp_c, *mp_n;
@@ -882,18 +904,18 @@ vs_msgsave(SCR *sp, mtype_t mt, char *p, size_t len)
 	 * allocate memory here, we're genuinely screwed, dump the message
 	 * to stderr in the (probably) vain hope that someone will see it.
 	 */
-	CALLOC_GOTO(sp, mp_n, 1, sizeof(MSGS));
-	MALLOC_GOTO(sp, mp_n->buf, len);
+	CALLOC_GOTO(sp, mp_n, MSGS *, 1, sizeof(MSGS));
+	MALLOC_GOTO(sp, mp_n->buf, char *, len);
 
 	memmove(mp_n->buf, p, len);
 	mp_n->len = len;
 	mp_n->mtype = mt;
 
 	gp = sp->gp;
-	if ((mp_c = LIST_FIRST(&gp->msgq)) == NULL) {
+	if ((mp_c = gp->msgq.lh_first) == NULL) {
 		LIST_INSERT_HEAD(&gp->msgq, mp_n, q);
 	} else {
-		for (; LIST_NEXT(mp_c, q) != NULL; mp_c = LIST_NEXT(mp_c, q));
+		for (; mp_c->q.le_next != NULL; mp_c = mp_c->q.le_next);
 		LIST_INSERT_AFTER(mp_c, mp_n, q);
 	}
 	return;

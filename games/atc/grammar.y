@@ -1,4 +1,4 @@
-/*	$OpenBSD: grammar.y,v 1.10 2016/01/09 19:27:56 mestre Exp $	*/
+/*	$OpenBSD: grammar.y,v 1.3 1999/07/31 20:08:29 pjanzen Exp $	*/
 /*	$NetBSD: grammar.y,v 1.3 1995/03/21 15:03:59 cgd Exp $	*/
 
 /*-
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -58,9 +62,15 @@
 }
 
 %{
-#include "def.h"
-#include "extern.h"
-#include "y.tab.h"
+#include "include.h"
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)grammar.y	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: grammar.y,v 1.3 1999/07/31 20:08:29 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
 int	errors = 0;
 int	line = 1;
@@ -165,9 +175,13 @@ Bpoint:
 	'(' ConstOp ConstOp ')'
 		{
 		if (sp->num_beacons % REALLOC == 0) {
-			sp->beacon = reallocarray(sp->beacon,
-				(sp->num_beacons + REALLOC) , 
-				sizeof (BEACON));
+			if (sp->beacon == NULL)
+				sp->beacon = (BEACON *) malloc((sp->num_beacons
+					+ REALLOC) * sizeof (BEACON));
+			else
+				sp->beacon = (BEACON *) realloc(sp->beacon,
+					(sp->num_beacons + REALLOC) * 
+					sizeof (BEACON));
 			if (sp->beacon == NULL)
 				return (yyerror("No memory available."));
 		}
@@ -191,9 +205,13 @@ Epoint:
 		int	dir;
 
 		if (sp->num_exits % REALLOC == 0) {
-			sp->exit = reallocarray(sp->exit,
-				(sp->num_exits + REALLOC) , 
-				sizeof (EXIT));
+			if (sp->exit == NULL)
+				sp->exit = (EXIT *) malloc((sp->num_exits + 
+					REALLOC) * sizeof (EXIT));
+			else
+				sp->exit = (EXIT *) realloc(sp->exit,
+					(sp->num_exits + REALLOC) * 
+					sizeof (EXIT));
 			if (sp->exit == NULL)
 				return (yyerror("No memory available."));
 		}
@@ -220,9 +238,13 @@ Apoint:
 		int	dir;
 
 		if (sp->num_airports % REALLOC == 0) {
-			sp->airport = reallocarray(sp->airport,
-				(sp->num_airports + REALLOC) , 
-				sizeof(AIRPORT));
+			if (sp->airport == NULL)
+				sp->airport=(AIRPORT *)malloc((sp->num_airports
+					+ REALLOC) * sizeof(AIRPORT));
+			else
+				sp->airport = (AIRPORT *) realloc(sp->airport,
+					(sp->num_airports + REALLOC) * 
+					sizeof(AIRPORT));
 			if (sp->airport == NULL)
 				return (yyerror("No memory available."));
 		}
@@ -247,9 +269,13 @@ Lline:
 	'[' '(' ConstOp ConstOp ')' '(' ConstOp ConstOp ')' ']'
 		{
 		if (sp->num_lines % REALLOC == 0) {
-			sp->line = reallocarray(sp->line,
-				(sp->num_lines + REALLOC) ,
-				sizeof (LINE));
+			if (sp->line == NULL)
+				sp->line = (LINE *) malloc((sp->num_lines + 
+					REALLOC) * sizeof (LINE));
+			else
+				sp->line = (LINE *) realloc(sp->line,
+					(sp->num_lines + REALLOC) *
+					sizeof (LINE));
 			if (sp->line == NULL)
 				return (yyerror("No memory available."));
 		}
@@ -264,7 +290,8 @@ Lline:
 %%
 
 void
-check_edge(int x, int y)
+check_edge(x, y)
+	int x, y;
 {
 	if (!(x == 0) && !(x == sp->width - 1) && 
 	    !(y == 0) && !(y == sp->height - 1))
@@ -272,7 +299,8 @@ check_edge(int x, int y)
 }
 
 void
-check_point(int x, int y)
+check_point(x, y)
+	int x, y;
 {
 	if (x < 1 || x >= sp->width - 1)
 		yyerror("X value out of range.");
@@ -281,7 +309,8 @@ check_point(int x, int y)
 }
 
 void
-check_linepoint(int x, int y)
+check_linepoint(x, y)
+	int x, y;
 {
 	if (x < 0 || x >= sp->width)
 		yyerror("X value out of range.");
@@ -290,7 +319,8 @@ check_linepoint(int x, int y)
 }
 
 void
-check_line(int x1, int y1, int x2, int y2)
+check_line(x1, y1, x2, y2)
+	int x1, y1, x2, y2;
 {
 	int	d1, d2;
 
@@ -305,7 +335,8 @@ check_line(int x1, int y1, int x2, int y2)
 }
 
 int
-yyerror(const char *s)
+yyerror(s)
+	const char *s;
 {
 	fprintf(stderr, "\"%s\": line %d: %s\n", file, line, s);
 	errors++;
@@ -314,7 +345,8 @@ yyerror(const char *s)
 }
 
 void
-check_edir(int x, int y, int dir)
+check_edir(x, y, dir)
+	int x, y, dir;
 {
 	int	bad = 0;
 
@@ -346,12 +378,13 @@ check_edir(int x, int y, int dir)
 }
 
 void
-check_adir(int x, int y, int dir)
+check_adir(x, y, dir)
+	int x, y, dir;
 {
 }
 
 int
-checkdefs(void)
+checkdefs()
 {
 	int	err = 0;
 

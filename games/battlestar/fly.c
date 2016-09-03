@@ -1,4 +1,4 @@
-/*	$OpenBSD: fly.c,v 1.14 2015/12/31 17:51:19 mestre Exp $	*/
+/*	$OpenBSD: fly.c,v 1.7 1999/09/25 20:30:45 pjanzen Exp $	*/
 /*	$NetBSD: fly.c,v 1.3 1995/03/21 15:07:28 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,36 +34,33 @@
  * SUCH DAMAGE.
  */
 
-#include <curses.h>
-#include <signal.h>
-#include <stdlib.h>
-#include <unistd.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)fly.c	8.2 (Berkeley) 4/28/95";
+#else
+static char rcsid[] = "$OpenBSD: fly.c,v 1.7 1999/09/25 20:30:45 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
 #include "extern.h"
-
 #undef UP
+#include <curses.h>
 
+#define abs(a)	((a) < 0 ? -(a) : (a))
 #define MIDR  (LINES/2 - 1)
 #define MIDC  (COLS/2 - 1)
 
+int     row, column;
+int     dr = 0, dc = 0;
+char    destroyed;
 int     ourclock = 120;	/* time for all the flights in the game */
+char    cross = 0;
+sig_t   oldsig;
 
-static int     row, column;
-static int     dr = 0, dc = 0;
-static char    destroyed;
-static char    cross = 0;
-static sig_t   oldsig;
 
-static void blast(void);
-static void endfly(void);
-static void moveenemy(int);
-static void notarget(void);
-static void screen(void);
-static void succumb(int);
-static void target(void);
-
-static void
-succumb(int sigraised)
+void
+succumb(sigraised)
+	int     sigraised;
 {
 	if (oldsig == SIG_DFL) {
 		endfly();
@@ -72,7 +73,7 @@ succumb(int sigraised)
 }
 
 int
-visual(void)
+visual()
 {
 	destroyed = 0;
 	if (initscr() == NULL) {
@@ -80,7 +81,7 @@ visual(void)
 		return (0);
 	}
 	oldsig = signal(SIGINT, succumb);
-	cbreak();
+	crmode();
 	noecho();
 	screen();
 	row = rnd(LINES - 3) + 1;
@@ -178,8 +179,8 @@ visual(void)
 	}
 }
 
-static void
-screen(void)
+void
+screen()
 {
 	int     r, c, n;
 	int     i;
@@ -195,8 +196,8 @@ screen(void)
 	refresh();
 }
 
-static void
-target(void)
+void
+target()
 {
 	int     n;
 
@@ -208,8 +209,8 @@ target(void)
 	}
 }
 
-static void
-notarget(void)
+void
+notarget()
 {
 	int     n;
 
@@ -221,8 +222,8 @@ notarget(void)
 	}
 }
 
-static void
-blast(void)
+void
+blast()
 {
 	int     n;
 
@@ -243,8 +244,9 @@ blast(void)
 	alarm(1);
 }
 
-static void
-moveenemy(int sigraised)
+void
+moveenemy(sigraised)
+	int     sigraised;
 {
 	double  d;
 	int     oldr, oldc;
@@ -282,8 +284,8 @@ moveenemy(int sigraised)
 	alarm(1);
 }
 
-static void
-endfly(void)
+void
+endfly()
 {
 	alarm(0);
 	signal(SIGALRM, SIG_DFL);

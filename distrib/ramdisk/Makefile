@@ -1,52 +1,49 @@
-#	$OpenBSD: Makefile,v 1.46 2016/09/01 10:08:29 deraadt Exp $
+#	$OpenBSD: Makefile,v 1.15 1999/05/26 16:08:43 espie Exp $
 
 REV=		${OSrev}
 
 CBIN=		instbin
 ARCHDIR=	${.CURDIR}/../${MACHINE}/ramdisk
 
-.include <bsd.own.mk>
-
 .if exists(${ARCHDIR}/Makefile.inc)
 .include "${ARCHDIR}/Makefile.inc"
 .endif
 
 MOUNT_POINT?=	/mnt
-VND?=		vnd0
+VND?=		svnd0
 VND_DEV=	/dev/${VND}a
 VND_RDEV=	/dev/r${VND}a
 DISKTYPE=	rdroot
 PID!=		echo $$$$
-REALIMAGE!=	echo /var/tmp/image.${PID}
+REALIMAGE!=	echo /tmp/image.${PID}
 IMAGE?=		ramdisk${REV}.fs
-IMAGESIZE?=	8192 # 4MB in 512 byte blocks
+IMAGESIZE?=	8192 # 4Mb in 512 byte blocks
 NEWFS_WILL_FAIL?=false
-RDSETROOT_EXT_SRC=${.CURDIR}/../common/elf32.c ${.CURDIR}/../common/elf64.c
-CRUNCHGENOPTS?=-E
+CRUNCHGENOPTS?=
 KERNEL?=	RAMDISK
 UTILS?=		${.CURDIR}/../miniroot
 STRIP?=		strip
 
-LISTS=		${.CURDIR}/list ${ARCHDIR}/list.local
-MTREE=		${UTILS}/mtree.conf
+LISTS=		${.CURDIR}/list ${ARCHDIR}/list
+MTREE=		${.CURDIR}/mtree.conf
 
 FLOPPY?=	floppy${REV}.fs
 FLOPPYSIZE?=	2880
 FLOPPYTYPE?=	floppy
 INSTALLBOOT?=	installboot
 BOOT?=		${DESTDIR}/usr/mdec/boot
-BOOTIN?=	${MOUNT_POINT}/boot
 BOOTXX?=	${DESTDIR}/usr/mdec/bootxx
+RAWLABEL?=	-r
 
 # old format, minfree, opt, b/i  trks, sects, cpg
 NEWFSOPTS=	-t ffs -m 0 -o space -f 1024 -b 8192
-NEWFSOPTS_RD?=	${NEWFSOPTS} -i 8192 -s ${IMAGESIZE}
-#NEWFSOPTS_FD=	${NEWFSOPTS} -i 524288 -c ${FLOPPYSIZE} -s ${FLOPPYSIZE}
-NEWFSOPTS_FD=	${NEWFSOPTS} -i 1048575 -c ${FLOPPYSIZE} -s ${FLOPPYSIZE}
+NEWFSOPTS_RD=	${NEWFSOPTS} -i 16384 -c 64 -s ${IMAGESIZE}
+#NEWFSOPTS_FD=	${NEWFSOPTS} -i 524288 -c 80 -s ${FLOPPYSIZE}
+NEWFSOPTS_FD=	${NEWFSOPTS} -i 1048575 -c 256 -s ${FLOPPYSIZE}
 
 .ifndef DESTDIR
 all:
-	@echo setenv DESTDIR before making a ramdisk!
+	@echo setenv DESTDIR before makeing a ramdisk!
 	@false
 .else
 
@@ -59,11 +56,13 @@ all:	bsd.rd
 ${FLOPPY}:	bsd.gz ${BOOT} ${BOOTXX}
 	dd if=/dev/zero of=${REALIMAGE} count=${FLOPPYSIZE}
 	vnconfig -v -c ${VND} ${REALIMAGE}
-	disklabel -w ${VND} ${FLOPPYTYPE}
+	disklabel -w ${RAWLABEL} ${VND} ${FLOPPYTYPE}
 	newfs ${NEWFSOPTS_FD} ${VND_RDEV}
 	mount ${VND_DEV} ${MOUNT_POINT}
+	cp ${BOOT} ${MOUNT_POINT}/boot
 	cp bsd.gz ${MOUNT_POINT}/bsd
-	${INSTALLBOOT} -v -r ${MOUNT_POINT} ${VND} ${BOOTXX} ${BOOT}
+	${INSTALLBOOT} -v ${MOUNT_POINT}/boot ${BOOTXX} \
+		`echo ${VND_RDEV} | sed -e 's/a$$/c/'`
 	@echo ""
 	@df -i ${MOUNT_POINT}
 	@echo ""
@@ -75,32 +74,31 @@ ${FLOPPY}:	bsd.gz ${BOOT} ${BOOTXX}
 bsd:
 	cd ${.CURDIR}/../../sys/arch/${MACHINE}/conf && config ${KERNEL}
 	cd ${.CURDIR}/../../sys/arch/${MACHINE}/compile/${KERNEL} && \
-	    ${MAKE} clean && ${MAKE} depend && COPTS=-Os ${MAKE}
+	    make depend && make clean && COPTS=-Os make
+#	cd ${.CURDIR}/../../sys/arch/${MACHINE}/compile/${KERNEL} && \
+#	    make depend && make clean && make
 	cp ${.CURDIR}/../../sys/arch/${MACHINE}/compile/${KERNEL}/bsd bsd
 
 bsd.rd:	bsd ${IMAGE} rdsetroot
 	cp bsd bsd.rd
-	${.OBJDIR}/rdsetroot bsd.rd ${IMAGE}
+	${.OBJDIR}/rdsetroot bsd.rd < ${IMAGE}
 	${STRIP} bsd.rd
 
 bsd.gz:	bsd.rd
-	${GZIPCMD} ${GZIPFLAGS} < bsd.rd > bsd.gz
+	${GZIP} ${GZIPFLAGS} < bsd.rd > bsd.gz
 
-rdsetroot: ${.CURDIR}/../common/elfrdsetroot.c ${RDSETROOT_EXT_SRC}
-	${HOSTCC} ${HOSTCCFLAGS} -o rdsetroot ${RDSETROOT_EXT_SRC} \
-	    ${.CURDIR}/../common/elfrdsetroot.c
+rdsetroot: ${.CURDIR}/../common/rdsetroot.c
+	${HOSTCC} ${HOSTCCFLAGS} -o rdsetroot ${.CURDIR}/../common/rdsetroot.c
 
 ${IMAGE}: ${CBIN}
 	dd if=/dev/zero of=${REALIMAGE} count=${IMAGESIZE}
 	vnconfig -v -c ${VND} ${REALIMAGE}
-	disklabel -w ${VND} ${DISKTYPE}
+	disklabel -w ${RAWLABEL} ${VND} ${DISKTYPE}
 	newfs ${NEWFSOPTS_RD} ${VND_RDEV} || ${NEWFS_WILL_FAIL}
 	mount ${VND_DEV} ${MOUNT_POINT}
 	mtree -def ${MTREE} -p ${MOUNT_POINT}/ -u
-	REV=${REV} CURDIR=${.CURDIR} OBJDIR=${.OBJDIR} \
-	    ARCHDIR=${ARCHDIR} TARGDIR=${MOUNT_POINT} UTILS=${UTILS} \
-	    RELEASEDIR=${RELEASEDIR} sh ${UTILS}/runlist.sh ${LISTS}
-	rm ${MOUNT_POINT}/${CBIN}
+	REV=${REV} CURDIR=${.CURDIR} OBJDIR=${.OBJDIR} ARCHDIR=${ARCHDIR} \
+	    TARGDIR=${MOUNT_POINT} UTILS=${UTILS} sh ${UTILS}/runlist.sh ${LISTS}
 	@echo ""
 	@df -i ${MOUNT_POINT}
 	@echo ""
@@ -117,22 +115,19 @@ ${CBIN}.mk ${CBIN}.cache ${CBIN}.c: ${CBIN}.conf
 	    ${CBIN}.conf
 
 ${CBIN}: ${CBIN}.mk ${CBIN}.cache ${CBIN}.c
-	${MAKE} -f ${CBIN}.mk SRCLIBDIR=${.CURDIR}/../../../lib all
+	make -f ${CBIN}.mk all
 
 clean cleandir:
 	/bin/rm -f *.core ${IMAGE} ${CBIN} ${CBIN}.mk ${CBIN}.cache \
-	    lib*.a lib*.olist ${CBIN}.map \
-	    ${CBIN}.conf *.o *.lo *.c bsd bsd.*
+	${CBIN}.conf *.o *.lo *.c bsd bsd.*
+
+beforeinstall:
+	cp bsd.rd ${DESTDIR}/snapshot
+.ifdef MAKEFLOPPY
+	cp ${FLOPPY} ${DESTDIR}/snapshot
+.endif
 
 .endif	# DESTDIR check
-
-.ifdef RELEASEDIR
-beforeinstall:
-	cp bsd.rd ${RELEASEDIR}
-.ifdef MAKEFLOPPY
-	cp ${FLOPPY} ${RELEASEDIR}
-.endif	# MAKEFLOPPY
-.endif	# RELEASEDIR
 
 unconfig:
 	-umount -f ${MOUNT_POINT}

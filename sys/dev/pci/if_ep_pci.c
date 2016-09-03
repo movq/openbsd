@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_ep_pci.c,v 1.34 2015/11/24 17:11:39 mpi Exp $	*/
+/*	$OpenBSD: if_ep_pci.c,v 1.18 1998/09/19 10:08:06 maja Exp $	*/
 /*	$NetBSD: if_ep_pci.c,v 1.13 1996/10/21 22:56:38 thorpej Exp $	*/
 
 /*
@@ -39,26 +39,31 @@
 #include <sys/socket.h> 
 #include <sys/ioctl.h>
 #include <sys/errno.h>
-#include <sys/timeout.h>
 #include <sys/syslog.h>
-#include <sys/selinfo.h>
+#include <sys/select.h>
 #include <sys/device.h>
 
 #include <net/if.h>
+#include <net/if_dl.h>
+#include <net/if_types.h>
 #include <net/if_media.h>
 
+#ifdef INET
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
+#include <netinet/in_var.h>
+#include <netinet/ip.h> 
 #include <netinet/if_ether.h>
+#endif
  
 #if NBPFILTER > 0
 #include <net/bpf.h>
+#include <net/bpfdesc.h>
 #endif
 
 #include <machine/cpu.h>
 #include <machine/bus.h>
 #include <machine/intr.h>
-
-#include <dev/mii/miivar.h>
 
 #include <dev/ic/elink3var.h>
 #include <dev/ic/elink3reg.h>
@@ -74,18 +79,11 @@
 #define PCI_CONN		0x48    /* Connector type */
 #define PCI_CBIO		0x10    /* Configuration Base IO Address */
 
-int ep_pci_match(struct device *, void *, void *);
-void ep_pci_attach(struct device *, struct device *, void *);
+int ep_pci_match __P((struct device *, void *, void *));
+void ep_pci_attach __P((struct device *, struct device *, void *));
 
 struct cfattach ep_pci_ca = {
 	sizeof(struct ep_softc), ep_pci_match, ep_pci_attach
-};
-
-const struct pci_matchid ep_pci_devices[] = {
-	{ PCI_VENDOR_3COM, PCI_PRODUCT_3COM_3C590 },
-	{ PCI_VENDOR_3COM, PCI_PRODUCT_3COM_3C595MII },
-	{ PCI_VENDOR_3COM, PCI_PRODUCT_3COM_3C595T4 },
-	{ PCI_VENDOR_3COM, PCI_PRODUCT_3COM_3C595TX },
 };
 
 int
@@ -93,8 +91,22 @@ ep_pci_match(parent, match, aux)
 	struct device *parent;
 	void *match, *aux;
 {
-	return (pci_matchbyid((struct pci_attach_args *)aux, ep_pci_devices,
-	    nitems(ep_pci_devices)));
+	struct pci_attach_args *pa = (struct pci_attach_args *) aux;
+
+	if (PCI_VENDOR(pa->pa_id) != PCI_VENDOR_3COM)
+		return 0;
+
+	switch (PCI_PRODUCT(pa->pa_id)) {
+	case PCI_PRODUCT_3COM_3C590:
+	case PCI_PRODUCT_3COM_3C595MII:
+	case PCI_PRODUCT_3COM_3C595T4:
+	case PCI_PRODUCT_3COM_3C595TX:
+		break;
+	default:
+		return 0;
+	}
+
+	return 1;
 }
 
 void
@@ -105,17 +117,24 @@ ep_pci_attach(parent, self, aux)
 	struct ep_softc *sc = (void *)self;
 	struct pci_attach_args *pa = aux;
 	pci_chipset_tag_t pc = pa->pa_pc;
+	bus_space_tag_t iot = pa->pa_iot;
+	bus_addr_t iobase;
 	bus_size_t iosize;
 	pci_intr_handle_t ih;
 	pcireg_t i;
 	const char *intrstr = NULL;
 
-	if (pci_mapreg_map(pa, PCI_CBIO, PCI_MAPREG_TYPE_IO, 0,
-	    &sc->sc_iot, &sc->sc_ioh, NULL, &iosize, 0)) {
+	if (pci_io_find(pc, pa->pa_tag, PCI_CBIO, &iobase, &iosize)) {
+		printf(": can't find i/o space\n");
+		return;
+	}
+
+	if (bus_space_map(iot, iobase, iosize, 0, &sc->sc_ioh)) {
 		printf(": can't map i/o space\n");
 		return;
 	}
 
+	sc->sc_iot = iot;
 	sc->bustype = EP_BUS_PCI;
 
 	i = pci_conf_read(pc, pa->pa_tag, PCI_CONN);
@@ -126,10 +145,15 @@ ep_pci_attach(parent, self, aux)
 
 	epconfig(sc, EP_CHIPSET_VORTEX, NULL);
 
+	/* Enable the card. */
+	pci_conf_write(pc, pa->pa_tag, PCI_COMMAND_STATUS_REG,
+	    pci_conf_read(pc, pa->pa_tag, PCI_COMMAND_STATUS_REG) |
+	    PCI_COMMAND_MASTER_ENABLE);
+
 	/* Map and establish the interrupt. */
-	if (pci_intr_map(pa, &ih)) {
+	if (pci_intr_map(pc, pa->pa_intrtag, pa->pa_intrpin,
+	    pa->pa_intrline, &ih)) {
 		printf(", couldn't map interrupt\n");
-		bus_space_unmap(sc->sc_iot, sc->sc_ioh, iosize);
 		return;
 	}
 	intrstr = pci_intr_string(pc, ih);
@@ -140,7 +164,6 @@ ep_pci_attach(parent, self, aux)
 		if (intrstr != NULL)
 			printf(" at %s", intrstr);
 		printf("\n");
-		bus_space_unmap(sc->sc_iot, sc->sc_ioh, iosize);
 		return;
 	}
 	printf(" %s\n", intrstr);

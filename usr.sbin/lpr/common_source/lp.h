@@ -1,5 +1,4 @@
-/*	$OpenBSD: lp.h,v 1.21 2016/02/29 17:26:01 jca Exp $	*/
-/*	$NetBSD: lp.h,v 1.14 2000/04/16 14:43:58 mrg Exp $	*/
+/*	$OpenBSD: lp.h,v 1.3 1997/01/17 16:11:35 millert Exp $	*/
 
 /*
  * Copyright (c) 1983, 1993
@@ -13,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -41,8 +44,10 @@ extern char	*AF;		/* accounting file */
 extern long	 BR;		/* baud rate if lp is a tty */
 extern char	*CF;		/* name of cifplot filter (per job) */
 extern char	*DF;		/* name of tex filter (per job) */
-extern long	 DU;		/* daemon user-id */
+extern long	 DU;		/* daeomon user-id */
+extern long	 FC;		/* flags to clear if lp is a tty */
 extern char	*FF;		/* form feed string */
+extern long	 FS;		/* flags to set if lp is a tty */
 extern char	*GF;		/* name of graph(1G) filter (per job) */
 extern long	 HL;		/* print header last */
 extern char	*IF;		/* name of input filter (created per job) */
@@ -51,7 +56,7 @@ extern char	*LO;		/* lock file name */
 extern char	*LP;		/* line printer device name */
 extern long	 MC;		/* maximum number of copies allowed */
 extern char	*MS;		/* stty flags to set if lp is a tty */
-extern long	 MX;		/* maximum number of blocks to copy */
+extern long  MX;		/* maximum number of blocks to copy */
 extern char	*NF;		/* name of ditroff(1) filter (per job) */
 extern char	*OF;		/* name of output filter (created once) */
 extern long	 PL;		/* page length */
@@ -73,22 +78,18 @@ extern char	*ST;		/* status file name */
 extern char	*TF;		/* name of troff(1) filter (per job) */
 extern char	*TR;		/* trailer string to be output when Q empties */
 extern char	*VF;		/* name of raster filter (per job) */
+extern long	 XC;		/* flags to clear for local mode */
+extern long	 XS;		/* flags to set for local mode */
 
 extern char	line[BUFSIZ];
 extern char	*bp;		/* pointer into printcap buffer */
+extern char	*name;		/* program name */
 extern char	*printer;	/* printer name */
 				/* host machine name */
-extern char	host[HOST_NAME_MAX+1];
+extern char	host[MAXHOSTNAMELEN];
 extern char	*from;		/* client's machine name */
 extern int	remote;		/* true if sending files to a remote host */
-extern char	*printcapdb[];	/* printcap database array */
-extern u_int	wait_time;	/* time to wait for remote responses */
-
-extern uid_t	real_uid, effective_uid;
-extern gid_t	real_gid, effective_gid;
-
-extern volatile sig_atomic_t	gotintr;
-
+extern char	*printcapdb[];  /* printcap database array */
 /*
  * Structure used for building a sorted list of control files.
  */
@@ -97,44 +98,33 @@ struct queue {
 	char	q_name[MAXNAMLEN+1];	/* control file name */
 };
 
-/*
- * Macros to raise/lower permissions.
- */
-#define PRIV_START do {				\
-	int save_errno = errno;			\
-	(void)seteuid(effective_uid);		\
-	(void)setegid(effective_gid);		\
-	errno = save_errno;			\
-} while (0)
-
-#define PRIV_END do {				\
-	int save_errno = errno;			\
-	(void)setegid(real_gid);		\
-	(void)seteuid(real_uid);		\
-	errno = save_errno;			\
-} while (0)
-
+#include <sys/cdefs.h>
 
 __BEGIN_DECLS
 struct dirent;
 
-/* common.c */
-char	*checkremote(void);
-int	 ckqueue(char *);
-void	 fatal(const char *, ...)
-    __attribute__((__noreturn__,__format__(__printf__, 1, 2)));
-int	 get_line(FILE *);
-int	 getport(char *, int);
-int	 getq(struct queue ***);
-int	 safe_open(const char *, int, mode_t);
-
-/* displayq.c */
-void	 displayq(int);
-
-/* rmjob.c */
-void	 rmjob(void);
-
-/* startdaemon.c */
-int	 startdaemon(char *);
-
+void     blankfill __P((int));
+char	*checkremote __P((void));
+int      chk __P((char *));
+void     displayq __P((int));
+void     dump __P((char *, char *, int));
+void	 fatal __P((const char *, ...));
+int	 getline __P((FILE *));
+int	 getport __P((char *, int));
+int	 getq __P((struct queue *(*[])));
+void     header __P((void));
+void     inform __P((char *));
+int      inlist __P((char *, char *));
+int      iscf __P((struct dirent *));
+int      isowner __P((char *, char *));
+void     ldump __P((char *, char *, int));
+int      lockchk __P((char *));
+void     prank __P((int));
+void     process __P((char *));
+void     rmjob __P((void));
+void     rmremote __P((void));
+void     show __P((char *, char *, int));
+int      startdaemon __P((char *));
+void     warn __P((void));
+void     delay __P((int));
 __END_DECLS

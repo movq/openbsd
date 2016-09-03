@@ -1,6 +1,5 @@
 /* ECOFF object file format.
-   Copyright 1993, 1994, 1995, 1996, 1998, 1999, 2000, 2001, 2002
-   Free Software Foundation, Inc.
+   Copyright (C) 1993, 1994 Free Software Foundation, Inc.
    Contributed by Cygnus Support.
    This file was put together by Ian Lance Taylor <ian@cygnus.com>.
 
@@ -17,9 +16,8 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with GAS; see the file COPYING.  If not, write to the Free
-   Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+   along with GAS; see the file COPYING.  If not, write to
+   the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #define OBJ_HEADER "obj-ecoff.h"
 #include "as.h"
@@ -30,11 +28,6 @@
 /* Almost all of the ECOFF support is actually in ecoff.c in the main
    gas directory.  This file mostly just arranges to call that one at
    the right times.  */
-
-static int ecoff_sec_sym_ok_for_reloc PARAMS ((asection *));
-static void obj_ecoff_frob_symbol PARAMS ((symbolS *, int *));
-static void ecoff_pop_insert PARAMS ((void));
-static int ecoff_separate_stab_sections PARAMS ((void));
 
 /* These are the pseudo-ops we support in this file.  Only those
    relating to debugging information are supported here.
@@ -83,11 +76,7 @@ const pseudo_typeS obj_pseudo_table[] =
 
   /* Other ECOFF directives.  */
   { "extern",	ecoff_directive_extern,	0 },
-
-#ifndef TC_MIPS
-  /* For TC_MIPS, tc-mips.c adds this.  */
   { "weakext",	ecoff_directive_weakext, 0 },
-#endif
 
   /* These are used on Irix.  I don't know how to implement them.  */
   { "bgnb",	s_ignore,		0 },
@@ -95,16 +84,21 @@ const pseudo_typeS obj_pseudo_table[] =
   { "verstamp",	s_ignore,		0 },
 
   /* Sentinel.  */
-  { NULL,	s_ignore,		0 }
+  { NULL }
 };
 
-/* Set section VMAs and GP values before reloc processing.  */
+/* Swap out the symbols and debugging information for BFD.  */
 
 void
-ecoff_frob_file_before_fix ()
+ecoff_frob_file ()
 {
+  const struct ecoff_debug_swap * const debug_swap
+    = &ecoff_backend (stdoutput)->debug_swap;
   bfd_vma addr;
-  asection **sec;
+  asection *sec;
+  HDRR *hdr;
+  char *buf;
+  char *set;
 
   /* Set the section VMA values.  We force the .sdata and .sbss
      sections to the end to ensure that their VMA addresses are close
@@ -136,81 +130,55 @@ ecoff_frob_file_before_fix ()
     /* bss segment */
     ".sbss", ".bss",
   };
-#define n_names ((int) (sizeof (names) / sizeof (names[0])))
-
-  /* Sections that match names, order to be straightened out later.  */
-  asection *secs[n_names];
-  int i;
+#define n_names (sizeof (names) / sizeof (names[0]))
 
   addr = 0;
-  for (i = 0; i < n_names; i++)
-    secs[i] = 0;
-
-  for (sec = &stdoutput->sections; *sec != (asection *) NULL; )
-    {
-      for (i = 0; i < n_names; i++)
-	if (!strcmp ((*sec)->name, names[i]))
-	  {
-	    secs[i] = *sec;
-	    bfd_section_list_remove (stdoutput, sec);
-	    break;
-	  }
-      if (i == n_names)
-	{
-	  bfd_set_section_vma (stdoutput, *sec, addr);
-	  addr += bfd_section_size (stdoutput, *sec);
-	  sec = &(*sec)->next;
-	}
-    }
-  for (i = 0; i < n_names; i++)
-    if (secs[i])
-      {
-	bfd_set_section_vma (stdoutput, secs[i], addr);
-	addr += bfd_section_size (stdoutput, secs[i]);
-      }
-  for (i = n_names - 1; i >= 0; i--)
-    if (secs[i])
-      bfd_section_list_insert (stdoutput, &stdoutput->sections, secs[i]);
-
-  /* Fill in the register masks.  */
   {
-    unsigned long gprmask = 0;
-    unsigned long fprmask = 0;
-    unsigned long *cprmask = NULL;
+    /* Sections that match names, order to be straightened out later.  */
+    asection *secs[n_names];
+    /* Linked list of sections with non-matching names.  Random ordering.  */
+    asection *other_sections = 0;
+    /* Pointer to next section, since we're destroying the original
+       ordering.  */
+    asection *next;
 
-#ifdef TC_MIPS
-    /* Fill in the MIPS register masks.  It's probably not worth
-       setting up a generic interface for this.  */
-    gprmask = mips_gprmask;
-    cprmask = mips_cprmask;
-#endif
+    int i;
 
-#ifdef TC_ALPHA
-    alpha_frob_ecoff_data ();
-
-    if (! bfd_ecoff_set_gp_value (stdoutput, alpha_gp_value))
-      as_fatal (_("Can't set GP value"));
-
-    gprmask = alpha_gprmask;
-    fprmask = alpha_fprmask;
-#endif
-
-    if (! bfd_ecoff_set_regmasks (stdoutput, gprmask, fprmask, cprmask))
-      as_fatal (_("Can't set register masks"));
+    for (i = 0; i < n_names; i++)
+      secs[i] = 0;
+    for (sec = stdoutput->sections; sec != (asection *) NULL; sec = next)
+      {
+	next = sec->next;
+	for (i = 0; i < n_names; i++)
+	  if (!strcmp (sec->name, names[i]))
+	    {
+	      secs[i] = sec;
+	      break;
+	    }
+	if (i == n_names)
+	  {
+	    bfd_set_section_vma (stdoutput, sec, addr);
+	    addr += bfd_section_size (stdoutput, sec);
+	    sec->next = other_sections;
+	    other_sections = sec;
+	  }
+      }
+    for (i = 0; i < n_names; i++)
+      if (secs[i])
+	{
+	  sec = secs[i];
+	  bfd_set_section_vma (stdoutput, sec, addr);
+	  addr += bfd_section_size (stdoutput, sec);
+	}
+    for (i = n_names - 1; i >= 0; i--)
+      if (secs[i])
+	{
+	  sec = secs[i];
+	  sec->next = other_sections;
+	  other_sections = sec;
+	}
+    stdoutput->sections = other_sections;
   }
-}
-
-/* Swap out the symbols and debugging information for BFD.  */
-
-void
-ecoff_frob_file ()
-{
-  const struct ecoff_debug_swap * const debug_swap
-    = &ecoff_backend (stdoutput)->debug_swap;
-  bfd_vma addr ATTRIBUTE_UNUSED;
-  HDRR *hdr;
-  char *buf;
-  char *set;
 
   /* Build the ECOFF debugging information.  */
   assert (ecoff_data (stdoutput) != 0);
@@ -239,7 +207,35 @@ ecoff_frob_file ()
   SET (external_rfd, crfd, PTR, debug_swap->external_rfd_size);
   SET (external_fdr, ifdMax, PTR, debug_swap->external_fdr_size);
   SET (external_ext, iextMax, PTR, debug_swap->external_ext_size);
+
 #undef SET
+
+  /* Fill in the register masks.  */
+  {
+    unsigned long gprmask = 0;
+    unsigned long fprmask = 0;
+    unsigned long *cprmask = NULL;
+
+#ifdef TC_MIPS
+    /* Fill in the MIPS register masks.  It's probably not worth
+       setting up a generic interface for this.  */
+    gprmask = mips_gprmask;
+    cprmask = mips_cprmask;
+#endif
+
+#ifdef TC_ALPHA
+    alpha_frob_ecoff_data ();
+
+    if (! bfd_ecoff_set_gp_value (stdoutput, alpha_gp_value))
+      as_fatal ("Can't set GP value");
+
+    gprmask = alpha_gprmask;
+    fprmask = alpha_fprmask;
+#endif
+
+    if (! bfd_ecoff_set_regmasks (stdoutput, gprmask, fprmask, cprmask))
+      as_fatal ("Can't set register masks");
+  }
 }
 
 /* This is called by the ECOFF code to set the external information
@@ -255,17 +251,16 @@ obj_ecoff_set_ext (sym, ext)
     = &ecoff_backend (stdoutput)->debug_swap;
   ecoff_symbol_type *esym;
 
-  know (bfd_asymbol_flavour (symbol_get_bfdsym (sym))
-	== bfd_target_ecoff_flavour);
-  esym = ecoffsymbol (symbol_get_bfdsym (sym));
-  esym->local = FALSE;
+  know (bfd_asymbol_flavour (sym->bsym) == bfd_target_ecoff_flavour);
+  esym = ecoffsymbol (sym->bsym);
+  esym->local = false;
   esym->native = xmalloc (debug_swap->external_ext_size);
   (*debug_swap->swap_ext_out) (stdoutput, ext, esym->native);
 }
 
 static int
 ecoff_sec_sym_ok_for_reloc (sec)
-     asection *sec ATTRIBUTE_UNUSED;
+     asection *sec;
 {
   return 1;
 }
@@ -273,7 +268,7 @@ ecoff_sec_sym_ok_for_reloc (sec)
 static void
 obj_ecoff_frob_symbol (sym, puntp)
      symbolS *sym;
-     int *puntp ATTRIBUTE_UNUSED;
+     int *puntp;
 {
   ecoff_frob_symbol (sym);
 }
@@ -284,45 +279,22 @@ ecoff_pop_insert ()
   pop_insert (obj_pseudo_table);
 }
 
-static int
-ecoff_separate_stab_sections ()
-{
-  return 0;
-}
-
 const struct format_ops ecoff_format_ops =
 {
   bfd_target_ecoff_flavour,
-  0,	/* dfl_leading_underscore */
-
-  /* FIXME: A comment why emit_section_symbols is different here (1) from
-     the single-format definition (0) would be in order.  */
-  1,	/* emit_section_symbols */
-  0,	/* begin */
-  ecoff_new_file,
+  0,
+  1,
   obj_ecoff_frob_symbol,
   ecoff_frob_file,
-  0,	/* frob_file_before_adjust */
-  ecoff_frob_file_before_fix,
-  0,	/* frob_file_after_relocs */
-  0,	/* s_get_size */
-  0,	/* s_set_size */
-  0,	/* s_get_align */
-  0,	/* s_set_align */
-  0,	/* s_get_other */
-  0,	/* s_set_other */
-  0,	/* s_get_desc */
-  0,	/* s_set_desc */
-  0,	/* s_get_type */
-  0,	/* s_set_type */
-  0,	/* copy_symbol_attributes */
+  0,
+  0, 0,
+  0, 0,
+  0,
   ecoff_generate_asm_lineno,
   ecoff_stab,
-  ecoff_separate_stab_sections,
-  0,	/* init_stab_section */
   ecoff_sec_sym_ok_for_reloc,
   ecoff_pop_insert,
   ecoff_set_ext,
   ecoff_read_begin_hook,
-  ecoff_symbol_new_hook
+  ecoff_symbol_new_hook,
 };

@@ -1,5 +1,5 @@
-/* $OpenBSD: ipsec_doi.h,v 1.8 2004/04/15 18:39:25 deraadt Exp $	 */
-/* $EOM: ipsec_doi.h,v 1.10 1999/04/02 00:57:51 niklas Exp $	 */
+/*	$OpenBSD: ipsec_doi.h,v 1.5 1999/04/19 19:54:54 niklas Exp $	*/
+/*	$EOM: ipsec_doi.h,v 1.10 1999/04/02 00:57:51 niklas Exp $	*/
 
 /*
  * Copyright (c) 1998, 1999 Niklas Hallqvist.  All rights reserved.
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Ericsson Radio Systems.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -35,10 +40,10 @@
 #include "ipsec_fld.h"
 #include "ipsec_num.h"
 
-/* The SPI size of all IPsec protocols.  XXX Correct?  */
+/* The SPI size of all IPSEC protocols.  XXX Correct?  */
 #define IPSEC_SPI_SIZE 4
 
 /* The low limit if valid SPI values.  */
 #define IPSEC_SPI_LOW 0x100
 
-#endif				/* _IPSEC_DOI_H_ */
+#endif /* _IPSEC_DOI_H_ */

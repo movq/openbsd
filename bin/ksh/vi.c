@@ -1,4 +1,4 @@
-/*	$OpenBSD: vi.c,v 1.39 2015/12/22 08:39:26 mmcc Exp $	*/
+/*	$OpenBSD: vi.c,v 1.7 1999/07/14 13:37:24 millert Exp $	*/
 
 /*
  *	vi command editing
@@ -9,16 +9,14 @@
 #include "config.h"
 #ifdef VI
 
-#include <sys/stat.h>		/* completion */
-
-#include <ctype.h>
-#include <string.h>
-
 #include "sh.h"
+#include <ctype.h>
+#include "ksh_stat.h"		/* completion */
 #include "edit.h"
 
-#define CMDLEN		2048
-#define CTRL(c)		(c & 0x1f)
+#define CMDLEN		1024
+#define Ctrl(c)		(c&0x1f)
+#define	is_wordch(c)	(letnum(c))
 
 struct edstate {
 	int	winleft;
@@ -29,45 +27,44 @@ struct edstate {
 };
 
 
-static int	vi_hook(int);
-static void	vi_reset(char *, size_t);
-static int	nextstate(int);
-static int	vi_insert(int);
-static int	vi_cmd(int, const char *);
-static int	domove(int, const char *, int);
-static int	redo_insert(int);
-static void	yank_range(int, int);
-static int	bracktype(int);
-static void	save_cbuf(void);
-static void	restore_cbuf(void);
-static void	edit_reset(char *, size_t);
-static int	putbuf(const char *, int, int);
-static void	del_range(int, int);
-static int	findch(int, int, int, int);
-static int	forwword(int);
-static int	backword(int);
-static int	endword(int);
-static int	Forwword(int);
-static int	Backword(int);
-static int	Endword(int);
-static int	grabhist(int, int);
-static int	grabsearch(int, int, int, char *);
-static void	redraw_line(int);
-static void	refresh(int);
-static int	outofwin(void);
-static void	rewindow(void);
-static int	newcol(int, int);
-static void	display(char *, char *, int);
-static void	ed_mov_opt(int, char *);
-static int	expand_word(int);
-static int	complete_word(int, int);
-static int	print_expansions(struct edstate *, int);
-static int	char_len(int);
-static void	x_vi_zotc(int);
-static void	vi_pprompt(int);
-static void	vi_error(void);
-static void	vi_macro_reset(void);
-static int	x_vi_putbuf(const char *, size_t);
+static int	vi_hook	ARGS((int ch));
+static void 	vi_reset ARGS((char *buf, size_t len));
+static int	nextstate ARGS((int ch));
+static int	vi_insert ARGS((int ch));
+static int	vi_cmd ARGS((int argcnt, const char *cmd));
+static int	domove ARGS((int argcnt, const char *cmd, int sub));
+static int	redo_insert ARGS((int count));
+static void	yank_range ARGS((int a, int b));
+static int	bracktype ARGS((int ch));
+static void	save_cbuf ARGS((void));
+static void	restore_cbuf ARGS((void));
+static void	edit_reset ARGS((char *buf, size_t len));
+static int	putbuf ARGS((const char *buf, int len, int repl));
+static void	del_range ARGS((int a, int b));
+static int	findch ARGS((int ch, int cnt, int forw, int incl));
+static int	forwword ARGS((int argcnt));
+static int	backword ARGS((int argcnt));
+static int	endword ARGS((int argcnt));
+static int	Forwword ARGS((int argcnt));
+static int	Backword ARGS((int argcnt));
+static int	Endword ARGS((int argcnt));
+static int	grabhist ARGS((int save, int n));
+static int	grabsearch ARGS((int save, int start, int fwd, char *pat));
+static void	redraw_line ARGS((int newline));
+static void	refresh ARGS((int leftside));
+static int	outofwin ARGS((void));
+static void	rewindow ARGS((void));
+static int	newcol ARGS((int ch, int col));
+static void	display ARGS((char *wb1, char *wb2, int leftside));
+static void	ed_mov_opt ARGS((int col, char *wb));
+static int	expand_word ARGS((int command));
+static int	complete_word ARGS((int command, int count));
+static int	print_expansions ARGS((struct edstate *e, int command));
+static int 	char_len ARGS((int c));
+static void 	x_vi_zotc ARGS((int c));
+static void	vi_pprompt ARGS((int full));
+static void	vi_error ARGS((void));
+static void	vi_macro_reset ARGS((void));
 
 #define C_	0x1		/* a valid command that isn't a M_, E_, U_ */
 #define M_	0x2		/* movement command (h, l, etc.) */
@@ -143,9 +140,9 @@ const unsigned char	classify[128] = {
 
 static char		undocbuf[CMDLEN];
 
-static struct edstate	*save_edstate(struct edstate *old);
-static void		restore_edstate(struct edstate *old, struct edstate *new);
-static void		free_edstate(struct edstate *old);
+static struct edstate 	*save_edstate ARGS((struct edstate *old));
+static void		restore_edstate ARGS((struct edstate *old, struct edstate *new));
+static void 		free_edstate ARGS((struct edstate *old));
 
 static struct edstate	ebuf;
 static struct edstate	undobuf = { 0, undocbuf, CMDLEN, 0, 0 };
@@ -190,7 +187,9 @@ enum expand_mode { NONE, EXPAND, COMPLETE, PRINT };
 static enum expand_mode expanded = NONE;/* last input was expanded */
 
 int
-x_vi(char *buf, size_t len)
+x_vi(buf, len)
+	char	*buf;
+	size_t	len;
 {
 	int	c;
 
@@ -199,7 +198,7 @@ x_vi(char *buf, size_t len)
 	x_flush();
 	while (1) {
 		if (macro.p) {
-			c = (unsigned char)*macro.p++;
+			c = *macro.p++;
 			/* end of current macro? */
 			if (!c) {
 				/* more macros left to finish? */
@@ -209,9 +208,9 @@ x_vi(char *buf, size_t len)
 				vi_macro_reset();
 				c = x_getc();
 			}
-		} else
+		} else {
 			c = x_getc();
-
+		}
 		if (c == -1)
 			break;
 		if (state != VLIT) {
@@ -220,7 +219,7 @@ x_vi(char *buf, size_t len)
 				x_vi_zotc(c);
 				x_flush();
 				trapsig(c == edchars.intr ? SIGINT : SIGQUIT);
-				x_mode(false);
+				x_mode(FALSE);
 				unwind(LSHELL);
 			} else if (c == edchars.eof && state != VVERSION) {
 				if (es->linelen == 0) {
@@ -238,7 +237,7 @@ x_vi(char *buf, size_t len)
 
 	x_putc('\r'); x_putc('\n'); x_flush();
 
-	if (c == -1 || len <= es->linelen)
+	if (c == -1)
 		return -1;
 
 	if (es->cbuf != buf)
@@ -250,23 +249,50 @@ x_vi(char *buf, size_t len)
 }
 
 static int
-vi_hook(int ch)
+vi_hook(ch)
+	int		ch;
 {
-	static char	curcmd[MAXVICMD], locpat[SRCHLEN];
-	static int	cmdlen, argc1, argc2;
+	static char	curcmd[MAXVICMD];
+	static char	locpat[SRCHLEN];
+	static int	cmdlen;
+	static int	argc1, argc2;
 
 	switch (state) {
 
 	case VNORMAL:
 		if (insert != 0) {
-			if (ch == CTRL('v')) {
+			if (ch == Ctrl('v')) {
 				state = VLIT;
 				ch = '^';
 			}
 			switch (vi_insert(ch)) {
 			case -1:
+#ifdef OS2
+				/* Arrow keys generate 0xe0X, where X is H.. */
+				state = VCMD;
+				argc1 = 1;
+				switch (x_getc()) {
+				  case 'H':
+					*curcmd='k';
+					break;
+				  case 'K':
+					*curcmd='h';
+					break;
+				  case 'P':
+					*curcmd='j';
+					break;
+				  case 'M':
+					*curcmd='l';
+					break;
+				  default:
+					vi_error();
+					state = VNORMAL;
+				}
+				break;
+#else /* OS2 */
 				vi_error();
 				state = VNORMAL;
+#endif /* OS2 */
 				break;
 			case 0:
 				if (state == VLIT) {
@@ -294,10 +320,11 @@ vi_hook(int ch)
 					es->cursor = 0;
 					es->linelen = 0;
 					if (ch == '/') {
-						if (putbuf("/", 1, 0) != 0)
+						if (putbuf("/", 1, 0) != 0) {
 							return -1;
+						}
 					} else if (putbuf("?", 1, 0) != 0)
-						return -1;
+							return -1;
 					refresh(0);
 				}
 				if (state == VVERSION) {
@@ -305,7 +332,7 @@ vi_hook(int ch)
 					es->cursor = 0;
 					es->linelen = 0;
 					putbuf(ksh_version + 4,
-					    strlen(ksh_version + 4), 0);
+						strlen(ksh_version + 4), 0);
 					refresh(0);
 				}
 			}
@@ -373,7 +400,7 @@ vi_hook(int ch)
 		break;
 
 	case VXCH:
-		if (ch == CTRL('['))
+		if (ch == Ctrl('['))
 			state = VNORMAL;
 		else {
 			curcmd[cmdlen++] = ch;
@@ -382,7 +409,7 @@ vi_hook(int ch)
 		break;
 
 	case VSEARCH:
-		if (ch == '\r' || ch == '\n' /*|| ch == CTRL('[')*/ ) {
+		if (ch == '\r' || ch == '\n' /*|| ch == Ctrl('[')*/ ) {
 			restore_cbuf();
 			/* Repeat last search? */
 			if (srchlen == 0) {
@@ -394,13 +421,13 @@ vi_hook(int ch)
 				}
 			} else {
 				locpat[srchlen] = '\0';
-				(void) strlcpy(srchpat, locpat, sizeof srchpat);
+				(void) strcpy(srchpat, locpat);
 			}
 			state = VCMD;
-		} else if (ch == edchars.erase || ch == CTRL('h')) {
+		} else if (ch == edchars.erase || ch == Ctrl('h')) {
 			if (srchlen != 0) {
 				srchlen--;
-				es->linelen -= char_len((unsigned char)locpat[srchlen]);
+				es->linelen -= char_len((unsigned char) locpat[srchlen]);
 				es->cursor = es->linelen;
 				refresh(0);
 				return 0;
@@ -415,20 +442,15 @@ vi_hook(int ch)
 			refresh(0);
 			return 0;
 		} else if (ch == edchars.werase) {
-			struct edstate new_es, *save_es;
 			int i;
 			int n = srchlen;
 
-			new_es.cursor = n;
-			new_es.cbuf = locpat;
-
-			save_es = es;
-			es = &new_es;
-			n = backword(1);
-			es = save_es;
-
+			while (n > 0 && isspace(locpat[n - 1]))
+				n--;
+			while (n > 0 && !isspace(locpat[n - 1]))
+				n--;
 			for (i = srchlen; --i >= n; )
-				es->linelen -= char_len((unsigned char)locpat[i]);
+				es->linelen -= char_len((unsigned char) locpat[i]);
 			srchlen = n;
 			es->cursor = es->linelen;
 			refresh(0);
@@ -439,22 +461,15 @@ vi_hook(int ch)
 			else {
 				locpat[srchlen++] = ch;
 				if ((ch & 0x80) && Flag(FVISHOW8)) {
-					if (es->linelen + 2 > es->cbufsize)
-						vi_error();
 					es->cbuf[es->linelen++] = 'M';
 					es->cbuf[es->linelen++] = '-';
 					ch &= 0x7f;
 				}
 				if (ch < ' ' || ch == 0x7f) {
-					if (es->linelen + 2 > es->cbufsize)
-						vi_error();
 					es->cbuf[es->linelen++] = '^';
 					es->cbuf[es->linelen++] = ch ^ '@';
-				} else {
-					if (es->linelen >= es->cbufsize)
-						vi_error();
+				} else
 					es->cbuf[es->linelen++] = ch;
-				}
 				es->cursor = es->linelen;
 				refresh(0);
 			}
@@ -497,7 +512,7 @@ vi_hook(int ch)
 		case 0:
 			if (insert != 0) {
 				if (lastcmd[0] == 's' || lastcmd[0] == 'c' ||
-				    lastcmd[0] == 'C') {
+						lastcmd[0] == 'C') {
 					if (redo_insert(1) != 0)
 						vi_error();
 				} else {
@@ -525,7 +540,9 @@ vi_hook(int ch)
 }
 
 static void
-vi_reset(char *buf, size_t len)
+vi_reset(buf, len)
+	char	*buf;
+	size_t	len;
 {
 	state = VNORMAL;
 	ohnum = hnum = hlast = histnum(-1) + 1;
@@ -539,7 +556,8 @@ vi_reset(char *buf, size_t len)
 }
 
 static int
-nextstate(int ch)
+nextstate(ch)
+	int	ch;
 {
 	if (is_extend(ch))
 		return VEXTCMD;
@@ -549,7 +567,7 @@ nextstate(int ch)
 		return VXCH;
 	else if (ch == '.')
 		return VREDO;
-	else if (ch == CTRL('v'))
+	else if (ch == Ctrl('v'))
 		return VVERSION;
 	else if (is_cmd(ch))
 		return VCMD;
@@ -558,11 +576,12 @@ nextstate(int ch)
 }
 
 static int
-vi_insert(int ch)
+vi_insert(ch)
+	int	ch;
 {
 	int	tcursor;
 
-	if (ch == edchars.erase || ch == CTRL('h')) {
+	if (ch == edchars.erase || ch == Ctrl('h')) {
 		if (insert == REPLACE) {
 			if (es->cursor == undo->cursor) {
 				vi_error();
@@ -585,7 +604,7 @@ vi_insert(int ch)
 			es->cursor--;
 			es->linelen--;
 			memmove(&es->cbuf[es->cursor], &es->cbuf[es->cursor+1],
-			    es->linelen - es->cursor + 1);
+					es->linelen - es->cursor + 1);
 		}
 		expanded = NONE;
 		return 0;
@@ -594,7 +613,7 @@ vi_insert(int ch)
 		if (es->cursor != 0) {
 			inslen = 0;
 			memmove(es->cbuf, &es->cbuf[es->cursor],
-			    es->linelen - es->cursor);
+						es->linelen - es->cursor);
 			es->linelen -= es->cursor;
 			es->cursor = 0;
 		}
@@ -603,9 +622,9 @@ vi_insert(int ch)
 	}
 	if (ch == edchars.werase) {
 		if (es->cursor != 0) {
-			tcursor = backword(1);
+			tcursor = Backword(1);
 			memmove(&es->cbuf[tcursor], &es->cbuf[es->cursor],
-			    es->linelen - es->cursor);
+						es->linelen - es->cursor);
 			es->linelen -= es->cursor - tcursor;
 			if (inslen < es->cursor - tcursor)
 				inslen = 0;
@@ -620,9 +639,13 @@ vi_insert(int ch)
 	 * buffer (if user inserts & deletes char, ibuf gets trashed and
 	 * we don't want to use it)
 	 */
-	if (first_insert && ch != CTRL('['))
+	if (first_insert && ch != Ctrl('['))
 		saved_inslen = 0;
 	switch (ch) {
+
+#ifdef OS2
+	case 224:	 /* function key prefix */
+#endif /* OS2 */
 	case '\0':
 		return -1;
 
@@ -630,7 +653,7 @@ vi_insert(int ch)
 	case '\n':
 		return 1;
 
-	case CTRL('['):
+	case Ctrl('['):
 		expanded = NONE;
 		if (first_insert) {
 			first_insert = 0;
@@ -642,25 +665,25 @@ vi_insert(int ch)
 			lastac = 1;
 		}
 		if (lastcmd[0] == 's' || lastcmd[0] == 'c' ||
-		    lastcmd[0] == 'C')
+				lastcmd[0] == 'C')
 			return redo_insert(0);
 		else
 			return redo_insert(lastac - 1);
 
 	/* { Begin nonstandard vi commands */
-	case CTRL('x'):
+	case Ctrl('x'):
 		expand_word(0);
 		break;
 
-	case CTRL('f'):
+	case Ctrl('f'):
 		complete_word(0, 0);
 		break;
 
-	case CTRL('e'):
+	case Ctrl('e'):
 		print_expansions(es, 0);
 		break;
 
-	case CTRL('i'):
+	case Ctrl('i'):
 		if (Flag(FVITABCOMPLETE)) {
 			complete_word(0, 0);
 			break;
@@ -669,12 +692,12 @@ vi_insert(int ch)
 	/* End nonstandard vi commands } */
 
 	default:
-		if (es->linelen >= es->cbufsize - 1)
+		if (es->linelen == es->cbufsize - 1)
 			return -1;
 		ibuf[inslen++] = ch;
 		if (insert == INSERT) {
 			memmove(&es->cbuf[es->cursor+1], &es->cbuf[es->cursor],
-			    es->linelen - es->cursor);
+					es->linelen - es->cursor);
 			es->linelen++;
 		}
 		es->cbuf[es->cursor++] = ch;
@@ -686,7 +709,9 @@ vi_insert(int ch)
 }
 
 static int
-vi_cmd(int argcnt, const char *cmd)
+vi_cmd(argcnt, cmd)
+	int		argcnt;
+	const char	*cmd;
 {
 	int		ncursor;
 	int		cur, c1, c2, c3 = 0;
@@ -715,8 +740,8 @@ vi_cmd(int argcnt, const char *cmd)
 		}
 		switch (*cmd) {
 
-		case CTRL('l'):
-		case CTRL('r'):
+		case Ctrl('l'):
+		case Ctrl('r'):
 			redraw_line(1);
 			break;
 
@@ -729,7 +754,7 @@ vi_cmd(int argcnt, const char *cmd)
 
 				/* lookup letter in alias list... */
 				alias[1] = cmd[1];
-				ap = ktsearch(&aliases, alias, hash(alias));
+				ap = tsearch(&aliases, alias, hash(alias));
 				if (!cmd[1] || !ap || !(ap->flag & ISSET))
 					return -1;
 				/* check if this is a recursive call... */
@@ -739,8 +764,8 @@ vi_cmd(int argcnt, const char *cmd)
 							return -1;
 				/* insert alias into macro buffer */
 				nlen = strlen(ap->val.s) + 1;
-				olen = !macro.p ? 2 :
-				    macro.len - (macro.p - macro.buf);
+				olen = !macro.p ? 2
+					: macro.len - (macro.p - macro.buf);
 				nbuf = alloc(nlen + 1 + olen, APERM);
 				memcpy(nbuf, ap->val.s, nlen);
 				nbuf[nlen++] = cmd[1];
@@ -793,10 +818,9 @@ vi_cmd(int argcnt, const char *cmd)
 				if ((ncursor = domove(argcnt, &cmd[1], 1)) < 0)
 					return -1;
 				if (*cmd == 'c' &&
-				    (cmd[1]=='w' || cmd[1]=='W') &&
-				    !isspace((unsigned char)es->cbuf[es->cursor])) {
-					while (isspace(
-					    (unsigned char)es->cbuf[--ncursor]))
+						(cmd[1]=='w' || cmd[1]=='W') &&
+						!isspace(es->cbuf[es->cursor])) {
+					while (isspace(es->cbuf[--ncursor]))
 						;
 					ncursor++;
 				}
@@ -860,8 +884,8 @@ vi_cmd(int argcnt, const char *cmd)
 
 		case 'g':
 			if (!argcnt)
-				argcnt = hlast;
-			/* FALLTHROUGH */
+				argcnt = hlast + 1;
+			/* fall through */
 		case 'G':
 			if (!argcnt)
 				argcnt = 1;
@@ -888,7 +912,7 @@ vi_cmd(int argcnt, const char *cmd)
 
 		case 'j':
 		case '+':
-		case CTRL('n'):
+		case Ctrl('n'):
 			if (grabhist(modified, hnum + argcnt) < 0)
 				return -1;
 			else {
@@ -899,7 +923,7 @@ vi_cmd(int argcnt, const char *cmd)
 
 		case 'k':
 		case '-':
-		case CTRL('p'):
+		case Ctrl('p'):
 			if (grabhist(modified, hnum - argcnt) < 0)
 				return -1;
 			else {
@@ -914,15 +938,8 @@ vi_cmd(int argcnt, const char *cmd)
 			modified = 1; hnum = hlast;
 			if (cmd[1] == 0)
 				vi_error();
-			else {
-				int	n;
-
-				if (es->cursor + argcnt > es->linelen)
-					return -1;
-				for (n = 0; n < argcnt; ++n)
-					es->cbuf[es->cursor + n] = cmd[1];
-				es->cursor += n - 1;
-			}
+			else
+				es->cbuf[es->cursor] = cmd[1];
 			break;
 
 		case 'R':
@@ -941,7 +958,7 @@ vi_cmd(int argcnt, const char *cmd)
 			break;
 
 		case 'v':
-			if (es->linelen == 0 && argcnt == 0)
+			if (es->linelen == 0)
 				return -1;
 			if (!argcnt) {
 				if (modified) {
@@ -953,9 +970,9 @@ vi_cmd(int argcnt, const char *cmd)
 						- (hlast - hnum);
 			}
 			shf_snprintf(es->cbuf, es->cbufsize,
-			    argcnt ? "%s %d" : "%s",
-			    "fc -e ${VISUAL:-${EDITOR:-vi}} --",
-			    argcnt);
+					argcnt ? "%s %d" : "%s",
+					"fc -e ${VISUAL:-${EDITOR:-vi}} --",
+					argcnt);
 			es->linelen = strlen(es->cbuf);
 			return 2;
 
@@ -1004,7 +1021,7 @@ vi_cmd(int argcnt, const char *cmd)
 			c3 = 1;
 			srchlen = 0;
 			lastsearch = *cmd;
-			/* FALLTHROUGH */
+			/* fall through */
 		case 'n':
 		case 'N':
 			if (lastsearch == ' ')
@@ -1016,7 +1033,7 @@ vi_cmd(int argcnt, const char *cmd)
 			if (*cmd == 'N')
 				c1 = !c1;
 			if ((c2 = grabsearch(modified, hnum,
-			    c1, srchpat)) < 0) {
+							c1, srchpat)) < 0) {
 				if (c3) {
 					restore_cbuf();
 					refresh(0);
@@ -1035,7 +1052,7 @@ vi_cmd(int argcnt, const char *cmd)
 			if (histnum(-1) < 0)
 				return -1;
 			p = *histpos();
-#define issp(c)		(isspace((unsigned char)(c)) || (c) == '\n')
+#define issp(c)		(isspace((c)) || (c) == '\n')
 			if (argcnt) {
 				while (*p && issp(*p))
 					p++;
@@ -1069,7 +1086,7 @@ vi_cmd(int argcnt, const char *cmd)
 				argcnt++;
 				p++;
 			}
-			if (putbuf(" ", 1, 0) != 0)
+			if (putbuf(space, 1, 0) != 0)
 				argcnt = -1;
 			else if (putbuf(sp, argcnt, 0) != 0)
 				argcnt = -1;
@@ -1084,20 +1101,18 @@ vi_cmd(int argcnt, const char *cmd)
 
 		case '~': {
 			char	*p;
-			unsigned char c;
 			int	i;
 
 			if (es->linelen == 0)
 				return -1;
 			for (i = 0; i < argcnt; i++) {
 				p = &es->cbuf[es->cursor];
-				c = (unsigned char)*p;
-				if (islower(c)) {
+				if (islower(*p)) {
 					modified = 1; hnum = hlast;
-					*p = toupper(c);
-				} else if (isupper(c)) {
+					*p = toupper(*p);
+				} else if (isupper(*p)) {
 					modified = 1; hnum = hlast;
-					*p = tolower(c);
+					*p = tolower(*p);
 				}
 				if (es->cursor < es->linelen - 1)
 					es->cursor++;
@@ -1108,35 +1123,35 @@ vi_cmd(int argcnt, const char *cmd)
 		case '#':
 		    {
 			int ret = x_do_comment(es->cbuf, es->cbufsize,
-			    &es->linelen);
+					    &es->linelen);
 			if (ret >= 0)
 				es->cursor = 0;
 			return ret;
 		    }
 
-		case '=':			/* at&t ksh */
-		case CTRL('e'):			/* Nonstandard vi/ksh */
+		case '=': 			/* at&t ksh */
+		case Ctrl('e'):			/* Nonstandard vi/ksh */
 			print_expansions(es, 1);
 			break;
 
 
-		case CTRL('i'):			/* Nonstandard vi/ksh */
+		case Ctrl('i'):			/* Nonstandard vi/ksh */
 			if (!Flag(FVITABCOMPLETE))
 				return -1;
 			complete_word(1, argcnt);
 			break;
 
-		case CTRL('['):			/* some annoying at&t ksh's */
+		case Ctrl('['):			/* some annoying at&t ksh's */
 			if (!Flag(FVIESCCOMPLETE))
 				return -1;
 		case '\\':			/* at&t ksh */
-		case CTRL('f'):			/* Nonstandard vi/ksh */
+		case Ctrl('f'):			/* Nonstandard vi/ksh */
 			complete_word(1, argcnt);
 			break;
 
 
 		case '*':			/* at&t ksh */
-		case CTRL('x'):			/* Nonstandard vi/ksh */
+		case Ctrl('x'):			/* Nonstandard vi/ksh */
 			expand_word(1);
 			break;
 		}
@@ -1147,10 +1162,13 @@ vi_cmd(int argcnt, const char *cmd)
 }
 
 static int
-domove(int argcnt, const char *cmd, int sub)
+domove(argcnt, cmd, sub)
+	int	argcnt;
+	const char *cmd;
+	int	sub;
 {
-	int	bcount, i = 0, t;
-	int	ncursor = 0;
+	int	bcount, UNINITIALIZED(i), t;
+	int	UNINITIALIZED(ncursor);
 
 	switch (*cmd) {
 
@@ -1205,7 +1223,7 @@ domove(int argcnt, const char *cmd, int sub)
 		break;
 
 	case 'h':
-	case CTRL('h'):
+	case Ctrl('h'):
 		if (!sub && es->cursor == 0)
 			return -1;
 		ncursor = es->cursor - argcnt;
@@ -1242,8 +1260,7 @@ domove(int argcnt, const char *cmd, int sub)
 
 	case '^':
 		ncursor = 0;
-		while (ncursor < es->linelen - 1 &&
-		    isspace((unsigned char)es->cbuf[ncursor]))
+		while (ncursor < es->linelen - 1 && isspace(es->cbuf[ncursor]))
 			ncursor++;
 		break;
 
@@ -1265,7 +1282,7 @@ domove(int argcnt, const char *cmd, int sub)
 	case '%':
 		ncursor = es->cursor;
 		while (ncursor < es->linelen &&
-		    (i = bracktype(es->cbuf[ncursor])) == 0)
+				(i = bracktype(es->cbuf[ncursor])) == 0)
 			ncursor++;
 		if (ncursor == es->linelen)
 			return -1;
@@ -1295,7 +1312,8 @@ domove(int argcnt, const char *cmd, int sub)
 }
 
 static int
-redo_insert(int count)
+redo_insert(count)
+	int	count;
 {
 	while (count-- > 0)
 		if (putbuf(ibuf, inslen, insert==REPLACE) != 0)
@@ -1307,7 +1325,8 @@ redo_insert(int count)
 }
 
 static void
-yank_range(int a, int b)
+yank_range(a, b)
+	int	a, b;
 {
 	yanklen = b - a;
 	if (yanklen != 0)
@@ -1315,7 +1334,8 @@ yank_range(int a, int b)
 }
 
 static int
-bracktype(int ch)
+bracktype(ch)
+	int	ch;
 {
 	switch (ch) {
 
@@ -1360,7 +1380,7 @@ static char	holdbuf[CMDLEN];	/* place to hold last edit buffer */
 static int	holdlen;		/* length of holdbuf */
 
 static void
-save_cbuf(void)
+save_cbuf()
 {
 	memmove(holdbuf, es->cbuf, es->linelen);
 	holdlen = es->linelen;
@@ -1368,7 +1388,7 @@ save_cbuf(void)
 }
 
 static void
-restore_cbuf(void)
+restore_cbuf()
 {
 	es->cursor = 0;
 	es->linelen = holdlen;
@@ -1377,14 +1397,15 @@ restore_cbuf(void)
 
 /* return a new edstate */
 static struct edstate *
-save_edstate(struct edstate *old)
+save_edstate(old)
+	struct edstate *old;
 {
 	struct edstate *new;
 
-	new = alloc(sizeof(struct edstate), APERM);
+	new = (struct edstate *)alloc(sizeof(struct edstate), APERM);
 	new->cbuf = alloc(old->cbufsize, APERM);
-	memcpy(new->cbuf, old->cbuf, old->linelen);
 	new->cbufsize = old->cbufsize;
+	strcpy(new->cbuf, old->cbuf);
 	new->linelen = old->linelen;
 	new->cursor = old->cursor;
 	new->winleft = old->winleft;
@@ -1392,9 +1413,10 @@ save_edstate(struct edstate *old)
 }
 
 static void
-restore_edstate(struct edstate *new, struct edstate *old)
+restore_edstate(new, old)
+	struct edstate *old, *new;
 {
-	memcpy(new->cbuf, old->cbuf, old->linelen);
+	strncpy(new->cbuf, old->cbuf, old->linelen);
 	new->linelen = old->linelen;
 	new->cursor = old->cursor;
 	new->winleft = old->winleft;
@@ -1402,16 +1424,19 @@ restore_edstate(struct edstate *new, struct edstate *old)
 }
 
 static void
-free_edstate(struct edstate *old)
+free_edstate(old)
+	struct edstate *old;
 {
 	afree(old->cbuf, APERM);
-	afree(old, APERM);
+	afree((char *)old, APERM);
 }
 
 
 
 static void
-edit_reset(char *buf, size_t len)
+edit_reset(buf, len)
+	char	*buf;
+	size_t	len;
 {
 	const char *p;
 
@@ -1447,17 +1472,11 @@ edit_reset(char *buf, size_t len)
 	holdlen = 0;
 }
 
-/*
- * this is used for calling x_escape() in complete_word()
- */
 static int
-x_vi_putbuf(const char *s, size_t len)
-{
-	return putbuf(s, len, 0);
-}
-
-static int
-putbuf(const char *buf, int len, int repl)
+putbuf(buf, len, repl)
+	const char *buf;
+	int	len;
+	int	repl;
 {
 	if (len == 0)
 		return 0;
@@ -1470,7 +1489,7 @@ putbuf(const char *buf, int len, int repl)
 		if (es->linelen + len >= es->cbufsize)
 			return -1;
 		memmove(&es->cbuf[es->cursor + len], &es->cbuf[es->cursor],
-		    es->linelen - es->cursor);
+			es->linelen - es->cursor);
 		es->linelen += len;
 	}
 	memmove(&es->cbuf[es->cursor], buf, len);
@@ -1479,7 +1498,8 @@ putbuf(const char *buf, int len, int repl)
 }
 
 static void
-del_range(int a, int b)
+del_range(a, b)
+	int	a, b;
 {
 	if (es->linelen != b)
 		memmove(&es->cbuf[a], &es->cbuf[b], es->linelen - b);
@@ -1487,7 +1507,11 @@ del_range(int a, int b)
 }
 
 static int
-findch(int ch, int cnt, int forw, int incl)
+findch(ch, cnt, forw, incl)
+	int	ch;
+	int	cnt;
+	int	forw;
+	int	incl;
 {
 	int	ncursor;
 
@@ -1515,46 +1539,47 @@ findch(int ch, int cnt, int forw, int incl)
 }
 
 static int
-forwword(int argcnt)
+forwword(argcnt)
+	int	argcnt;
 {
 	int	ncursor;
 
 	ncursor = es->cursor;
 	while (ncursor < es->linelen && argcnt--) {
-		if (letnum(es->cbuf[ncursor]))
-			while (letnum(es->cbuf[ncursor]) &&
-			    ncursor < es->linelen)
+		if (is_wordch(es->cbuf[ncursor]))
+			while (is_wordch(es->cbuf[ncursor]) &&
+					ncursor < es->linelen)
 				ncursor++;
-		else if (!isspace((unsigned char)es->cbuf[ncursor]))
-			while (!letnum(es->cbuf[ncursor]) &&
-			    !isspace((unsigned char)es->cbuf[ncursor]) &&
-			    ncursor < es->linelen)
+		else if (!isspace(es->cbuf[ncursor]))
+			while (!is_wordch(es->cbuf[ncursor]) &&
+					!isspace(es->cbuf[ncursor]) &&
+					ncursor < es->linelen)
 				ncursor++;
-		while (isspace((unsigned char)es->cbuf[ncursor]) &&
-		    ncursor < es->linelen)
+		while (isspace(es->cbuf[ncursor]) && ncursor < es->linelen)
 			ncursor++;
 	}
 	return ncursor;
 }
 
 static int
-backword(int argcnt)
+backword(argcnt)
+	int	argcnt;
 {
 	int	ncursor;
 
 	ncursor = es->cursor;
 	while (ncursor > 0 && argcnt--) {
-		while (--ncursor > 0 && isspace((unsigned char)es->cbuf[ncursor]))
+		while (--ncursor > 0 && isspace(es->cbuf[ncursor]))
 			;
 		if (ncursor > 0) {
-			if (letnum(es->cbuf[ncursor]))
+			if (is_wordch(es->cbuf[ncursor]))
 				while (--ncursor >= 0 &&
-				    letnum(es->cbuf[ncursor]))
+				   is_wordch(es->cbuf[ncursor]))
 					;
 			else
 				while (--ncursor >= 0 &&
-				    !letnum(es->cbuf[ncursor]) &&
-				    !isspace((unsigned char)es->cbuf[ncursor]))
+				   !is_wordch(es->cbuf[ncursor]) &&
+				   !isspace(es->cbuf[ncursor]))
 					;
 			ncursor++;
 		}
@@ -1563,24 +1588,25 @@ backword(int argcnt)
 }
 
 static int
-endword(int argcnt)
+endword(argcnt)
+	int	argcnt;
 {
 	int	ncursor;
 
 	ncursor = es->cursor;
 	while (ncursor < es->linelen && argcnt--) {
 		while (++ncursor < es->linelen - 1 &&
-		    isspace((unsigned char)es->cbuf[ncursor]))
+				isspace(es->cbuf[ncursor]))
 			;
 		if (ncursor < es->linelen - 1) {
-			if (letnum(es->cbuf[ncursor]))
+			if (is_wordch(es->cbuf[ncursor]))
 				while (++ncursor < es->linelen &&
-				    letnum(es->cbuf[ncursor]))
+					  is_wordch(es->cbuf[ncursor]))
 					;
 			else
 				while (++ncursor < es->linelen &&
-				    !letnum(es->cbuf[ncursor]) &&
-				    !isspace((unsigned char)es->cbuf[ncursor]))
+				   !is_wordch(es->cbuf[ncursor]) &&
+				   !isspace(es->cbuf[ncursor]))
 					;
 			ncursor--;
 		}
@@ -1589,34 +1615,32 @@ endword(int argcnt)
 }
 
 static int
-Forwword(int argcnt)
+Forwword(argcnt)
+	int	argcnt;
 {
 	int	ncursor;
 
 	ncursor = es->cursor;
 	while (ncursor < es->linelen && argcnt--) {
-		while (!isspace((unsigned char)es->cbuf[ncursor]) &&
-		    ncursor < es->linelen)
+		while (!isspace(es->cbuf[ncursor]) && ncursor < es->linelen)
 			ncursor++;
-		while (isspace((unsigned char)es->cbuf[ncursor]) &&
-		    ncursor < es->linelen)
+		while (isspace(es->cbuf[ncursor]) && ncursor < es->linelen)
 			ncursor++;
 	}
 	return ncursor;
 }
 
 static int
-Backword(int argcnt)
+Backword(argcnt)
+	int	argcnt;
 {
 	int	ncursor;
 
 	ncursor = es->cursor;
 	while (ncursor > 0 && argcnt--) {
-		while (--ncursor >= 0 &&
-		    isspace((unsigned char)es->cbuf[ncursor]))
+		while (--ncursor >= 0 && isspace(es->cbuf[ncursor]))
 			;
-		while (ncursor >= 0 &&
-		    !isspace((unsigned char)es->cbuf[ncursor]))
+		while (ncursor >= 0 && !isspace(es->cbuf[ncursor]))
 			ncursor--;
 		ncursor++;
 	}
@@ -1624,18 +1648,19 @@ Backword(int argcnt)
 }
 
 static int
-Endword(int argcnt)
+Endword(argcnt)
+	int	argcnt;
 {
 	int	ncursor;
 
 	ncursor = es->cursor;
 	while (ncursor < es->linelen - 1 && argcnt--) {
 		while (++ncursor < es->linelen - 1 &&
-		    isspace((unsigned char)es->cbuf[ncursor]))
+				isspace(es->cbuf[ncursor]))
 			;
 		if (ncursor < es->linelen - 1) {
 			while (++ncursor < es->linelen &&
-			    !isspace((unsigned char)es->cbuf[ncursor]))
+					!isspace(es->cbuf[ncursor]))
 				;
 			ncursor--;
 		}
@@ -1644,7 +1669,9 @@ Endword(int argcnt)
 }
 
 static int
-grabhist(int save, int n)
+grabhist(save, n)
+	int	save;
+	int	n;
 {
 	char	*hptr;
 
@@ -1671,7 +1698,9 @@ grabhist(int save, int n)
 }
 
 static int
-grabsearch(int save, int start, int fwd, char *pat)
+grabsearch(save, start, fwd, pat)
+	int	save, start, fwd;
+	char	*pat;
 {
 	char	*hptr;
 	int	hist;
@@ -1686,8 +1715,8 @@ grabsearch(int save, int start, int fwd, char *pat)
 	anchored = *pat == '^' ? (++pat, 1) : 0;
 	if ((hist = findhist(start, fwd, pat, anchored)) < 0) {
 		/* if (start != 0 && fwd && match(holdbuf, pat) >= 0) { */
-		/* XXX should strcmp be strncmp? */
-		if (start != 0 && fwd && strcmp(holdbuf, pat) >= 0) {
+		/* XXX should FILECMP be strncmp? */
+		if (start != 0 && fwd && FILECMP(holdbuf, pat) >= 0) {
 			restore_cbuf();
 			return 0;
 		} else
@@ -1705,7 +1734,8 @@ grabsearch(int save, int start, int fwd, char *pat)
 }
 
 static void
-redraw_line(int newline)
+redraw_line(newline)
+	int newline;
 {
 	(void) memset(wbuf[win], ' ', wbuf_len);
 	if (newline) {
@@ -1718,7 +1748,8 @@ redraw_line(int newline)
 }
 
 static void
-refresh(int leftside)
+refresh(leftside)
+	int		leftside;
 {
 	if (leftside < 0)
 		leftside = lastref;
@@ -1731,7 +1762,7 @@ refresh(int leftside)
 }
 
 static int
-outofwin(void)
+outofwin()
 {
 	int	cur, col;
 
@@ -1747,11 +1778,11 @@ outofwin(void)
 }
 
 static void
-rewindow(void)
+rewindow()
 {
-	int	tcur, tcol;
-	int	holdcur1, holdcol1;
-	int	holdcur2, holdcol2;
+	register int	tcur, tcol;
+	int		holdcur1, holdcol1;
+	int		holdcur2, holdcol2;
 
 	holdcur1 = holdcur2 = tcur = 0;
 	holdcol1 = holdcol2 = tcol = 0;
@@ -1766,12 +1797,13 @@ rewindow(void)
 	}
 	while (tcol - holdcol1 > winwidth / 2)
 		holdcol1 = newcol((unsigned char) es->cbuf[holdcur1++],
-		    holdcol1);
+				  holdcol1);
 	es->winleft = holdcur1;
 }
 
 static int
-newcol(int ch, int col)
+newcol(ch, col)
+	int	ch, col;
 {
 	if (ch == '\t')
 		return (col | 7) + 1;
@@ -1779,12 +1811,14 @@ newcol(int ch, int col)
 }
 
 static void
-display(char *wb1, char *wb2, int leftside)
+display(wb1, wb2, leftside)
+	char	*wb1, *wb2;
+	int	leftside;
 {
 	unsigned char ch;
 	char	*twb1, *twb2, mc;
 	int	cur, col, cnt;
-	int	ncol = 0;
+	int	UNINITIALIZED(ncol);
 	int	moreright;
 
 	col = 0;
@@ -1872,7 +1906,9 @@ display(char *wb1, char *wb2, int leftside)
 }
 
 static void
-ed_mov_opt(int col, char *wb)
+ed_mov_opt(col, wb)
+	int	col;
+	char	*wb;
 {
 	if (col < cur_col) {
 		if (col + 1 < cur_col - col) {
@@ -1896,7 +1932,8 @@ ed_mov_opt(int col, char *wb)
 
 /* replace word with all expansions (ie, expand word*) */
 static int
-expand_word(int command)
+expand_word(command)
+	int command;
 {
 	static struct edstate *buf;
 	int rval = 0;
@@ -1908,18 +1945,18 @@ expand_word(int command)
 	/* Undo previous expansion */
 	if (command == 0 && expanded == EXPAND && buf) {
 		restore_edstate(es, buf);
-		buf = NULL;
+		buf = 0;
 		expanded = NONE;
 		return 0;
 	}
 	if (buf) {
 		free_edstate(buf);
-		buf = NULL;
+		buf = 0;
 	}
 
 	nwords = x_cf_glob(XCF_COMMAND_FILE|XCF_FULLPATH,
-	    es->cbuf, es->linelen, es->cursor,
-	    &start, &end, &words, NULL);
+		es->cbuf, es->linelen, es->cursor,
+		&start, &end, &words, (int *) 0);
 	if (nwords == 0) {
 		vi_error();
 		return -1;
@@ -1930,11 +1967,11 @@ expand_word(int command)
 	del_range(start, end);
 	es->cursor = start;
 	for (i = 0; i < nwords; ) {
-		if (x_escape(words[i], strlen(words[i]), x_vi_putbuf) != 0) {
+		if (putbuf(words[i], (int) strlen(words[i]), 0) != 0) {
 			rval = -1;
 			break;
 		}
-		if (++i < nwords && putbuf(" ", 1, 0) != 0) {
+		if (++i < nwords && putbuf(space, 1, 0) != 0) {
 			rval = -1;
 			break;
 		}
@@ -1950,7 +1987,9 @@ expand_word(int command)
 }
 
 static int
-complete_word(int command, int count)
+complete_word(command, count)
+	int command;
+	int count;
 {
 	static struct edstate *buf;
 	int rval = 0;
@@ -1970,21 +2009,21 @@ complete_word(int command, int count)
 	}
 	if (command == 0 && expanded == PRINT && buf) {
 		restore_edstate(es, buf);
-		buf = NULL;
+		buf = 0;
 		expanded = NONE;
 		return 0;
 	}
 	if (buf) {
 		free_edstate(buf);
-		buf = NULL;
+		buf = 0;
 	}
 
 	/* XCF_FULLPATH for count 'cause the menu printed by print_expansions()
 	 * was done this way.
 	 */
 	nwords = x_cf_glob(XCF_COMMAND_FILE | (count ? XCF_FULLPATH : 0),
-	    es->cbuf, es->linelen, es->cursor,
-	    &start, &end, &words, &is_command);
+		es->cbuf, es->linelen, es->cursor,
+		&start, &end, &words, &is_command);
 	if (nwords == 0) {
 		vi_error();
 		return -1;
@@ -2004,13 +2043,15 @@ complete_word(int command, int count)
 		 * Expand the count'th word to its basename
 		 */
 		if (is_command) {
-			match = words[count] +
-			    x_basename(words[count], NULL);
+			match = words[count]
+				+ x_basename(words[count], (char *) 0);
 			/* If more than one possible match, use full path */
 			for (i = 0; i < nwords; i++)
 				if (i != count &&
-				    strcmp(words[i] + x_basename(words[i],
-				    NULL), match) == 0) {
+				    FILECMP(words[i]
+					    + x_basename(words[i], (char *) 0),
+					    match) == 0)
+				{
 					match = words[count];
 					break;
 				}
@@ -2029,20 +2070,17 @@ complete_word(int command, int count)
 	buf = save_edstate(es);
 	del_range(start, end);
 	es->cursor = start;
-
-	/* escape all shell-sensitive characters and put the result into
-	 * command buffer */
-	rval = x_escape(match, match_len, x_vi_putbuf);
-
-	if (rval == 0 && is_unique) {
+	if (putbuf(match, match_len, 0) != 0)
+		rval = -1;
+	else if (is_unique) {
 		/* If exact match, don't undo.  Allows directory completions
 		 * to be used (ie, complete the next portion of the path).
 		 */
 		expanded = NONE;
 
 		/* If not a directory, add a space to the end... */
-		if (match_len > 0 && match[match_len - 1] != '/')
-			rval = putbuf(" ", 1, 0);
+		if (match_len > 0 && !ISDIRSEP(match[match_len - 1]))
+			rval = putbuf(space, 1, 0);
 	}
 	x_free_words(nwords, words);
 
@@ -2055,7 +2093,9 @@ complete_word(int command, int count)
 }
 
 static int
-print_expansions(struct edstate *e, int command)
+print_expansions(e, command)
+	struct edstate *e;
+	int	command;
 {
 	int nwords;
 	int start, end;
@@ -2063,8 +2103,8 @@ print_expansions(struct edstate *e, int command)
 	int is_command;
 
 	nwords = x_cf_glob(XCF_COMMAND_FILE|XCF_FULLPATH,
-	    e->cbuf, e->linelen, e->cursor,
-	    &start, &end, &words, &is_command);
+		e->cbuf, e->linelen, e->cursor,
+		&start, &end, &words, &is_command);
 	if (nwords == 0) {
 		vi_error();
 		return -1;
@@ -2077,7 +2117,8 @@ print_expansions(struct edstate *e, int command)
 
 /* How long is char when displayed (not counting tabs) */
 static int
-char_len(int c)
+char_len(c)
+	int c;
 {
 	int len = 1;
 
@@ -2090,9 +2131,10 @@ char_len(int c)
 	return len;
 }
 
-/* Similar to x_zotc(emacs.c), but no tab weirdness */
+/* Similar to x_zotc(emacs.c), but no tab wierdness */
 static void
-x_vi_zotc(int c)
+x_vi_zotc(c)
+	int c;
 {
 	if (Flag(FVISHOW8) && (c & 0x80)) {
 		x_puts("M-");
@@ -2106,13 +2148,14 @@ x_vi_zotc(int c)
 }
 
 static void
-vi_pprompt(int full)
+vi_pprompt(full)
+	int full;
 {
 	pprompt(prompt + (full ? 0 : prompt_skip), prompt_trunc);
 }
 
 static void
-vi_error(void)
+vi_error()
 {
 	/* Beem out of any macros as soon as an error occurs */
 	vi_macro_reset();
@@ -2121,7 +2164,7 @@ vi_error(void)
 }
 
 static void
-vi_macro_reset(void)
+vi_macro_reset()
 {
 	if (macro.p) {
 		afree(macro.buf, APERM);

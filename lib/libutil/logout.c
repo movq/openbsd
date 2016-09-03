@@ -1,4 +1,4 @@
-/*	$OpenBSD: logout.c,v 1.9 2015/12/28 20:11:36 guenther Exp $	*/
+/*	$OpenBSD: logout.c,v 1.4 1998/07/13 02:11:13 millert Exp $	*/
 /*
  * Copyright (c) 1988, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +11,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,6 +32,11 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+/* from: static char sccsid[] = "@(#)logout.c	8.1 (Berkeley) 6/4/93"; */
+static char *rcsid = "$Id: logout.c,v 1.4 1998/07/13 02:11:13 millert Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
 #include <sys/time.h>
 
@@ -42,19 +51,20 @@
 typedef struct utmp UTMP;
 
 int
-logout(const char *line)
+logout(line)
+	const char *line;
 {
 	int fd, rval;
 	UTMP ut;
 
-	if ((fd = open(_PATH_UTMP, O_RDWR|O_CLOEXEC)) < 0)
+	if ((fd = open(_PATH_UTMP, O_RDWR, 0)) < 0)
 		return(0);
 	rval = 0;
 	while (read(fd, &ut, sizeof(UTMP)) == sizeof(UTMP)) {
 		if (!ut.ut_name[0] || strncmp(ut.ut_line, line, UT_LINESIZE))
 			continue;
-		memset(ut.ut_name, 0, UT_NAMESIZE);
-		memset(ut.ut_host, 0, UT_HOSTSIZE);
+		bzero(ut.ut_name, UT_NAMESIZE);
+		bzero(ut.ut_host, UT_HOSTSIZE);
 		(void)time(&ut.ut_time);
 		(void)lseek(fd, -(off_t)sizeof(UTMP), SEEK_CUR);
 		(void)write(fd, &ut, sizeof(UTMP));

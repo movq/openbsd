@@ -1,4 +1,3 @@
-/*	$OpenBSD: getservent.c,v 1.15 2015/09/14 07:38:38 guenther Exp $ */
 /*
  * Copyright (c) 1983, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,68 +31,70 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: getservent.c,v 1.5 1999/09/03 16:23:19 millert Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
 #include <sys/socket.h>
-
-#include <errno.h>
-#include <limits.h>
 #include <netdb.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
+#define	MAXALIASES	35
+
+static FILE *servf = NULL;
+static char line[BUFSIZ+1];
+static struct servent serv;
+static char *serv_aliases[MAXALIASES];
+int _serv_stayopen;
+
 void
-setservent_r(int f, struct servent_data *sd)
+setservent(f)
+	int f;
 {
-	if (sd->fp == NULL)
-		sd->fp = fopen(_PATH_SERVICES, "re" );
+	if (servf == NULL)
+		servf = fopen(_PATH_SERVICES, "r" );
 	else
-		rewind(sd->fp);
-	sd->stayopen |= f;
+		rewind(servf);
+	_serv_stayopen |= f;
 }
-DEF_WEAK(setservent_r);
 
 void
-endservent_r(struct servent_data *sd)
+endservent()
 {
-	if (sd->fp) {
-		fclose(sd->fp);
-		sd->fp = NULL;
+	if (servf) {
+		fclose(servf);
+		servf = NULL;
 	}
-	free(sd->aliases);
-	sd->aliases = NULL;
-	sd->maxaliases = 0;
-	free(sd->line);
-	sd->line = NULL;
-	sd->stayopen = 0;
+	_serv_stayopen = 0;
 }
-DEF_WEAK(endservent_r);
 
-int
-getservent_r(struct servent *se, struct servent_data *sd)
+struct servent *
+getservent()
 {
 	char *p, *cp, **q, *endp;
-	size_t len;
 	long l;
-	int serrno;
+	size_t len;
 
-	if (sd->fp == NULL && (sd->fp = fopen(_PATH_SERVICES, "re" )) == NULL)
-		return (-1);
+	if (servf == NULL && (servf = fopen(_PATH_SERVICES, "r" )) == NULL)
+		return (NULL);
 again:
-	if ((p = fgetln(sd->fp, &len)) == NULL)
-		return (-1);
-	if (len == 0 || *p == '#' || *p == '\n')
-		goto again;
+	if ((p = fgetln(servf, &len)) == NULL)
+		return (NULL);
 	if (p[len-1] == '\n')
 		len--;
-	if ((cp = memchr(p, '#', len)) != NULL)
-		len = cp - p;
-	cp = realloc(sd->line, len + 1);
-	if (cp == NULL)
-		return (-1);
-	sd->line = se->s_name = memcpy(cp, p, len);
-	cp[len] = '\0';
-	p = strpbrk(cp, " \t");
+	if (len >= sizeof(line) || len == 0)
+		goto again;
+	p = memcpy(line, p, len);
+	line[len] = '\0';
+	if (*p == '#')
+		goto again;
+	if ((cp = strchr(p, '#')) != NULL)
+		*cp = '\0';
+	serv.s_name = p;
+	p = strpbrk(p, " \t");
 	if (p == NULL)
 		goto again;
 	*p++ = '\0';
@@ -102,19 +107,9 @@ again:
 	l = strtol(p, &endp, 10);
 	if (endp == p || *endp != '\0' || l < 0 || l > USHRT_MAX)
 		goto again;
-	se->s_port = htons((in_port_t)l);
-	se->s_proto = cp;
-	if (sd->aliases == NULL) {
-		sd->maxaliases = 10;
-		sd->aliases = calloc(sd->maxaliases, sizeof(char *));
-		if (sd->aliases == NULL) {
-			serrno = errno;
-			endservent_r(sd);
-			errno = serrno;
-			return (-1);
-		}
-	}
-	q = se->s_aliases = sd->aliases;
+	serv.s_port = htons((in_port_t)l);
+	serv.s_proto = cp;
+	q = serv.s_aliases = serv_aliases;
 	cp = strpbrk(cp, " \t");
 	if (cp != NULL)
 		*cp++ = '\0';
@@ -123,49 +118,12 @@ again:
 			cp++;
 			continue;
 		}
-		if (q == &se->s_aliases[sd->maxaliases - 1]) {
-			p = reallocarray(se->s_aliases, sd->maxaliases,
-			    2 * sizeof(char *));
-			if (p == NULL) {
-				serrno = errno;
-				endservent_r(sd);
-				errno = serrno;
-				return (-1);
-			}
-			sd->maxaliases *= 2;
-			q = (char **)p + (q - se->s_aliases);
-			se->s_aliases = sd->aliases = (char **)p;
-		}
-		*q++ = cp;
+		if (q < &serv_aliases[MAXALIASES - 1])
+			*q++ = cp;
 		cp = strpbrk(cp, " \t");
 		if (cp != NULL)
 			*cp++ = '\0';
 	}
 	*q = NULL;
-	return (0);
-}
-DEF_WEAK(getservent_r);
-
-struct servent_data _servent_data;	/* shared with getservby{name,port}.c */
-
-void
-setservent(int f)
-{
-	setservent_r(f, &_servent_data);
-}
-
-void
-endservent(void)
-{
-	endservent_r(&_servent_data);
-}
-
-struct servent *
-getservent(void)
-{
-	static struct servent serv;
-
-	if (getservent_r(&serv, &_servent_data) != 0)
-		return (NULL);
 	return (&serv);
 }

@@ -1,4 +1,4 @@
-/*	$OpenBSD: snova.c,v 1.8 2016/01/07 14:37:51 mestre Exp $	*/
+/*	$OpenBSD: snova.c,v 1.2 1998/08/19 07:42:07 pjanzen Exp $	*/
 /*	$NetBSD: snova.c,v 1.3 1995/04/22 10:59:29 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,9 +34,16 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)snova.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: snova.c,v 1.2 1998/08/19 07:42:07 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
 #include <stdio.h>
 #include <unistd.h>
-
 #include "trek.h"
 
 /*
@@ -57,13 +68,15 @@
 */
 
 void
-snova(int x, int y)
+snova(x, y)
+	int	x, y;
 {
-	int		qx, qy;
-	int		ix, iy = 0;
-	int		f, n;
-	int		dx, dy;
-	struct quad	*q;
+	int			qx, qy;
+	register int		ix, iy = 0;
+	int			f;
+	int			dx, dy;
+	int			n;
+	register struct quad	*q;
 
 	f = 0;
 	ix = x;
@@ -106,7 +119,7 @@ snova(int x, int y)
 	if (f)
 	{
 		/* supernova is in same quadrant as Enterprise */
-		printf("\a\nRED ALERT: supernova occuring at %d,%d\n", ix, iy);
+		printf("\nRED ALERT: supernova occuring at %d,%d\n", ix, iy);
 		dx = ix - Ship.sectx;
 		dy = iy - Ship.secty;
 		if (dx * dx + dy * dy <= 2)

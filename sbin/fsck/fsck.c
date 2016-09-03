@@ -1,4 +1,4 @@
-/*	$OpenBSD: fsck.c,v 1.38 2015/11/23 19:19:29 deraadt Exp $	*/
+/*	$OpenBSD: fsck.c,v 1.6 1997/02/28 00:47:44 millert Exp $	*/
 /*	$NetBSD: fsck.c,v 1.7 1996/10/03 20:06:30 christos Exp $	*/
 
 /*
@@ -14,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,11 +35,13 @@
  * SUCH DAMAGE.
  *
  * From: @(#)mount.c	8.19 (Berkeley) 4/19/94
- * From: NetBSD: mount.c,v 1.24 1995/11/18 03:34:29 cgd Exp
+ * From: NetBSD: mount.c,v 1.24 1995/11/18 03:34:29 cgd Exp 
  *
  */
 
-#include <sys/types.h>
+static char rcsid[] = "$NetBSD: fsck.c,v 1.7 1996/10/03 20:06:30 christos Exp $";
+
+#include <sys/param.h>
 #include <sys/mount.h>
 #include <sys/queue.h>
 #include <sys/resource.h>
@@ -49,14 +55,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <limits.h>
 #include <util.h>
 
 #include "pathnames.h"
 #include "fsutil.h"
 
 static enum { IN_LIST, NOT_IN_LIST } which = NOT_IN_LIST;
-static enum { NONET_FILTER, NET_FILTER } filter = NONET_FILTER;
 
 TAILQ_HEAD(fstypelist, entry) opthead, selhead;
 
@@ -66,48 +70,43 @@ struct entry {
 	TAILQ_ENTRY(entry) entries;
 };
 
-static int maxrun;
-static char *options;
-static int flags;
+static int maxrun = 0;
+static char *options = NULL;
+static int flags = 0;
 
-int main(int, char *[]);
+int main __P((int, char *[]));
 
-static int checkfs(const char *, const char *, const char *, void *, pid_t *);
-static int selected(const char *);
-static void addoption(char *);
-static const char *getoptions(const char *);
-static void addentry(struct fstypelist *, const char *, const char *);
-static void maketypelist(char *);
-static char *catopt(char *, const char *, int);
-static void mangle(char *, int *, const char ***, int *);
-static void usage(void);
-static void *isok(struct fstab *);
-static int hasopt(const char *, const char *);
+static int checkfs __P((const char *, const char *, const char *, void *,
+    pid_t *));
+static int selected __P((const char *));
+static void addoption __P((char *));
+static const char *getoptions __P((const char *));
+static void addentry __P((struct fstypelist *, const char *, const char *));
+static void maketypelist __P((char *));
+static char *catopt __P((char *, const char *, int));
+static void mangle __P((char *, int *, const char ***, int *));
+static void usage __P((void));
+static void *isok __P((struct fstab *));
 
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
-	const char *errstr;
 	struct fstab *fs;
 	int i, rval = 0;
 	char *vfstype = NULL;
-	char *p, globopt[3];
+	char globopt[3];
 	struct rlimit rl;
 
 	/* Increase our data size to the max */
 	if (getrlimit(RLIMIT_DATA, &rl) == 0) {
-		if (geteuid() == 0)
-			rl.rlim_cur = rl.rlim_max = RLIM_INFINITY;
-		else
-			rl.rlim_cur = rl.rlim_max;
+		rl.rlim_cur = rl.rlim_max;
 		if (setrlimit(RLIMIT_DATA, &rl) < 0)
-			warn("Can't set resource limit to max data size");
+			warn("Can't get resource limit to max data size");
 	} else
 		warn("Can't get resource limit for data size");
-
-	if (pledge("stdio rpath wpath disklabel proc exec", NULL) == -1)
-		err(1, "pledge");
 
 	globopt[0] = '-';
 	globopt[2] = '\0';
@@ -115,7 +114,7 @@ main(int argc, char *argv[])
 	TAILQ_INIT(&selhead);
 	TAILQ_INIT(&opthead);
 
-	while ((i = getopt(argc, argv, "b:dfl:nNpT:t:vy")) != -1)
+	while ((i = getopt(argc, argv, "dvpfnyl:t:T:")) != -1)
 		switch (i) {
 		case 'd':
 			flags |= CHECK_DEBUG;
@@ -135,18 +134,8 @@ main(int argc, char *argv[])
 			options = catopt(options, globopt, 1);
 			break;
 
-		case 'b':
-			if (asprintf(&p, "-b %s", optarg) == -1)
-				err(1, "malloc failed");
-			options = catopt(options, p, 1);
-			free(p);
-			break;
-
 		case 'l':
-			maxrun = strtonum(optarg, 0, INT_MAX, &errstr);
-			if (errstr)
-				errx(1, "-l %s: %s", optarg, errstr);
-
+			maxrun = atoi(optarg);
 			break;
 
 		case 'T':
@@ -155,15 +144,11 @@ main(int argc, char *argv[])
 			break;
 
 		case 't':
-			if (!TAILQ_EMPTY(&selhead))
+			if (selhead.tqh_first != NULL)
 				errx(1, "only one -t option may be specified.");
 
 			maketypelist(optarg);
 			vfstype = optarg;
-			break;
-
-		case 'N':
-			filter = NET_FILTER;
 			break;
 
 		case '?':
@@ -186,7 +171,7 @@ main(int argc, char *argv[])
 	for (; argc--; argv++) {
 		char *spec, *type;
 
-		if ((strncmp(*argv, "/dev/", 5) == 0 || isduid(*argv, 0)) &&
+		if (strncmp(*argv, "/dev/", 5) == 0 &&
 		    (type = readlabelfs(*argv, 0))) {
 			spec = *argv;
 		} else if ((fs = getfsfile(*argv)) == NULL &&
@@ -213,7 +198,8 @@ main(int argc, char *argv[])
 
 
 static void *
-isok(struct fstab *fs)
+isok(fs)
+	struct fstab *fs;
 {
 	if (fs->fs_passno == 0)
 		return NULL;
@@ -221,16 +207,6 @@ isok(struct fstab *fs)
 	if (BADTYPE(fs->fs_type))
 		return NULL;
 
-	switch (filter) {
-	case NET_FILTER:
-		if (!hasopt(fs->fs_mntops, "net"))
-			return NULL;
-		break;
-	case NONET_FILTER:
-		if (hasopt(fs->fs_mntops, "net"))
-			return NULL;
-		break;
-	}
 	if (!selected(fs->fs_vfstype))
 		return NULL;
 
@@ -239,8 +215,10 @@ isok(struct fstab *fs)
 
 
 static int
-checkfs(const char *vfstype, const char *spec, const char *mntpt, void *auxarg,
-    pid_t *pidp)
+checkfs(vfstype, spec, mntpt, auxarg, pidp)
+	const char *vfstype, *spec, *mntpt;
+	void *auxarg;
+	pid_t *pidp;
 {
 	/* List of directories containing fsck_xxx subcommands. */
 	static const char *edirs[] = {
@@ -251,14 +229,14 @@ checkfs(const char *vfstype, const char *spec, const char *mntpt, void *auxarg,
 	const char **argv, **edir;
 	pid_t pid;
 	int argc, i, status, maxargc;
-	char *optbuf = NULL, fsname[PATH_MAX], execname[PATH_MAX];
+	char *optbuf = NULL, fsname[MAXPATHLEN], execname[MAXPATHLEN];
 	const char *extra = getoptions(vfstype);
 
 	if (strcmp(vfstype, "ufs") == 0)
 		vfstype = MOUNT_UFS;
 
 	maxargc = 100;
-	argv = ereallocarray(NULL, maxargc, sizeof(char *));
+	argv = emalloc(sizeof(char *) * maxargc);
 
 	argc = 0;
 	(void)snprintf(fsname, sizeof(fsname), "fsck_%s", vfstype);
@@ -280,7 +258,7 @@ checkfs(const char *vfstype, const char *spec, const char *mntpt, void *auxarg,
 	argv[argc] = NULL;
 
 	if (flags & (CHECK_DEBUG|CHECK_VERBOSE)) {
-		(void)printf("start %s %swait %s", mntpt,
+		(void)printf("start %s %swait %s", mntpt, 
 			pidp ? "no" : "", fsname);
 		for (i = 1; i < argc; i++)
 			(void)printf(" %s", argv[i]);
@@ -290,8 +268,8 @@ checkfs(const char *vfstype, const char *spec, const char *mntpt, void *auxarg,
 	switch (pid = fork()) {
 	case -1:				/* Error. */
 		warn("fork");
-		free(optbuf);
-		free(argv);
+		if (optbuf)
+			free(optbuf);
 		return (1);
 
 	case 0:					/* Child. */
@@ -304,26 +282,24 @@ checkfs(const char *vfstype, const char *spec, const char *mntpt, void *auxarg,
 			(void)snprintf(execname,
 			    sizeof(execname), "%s/fsck_%s", *edir, vfstype);
 			execv(execname, (char * const *)argv);
-			if (errno != ENOENT) {
+			if (errno != ENOENT)
 				if (spec)
 					warn("exec %s for %s", execname, spec);
 				else
 					warn("exec %s", execname);
-			}
 		} while (*++edir != NULL);
 
-		if (errno == ENOENT) {
+		if (errno == ENOENT)
 			if (spec)
 				warn("exec %s for %s", execname, spec);
 			else
 				warn("exec %s", execname);
-		}
 		exit(1);
 		/* NOTREACHED */
 
 	default:				/* Parent. */
-		free(optbuf);
-		free(argv);
+		if (optbuf)
+			free(optbuf);
 
 		if (pidp) {
 			*pidp = pid;
@@ -351,12 +327,13 @@ checkfs(const char *vfstype, const char *spec, const char *mntpt, void *auxarg,
 
 
 static int
-selected(const char *type)
+selected(type)
+	const char *type;
 {
 	struct entry *e;
 
 	/* If no type specified, it's always selected. */
-	TAILQ_FOREACH(e, &selhead, entries)
+	for (e = selhead.tqh_first; e != NULL; e = e->entries.tqe_next)
 		if (!strncmp(e->type, type, MFSNAMELEN))
 			return which == IN_LIST ? 1 : 0;
 
@@ -365,11 +342,12 @@ selected(const char *type)
 
 
 static const char *
-getoptions(const char *type)
+getoptions(type)
+	const char *type;
 {
 	struct entry *e;
 
-	TAILQ_FOREACH(e, &opthead, entries)
+	for (e = opthead.tqh_first; e != NULL; e = e->entries.tqe_next)
 		if (!strncmp(e->type, type, MFSNAMELEN))
 			return e->options;
 	return "";
@@ -377,7 +355,8 @@ getoptions(const char *type)
 
 
 static void
-addoption(char *optstr)
+addoption(optstr)
+	char *optstr;
 {
 	char *newoptions;
 	struct entry *e;
@@ -387,7 +366,7 @@ addoption(char *optstr)
 
 	*newoptions++ = '\0';
 
-	TAILQ_FOREACH(e, &opthead, entries)
+	for (e = opthead.tqh_first; e != NULL; e = e->entries.tqe_next)
 		if (!strncmp(e->type, optstr, MFSNAMELEN)) {
 			e->options = catopt(e->options, newoptions, 1);
 			return;
@@ -397,7 +376,10 @@ addoption(char *optstr)
 
 
 static void
-addentry(struct fstypelist *list, const char *type, const char *opts)
+addentry(list, type, opts)
+	struct fstypelist *list;
+	const char *type;
+	const char *opts;
 {
 	struct entry *e;
 
@@ -409,7 +391,8 @@ addentry(struct fstypelist *list, const char *type, const char *opts)
 
 
 static void
-maketypelist(char *fslist)
+maketypelist(fslist)
+	char *fslist;
 {
 	char *ptr;
 
@@ -430,38 +413,49 @@ maketypelist(char *fslist)
 
 
 static char *
-catopt(char *s0, const char *s1, int fr)
+catopt(s0, s1, fr)
+	char *s0;
+	const char *s1;
+	int fr;
 {
+	size_t i;
 	char *cp;
 
 	if (s0 && *s0) {
-		if (asprintf(&cp, "%s,%s", s0, s1) == -1)
-			err(1, "malloc failed");
-	} else
+		i = strlen(s0) + strlen(s1) + 1 + 1;
+		cp = emalloc(i);
+		(void)snprintf(cp, i, "%s,%s", s0, s1);
+	}
+	else
 		cp = estrdup(s1);
 
-	if (fr)
+	if (s0 && fr)
 		free(s0);
 	return (cp);
 }
 
 
 static void
-mangle(char *opts, int *argcp, const char ***argvp, int *maxargcp)
+mangle(opts, argcp, argvp, maxargcp)
+	char *opts;
+	int *argcp;
+	const char ***argvp;
+	int *maxargcp;
 {
 	char *p, *s;
 	int argc = *argcp, maxargc = *maxargcp;
 	const char **argv = *argvp;
 
+	argc = *argcp;
+	maxargc = *maxargcp;
+
 	for (s = opts; (p = strsep(&s, ",")) != NULL;) {
 		/* always leave space for one more argument and the NULL */
 		if (argc >= maxargc - 3) {
-			int newmaxargc = maxargc + 50;
-
-			argv = ereallocarray(argv, newmaxargc, sizeof(char *));
-			maxargc = newmaxargc;
+			maxargc += 50;
+			argv = erealloc(argv, maxargc * sizeof(char *));
 		}
-		if (*p != '\0') {
+		if (*p != '\0')
 			if (*p == '-') {
 				argv[argc++] = p;
 				p = strchr(p, '=');
@@ -474,7 +468,6 @@ mangle(char *opts, int *argcp, const char ***argvp, int *maxargcp)
 				argv[argc++] = "-o";
 				argv[argc++] = p;
 			}
-		}
 	}
 
 	*argcp = argc;
@@ -482,30 +475,15 @@ mangle(char *opts, int *argcp, const char ***argvp, int *maxargcp)
 	*maxargcp = maxargc;
 }
 
-static int
-hasopt(const char *mntopts, const char *option)
-{
-	int found;
-	char *opt, *optbuf;
-
-	if (mntopts == NULL)
-		return (0);
-	optbuf = strdup(mntopts);
-	found = 0;
-	for (opt = optbuf; !found && opt != NULL; strsep(&opt, ","))
-		found = !strncmp(opt, option, strlen(option));
-	free(optbuf);
-	return (found);
-}
-
 
 static void
-usage(void)
+usage()
 {
 	extern char *__progname;
+	static const char common[] =
+	    "[-dpvlyn] [-T fstype:fsoptions] [-t fstype]";
 
-	fprintf(stderr, "usage: %s "
-	    "[-dfNnpvy] [-b block#] [-l maxparallel] [-T fstype:fsoptions]\n"
-	    "            [-t fstype] [special | node ...]\n", __progname);
+	(void)fprintf(stderr, "Usage: %s %s [special|node]...\n",
+	    __progname, common);
 	exit(1);
 }

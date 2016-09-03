@@ -1,4 +1,4 @@
-/*	$OpenBSD: sem.c,v 1.36 2015/12/14 05:59:56 mmcc Exp $	*/
+/*	$OpenBSD: sem.c,v 1.14 1999/04/18 17:15:09 espie Exp $	*/
 /*	$NetBSD: sem.c,v 1.10 1996/11/11 23:40:11 gwr Exp $	*/
 
 /*
@@ -22,7 +22,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -41,14 +45,11 @@
  *	from: @(#)sem.c	8.1 (Berkeley) 6/6/93
  */
 
-#include <sys/param.h>	/* NODEV */
-
+#include <sys/param.h>
 #include <ctype.h>
-#include <err.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
 #include "config.h"
 #include "sem.h"
 
@@ -60,6 +61,7 @@
 
 const char *s_generic;
 const char *s_nfs;
+static const char *s_qmark;
 
 static struct hashtab *attrtab;		/* for attribute lookup */
 static struct hashtab *cfhashtab;	/* for config lookup */
@@ -74,24 +76,24 @@ static struct config **nextcf;
 static struct devi **nextdevi;
 static struct devi **nextpseudo;
 
-static int has_errobj(struct nvlist *, void *);
-static struct nvlist *addtoattr(struct nvlist *, struct devbase *);
-static int exclude(struct nvlist *, const char *, const char *);
-static int resolve(struct nvlist **, const char *, const char *,
-    struct nvlist *, int);
-static int lresolve(struct nvlist **, const char *, const char *,
-    struct nvlist *, int);
-static struct devi *newdevi(const char *, int, struct devbase *d);
-static struct devi *getdevi(const char *);
-static const char *concat(const char *, int);
-static char *extend(char *, const char *);
-static int split(const char *, size_t, char *, size_t, int *);
-static void selectbase(struct devbase *, struct deva *);
-static int onlist(struct nvlist *, void *);
-static const char **fixloc(const char *, struct attr *, struct nvlist *);
+static int has_errobj __P((struct nvlist *, void *));
+static struct nvlist *addtoattr __P((struct nvlist *, struct devbase *));
+static int exclude __P((struct nvlist *, const char *, const char *));
+static int resolve __P((struct nvlist **, const char *, const char *,
+			struct nvlist *, int));
+static int lresolve __P((struct nvlist **, const char *, const char *,
+			struct nvlist *, int));
+static struct devi *newdevi __P((const char *, int, struct devbase *d));
+static struct devi *getdevi __P((const char *));
+static const char *concat __P((const char *, int));
+static char *extend __P((char *, const char *));
+static int split __P((const char *, size_t, char *, size_t, int *));
+static void selectbase __P((struct devbase *, struct deva *));
+static int onlist __P((struct nvlist *, void *));
+static const char **fixloc __P((const char *, struct attr *, struct nvlist *));
 
 void
-initsem(void)
+initsem()
 {
 
 	attrtab = ht_new();
@@ -117,15 +119,16 @@ initsem(void)
 
 	s_generic = intern("generic");
 	s_nfs = intern("nfs");
+	s_qmark = intern("?");
 }
 
 /* Name of include file just ended (set in scan.l) */
 extern const char *lastfile;
 
 void
-enddefs(void)
+enddefs()
 {
-	struct devbase *dev;
+	register struct devbase *dev;
 
 	for (dev = allbases; dev != NULL; dev = dev->d_next) {
 		if (!dev->d_isdef) {
@@ -143,7 +146,8 @@ enddefs(void)
 }
 
 void
-setdefmaxusers(int min, int def, int max)
+setdefmaxusers(min, def, max)
+	int min, def, max;
 {
 
 	if (min < 1 || min > def || def > max)
@@ -156,18 +160,22 @@ setdefmaxusers(int min, int def, int max)
 }
 
 void
-setmaxusers(int n)
+setmaxusers(n)
+	int n;
 {
 
 	if (maxusers != 0) {
-		warnx("warning: duplicate maxusers parameter, will use latest definition (%d)", n);
+		error("duplicate maxusers parameter");
+		return;
 	}
 	maxusers = n;
 	if (n < minmaxusers) {
-		warnx("warning: minimum of %d maxusers assumed", minmaxusers);
+		error("warning: minimum of %d maxusers assumed\n", minmaxusers);
+		errors--;	/* take it away */
 		maxusers = minmaxusers;
 	} else if (n > maxmaxusers) {
-		warnx("warning: maxusers (%d) > %d", n, maxmaxusers);
+		error("warning: maxusers (%d) > %d", n, maxmaxusers);
+		errors--;
 	}
 }
 
@@ -177,11 +185,13 @@ setmaxusers(int n)
  * all locator lists include a dummy head node, which we discard here.
  */
 int
-defattr(const char *name, struct nvlist *locs)
+defattr(name, locs)
+	const char *name;
+	struct nvlist *locs;
 {
-	struct attr *a;
-	struct nvlist *nv;
-	int len;
+	register struct attr *a;
+	register struct nvlist *nv;
+	register int len;
 
 	a = emalloc(sizeof *a);
 	if (ht_insert(attrtab, name, a)) {
@@ -213,7 +223,9 @@ defattr(const char *name, struct nvlist *locs)
  * pointer list.
  */
 static int
-has_errobj(struct nvlist *nv, void *obj)
+has_errobj(nv, obj)
+	register struct nvlist *nv;
+	register void *obj;
 {
 
 	for (; nv != NULL; nv = nv->nv_next)
@@ -228,9 +240,11 @@ has_errobj(struct nvlist *nv, void *obj)
  * list order, but no one cares anyway.
  */
 static struct nvlist *
-addtoattr(struct nvlist *l, struct devbase *dev)
+addtoattr(l, dev)
+	register struct nvlist *l;
+	register struct devbase *dev;
 {
-	struct nvlist *n;
+	register struct nvlist *n;
 
 	n = newnv(NULL, NULL, dev, 0, l);
 	return (n);
@@ -241,11 +255,13 @@ addtoattr(struct nvlist *l, struct devbase *dev)
  * attribute and/or refer to existing attributes.
  */
 void
-defdev(struct devbase *dev, int ispseudo, struct nvlist *loclist,
-    struct nvlist *attrs)
+defdev(dev, ispseudo, loclist, attrs)
+	register struct devbase *dev;
+	int ispseudo;
+	struct nvlist *loclist, *attrs;
 {
-	struct nvlist *nv;
-	struct attr *a;
+	register struct nvlist *nv;
+	register struct attr *a;
 
 	if (dev == &errdev)
 		goto bad;
@@ -297,10 +313,11 @@ bad:
  * i.e., does not end in a digit or contain special characters.
  */
 struct devbase *
-getdevbase(char *name)
+getdevbase(name)
+	const char *name;
 {
-	u_char *p;
-	struct devbase *dev;
+	register u_char *p;
+	register struct devbase *dev;
 
 	p = (u_char *)name;
 	if (!isalpha(*p))
@@ -340,12 +357,14 @@ badname:
  * There may be a list of (plain) attributes.
  */
 void
-defdevattach(struct deva *deva, struct devbase *dev, struct nvlist *atlist,
-    struct nvlist *attrs)
+defdevattach(deva, dev, atlist, attrs)
+	register struct deva *deva;
+	struct devbase *dev;
+	struct nvlist *atlist, *attrs;
 {
-	struct nvlist *nv;
-	struct attr *a;
-	struct deva *da;
+	register struct nvlist *nv;
+	register struct attr *a;
+	register struct deva *da;
 
 	if (dev == &errdev)
 		goto bad;
@@ -404,7 +423,7 @@ defdevattach(struct deva *deva, struct devbase *dev, struct nvlist *atlist,
 		for (da = dev->d_ahead; da != NULL; da = da->d_bsame)
 			if (onlist(da->d_atlist, a))
 				error("attach at `%s' already done by `%s'",
-				    a ? a->a_name : "root", da->d_name);
+				     a ? a->a_name : "root", da->d_name);
 
 		if (a == NULL)
 			continue;		/* at root; don't add */
@@ -429,10 +448,11 @@ bad:
  * name, i.e., does not contain digits or special characters.
  */
 struct deva *
-getdevattach(const char *name)
+getdevattach(name)
+	const char *name;
 {
-	u_char *p;
-	struct deva *deva;
+	register u_char *p;
+	register struct deva *deva;
 
 	p = (u_char *)name;
 	if (!isalpha(*p))
@@ -441,7 +461,7 @@ getdevattach(const char *name)
 		if (!isalnum(*p) && *p != '_')
 			goto badname;
 	}
-	if (isdigit((unsigned char)*--p)) {
+	if (isdigit(*--p)) {
 badname:
 		error("bad device attachment name `%s'", name);
 		return (&errdeva);
@@ -470,7 +490,8 @@ badname:
  * Look up an attribute.
  */
 struct attr *
-getattr(const char *name)
+getattr(name)
+	const char *name;
 {
 	struct attr *a;
 
@@ -486,7 +507,9 @@ getattr(const char *name)
  * as a root/swap/dumps "on" device in a configuration.
  */
 void
-setmajor(struct devbase *d, int n)
+setmajor(d, n)
+	struct devbase *d;
+	int n;
 {
 
 	if (d != &errdev && d->d_major != NODEV)
@@ -496,8 +519,12 @@ setmajor(struct devbase *d, int n)
 		d->d_major = n;
 }
 
+#define ABS(x) ((x) < 0 ? -(x) : (x))
+
 static int
-exclude(struct nvlist *nv, const char *name, const char *what)
+exclude(nv, name, what)
+	struct nvlist *nv;
+	const char *name, *what;
 {
 
 	if (nv != NULL) {
@@ -513,13 +540,16 @@ exclude(struct nvlist *nv, const char *name, const char *what)
  * corresponding name, and map NULL to the default.
  */
 static int
-resolve(struct nvlist **nvp, const char *name, const char *what,
-    struct nvlist *dflt, int part)
+resolve(nvp, name, what, dflt, part)
+	register struct nvlist **nvp;
+	const char *name, *what;
+	struct nvlist *dflt;
+	register int part;
 {
-	struct nvlist *nv;
-	struct devbase *dev;
-	const char *cp;
-	int maj, min, l;
+	register struct nvlist *nv;
+	register struct devbase *dev;
+	register const char *cp;
+	register int maj, min, l;
 	int unit;
 	char buf[NAMESIZE];
 
@@ -550,12 +580,10 @@ resolve(struct nvlist **nvp, const char *name, const char *what,
 			if (dev->d_major == maj)
 				break;
 		if (dev == NULL)
-			(void)snprintf(buf, sizeof buf, "<%d/%d>",
-			    maj, min);
+			(void)sprintf(buf, "<%d/%d>", maj, min);
 		else
-			(void)snprintf(buf, sizeof buf, "%s%d%c",
-			    dev->d_name, min / maxpartitions,
-			    (min % maxpartitions) + 'a');
+			(void)sprintf(buf, "%s%d%c", dev->d_name,
+			    min / maxpartitions, (min % maxpartitions) + 'a');
 		nv->nv_str = intern(buf);
 		return (0);
 	}
@@ -574,7 +602,7 @@ resolve(struct nvlist **nvp, const char *name, const char *what,
 	l = strlen(nv->nv_str);
 	cp = &nv->nv_str[l];
 	if (l > 1 && *--cp >= 'a' && *cp <= 'a'+maxpartitions &&
-	    isdigit((unsigned char)cp[-1])) {
+	    isdigit(cp[-1])) {
 		l--;
 		part = *cp - 'a';
 	}
@@ -595,8 +623,11 @@ resolve(struct nvlist **nvp, const char *name, const char *what,
 }
 
 static int
-lresolve(struct nvlist **nvp, const char *name, const char *what,
-    struct nvlist *dflt, int part)
+lresolve(nvp, name, what, dflt, part)
+	register struct nvlist **nvp;
+	const char *name, *what;
+	struct nvlist *dflt;
+	int part;
 {
 	int err;
 
@@ -610,10 +641,11 @@ lresolve(struct nvlist **nvp, const char *name, const char *what,
  * Add a completed configuration to the list.
  */
 void
-addconf(struct config *cf0)
+addconf(cf0)
+	register struct config *cf0;
 {
-	struct config *cf;
-	struct nvlist *nv;
+	register struct config *cf;
+	register struct nvlist *nv;
 	const char *name;
 
 	name = cf0->cf_name;
@@ -662,7 +694,10 @@ bad:
 }
 
 void
-setconf(struct nvlist **npp, const char *what, struct nvlist *v)
+setconf(npp, what, v)
+	register struct nvlist **npp;
+	const char *what;
+	struct nvlist *v;
 {
 
 	if (*npp != NULL) {
@@ -673,9 +708,12 @@ setconf(struct nvlist **npp, const char *what, struct nvlist *v)
 }
 
 static struct devi *
-newdevi(const char *name, int unit, struct devbase *d)
+newdevi(name, unit, d)
+	const char *name;
+	int unit;
+	struct devbase *d;
 {
-	struct devi *i;
+	register struct devi *i;
 
 	i = emalloc(sizeof *i);
 	i->i_name = name;
@@ -699,68 +737,21 @@ newdevi(const char *name, int unit, struct devbase *d)
 }
 
 /*
- * Enable an already declared but disabled device.
- */
-void
-enabledev(const char *name, const char *at)
-{
-	struct devbase *ib, *ab;
-	char atbuf[NAMESIZE];
-	struct attr *attr;
-	struct nvlist *nv;
-	struct devi *i;
-	const char *cp;
-	int atunit;
-
-	i = ht_lookup(devitab, name);
-	if (i == NULL) {
-		error("invalid device `%s'", name);
-		return;
-	}
-	ib = i->i_base;
-
-	if (split(at, strlen(at), atbuf, sizeof atbuf, &atunit)) {
-		error("invalid attachment name `%s'", at);
-		return;
-	}
-	cp = intern(atbuf);
-	ab = ht_lookup(devbasetab, cp);
-	if (ab == NULL) {
-		error("invalid attachment device `%s'", cp);
-		return;
-	}
-	for (nv = ab->d_attrs; nv != NULL; nv = nv->nv_next) {
-		attr = nv->nv_ptr;
-		if (onlist(attr->a_devs, ib))
-			goto foundattachment;
-	}
-	error("%s's cannot attach to %s's", ib->d_name, atbuf);
-	return;
-
-foundattachment:
-	while (i && i->i_atdev != ab)
-		i = i->i_alias;
-	if (i == NULL) {
-		error("%s at %s not found", name, at);
-		return;
-	} else
-		i->i_disable = 0; /* Enable */
-}
-
-/*
  * Add the named device as attaching to the named attribute (or perhaps
  * another device instead) plus unit number.
  */
 void
-adddev(const char *name, const char *at, struct nvlist *loclist, int flags,
-    int disable)
+adddev(name, at, loclist, flags, disable)
+	const char *name, *at;
+	struct nvlist *loclist;
+	int flags, disable;
 {
-	struct devi *i;	/* the new instance */
-	struct attr *attr;	/* attribute that allows attach */
-	struct devbase *ib;	/* i->i_base */
-	struct devbase *ab;	/* not NULL => at another dev */
-	struct nvlist *nv;
-	struct deva *iba;	/* devbase attachment used */
+	register struct devi *i;	/* the new instance */
+	register struct attr *attr;	/* attribute that allows attach */
+	register struct devbase *ib;	/* i->i_base */
+	register struct devbase *ab;	/* not NULL => at another dev */
+	register struct nvlist *nv;
+	register struct deva *iba;	/* devbase attachment used */
 	const char *cp;
 	int atunit;
 	char atbuf[NAMESIZE];
@@ -807,7 +798,7 @@ adddev(const char *name, const char *at, struct nvlist *loclist, int flags,
 		 *
 		 * (1) If we're attached to an attribute, then we don't need
 		 *     look at the parent base device to see what attributes
-		 *     it has, and make sure that we can attach to them.
+		 *     it has, and make sure that we can attach to them.    
 		 *
 		 * (2) If we're attached to a real device (i.e. named in
 		 *     the config file), we want to remember that so that
@@ -888,10 +879,12 @@ bad:
 }
 
 void
-addpseudo(const char *name, int number, int disable)
+addpseudo(name, number)
+	const char *name;
+	int number;
 {
-	struct devbase *d;
-	struct devi *i;
+	register struct devbase *d;
+	register struct devi *i;
 
 	d = ht_lookup(devbasetab, name);
 	if (d == NULL) {
@@ -903,14 +896,12 @@ addpseudo(const char *name, int number, int disable)
 		return;
 	}
 	if (ht_lookup(devitab, name) != NULL) {
-		warnx("warning: duplicate definition of `%s', will use latest definition", name);
-		d->d_umax = number;
+		error("`%s' already defined", name);
 		return;
 	}
 	i = newdevi(name, number - 1, d);	/* foo 16 => "foo0..foo15" */
 	if (ht_insert(devitab, name, i))
 		panic("addpseudo(%s)", name);
-	i->i_disable = disable;
 	selectbase(d, NULL);
 	*nextpseudo = i;
 	nextpseudo = &i->i_next;
@@ -921,10 +912,11 @@ addpseudo(const char *name, int number, int disable)
  * Define a new instance of a specific device.
  */
 static struct devi *
-getdevi(const char *name)
+getdevi(name)
+	const char *name;
 {
-	struct devi *i, *firsti;
-	struct devbase *d;
+	register struct devi *i, *firsti;
+	register struct devbase *d;
 	int unit;
 	char base[NAMESIZE];
 
@@ -960,7 +952,9 @@ getdevi(const char *name)
 }
 
 static const char *
-concat(const char *name, int c)
+concat(name, c)
+	const char *name;
+	int c;
 {
 	size_t len;
 	char buf[NAMESIZE];
@@ -977,14 +971,16 @@ concat(const char *name, int c)
 }
 
 const char *
-starref(const char *name)
+starref(name)
+	const char *name;
 {
 
 	return (concat(name, '*'));
 }
 
 const char *
-wildref(const char *name)
+wildref(name)
+	const char *name;
 {
 
 	return (concat(name, '?'));
@@ -996,17 +992,22 @@ wildref(const char *name)
  * the length of the "foo0" part is one of the arguments.
  */
 static int
-split(const char *name, size_t nlen, char *base, size_t bsize, int *aunit)
+split(name, nlen, base, bsize, aunit)
+	register const char *name;
+	size_t nlen;
+	char *base;
+	size_t bsize;
+	int *aunit;
 {
-	const char *cp;
-	int c;
+	register const char *cp;
+	register int c;
 	size_t l;
 
 	l = nlen;
-	if (l < 2 || l >= bsize || isdigit((unsigned char)*name))
+	if (l < 2 || l >= bsize || isdigit(*name))
 		return (1);
 	c = (u_char)name[--l];
-	if (!isdigit((unsigned char)c)) {
+	if (!isdigit(c)) {
 		if (c == '*')
 			*aunit = STAR;
 		else if (c == '?')
@@ -1015,7 +1016,7 @@ split(const char *name, size_t nlen, char *base, size_t bsize, int *aunit)
 			return (1);
 	} else {
 		cp = &name[l];
-		while (isdigit((unsigned char)cp[-1]))
+		while (isdigit(cp[-1]))
 			l--, cp--;
 		*aunit = atoi(cp);
 	}
@@ -1029,10 +1030,12 @@ split(const char *name, size_t nlen, char *base, size_t bsize, int *aunit)
  * attributes for "optional foo".
  */
 static void
-selectbase(struct devbase *d, struct deva *da)
+selectbase(d, da)
+	register struct devbase *d;
+	register struct deva *da;
 {
-	struct attr *a;
-	struct nvlist *nv;
+	register struct attr *a;
+	register struct nvlist *nv;
 
 	(void)ht_insert(selecttab, d->d_name, (char *)d->d_name);
 	for (nv = d->d_attrs; nv != NULL; nv = nv->nv_next) {
@@ -1053,7 +1056,9 @@ selectbase(struct devbase *d, struct deva *da)
  * Is the given pointer on the given list of pointers?
  */
 static int
-onlist(struct nvlist *nv, void *ptr)
+onlist(nv, ptr)
+	register struct nvlist *nv;
+	register void *ptr;
 {
 	for (; nv != NULL; nv = nv->nv_next)
 		if (nv->nv_ptr == ptr)
@@ -1062,9 +1067,11 @@ onlist(struct nvlist *nv, void *ptr)
 }
 
 static char *
-extend(char *p, const char *name)
+extend(p, name)
+	register char *p;
+	const char *name;
 {
-	int l;
+	register int l;
 
 	l = strlen(name);
 	bcopy(name, p, l);
@@ -1079,11 +1086,14 @@ extend(char *p, const char *name)
  * given as "?" and have defaults.  Return 0 on success.
  */
 static const char **
-fixloc(const char *name, struct attr *attr, struct nvlist *got)
+fixloc(name, attr, got)
+	const char *name;
+	register struct attr *attr;
+	register struct nvlist *got;
 {
-	struct nvlist *m, *n;
-	int ord;
-	const char **lp;
+	register struct nvlist *m, *n;
+	register int ord;
+	register const char **lp;
 	int nmissing, nextra, nnodefault;
 	char *mp, *ep, *ndp;
 	char missing[1000], extra[1000], nodefault[1000];
@@ -1097,8 +1107,7 @@ fixloc(const char *name, struct attr *attr, struct nvlist *got)
 	if (attr->a_loclen == 0)	/* e.g., "at root" */
 		lp = nullvec;
 	else
-		lp = ereallocarray(NULL, attr->a_loclen + 1, 
-		    sizeof(const char *));
+		lp = emalloc((attr->a_loclen + 1) * sizeof(const char *));
 	for (n = got; n != NULL; n = n->nv_next)
 		n->nv_int = -1;
 	nmissing = 0;

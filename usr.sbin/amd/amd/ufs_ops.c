@@ -1,4 +1,4 @@
-/*	$OpenBSD: ufs_ops.c,v 1.10 2014/10/26 03:28:41 guenther Exp $	*/
+/*	$OpenBSD: ufs_ops.c,v 1.2 1996/03/25 15:54:50 niklas Exp $	*/
 
 /*
  * Copyright (c) 1990 Jan-Simon Pendry
@@ -17,7 +17,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -41,6 +45,13 @@
 #ifdef HAS_UFS
 
 #include <sys/stat.h>
+#ifdef NFS_3
+typedef nfs_fh fhandle_t;
+#endif /* NFS_3 */
+
+#ifdef UFS_HDR
+#include UFS_HDR
+#endif /* UFS_HDR */
 
 /*
  * UN*X file system
@@ -49,8 +60,9 @@
 /*
  * UFS needs local filesystem and device.
  */
-static char *
-ufs_match(am_opts *fo)
+static char *ufs_match P((am_opts *fo));
+static char *ufs_match(fo)
+am_opts *fo;
 {
 	if (!fo->opt_dev) {
 		plog(XLOG_USER, "ufs: no device specified");
@@ -68,8 +80,10 @@ ufs_match(am_opts *fo)
 	return strdup(fo->opt_dev);
 }
 
-static int
-mount_ufs(char *dir, char *fs_name, char *opts)
+static mount_ufs(dir, fs_name, opts)
+char *dir;
+char *fs_name;
+char *opts;
 {
 	struct ufs_args ufs_args;
 	struct mntent mnt;
@@ -78,23 +92,29 @@ mount_ufs(char *dir, char *fs_name, char *opts)
 	/*
 	 * Figure out the name of the file system type.
 	 */
-	const char *type = MOUNT_FFS;
+	MTYPE_TYPE type = MOUNT_TYPE_UFS;
 
-	bzero(&ufs_args, sizeof(ufs_args));	/* Paranoid */
+	bzero((voidp) &ufs_args, sizeof(ufs_args));	/* Paranoid */
 
 	/*
 	 * Fill in the mount structure
 	 */
 	mnt.mnt_dir = dir;
 	mnt.mnt_fsname = fs_name;
-	mnt.mnt_type = "ffs";
+	mnt.mnt_type = MTAB_TYPE_UFS;
 	mnt.mnt_opts = opts;
 	mnt.mnt_freq = 1;
 	mnt.mnt_passno = 2;
 
 	flags = compute_mount_flags(&mnt);
 
+#ifdef ULTRIX_HACK
+	ufs_args.ufs_flags = flags;
+	ufs_args.ufs_pgthresh = 64; /* 64K - XXX */
+	flags &= M_RDONLY;
+#else
 	ufs_args.fspec = fs_name;
+#endif /* ULTRIX_HACK */
 
 	/*
 	 * Call generic mount routine
@@ -102,8 +122,9 @@ mount_ufs(char *dir, char *fs_name, char *opts)
 	return mount_fs(&mnt, flags, (caddr_t) &ufs_args, 0, type);
 }
 
-static int
-ufs_fmount(mntfs *mf)
+/*ARGSUSED*/
+static int ufs_fmount(mf)
+mntfs *mf;
 {
 	int error;
 
@@ -117,10 +138,10 @@ ufs_fmount(mntfs *mf)
 	return 0;
 }
 
-static int
-ufs_fumount(mntfs *mf)
+static int ufs_fumount(mf)
+mntfs *mf;
 {
-	return umount_fs(mf->mf_mount);
+	return UMOUNT_FS(mf->mf_mount);
 }
 
 /*

@@ -1,5 +1,3 @@
-/*	$OpenBSD: sbrk.S,v 1.14 2015/09/10 13:29:09 guenther Exp $	*/
-
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
  * All rights reserved.
@@ -16,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,66 +35,37 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+	.data
+	/*.asciz "from: @(#)sbrk.s	5.1 (Berkeley) 5/12/90"*/
+	.asciz "$Id: sbrk.S,v 1.2 1999/02/09 05:23:37 smurph Exp $"
+	.text
+#endif /* LIBC_SCCS and not lint */
+
 #include "SYS.h"
 
 	.globl	_end
-	.globl	__curbrk
+	.globl	curbrk
 
 	.data
 	.align 8
-__curbrk:
-	.long	_end
-	END(__curbrk)
-	.type	__curbrk,@object
-
+curbrk:	.long	_end
 	.text
 
-	.weak	sbrk
-
 ENTRY(sbrk)
-#ifdef __PIC__
-	PIC_SAVE(%r9)
-	PIC_SETUP
-#endif
-
-#ifdef __PIC__
-	PIC_LOAD(%r5,__curbrk)
-#else
-	or.u	%r5,%r0,%hi16(__curbrk)
-	ld	%r5,%r5,%lo16(__curbrk)
-#endif
-	add	%r2,%r2,%r5
-	or	%r4,%r2,0
-	or	%r13,%r0,SYS_break
-	tb0	0,%r0,450
-#ifdef __PIC__
-	br	9f
-#else
-	br 	CERROR
-#endif
-	/* Save old __curbrk */
-#ifdef __PIC__
-	PIC_LOAD(%r2,__curbrk)
-#else
-	or.u	%r5,%r0,%hi16(__curbrk)
-	ld	%r2,%r5,%lo16(__curbrk)
-#endif
-	/* Update __curbrk */
-#ifdef __PIC__
-	PIC_STORE(%r4,__curbrk)
-#else
-	st	%r4,%r5,%lo16(__curbrk)
-#endif
-	/* and return old __curbrk */
-#ifdef __PIC__
-	PIC_RESTORE(%r9)
-#endif
-	jmp.n	%r1
-	 or	%r3,%r0,0
-
-#ifdef __PIC__
-9:
-	br.n	CERROR
-	 PIC_RESTORE(%r9)
-#endif
-END(sbrk)
+	or.u	r5,r0,hi16(curbrk)
+	ld	r5,r5,lo16(curbrk)
+	add	r2,r2,r5
+	or	r4,r2,0
+	or	r13,r0,SYS_break
+	tb0	0,r0,128
+	br 	cerror
+	/* Save old curbrk */
+	or.u	r5,r0,hi16(curbrk)
+	ld	r3,r5,lo16(curbrk)
+	/* Update curbrk */
+	st	r4,r5,lo16(curbrk)
+	/* and return old curbrk */
+	or	r2,r3,0
+	jmp.n	r1
+	or	r3,r0,0

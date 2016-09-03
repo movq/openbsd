@@ -1,4 +1,4 @@
-/*	$OpenBSD: str.c,v 1.12 2012/12/05 23:20:26 deraadt Exp $	*/
+/*	$OpenBSD: str.c,v 1.5 1998/12/07 18:23:29 deraadt Exp $	*/
 /*	$NetBSD: str.c,v 1.7 1995/08/31 22:13:47 jtc Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +34,14 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)str.c	8.2 (Berkeley) 4/28/95";
+#endif
+static char rcsid[] = "$OpenBSD: str.c,v 1.5 1998/12/07 18:23:29 deraadt Exp $";
+#endif /* not lint */
+
+#include <sys/cdefs.h>
 #include <sys/types.h>
 
 #include <errno.h>
@@ -42,19 +54,19 @@
 
 #include "extern.h"
 
-static int	backslash(STR *);
-static int	bracket(STR *);
-static int	c_class(const void *, const void *);
-static void	genclass(STR *);
-static void	genequiv(STR *);
-static int	genrange(STR *);
-static void	genseq(STR *);
+static int	backslash __P((STR *));
+static int	bracket __P((STR *));
+static int	c_class __P((const void *, const void *));
+static void	genclass __P((STR *));
+static void	genequiv __P((STR *));
+static int	genrange __P((STR *));
+static void	genseq __P((STR *));
 
 int
 next(s)
-	STR *s;
+	register STR *s;
 {
-	int ch;
+	register int ch;
 
 	switch (s->state) {
 	case EOS:
@@ -110,27 +122,27 @@ next(s)
 
 static int
 bracket(s)
-	STR *s;
+	register STR *s;
 {
-	char *p;
+	register char *p;
 
 	switch (s->str[1]) {
 	case ':':				/* "[:class:]" */
-		if ((p = strstr((char *)s->str + 2, ":]")) == NULL)
+		if ((p = strstr(s->str + 2, ":]")) == NULL)
 			return (0);
 		*p = '\0';
 		s->str += 2;
 		genclass(s);
-		s->str = (unsigned char *)p + 2;
+		s->str = p + 2;
 		return (1);
 	case '=':				/* "[=equiv=]" */
-		if ((p = strstr((char *)s->str + 2, "=]")) == NULL)
+		if ((p = strstr(s->str + 2, "=]")) == NULL)
 			return (0);
 		s->str += 2;
 		genequiv(s);
 		return (1);
 	default:				/* "[\###*n]" or "[#*n]" */
-		if ((p = strpbrk((char *)s->str + 2, "*]")) == NULL)
+		if ((p = strpbrk(s->str + 2, "*]")) == NULL)
 			return (0);
 		if (p[0] != '*' || strchr(p, ']') == NULL)
 			return (0);
@@ -143,7 +155,7 @@ bracket(s)
 
 typedef struct {
 	char *name;
-	int (*func)(int);
+	int (*func) __P((int));
 	int *set;
 } CLASS;
 
@@ -166,17 +178,18 @@ static void
 genclass(s)
 	STR *s;
 {
-	int cnt, (*func)(int);
+	register int cnt, (*func) __P((int));
 	CLASS *cp, tmp;
 	int *p;
 
-	tmp.name = (char *)s->str;
+	tmp.name = s->str;
 	if ((cp = (CLASS *)bsearch(&tmp, classes, sizeof(classes) /
 	    sizeof(CLASS), sizeof(CLASS), c_class)) == NULL)
 		errx(1, "unknown class %s", s->str);
 
-	if ((cp->set = p = calloc(NCHARS + 1, sizeof(int))) == NULL)
+	if ((cp->set = p = malloc((NCHARS + 1) * sizeof(int))) == NULL)
 		errx(1, "no memory for a class");
+	bzero(p, (NCHARS + 1) * sizeof(int));
 	for (cnt = 0, func = cp->func; cnt < NCHARS; ++cnt)
 		if ((func)(cnt))
 			*p++ = cnt;
@@ -222,7 +235,7 @@ genrange(s)
 	STR *s;
 {
 	int stopval;
-	unsigned char *savestart;
+	char *savestart;
 
 	savestart = s->str;
 	stopval = *++s->str == '\\' ? backslash(s) : *s->str++;
@@ -262,9 +275,9 @@ genseq(s)
 		break;
 	default:
 		if (isdigit(*s->str)) {
-			s->cnt = strtol((char *)s->str, &ep, 0);
+			s->cnt = strtol(s->str, &ep, 0);
 			if (*ep == ']') {
-				s->str = (unsigned char *)ep + 1;
+				s->str = ep + 1;
 				break;
 			}
 		}
@@ -281,9 +294,9 @@ genseq(s)
  */
 static int
 backslash(s)
-	STR *s;
+	register STR *s;
 {
-	int ch, cnt, val;
+	register int ch, cnt, val;
 
 	for (cnt = val = 0;;) {
 		ch = *++s->str;

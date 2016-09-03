@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_hline.c,v 1.5 2010/01/12 23:22:05 nicm Exp $ */
+/*	$OpenBSD: lib_hline.c,v 1.1 1999/01/18 19:09:46 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2001,2006 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -33,6 +33,8 @@
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
  ****************************************************************************/
 
+
+
 /*
 **	lib_hline.c
 **
@@ -42,41 +44,35 @@
 
 #include <curses.priv.h>
 
-MODULE_ID("$Id: lib_hline.c,v 1.5 2010/01/12 23:22:05 nicm Exp $")
+MODULE_ID("$From: lib_hline.c,v 1.4 1998/06/28 00:11:01 tom Exp $")
 
-NCURSES_EXPORT(int)
-whline(WINDOW *win, chtype ch, int n)
+int whline(WINDOW *win, chtype ch, int n)
 {
-    int code = ERR;
-    NCURSES_SIZE_T start;
-    NCURSES_SIZE_T end;
+int   code = ERR;
+short start;
+short end;
 
-    T((T_CALLED("whline(%p,%s,%d)"), win, _tracechtype(ch), n));
+	T((T_CALLED("whline(%p,%s,%d)"), win, _tracechtype(ch), n));
 
-    if (win) {
-	struct ldat *line = &(win->_line[win->_cury]);
-	NCURSES_CH_T wch;
+	if (win) {
+		struct ldat *line = &(win->_line[win->_cury]);
 
-	start = win->_curx;
-	end = start + n - 1;
-	if (end > win->_maxx)
-	    end = win->_maxx;
+		start = win->_curx;
+		end   = start + n - 1;
+		if (end > win->_maxx)
+			end   = win->_maxx;
 
-	CHANGED_RANGE(line, start, end);
+		CHANGED_RANGE(line, start, end);
 
-	if (ch == 0)
-	    SetChar2(wch, ACS_HLINE);
-	else
-	    SetChar2(wch, ch);
-	wch = _nc_render(win, wch);
+		if (ch == 0)
+			ch = ACS_HLINE;
+		ch = _nc_render(win, ch);
 
-	while (end >= start) {
-	    line->text[end] = wch;
-	    end--;
+		while ( end >= start) {
+			line->text[end] = ch;
+			end--;
+		}
+		code = OK;
 	}
-
-	_nc_synchook(win);
-	code = OK;
-    }
-    returnCode(code);
+	returnCode(code);
 }

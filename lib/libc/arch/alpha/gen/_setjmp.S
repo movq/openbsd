@@ -1,4 +1,4 @@
-/*	$OpenBSD: _setjmp.S,v 1.6 2016/05/09 16:33:48 guenther Exp $	*/
+/*	$OpenBSD: _setjmp.S,v 1.3 1996/11/13 21:20:09 niklas Exp $	*/
 /*	$NetBSD: _setjmp.S,v 1.2 1996/10/17 03:08:03 cgd Exp $	*/
 
 /*
@@ -28,7 +28,12 @@
  * rights to redistribute these changes.
  */
 
-#include "SYS.h"
+#include <machine/asm.h>
+
+#if defined(LIBC_SCCS)
+	.text
+	.asciz "$OpenBSD: _setjmp.S,v 1.3 1996/11/13 21:20:09 niklas Exp $"
+#endif
 
 /*
  * C library -- _setjmp, _longjmp
@@ -84,7 +89,7 @@ LEAF(_setjmp, 1)
 
 	mov	zero, v0			/* return zero */
 	RET
-END_STRONG(_setjmp)
+END(_setjmp)
 
 LEAF(_longjmp, 2)
 	LDGP(pv)
@@ -114,13 +119,11 @@ LEAF(_longjmp, 2)
 	ldt	ft0, (69 * 8)(a0)		/* get sc_fpcr */
 	mt_fpcr	ft0				/* and restore it. */
 
-	bne	a1, 1f
-	addq	a1, 1, a1
-1:
 	mov	a1, v0				/* return second arg */
 	RET
 
 botch:
-	CALL(_HIDDEN(abort))
+	CALL(longjmperror)
+	CALL(abort)
 	RET					/* "can't" get here... */
-END_STRONG(_longjmp)
+END(_longjmp)

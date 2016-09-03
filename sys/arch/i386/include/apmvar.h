@@ -1,4 +1,4 @@
-/*	$OpenBSD: apmvar.h,v 1.20 2015/02/06 08:16:49 dcoppa Exp $	*/
+/*	$OpenBSD: apmvar.h,v 1.8 1999/02/15 20:42:23 mickey Exp $	*/
 
 /*
  *  Copyright (c) 1995 John T. Kohl
@@ -28,8 +28,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  * 
  */
-#ifndef _MACHINE_APMVAR_H_
-#define _MACHINE_APMVAR_H_
+#ifndef _I386_APMVAR_H_
+#define _I386_APMVAR_H_
 
 #include <sys/ioccom.h>
 
@@ -37,7 +37,7 @@
  * functions/defines/etc.
  */
 
-#define	APM_VERSION	0x0102
+#define	APM_VERSION	0x0101
 
 /*
  * APM info word from boot loader
@@ -49,9 +49,6 @@
 #define APM_BIOS_PM_DISENGAGED	0x00100000
 #define	APM_MAJOR(f)		(((f) >> 8) & 0xff)
 #define	APM_MINOR(f)		((f) & 0xff)
-#define	APM_VERMASK		0x0000ffff
-#define	APM_NOCLI		0x00010000
-#define	APM_BEBATT		0x00020000
 
 /* APM error codes */
 #define	APM_ERR_CODE(regs)	(((regs)->ax & 0xff00) >> 8)
@@ -65,8 +62,6 @@
 #define	APM_ERR_UNRECOG_DEV	0x09
 #define	APM_ERR_ERANGE		0x0A
 #define	APM_ERR_NOTENGAGED	0x0B
-#define	APM_ERR_EOPNOSUPP	0x0C
-#define	APM_ERR_RTIMER_DISABLED	0x0D
 #define APM_ERR_UNABLE		0x60
 #define APM_ERR_NOEVENTS	0x80
 #define	APM_ERR_NOT_PRESENT	0x86
@@ -138,8 +133,7 @@
 #define		APM_BATT_FLAG_LOW	0x02
 #define		APM_BATT_FLAG_CRITICAL	0x04
 #define		APM_BATT_FLAG_CHARGING	0x08
-#define		APM_BATT_FLAG_NOBATTERY	0x10
-#define		APM_BATT_FLAG_NOSYSBATT	0x80
+#define		APM_BATT_FLAG_NOBATTERY	0x80
 #define		APM_BATT_LIFE_UNKNOWN	0xff
 #define		BATT_STATE(regp) ((regp)->bx & 0xff)
 #define		BATT_FLAGS(regp) (((regp)->cx & 0xff00) >> 8)
@@ -154,7 +148,6 @@
 				      ((regp)->dx & 0x7fff) : \
 				      ((regp)->dx & 0x7fff)/60)
 #define		BATT_REM_VALID(regp) (((regp)->dx & 0xffff) != 0xffff)
-#define		BATT_COUNT(regp)	((regp)->si)
 
 #define	APM_GET_PM_EVENT	0x530b
 #define		APM_NOEVENT		0x0000
@@ -170,17 +163,12 @@
 #define		APM_USER_STANDBY_REQ	0x0009
 #define		APM_USER_SUSPEND_REQ	0x000A
 #define		APM_SYS_STANDBY_RESUME	0x000B
-#define		APM_CAPABILITY_CHANGE	0x000C	/* apm v1.2 */
+#define		APM_CAPABILITY_CHANGE	0x000C
 /* 0x000d - 0x00ff	Reserved system events */
-#define		APM_USER_HIBERNATE_REQ	0x000D
 /* 0x0100 - 0x01ff	Reserved device events */
 /* 0x0200 - 0x02ff	OEM-defined APM events */
 /* 0x0300 - 0xffff	Reserved */
-#define		APM_EVENT_MASK		0xffff
-
-#define	APM_EVENT_COMPOSE(t,i)	((((i) & 0x7fff) << 16)|((t) & APM_EVENT_MASK))
-#define	APM_EVENT_TYPE(e)	((e) & APM_EVENT_MASK)
-#define	APM_EVENT_INDEX(e)	((e) >> 16)
+#define		APM_DEFEVENT		0xffffffff	/* for customization */
 
 #define	APM_GET_POWER_STATE	0x530c
 #define	APM_DEVICE_MGMT_ENABLE	0x530d
@@ -198,20 +186,7 @@
 #define		APM_MGT_DISENGAGE	0x0	/* %cx */
 #define		APM_MGT_ENGAGE		0x1
 
-/* %bx - APM_DEV_APM_BIOS
- * %bl - number of batteries
- * %cx - capabilities
- */
 #define	APM_GET_CAPABILITIES	0x5310
-#define		APM_NBATTERIES(regp)	((regp)->bx)
-#define		APM_GLOBAL_STANDBY	0x0001
-#define		APM_GLOBAL_SUSPEND	0x0002
-#define		APM_RTIMER_STANDBY	0x0004	/* resume time wakes up */
-#define		APM_RTIMER_SUSPEND	0x0008
-#define		APM_IRRING_STANDBY	0x0010	/* internal ring wakes up */
-#define		APM_IRRING_SUSPEND	0x0020
-#define		APM_PCCARD_STANDBY	0x0040	/* pccard wakes up */
-#define		APM_PCCARD_SUSPEND	0x0080
 
 /* %bx - APM_DEV_APM_BIOS
  * %cl - function
@@ -262,6 +237,12 @@
  * Sep., 1994	Implemented on FreeBSD 1.1.5.1R (Toshiba AVS001WD)
  */
 
+struct apm_event_info {
+	u_int type;
+	u_int index;
+	u_int spare[8];
+};
+
 #define APM_BATTERY_ABSENT 4
 
 struct apm_power_info {
@@ -282,22 +263,19 @@ struct apm_ctl {
 #define	APM_IOC_STANDBY	_IO('A', 1)	/* put system into standby */
 #define	APM_IOC_SUSPEND	_IO('A', 2)	/* put system into suspend */
 #define	APM_IOC_GETPOWER _IOR('A', 3, struct apm_power_info) /* fetch battery state */
+#define	APM_IOC_NEXTEVENT _IOR('A', 4, struct apm_event_info) /* fetch event */
 #define	APM_IOC_DEV_CTL	_IOW('A', 5, struct apm_ctl) /* put device into mode */
 #define APM_IOC_PRN_CTL _IOW('A', 6, int ) /* driver power status msg */
 #define		APM_PRINT_ON	0	/* driver power status displayed */
 #define		APM_PRINT_OFF	1	/* driver power status not displayed */
 #define		APM_PRINT_PCT	2	/* driver power status only displayed
 					   if the percentage changes */
-#define	APM_IOC_STANDBY_REQ	_IO('A', 7)	/* request standby */
-#define	APM_IOC_SUSPEND_REQ	_IO('A', 8)	/* request suspend */
-#define	APM_IOC_HIBERNATE	_IO('A', 9)	/* put system into hibernate */
-
 
 #ifdef _KERNEL
-extern void apm_cpu_busy(void);
-extern void apm_cpu_idle(void);
-extern void apminit(void);
-int apm_set_powstate(u_int devid, u_int powstate);
+extern void apm_cpu_busy __P((void));
+extern void apm_cpu_idle __P((void));
+extern void apminit __P((void));
+int apm_set_powstate __P((u_int devid, u_int powstate));
 #endif /* _KERNEL */
 
-#endif /* _MACHINE_APMVAR_H_ */
+#endif /* _I386_APMVAR_H_ */

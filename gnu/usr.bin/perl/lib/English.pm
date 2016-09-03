@@ -1,9 +1,7 @@
 package English;
 
-our $VERSION = '1.09';
-
 require Exporter;
-@ISA = qw(Exporter);
+@ISA = (Exporter);
 
 =head1 NAME
 
@@ -12,13 +10,18 @@ English - use nice English (or awk) names for ugly punctuation variables
 =head1 SYNOPSIS
 
     use English;
-    use English qw( -no_match_vars ) ;  # Avoids regex performance
-                                        # penalty in perl 5.16 and
-                                        # earlier
     ...
     if ($ERRNO =~ /denied/) { ... }
 
 =head1 DESCRIPTION
+
+You should I<not> use this module in programs intended to be portable
+among Perl versions, programs that must perform regular expression
+matching operations efficiently, or libraries intended for use with
+such programs.  In a sense, this module is deprecated.  The reasons
+for this have to do with implementation details of the Perl
+interpreter which are too thorny to go into here.  Perhaps someday
+they will be fixed to make "C<use English>" more practical.
 
 This module provides aliases for the built-in variables whose
 names no one seems to like to read.  Variables with side-effects
@@ -32,56 +35,23 @@ $INPUT_RECORD_SEPARATOR if you are using the English module.
 
 See L<perlvar> for a complete list of these.
 
-=head1 PERFORMANCE
-
-NOTE: This was fixed in perl 5.20.  Mentioning these three variables no
-longer makes a speed difference.  This section still applies if your code
-is to run on perl 5.18 or earlier.
-
-This module can provoke sizeable inefficiencies for regular expressions,
-due to unfortunate implementation details.  If performance matters in
-your application and you don't need $PREMATCH, $MATCH, or $POSTMATCH,
-try doing
-
-   use English qw( -no_match_vars ) ;
-
-.  B<It is especially important to do this in modules to avoid penalizing
-all applications which use them.>
-
 =cut
 
-no warnings;
-
-my $globbed_match ;
+local $^W = 0;
 
 # Grandfather $NAME import
 sub import {
     my $this = shift;
-    my @list = grep { ! /^-no_match_vars$/ } @_ ;
+    my @list = @_;
     local $Exporter::ExportLevel = 1;
-    if ( @_ == @list ) {
-        *EXPORT = \@COMPLETE_EXPORT ;
-        $globbed_match ||= (
-	    eval q{
-		*MATCH				= *&	;
-		*PREMATCH			= *`	;
-		*POSTMATCH			= *'	;
-		1 ;
-	       }
-	    || do {
-		require Carp ;
-		Carp::croak("Can't create English for match leftovers: $@") ;
-	    }
-	) ;
-    }
-    else {
-        *EXPORT = \@MINIMAL_EXPORT ;
-    }
     Exporter::import($this,grep {s/^\$/*/} @list);
 }
 
-@MINIMAL_EXPORT = qw(
+@EXPORT = qw(
 	*ARG
+	*MATCH
+	*PREMATCH
+	*POSTMATCH
 	*LAST_PAREN_MATCH
 	*INPUT_LINE_NUMBER
 	*NR
@@ -119,9 +89,7 @@ sub import {
 	*EGID
 	*PROGRAM_NAME
 	*PERL_VERSION
-	*OLD_PERL_VERSION
 	*ACCUMULATOR
-	*COMPILING
 	*DEBUGGING
 	*SYSTEM_FD_MAX
 	*INPLACE_EDIT
@@ -130,32 +98,18 @@ sub import {
 	*WARNING
 	*EXECUTABLE_NAME
 	*OSNAME
-	*LAST_REGEXP_CODE_RESULT
-	*EXCEPTIONS_BEING_CAUGHT
-	*LAST_SUBMATCH_RESULT
-	@LAST_MATCH_START
-	@LAST_MATCH_END
 );
 
-
-@MATCH_EXPORT = qw(
-	*MATCH
-	*PREMATCH
-	*POSTMATCH
-);
-
-@COMPLETE_EXPORT = ( @MINIMAL_EXPORT, @MATCH_EXPORT ) ;
-
-# The ground of all being.
+# The ground of all being. @ARG is deprecated (5.005 makes @_ lexical)
 
 	*ARG					= *_	;
 
 # Matching.
 
+	*MATCH					= *&	;
+	*PREMATCH				= *`	;
+	*POSTMATCH				= *'	;
 	*LAST_PAREN_MATCH			= *+	;
-	*LAST_SUBMATCH_RESULT			= *^N ;
-	*LAST_MATCH_START			= *-{ARRAY} ;
-	*LAST_MATCH_END				= *+{ARRAY} ;
 
 # Input.
 
@@ -193,8 +147,6 @@ sub import {
 	*CHILD_ERROR				= *?	;
 	*OS_ERROR				= *!	;
 	    *ERRNO				= *!	;
-	*OS_ERROR				= *!	;
-	    *ERRNO				= *!	;
 	*EXTENDED_OS_ERROR			= *^E	;
 	*EVAL_ERROR				= *@	;
 
@@ -214,16 +166,13 @@ sub import {
 
 # Internals.
 
-	*PERL_VERSION				= *^V	;
-	*OLD_PERL_VERSION			= *]	;
+	*PERL_VERSION				= *]	;
 	*ACCUMULATOR				= *^A	;
 	*COMPILING				= *^C	;
 	*DEBUGGING				= *^D	;
 	*SYSTEM_FD_MAX				= *^F	;
 	*INPLACE_EDIT				= *^I	;
 	*PERLDB					= *^P	;
-	*LAST_REGEXP_CODE_RESULT		= *^R	;
-	*EXCEPTIONS_BEING_CAUGHT		= *^S	;
 	*BASETIME				= *^T	;
 	*WARNING				= *^W	;
 	*EXECUTABLE_NAME			= *^X	;
@@ -233,5 +182,6 @@ sub import {
 
 #	*ARRAY_BASE				= *[	;
 #	*OFMT					= *#	;
+#	*MULTILINE_MATCHING			= **	;
 
 1;

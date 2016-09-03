@@ -1,4 +1,4 @@
-/*	$OpenBSD: prtable.c,v 1.11 2008/08/04 18:42:09 millert Exp $	*/
+/*	$OpenBSD: prtable.c,v 1.4 1998/09/24 06:45:06 pjanzen Exp $	*/
 /*	$NetBSD: prtable.c,v 1.2 1995/03/21 12:14:42 cgd Exp $	*/
 
 /*-
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -41,9 +45,7 @@
 
 #define NCOLS	5
 
-static int	get_maxlen(char **, int, int (*)(char **, int));
-
-extern int	lastline, LIST_LINE, LIST_COL;
+static int	get_maxlen __P((char *[], int, int (*)(char **, int)));
 
 /*
  * Routine to print a table
@@ -61,11 +63,14 @@ extern int	lastline, LIST_LINE, LIST_COL;
  * an index
  */
 void
-prtable(char **base, int num, int d_cols, int width, 
-        void (*prentry)(char **, int), int (*length)(char **, int))
+prtable(base, num, d_cols, width, prentry, length)
+	char *base[];
+	int num, d_cols, width;
+	void (*prentry) __P((char *[], int));
+	int (*length) __P((char *[], int));
 {
-	int c, j;
-	int a, b, cols, loc, maxlen, nrows, z;
+	register int c, j;
+	register int a, b, cols, loc, maxlen, nrows, z;
 	int col, row;
 
 	if (num == 0)
@@ -104,29 +109,17 @@ prtable(char **base, int num, int d_cols, int width,
 		}
 		getyx(stdscr, row, col);
 		move(row + 1, 0);
-		if (row + 1 == lastline && a != nrows) {
-			attron(A_REVERSE);
-			printw("--More--");
-			attroff(A_REVERSE);
-			do {
-			    j = inputch();
-			} while (j != ' ' && j != 'q' && j != 'Q');
-			if (j == 'q' || j == 'Q') {
-				move(row + 1, 0);
-				wclrtoeol(stdscr);
-				break;
-			}
-			move(LIST_LINE, LIST_COL);
-			wclrtobot(stdscr);
-		}
 	}
 	refresh();
 }
 
 static int
-get_maxlen(char **base, int num, int (*length)(char **, int))
+get_maxlen(base, num, length)
+	char *base[];
+	int num;
+	int (*length) __P((char **, int));
 {
-	int i, len, max;
+	register int i, len, max;
 
 	max = (*length)(base, 0);
 	for (i = 0; i < num; i++) {

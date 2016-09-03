@@ -1,4 +1,4 @@
-/*	$OpenBSD: nfsmount.h,v 1.25 2012/09/10 11:10:59 jsing Exp $	*/
+/*	$OpenBSD: nfsmount.h,v 1.6 1999/06/10 05:55:15 millert Exp $	*/
 /*	$NetBSD: nfsmount.h,v 1.10 1996/02/18 11:54:03 fvdl Exp $	*/
 
 /*
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -45,11 +49,6 @@
  * Holds NFS specific information for mount.
  */
 struct	nfsmount {
-	RB_HEAD(nfs_nodetree, nfsnode)
-		nm_ntree;		/* filehandle/node tree */
-	TAILQ_HEAD(reqs, nfsreq)
-		nm_reqsq;		/* request queue for this mount. */
-	struct timeout nm_rtimeout;	/* timeout (scans/resends nm_reqsq). */
 	int	nm_flag;		/* Flags for soft/hard... */
 	struct	mount *nm_mountp;	/* Vfs structure for this filesystem */
 	int	nm_numgrps;		/* Max. size of groupslist */
@@ -62,16 +61,30 @@ struct	nfsmount {
 	struct	mbuf *nm_nam;		/* Addr of server */
 	int	nm_timeo;		/* Init timer for NFSMNT_DUMBTIMR */
 	int	nm_retry;		/* Max retries */
-	int	nm_srtt[NFS_MAX_TIMER];	/* RTT Timers for RPCs */
-	int	nm_sdrtt[NFS_MAX_TIMER];
+	int	nm_srtt[4];		/* Timers for rpcs */
+	int	nm_sdrtt[4];
 	int	nm_sent;		/* Request send count */
 	int	nm_cwnd;		/* Request send window */
 	int	nm_timeouts;		/* Request timeouts */
+	int	nm_deadthresh;		/* Threshold of timeouts-->dead server*/
 	int	nm_rsize;		/* Max size of read rpc */
 	int	nm_wsize;		/* Max size of write rpc */
 	int	nm_readdirsize;		/* Size of a readdir rpc */
 	int	nm_readahead;		/* Num. of blocks to readahead */
+	int	nm_leaseterm;		/* Term (sec) for NQNFS lease */
+	CIRCLEQ_HEAD(, nfsnode) nm_timerhead; /* Head of lease timer queue */
+	struct vnode *nm_inprog;	/* Vnode in prog by nqnfs_clientd() */
+	uid_t	nm_authuid;		/* Uid for authenticator */
+	int	nm_authtype;		/* Authenticator type */
+	int	nm_authlen;		/* and length */
+	char	*nm_authstr;		/* Authenticator string */
+	char	*nm_verfstr;		/* and the verifier */
+	int	nm_verflen;
 	u_char	nm_verf[NFSX_V3WRITEVERF]; /* V3 write verifier */
+	NFSKERBKEY_T nm_key;		/* and the session key */
+	int	nm_numuids;		/* Number of nfsuid mappings */
+	TAILQ_HEAD(, nfsuid) nm_uidlruhead; /* Lists of nfsuid mappings */
+	LIST_HEAD(, nfsuid) nm_uidhashtbl[NFS_MUIDHASHSIZ];
 	u_short	nm_acregmin;		/* Attr cache file recently modified */
 	u_short	nm_acregmax;		/* ac file not recently modified */
 	u_short	nm_acdirmin;		/* ac for dir recently modified */
@@ -79,31 +92,35 @@ struct	nfsmount {
 };
 
 #ifdef _KERNEL
-
-/* Convert mount ptr to nfsmount ptr: */
+/*
+ * Convert mount ptr to nfsmount ptr.
+ */
 #define VFSTONFS(mp)	((struct nfsmount *)((mp)->mnt_data))
-
-/* Prototypes for NFS mount operations: */
-int	nfs_mount(struct mount *, const char *, void *, struct nameidata *,
-	    struct proc *);
-int	mountnfs(struct nfs_args *, struct mount *, struct mbuf *,
-	    const char *, char *);
-int	nfs_mountroot(void);
-void	nfs_decode_args(struct nfsmount *, struct nfs_args *,
-	    struct nfs_args *);
-int	nfs_start(struct mount *, int, struct proc *);
-int	nfs_unmount(struct mount *, int, struct proc *);
-int	nfs_root(struct mount *, struct vnode **);
-int	nfs_quotactl(struct mount *, int, uid_t, caddr_t, struct proc *);
-int	nfs_statfs(struct mount *, struct statfs *, struct proc *);
-int	nfs_sync(struct mount *, int, struct ucred *, struct proc *);
-int	nfs_vget(struct mount *, ino_t, struct vnode **);
-int	nfs_fhtovp(struct mount *, struct fid *, struct vnode **);
-int	nfs_vptofh(struct vnode *, struct fid *);
-int	nfs_fsinfo(struct nfsmount *, struct vnode *, struct ucred *,
-	    struct proc *);
-void	nfs_init(void);
-
 #endif /* _KERNEL */
+
+/*
+ * Prototypes for NFS mount operations
+ */
+int	nfs_mount __P((struct mount *mp, const char *path, caddr_t data,
+		struct nameidata *ndp, struct proc *p));
+int	mountnfs __P((struct nfs_args *argp, struct mount *mp,
+		struct mbuf *nam, char *pth, char *hst, struct vnode **vpp));
+int	nfs_mountroot __P((void));
+void	nfs_decode_args __P((struct nfsmount *, struct nfs_args *, struct nfs_args *));
+int	nfs_start __P((struct mount *mp, int flags, struct proc *p));
+int	nfs_unmount __P((struct mount *mp, int mntflags, struct proc *p));
+int	nfs_root __P((struct mount *mp, struct vnode **vpp));
+int	nfs_quotactl __P((struct mount *mp, int cmds, uid_t uid, caddr_t arg,
+		struct proc *p));
+int	nfs_statfs __P((struct mount *mp, struct statfs *sbp, struct proc *p));
+int	nfs_sync __P((struct mount *mp, int waitfor, struct ucred *cred,
+		struct proc *p));
+int	nfs_vget __P((struct mount *, ino_t, struct vnode **));
+int	nfs_fhtovp __P((struct mount *mp, struct fid *fhp, struct mbuf *nam,
+		struct vnode **vpp, int *exflagsp, struct ucred **credanonp));
+int	nfs_vptofh __P((struct vnode *vp, struct fid *fhp));
+int	nfs_fsinfo __P((struct nfsmount *, struct vnode *, struct ucred *,
+			struct proc *));
+void	nfs_init __P((void));
 
 #endif

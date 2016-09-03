@@ -1,46 +1,31 @@
-/*	$OpenBSD: upap.c,v 1.10 2009/10/27 23:59:53 deraadt Exp $	*/
+/*	$OpenBSD: upap.c,v 1.6 1998/01/17 20:30:30 millert Exp $	*/
 
 /*
  * upap.c - User/Password Authentication Protocol.
  *
- * Copyright (c) 1984-2000 Carnegie Mellon University. All rights reserved.
+ * Copyright (c) 1989 Carnegie Mellon University.
+ * All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- *
- * 3. The name "Carnegie Mellon University" must not be used to
- *    endorse or promote products derived from this software without
- *    prior written permission. For permission or any legal
- *    details, please contact
- *      Office of Technology Transfer
- *      Carnegie Mellon University
- *      5000 Forbes Avenue
- *      Pittsburgh, PA  15213-3890
- *      (412) 268-4387, fax: (412) 268-7395
- *      tech-transfer@andrew.cmu.edu
- *
- * 4. Redistributions of any form whatsoever must retain the following
- *    acknowledgment:
- *    "This product includes software developed by Computing Services
- *     at Carnegie Mellon University (http://www.cmu.edu/computing/)."
- *
- * CARNEGIE MELLON UNIVERSITY DISCLAIMS ALL WARRANTIES WITH REGARD TO
- * THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
- * AND FITNESS, IN NO EVENT SHALL CARNEGIE MELLON UNIVERSITY BE LIABLE
- * FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
- * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
- * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Redistribution and use in source and binary forms are permitted
+ * provided that the above copyright notice and this paragraph are
+ * duplicated in all such forms and that any documentation,
+ * advertising materials, and other materials related to such
+ * distribution and use acknowledge that the software was developed
+ * by Carnegie Mellon University.  The name of the
+ * University may not be used to endorse or promote products derived
+ * from this software without specific prior written permission.
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
+ * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
+
+#ifndef lint
+#if 0
+static char rcsid[] = "Id: upap.c,v 1.11 1997/04/30 05:59:56 paulus Exp";
+#else
+static char rcsid[] = "$OpenBSD: upap.c,v 1.6 1998/01/17 20:30:30 millert Exp $";
+#endif
+#endif
 
 /*
  * TODO:
@@ -58,12 +43,13 @@
 /*
  * Protocol entry points.
  */
-static void upap_init(int);
-static void upap_lowerup(int);
-static void upap_lowerdown(int);
-static void upap_input(int, u_char *, int);
-static void upap_protrej(int);
-static int  upap_printpkt(u_char *, int, void (*)(void *, char *, ...), void *);
+static void upap_init __P((int));
+static void upap_lowerup __P((int));
+static void upap_lowerdown __P((int));
+static void upap_input __P((int, u_char *, int));
+static void upap_protrej __P((int));
+static int  upap_printpkt __P((u_char *, int,
+			       void (*) __P((void *, char *, ...)), void *));
 
 struct protent pap_protent = {
     PPP_PAP,
@@ -85,13 +71,13 @@ struct protent pap_protent = {
 
 upap_state upap[NUM_PPP];		/* UPAP state; one for each unit */
 
-static void upap_timeout(void *);
-static void upap_reqtimeout(void *);
-static void upap_rauthreq(upap_state *, u_char *, int, int);
-static void upap_rauthack(upap_state *, u_char *, int, int);
-static void upap_rauthnak(upap_state *, u_char *, int, int);
-static void upap_sauthreq(upap_state *);
-static void upap_sresp(upap_state *, int, int, char *, int);
+static void upap_timeout __P((void *));
+static void upap_reqtimeout __P((void *));
+static void upap_rauthreq __P((upap_state *, u_char *, int, int));
+static void upap_rauthack __P((upap_state *, u_char *, int, int));
+static void upap_rauthnak __P((upap_state *, u_char *, int, int));
+static void upap_sauthreq __P((upap_state *));
+static void upap_sresp __P((upap_state *, int, int, char *, int));
 
 
 /*
@@ -571,7 +557,7 @@ static int
 upap_printpkt(p, plen, printer, arg)
     u_char *p;
     int plen;
-    void (*printer)(void *, char *, ...);
+    void (*printer) __P((void *, char *, ...));
     void *arg;
 {
     int code, id, len;

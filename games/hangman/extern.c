@@ -1,4 +1,4 @@
-/*	$OpenBSD: extern.c,v 1.9 2015/12/31 15:20:36 mestre Exp $	*/
+/*	$OpenBSD: extern.c,v 1.3 1999/09/25 20:51:53 pjanzen Exp $	*/
 /*	$NetBSD: extern.c,v 1.3 1995/03/23 08:32:41 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,10 +34,17 @@
  * SUCH DAMAGE.
  */
 
-#include "hangman.h"
-#include "pathnames.h"
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)extern.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: extern.c,v 1.3 1999/09/25 20:51:53 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
-bool	Guessed[26 + 10];
+#include	"hangman.h"
+
+bool	Guessed[26];
 
 char	Word[BUFSIZ], Known[BUFSIZ];
 const char	*const Noose_pict[] = {
@@ -68,8 +79,3 @@ const char *Dict_name = _PATH_DICT;
 FILE	*Dict = NULL;
 
 off_t	Dict_size;
-
-int	syms;
-int	symfd = -1;
-off_t	symoffs, symsize;
-

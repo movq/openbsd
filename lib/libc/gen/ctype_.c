@@ -1,4 +1,3 @@
-/*	$OpenBSD: ctype_.c,v 1.12 2015/09/19 04:02:21 guenther Exp $ */
 /*
  * Copyright (c) 1989 The Regents of the University of California.
  * All rights reserved.
@@ -16,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,10 +36,13 @@
  * SUCH DAMAGE.
  */
 
-#include <ctype.h>
-#include "ctype_private.h"
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: ctype_.c,v 1.3 1996/09/15 09:30:56 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
 
-const char _C_ctype_[1 + CTYPE_NUM_CHARS] = {
+#include <ctype.h>
+
+const char _C_ctype_[1 + 256] = {
 	0,
 	_C,	_C,	_C,	_C,	_C,	_C,	_C,	_C,
 	_C,	_C|_S,	_C|_S,	_C|_S,	_C|_S,	_C|_S,	_C,	_C,
@@ -53,27 +59,7 @@ const char _C_ctype_[1 + CTYPE_NUM_CHARS] = {
 	_P,	_L|_X,	_L|_X,	_L|_X,	_L|_X,	_L|_X,	_L|_X,	_L,
 	_L,	_L,	_L,	_L,	_L,	_L,	_L,	_L,
 	_L,	_L,	_L,	_L,	_L,	_L,	_L,	_L,
-	_L,	_L,	_L,	_P,	_P,	_P,	_P,	_C,
-
-	 0,	 0,	 0,	 0,	 0,	 0,	 0,	 0, /* 80 */
-	 0,	 0,	 0,	 0,	 0,	 0,	 0,	 0, /* 88 */
-	 0,	 0,	 0,	 0,	 0,	 0,	 0,	 0, /* 90 */
-	 0,	 0,	 0,	 0,	 0,	 0,	 0,	 0, /* 98 */
-	 0,	 0,	 0,	 0,	 0,	 0,	 0,	 0, /* A0 */
-	 0,	 0,	 0,	 0,	 0,	 0,	 0,	 0, /* A8 */
-	 0,	 0,	 0,	 0,	 0,	 0,	 0,	 0, /* B0 */
-	 0,	 0,	 0,	 0,	 0,	 0,	 0,	 0, /* B8 */
-	 0,	 0,	 0,	 0,	 0,	 0,	 0,	 0, /* C0 */
-	 0,	 0,	 0,	 0,	 0,	 0,	 0,	 0, /* C8 */
-	 0,	 0,	 0,	 0,	 0,	 0,	 0,	 0, /* D0 */
-	 0,	 0,	 0,	 0,	 0,	 0,	 0,	 0, /* D8 */
-	 0,	 0,	 0,	 0,	 0,	 0,	 0,	 0, /* E0 */
-	 0,	 0,	 0,	 0,	 0,	 0,	 0,	 0, /* E8 */
-	 0,	 0,	 0,	 0,	 0,	 0,	 0,	 0, /* F0 */
-	 0,	 0,	 0,	 0,	 0,	 0,	 0,	 0  /* F8 */
+	_L,	_L,	_L,	_P,	_P,	_P,	_P,	_C
 };
 
 const char *_ctype_ = _C_ctype_;
-#if 0
-DEF_STRONG(_ctype_);
-#endif

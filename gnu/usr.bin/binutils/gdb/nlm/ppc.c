@@ -24,7 +24,9 @@ flush_i_cache (void)
 /* Get the registers out of the frame information.  */
 
 void
-frame_to_registers (struct StackFrame *frame, char *regs)
+frame_to_registers (frame, regs)
+     struct StackFrame *frame;
+     char *regs;
 {
   mem2hex (&frame->ExceptionState.CsavedRegs, &regs[GP0_REGNUM * 4 * 2], 4 * 32, 0);
 
@@ -42,7 +44,9 @@ frame_to_registers (struct StackFrame *frame, char *regs)
 /* Put the registers back into the frame information.  */
 
 void
-registers_to_frame (char *regs, struct StackFrame *frame)
+registers_to_frame (regs, frame)
+     char *regs;
+     struct StackFrame *frame;
 {
   hex2mem (&regs[GP0_REGNUM * 4 * 2], &frame->ExceptionState.CsavedRegs, 4 * 32, 0);
 
@@ -64,7 +68,8 @@ extern volatile int mem_err;
 extern int ReadByteAltDebugger (char* addr, char *theByte);
 extern int WriteByteAltDebugger (char* addr, char theByte);
 int
-get_char (char *addr)
+get_char (addr)
+     char *addr;
 {
   char c;
 
@@ -75,7 +80,9 @@ get_char (char *addr)
 }
 
 void
-set_char (char *addr, int val)
+set_char (addr, val)
+     char *addr;
+     int val;
 {
   if (!WriteByteAltDebugger (addr, val))
     mem_err = 1;
@@ -83,7 +90,9 @@ set_char (char *addr, int val)
 #endif
 
 int
-mem_write (char *dst, char *src, int len)
+mem_write (dst, src, len)
+     char *dst, *src;
+     int len;
 {
   while (len-- && !mem_err)
     set_char (dst++, *src++);
@@ -133,7 +142,8 @@ static LONG saved_target_inst;
 static LONG *saved_target_inst_pc = 0;
 
 void
-set_step_traps (struct StackFrame *frame)
+set_step_traps (frame)
+     struct StackFrame *frame;
 {
   union inst inst;
   LONG *target;
@@ -193,7 +203,8 @@ set_step_traps (struct StackFrame *frame)
    set.  */
 
 int
-clear_step_traps (struct StackFrame *frame)
+clear_step_traps (frame)
+     struct StackFrame *frame;
 {
   int retcode;
   LONG *pc = (LONG *)frame->ExceptionPC;
@@ -219,7 +230,9 @@ clear_step_traps (struct StackFrame *frame)
 }
 
 void
-do_status (char *ptr, struct StackFrame *frame)
+do_status (ptr, frame)
+     char *ptr;
+     struct StackFrame *frame;
 {
   int sigval;
 

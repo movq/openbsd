@@ -1,5 +1,4 @@
-/*	$OpenBSD: gencat.c,v 1.18 2015/10/10 21:29:59 deraadt Exp $	*/
-/*	$NetBSD: gencat.c,v 1.9 1998/10/09 17:00:56 itohy Exp $	*/
+/*	$OpenBSD: gencat.c,v 1.5 1997/09/21 10:34:00 jdm Exp $	*/
 
 /*-
  * Copyright (c) 1996 The NetBSD Foundation, Inc.
@@ -16,12 +15,19 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgment:
+ *        This product includes software developed by the NetBSD 
+ *	  Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its 
+ *    contributors may be used to endorse or promote products derived 
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
  * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS 
- * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
  * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
  * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
  * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
@@ -29,7 +35,6 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-
 
 /***********************************************************
 Copyright 1990, by Alfalfa Software Incorporated, Cambridge, Massachusetts.
@@ -66,18 +71,23 @@ up-to-date.  Many thanks.
 #define _NLS_PRIVATE
 
 /* ensure 8-bit cleanliness */
-#define ISSPACE(c) \
-    (isascii((unsigned char)c) && isspace((unsigned char)c))
+#define ISSPACE(c) (isascii(c) && isspace(c))
 
 #include <sys/queue.h>
 #include <ctype.h>
-#include <err.h>
-#include <fcntl.h>
-#include <nl_types.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <nl_types.h>
+
+extern void MCAddSet __P((int setId));
+extern void MCDelSet __P((int setId));
+extern void MCAddMsg __P((int msgId, const char *msg));
+extern void MCDelMsg __P((int msgId));
+extern void MCParse __P((int fd));
+extern void MCWriteCat __P((int fd));
 
 struct _msgT {
 	long    msgId;
@@ -97,45 +107,21 @@ static struct _setT *curSet;
 static char *curline = NULL;
 static long lineno = 0;
 
-extern	char	*__progname;		/* from crt0.o */
-
-static	char   *cskip(char *);
-static	void	error(char *, char *);
-static	void	nomem(void);
-static	char   *get_line(int);
-static	char   *getmsg(int, char *, char);
-static	void	warning(char *, char *);
-static	char   *wskip(char *);
-static	char   *xstrdup(const char *);
-static	void   *xmalloc(size_t);
-static	void   *xrealloc(void *, size_t);
-
-void	MCParse(int fd);
-void	MCWriteCat(int fd);
-void	MCDelMsg(int msgId);
-void	MCAddMsg(int msgId, const char *msg);
-void	MCAddSet(int setId);
-void	MCDelSet(int setId);
-int	main(int, char **);
-void	usage(void);
-
-
 void
-usage(void)
+usage()
 {
-	fprintf(stderr, "usage: %s catfile msgfile ...\n", __progname);
+	fprintf(stderr, "Use: gencat catfile msgfile ...\n");
 	exit(1);
 }
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int     argc;
+	char   *argv[];
 {
 	int     ofd, ifd;
 	char   *catfile = NULL;
 	int     c;
-
-	if (pledge("stdio rpath wpath cpath", NULL) == -1)
-		err(1, "pledge");
 
 	while ((c = getopt(argc, argv, "")) != -1) {
 		switch (c) {
@@ -155,22 +141,30 @@ main(int argc, char *argv[])
 	catfile = *argv++;
 
 	for (; *argv; argv++) {
-		if ((ifd = open(*argv, O_RDONLY)) < 0)
-			err(1, "Unable to read %s", *argv);
+		if ((ifd = open(*argv, O_RDONLY)) < 0) {
+			fprintf(stderr, "gencat: Unable to read %s\n", *argv);
+			exit(1);
+		}
 		MCParse(ifd);
 		close(ifd);
 	}
 
-	if ((ofd = open(catfile, O_WRONLY | O_TRUNC | O_CREAT, 0666)) < 0)
-		err(1, "Unable to create a new %s", catfile);
+	if ((ofd = open(catfile, O_WRONLY | O_TRUNC | O_CREAT, 0666)) < 0) {
+		fprintf(stderr, "gencat: Unable to create a new %s.\n",
+		    catfile);
+		exit(1);
+	}
 	MCWriteCat(ofd);
 	exit(0);
 }
 
 static void
-warning(char *cptr, char *msg)
+warning(cptr, msg)
+	char   *cptr;
+	char   *msg;
 {
-	warnx("%s on line %ld\n%s", msg, lineno, curline);
+	fprintf(stderr, "gencat: %s on line %ld\n", msg, lineno);
+	fprintf(stderr, "%s\n", curline);
 	if (cptr) {
 		char   *tptr;
 		for (tptr = curline; tptr < cptr; ++tptr)
@@ -180,20 +174,23 @@ warning(char *cptr, char *msg)
 }
 
 static void
-error(char *cptr, char *msg)
+error(cptr, msg)
+	char   *cptr;
+	char   *msg;
 {
 	warning(cptr, msg);
 	exit(1);
 }
 
 static void
-nomem(void)
+nomem()
 {
 	error(NULL, "out of memory");
 }
 
 static void *
-xmalloc(size_t len)
+xmalloc(len)
+	size_t  len;
 {
 	void   *p;
 
@@ -203,7 +200,9 @@ xmalloc(size_t len)
 }
 
 static void *
-xrealloc(void *ptr, size_t size)
+xrealloc(ptr, size)
+	void   *ptr;
+	size_t  size;
 {
 	if ((ptr = realloc(ptr, size)) == NULL)
 		nomem();
@@ -211,17 +210,17 @@ xrealloc(void *ptr, size_t size)
 }
 
 static char *
-xstrdup(const char *str)
+xstrdup(str)
+	char   *str;
 {
-	char *nstr;
-
-	if ((nstr = strdup(str)) == NULL)
+	if ((str = strdup(str)) == NULL)
 		nomem();
-	return (nstr);
+	return (str);
 }
 
 static char *
-get_line(int fd)
+getline(fd)
+	int     fd;
 {
 	static long curlen = BUFSIZ;
 	static char buf[BUFSIZ], *bptr = buf, *bend = buf;
@@ -264,7 +263,8 @@ get_line(int fd)
 }
 
 static char *
-wskip(char *cptr)
+wskip(cptr)
+	char   *cptr;
 {
 	if (!*cptr || !ISSPACE(*cptr)) {
 		warning(cptr, "expected a space");
@@ -276,7 +276,8 @@ wskip(char *cptr)
 }
 
 static char *
-cskip(char *cptr)
+cskip(cptr)
+	char   *cptr;
 {
 	if (!*cptr || ISSPACE(*cptr)) {
 		warning(cptr, "wasn't expecting a space");
@@ -288,7 +289,10 @@ cskip(char *cptr)
 }
 
 static char *
-getmsg(int fd, char *cptr, char quote)
+getmsg(fd, cptr, quote)
+	int     fd;
+	char   *cptr;
+	char    quote;
 {
 	static char *msg = NULL;
 	static long msglen = 0;
@@ -297,7 +301,7 @@ getmsg(int fd, char *cptr, char quote)
 
 	if (quote && *cptr == quote) {
 		++cptr;
-	} 
+	};
 
 	clen = strlen(cptr) + 1;
 	if (clen > msglen) {
@@ -313,96 +317,93 @@ getmsg(int fd, char *cptr, char quote)
 		if (quote && *cptr == quote) {
 			char   *tmp;
 			tmp = cptr + 1;
-
 			if (*tmp && (!ISSPACE(*tmp) || *wskip(tmp))) {
 				warning(cptr, "unexpected quote character, ignoring");
 				*tptr++ = *cptr++;
 			} else {
 				*cptr = '\0';
 			}
-		} else if (*cptr == '\\') {
-			++cptr;
-			switch (*cptr) {
-			case '\0':
-				cptr = get_line(fd);
-				if (!cptr)
-					error(NULL, "premature end of file");
-				msglen += strlen(cptr);
-				i = tptr - msg;
-				msg = xrealloc(msg, msglen);
-				tptr = msg + i;
-				break;
-			case 'n':
-				*tptr++ = '\n';
+		} else
+			if (*cptr == '\\') {
 				++cptr;
-				break;
-			case 't':
-				*tptr++ = '\t';
-				++cptr;
-				break;
-			case 'v':
-				*tptr++ = '\v';
-				++cptr;
-				break;
-			case 'b':
-				*tptr++ = '\b';
-				++cptr;
-				break;
-			case 'r':
-				*tptr++ = '\r';
-				++cptr;
-				break;
-			case 'f':
-				*tptr++ = '\f';
-				++cptr;
-				break;
-			case '\\':
-				*tptr++ = '\\';
-				++cptr;
-				break;
-			case '"':
-				/* FALLTHROUGH */
-			case '\'':
-				/*
-				 * While it isn't necessary to
-				 * escape ' and ", let's accept
-				 * them escaped and not complain.
-				 * (XPG4 states that '\' should be
-				 * ignored when not used in a 
-				 * valid escape sequence)
-				 */
-				*tptr++ = '"';
-				++cptr;
-				break;
-			default:
-				if (quote && *cptr == quote) {
-					*tptr++ = *cptr++;
-				} else if (isdigit((unsigned char) *cptr)) {
-					*tptr = 0;
-					for (i = 0; i < 3; ++i) {
-						if (!isdigit((unsigned char) *cptr))
-							break;
-						if (*cptr > '7')
-							warning(cptr, "octal number greater than 7?!");
-						*tptr *= 8;
-						*tptr += (*cptr - '0');
-						++cptr;
+				switch (*cptr) {
+				case '\0':
+					cptr = getline(fd);
+					if (!cptr)
+						error(NULL, "premature end of file");
+					msglen += strlen(cptr);
+					i = tptr - msg;
+					msg = xrealloc(msg, msglen);
+					tptr = msg + i;
+					break;
+				case 'n':
+					*tptr++ = '\n';
+					++cptr;
+					break;
+				case 't':
+					*tptr++ = '\t';
+					++cptr;
+					break;
+				case 'v':
+					*tptr++ = '\v';
+					++cptr;
+					break;
+				case 'b':
+					*tptr++ = '\b';
+					++cptr;
+					break;
+				case 'r':
+					*tptr++ = '\r';
+					++cptr;
+					break;
+				case 'f':
+					*tptr++ = '\f';
+					++cptr;
+					break;
+				case '\\':
+					*tptr++ = '\\';
+					++cptr;
+					break;
+				case '"': 
+				case '\'':
+					/* 
+					 * While it isn't necessary to
+					 * escape ' and ", let's accept
+					 * them escaped and not complain.
+					 * (XPG4 states that '\' should be
+					 * ignored when not used in a
+					 * valid escape sequence)
+					 */
+					*tptr++ = '"';
+					++cptr;
+					break;
+				default:
+					if (isdigit(*cptr)) {
+						*tptr = 0;
+						for (i = 0; i < 3; ++i) {
+							if (!isdigit(*cptr))
+								break;
+							if (*cptr > '7')
+								warning(cptr, "octal number greater than 7?!");
+							*tptr *= 8;
+							*tptr += (*cptr - '0');
+							++cptr;
+						}
+					} else {
+						warning(cptr, "unrecognized escape sequence; ignoring escape character");
 					}
-				} else {
-					warning(cptr, "unrecognized escape sequence; ignoring esacpe character");
 				}
-				break;
+			} else {
+				*tptr++ = *cptr++;
 			}
-		} else {
-			*tptr++ = *cptr++;
-		}
 	}
 	*tptr = '\0';
 	return (msg);
 }
 
 void
-MCParse(int fd)
+MCParse(fd)
+	int     fd;
 {
 	char   *cptr, *str;
 	int     setid, msgid = 0;
@@ -410,7 +411,7 @@ MCParse(int fd)
 
 	/* XXX: init sethead? */
 
-	while ((cptr = get_line(fd))) {
+	while ((cptr = getline(fd))) {
 		if (*cptr == '$') {
 			++cptr;
 			if (strncmp(cptr, "set", 3) == 0) {
@@ -445,32 +446,15 @@ MCParse(int fd)
 				}
 			}
 		} else {
-			/*
-			 * First check for (and eat) empty lines....
-			 */
-			if (!*cptr)
-				continue;
-			/*
-			 * We have a digit? Start of a message. Else,
-			 * syntax error.
-			 */
-			if (isdigit((unsigned char) *cptr)) {
+			if (isdigit(*cptr)) {
 				msgid = atoi(cptr);
 				cptr = cskip(cptr);
 				cptr = wskip(cptr);
 				/* if (*cptr) ++cptr; */
-			} else {
-				warning(cptr, "neither blank line nor start of a message id");
-				continue;
 			}
-			/*
-			 * If we have a message ID, but no message,
-			 * then this means "delete this message id
-			 * from the catalog".
-			 */
-			if (!*cptr) {
+			if (!*cptr)
 				MCDelMsg(msgid);
-			} else {
+			else {
 				str = getmsg(fd, cptr, quote);
 				MCAddMsg(msgid, str);
 			}
@@ -488,7 +472,8 @@ MCParse(int fd)
  * that would otherwise be required.
  */
 void
-MCWriteCat(int fd)
+MCWriteCat(fd)
+	int     fd;
 {
 	int     nsets;		/* number of sets */
 	int     nmsgs;		/* number of msgs */
@@ -510,10 +495,12 @@ MCWriteCat(int fd)
 	nmsgs = 0;
 	string_size = 0;
 
-	LIST_FOREACH(set, &sethead, entries) {
+	for (set = sethead.lh_first; set != NULL;
+	    set = set->entries.le_next) {
 		nsets++;
 
-		LIST_FOREACH(msg, &set->msghead, entries) {
+		for (msg = set->msghead.lh_first; msg != NULL;
+		    msg = msg->entries.le_next) {
 			nmsgs++;
 			string_size += strlen(msg->str) + 1;
 		}
@@ -559,10 +546,12 @@ MCWriteCat(int fd)
 
 	msg_index = 0;
 	msg_offset = 0;
-	LIST_FOREACH(set, &sethead, entries) {
+	for (set = sethead.lh_first; set != NULL;
+	    set = set->entries.le_next) {
 
 		nmsgs = 0;
-		LIST_FOREACH(msg, &set->msghead, entries) {
+		for (msg = set->msghead.lh_first; msg != NULL;
+		    msg = msg->entries.le_next) {
 			int     msg_len = strlen(msg->str) + 1;
 
 			msg_hdr->__msgno = htonl(msg->msgId);
@@ -589,7 +578,8 @@ MCWriteCat(int fd)
 }
 
 void
-MCAddSet(int setId)
+MCAddSet(setId)
+	int     setId;
 {
 	struct _setT *p, *q;
 
@@ -605,9 +595,9 @@ MCAddSet(int setId)
 	}
 #endif
 
-	p = LIST_FIRST(&sethead);
+	p = sethead.lh_first;
 	q = NULL;
-	for (; p != NULL && p->setId < setId; q = p, p = LIST_NEXT(p, entries));
+	for (; p != NULL && p->setId < setId; q = p, p = p->entries.le_next);
 
 	if (p && p->setId == setId) {
 		;
@@ -629,7 +619,9 @@ MCAddSet(int setId)
 }
 
 void
-MCAddMsg(int msgId, const char *str)
+MCAddMsg(msgId, str)
+	int     msgId;
+	const char *str;
 {
 	struct _msgT *p, *q;
 
@@ -648,9 +640,9 @@ MCAddMsg(int msgId, const char *str)
 	}
 #endif
 
-	p = LIST_FIRST(&curSet->msghead);
+	p = curSet->msghead.lh_first;
 	q = NULL;
-	for (; p != NULL && p->msgId < msgId; q = p, p = LIST_NEXT(p, entries));
+	for (; p != NULL && p->msgId < msgId; q = p, p = p->entries.le_next);
 
 	if (p && p->msgId == msgId) {
 		free(p->str);
@@ -670,18 +662,18 @@ MCAddMsg(int msgId, const char *str)
 }
 
 void
-MCDelSet(int setId)
+MCDelSet(setId)
+	int     setId;
 {
 	struct _setT *set;
 	struct _msgT *msg;
 
-	set = LIST_FIRST(&sethead);
-	for (; set != NULL && set->setId < setId;
-	    set = LIST_NEXT(set, entries));
+	set = sethead.lh_first;
+	for (; set != NULL && set->setId < setId; set = set->entries.le_next);
 
 	if (set && set->setId == setId) {
 
-		msg = LIST_FIRST(&set->msghead);
+		msg = set->msghead.lh_first;
 		while (msg) {
 			free(msg->str);
 			LIST_REMOVE(msg, entries);
@@ -694,16 +686,16 @@ MCDelSet(int setId)
 }
 
 void
-MCDelMsg(int msgId)
+MCDelMsg(msgId)
+	int     msgId;
 {
 	struct _msgT *msg;
 
 	if (!curSet)
 		error(NULL, "you can't delete a message before defining the set");
 
-	msg = LIST_FIRST(&curSet->msghead);
-	for (; msg != NULL && msg->msgId < msgId;
-	    msg = LIST_NEXT(msg, entries));
+	msg = curSet->msghead.lh_first;
+	for (; msg != NULL && msg->msgId < msgId; msg = msg->entries.le_next);
 
 	if (msg && msg->msgId == msgId) {
 		free(msg->str);

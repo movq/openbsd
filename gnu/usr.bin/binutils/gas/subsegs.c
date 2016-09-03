@@ -1,6 +1,5 @@
 /* subsegs.c - subsegments -
-   Copyright 1987, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2002
+   Copyright (C) 1987, 90, 91, 92, 93, 94, 95, 1996
    Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
@@ -20,7 +19,9 @@
    Software Foundation, 59 Temple Place - Suite 330, Boston, MA
    02111-1307, USA.  */
 
-/* Segments & sub-segments.  */
+/*
+ * Segments & sub-segments.
+ */
 
 #include "as.h"
 
@@ -36,11 +37,12 @@ static struct obstack frchains;
 segment_info_type segment_info[SEG_MAXIMUM_ORDINAL];
 
 #else
-/* Commented in "subsegs.h".  */
+/* Commented in "subsegs.h". */
 frchainS *data0_frchainP, *bss0_frchainP;
 
 #endif /* MANY_SEGMENTS */
-char const *const seg_name[] = {
+char const *const seg_name[] =
+{
   "absolute",
 #ifdef MANY_SEGMENTS
   "e0", "e1", "e2", "e3", "e4", "e5", "e6", "e7", "e8", "e9",
@@ -60,7 +62,7 @@ char const *const seg_name[] = {
   "transfert vector postload",
   "register",
   "",
-};				/* Used by error reporters, dumpers etc.  */
+};				/* Used by error reporters, dumpers etc. */
 #else /* BFD_ASSEMBLER */
 
 /* Gas segment information for bfd_abs_section_ptr and
@@ -70,14 +72,14 @@ static segment_info_type *und_seg_info;
 
 #endif /* BFD_ASSEMBLER */
 
-static void subseg_set_rest (segT, subsegT);
+static void subseg_set_rest PARAMS ((segT, subsegT));
 
 static fragS dummy_frag;
 
 static frchainS absolute_frchain;
 
 void
-subsegs_begin (void)
+subsegs_begin ()
 {
   /* Check table(s) seg_name[], seg_N_TYPE[] is in correct order */
 #if !defined (MANY_SEGMENTS) && !defined (BFD_ASSEMBLER)
@@ -101,12 +103,12 @@ subsegs_begin (void)
 #endif
 
   frchain_root = NULL;
-  frchain_now = NULL;		/* Warn new_subseg() that we are booting.  */
+  frchain_now = NULL;		/* Warn new_subseg() that we are booting. */
 
   frag_now = &dummy_frag;
 
 #ifndef BFD_ASSEMBLER
-  now_subseg = 42;		/* Lie for 1st call to subseg_new.  */
+  now_subseg = 42;		/* Lie for 1st call to subseg_new. */
 #ifdef MANY_SEGMENTS
   {
     int i;
@@ -146,7 +148,9 @@ subsegs_begin (void)
  * segment context correct.
  */
 void
-subseg_change (register segT seg, register int subseg)
+subseg_change (seg, subseg)
+     register segT seg;
+     register int subseg;
 {
   now_seg = seg;
   now_subseg = subseg;
@@ -201,7 +205,9 @@ subseg_change (register segT seg, register int subseg)
 }
 
 static void
-subseg_set_rest (segT seg, subsegT subseg)
+subseg_set_rest (seg, subseg)
+     segT seg;
+     subsegT subseg;
 {
   register frchainS *frcP;	/* crawl frchain chain */
   register frchainS **lastPP;	/* address of last pointer */
@@ -269,11 +275,12 @@ subseg_set_rest (segT seg, subsegT subseg)
    */
   if (!frcP
       || (frcP->frch_seg > seg
-	  || frcP->frch_subseg > subseg))	/* Kinky logic only works with 2 segments.  */
+	  || frcP->frch_subseg > subseg))	/* Kinky logic only works with 2 segments. */
     {
       /*
        * This should be the only code that creates a frchainS.
        */
+      extern fragS *frag_alloc ();
       newP = (frchainS *) obstack_alloc (&frchains, sizeof (frchainS));
       newP->frch_subseg = subseg;
       newP->frch_seg = seg;
@@ -281,7 +288,7 @@ subseg_set_rest (segT seg, subsegT subseg)
       newP->fix_root = NULL;
       newP->fix_tail = NULL;
 #endif
-      obstack_begin (&newP->frch_obstack, chunksize);
+      obstack_begin (&newP->frch_obstack, 5000);
 #if __GNUC__ >= 2
       obstack_alignment_mask (&newP->frch_obstack) = __alignof__ (fragS) - 1;
 #endif
@@ -292,16 +299,6 @@ subseg_set_rest (segT seg, subsegT subseg)
 
       *lastPP = newP;
       newP->frch_next = frcP;	/* perhaps NULL */
-
-#ifdef BFD_ASSEMBLER
-      {
-	segment_info_type *seginfo;
-	seginfo = seg_info (seg);
-	if (seginfo && seginfo->frchainP == frcP)
-	  seginfo->frchainP = newP;
-      }
-#endif
-
       frcP = newP;
     }
   /*
@@ -370,7 +367,7 @@ subseg_new (segname, subseg)
     return new_seg;
   }
 #else
-  as_bad (_("attempt to switch to nonexistent segment \"%s\""), segname);
+  as_bad ("Attempt to switch to nonexistent segment \"%s\"", segname);
   return now_seg;
 #endif
 }
@@ -397,7 +394,9 @@ subseg_set (seg, subseg)	/* begin assembly for a new sub-segment */
 #else /* BFD_ASSEMBLER */
 
 segT
-subseg_get (const char *segname, int force_new)
+subseg_get (segname, force_new)
+     const char *segname;
+     int force_new;
 {
   segT secptr;
   segment_info_type *seginfo;
@@ -416,15 +415,11 @@ subseg_get (const char *segname, int force_new)
   else
     secptr = bfd_make_section_anyway (stdoutput, segname);
 
-#ifdef obj_sec_set_private_data
-  obj_sec_set_private_data (stdoutput, secptr);
-#endif
-
   seginfo = seg_info (secptr);
   if (! seginfo)
     {
       /* Check whether output_section is set first because secptr may
-	 be bfd_abs_section_ptr.  */
+         be bfd_abs_section_ptr.  */
       if (secptr->output_section != secptr)
 	secptr->output_section = secptr;
       seginfo = (segment_info_type *) xmalloc (sizeof (*seginfo));
@@ -447,7 +442,9 @@ subseg_get (const char *segname, int force_new)
 }
 
 segT
-subseg_new (const char *segname, subsegT subseg)
+subseg_new (segname, subseg)
+     const char *segname;
+     subsegT subseg;
 {
   segT secptr;
   segment_info_type *seginfo;
@@ -463,7 +460,9 @@ subseg_new (const char *segname, subsegT subseg)
 /* Like subseg_new, except a new section is always created, even if
    a section with that name already exists.  */
 segT
-subseg_force_new (const char *segname, subsegT subseg)
+subseg_force_new (segname, subseg)
+     const char *segname;
+     subsegT subseg;
 {
   segT secptr;
   segment_info_type *seginfo;
@@ -477,7 +476,9 @@ subseg_force_new (const char *segname, subsegT subseg)
 }
 
 void
-subseg_set (segT secptr, subsegT subseg)
+subseg_set (secptr, subseg)
+     segT secptr;
+     subsegT subseg;
 {
   if (! (secptr == now_seg && subseg == now_subseg))
     subseg_set_rest (secptr, subseg);
@@ -491,7 +492,8 @@ subseg_set (segT secptr, subsegT subseg)
 /* Get the gas information we are storing for a section.  */
 
 segment_info_type *
-seg_info (segT sec)
+seg_info (sec)
+     segT sec;
 {
   if (sec == bfd_abs_section_ptr)
     return abs_seg_info;
@@ -502,7 +504,8 @@ seg_info (segT sec)
 }
 
 symbolS *
-section_symbol (segT sec)
+section_symbol (sec)
+     segT sec;
 {
   segment_info_type *seginfo = seg_info (sec);
   symbolS *s;
@@ -516,33 +519,20 @@ section_symbol (segT sec)
 #define EMIT_SECTION_SYMBOLS 1
 #endif
 
-  if (! EMIT_SECTION_SYMBOLS || symbol_table_frozen)
-    {
-      /* Here we know it won't be going into the symbol table.  */
-      s = symbol_create (sec->symbol->name, sec, 0, &zero_address_frag);
-    }
+  if (! EMIT_SECTION_SYMBOLS
+#ifdef BFD_ASSEMBLER
+      || symbol_table_frozen
+#endif
+      )
+    /* Here we know it won't be going into the symbol table.  */
+    s = symbol_create (sec->name, sec, 0, &zero_address_frag);
   else
-    {
-      s = symbol_find_base (sec->symbol->name, 0);
-      if (s == NULL)
-	s = symbol_new (sec->symbol->name, sec, 0, &zero_address_frag);
-      else
-	{
-	  if (S_GET_SEGMENT (s) == undefined_section)
-	    {
-	      S_SET_SEGMENT (s, sec);
-	      symbol_set_frag (s, &zero_address_frag);
-	    }
-	}
-    }
-
+    s = symbol_new (sec->name, sec, 0, &zero_address_frag);
   S_CLEAR_EXTERNAL (s);
 
   /* Use the BFD section symbol, if possible.  */
   if (obj_sec_sym_ok_for_reloc (sec))
-    symbol_set_bfdsym (s, sec->symbol);
-  else
-    symbol_get_bfdsym (s)->flags |= BSF_SECTION_SYM;
+    s->bsym = sec->symbol;
 
   seginfo->sym = s;
   return s;
@@ -550,51 +540,9 @@ section_symbol (segT sec)
 
 #endif /* BFD_ASSEMBLER */
 
-/* Return whether the specified segment is thought to hold text.  */
-
-#ifndef BFD_ASSEMBLER
-const char * const nontext_section_names[] = {
-  ".eh_frame",
-  ".gcc_except_table",
-#ifdef OBJ_COFF
-#ifndef COFF_LONG_SECTION_NAMES
-  ".eh_fram",
-  ".gcc_exc",
-#endif
-#endif
-  NULL
-};
-#endif /* ! BFD_ASSEMBLER */
-
-int
-subseg_text_p (segT sec)
-{
-#ifdef BFD_ASSEMBLER
-  return (bfd_get_section_flags (stdoutput, sec) & SEC_CODE) != 0;
-#else /* ! BFD_ASSEMBLER */
-  const char * const *p;
-
-  if (sec == data_section || sec == bss_section || sec == absolute_section)
-    return 0;
-
-  for (p = nontext_section_names; *p != NULL; ++p)
-    {
-      if (strcmp (segment_name (sec), *p) == 0)
-	return 0;
-
-#ifdef obj_segment_name
-      if (strcmp (obj_segment_name (sec), *p) == 0)
-	return 0;
-#endif
-    }
-
-  return 1;
-
-#endif /* ! BFD_ASSEMBLER */
-}
-
 void
-subsegs_print_statistics (FILE *file)
+subsegs_print_statistics (file)
+     FILE *file;
 {
   frchainS *frchp;
   fprintf (file, "frag chains:\n");
@@ -638,7 +586,7 @@ subsegs_print_statistics (FILE *file)
 	  count++;
 	}
       fprintf (file, "\n");
-      fprintf (file, "\t%p %-10s\t%10d frags\n", (void *) frchp,
+      fprintf (file, "\t%p %-10s\t%10d frags\n", frchp,
 	       segment_name (frchp->frch_seg), count);
     }
 }

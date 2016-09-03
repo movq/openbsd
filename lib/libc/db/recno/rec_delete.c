@@ -1,4 +1,4 @@
-/*	$OpenBSD: rec_delete.c,v 1.10 2005/08/05 13:03:00 espie Exp $	*/
+/*	$OpenBSD: rec_delete.c,v 1.4 1999/02/15 05:11:25 millert Exp $	*/
 
 /*-
  * Copyright (c) 1990, 1993, 1994
@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,6 +36,14 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+#if 0
+static char sccsid[] = "@(#)rec_delete.c	8.7 (Berkeley) 7/14/94";
+#else
+static char rcsid[] = "$OpenBSD: rec_delete.c,v 1.4 1999/02/15 05:11:25 millert Exp $";
+#endif
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
 
 #include <errno.h>
@@ -41,7 +53,7 @@
 #include <db.h>
 #include "recno.h"
 
-static int rec_rdelete(BTREE *, recno_t);
+static int rec_rdelete __P((BTREE *, recno_t));
 
 /*
  * __REC_DELETE -- Delete the item(s) referenced by a key.
@@ -55,7 +67,10 @@ static int rec_rdelete(BTREE *, recno_t);
  *	RET_ERROR, RET_SUCCESS and RET_SPECIAL if the key not found.
  */
 int
-__rec_delete(const DB *dbp, const DBT *key, u_int flags)
+__rec_delete(dbp, key, flags)
+	const DB *dbp;
+	const DBT *key;
+	u_int flags;
 {
 	BTREE *t;
 	recno_t nrec;
@@ -108,7 +123,9 @@ einval:		errno = EINVAL;
  *	RET_ERROR, RET_SUCCESS and RET_SPECIAL if the key not found.
  */
 static int
-rec_rdelete(BTREE *t, recno_t nrec)
+rec_rdelete(t, nrec)
+	BTREE *t;
+	recno_t nrec;
 {
 	EPG *e;
 	PAGE *h;
@@ -134,13 +151,16 @@ rec_rdelete(BTREE *t, recno_t nrec)
  *
  * Parameters:
  *	t:	tree
- *	idx:	index on current page to delete
+ *	index:	index on current page to delete
  *
  * Returns:
  *	RET_SUCCESS, RET_ERROR.
  */
 int
-__rec_dleaf(BTREE *t, PAGE *h, u_int32_t idx)
+__rec_dleaf(t, h, index)
+	BTREE *t;
+	PAGE *h;
+	u_int32_t index;
 {
 	RLEAF *rl;
 	indx_t *ip, cnt, offset;
@@ -158,7 +178,7 @@ __rec_dleaf(BTREE *t, PAGE *h, u_int32_t idx)
 	 * down, overwriting the deleted record and its index.  If the record
 	 * uses overflow pages, make them available for reuse.
 	 */
-	to = rl = GETRLEAF(h, idx);
+	to = rl = GETRLEAF(h, index);
 	if (rl->flags & P_BIGDATA && __ovfl_delete(t, rl->bytes) == RET_ERROR)
 		return (RET_ERROR);
 	nbytes = NRLEAF(rl);
@@ -171,8 +191,8 @@ __rec_dleaf(BTREE *t, PAGE *h, u_int32_t idx)
 	memmove(from + nbytes, from, (char *)to - from);
 	h->upper += nbytes;
 
-	offset = h->linp[idx];
-	for (cnt = &h->linp[idx] - (ip = &h->linp[0]); cnt--; ++ip)
+	offset = h->linp[index];
+	for (cnt = &h->linp[index] - (ip = &h->linp[0]); cnt--; ++ip)
 		if (ip[0] < offset)
 			ip[0] += nbytes;
 	for (cnt = &h->linp[NEXTINDEX(h)] - ip; --cnt; ++ip)

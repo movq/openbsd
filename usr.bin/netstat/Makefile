@@ -1,10 +1,12 @@
-#	$OpenBSD: Makefile,v 1.24 2015/02/12 01:49:02 claudio Exp $
+#	$OpenBSD: Makefile,v 1.5 1997/09/21 11:50:15 deraadt Exp $
 
 PROG=	netstat
-SRCS=	if.c inet.c inet6.c main.c mbuf.c mroute.c route.c \
-	unix.c mroute6.c net80211.c show.c
-LDADD=	-lkvm -lutil
-DPADD=	${LIBKVM} ${LIBUTIL}
-CFLAGS+=	-Wall
+SRCS=	if.c inet.c ipx.c iso.c main.c mbuf.c mroute.c ns.c route.c \
+	tp_astring.c unix.c atalk.c
+.PATH:	${.CURDIR}/../../sys/netiso
+BINGRP=	kmem
+BINMODE=2555
+LDADD=	-lkvm
+DPADD=	${LIBKVM}
 
 .include <bsd.prog.mk>

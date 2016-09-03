@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_le.c,v 1.20 2014/12/22 02:28:51 tedu Exp $	*/
+/*	$OpenBSD: if_le.c,v 1.14 1998/09/16 22:41:20 jason Exp $	*/
 /*	$NetBSD: if_le_isa.c,v 1.2 1996/05/12 23:52:56 mycroft Exp $	*/
 
 /*-
@@ -17,7 +17,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -49,8 +53,12 @@
 #include <net/if.h>
 #include <net/if_media.h>
 
+#ifdef INET
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
+#endif
+
+#include <vm/vm.h>
 
 #include <machine/cpu.h>
 #include <machine/intr.h>
@@ -59,15 +67,15 @@
 #include <dev/isa/isavar.h>
 #include <dev/isa/isadmavar.h>
 
-#include <dev/ic/lancereg.h>
-#include <dev/ic/lancevar.h>
 #include <dev/ic/am7990reg.h>
 #include <dev/ic/am7990var.h>
 
 #include <dev/isa/if_levar.h>
 
 void
-le_isa_wrcsr(struct lance_softc *sc, uint16_t port, uint16_t val)
+le_isa_wrcsr(sc, port, val)
+	struct am7990_softc *sc;
+	u_int16_t port, val;
 {
 	struct le_softc *lesc = (struct le_softc *)sc;
 	bus_space_tag_t iot = lesc->sc_iot;
@@ -77,13 +85,15 @@ le_isa_wrcsr(struct lance_softc *sc, uint16_t port, uint16_t val)
 	bus_space_write_2(iot, ioh, lesc->sc_rdp, val);
 }
 
-uint16_t
-le_isa_rdcsr(struct lance_softc *sc, uint16_t port)
+u_int16_t
+le_isa_rdcsr(sc, port)
+	struct am7990_softc *sc;
+	u_int16_t port;
 {
 	struct le_softc *lesc = (struct le_softc *)sc;
 	bus_space_tag_t iot = lesc->sc_iot;
 	bus_space_handle_t ioh = lesc->sc_ioh;
-	uint16_t val;
+	u_int16_t val;
 
 	bus_space_write_2(iot, ioh, lesc->sc_rap, port);
 	val = bus_space_read_2(iot, ioh, lesc->sc_rdp);
@@ -95,7 +105,8 @@ le_isa_rdcsr(struct lance_softc *sc, uint16_t port)
  * Controller interrupt.
  */
 int
-le_isa_intredge(void *arg)
+le_isa_intredge(arg)
+	void *arg;
 {
 
 	if (am7990_intr(arg) == 0)

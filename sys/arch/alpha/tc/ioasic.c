@@ -1,35 +1,5 @@
-/* $OpenBSD: ioasic.c,v 1.17 2010/09/20 06:33:46 matthew Exp $ */
-/* $NetBSD: ioasic.c,v 1.34 2000/07/18 06:10:06 thorpej Exp $ */
-
-/*-
- * Copyright (c) 1997, 1998 The NetBSD Foundation, Inc.
- * All rights reserved.
- *
- * This code is derived from software contributed to The NetBSD Foundation
- * by Jason R. Thorpe of the Numerical Aerospace Simulation Facility,
- * NASA Ames Research Center.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
- * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
- * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- */
+/*	$OpenBSD: ioasic.c,v 1.7 1999/01/11 05:11:04 millert Exp $	*/
+/*	$NetBSD: ioasic.c,v 1.10 1996/12/05 01:39:41 cgd Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995, 1996 Carnegie-Mellon University.
@@ -62,24 +32,33 @@
 #include <sys/kernel.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
-#include <sys/timeout.h>
 
 #include <machine/autoconf.h>
-#include <machine/bus.h>
 #include <machine/pte.h>
 #include <machine/rpb.h>
-
-#include <dev/tc/tcvar.h>
-#include <dev/tc/ioasicreg.h>
-#include <dev/tc/ioasicvar.h>
-#ifdef DEC_3000_300
-#include <alpha/tc/tc_3000_300.h>
+#ifndef EVCNT_COUNTERS
+#include <machine/intrcnt.h>
 #endif
 
+#include <dev/tc/tcvar.h>
+#include <alpha/tc/ioasicreg.h>
+#include <dev/tc/ioasicvar.h>
+
+struct ioasic_softc {
+	struct	device sc_dv;
+
+	tc_addr_t sc_base;
+	void	*sc_cookie;
+};
+
 /* Definition of the driver for autoconfig. */
-int	ioasicmatch(struct device *, void *, void *);
-void	ioasicattach(struct device *, struct device *, void *);
+#ifdef __BROKEN_INDIRECT_CONFIG
+int	ioasicmatch __P((struct device *, void *, void *));
+#else
+int	ioasicmatch __P((struct device *, struct cfdata *, void *));
+#endif
+void	ioasicattach __P((struct device *, struct device *, void *));
+int     ioasicprint(void *, const char *);
 
 struct cfattach ioasic_ca = {
 	sizeof(struct ioasic_softc), ioasicmatch, ioasicattach,
@@ -89,11 +68,10 @@ struct cfdriver ioasic_cd = {
 	NULL, "ioasic", DV_DULL,
 };
 
-int	ioasic_intr(void *);
-int	ioasic_intrnull(void *);
+int	ioasic_intr __P((void *));
+int	ioasic_intrnull __P((void *));
 
-#define	C(x)	((void *)(u_long)(x))
-#define	KV(x)	(ALPHA_PHYS_TO_K0SEG(x))
+#define	C(x)	((void *)(x))
 
 #define	IOASIC_DEV_LANCE	0
 #define	IOASIC_DEV_SCC0		1
@@ -104,24 +82,24 @@ int	ioasic_intrnull(void *);
 
 #define	IOASIC_NCOOKIES		4
 
-struct ioasic_dev ioasic_devs[] = {
-	{ "PMAD-BA ", IOASIC_SLOT_3_START, C(IOASIC_DEV_LANCE),
-	  IOASIC_INTR_LANCE, },
-	{ "z8530   ", IOASIC_SLOT_4_START, C(IOASIC_DEV_SCC0),
-	  IOASIC_INTR_SCC_0, },
-	{ "z8530   ", IOASIC_SLOT_6_START, C(IOASIC_DEV_SCC1),
-	  IOASIC_INTR_SCC_1, },
-	{ "TOY_RTC ", IOASIC_SLOT_8_START, C(IOASIC_DEV_BOGUS),
-	  0, },
-	{ "AMD79c30", IOASIC_SLOT_9_START, C(IOASIC_DEV_ISDN),
-	  IOASIC_INTR_ISDN_TXLOAD | IOASIC_INTR_ISDN_RXLOAD,  },
+struct ioasic_dev {
+	char		*iad_modname;
+	tc_offset_t	iad_offset;
+	void		*iad_cookie;
+	u_int32_t	iad_intrbits;
+} ioasic_devs[] = {
+	/* XXX lance name */
+	{ "lance",    0x000c0000, C(IOASIC_DEV_LANCE), IOASIC_INTR_LANCE, },
+	{ "z8530   ", 0x00100000, C(IOASIC_DEV_SCC0),  IOASIC_INTR_SCC_0, },
+	{ "z8530   ", 0x00180000, C(IOASIC_DEV_SCC1),  IOASIC_INTR_SCC_1, },
+	{ "TOY_RTC ", 0x00200000, C(IOASIC_DEV_BOGUS), 0,                 },
+	{ "AMD79c30", 0x00240000, C(IOASIC_DEV_ISDN),  IOASIC_INTR_ISDN,  },
 };
 int ioasic_ndevs = sizeof(ioasic_devs) / sizeof(ioasic_devs[0]);
 
 struct ioasicintr {
-	int	(*iai_func)(void *);
+	int	(*iai_func) __P((void *));
 	void	*iai_arg;
-	struct evcount iai_count;
 } ioasicintrs[IOASIC_NCOOKIES];
 
 tc_addr_t ioasic_base;		/* XXX XXX XXX */
@@ -129,10 +107,17 @@ tc_addr_t ioasic_base;		/* XXX XXX XXX */
 /* There can be only one. */
 int ioasicfound;
 
+extern int cputype;
+
 int
 ioasicmatch(parent, cfdata, aux)
 	struct device *parent;
-	void *cfdata, *aux;
+#ifdef __BROKEN_INDIRECT_CONFIG
+	void *cfdata;
+#else
+	struct cfdata *cfdata;
+#endif
+	void *aux;
 {
 	struct tc_attach_args *ta = aux;
 
@@ -157,28 +142,20 @@ ioasicattach(parent, self, aux)
 {
 	struct ioasic_softc *sc = (struct ioasic_softc *)self;
 	struct tc_attach_args *ta = aux;
-#ifdef DEC_3000_300
-	u_long ssr;
-#endif
-	u_long i, imsk;
+	struct ioasicdev_attach_args ioasicdev;
+	u_long i;
 
 	ioasicfound = 1;
 
-	sc->sc_bst = ta->ta_memt; 
-	if (bus_space_map(ta->ta_memt, ta->ta_addr,
-			0x400000, 0, &sc->sc_bsh)) {
-		printf("%s: unable to map device\n", sc->sc_dv.dv_xname);
-		return;
-	}
-	sc->sc_dmat = ta->ta_dmat;
-
-	ioasic_base = sc->sc_base = ta->ta_addr; /* XXX XXX XXX */
+	sc->sc_base = ta->ta_addr;
+	ioasic_base = sc->sc_base;			/* XXX XXX XXX */
+	sc->sc_cookie = ta->ta_cookie;
 
 #ifdef DEC_3000_300
 	if (cputype == ST_DEC_3000_300) {
-		ssr = bus_space_read_4(sc->sc_bst, sc->sc_bsh, IOASIC_CSR);
-		ssr |= IOASIC_CSR_FASTMODE;
-		bus_space_write_4(sc->sc_bst, sc->sc_bsh, IOASIC_CSR, ssr);
+		*(volatile u_int *)IOASIC_REG_CSR(sc->sc_base) |=
+		    IOASIC_CSR_FASTMODE;
+		tc_mb();
 		printf(": slow mode\n");
 	} else
 #endif
@@ -186,12 +163,12 @@ ioasicattach(parent, self, aux)
 
 	/*
 	 * Turn off all device interrupt bits.
-	 * (This does _not_ include 3000/300 TC option slot bits).
+	 * (This does _not_ include 3000/300 TC option slot bits.
 	 */
-	imsk = bus_space_read_4(sc->sc_bst, sc->sc_bsh, IOASIC_IMSK);
 	for (i = 0; i < ioasic_ndevs; i++)
-		imsk &= ~ioasic_devs[i].iad_intrbits;
-	bus_space_write_4(sc->sc_bst, sc->sc_bsh, IOASIC_IMSK, imsk);
+		*(volatile u_int32_t *)IOASIC_REG_IMSK(ioasic_base) &=
+			~ioasic_devs[i].iad_intrbits;
+	tc_mb();
 
 	/*
 	 * Set up interrupt handlers.
@@ -200,25 +177,55 @@ ioasicattach(parent, self, aux)
 		ioasicintrs[i].iai_func = ioasic_intrnull;
 		ioasicintrs[i].iai_arg = (void *)i;
 	}
-	tc_intr_establish(parent, ta->ta_cookie, IPL_NONE, ioasic_intr, sc,
-	    NULL);
+	tc_intr_establish(parent, sc->sc_cookie, TC_IPL_NONE, ioasic_intr, sc);
 
-	/*
+        /*
 	 * Try to configure each device.
 	 */
-	ioasic_attach_devs(sc, ioasic_devs, ioasic_ndevs);
+        for (i = 0; i < ioasic_ndevs; i++) {
+		strncpy(ioasicdev.iada_modname, ioasic_devs[i].iad_modname,
+			TC_ROM_LLEN);
+		ioasicdev.iada_modname[TC_ROM_LLEN] = '\0';
+		ioasicdev.iada_offset = ioasic_devs[i].iad_offset;
+		ioasicdev.iada_addr = sc->sc_base + ioasic_devs[i].iad_offset;
+		ioasicdev.iada_cookie = ioasic_devs[i].iad_cookie;
+
+                /* Tell the autoconfig machinery we've found the hardware. */
+                config_found(self, &ioasicdev, ioasicprint);
+        }
+}
+
+int
+ioasicprint(aux, pnp)
+	void *aux;
+	const char *pnp;
+{
+	struct ioasicdev_attach_args *d = aux;
+
+        if (pnp)
+                printf("%s at %s", d->iada_modname, pnp);
+        printf(" offset 0x%lx", (long)d->iada_offset);
+        return (UNCONF);
+}
+
+int
+ioasic_submatch(match, d)
+	struct cfdata *match;
+	struct ioasicdev_attach_args *d;
+{
+
+	return ((match->ioasiccf_offset == d->iada_offset) ||
+		(match->ioasiccf_offset == IOASIC_OFFSET_UNKNOWN));
 }
 
 void
-ioasic_intr_establish(ioa, cookie, level, func, arg, name)
+ioasic_intr_establish(ioa, cookie, level, func, arg)
 	struct device *ioa;
 	void *cookie, *arg;
-	int level;
-	int (*func)(void *);
-	const char *name;
+	tc_intrlevel_t level;
+	int (*func) __P((void *));
 {
-	struct ioasic_softc *sc = (void *)ioasic_cd.cd_devs[0];
-	u_long dev, i, imsk;
+	u_long dev, i;
 
 	dev = (u_long)cookie;
 #ifdef DIAGNOSTIC
@@ -226,11 +233,10 @@ ioasic_intr_establish(ioa, cookie, level, func, arg, name)
 #endif
 
 	if (ioasicintrs[dev].iai_func != ioasic_intrnull)
-		panic("ioasic_intr_establish: cookie %lu twice", dev);
+		panic("ioasic_intr_establish: cookie %d twice", dev);
 
 	ioasicintrs[dev].iai_func = func;
 	ioasicintrs[dev].iai_arg = arg;
-	evcount_attach(&ioasicintrs[dev].iai_count, name, NULL);
 
 	/* Enable interrupts for the device. */
 	for (i = 0; i < ioasic_ndevs; i++)
@@ -238,10 +244,9 @@ ioasic_intr_establish(ioa, cookie, level, func, arg, name)
 			break;
 	if (i == ioasic_ndevs)
 		panic("ioasic_intr_establish: invalid cookie.");
-
-	imsk = bus_space_read_4(sc->sc_bst, sc->sc_bsh, IOASIC_IMSK);
-        imsk |= ioasic_devs[i].iad_intrbits;
-        bus_space_write_4(sc->sc_bst, sc->sc_bsh, IOASIC_IMSK, imsk);
+	*(volatile u_int32_t *)IOASIC_REG_IMSK(ioasic_base) |=
+		ioasic_devs[i].iad_intrbits;
+	tc_mb();
 }
 
 void
@@ -249,8 +254,7 @@ ioasic_intr_disestablish(ioa, cookie)
 	struct device *ioa;
 	void *cookie;
 {
-	struct ioasic_softc *sc = (void *)ioasic_cd.cd_devs[0];
-	u_long dev, i, imsk;
+	u_long dev, i;
 
 	dev = (u_long)cookie;
 #ifdef DIAGNOSTIC
@@ -258,7 +262,7 @@ ioasic_intr_disestablish(ioa, cookie)
 #endif
 
 	if (ioasicintrs[dev].iai_func == ioasic_intrnull)
-		panic("ioasic_intr_disestablish: cookie %lu missing intr", dev);
+		panic("ioasic_intr_disestablish: cookie %d missing intr", dev);
 
 	/* Enable interrupts for the device. */
 	for (i = 0; i < ioasic_ndevs; i++)
@@ -266,14 +270,12 @@ ioasic_intr_disestablish(ioa, cookie)
 			break;
 	if (i == ioasic_ndevs)
 		panic("ioasic_intr_disestablish: invalid cookie.");
-
-	imsk = bus_space_read_4(sc->sc_bst, sc->sc_bsh, IOASIC_IMSK);
-	imsk &= ~ioasic_devs[i].iad_intrbits;
-	bus_space_write_4(sc->sc_bst, sc->sc_bsh, IOASIC_IMSK, imsk);
+	*(volatile u_int32_t *)IOASIC_REG_IMSK(ioasic_base) &=
+		~ioasic_devs[i].iad_intrbits;
+	tc_mb();
 
 	ioasicintrs[dev].iai_func = ioasic_intrnull;
 	ioasicintrs[dev].iai_arg = (void *)dev;
-	evcount_detach(&ioasicintrs[dev].iai_count);
 }
 
 int
@@ -286,7 +288,8 @@ ioasic_intrnull(val)
 }
 
 /*
- * ASIC interrupt handler.
+ * asic_intr --
+ *	ASIC interrupt handler.
  */
 int
 ioasic_intr(val)
@@ -295,35 +298,37 @@ ioasic_intr(val)
 	register struct ioasic_softc *sc = val;
 	register int ifound;
 	int gifound;
-	u_int32_t sir, osir;
+	u_int32_t sir;
+	volatile u_int32_t *sirp;
+
+	sirp = (volatile u_int32_t *)IOASIC_REG_INTR(sc->sc_base);
 
 	gifound = 0;
 	do {
 		ifound = 0;
 		tc_syncbus();
 
-		osir = sir =
-		    bus_space_read_4(sc->sc_bst, sc->sc_bsh, IOASIC_INTR);
+		sir = *sirp;
+
+#ifdef EVCNT_COUNTERS
+	/* No interrupt counting via evcnt counters */ 
+	XXX BREAK HERE XXX
+#else /* !EVCNT_COUNTERS */
+#define	INCRINTRCNT(slot)	intrcnt[INTRCNT_IOASIC + slot]++
+#endif /* EVCNT_COUNTERS */ 
 
 		/* XXX DUPLICATION OF INTERRUPT BIT INFORMATION... */
-#define	CHECKINTR(slot, bits, clear)					\
-		if (sir & (bits)) {					\
+#define	CHECKINTR(slot, bits)						\
+		if (sir & bits) {					\
 			ifound = 1;					\
-			ioasicintrs[slot].iai_count.ec_count++;		\
+			INCRINTRCNT(slot);				\
 			(*ioasicintrs[slot].iai_func)			\
 			    (ioasicintrs[slot].iai_arg);		\
-			if (clear)					\
-				sir &= ~(bits);				\
 		}
-		CHECKINTR(IOASIC_DEV_SCC0, IOASIC_INTR_SCC_0, 0);
-		CHECKINTR(IOASIC_DEV_SCC1, IOASIC_INTR_SCC_1, 0);
-		CHECKINTR(IOASIC_DEV_LANCE, IOASIC_INTR_LANCE, 0);
-		CHECKINTR(IOASIC_DEV_ISDN, IOASIC_INTR_ISDN_TXLOAD |
-		    IOASIC_INTR_ISDN_RXLOAD | IOASIC_INTR_ISDN_OVRUN, 1);
-
-		if (sir != osir)
-			bus_space_write_4(sc->sc_bst, sc->sc_bsh,
-			    IOASIC_INTR, sir);
+		CHECKINTR(IOASIC_DEV_SCC0, IOASIC_INTR_SCC_0);
+		CHECKINTR(IOASIC_DEV_SCC1, IOASIC_INTR_SCC_1);
+		CHECKINTR(IOASIC_DEV_LANCE, IOASIC_INTR_LANCE);
+		CHECKINTR(IOASIC_DEV_ISDN, IOASIC_INTR_ISDN);
 
 		gifound |= ifound;
 	} while (ifound);
@@ -331,98 +336,28 @@ ioasic_intr(val)
 	return (gifound);
 }
 
-/*
- * Blink leds
- */
+/* XXX */
+char *
+ioasic_lance_ether_address()
+{
 
-struct {
-	int		patpos;
-	struct timeout	tmo;
-} led_blink_state;
-
-static const uint8_t led_pattern8[] = {
-	0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80,
-	0x40, 0x20, 0x10, 0x08, 0x04, 0x02
-};
+	return (u_char *)IOASIC_SYS_ETHER_ADDRESS(ioasic_base);
+}
 
 void
-ioasic_led_blink(void *unused)
+ioasic_lance_dma_setup(v)
+	void *v;
 {
-	extern int alpha_led_blink;
-	vaddr_t rw_csr;
-	u_int32_t pattern;
-	int display_loadavg;
+	volatile u_int32_t *ldp;
+	tc_addr_t tca;
 
-	if (alpha_led_blink == 0) {
-		pattern = 0;	/* all clear */
-		led_blink_state.patpos = 0;
-	} else {
-#ifdef DEC_3000_300
-		if (cputype == ST_DEC_3000_300)
-			display_loadavg = 0;
-		else
-#endif
-		switch (hwrpb->rpb_variation & SV_ST_MASK) {
-		case SV_ST_FLAMINGO:
-		case SV_ST_HOTPINK:
-		case SV_ST_FLAMINGOPLUS:
-		case SV_ST_ULTRA:
-		case SV_ST_FLAMINGO45:
-			/* 500/800/900, 2 7-segment display, display loadavg */
-			display_loadavg = 1;
-			break;
-		case SV_ST_SANDPIPER:
-		case SV_ST_SANDPLUS:
-		case SV_ST_SANDPIPER45:
-		default:
-			/* 400/600/700, 8 leds, display moving pattern */
-			display_loadavg = 0;
-			break;
-		}
+	tca = (tc_addr_t)v;
 
-		if (display_loadavg)
-			pattern = averunnable.ldavg[0] >> FSHIFT;
-		else {
-			pattern = led_pattern8[led_blink_state.patpos];
-			led_blink_state.patpos = 
-			    (led_blink_state.patpos + 1) % sizeof(led_pattern8);
-		}
-	}
+	ldp = (volatile u_int *)IOASIC_REG_LANCE_DMAPTR(ioasic_base);
+	*ldp = ((tca << 3) & ~(tc_addr_t)0x1f) | ((tca >> 29) & 0x1f);
+	tc_wmb();
 
-	/*
-	 * The low 8 bits, controlling the leds, are read-only in the
-	 * CSR register, but read-write in its image at CSR + 4.
-	 *
-	 * On model 300, however, the internal 8 leds are at a different
-	 * address, but the (better visible) power supply led is actually
-	 * bit 5 in CSR (active low).
-	 */
-#ifdef DEC_3000_300
-	if (cputype == ST_DEC_3000_300) {
-		rw_csr = KV(0x1a0000000 + IOASIC_CSR + 4);
-
-		*(volatile uint32_t *)TC_3000_300_LED =
-		    (*(volatile uint32_t *)TC_3000_300_LED & ~(0xff << 16)) |
-		     (pattern << 16);
-		/*
-		 * Blink the power supply led 8x slower.  This relies
-		 * on led_pattern8[] being a < 16 element array.
-		 */
-		*(volatile uint32_t *)rw_csr =
-		    (*(volatile uint32_t *)rw_csr & ~(1 << 5)) ^
-		    ((led_blink_state.patpos >> 3) << 5);
-	} else
-#endif
-	{
-		rw_csr = KV(0x1e0000000 + IOASIC_CSR + 4);
-
-		*(volatile uint32_t *)rw_csr =
-		    (*(volatile uint32_t *)rw_csr & ~0xff) | pattern;
-	}
-
-	if (alpha_led_blink != 0) {
-		timeout_set(&led_blink_state.tmo, ioasic_led_blink, NULL);
-		timeout_add(&led_blink_state.tmo,
-		    (((averunnable.ldavg[0] + FSCALE) * hz) >> (FSHIFT + 3)));
-	}
+	*(volatile u_int32_t *)IOASIC_REG_CSR(ioasic_base) |=
+	    IOASIC_CSR_DMAEN_LANCE;
+	tc_mb();
 }

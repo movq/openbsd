@@ -19,11 +19,10 @@ libswanted=`echo $libswanted | sed -e 's/ inet / /'`
 # Configure defaults to usenm='y', which doesn't work very well
 usenm='n'
 
-# removed d_vfork='define'; we can't use it any more ...
+# for performance, apparently this makes a huge difference (~krader)
 
-case "$optimize" in
-'') optimize='-Wc,-O3 -W0,-xstring' ;;
-esac
+d_vfork='define'
+optimize='-Wc,-O3 -W0,-xstring'
 
 # We override d_socket because it's very hard for Configure to get it right
 # in Dynix/Ptx, for several reasons.
@@ -44,15 +43,15 @@ esac
 # Jarkko Hietaniemi November 1998
 
 case "$osvers" in
-4.[45]*) # configure doesn't find sockets, as they're in libsocket, not libc
+4.4*) # configure doesn't find sockets, as they're in libsocket, not libc
         d_socket='define'
         d_oldsock='undef'
         d_sockpair='define'
         ;;
 4.2*) # on ptx/TCP 4.2, we can use BSD sockets, but they're not the default.
-        cppflags="$cppflags -Wc,+bsd-socket"
-        ccflags="$ccflags -Wc,+bsd-socket"
-        ldflags="$ldflags -Wc,+bsd-socket"
+        cppflags='-Wc,+bsd-socket'
+        ccflags='-Wc,+bsd-socket'
+        ldflags='-Wc,+bsd-socket'
         d_socket='define'
         d_oldsock='undef'
         d_sockpair='define'

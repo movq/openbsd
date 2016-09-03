@@ -1,5 +1,4 @@
-#	$OpenBSD: Makefile,v 1.2 2001/01/29 01:58:34 niklas Exp $
-
+#	@(#)Makefile	8.5 (Berkeley) 7/16/94
 
 SRCS=	vi.1
 DOCS=	vi.0 vi.0.ps

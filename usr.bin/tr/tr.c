@@ -1,4 +1,4 @@
-/*	$OpenBSD: tr.c,v 1.19 2015/10/09 01:37:09 deraadt Exp $	*/
+/*	$OpenBSD: tr.c,v 1.5 1997/07/25 21:14:04 mickey Exp $	*/
 /*	$NetBSD: tr.c,v 1.5 1995/08/31 22:13:48 jtc Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,6 +33,19 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1988, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)tr.c	8.2 (Berkeley) 5/4/95";
+#endif
+static char rcsid[] = "$OpenBSD: tr.c,v 1.5 1997/07/25 21:14:04 mickey Exp $";
+#endif /* not lint */
 
 #include <sys/types.h>
 
@@ -78,22 +95,20 @@ static int string1[NCHARS] = {
 STR s1 = { STRING1, NORMAL, 0, OOBCH, { 0, OOBCH }, NULL, NULL };
 STR s2 = { STRING2, NORMAL, 0, OOBCH, { 0, OOBCH }, NULL, NULL };
 
-static void setup(int *, char *, STR *, int);
-static void usage(void);
+static void setup __P((int *, char *, STR *, int));
+static void usage __P((void));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
-	int ch, cnt, lastch, *p;
+	register int ch, cnt, lastch, *p;
 	int cflag, dflag, sflag, isstring2;
 
-	if (pledge("stdio", NULL) == -1)
-		err(1, "pledge");
-
 	cflag = dflag = sflag = 0;
-	while ((ch = getopt(argc, argv, "Ccds")) != -1)
-		switch(ch) {
-		case 'C':
+	while ((ch = getopt(argc, argv, "cds")) != -1)
+		switch((char)ch) {
 		case 'c':
 			cflag = 1;
 			break;
@@ -124,7 +139,7 @@ main(int argc, char *argv[])
 	}
 
 	/*
-	 * tr -ds [-Cc] string1 string2
+	 * tr -ds [-c] string1 string2
 	 * Delete all characters (or complemented characters) in string1.
 	 * Squeeze all characters in string2.
 	 */
@@ -134,7 +149,7 @@ main(int argc, char *argv[])
 
 		setup(string1, argv[0], &s1, cflag);
 		setup(string2, argv[1], &s2, 0);
-
+		
 		for (lastch = OOBCH; (ch = getchar()) != EOF;)
 			if (!string1[ch] && (!string2[ch] || lastch != ch)) {
 				lastch = ch;
@@ -144,7 +159,7 @@ main(int argc, char *argv[])
 	}
 
 	/*
-	 * tr -d [-Cc] string1
+	 * tr -d [-c] string1
 	 * Delete all characters (or complemented characters) in string1.
 	 */
 	if (dflag) {
@@ -160,7 +175,7 @@ main(int argc, char *argv[])
 	}
 
 	/*
-	 * tr -s [-Cc] string1
+	 * tr -s [-c] string1
 	 * Squeeze all characters (or complemented characters) in string1.
 	 */
 	if (sflag && !isstring2) {
@@ -175,7 +190,7 @@ main(int argc, char *argv[])
 	}
 
 	/*
-	 * tr [-Ccs] string1 string2
+	 * tr [-cs] string1 string2
 	 * Replace all characters (or complemented characters) in string1 with
 	 * the character in the same position in string2.  If the -s option is
 	 * specified, squeeze all the characters in string2.
@@ -183,8 +198,8 @@ main(int argc, char *argv[])
 	if (!isstring2)
 		usage();
 
-	s1.str = (unsigned char *)argv[0];
-	s2.str = (unsigned char *)argv[1];
+	s1.str = argv[0];
+	s2.str = argv[1];
 
 	if (cflag)
 		for (cnt = NCHARS, p = string1; cnt--;)
@@ -194,7 +209,6 @@ main(int argc, char *argv[])
 		errx(1, "empty string2");
 
 	/* If string2 runs out of characters, use the last one specified. */
-	ch = s2.lastch;
 	if (sflag)
 		while (next(&s1)) {
 			string1[s1.lastch] = ch = s2.lastch;
@@ -226,11 +240,15 @@ main(int argc, char *argv[])
 }
 
 static void
-setup(int *string, char *arg, STR *str, int cflag)
+setup(string, arg, str, cflag)
+	int *string;
+	char *arg;
+	STR *str;
+	int cflag;
 {
-	int cnt, *p;
+	register int cnt, *p;
 
-	str->str = (unsigned char *)arg;
+	str->str = arg;
 	bzero(string, NCHARS * sizeof(int));
 	while (next(str))
 		string[str->lastch] = 1;
@@ -240,12 +258,11 @@ setup(int *string, char *arg, STR *str, int cflag)
 }
 
 static void
-usage(void)
+usage()
 {
-	fprintf(stderr,
-	    "usage: tr [-Ccs] string1 string2\n"
-	    "       tr [-Cc] -d string1\n"
-	    "       tr [-Cc] -s string1\n"
-	    "       tr [-Cc] -ds string1 string2\n");
+	(void)fprintf(stderr, "usage: tr [-cs] string1 string2\n");
+	(void)fprintf(stderr, "       tr [-c] -d string1\n");
+	(void)fprintf(stderr, "       tr [-c] -s string1\n");
+	(void)fprintf(stderr, "       tr [-c] -ds string1 string2\n");
 	exit(1);
 }

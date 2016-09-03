@@ -1,13 +1,18 @@
-/*	$OpenBSD: timer_gettime.c,v 1.7 2015/09/12 13:13:34 guenther Exp $ */
+#if defined(SYSLIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: timer_gettime.c,v 1.4 1998/02/07 20:50:55 tholo Exp $";
+#endif /* SYSLIBC_SCCS and not lint */
 
+#include <signal.h>
 #include <time.h>
 #include <errno.h>
 
-int	timer_gettime(timer_t, struct itimerspec *);
-PROTO_DEPRECATED(timer_gettime);
+struct itimerspec;
 
+/* ARGSUSED */
 int
-timer_gettime(timer_t timerid, struct itimerspec *value)
+timer_gettime(timerid, value)
+	timer_t timerid;
+	struct itimerspec *value;
 {
 	errno = ENOSYS;
 	return -1;

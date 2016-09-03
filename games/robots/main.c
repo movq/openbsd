@@ -1,4 +1,4 @@
-/*	$OpenBSD: main.c,v 1.25 2016/03/07 12:07:57 mestre Exp $	*/
+/*	$OpenBSD: main.c,v 1.7 1998/08/22 08:55:54 pjanzen Exp $	*/
 /*	$NetBSD: main.c,v 1.5 1995/04/22 10:08:54 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,118 +34,104 @@
  * SUCH DAMAGE.
  */
 
-#include <err.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <signal.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1980, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
 
-#include "robots.h"
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)main.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: main.c,v 1.7 1998/08/22 08:55:54 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
-void
-usage(void)
-{
-	fprintf(stderr, "usage: %s [-ajrst] [scorefile]\n", getprogname());
-	exit(1);
-}
+#include	"robots.h"
 
 int
-main(int ac, char *av[])
+main(ac, av)
+	int	ac;
+	char	**av;
 {
-	bool		show_only;
-	extern char	Scorefile[PATH_MAX];
+	register char	*sp;
+	register bool	bad_arg;
+	register bool	show_only;
+	extern char	*Scorefile;
 	int		score_wfd;     /* high score writable file descriptor */
 	int		score_err = 0; /* hold errno from score file open */
-	int		ch;
-	int		ret;
-	extern int	optind;
-	char		*home;
-#ifdef FANCY
-	char		*sp;
-#endif
 
-	if (pledge("stdio rpath wpath cpath tty", NULL) == -1)
-		err(1, "pledge");
-
-	home = getenv("HOME");
-	if (home == NULL || *home == '\0')
-		err(1, "getenv");
-
-	ret = snprintf(Scorefile, sizeof(Scorefile), "%s/%s", home,
-	    ".robots.scores");
-	if (ret < 0 || ret >= PATH_MAX)
-		errc(1, ENAMETOOLONG, "%s/%s", home, ".robots.scores");
-
-	if ((score_wfd = open(Scorefile, O_RDWR | O_CREAT, 0666)) < 0)
+	if ((score_wfd = open(Scorefile, O_RDWR)) < 0)
 		score_err = errno;
 
-	show_only = FALSE;
-	while ((ch = getopt(ac, av, "srajt")) != -1)
-		switch (ch) {
-		case 's':
-			show_only = TRUE;
-			break;
-		case 'r':
-			Real_time = TRUE;
-			/* Could be a command-line option */
-			tv.tv_sec = 3;
-			break;
-		case 'a':
-			Start_level = 4;
-			break;
-		case 'j':
-			Jump = TRUE;
-			break;
-		case 't':
-			Teleport = TRUE;
-			break;
-		case '?':
-		default:
-			usage();
-		}
-	ac -= optind;
-	av += optind;
+	/* revoke */
+	setegid(getgid());
+	setgid(getgid());
 
-	if (ac > 1)
-		usage();
-	if (ac == 1) {
-		if (strlcpy(Scorefile, av[0], sizeof(Scorefile)) >=
-		    sizeof(Scorefile))
-			errc(1, ENAMETOOLONG, "%s", av[0]);
-		if (score_wfd >= 0)
-			close(score_wfd);
-		/* This file requires no special privileges. */
-		if ((score_wfd = open(Scorefile, O_RDWR | O_CREAT, 0666)) < 0)
-			score_err = errno;
+	show_only = FALSE;
+	if (ac > 1) {
+		bad_arg = FALSE;
+		for (++av; ac > 1 && *av[0]; av++, ac--)
+			if (av[0][0] != '-') {
+				Scorefile = av[0];
+				if (score_wfd >= 0)
+					close(score_wfd);
+			/* This file requires no special privileges. */
+				if ((score_wfd = open(Scorefile, O_RDWR)) < 0)
+					score_err = errno;
 #ifdef	FANCY
-		sp = strrchr(Scorefile, '/');
-		if (sp == NULL)
-			sp = Scorefile;
-		if (strcmp(sp, "pattern_roll") == 0)
-			Pattern_roll = TRUE;
-		else if (strcmp(sp, "stand_still") == 0)
-			Stand_still = TRUE;
-		if (Pattern_roll || Stand_still)
-			Teleport = TRUE;
+				sp = strrchr(Scorefile, '/');
+				if (sp == NULL)
+					sp = Scorefile;
+				if (strcmp(sp, "pattern_roll") == 0)
+					Pattern_roll = TRUE;
+				else if (strcmp(sp, "stand_still") == 0)
+					Stand_still = TRUE;
+				if (Pattern_roll || Stand_still)
+					Teleport = TRUE;
 #endif
+			} else
+				for (sp = &av[0][1]; *sp; sp++)
+					switch (*sp) {
+					  case 's':
+						show_only = TRUE;
+						break;
+					  case 'r':
+						Real_time = TRUE;
+						break;
+					  case 'a':
+						Start_level = 4;
+						break;
+					  case 'j':
+						Jump = TRUE;
+						break;
+					  case 't':
+						Teleport = TRUE;
+						break;
+					  default:
+						warnx("unknown option: %c", *sp);
+						bad_arg = TRUE;
+						break;
+					}
+		if (bad_arg) {
+			exit(1);
+			/* NOTREACHED */
+		}
 	}
 
 	if (show_only) {
 		show_score();
-		return 0;
+		exit(0);
 	}
 
-	if (score_wfd < 0) {
+	if (score_wfd < 0)
 		warnx("%s: %s; no scores will be saved", Scorefile,
 			strerror(score_err));
-		sleep(1);
-	}
 
 	initscr();
 	signal(SIGINT, quit);
-	cbreak();
+	crmode();
 	noecho();
 	nonl();
 	if (LINES != Y_SIZE || COLS != X_SIZE) {
@@ -153,6 +143,9 @@ main(int ac, char *av[])
 		stdscr = newwin(Y_SIZE, X_SIZE, 0, 0);
 	}
 
+	srandom(getpid());
+	if (Real_time)
+		signal(SIGALRM, move_robots);
 	do {
 		init_field();
 		for (Level = Start_level; !Dead; Level++) {
@@ -165,6 +158,14 @@ main(int ac, char *av[])
 		score(score_wfd);
 	} while (another());
 	quit(0);
+	/* NOT REACHED */
+}
+
+void
+__cputchar(ch)
+	int ch;
+{
+	(void)putchar(ch);
 }
 
 /*
@@ -172,10 +173,12 @@ main(int ac, char *av[])
  *	Leave the program elegantly.
  */
 void
-quit(int dummy)
+quit(dummy)
+	int dummy;
 {
 	endwin();
 	exit(0);
+	/* NOTREACHED */
 }
 
 /*
@@ -183,9 +186,9 @@ quit(int dummy)
  *	See if another game is desired
  */
 bool
-another(void)
+another()
 {
-	int	y;
+	register int	y;
 
 #ifdef	FANCY
 	if ((Stand_still || Pattern_roll) && !Newscore)

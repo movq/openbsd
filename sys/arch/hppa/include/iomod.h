@@ -1,30 +1,5 @@
-/*	$OpenBSD: iomod.h,v 1.19 2009/02/06 17:26:21 miod Exp $	*/
+/*	$OpenBSD: iomod.h,v 1.6 1999/04/20 19:36:32 mickey Exp $	*/
 
-/*
- * Copyright (c) 2000-2004 Michael Shalayeff
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHOR OR HIS RELATIVES BE LIABLE FOR ANY DIRECT,
- * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF MIND, USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
- * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
- * THE POSSIBILITY OF SUCH DAMAGE.
- */
 /*
  * Copyright (c) 1990 mt Xinu, Inc.  All rights reserved.
  * Copyright (c) 1990,1991,1992,1994 University of Utah.  All rights reserved.
@@ -49,7 +24,6 @@
  * improvements that they make and grant CSL redistribution rights.
  *
  *	Utah $Hdr: iomod.h 1.6 94/12/14$
- *	Author: Jeff Forys (CSS), Dave Slattengren (mtXinu)
  */
 
 #ifndef	_MACHINE_IOMOD_H_
@@ -99,17 +73,31 @@
  * SPA space (see below) ranges from 0xF1000000 thru 0xFFFC0000.
  */
 
-#define	PDC_LOW		0xEF000000	/* define some ranges */
-#define	PDC_HIGH	0xF1000000
-#define	FPA_LOW		0xFFF80000
-#define	FPA_HIGH	0xFFFC0000
-#define	SPA_LOW		0xF1000000
-#define	SPA_HIGH	0xFFFC0000
-#define	SGC_LOW		0xF4000000
-#define	SGC_HIGH	0xFA000000
+#define	HPPA_IOBEGIN	0xF0000000
+#define	HPPA_IOLEN	0x10000000
+#define	PDC_ADDR	0xEF000000	/* explained above */
+#define	IO_ADDR		0xF1000000
+#define	SGC_SLOT1	0xF4000000	/* (hp700) */
+#define	SGC_SLOT2	0xF8000000	/* (hp700) */
+#define	SGC_SIZE	0x02000000	/* (hp700) */
+#define	FP_ADDR		0xFFF80000
+#define	LBCAST_ADDR	0xFFFC0000
+#define	GBCAST_ADDR	0xFFFE0000
+
+#define	PDC_LOW		PDC_ADDR	/* define some ranges */
+#define	PDC_HIGH	IO_ADDR
+#define	FPA_LOW		FP_ADDR
+#define	FPA_HIGH	LBCAST_ADDR
+#define	SPA_LOW		IO_ADDR
+#define	SPA_HIGH	LBCAST_ADDR
+#define	SGC_LOW		SGC_SLOT1
+#define	SGC_HIGH	(SGC_SLOT2+SGC_SIZE)
 
 #define	FPA_IOMOD	((FPA_HIGH-FPA_LOW)/sizeof(struct iomod))
 #define	MAXMODBUS	((int)(FPA_IOMOD))	/* maximum modules/bus */
+
+#define	FLEX_MASK	0xFFFC0000	/* (see below) */
+#define	HPPA_FLEX(a)	(((a) & FLEX_MASK) >> 18)
 
 /* size of HPA space for any device */
 #define	IOMOD_HPASIZE	0x1000
@@ -136,75 +124,47 @@
 struct pagezero {
 	/* [0x000] Initialize Vectors */
 	int	ivec_special;		/* must be zero */
-	u_int	ivec_mempf;		/* powerfail recovery software */
-	u_int	ivec_toc;		/* exec'd after Transfer Of Control */
+					/* powerfail recovery software */
+	int	(*ivec_mempf)__P((void));
+					/* exec'd after Transfer Of Control */
+	int	(*ivec_toc)__P((void));
 	u_int	ivec_toclen;		/* bytes of ivec_toc code */
-	u_int	ivec_rendz;		/* exec'd after Rendezvous Signal */
+					/* exec'd after Rendezvous Signal */
+	int	(*ivec_rendz)__P((void));
 	u_int	ivec_mempflen;		/* bytes of ivec_mempf code */
-	u_int	ivec_resv[2];		/* (reserved) */
-	u_int	ivec_mbz;		/* must be zero */
-	u_int	ivec_resv2[7];		/* (reserved) */
+	int	ivec_resv[10];		/* (reserved) must be zero */
 
 	/* [0x040] Processor Dependent */
 	union	{
-		u_int	pd_Resv1[112];	/* (reserved) processor dependent */
+		int	pd_Resv1[112];	/* (reserved) processor dependent */
 		struct	{		/* Viper-specific data */
-			u_int	v_Resv1[39];
+			int	v_Resv1[39];
 			u_int	v_Ctrlcpy;	/* copy of Viper `vi_control' */
-			u_int	v_Resv2[72];
+			int	v_Resv2[72];
 		} pd_Viper;
 	} pz_Pdep;
 
-	/* [0x200] IODC Data Area Descriptors
-		   use PDC_ALLOC to allocate these memory regions */
-	u_int	iodc_cons_base;		/* */
-	u_int	iodc_cons_size;		/* */
-	u_int	iodc_kbrd_base;		/* */
-	u_int	iodc_kbrd_size;		/* */
-	u_int	iodc_boot_base;		/* */
-	u_int	iodc_boot_size;		/* */
+	/* [0x200] Reserved */
+	int	resv1[84];		/* (reserved) */
 
-	/* [0x218] */
-	u_int	resv1[0x41];
-
-	/* [0x31C] Capability Flags */
-	u_int	cap_flags;		/* system capabilities */
-#define	HPPA_CAP_WIDESCSI	0x00000001
-
-	/* [0x320] Keyboard Extensions */
-	u_int	kbrd_ext[2];
-
-	/* [0x328] Boot Device Extensions */
-	u_int	boot_ext[2];
-
-	/* [0x330] Console/Display Extensions */
-	u_int	cons_ext[2];
-
-	/* [0x338] Initial Memory Module Extensions */
-	u_int	imm_ext[2];
-
-	/* [0x340] Memory Configuration */
-	u_int	memc_cont_l;		/* memc_cont low part */
-	u_int	memc_phsize_l;		/* memc_phsize low part */
-	u_int	memc_adsize_l;		/* memc_adsize low part */
-	u_int	memc_resv;		/* (reserved) */
-	u_int	memc_cont;		/* bytes of contiguous valid memory */
-	u_int	memc_phsize;		/* bytes of valid physical memory */
-	u_int	memc_adsize;		/* bytes of SPA space used by PDC */
-	u_int	memc_hpa_h;		/* HPA of CPU (high) */
+	/* [0x350] Memory Configuration */
+	int	memc_cont;		/* bytes of contiguous valid memory */
+	int	memc_phsize;		/* bytes of valid physical memory */
+	int	memc_adsize;		/* bytes of SPA space used by PDC */
+	int	memc_resv;		/* (reserved) */
 
 	/* [0x360] Miscellaneous */
 	struct boot_err mem_be[8];	/* boot errors (see above) */
-	u_int	mem_free;		/* first free phys. memory location */
-	u_int	mem_hpa;		/* HPA of CPU */
-	u_int	mem_pdc;		/* PDC entry point */
+	int	mem_free;		/* first free phys. memory location */
+	struct iomod *mem_hpa;		/* HPA of CPU */
+	int	(*mem_pdc)__P((void));	/* PDC entry point */
 	u_int	mem_10msec;		/* # of Interval Timer ticks in 10msec*/
 
 	/* [0x390] Initial Memory Module */
-	u_int	imm_hpa;		/* HPA of Initial Memory module */
-	u_int	imm_soft_boot;		/* 0 == hard boot, 1 == soft boot */
-	u_int	imm_spa_size;		/* bytes of SPA in IMM */
-	u_int	imm_max_mem;		/* bytes of mem in IMM (<= spa_size) */
+	struct iomod *imm_hpa;		/* HPA of Initial Memory module */
+	int	imm_soft_boot;		/* 0 == hard boot, 1 == soft boot */
+	int	imm_spa_size;		/* bytes of SPA in IMM */
+	int	imm_max_mem;		/* bytes of mem in IMM (<= spa_size) */
 
 	/* [0x3A0] Boot Console/Display, Device, and Keyboard */
 	struct pz_device mem_cons;	/* description of console device */
@@ -212,10 +172,10 @@ struct pagezero {
 	struct pz_device mem_kbd;	/* description of keyboard device */
 
 	/* [0x430] Reserved */
-	u_int	resv2[116];		/* (reserved) */
+	int	resv2[116];		/* (reserved) */
 
 	/* [0x600] Processor Dependent */
-	u_int	pd_resv2[128];		/* (reserved) processor dependent */
+	int	pd_resv2[128];		/* (reserved) processor dependent */
 };
 #define	v_ctrlcpy	pz_Pdep.pd_Viper.v_Ctrlcpy
 
@@ -299,7 +259,7 @@ struct bpa {
 /*
  * All I/O and Memory modules have 4K-bytes of HPA space associated with
  * it (described above), however not all modules implement every register.
- * The first 2K-bytes of registers are "privileged".
+ * The first 2K-bytes of registers are "priviliged".
  *
  * (WO) == Write Only, (RO) == Read Only
  */
@@ -309,38 +269,38 @@ struct iomod {
 	u_int	io_eir;		/* (WO) interrupt CPU; set bits in EIR CR */
 	u_int	io_eim;		/* (WO) External Interrupt Message address */
 	u_int	io_dc_rw;	/* write address of IODC to read IODC data */
-	u_int	io_ii_rw;	/* read/clear external intrpt msg (bit-26) */
-	u_int	io_dma_link;	/* pointer to "next quad" in DMA chain */
+	int	io_ii_rw;	/* read/clear external intrpt msg (bit-26) */
+	caddr_t	io_dma_link;	/* pointer to "next quad" in DMA chain */
 	u_int	io_dma_command;	/* (RO) chain command to exec on "next quad" */
-	u_int	io_dma_address;	/* (RO) start of DMA */
-	u_int	io_dma_count;	/* (RO) number of bytes remaining to xfer */
-	u_int	io_flex;	/* (WO) HPA flex addr, LSB: bus master flag */
-	u_int	io_spa;		/* (WO) SPA space; 0-20:addr, 24-31:iodc_spa */
-	u_int	resv1[2];	/* (reserved) */
+	caddr_t	io_dma_address;	/* (RO) start of DMA */
+	int	io_dma_count;	/* (RO) number of bytes remaining to xfer */
+	caddr_t	io_flex;	/* (WO) HPA flex addr, LSB: bus master flag */
+	caddr_t	io_spa;		/* (WO) SPA space; 0-20:addr, 24-31:iodc_spa */
+	int	resv1[2];	/* (reserved) */
 	u_int	io_command;	/* (WO) module commands (see below) */
 	u_int	io_status;	/* (RO) error returns (see below) */
 	u_int	io_control;	/* memory err logging (bit-9), bc forwarding */
 	u_int	io_test;	/* (RO) self-test information */
 /* ARS (Auxiliary Register Set) */
 	u_int	io_err_sadd;	/* (RO) slave bus error or memory error addr */
-	u_int	chain_addr;	/* start address of chain RAM */
+	caddr_t	chain_addr;	/* start address of chain RAM */
 	u_int	sub_mask_clr;	/* ignore intrpts on sub-channel (bitmask) */
 	u_int	sub_mask_set;	/* service intrpts on sub-channel (bitmask) */
 	u_int	diagnostic;	/* diagnostic use (reserved) */
-	u_int	resv2[2];	/* (reserved) */
-	u_int	nmi_address;	/* address to send data to when NMI detected */
-	u_int	nmi_data;	/* NMI data to be sent */
-	u_int	resv3[3];	/* (reserved) */
+	int	resv2[2];	/* (reserved) */
+	caddr_t	nmi_address;	/* address to send data to when NMI detected */
+	caddr_t	nmi_data;	/* NMI data to be sent */
+	int	resv3[3];	/* (reserved) */
 	u_int	io_mem_low;	/* bottom of memory address range */
 	u_int	io_mem_high;	/* top of memory address range */
 	u_int	io_io_low;	/* bottom of I/O HPA address Range */
 	u_int	io_io_high;	/* top of I/O HPA address Range */
 
-	u_int	priv_trs[160];	/* TRSes (Type-dependent Reg Sets) */
+	int	priv_trs[160];	/* TRSes (Type-dependent Reg Sets) */
 
-	u_int	priv_hvrs[320];	/* HVRSes (HVERSION-dependent Register Sets) */
+	int	priv_hvrs[320];	/* HVRSes (HVERSION-dependent Register Sets) */
 
-	u_int	hvrs[512];	/* HVRSes (HVERSION-dependent Register Sets) */
+	int	hvrs[512];	/* HVRSes (HVERSION-dependent Register Sets) */
 };
 #endif	/* !_LOCORE */
 
@@ -376,14 +336,14 @@ struct iomod {
 #define	IO_ERR_DEPEND	 0	/* unspecified error */
 #define	IO_ERR_SPA	 1	/* (module-type specific) */
 #define	IO_ERR_INTERNAL	 2	/* (module-type specific) */
-#define	IO_ERR_MODE	 3	/* invalid mode or address space mapping */
+#define	IO_ERR_MODE	 3	/* invlaid mode or address space mapping */
 #define	IO_ERR_ERROR_M	 4	/* bus error (master detect) */
 #define	IO_ERR_DPARITY_S 5	/* data parity (slave detect) */
 #define	IO_ERR_PROTO_M	 6	/* protocol error (master detect) */
 #define	IO_ERR_ADDRESS	 7	/* no slave acknowledgement in transaction */
-#define	IO_ERR_MORE	 8	/* device transferred more data than expected */
-#define	IO_ERR_LESS	 9	/* device transferred less data than expected */
-#define	IO_ERR_SAPARITY	10	/* slave address phase parity */
+#define	IO_ERR_MORE	 8	/* device transfered more data than expected */
+#define	IO_ERR_LESS	 9	/* device transfered less data than expected */
+#define	IO_ERR_SAPARITY	10	/* slave addrss phase parity */
 #define	IO_ERR_MAPARITY	11	/* master address phase parity */
 #define	IO_ERR_MDPARITY	12	/* mode phase parity */
 #define	IO_ERR_STPARITY	13	/* status phase parity */
@@ -399,7 +359,7 @@ struct iomod {
 #define	IO_ERR_PROTOCOL	54	/* protocol error (slave detect) */
 #define	IO_ERR_SELFTEST	58	/* (module-type specific) */
 #define	IO_ERR_BUSY	59	/* slave was busy too often or too long */
-#define	IO_ERR_RETRY	60	/* "busied" transaction not retried soon enough */
+#define	IO_ERR_RETRY	60	/* "busied" transaction not retried soon enuf */
 #define	IO_ERR_ACCESS	61	/* illegal register access */
 #define	IO_ERR_IMPROP	62	/* "improper" data written */
 #define	IO_ERR_UNKNOWN	63
@@ -410,5 +370,9 @@ struct iomod {
 
 /* io_spa */
 #define	SPA_ENABLE	0x20	/* io_spa register enable spa bit */
+
+#define	EIM_GRPMASK	0x1F	/* EIM register group mask */
+#define	EIEM_MASK(eim)	(0x80000000 >> (eim & EIM_GRPMASK))
+#define	EIEM_BITCNT	32	/* number of bits in EIEM register */
 
 #endif	/* _MACHINE_IOMOD_H_ */

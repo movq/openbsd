@@ -1,4 +1,3 @@
-/*	$OpenBSD: sscanf.c,v 1.15 2015/08/31 02:53:57 guenther Exp $ */
 /*-
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,35 +34,55 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: sscanf.c,v 1.3 1997/07/25 20:30:12 mickey Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <stdio.h>
 #include <string.h>
+#ifdef __STDC__
 #include <stdarg.h>
+#else
+#include <varargs.h>
+#endif
 #include "local.h"
 
+/* ARGSUSED */
 static int
-eofread(void *cookie, char *buf, int len)
+eofread(cookie, buf, len)
+	void *cookie;
+	char *buf;
+	int len;
 {
 
 	return (0);
 }
 
-int
-sscanf(const char *str, const char *fmt, ...)
+#ifdef __STDC__
+sscanf(const char *str, char const *fmt, ...)
+#else
+sscanf(str, fmt, va_alist)
+	const char *str;
+	char *fmt;
+	va_dcl
+#endif
 {
 	int ret;
 	va_list ap;
 	FILE f;
-	struct __sfileext fext;
 
-	_FILEEXT_SETUP(&f, &fext);
 	f._flags = __SRD;
 	f._bf._base = f._p = (unsigned char *)str;
 	f._bf._size = f._r = strlen(str);
 	f._read = eofread;
+	f._ub._base = NULL;
 	f._lb._base = NULL;
+#ifdef __STDC__
 	va_start(ap, fmt);
+#else
+	va_start(ap);
+#endif
 	ret = __svfscanf(&f, fmt, ap);
 	va_end(ap);
 	return (ret);
 }
-DEF_STRONG(sscanf);

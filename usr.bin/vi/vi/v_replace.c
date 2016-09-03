@@ -1,5 +1,3 @@
-/*	$OpenBSD: v_replace.c,v 1.9 2016/01/06 22:28:52 millert Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)v_replace.c	10.17 (Berkeley) 6/30/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -38,10 +40,12 @@
  * <literal> character, it required three <literal> characters after the
  * command.  This may not be right, but at least it's not insane.
  *
- * PUBLIC: int v_replace(SCR *, VICMD *);
+ * PUBLIC: int v_replace __P((SCR *, VICMD *));
  */
 int
-v_replace(SCR *sp, VICMD *vp)
+v_replace(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	EVENT ev;
 	VI_PRIVATE *vip;
@@ -67,7 +71,7 @@ v_replace(SCR *sp, VICMD *vp)
 	if (db_get(sp, vp->m_start.lno, DBG_FATAL, &p, &len))
 		return (1);
 	if (len == 0) {
-		msgq(sp, M_BERR, "No characters to replace");
+		msgq(sp, M_BERR, "186|No characters to replace");
 		return (1);
 	}
 
@@ -150,7 +154,7 @@ next:		if (v_event_get(sp, &ev, 0, 0))
 	 * is different from the historic vi, which replaced N characters with
 	 * a single new line.  Users complained, so we match historic practice.
 	 */
-	if ((!quote && vip->rvalue == K_CR) || vip->rvalue == K_NL) {
+	if (!quote && vip->rvalue == K_CR || vip->rvalue == K_NL) {
 		/* Set return line. */
 		vp->m_stop.lno = vp->m_start.lno + 1;
 		vp->m_stop.cno = 0;

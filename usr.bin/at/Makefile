@@ -1,16 +1,15 @@
-#	$OpenBSD: Makefile,v 1.12 2016/03/30 06:38:45 jmc Exp $
+#	$OpenBSD: Makefile,v 1.4 1997/09/21 11:48:22 deraadt Exp $
 
 PROG=	at
-SRCS=	at.c client.c parsetime.c
-CRONDIR=${.CURDIR}/../../usr.sbin/cron
-CFLAGS+=-I${CRONDIR}
-MAN=	at.1 atrm.1 atq.1
+SRCS=	at.c panic.c parsetime.c perm.c
 LINKS=	${BINDIR}/at ${BINDIR}/atq \
 	${BINDIR}/at ${BINDIR}/atrm \
 	${BINDIR}/at ${BINDIR}/batch
-BINGRP=	crontab
-BINMODE= 2555
+MLINKS=	at.1 batch.1 \
+	at.1 atq.1 \
+	at.1 atrm.1
 
-.PATH: ${CRONDIR}
+BINOWN=	root
+BINMODE= 4555
 
 .include <bsd.prog.mk>

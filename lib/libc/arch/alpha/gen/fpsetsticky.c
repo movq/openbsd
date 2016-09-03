@@ -1,8 +1,8 @@
-/*	$OpenBSD: fpsetsticky.c,v 1.5 2005/08/07 16:40:13 espie Exp $	*/
-/*	$NetBSD: fpsetsticky.c,v 1.3 2002/01/13 21:45:40 thorpej Exp $	*/
+/*	$OpenBSD: fpsetsticky.c,v 1.3 1996/11/13 21:20:16 niklas Exp $	*/
+/*	$NetBSD: fpsetsticky.c,v 1.1 1995/04/29 05:11:04 cgd Exp $	*/
 
 /*
- * Copyright (c) 1999 Ross Harvey
+ * Copyright (c) 1995 Christopher G. Demetriou
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -15,7 +15,7 @@
  *    documentation and/or other materials provided with the distribution.
  * 3. All advertising materials mentioning features or use of this software
  *    must display the following acknowledgement:
- *      This product includes software developed by Ross Harvey
+ *      This product includes software developed by Christopher G. Demetriou
  *	for the NetBSD Project.
  * 4. The name of the author may not be used to endorse or promote products
  *    derived from this software without specific prior written permission
@@ -32,16 +32,17 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/types.h>
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: fpsetsticky.c,v 1.3 1996/11/13 21:20:16 niklas Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <ieeefp.h>
-#include <machine/sysarch.h>
 
 fp_except
 fpsetsticky(sticky)
 	fp_except sticky;
 {
-	struct alpha_fp_except_args a;
 
-	a.mask = sticky;
-	return sysarch(ALPHA_FPSETSTICKY, &a);
+	/* XXX */
+	abort();
 }

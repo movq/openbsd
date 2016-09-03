@@ -1,4 +1,4 @@
-/*	$OpenBSD: headersize.c,v 1.10 2013/10/15 05:17:31 deraadt Exp $	*/
+/*	$OpenBSD: headersize.c,v 1.5 1996/11/27 19:54:47 niklas Exp $	*/
 /*	$NetBSD: headersize.c,v 1.5 1996/09/23 04:32:59 cgd Exp $	*/
 
 /*
@@ -33,11 +33,11 @@
 #include <sys/types.h>
 #include <sys/fcntl.h>
 #include <sys/exec.h>
+#include <sys/exec_ecoff.h>
 #include <sys/exec_elf.h>
 
 #include <unistd.h>
 #include <stdio.h>
-#include <err.h>
 
 #define	HDR_BUFSIZE	512
 
@@ -47,8 +47,9 @@ main(argc, argv)
 	char *argv[];
 {
 	char buf[HDR_BUFSIZE], *fname;
+	struct ecoff_exechdr *ecoffp;
 #ifdef ALPHA_BOOT_ELF
-	Elf64_Ehdr *elfp;
+	Elf_Ehdr *elfp;
 #endif
 	int fd;
 	unsigned long loadaddr;
@@ -60,17 +61,21 @@ main(argc, argv)
 	fname = argv[2];
 
 	if ((fd = open(fname, O_RDONLY, 0)) == -1)
-		err(1, "%s: open failed", fname);
+		err(1, "%s: open failed", 0);
 
-	if (read(fd, &buf, HDR_BUFSIZE) != HDR_BUFSIZE)
+	if (read(fd, &buf, HDR_BUFSIZE) < HDR_BUFSIZE)
 		err(1, "%s: read failed", fname);
+	ecoffp = (struct ecoff_exechdr *)buf;
 #ifdef ALPHA_BOOT_ELF
-	elfp = (Elf64_Ehdr *)buf;
+	elfp = (Elf_Ehdr *)buf;
 #endif
 
+	if (!ECOFF_BADMAG(ecoffp)) {
+		printf("%d\n", ECOFF_TXTOFF(ecoffp));
+	}
 #ifdef ALPHA_BOOT_ELF
-	if (memcmp(ELFMAG, elfp->e_ident, SELFMAG) == 0) {
-		Elf64_Phdr phdr;
+	else if (memcmp(Elf_e_ident, elfp->e_ident, Elf_e_siz) == 0) {
+		Elf_Phdr phdr;
 
 		/* XXX assume the first segment is the one we want */
 		if (lseek(fd, elfp->e_phoff, SEEK_SET) == -1)
@@ -78,12 +83,11 @@ main(argc, argv)
 		if (read(fd, (void *)&phdr, sizeof(phdr)) != sizeof(phdr))
 			err(1, "%s: read phdr failed", fname);
 
-		printf("%ld\n", phdr.p_offset + (loadaddr - phdr.p_vaddr));
+		printf("%d\n", phdr.p_offset + (loadaddr - phdr.p_vaddr));
 	}
-	else
 #endif
+	else
 		errx(1, "%s: bad magic number", fname);
 
 	close(fd);
-	exit(0);
 }

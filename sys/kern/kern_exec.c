@@ -1,4 +1,4 @@
-/*	$OpenBSD: kern_exec.c,v 1.182 2016/06/11 21:00:11 kettenis Exp $	*/
+/*	$OpenBSD: kern_exec.c,v 1.33 1999/08/09 12:19:07 millert Exp $	*/
 /*	$NetBSD: kern_exec.c,v 1.75 1996/02/09 18:59:28 christos Exp $	*/
 
 /*-
@@ -40,7 +40,6 @@
 #include <sys/proc.h>
 #include <sys/mount.h>
 #include <sys/malloc.h>
-#include <sys/pool.h>
 #include <sys/namei.h>
 #include <sys/vnode.h>
 #include <sys/file.h>
@@ -52,35 +51,21 @@
 #include <sys/mman.h>
 #include <sys/signalvar.h>
 #include <sys/stat.h>
-#include <sys/conf.h>
-#include <sys/pledge.h>
 #ifdef SYSVSHM
 #include <sys/shm.h>
 #endif
 
 #include <sys/syscallargs.h>
 
-#include <uvm/uvm_extern.h>
+#include <vm/vm.h>
+#include <vm/vm_kern.h>
 
-#ifdef __HAVE_MD_TCB
-# include <machine/tcb.h>
+#if defined(UVM)
+#include <uvm/uvm_extern.h>
 #endif
 
-const struct kmem_va_mode kv_exec = {
-	.kv_wait = 1,
-	.kv_map = &exec_map
-};
-
-/*
- * Map the shared signal code.
- */
-int exec_sigcode_map(struct process *, struct emul *);
-
-/*
- * If non-zero, stackgap_random specifies the upper limit of the random gap size
- * added to the fixed stack position. Must be n^2.
- */
-int stackgap_random = STACKGAP_RANDOM;
+#include <machine/cpu.h>
+#include <machine/reg.h>
 
 /*
  * check exec:
@@ -102,12 +87,14 @@ int stackgap_random = STACKGAP_RANDOM;
  * EXEC SWITCH EXIT:
  *	ok:	return 0, filled exec package, one locked vnode.
  *	error:	destructive:
- *			everything deallocated except exec header.
- *		non-destructive:
+ *			everything deallocated execept exec header.
+ *		non-descructive:
  *			error code, locked vnode, exec header unmodified
  */
 int
-check_exec(struct proc *p, struct exec_package *epp)
+check_exec(p, epp)
+	struct proc *p;
+	struct exec_package *epp;
 {
 	int error, i;
 	struct vnode *vp;
@@ -141,8 +128,8 @@ check_exec(struct proc *p, struct exec_package *epp)
 		error = EACCES;
 		goto bad1;
 	}
-
-	if ((vp->v_mount->mnt_flag & MNT_NOSUID))
+	if ((vp->v_mount->mnt_flag & MNT_NOSUID) ||
+	    (p->p_flag & P_TRACED) || p->p_fd->fd_refcnt > 1)
 		epp->ep_vap->va_mode &= ~(VSUID | VSGID);
 
 	/* check access.  for root we have to see if any exec bit on */
@@ -157,12 +144,9 @@ check_exec(struct proc *p, struct exec_package *epp)
 	if ((error = VOP_OPEN(vp, FREAD, p->p_ucred, p)) != 0)
 		goto bad1;
 
-	/* unlock vp, we need it unlocked from here */
-	VOP_UNLOCK(vp, p);
-
 	/* now we have the file, get the exec header */
 	error = vn_rdwr(UIO_READ, vp, epp->ep_hdr, epp->ep_hdrlen, 0,
-	    UIO_SYSSPACE, 0, p->p_ucred, &resid, p);
+	    UIO_SYSSPACE, IO_NODELOCKED, p->p_ucred, &resid, p);
 	if (error)
 		goto bad2;
 	epp->ep_hdrvalid = epp->ep_hdrlen - resid;
@@ -177,9 +161,8 @@ check_exec(struct proc *p, struct exec_package *epp)
 
 		if (execsw[i].es_check == NULL)
 			continue;
+
 		newerror = (*execsw[i].es_check)(p, epp);
-		if (!newerror && !(epp->ep_emul->e_flags & EMUL_ENABLED))
-			newerror = EPERM;
 		/* make sure the first "interesting" error code is saved. */
 		if (!newerror || error == ENOEXEC)
 			error = newerror;
@@ -209,10 +192,12 @@ check_exec(struct proc *p, struct exec_package *epp)
 
 bad2:
 	/*
-	 * close the vnode, free the pathname buf, and punt.
+	 * unlock and close the vnode, free the
+	 * pathname buf, and punt.
 	 */
+	VOP_UNLOCK(vp, 0, p);
 	vn_close(vp, FREAD, p->p_ucred, p);
-	pool_put(&namei_pool, ndp->ni_cnd.cn_pnbuf);
+	FREE(ndp->ni_cnd.cn_pnbuf, M_NAMEI);
 	return (error);
 
 bad1:
@@ -220,7 +205,7 @@ bad1:
 	 * free the namei pathname buffer, and put the vnode
 	 * (which we don't yet have open).
 	 */
-	pool_put(&namei_pool, ndp->ni_cnd.cn_pnbuf);
+	FREE(ndp->ni_cnd.cn_pnbuf, M_NAMEI);
 	vput(vp);
 	return (error);
 }
@@ -228,61 +213,60 @@ bad1:
 /*
  * exec system call
  */
+/* ARGSUSED */
 int
-sys_execve(struct proc *p, void *v, register_t *retval)
+sys_execve(p, v, retval)
+	register struct proc *p;
+	void *v;
+	register_t *retval;
 {
-	struct sys_execve_args /* {
-		syscallarg(const char *) path;
-		syscallarg(char *const *) argp;
-		syscallarg(char *const *) envp;
+	register struct sys_execve_args /* {
+		syscallarg(char *) path;
+		syscallarg(char * *) argp;
+		syscallarg(char * *) envp;
 	} */ *uap = v;
-	int error;
+	int error, i;
 	struct exec_package pack;
 	struct nameidata nid;
 	struct vattr attr;
 	struct ucred *cred = p->p_ucred;
 	char *argp;
 	char * const *cpp, *dp, *sp;
-#ifdef KTRACE
-	char *env_start;
-#endif
-	struct process *pr = p->p_p;
 	long argc, envc;
-	size_t len, sgap;
-#ifdef MACHINE_STACK_GROWS_UP
-	size_t slen;
-#endif
+	size_t len;
 	char *stack;
 	struct ps_strings arginfo;
-	struct vmspace *vm = pr->ps_vmspace;
+	struct vmspace *vm = p->p_vmspace;
 	char **tmpfap;
+	int szsigcode;
 	extern struct emul emul_native;
-	struct vnode *otvp;
-
-	/* get other threads to stop */
-	if ((error = single_thread_set(p, SINGLE_UNWIND, 1)))
-		return (error);
 
 	/*
-	 * Cheap solution to complicated problems.
-	 * Mark this process as "leave me alone, I'm execing".
+	 * figure out the maximum size of an exec header, if necessary.
+	 * XXX should be able to keep LKM code from modifying exec switch
+	 * when we're still using it, but...
 	 */
-	atomic_setbits_int(&pr->ps_flags, PS_INEXEC);
+	if (exec_maxhdrsz == 0) {
+		for (i = 0; i < nexecs; i++)
+			if (execsw[i].es_check != NULL
+			    && execsw[i].es_hdrsz > exec_maxhdrsz)
+				exec_maxhdrsz = execsw[i].es_hdrsz;
+	}
 
+	/* init the namei data to point the file user's program name */
 	NDINIT(&nid, LOOKUP, NOFOLLOW, UIO_USERSPACE, SCARG(uap, path), p);
-	nid.ni_pledge = PLEDGE_EXEC;
 
 	/*
 	 * initialize the fields of the exec package.
 	 */
 	pack.ep_name = (char *)SCARG(uap, path);
-	pack.ep_hdr = malloc(exec_maxhdrsz, M_EXEC, M_WAITOK);
+	MALLOC(pack.ep_hdr, void *, exec_maxhdrsz, M_EXEC, M_WAITOK);
 	pack.ep_hdrlen = exec_maxhdrsz;
 	pack.ep_hdrvalid = 0;
 	pack.ep_ndp = &nid;
-	pack.ep_interp = NULL;
 	pack.ep_emul_arg = NULL;
-	VMCMDSET_INIT(&pack.ep_vmcmds);
+	pack.ep_vmcmds.evs_cnt = 0;
+	pack.ep_vmcmds.evs_used = 0;
 	pack.ep_vap = &attr;
 	pack.ep_emul = &emul_native;
 	pack.ep_flags = 0;
@@ -295,9 +279,13 @@ sys_execve(struct proc *p, void *v, register_t *retval)
 	/* XXX -- THE FOLLOWING SECTION NEEDS MAJOR CLEANUP */
 
 	/* allocate an argument buffer */
-	argp = km_alloc(NCARGS, &kv_exec, &kp_pageable, &kd_waitok);
+#if defined(UVM)
+	argp = (char *) uvm_km_valloc_wait(exec_map, NCARGS);
+#else
+	argp = (char *)kmem_alloc_wait(exec_map, NCARGS);
+#endif
 #ifdef DIAGNOSTIC
-	if (argp == NULL)
+	if (argp == (vaddr_t) 0)
 		panic("execve: argp == NULL");
 #endif
 	dp = argp;
@@ -312,18 +300,18 @@ sys_execve(struct proc *p, void *v, register_t *retval)
 			cp = *tmpfap;
 			while (*cp)
 				*dp++ = *cp++;
-			*dp++ = '\0';
+			dp++;
 
-			free(*tmpfap, M_EXEC, 0);
+			FREE(*tmpfap, M_EXEC);
 			tmpfap++; argc++;
 		}
-		free(pack.ep_fa, M_EXEC, 0);
+		FREE(pack.ep_fa, M_EXEC);
 		pack.ep_flags &= ~EXEC_HASARGL;
 	}
 
 	/* Now get argv & environment */
 	if (!(cpp = SCARG(uap, argp))) {
-		error = EFAULT;
+		error = EINVAL;
 		goto bad;
 	}
 
@@ -346,23 +334,9 @@ sys_execve(struct proc *p, void *v, register_t *retval)
 		argc++;
 	}
 
-	/* must have at least one argument */
-	if (argc == 0) {
-		error = EINVAL;
-		goto bad;
-	}
-
-#ifdef KTRACE
-	if (KTRPOINT(p, KTR_EXECARGS))
-		ktrexec(p, KTR_EXECARGS, argp, dp - argp);
-#endif
-
 	envc = 0;
-	/* environment does not need to be there */
+	/* environment need not be there */
 	if ((cpp = SCARG(uap, envp)) != NULL ) {
-#ifdef KTRACE
-		env_start = dp;
-#endif
 		while (1) {
 			len = argp + ARG_MAX - dp;
 			if ((error = copyin(cpp, &sp, sizeof(sp))) != 0)
@@ -378,32 +352,18 @@ sys_execve(struct proc *p, void *v, register_t *retval)
 			cpp++;
 			envc++;
 		}
-
-#ifdef KTRACE
-		if (KTRPOINT(p, KTR_EXECENV))
-			ktrexec(p, KTR_EXECENV, env_start, dp - env_start);
-#endif
 	}
 
-	dp = (char *)(((long)dp + _STACKALIGNBYTES) & ~_STACKALIGNBYTES);
+	dp = (char *)ALIGN(dp);
 
-	sgap = STACKGAPLEN;
-
-	/*
-	 * If we have enabled random stackgap, the stack itself has already
-	 * been moved from a random location, but is still aligned to a page
-	 * boundary.  Provide the lower bits of random placement now.
-	 */
-	if (stackgap_random != 0) {
-		sgap += arc4random() & PAGE_MASK;
-		sgap = (sgap + _STACKALIGNBYTES) & ~_STACKALIGNBYTES;
-	}
+	szsigcode = pack.ep_emul->e_esigcode - pack.ep_emul->e_sigcode;
 
 	/* Now check if args & environ fit into new stack */
 	len = ((argc + envc + 2 + pack.ep_emul->e_arglen) * sizeof(char *) +
-	    sizeof(long) + dp + sgap + sizeof(struct ps_strings)) - argp;
+	    sizeof(long) + dp + STACKGAPLEN + szsigcode +
+	    sizeof(struct ps_strings)) - argp;
 
-	len = (len + _STACKALIGNBYTES) &~ _STACKALIGNBYTES;
+	len = ALIGN(len);	/* make the stack "safely" aligned */
 
 	if (len > pack.ep_ssize) { /* in effect, compare to initial limit */
 		error = ENOMEM;
@@ -414,306 +374,207 @@ sys_execve(struct proc *p, void *v, register_t *retval)
 	pack.ep_ssize = len;	/* maybe should go elsewhere, but... */
 
 	/*
-	 * we're committed: any further errors will kill the process, so
-	 * kill the other threads now.
-	 */
-	single_thread_set(p, SINGLE_EXIT, 0);
-
-	/*
 	 * Prepare vmspace for remapping. Note that uvmspace_exec can replace
-	 * pr_vmspace!
+	 * p_vmspace!
 	 */
-	uvmspace_exec(p, VM_MIN_ADDRESS, VM_MAXUSER_ADDRESS);
+#if defined(UVM)
+	uvmspace_exec(p);
+#else
+	/* Unmap old program */
+#ifdef __sparc__
+	kill_user_windows(p);		/* before stack addresses go away */
+#endif
+	/* Kill shared memory and unmap old program */
+#ifdef SYSVSHM
+	if (vm->vm_shm && vm->vm_refcnt == 1)
+		shmexit(vm);
+#endif
+	vm_deallocate(&vm->vm_map, VM_MIN_ADDRESS,
+	    VM_MAXUSER_ADDRESS - VM_MIN_ADDRESS);
+#endif
 
-	vm = pr->ps_vmspace;
+	vm = p->p_vmspace;
 	/* Now map address space */
-	vm->vm_taddr = (char *)trunc_page(pack.ep_taddr);
-	vm->vm_tsize = atop(round_page(pack.ep_taddr + pack.ep_tsize) -
-	    trunc_page(pack.ep_taddr));
-	vm->vm_daddr = (char *)trunc_page(pack.ep_daddr);
-	vm->vm_dsize = atop(round_page(pack.ep_daddr + pack.ep_dsize) -
-	    trunc_page(pack.ep_daddr));
-	vm->vm_dused = 0;
-	vm->vm_ssize = atop(round_page(pack.ep_ssize));
+	vm->vm_taddr = (char *)pack.ep_taddr;
+	vm->vm_tsize = btoc(pack.ep_tsize);
+	vm->vm_daddr = (char *)pack.ep_daddr;
+	vm->vm_dsize = btoc(pack.ep_dsize);
+	vm->vm_ssize = btoc(pack.ep_ssize);
 	vm->vm_maxsaddr = (char *)pack.ep_maxsaddr;
-	vm->vm_minsaddr = (char *)pack.ep_minsaddr;
 
 	/* create the new process's VM space by running the vmcmds */
 #ifdef DIAGNOSTIC
 	if (pack.ep_vmcmds.evs_used == 0)
 		panic("execve: no vmcmds");
 #endif
-	error = exec_process_vmcmds(p, &pack);
+	for (i = 0; i < pack.ep_vmcmds.evs_used && !error; i++) {
+		struct exec_vmcmd *vcp;
+
+		vcp = &pack.ep_vmcmds.evs_cmds[i];
+		error = (*vcp->ev_proc)(p, vcp);
+	}
+
+	/* free the vmspace-creation commands, and release their references */
+	kill_vmcmds(&pack.ep_vmcmds);
 
 	/* if an error happened, deallocate and punt */
 	if (error)
 		goto exec_abort;
 
-	/* old "stackgap" is gone now */
-	pr->ps_stackgap = 0;
-
-#ifdef MACHINE_STACK_GROWS_UP
-	pr->ps_strings = (vaddr_t)vm->vm_maxsaddr + sgap;
-        if (uvm_map_protect(&vm->vm_map, (vaddr_t)vm->vm_maxsaddr,
-            trunc_page(pr->ps_strings), PROT_NONE, TRUE))
-                goto exec_abort;
-#else
-	pr->ps_strings = (vaddr_t)vm->vm_minsaddr - sizeof(arginfo) - sgap;
-        if (uvm_map_protect(&vm->vm_map,
-            round_page(pr->ps_strings + sizeof(arginfo)),
-            (vaddr_t)vm->vm_minsaddr, PROT_NONE, TRUE))
-                goto exec_abort;
-#endif
-
 	/* remember information about the process */
 	arginfo.ps_nargvstr = argc;
 	arginfo.ps_nenvstr = envc;
 
-#ifdef MACHINE_STACK_GROWS_UP
-	stack = (char *)vm->vm_maxsaddr + sizeof(arginfo) + sgap;
-	slen = len - sizeof(arginfo) - sgap;
-#else
-	stack = (char *)(vm->vm_minsaddr - len);
-#endif
+	stack = (char *)(USRSTACK - len);
 	/* Now copy argc, args & environ to new stack */
 	if (!(*pack.ep_emul->e_copyargs)(&pack, &arginfo, stack, argp))
 		goto exec_abort;
 
 	/* copy out the process's ps_strings structure */
-	if (copyout(&arginfo, (char *)pr->ps_strings, sizeof(arginfo)))
+	if (copyout(&arginfo, (char *)PS_STRINGS, sizeof(arginfo)))
 		goto exec_abort;
 
-	stopprofclock(pr);	/* stop profiling */
+	/* copy out the process's signal trapoline code */
+	if (szsigcode && copyout((char *)pack.ep_emul->e_sigcode,
+	    ((char *)PS_STRINGS) - szsigcode, szsigcode))
+		goto exec_abort;
+
+	stopprofclock(p);	/* stop profiling */
 	fdcloseexec(p);		/* handle close on exec */
-	execsigs(p);		/* reset caught signals */
-	TCB_SET(p, NULL);	/* reset the TCB address */
-	pr->ps_kbind_addr = 0;	/* reset the kbind bits */
-	pr->ps_kbind_cookie = 0;
-	arc4random_buf(&pr->ps_sigcookie, sizeof pr->ps_sigcookie);
+	execsigs(p);		/* reset catched signals */
 
 	/* set command name & other accounting info */
-	memset(p->p_comm, 0, sizeof(p->p_comm));
 	len = min(nid.ni_cnd.cn_namelen, MAXCOMLEN);
-	memcpy(p->p_comm, nid.ni_cnd.cn_nameptr, len);
-	pr->ps_acflag &= ~AFORK;
+	bcopy(nid.ni_cnd.cn_nameptr, p->p_comm, len);
+	p->p_comm[len] = 0;
+	p->p_acflag &= ~AFORK;
 
-	/* record proc's vnode, for use by sysctl */
-	otvp = pr->ps_textvp;
-	vref(pack.ep_vp);
-	pr->ps_textvp = pack.ep_vp;
-	if (otvp)
-		vrele(otvp);
+	/* record proc's vnode, for use by procfs and others */
+        if (p->p_textvp)
+                vrele(p->p_textvp);
+	VREF(pack.ep_vp);
+	p->p_textvp = pack.ep_vp;
 
-	atomic_setbits_int(&pr->ps_flags, PS_EXEC);
-	if (pr->ps_flags & PS_PPWAIT) {
-		atomic_clearbits_int(&pr->ps_flags, PS_PPWAIT);
-		atomic_clearbits_int(&pr->ps_pptr->ps_flags, PS_ISPWAIT);
-		wakeup(pr->ps_pptr);
+	p->p_flag |= P_EXEC;
+	if (p->p_flag & P_PPWAIT) {
+		p->p_flag &= ~P_PPWAIT;
+		wakeup((caddr_t)p->p_pptr);
 	}
 
 	/*
-	 * If process does execve() while it has a mismatched real,
-	 * effective, or saved uid/gid, we set PS_SUGIDEXEC.
+	 * If process does execve() while it has euid/uid or egid/gid
+	 * which are mismatched, it remains P_SUGIDEXEC.
 	 */
-	if (cred->cr_uid != cred->cr_ruid ||
-	    cred->cr_uid != cred->cr_svuid ||
-	    cred->cr_gid != cred->cr_rgid ||
-	    cred->cr_gid != cred->cr_svgid)
-		atomic_setbits_int(&pr->ps_flags, PS_SUGIDEXEC);
-	else
-		atomic_clearbits_int(&pr->ps_flags, PS_SUGIDEXEC);
-
-	atomic_clearbits_int(&pr->ps_flags, PS_PLEDGE);
-	pledge_dropwpaths(pr);
+	if (p->p_ucred->cr_uid == p->p_cred->p_ruid &&
+	    p->p_ucred->cr_gid == p->p_cred->p_rgid)
+		p->p_flag &= ~P_SUGIDEXEC;
 
 	/*
 	 * deal with set[ug]id.
-	 * MNT_NOEXEC has already been used to disable s[ug]id.
+	 * MNT_NOEXEC and P_TRACED have already been used to disable s[ug]id.
 	 */
-	if ((attr.va_mode & (VSUID | VSGID)) && proc_cansugid(p)) {
+	if ((attr.va_mode & (VSUID | VSGID))) {
 		int i;
-
-		atomic_setbits_int(&pr->ps_flags, PS_SUGID|PS_SUGIDEXEC);
 
 #ifdef KTRACE
 		/*
 		 * If process is being ktraced, turn off - unless
 		 * root set it.
 		 */
-		if (pr->ps_tracevp && !(pr->ps_traceflag & KTRFAC_ROOT))
-			ktrcleartrace(pr);
+		if (p->p_tracep && !(p->p_traceflag & KTRFAC_ROOT)) {
+			p->p_traceflag = 0;
+			vrele(p->p_tracep);
+			p->p_tracep = NULL;
+		}
 #endif
-		p->p_ucred = cred = crcopy(cred);
+		p->p_ucred = crcopy(cred);
 		if (attr.va_mode & VSUID)
-			cred->cr_uid = attr.va_uid;
+			p->p_ucred->cr_uid = attr.va_uid;
 		if (attr.va_mode & VSGID)
-			cred->cr_gid = attr.va_gid;
+			p->p_ucred->cr_gid = attr.va_gid;
+		p->p_flag |= P_SUGID;
+		p->p_flag |= P_SUGIDEXEC;
 
 		/*
-		 * For set[ug]id processes, a few caveats apply to
-		 * stdin, stdout, and stderr.
+		 * XXX For setuid processes, attempt to ensure that
+		 * stdin, stdout, and stderr are already allocated.
+		 * We do not want userland to accidentally allocate
+		 * descriptors in this range which has implied meaning
+		 * to libc.
 		 */
-		error = 0;
-		fdplock(p->p_fd);
 		for (i = 0; i < 3; i++) {
-			struct file *fp = NULL;
+			extern struct fileops vnops;
+			struct nameidata nd;
+			struct file *fp;
+			int indx;
+			short flags;
 
-			/*
-			 * NOTE - This will never return NULL because of
-			 * immature fds. The file descriptor table is not
-			 * shared because we're suid.
-			 */
-			fp = fd_getfile(p->p_fd, i);
+			flags = FREAD | (i == 0 ? 0 : FWRITE);
 
-			/*
-			 * Ensure that stdin, stdout, and stderr are already
-			 * allocated.  We do not want userland to accidentally
-			 * allocate descriptors in this range which has implied
-			 * meaning to libc.
-			 */
-			if (fp == NULL) {
-				short flags = FREAD | (i == 0 ? 0 : FWRITE);
-				struct vnode *vp;
-				int indx;
-
+			if (p->p_fd->fd_ofiles[i] == NULL) {
 				if ((error = falloc(p, &fp, &indx)) != 0)
-					break;
-#ifdef DIAGNOSTIC
-				if (indx != i)
-					panic("sys_execve: falloc indx != i");
-#endif
-				if ((error = cdevvp(getnulldev(), &vp)) != 0) {
+					continue;
+				NDINIT(&nd, LOOKUP, FOLLOW, UIO_SYSSPACE,
+				    "/dev/null", p);
+				if ((error = vn_open(&nd, flags, 0)) != 0) {
+					ffree(fp);
 					fdremove(p->p_fd, indx);
-					closef(fp, p);
 					break;
 				}
-				if ((error = VOP_OPEN(vp, flags, cred, p)) != 0) {
-					fdremove(p->p_fd, indx);
-					closef(fp, p);
-					vrele(vp);
-					break;
-				}
-				if (flags & FWRITE)
-					vp->v_writecount++;
 				fp->f_flag = flags;
 				fp->f_type = DTYPE_VNODE;
 				fp->f_ops = &vnops;
-				fp->f_data = (caddr_t)vp;
-				FILE_SET_MATURE(fp, p);
+				fp->f_data = (caddr_t)nd.ni_vp;
+				VOP_UNLOCK(nd.ni_vp, 0, p);
 			}
 		}
-		fdpunlock(p->p_fd);
-		if (error)
-			goto exec_abort;
+
 	} else
-		atomic_clearbits_int(&pr->ps_flags, PS_SUGID);
+		p->p_flag &= ~P_SUGID;
+	p->p_cred->p_svuid = p->p_ucred->cr_uid;
+	p->p_cred->p_svgid = p->p_ucred->cr_gid;
 
-	/*
-	 * Reset the saved ugids and update the process's copy of the
-	 * creds if the creds have been changed
-	 */
-	if (cred->cr_uid != cred->cr_svuid ||
-	    cred->cr_gid != cred->cr_svgid) {
-		/* make sure we have unshared ucreds */
-		p->p_ucred = cred = crcopy(cred);
-		cred->cr_svuid = cred->cr_uid;
-		cred->cr_svgid = cred->cr_gid;
-	}
-
-	if (pr->ps_ucred != cred) {
-		struct ucred *ocred;
-
-		ocred = pr->ps_ucred;
-		crhold(cred);
-		pr->ps_ucred = cred;
-		crfree(ocred);
-	}
-
-	if (pr->ps_flags & PS_SUGIDEXEC) {
+	if (p->p_flag & P_SUGIDEXEC) {
 		int i, s = splclock();
 
-		timeout_del(&pr->ps_realit_to);
-		for (i = 0; i < nitems(pr->ps_timer); i++) {
-			timerclear(&pr->ps_timer[i].it_interval);
-			timerclear(&pr->ps_timer[i].it_value);
+		untimeout(realitexpire, (void *)p);
+		timerclear(&p->p_realtimer.it_interval);
+		timerclear(&p->p_realtimer.it_value);
+		for (i = 0; i < sizeof(p->p_stats->p_timer) /
+		    sizeof(p->p_stats->p_timer[0]); i++) {
+			timerclear(&p->p_stats->p_timer[i].it_interval);
+			timerclear(&p->p_stats->p_timer[i].it_value);
 		}
 		splx(s);
 	}
 
-	/* reset CPU time usage for the thread, but not the process */
-	timespecclear(&p->p_tu.tu_runtime);
-	p->p_tu.tu_uticks = p->p_tu.tu_sticks = p->p_tu.tu_iticks = 0;
+#if defined(UVM)
+	uvm_km_free_wakeup(exec_map, (vaddr_t) argp, NCARGS);
+#else
+	kmem_free_wakeup(exec_map, (vaddr_t)argp, NCARGS);
+#endif
 
-	km_free(argp, NCARGS, &kv_exec, &kp_pageable);
-
-	pool_put(&namei_pool, nid.ni_cnd.cn_pnbuf);
-	vn_close(pack.ep_vp, FREAD, cred, p);
-
-	/*
-	 * notify others that we exec'd
-	 */
-	KNOTE(&pr->ps_klist, NOTE_EXEC);
+	FREE(nid.ni_cnd.cn_pnbuf, M_NAMEI);
+	VOP_CLOSE(pack.ep_vp, FREAD, cred, p);
+	vput(pack.ep_vp);
 
 	/* setup new registers and do misc. setup. */
-	if (pack.ep_emul->e_fixup != NULL) {
-		if ((*pack.ep_emul->e_fixup)(p, &pack) != 0)
+	if(pack.ep_emul->e_fixup != NULL) {
+		if((*pack.ep_emul->e_fixup)(p, &pack) != 0)
 			goto free_pack_abort;
 	}
-#ifdef MACHINE_STACK_GROWS_UP
-	(*pack.ep_emul->e_setregs)(p, &pack, (u_long)stack + slen, retval);
-#else
 	(*pack.ep_emul->e_setregs)(p, &pack, (u_long)stack, retval);
-#endif
 
-	/* map the process's signal trampoline code */
-	if (exec_sigcode_map(pr, pack.ep_emul))
-		goto free_pack_abort;
-
-#ifdef __HAVE_EXEC_MD_MAP
-	/* perform md specific mappings that process might need */
-	if (exec_md_map(p, &pack))
-		goto free_pack_abort;
-#endif
-
-	if (pr->ps_flags & PS_TRACED)
+	if (p->p_flag & P_TRACED)
 		psignal(p, SIGTRAP);
 
-	free(pack.ep_hdr, M_EXEC, pack.ep_hdrlen);
+	p->p_emul = pack.ep_emul;
+	FREE(pack.ep_hdr, M_EXEC);
 
-	/*
-	 * Call emulation specific exec hook. This can setup per-process
-	 * p->p_emuldata or do any other per-process stuff an emulation needs.
-	 *
-	 * If we are executing process of different emulation than the
-	 * original forked process, call e_proc_exit() of the old emulation
-	 * first, then e_proc_exec() of new emulation. If the emulation is
-	 * same, the exec hook code should deallocate any old emulation
-	 * resources held previously by this process.
-	 */
-	if (pr->ps_emul && pr->ps_emul->e_proc_exit &&
-	    pr->ps_emul != pack.ep_emul)
-		(*pr->ps_emul->e_proc_exit)(p);
-
-	p->p_descfd = 255;
-	if ((pack.ep_flags & EXEC_HASFD) && pack.ep_fd < 255)
-		p->p_descfd = pack.ep_fd;
-
-	if (pack.ep_flags & EXEC_WXNEEDED)
-		p->p_p->ps_flags |= PS_WXNEEDED;
-
-	/*
-	 * Call exec hook. Emulation code may NOT store reference to anything
-	 * from &pack.
-	 */
-	if (pack.ep_emul->e_proc_exec)
-		(*pack.ep_emul->e_proc_exec)(p, &pack);
-
-	/* update ps_emul, the old value is no longer needed */
-	pr->ps_emul = pack.ep_emul;
-
-	atomic_clearbits_int(&pr->ps_flags, PS_INEXEC);
-	single_thread_clear(p, P_SUSPSIG);
-
+#ifdef KTRACE
+	if (KTRPOINT(p, KTR_EMUL))
+		ktremul(p->p_tracep, p->p_emul->e_name);
+#endif
 	return (0);
 
 bad:
@@ -722,24 +583,20 @@ bad:
 	/* kill any opened file descriptor, if necessary */
 	if (pack.ep_flags & EXEC_HASFD) {
 		pack.ep_flags &= ~EXEC_HASFD;
-		fdplock(p->p_fd);
 		(void) fdrelease(p, pack.ep_fd);
-		fdpunlock(p->p_fd);
 	}
-	if (pack.ep_interp != NULL)
-		pool_put(&namei_pool, pack.ep_interp);
-	if (pack.ep_emul_arg != NULL)
-		free(pack.ep_emul_arg, M_TEMP, pack.ep_emul_argsize);
 	/* close and put the exec'd file */
-	vn_close(pack.ep_vp, FREAD, cred, p);
-	pool_put(&namei_pool, nid.ni_cnd.cn_pnbuf);
-	km_free(argp, NCARGS, &kv_exec, &kp_pageable);
+	VOP_CLOSE(pack.ep_vp, FREAD, cred, p);
+	vput(pack.ep_vp);
+	FREE(nid.ni_cnd.cn_pnbuf, M_NAMEI);
+#if defined(UVM)
+	uvm_km_free_wakeup(exec_map, (vaddr_t) argp, NCARGS);
+#else
+	kmem_free_wakeup(exec_map, (vaddr_t) argp, NCARGS);
+#endif
 
 freehdr:
-	free(pack.ep_hdr, M_EXEC, pack.ep_hdrlen);
-	atomic_clearbits_int(&pr->ps_flags, PS_INEXEC);
-	single_thread_clear(p, P_SUSPSIG);
-
+	FREE(pack.ep_hdr, M_EXEC);
 	return (error);
 
 exec_abort:
@@ -748,36 +605,46 @@ exec_abort:
 	 * get rid of the (new) address space we have created, if any, get rid
 	 * of our namei data and vnode, and exit noting failure
 	 */
+#if defined(UVM)
 	uvm_deallocate(&vm->vm_map, VM_MIN_ADDRESS,
 		VM_MAXUSER_ADDRESS - VM_MIN_ADDRESS);
-	if (pack.ep_interp != NULL)
-		pool_put(&namei_pool, pack.ep_interp);
-	if (pack.ep_emul_arg != NULL)
-		free(pack.ep_emul_arg, M_TEMP, pack.ep_emul_argsize);
-	pool_put(&namei_pool, nid.ni_cnd.cn_pnbuf);
-	vn_close(pack.ep_vp, FREAD, cred, p);
-	km_free(argp, NCARGS, &kv_exec, &kp_pageable);
+#else
+	vm_deallocate(&vm->vm_map, VM_MIN_ADDRESS,
+		VM_MAXUSER_ADDRESS - VM_MIN_ADDRESS);
+#endif
+	if (pack.ep_emul_arg)
+		FREE(pack.ep_emul_arg, M_TEMP);
+	FREE(nid.ni_cnd.cn_pnbuf, M_NAMEI);
+	VOP_CLOSE(pack.ep_vp, FREAD, cred, p);
+	vput(pack.ep_vp);
+#if defined(UVM)
+	uvm_km_free_wakeup(exec_map, (vaddr_t) argp, NCARGS);
+#else
+	kmem_free_wakeup(exec_map, (vaddr_t) argp, NCARGS);
+#endif
 
 free_pack_abort:
-	free(pack.ep_hdr, M_EXEC, pack.ep_hdrlen);
-	exit1(p, W_EXITCODE(0, SIGABRT), EXIT_NORMAL);
+	FREE(pack.ep_hdr, M_EXEC);
+	exit1(p, W_EXITCODE(0, SIGABRT));
+	exit1(p, -1);
 
 	/* NOTREACHED */
-	atomic_clearbits_int(&pr->ps_flags, PS_INEXEC);
-
 	return (0);
 }
 
 
 void *
-copyargs(struct exec_package *pack, struct ps_strings *arginfo, void *stack,
-    void *argp)
+copyargs(pack, arginfo, stack, argp)
+	struct exec_package *pack;
+	struct ps_strings *arginfo;
+	void *stack;
+	void *argp;
 {
 	char **cpp = stack;
 	char *dp, *sp;
 	size_t len;
 	void *nullp = NULL;
-	long argc = arginfo->ps_nargvstr;
+	int argc = arginfo->ps_nargvstr;
 	int envc = arginfo->ps_nenvstr;
 
 	if (copyout(&argc, cpp++, sizeof(argc)))
@@ -808,62 +675,4 @@ copyargs(struct exec_package *pack, struct ps_strings *arginfo, void *stack,
 		return (NULL);
 
 	return (cpp);
-}
-
-int
-exec_sigcode_map(struct process *pr, struct emul *e)
-{
-	vsize_t sz;
-
-	sz = (vaddr_t)e->e_esigcode - (vaddr_t)e->e_sigcode;
-
-	/*
-	 * If we don't have a sigobject for this emulation, create one.
-	 *
-	 * sigobject is an anonymous memory object (just like SYSV shared
-	 * memory) that we keep a permanent reference to and that we map
-	 * in all processes that need this sigcode. The creation is simple,
-	 * we create an object, add a permanent reference to it, map it in
-	 * kernel space, copy out the sigcode to it and unmap it.
-	 * Then we map it with PROT_READ|PROT_EXEC into the process just
-	 * the way sys_mmap would map it.
-	 */
-	if (e->e_sigobject == NULL) {
-		extern int sigfillsiz;
-		extern u_char sigfill[];
-		size_t off;
-		vaddr_t va;
-		int r;
-
-		e->e_sigobject = uao_create(sz, 0);
-		uao_reference(e->e_sigobject);	/* permanent reference */
-
-		if ((r = uvm_map(kernel_map, &va, round_page(sz), e->e_sigobject,
-		    0, 0, UVM_MAPFLAG(PROT_READ | PROT_WRITE, PROT_READ | PROT_WRITE,
-		    MAP_INHERIT_SHARE, MADV_RANDOM, 0)))) {
-			uao_detach(e->e_sigobject);
-			return (ENOMEM);
-		}
-
-		for (off = 0; off < round_page(sz); off += sigfillsiz)
-			memcpy((caddr_t)va + off, sigfill, sigfillsiz);
-		memcpy((caddr_t)va, e->e_sigcode, sz);
-		uvm_unmap(kernel_map, va, va + round_page(sz));
-	}
-
-	pr->ps_sigcode = 0; /* no hint */
-	uao_reference(e->e_sigobject);
-	if (uvm_map(&pr->ps_vmspace->vm_map, &pr->ps_sigcode, round_page(sz),
-	    e->e_sigobject, 0, 0, UVM_MAPFLAG(PROT_READ | PROT_EXEC,
-	    PROT_READ | PROT_WRITE | PROT_EXEC, MAP_INHERIT_COPY,
-	    MADV_RANDOM, UVM_FLAG_COPYONW))) {
-		uao_detach(e->e_sigobject);
-		return (ENOMEM);
-	}
-
-	/* Calculate PC at point of sigreturn entry */
-	pr->ps_sigcoderet = pr->ps_sigcode +
-	    (pr->ps_emul->e_esigret - pr->ps_emul->e_sigcode);
-
-	return (0);
 }

@@ -1,4 +1,3 @@
-/*	$OpenBSD: n_tan.c,v 1.14 2013/07/15 04:08:26 espie Exp $	*/
 /*	$NetBSD: n_tan.c,v 1.1 1995/10/10 23:37:07 ragge Exp $	*/
 /*
  * Copyright (c) 1987, 1993
@@ -12,7 +11,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,26 +32,23 @@
  * SUCH DAMAGE.
  */
 
-#include <math.h>
+#ifndef lint
+static char sccsid[] = "@(#)tan.c	8.1 (Berkeley) 6/4/93";
+#endif /* not lint */
 
 #include "mathimpl.h"
-
-float
-tanf(float x)
-{
-	return (float)tan((double) x);
-}
-
+#include "trig.h"
 double
-tan(double x)
+tan(x) 
+double x;
 {
 	double a,z,ss,cc,c;
 	int k;
 
 	if(!finite(x))		/* tan(NaN) and tan(INF) must be NaN */
 		return x-x;
-	x = remainder(x,PI);	/* reduce x into [-PI/2, PI/2] */
-	a = copysign(x,one);	/* ... = abs(x) */
+	x = drem(x,PI);			/* reduce x into [-PI/2, PI/2] */
+	a = copysign(x,one);		/* ... = abs(x) */
 	if (a >= PIo4) {
 		k = 1;
 		x = copysign(PIo2-a,x);
@@ -67,8 +67,10 @@ tan(double x)
 	c = (z >= thresh ? half-((z-half)-cc) : one-(z-cc));
 	if (k == 0)
 		return x+(x*(z-(cc-ss)))/c;	/* ... sin/cos */
+#ifdef national
+	else if (x == zero)
+		return copysign(fmax,x);	/* no inf on 32k */
+#endif	/* national */
 	else
 		return c/(x+x*ss);		/* ... cos/sin */
 }
-
-__strong_alias(tanl, tan);

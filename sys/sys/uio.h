@@ -1,4 +1,4 @@
-/*	$OpenBSD: uio.h,v 1.18 2015/01/18 20:35:44 guenther Exp $	*/
+/*	$OpenBSD: uio.h,v 1.7 1999/01/20 22:08:59 art Exp $	*/
 /*	$NetBSD: uio.h,v 1.12 1996/02/09 18:25:45 christos Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -35,25 +39,11 @@
 #ifndef _SYS_UIO_H_
 #define	_SYS_UIO_H_
 
-#include <sys/cdefs.h>
-#include <sys/_types.h>
-
-#ifndef	_SIZE_T_DEFINED_
-#define	_SIZE_T_DEFINED_
-typedef	__size_t	size_t;
-#endif
-
-#ifndef	_SSIZE_T_DEFINED_
-#define	_SSIZE_T_DEFINED_
-typedef	__ssize_t	ssize_t;
-#endif
-
 struct iovec {
 	void	*iov_base;	/* Base address. */
 	size_t	 iov_len;	/* Length. */
 };
 
-#if __BSD_VISIBLE	/* needed by kdump */
 enum	uio_rw { UIO_READ, UIO_WRITE };
 
 /* Segment flag values. */
@@ -61,7 +51,6 @@ enum uio_seg {
 	UIO_USERSPACE,		/* from user data space */
 	UIO_SYSSPACE		/* from system space */
 };
-#endif /* __BSD_VISIBLE */
 
 #ifdef _KERNEL
 struct uio {
@@ -71,7 +60,7 @@ struct uio {
 	size_t	uio_resid;	/* residual i/o count */
 	enum	uio_seg uio_segflg; /* see above */
 	enum	uio_rw uio_rw;	/* see above */
-	struct	proc *uio_procp;/* associated thread or NULL */
+	struct	proc *uio_procp;/* process if UIO_USERSPACE */
 };
 
 /*
@@ -80,28 +69,17 @@ struct uio {
 #define UIO_SMALLIOV	8		/* 8 on stack, else malloc */
 #endif /* _KERNEL */
 
-#if __BSD_VISIBLE
 #define UIO_MAXIOV	1024		/* Deprecated, use IOV_MAX instead */
-#endif
 
 #ifndef	_KERNEL
+#include <sys/cdefs.h>
+
 __BEGIN_DECLS
-#if __BSD_VISIBLE
-ssize_t preadv(int, const struct iovec *, int, __off_t);
-ssize_t pwritev(int, const struct iovec *, int, __off_t);
-#endif /* __BSD_VISIBLE */
-ssize_t	readv(int, const struct iovec *, int);
-ssize_t	writev(int, const struct iovec *, int);
+ssize_t	readv __P((int, const struct iovec *, int));
+ssize_t	writev __P((int, const struct iovec *, int));
 __END_DECLS
 #else
-int	ureadc(int c, struct uio *);
-
-struct file;
-int	dofilereadv(struct proc *, int, struct file *,
-	    const struct iovec *, int, int, off_t *, register_t *);
-int	dofilewritev(struct proc *, int, struct file *,
-	    const struct iovec *, int, int, off_t *, register_t *);
-
+int ureadc __P((int c, struct uio *));
 #endif /* !_KERNEL */
 
 #endif /* !_SYS_UIO_H_ */

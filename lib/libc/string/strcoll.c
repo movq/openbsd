@@ -1,4 +1,3 @@
-/*	$OpenBSD: strcoll.c,v 1.6 2015/08/31 02:53:57 guenther Exp $ */
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
  * All rights reserved.
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,15 +34,19 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: strcoll.c,v 1.2 1996/08/19 08:34:13 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <string.h>
 
 /*
  * Compare strings according to LC_COLLATE category of current locale.
  */
 int
-strcoll(const char *s1, const char *s2)
+strcoll(s1, s2)
+	const char *s1, *s2;
 {
 	/* LC_COLLATE is unimplemented, hence always "C" */
 	return (strcmp(s1, s2));
 }
-DEF_STRONG(strcoll);

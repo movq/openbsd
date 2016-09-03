@@ -1,7 +1,6 @@
-/*	$OpenBSD: machdep.c,v 1.38 2015/09/18 13:30:56 miod Exp $	*/
+/*	$OpenBSD: machdep.c,v 1.28 1999/08/25 00:54:19 mickey Exp $	*/
 
 /*
- * Copyright (c) 2004 Tom Cosgrove
  * Copyright (c) 1997-1999 Michael Shalayeff
  * All rights reserved.
  *
@@ -13,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *      This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -28,51 +32,39 @@
  */
 
 #include "libsa.h"
-#include "biosdev.h"
 #include <machine/apmvar.h>
 #include <machine/biosvar.h>
+#include "debug.h"
 
-#ifdef EFIBOOT
-#include "efiboot.h"
-#endif
+struct BIOS_regs	BIOS_regs;
 
-volatile struct BIOS_regs	BIOS_regs;
-
-#if defined(DEBUG)
+#if defined(DEBUG) && !defined(_TEST)
 #define CKPT(c)	(*(u_int16_t*)0xb8148 = 0x4700 + (c))
 #else
 #define CKPT(c) /* c */
 #endif
 
+extern int debug;
+
 void
-machdep(void)
+machdep()
 {
-	int i, j;
-	struct i386_boot_probes *pr;
-
-	/*
-	 * The list of probe routines is now in conf.c.
-	 */
-	for (i = 0; i < nibprobes; i++) {
-		pr = &probe_list[i];
-		if (pr != NULL) {
-			printf("%s:", pr->name);
-
-			for (j = 0; j < pr->count; j++) {
-				(*(pr->probes)[j])();
-			}
-
-			printf("\n");
-		}
-	}
-}
-
-int check_skip_conf(void)
-{
-	/* Return non-zero (skip boot.conf) if Control "shift" key down */
-#ifndef EFIBOOT
-	return (pc_getshifts(0) & 0x04);
-#else
-	return (efi_cons_getshifts(0) & 0x04);
+	/* here */    CKPT('0');
+#ifndef _TEST
+	gateA20(1);   CKPT('1');
+	debug_init(); CKPT('2');
 #endif
+	/* call console init before doing any io */
+	printf("probing:");
+	cninit();     CKPT('3');
+#ifndef _TEST
+	apmprobe();   CKPT('4');
+	pciprobe();   CKPT('5');
+/*	smpprobe();   CKPT('6'); */
+	memprobe();   CKPT('7');
+	printf("\n");
+
+	diskprobe();  CKPT('8');
+#endif
+	CKPT('Z');
 }

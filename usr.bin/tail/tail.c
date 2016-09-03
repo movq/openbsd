@@ -1,4 +1,4 @@
-/*	$OpenBSD: tail.c,v 1.21 2016/02/03 12:23:57 halex Exp $	*/
+/*	$OpenBSD: tail.c,v 1.5 1999/02/03 02:09:30 millert Exp $	*/
 
 /*-
  * Copyright (c) 1991, 1993
@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,6 +36,19 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1991, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)tail.c	8.1 (Berkeley) 6/6/93";
+#endif
+static char rcsid[] = "$OpenBSD: tail.c,v 1.5 1999/02/03 02:09:30 millert Exp $";
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/stat.h>
 
@@ -45,23 +62,22 @@
 #include "extern.h"
 
 int fflag, rflag, rval;
-int is_stdin;
+char *fname;
 
-static void obsolete(char **);
-static void usage(void);
+static void obsolete __P((char **));
+static void usage __P((void));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
-	struct tailfile *tf;
-	off_t off = 0;
+	struct stat sb;
+	FILE *fp;
+	long off = 0;
 	enum STYLE style;
-	int ch;
-	int i;
+	int ch, first;
 	char *p;
-
-	if (pledge("stdio rpath", NULL) == -1)
-		err(1, "pledge");
 
 	/*
 	 * Tail's options are weird.  First, -n10 is the same as -n-10, not
@@ -78,7 +94,7 @@ main(int argc, char *argv[])
 #define	ARG(units, forward, backward) {					\
 	if (style)							\
 		usage();						\
-	off = strtoll(optarg, &p, 10) * (units);			\
+	off = strtol(optarg, &p, 10) * (units);				\
 	if (*p)								\
 		errx(1, "illegal offset -- %s", optarg);		\
 	switch(optarg[0]) {						\
@@ -122,6 +138,9 @@ main(int argc, char *argv[])
 	argc -= optind;
 	argv += optind;
 
+	if (fflag && argc > 1)
+		errx(1, "-f option only appropriate for a single file");
+
 	/*
 	 * If displaying in reverse, don't permit follow option, and convert
 	 * style values.
@@ -149,34 +168,31 @@ main(int argc, char *argv[])
 		}
 	}
 
-	if ((tf = reallocarray(NULL, argc ? argc : 1, sizeof(*tf))) == NULL)
-		err(1, "reallocarray");
-
-	if (argc) {
-		for (i = 0; *argv; i++) {
-			tf[i].fname = *argv++;
-			if ((tf[i].fp = fopen(tf[i].fname, "r")) == NULL ||
-			    fstat(fileno(tf[i].fp), &(tf[i].sb))) {
-				ierr(tf[i].fname);
-				i--;
+	if (*argv)
+		for (first = 1; (fname = *argv++);) {
+			if ((fp = fopen(fname, "r")) == NULL ||
+			    fstat(fileno(fp), &sb)) {
+				ierr();
 				continue;
 			}
+			if (argc > 1) {
+				(void)printf("%s==> %s <==\n",
+				    first ? "" : "\n", fname);
+				first = 0;
+				(void)fflush(stdout);
+			}
+
+			if (rflag)
+				reverse(fp, style, off, &sb);
+			else
+				forward(fp, style, off, &sb);
+			(void)fclose(fp);
 		}
-		if (rflag)
-			reverse(tf, i, style, off);
-		else
-			forward(tf, i, style, off);
-	}
 	else {
-		if (pledge("stdio", NULL) == -1)
-			err(1, "pledge");
+		fname = "stdin";
 
-		tf[0].fname = "stdin";
-		tf[0].fp = stdin;
-		is_stdin = 1;
-
-		if (fstat(fileno(stdin), &(tf[0].sb))) {
-			ierr(tf[0].fname);
+		if (fstat(fileno(stdin), &sb)) {
+			ierr();
 			exit(1);
 		}
 
@@ -184,16 +200,16 @@ main(int argc, char *argv[])
 		 * Determine if input is a pipe.  4.4BSD will set the SOCKET
 		 * bit in the st_mode field for pipes.  Fix this then.
 		 */
-		if (lseek(fileno(tf[0].fp), (off_t)0, SEEK_CUR) == -1 &&
+		if (lseek(fileno(stdin), (off_t)0, SEEK_CUR) == -1 &&
 		    errno == ESPIPE) {
 			errno = 0;
 			fflag = 0;		/* POSIX.2 requires this. */
 		}
 
 		if (rflag)
-			reverse(tf, 1, style, off);
+			reverse(stdin, style, off, &sb);
 		else
-			forward(tf, 1, style, off);
+			forward(stdin, style, off, &sb);
 	}
 	exit(rval);
 }
@@ -204,10 +220,11 @@ main(int argc, char *argv[])
  * the option argument for a -b, -c or -n option gets converted.
  */
 static void
-obsolete(char *argv[])
+obsolete(argv)
+	char *argv[];
 {
-	char *ap, *p, *t;
-	size_t len;
+	register char *ap, *p, *t;
+	int len;
 	char *start;
 
 	while ((ap = *++argv)) {
@@ -225,7 +242,7 @@ obsolete(char *argv[])
 
 			/* Malloc space for dash, new option and argument. */
 			len = strlen(*argv);
-			if ((start = p = malloc(len + 4)) == NULL)
+			if ((start = p = malloc(len + 3)) == NULL)
 				err(1, NULL);
 			*p++ = '-';
 
@@ -259,7 +276,7 @@ obsolete(char *argv[])
 				errx(1, "illegal option -- %s", *argv);
 			}
 			*p++ = *argv[0];
-			(void)strlcpy(p, ap, start + len + 4 - p);
+			(void)strcpy(p, ap);
 			*argv = start;
 			continue;
 
@@ -286,10 +303,9 @@ obsolete(char *argv[])
 }
 
 static void
-usage(void)
+usage()
 {
 	(void)fprintf(stderr,
-	    "usage: tail [-f | -r] "
-	    "[-b number | -c number | -n number | -number] [file ...]\n");
+	    "usage: tail [-f | -r] [-b # | -c # | -n #] [file ...]\n");
 	exit(1);
 }

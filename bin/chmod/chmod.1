@@ -1,4 +1,4 @@
-.\"	$OpenBSD: chmod.1,v 1.41 2015/12/31 23:38:16 guenther Exp $
+.\"	$OpenBSD: chmod.1,v 1.15 1999/09/23 09:56:53 aaron Exp $
 .\"	$NetBSD: chmod.1,v 1.8 1995/03/21 09:02:07 cgd Exp $
 .\"
 .\" Copyright (c) 1989, 1990, 1993, 1994
@@ -15,7 +15,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgment:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -33,7 +37,7 @@
 .\"
 .\"	@(#)chmod.1	8.4 (Berkeley) 3/31/94
 .\"
-.Dd $Mdocdate: December 31 2015 $
+.Dd March 31, 1994
 .Dt CHMOD 1
 .Os
 .Sh NAME
@@ -41,37 +45,31 @@
 .Nd change file modes
 .Sh SYNOPSIS
 .Nm chmod
-.Op Fl h
 .Oo
 .Fl R
-.Op Fl H | L | P
+.Op Fl H | Fl L | Fl P
 .Oc
 .Ar mode
-.Ar
+.Op Ar
 .Sh DESCRIPTION
 The
 .Nm
 utility modifies the file mode bits of the listed files
 as specified by the
 .Ar mode
-operand.
-The mode of a file dictates its permissions, among other attributes.
+operand. The mode of a file dictates its permissions, among other attributes.
 .Pp
 The options are as follows:
 .Bl -tag -width Ds
+.It Fl R
+Recursively descend through any specified directory arguments.
+Change the modes of the file hierarchies rooted in the files
+instead of just the files themselves.
 .It Fl H
 If the
 .Fl R
 option is also specified, symbolic links on the command line are followed.
-Symbolic links encountered in the tree traversal are not followed.
-.It Fl h
-Treat symbolic links like other files: modify links instead of
-following them.
-The
-.Fl h
-and
-.Fl R
-options are mutually exclusive.
+(Symbolic links encountered in the tree traversal are not followed.)
 .It Fl L
 If the
 .Fl R
@@ -80,17 +78,15 @@ option is also specified, all symbolic links are followed.
 If the
 .Fl R
 option is also specified, no symbolic links are followed.
-.It Fl R
-Recurse.
-Where
-.Ar file
-is a directory,
-change the mode of the directory and all the files and directories
-in the file hierarchy below it.
 .El
 .Pp
-Symbolic links have modes,
-but those modes have no effect on the kernel's access checks.
+Symbolic links do not have modes, so unless the
+.Fl H
+or
+.Fl L
+option is set,
+.Nm
+on a symbolic link always succeeds and has no effect.
 The
 .Fl H ,
 .Fl L ,
@@ -98,20 +94,23 @@ and
 .Fl P
 options are ignored unless the
 .Fl R
-option is specified;
-if none of them are given,
-the default is to not follow symbolic links.
+option is specified.
 In addition, these options override each other and the
 command's actions are determined by the last one specified.
 .Pp
-Only the file's owner or the superuser is permitted to change
+Only the owner of a file or the super-user is permitted to change
 the mode of a file.
+.Pp
+The
+.Nm
+utility exits 0 on success or >0 if an error occurred.
 .Ss Absolute modes
 Absolute modes are specified according to the following format:
 .Bd -filled -offset indent
 .Nm chmod
 .Ar nnnn
-.Ar
+.Ar file
+.Op Ar ...
 .Ed
 .Pp
 An absolute mode is an octal number (specified as
@@ -165,10 +164,9 @@ and
 .Pp
 The execute bit for a directory is often referred to as the
 .Dq search
-bit.
-In order to access a file, a user must have execute permission in each
-directory leading up to it in the filesystem hierarchy.
-For example, to access the file
+bit. In order to access a file, a user must have execute permission in each
+directory leading up to it in the filesystem hierarchy. For example, to access
+the file
 .Pa /bin/ls ,
 execute permission is needed on
 .Pa / ,
@@ -178,14 +176,22 @@ and, of course, the
 binary itself.
 .Ss Symbolic modes
 Symbolic modes are specified according to the following format:
+.Pp
 .Bd -filled -offset indent
 .Nm chmod
 .Sm off
+.Ao
 .Op Ar who
 .Ar op
-.Oo Ar perm Oc , Ar ...
+.Op Ar perm
+.Ac Ns Li , Oo
+.Op Ar who
+.Ar op
+.Op Ar perm
+.Oc Ns Li , Op Ar ...
 .Sm on
-.Ar
+.Ar file
+.Op Ar ...
 .Ed
 .Pp
 The
@@ -252,7 +258,7 @@ values are cleared.
 .It =
 The mode bits specified by the
 .Ar who
-value are cleared or, if no
+value are cleared, or, if no
 .Ar who
 value is specified, the user, group
 and other mode bits are cleared.
@@ -319,44 +325,40 @@ symbols
 or
 .Sq t ,
 are ignored.
-.Sh EXIT STATUS
-.Ex -std chmod
 .Sh EXAMPLES
-Set file readable by anyone and writable by the owner only:
+Make a file readable by anyone and writable by the owner only.
 .Pp
-.Dl $ chmod 644 file
+.Dl Ic  chmod 644 file
 .Pp
-Deny write permission to group and others:
+Deny write permission to group and others.
 .Pp
-.Dl $ chmod go-w file
+.Dl Ic  chmod go-w file
 .Pp
 Set the read and write permissions to the usual defaults, but
-retain any execute permissions that are currently set:
+retain any execute permissions that are currently set.
 .Pp
-.Dl $ chmod =rw,+X file
+.Dl Ic  chmod =rw,+X file
 .Pp
 Make a directory or file searchable/executable by everyone if it is
-already searchable/executable by anyone:
+already searchable/executable by anyone.
 .Pp
-.Dl $ chmod +X file
+.Dl Ic  chmod +X file
 .Pp
-Any of these commands will make a file readable/executable by everyone and
-writable by the owner only:
-.Bd -literal -offset indent
-$ chmod 755 file
-$ chmod u=rwx,go=rx file
-$ chmod u=rwx,go=u-w file
-.Ed
+Any of the following will make a file readable/executable by everyone and
+writable by the owner only.
 .Pp
-Clear all mode bits for group and others:
+.Dl Ic  chmod 755 file
+.Dl Ic  chmod u=rwx,go=rx file
+.Dl Ic  chmod u=rwx,go=u-w file
 .Pp
-.Dl $ chmod go= file
+Clear all mode bits for group and others.
 .Pp
-Set the group bits equal to the user bits, but clear the group write bit:
+.Dl Ic  chmod go= file
 .Pp
-.Dl $ chmod g=u-w file
+Set the group bits equal to the user bits, but clear the group write bit.
+.Pp
+.Dl Ic  chmod g=u-w file
 .Sh SEE ALSO
-.Xr chflags 1 ,
 .Xr chgrp 1 ,
 .Xr find 1 ,
 .Xr install 1 ,
@@ -371,26 +373,15 @@ Set the group bits equal to the user bits, but clear the group write bit:
 .Sh STANDARDS
 The
 .Nm
-utility is compliant with the
-.St -p1003.1-2008
-specification.
-.Pp
-The flags
-.Op Fl HLP
-are extensions to that specification.
-.Pp
-The
+utility is expected to be
+.St -p1003.2
+compatible with the exception of the
+.Ar perm
+symbols
 .Sq t
-perm symbol (sticky bit) is marked by
-.St -p1003.1-2008
-as being an
-X/Open System Interfaces
-option.
-.Sh HISTORY
-A
-.Nm
-command appeared in
-.At v1 .
+and
+.Sq X
+which are not included in that standard.
 .Sh BUGS
 There's no
 .Ar perm

@@ -1,8 +1,7 @@
-/* m-x.c -- Meta-x minibuffer reader.
-   $Id: m-x.c,v 1.5 2006/07/17 16:12:36 espie Exp $
+/* m-x.c -- Meta-X minibuffer reader.
+   $Id: m-x.c,v 1.2 1999/01/11 16:38:08 espie Exp $
 
-   Copyright (C) 1993, 1997, 1998, 2001, 2002, 2004 Free Software
-   Foundation, Inc.
+   Copyright (C) 1993, 97 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,10 +17,9 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
 
-   Originally written by Brian Fox (bfox@ai.mit.edu). */
+   Written by Brian Fox (bfox@ai.mit.edu). */
 
 #include "info.h"
-#include "funs.h"
 
 /* **************************************************************** */
 /*                                                                  */
@@ -33,7 +31,9 @@
    name.  A return value of NULL indicates that no function name could
    be read. */
 char *
-read_function_name (char *prompt, WINDOW *window)
+read_function_name (prompt, window)
+     char *prompt;
+     WINDOW *window;
 {
   register int i;
   char *line;
@@ -70,7 +70,7 @@ DECLARE_INFO_COMMAND (describe_command,
 {
   char *line;
 
-  line = read_function_name ((char *) _("Describe command: "), window);
+  line = read_function_name (_("Describe command: "), window);
 
   if (!line)
     {
@@ -81,13 +81,13 @@ DECLARE_INFO_COMMAND (describe_command,
   /* Describe the function named in "LINE". */
   if (*line)
     {
-      InfoCommand *cmd = named_function (line);
+      VFunction *fun = named_function (line);
 
-      if (!cmd)
+      if (!fun)
         return;
 
       window_message_in_echo_area ("%s: %s.",
-                                   line, function_documentation (cmd));
+                                   line, function_documentation (fun));
     }
   free (line);
 }
@@ -96,24 +96,18 @@ DECLARE_INFO_COMMAND (info_execute_command,
    _("Read a command name in the echo area and execute it"))
 {
   char *line;
-  char *keys;
-  char *prompt;
-
-  prompt = (char *)xmalloc (20);
-
-  keys = where_is (info_keymap, InfoCmd(info_execute_command));
-  /* If the where_is () function thinks that this command doesn't exist,
-     there's something very wrong!  */
-  if (!keys)
-    abort();
-
-  if (info_explicit_arg || count != 1)
-    sprintf (prompt, "%d %s ", count, keys);
-  else
-    sprintf (prompt, "%s ", keys);
 
   /* Ask the completer to read a reference for us. */
-  line = read_function_name (prompt, window);
+  if (info_explicit_arg || count != 1)
+    {
+      char *prompt;
+
+      prompt = (char *)xmalloc (20);
+      sprintf (prompt, "%d M-x ", count);
+      line = read_function_name (prompt, window);
+    }
+  else
+    line = read_function_name ("M-x ", window);
 
   /* User aborted? */
   if (!line)
@@ -131,27 +125,23 @@ DECLARE_INFO_COMMAND (info_execute_command,
 
   /* User wants to execute a named command.  Do it. */
   {
-    InfoCommand *command;
+    VFunction *function;
 
     if ((active_window != the_echo_area) &&
         (strncmp (line, "echo-area-", 10) == 0))
       {
         free (line);
-        info_error ((char *) _("Cannot execute an `echo-area' command here."),
-            NULL, NULL);
+        info_error (_("Cannot execute an `echo-area' command here."));
         return;
       }
 
-    command = named_function (line);
+    function = named_function (line);
     free (line);
 
-    if (!command)
+    if (!function)
       return;
 
-    if (InfoFunction(command))
-      (*InfoFunction(command)) (active_window, count, 0);
-    else
-      info_error ((char *) _("Undefined command: %s"), line, NULL);
+    (*function) (active_window, count, 0);
   }
 }
 
@@ -159,7 +149,7 @@ DECLARE_INFO_COMMAND (info_execute_command,
 DECLARE_INFO_COMMAND (set_screen_height,
   _("Set the height of the displayed window"))
 {
-  int new_height, old_height = screenheight;
+  int new_height;
 
   if (info_explicit_arg || count != 1)
     new_height = count;
@@ -195,20 +185,6 @@ DECLARE_INFO_COMMAND (set_screen_height,
   terminal_clear_screen ();
   display_clear_display (the_display);
   screenheight = new_height;
-#ifdef SET_SCREEN_SIZE_HELPER
-  SET_SCREEN_SIZE_HELPER;
-#endif
-  if (screenheight == old_height)
-    {
-      /* Display dimensions didn't actually change, so
-	 window_new_screen_size won't do anything, but we've
-	 already cleared the display above.  Undo the damage.  */
-      window_mark_chain (windows, W_UpdateWindow);
-      display_update_display (windows);
-    }
-  else
-    {
-      display_initialize_display (screenwidth, screenheight);
-      window_new_screen_size (screenwidth, screenheight);
-    }
+  display_initialize_display (screenwidth, screenheight);
+  window_new_screen_size (screenwidth, screenheight);
 }

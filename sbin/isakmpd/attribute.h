@@ -1,5 +1,5 @@
-/* $OpenBSD: attribute.h,v 1.6 2004/05/14 08:42:56 hshoexer Exp $	 */
-/* $EOM: attribute.h,v 1.2 1998/09/29 21:51:07 niklas Exp $	 */
+/*	$OpenBSD: attribute.h,v 1.3 1998/11/17 11:10:07 niklas Exp $	*/
+/*	$EOM: attribute.h,v 1.2 1998/09/29 21:51:07 niklas Exp $	*/
 
 /*
  * Copyright (c) 1998 Niklas Hallqvist.  All rights reserved.
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Ericsson Radio Systems.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -36,12 +41,13 @@
 
 struct constant_map;
 
-extern int	 attribute_map(u_int8_t *, size_t, int (*)(u_int16_t,
-		     u_int8_t *, u_int16_t, void *), void *);
-extern u_int8_t	*attribute_set_basic(u_int8_t *, u_int16_t, u_int16_t);
-extern int	 attribute_set_constant(char *, char *, struct constant_map *,
-		     int, u_int8_t **);
-extern u_int8_t	*attribute_set_var(u_int8_t *, u_int16_t, u_int8_t *,
-		     u_int16_t);
+extern int attribute_map (u_int8_t *, size_t,
+			  int (*) (u_int16_t, u_int8_t *, u_int16_t, void *),
+			  void *);
+extern u_int8_t *attribute_set_basic (u_int8_t *, u_int16_t, u_int16_t);
+extern int attribute_set_constant (char *, char *, struct constant_map *,
+				   int, u_int8_t **);
+extern u_int8_t *attribute_set_var (u_int8_t *, u_int16_t, u_int8_t *,
+				    u_int16_t);
 
-#endif				/* _ATTRIBUTE_H_ */
+#endif /* _ATTRIBUTE_H_ */

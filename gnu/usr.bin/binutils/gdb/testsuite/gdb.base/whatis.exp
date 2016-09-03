@@ -1,5 +1,4 @@
-# Copyright 1988, 1990, 1991, 1992, 1994, 1995, 1996, 1997, 1999, 2002,
-# 2003, 2004 Free Software Foundation, Inc.
+#   Copyright (C) 1988, 1990, 1991, 1992, 1995 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -13,7 +12,10 @@
 # 
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
-# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  
+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
+
+# Please email any bugs, comments, and/or additions to this file to:
+# bug-gdb@prep.ai.mit.edu
 
 # This file was written by Rob Savoye. (rob@cygnus.com)
 
@@ -30,15 +32,19 @@ set bug_id 0
 set testfile whatis
 set srcfile ${testfile}.c
 set binfile ${objdir}/${subdir}/${testfile}
-if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {debug}] != "" } {
-     gdb_suppress_entire_file "Testcase compile failed, so all tests in this file will automatically fail."
+if  { [compile "${srcdir}/${subdir}/${srcfile} -g -o ${binfile}"] != "" } {
+    perror "Couldn't compile ${srcfile}"
+    return -1
 }
 
 # Create and source the file that provides information about the compiler
 # used to compile the test case.
-if [get_compiler_info ${binfile}] {
-    return -1;
+execute_anywhere "rm -f ${binfile}.ci"
+if  { [compile "-E ${srcdir}/${subdir}/compiler.c > ${binfile}.ci"] != "" } {
+    perror "Couldn't make ${binfile}.ci file"
+    return -1
 }
+source ${binfile}.ci
 
 # Start with a fresh gdb.
 
@@ -46,6 +52,14 @@ gdb_exit
 gdb_start
 gdb_reinitialize_dir $srcdir/$subdir
 gdb_load $binfile
+
+# If we did not use the signed keyword when compiling the file, don't
+# expect GDB to know that char is signed.
+if $signed_keyword_not_used then {
+    set signed_char "char"
+} else {
+    set signed_char "signed char"
+}
 
 # Define a procedure to set up an xfail for all targets that put out a
 # `long' type as an `int' type.
@@ -67,14 +81,14 @@ proc setup_xfail_on_long_vs_int {} {
 # uses in the stabs.  So we need to deal with names both from gcc and
 # native compilers.
 #
-
 gdb_test "whatis v_char" \
     "type = (unsigned char|char)" \
     "whatis char"
 
+setup_xfail "a29k-*-*"
 if {!$gcc_compiled} then { setup_xfail "mips-sgi-irix*" }
 gdb_test "whatis v_signed_char" \
-    "type = (signed char|char)" \
+    "type = $signed_char" \
     "whatis signed char"
 
 gdb_test "whatis v_unsigned_char" \
@@ -152,7 +166,7 @@ gdb_test "whatis v_unsigned_char_array" \
 
 gdb_test "whatis v_short_array" \
     "type = (short|short int) \\\[2\\\]" \
-    "whatis short array"
+    pass "whatis short array"
 
 gdb_test "whatis v_signed_short_array" \
     "type = (signed |)(short|short int) \\\[2\\\]" \
@@ -216,7 +230,7 @@ gdb_test "whatis v_unsigned_char_pointer" \
 
 gdb_test "whatis v_short_pointer" \
     "type = (short|short int) \\*" \
-    "whatis short pointer"
+    pass "whatis short pointer"
 
 gdb_test "whatis v_signed_short_pointer" \
     "type = (signed |)(short|short int) \\*" \
@@ -260,21 +274,13 @@ gdb_test "whatis v_double_pointer" \
     "whatis double pointer"
 
 
-if { $hp_aCC_compiler } {
-    set unstruct "unnamed\.struct\..*"
-    set ununion "unnamed\.union\..*"
-} else {
-    set unstruct "\.\.\."
-    set ununion "\.\.\."
-}
-
 # test whatis command with structure types
 gdb_test "whatis v_struct1" \
     "type = struct t_struct" \
     "whatis named structure"
 
 gdb_test "whatis v_struct2" \
-    "type = struct \{$unstruct\}" \
+    "type = struct \{...\}" \
     "whatis unnamed structure"
 
 
@@ -284,75 +290,68 @@ gdb_test "whatis v_union" \
     "whatis named union"
 
 gdb_test "whatis v_union2" \
-    "type = union \{$ununion\}" \
+    "type = union \{...\}" \
     "whatis unnamed union"
 
 
-# HP-UX: HP aCC compiler w/ +objdebug option detects language as
-# c++, so we need the 'void' pattern here.
-# Without +objdebug compilation option we still need to match ''.
-# - guo
-# Also, using stabs we will mark these functions as prototyped.  This
-# is harmless but causes an extra VOID to be printed.
-set void "(void|)"
 
 # test whatis command with functions return type
 gdb_test "whatis v_char_func" \
-    "type = (signed |unsigned |)char \\($void\\)" \
+    "type = (signed |unsigned |)char \\(\\)" \
     "whatis char function"
 
 gdb_test "whatis v_signed_char_func" \
-    "type = (signed |unsigned |)char \\($void\\)" \
+    "type = (signed |unsigned |)char \\(\\)" \
     "whatis signed char function"
 
 gdb_test "whatis v_unsigned_char_func" \
-    "type = unsigned char \\($void\\)"	\
+    "type = unsigned char \\(\\)"	\
     "whatis unsigned char function"
 
 gdb_test "whatis v_short_func" \
-    "type = short (int |)\\($void\\)" \
+    "type = short (int |)\\(\\)" \
     "whatis short function"
 
 gdb_test "whatis v_signed_short_func" \
-    "type = (signed |)short (int |)\\($void\\)" \
+    "type = (signed |)short (int |)\\(\\)" \
     "whatis signed short function"
 
 gdb_test "whatis v_unsigned_short_func" \
-    "type = (unsigned short|short unsigned int) \\($void\\)" \
+    "type = (unsigned short|short unsigned int) \\(\\)" \
     "whatis unsigned short function"
 
 gdb_test "whatis v_int_func" \
-    "type = int \\($void\\)" \
+    "type = int \\(\\)" \
     "whatis int function"
 
 gdb_test "whatis v_signed_int_func" \
-    "type = (signed |)int \\($void\\)" \
+    "type = (signed |)int \\(\\)" \
     "whatis signed int function"
 
 gdb_test "whatis v_unsigned_int_func" \
-    "type = unsigned int \\($void\\)" \
+    "type = unsigned int \\(\\)" \
     "whatis unsigned int function"
 
 gdb_test "whatis v_long_func" \
-    "type = (long|int|long int) \\($void\\)" \
+    "type = (long|int|long int) \\(\\)" \
     "whatis long function"
 
 gdb_test "whatis v_signed_long_func" \
-    "type = (signed |)(int|long|long int) \\($void\\)" \
+    "type = (signed |)(int|long|long int) \\(\\)" \
     "whatis signed long function"
 
 gdb_test "whatis v_unsigned_long_func" \
-    "type = (unsigned (int|long|long int)|long unsigned int) \\($void\\)" \
+    "type = (unsigned (int|long|long int)|long unsigned int) \\(\\)" \
     "whatis unsigned long function"
 
 # Sun /bin/cc calls this a function returning double.
 if {!$gcc_compiled} then {setup_xfail "*-sun-sunos4*"}
 gdb_test "whatis v_float_func" \
-    "type = float \\($void\\)" \
+    "type = float \\(\\)" \
     "whatis float function"
 
 gdb_test "whatis v_double_func" \
-    "type = double \\($void\\)" \
+    "type = double \\(\\)" \
     "whatis double function" \
 
 
@@ -381,14 +380,8 @@ gdb_test "whatis nested_su.outer_int" \
     "type = int" \
     "whatis outer structure member"
 
-if {$hp_aCC_compiler} {
-    set outer "outer_struct::"
-} else {
-    set outer ""
-}
-
 gdb_test "whatis nested_su.inner_struct_instance" \
-    "type = struct ${outer}inner_struct" \
+    "type = struct inner_struct" \
     "whatis inner structure"
 
 gdb_test "whatis nested_su.inner_struct_instance.inner_int" \
@@ -396,7 +389,7 @@ gdb_test "whatis nested_su.inner_struct_instance.inner_int" \
     "whatis inner structure member"
 
 gdb_test "whatis nested_su.inner_union_instance" \
-    "type = union ${outer}inner_union" \
+    "type = union inner_union" \
     "whatis inner union"
 
 gdb_test "whatis nested_su.inner_union_instance.inner_union_int" \

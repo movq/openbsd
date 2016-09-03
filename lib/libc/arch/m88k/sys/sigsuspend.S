@@ -1,5 +1,3 @@
-/*	$OpenBSD: sigsuspend.S,v 1.13 2016/05/07 19:05:21 guenther Exp $	*/
-
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
  * All rights reserved.
@@ -16,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,20 +35,26 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+	.data
+	/*.asciz "from: @(#)sigsuspend.s	5.2 (Berkeley) 6/6/90"*/
+	.asciz "$Id: sigsuspend.S,v 1.1 1998/12/15 07:10:34 smurph Exp $"
+	.text
+#endif /* LIBC_SCCS and not lint */
+
 #include "SYS.h"
 
 /*
- * Sigsuspend actually expects a pointer to the mask. To save
+ * Sigsuspend actually expects a pointer to the the mask. To save
  * a copyin in the kernel, we do the dereference here and pass it.
  * This will be fail if we ever have more than 32 signals ie. sizeof
  * sigset_t != sizeof int.
  */
 
-SYSENTRY_HIDDEN(sigsuspend)
-	ld	%r2,%r2,0		/* dereference the pointer mask */
-	or	%r13,%r0,SYS_sigsuspend
-	tb0	0,%r0,450
-	br	CERROR
-	jmp.n	%r1
-	 or	%r2,%r0,0
-SYSCALL_END_HIDDEN(sigsuspend)
+ENTRY(sigsuspend)
+	ld	r2,r2,0			/* dereference the pointer mask */
+	or	r13,r0,SYS_sigsuspend
+	tb0	0,r0,128
+	br	cerror
+	jmp.n	r1
+	or	r2,r0,0

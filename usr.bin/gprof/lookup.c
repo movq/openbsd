@@ -1,4 +1,4 @@
-/*	$OpenBSD: lookup.c,v 1.8 2009/10/27 23:59:38 deraadt Exp $	*/
+/*	$OpenBSD: lookup.c,v 1.2 1996/06/26 05:33:53 deraadt Exp $	*/
 /*	$NetBSD: lookup.c,v 1.5 1995/04/19 07:16:06 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +34,14 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)lookup.c	8.1 (Berkeley) 6/6/93";
+#else
+static char rcsid[] = "$OpenBSD: lookup.c,v 1.2 1996/06/26 05:33:53 deraadt Exp $";
+#endif
+#endif /* not lint */
+
 #include "gprof.h"
 
     /*
@@ -38,27 +50,28 @@
      *	    entry point.
      */
 nltype *
-nllookup(unsigned long address)
+nllookup( address )
+    unsigned long	address;
 {
-    long	low;
-    long	middle;
-    long	high;
+    register long	low;
+    register long	middle;
+    register long	high;
 #   ifdef DEBUG
-	int	probes;
+	register int	probes;
 
 	probes = 0;
-#   endif /* DEBUG */
+#   endif DEBUG
     for ( low = 0 , high = nname - 1 ; low != high ; ) {
 #	ifdef DEBUG
 	    probes += 1;
-#	endif /* DEBUG */
+#	endif DEBUG
 	middle = ( high + low ) >> 1;
 	if ( nl[ middle ].value <= address && nl[ middle+1 ].value > address ) {
 #	    ifdef DEBUG
 		if ( debug & LOOKUPDEBUG ) {
 		    printf( "[nllookup] %d (%d) probes\n" , probes , nname-1 );
 		}
-#	    endif /* DEBUG */
+#	    endif DEBUG
 	    return &nl[ middle ];
 	}
 	if ( nl[ middle ].value > address ) {
@@ -68,19 +81,23 @@ nllookup(unsigned long address)
 	}
     }
 #   ifdef DEBUG
-	if ( debug & LOOKUPDEBUG )
-	    warnx("[nllookup] (%d) binary search fails", nname - 1);
-#   endif /* DEBUG */
+	if ( debug & LOOKUPDEBUG ) {
+	    fprintf( stderr , "[nllookup] (%d) binary search fails\n" ,
+		nname-1 );
+	}
+#   endif DEBUG
     return 0;
 }
 
 arctype *
-arclookup(nltype *parentp, nltype *childp)
+arclookup( parentp , childp )
+    nltype	*parentp;
+    nltype	*childp;
 {
     arctype	*arcp;
 
     if ( parentp == 0 || childp == 0 ) {
-	warnx("[arclookup] parentp == 0 || childp == 0");
+	fprintf( stderr, "[arclookup] parentp == 0 || childp == 0\n" );
 	return 0;
     }
 #   ifdef DEBUG
@@ -88,7 +105,7 @@ arclookup(nltype *parentp, nltype *childp)
 	    printf( "[arclookup] parent %s child %s\n" ,
 		    parentp -> name , childp -> name );
 	}
-#   endif /* DEBUG */
+#   endif DEBUG
     for ( arcp = parentp -> children ; arcp ; arcp = arcp -> arc_childlist ) {
 #	ifdef DEBUG
 	    if ( debug & LOOKUPDEBUG ) {
@@ -96,7 +113,7 @@ arclookup(nltype *parentp, nltype *childp)
 			arcp -> arc_parentp -> name ,
 			arcp -> arc_childp -> name );
 	    }
-#	endif /* DEBUG */
+#	endif DEBUG
 	if ( arcp -> arc_childp == childp ) {
 	    return arcp;
 	}

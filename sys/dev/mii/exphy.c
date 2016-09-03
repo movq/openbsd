@@ -1,5 +1,5 @@
-/*	$OpenBSD: exphy.c,v 1.23 2015/03/14 03:38:48 jsg Exp $	*/
-/*	$NetBSD: exphy.c,v 1.23 2000/02/02 23:34:56 thorpej Exp $	*/
+/*	$OpenBSD: exphy.c,v 1.5 1999/09/26 17:50:41 jason Exp $	*/
+/*	$NetBSD: exphy.c,v 1.15.6.1 1999/04/23 15:39:33 perry Exp $	*/
 
 /*-
  * Copyright (c) 1998, 1999 The NetBSD Foundation, Inc.
@@ -17,6 +17,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the NetBSD
+ *	Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -42,6 +49,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Manuel Bouyer.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -61,57 +73,70 @@
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/kernel.h>
 #include <sys/device.h>
+#include <sys/malloc.h>
 #include <sys/socket.h>
 
 #include <net/if.h>
-#include <net/if_var.h>
 #include <net/if_media.h>
 
 #include <dev/mii/mii.h>
 #include <dev/mii/miivar.h>
 #include <dev/mii/miidevs.h>
 
-int	exphymatch(struct device *, void *, void *);
-void	exphyattach(struct device *, struct device *, void *);
+#ifdef __NetBSD__
+int	exphymatch __P((struct device *, struct cfdata *, void *));
+#else
+int	exphymatch __P((struct device *, void *, void *));
+#endif
+void	exphyattach __P((struct device *, struct device *, void *));
 
 struct cfattach exphy_ca = {
-	sizeof(struct mii_softc), exphymatch, exphyattach, mii_phy_detach
+	sizeof(struct mii_softc), exphymatch, exphyattach
 };
 
+#ifdef __OpenBSD__
 struct cfdriver exphy_cd = {
 	NULL, "exphy", DV_DULL
 };
+#endif
 
-int	exphy_service(struct mii_softc *, struct mii_data *, int);
-void	exphy_reset(struct mii_softc *);
-
-const struct mii_phy_funcs exphy_funcs = {
-	exphy_service, ukphy_status, exphy_reset,
-};
+int	exphy_service __P((struct mii_softc *, struct mii_data *, int));
+void	exphy_reset __P((struct mii_softc *));
 
 int
-exphymatch(struct device *parent, void *match, void *aux)
+exphymatch(parent, match, aux)
+	struct device *parent;
+#ifdef __NetBSD__
+	struct cfdata *match;
+#else
+	void *match;
+#endif
+	void *aux;
 {
 	struct mii_attach_args *ma = aux;
 
 	/*
-	 * Since 3com's PHY for some xl adapters is braindead and doesn't
-	 * report the proper OUI/MODEL information, we have this stupid
-	 * match function.
+	 * Argh, 3Com PHY reports oui == 0 model == 0!
 	 */
-	if ((strcmp(parent->dv_cfdata->cf_driver->cd_name, "xl") == 0) &&
-	    ((MII_OUI(ma->mii_id1, ma->mii_id2) == 0 &&
-	      MII_MODEL(ma->mii_id2) == 0) ||
-	     (MII_OUI(ma->mii_id1, ma->mii_id2) == MII_OUI_3COM &&
-	      MII_MODEL(ma->mii_id2) == 0)))
-		return (10);
+	if (MII_OUI(ma->mii_id1, ma->mii_id2) != 0 &&
+	    MII_MODEL(ma->mii_id2) != 0)
+		return (0);
 
-	return (0);
+	/*
+	 * Make sure the parent is an `xl'.
+	 */
+	if (strcmp(parent->dv_cfdata->cf_driver->cd_name, "xl") != 0)
+		return (0);
+
+	return (10);
 }
 
 void
-exphyattach(struct device *parent, struct device *self, void *aux)
+exphyattach(parent, self, aux)
+	struct device *parent, *self;
+	void *aux;
 {
 	struct mii_softc *sc = (struct mii_softc *)self;
 	struct mii_attach_args *ma = aux;
@@ -121,11 +146,8 @@ exphyattach(struct device *parent, struct device *self, void *aux)
 
 	sc->mii_inst = mii->mii_instance;
 	sc->mii_phy = ma->mii_phyno;
-	sc->mii_funcs = &exphy_funcs;
+	sc->mii_service = exphy_service;
 	sc->mii_pdata = mii;
-	sc->mii_flags = ma->mii_flags;
-
-	sc->mii_flags |= MIIF_NOISOLATE;
 
 	/*
 	 * The 3Com PHY can never be isolated, so never allow non-zero
@@ -136,22 +158,35 @@ exphyattach(struct device *parent, struct device *self, void *aux)
 		    sc->mii_dev.dv_xname);
 		return;
 	}
+	sc->mii_flags |= MIIF_NOISOLATE;
 
-	PHY_RESET(sc);
+#define	ADD(m, c)	ifmedia_add(&mii->mii_media, (m), (c), NULL)
+
+#if 0 /* See above. */
+	ADD(IFM_MAKEWORD(IFM_ETHER, IFM_NONE, 0, sc->mii_inst),
+	    BMCR_ISO);
+#endif
+
+	ADD(IFM_MAKEWORD(IFM_ETHER, IFM_100_TX, IFM_LOOP, sc->mii_inst),
+	    BMCR_LOOP|BMCR_S100);
+
+	exphy_reset(sc);
 
 	sc->mii_capabilities =
 	    PHY_READ(sc, MII_BMSR) & ma->mii_capmask;
 	if (sc->mii_capabilities & BMSR_MEDIAMASK)
-		mii_phy_add_media(sc);
+		mii_add_media(mii, sc->mii_capabilities,
+		    sc->mii_inst);
+#undef ADD
 }
 
 int
-exphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
+exphy_service(sc, mii, cmd)
+	struct mii_softc *sc;
+	struct mii_data *mii;
+	int cmd;
 {
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
-
-	if ((sc->mii_dev.dv_flags & DVF_ACTIVE) == 0)
-		return (ENXIO);
 
 	/*
 	 * We can't isolate the 3Com PHY, so it has to be the only one!
@@ -170,30 +205,64 @@ exphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 		if ((mii->mii_ifp->if_flags & IFF_UP) == 0)
 			break;
 
-		mii_phy_setmedia(sc);
+		switch (IFM_SUBTYPE(ife->ifm_media)) {
+		case IFM_AUTO:
+			/*
+			 * If we're already in auto mode, just return.
+			 */
+			if (PHY_READ(sc, MII_BMCR) & BMCR_AUTOEN)
+				return (0);
+			(void) mii_phy_auto(sc, 1);
+			break;
+		case IFM_100_T4:
+			/*
+			 * XXX Not supported as a manual setting right now.
+			 */
+			return (EINVAL);
+		default:
+			/*
+			 * BMCR data is stored in the ifmedia entry.
+			 */
+			PHY_WRITE(sc, MII_ANAR,
+			    mii_anar(ife->ifm_media));
+			PHY_WRITE(sc, MII_BMCR, ife->ifm_data);
+		}
 		break;
 
 	case MII_TICK:
-		if (mii_phy_tick(sc) == EJUSTRETURN)
+		/*
+		 * Only used for autonegotiation.
+		 */
+		if (IFM_SUBTYPE(ife->ifm_media) != IFM_AUTO)
 			return (0);
 
-		break;
+		/*
+		 * Is the interface even up?
+		 */
+		if ((mii->mii_ifp->if_flags & IFF_UP) == 0)
+			return (0);
 
-	case MII_DOWN:
-		mii_phy_down(sc);
-		return (0);
+		/*
+		 * The 3Com PHY's autonegotiation doesn't need to be
+		 * kicked; it continues in the background.
+		 */
+		break;
 	}
 
 	/* Update the media status. */
-	mii_phy_status(sc);
+	ukphy_status(sc);
 
 	/* Callback if something changed. */
-	mii_phy_update(sc, cmd);
+	if (sc->mii_active != mii->mii_media_active || cmd == MII_MEDIACHG) {
+		(*mii->mii_statchg)(sc->mii_dev.dv_parent);
+		sc->mii_active = mii->mii_media_active;
+	}
 	return (0);
 }
 
 void
-exphy_reset(struct mii_softc *sc)
+exphy_reset(sc)
+	struct mii_softc *sc;
 {
 
 	mii_phy_reset(sc);

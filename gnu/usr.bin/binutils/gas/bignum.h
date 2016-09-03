@@ -1,5 +1,5 @@
 /* bignum.h-arbitrary precision integers
-   Copyright 1987, 1992 Free Software Foundation, Inc.
+   Copyright (C) 1987, 1992 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -46,7 +46,7 @@ typedef unsigned short LITTLENUM_TYPE;
 
 /* lengths are in sizeof(littlenum)s */
 
-int bignum_copy (LITTLENUM_TYPE * in, int in_length,
-		 LITTLENUM_TYPE * out, int out_length);
+int bignum_copy PARAMS ((LITTLENUM_TYPE * in, int in_length,
+			 LITTLENUM_TYPE * out, int out_length));
 
 /* end of bignum.h */

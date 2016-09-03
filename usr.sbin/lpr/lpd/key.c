@@ -1,5 +1,4 @@
-/*	$OpenBSD: key.c,v 1.8 2015/01/16 06:40:18 deraadt Exp $	*/
-/*	$NetBSD: key.c,v 1.3 1997/10/20 08:08:28 scottr Exp $	*/
+/*	$OpenBSD: key.c,v 1.2 1997/01/17 16:12:40 millert Exp $	*/
 
 /*-
  * Copyright (c) 1991, 1993, 1994
@@ -13,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,44 +33,49 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)key.c	8.3 (Berkeley) 4/2/94";
+#else
+static char rcsid[] = "$OpenBSD: key.c,v 1.2 1997/01/17 16:12:40 millert Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/types.h>
 
 #include <errno.h>
-#include <signal.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <syslog.h>
 #include <dirent.h>
-#include <limits.h>
 #include <termios.h>
 
 #include "lp.h"
 #include "extern.h"
 
 __BEGIN_DECLS
-static int
-	c_key(const void *, const void *);
-void	f_cbreak(struct info *);
-void	f_columns(struct info *);
-void	f_dec(struct info *);
-void	f_extproc(struct info *);
-void	f_ispeed(struct info *);
-void	f_nl(struct info *);
-void	f_ospeed(struct info *);
-void	f_raw(struct info *);
-void	f_rows(struct info *);
-void	f_sane(struct info *);
-void	f_tty(struct info *);
+void	f_cbreak __P((struct info *));
+void	f_columns __P((struct info *));
+void	f_dec __P((struct info *));
+void	f_extproc __P((struct info *));
+void	f_ispeed __P((struct info *));
+void	f_nl __P((struct info *));
+void	f_ospeed __P((struct info *));
+void	f_raw __P((struct info *));
+void	f_rows __P((struct info *));
+void	f_sane __P((struct info *));
+void	f_tty __P((struct info *));
 __END_DECLS
 
 static struct key {
 	char *name;				/* name */
-	void (*f)(struct info *);		/* function */
+	void (*f) __P((struct info *));		/* function */
 #define	F_NEEDARG	0x01			/* needs an argument */
 #define	F_OFFOK		0x02			/* can turn off */
 	int flags;
-} const keys[] = {
+} keys[] = {
 	{ "cbreak",	f_cbreak,	F_OFFOK },
 	{ "cols",	f_columns,	F_NEEDARG },
 	{ "columns",	f_columns,	F_NEEDARG },
@@ -86,14 +94,17 @@ static struct key {
 };
 
 static int
-c_key(const void *a, const void *b)
+c_key(a, b)
+        const void *a, *b;
 {
 
         return (strcmp(((struct key *)a)->name, ((struct key *)b)->name));
 }
 
 int
-ksearch(char ***argvp, struct info *ip)
+ksearch(argvp, ip)
+	char ***argvp;
+	struct info *ip;
 {
 	char *name;
 	struct key *kp, tmp;
@@ -123,7 +134,8 @@ ksearch(char ***argvp, struct info *ip)
 }
 
 void
-f_cbreak(struct info *ip)
+f_cbreak(ip)
+	struct info *ip;
 {
 
 	if (ip->off)
@@ -138,7 +150,8 @@ f_cbreak(struct info *ip)
 }
 
 void
-f_columns(struct info *ip)
+f_columns(ip)
+	struct info *ip;
 {
 
 	ip->win.ws_col = atoi(ip->arg);
@@ -146,7 +159,8 @@ f_columns(struct info *ip)
 }
 
 void
-f_dec(struct info *ip)
+f_dec(ip)
+	struct info *ip;
 {
 
 	ip->t.c_cc[VERASE] = (u_char)0177;
@@ -159,7 +173,8 @@ f_dec(struct info *ip)
 }
 
 void
-f_extproc(struct info *ip)
+f_extproc(ip)
+	struct info *ip;
 {
 
 	if (ip->set) {
@@ -172,7 +187,8 @@ f_extproc(struct info *ip)
 }
 
 void
-f_ispeed(struct info *ip)
+f_ispeed(ip)
+	struct info *ip;
 {
 
 	cfsetispeed(&ip->t, atoi(ip->arg));
@@ -180,7 +196,8 @@ f_ispeed(struct info *ip)
 }
 
 void
-f_nl(struct info *ip)
+f_nl(ip)
+	struct info *ip;
 {
 
 	if (ip->off) {
@@ -194,7 +211,8 @@ f_nl(struct info *ip)
 }
 
 void
-f_ospeed(struct info *ip)
+f_ospeed(ip)
+	struct info *ip;
 {
 
 	cfsetospeed(&ip->t, atoi(ip->arg));
@@ -202,7 +220,8 @@ f_ospeed(struct info *ip)
 }
 
 void
-f_raw(struct info *ip)
+f_raw(ip)
+	struct info *ip;
 {
 
 	if (ip->off)
@@ -216,7 +235,8 @@ f_raw(struct info *ip)
 }
 
 void
-f_rows(struct info *ip)
+f_rows(ip)
+	struct info *ip;
 {
 
 	ip->win.ws_row = atoi(ip->arg);
@@ -224,7 +244,8 @@ f_rows(struct info *ip)
 }
 
 void
-f_sane(struct info *ip)
+f_sane(ip)
+	struct info *ip;
 {
 
 	ip->t.c_cflag = TTYDEF_CFLAG | (ip->t.c_cflag & (CLOCAL|CRTSCTS));
@@ -238,7 +259,8 @@ f_sane(struct info *ip)
 }
 
 void
-f_tty(struct info *ip)
+f_tty(ip)
+	struct info *ip;
 {
 	int tmp;
 

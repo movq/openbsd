@@ -1,5 +1,3 @@
-/*	$OpenBSD: v_increment.c,v 1.9 2016/01/06 22:28:52 millert Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)v_increment.c	10.12 (Berkeley) 3/19/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -39,16 +41,18 @@ static char * const fmt[] = {
 	"%#0*lo",
 };
 
-static void inc_err(SCR *, enum nresult);
+static void inc_err __P((SCR *, enum nresult));
 
 /*
  * v_increment -- [count]#[#+-]
  *	Increment/decrement a keyword number.
  *
- * PUBLIC: int v_increment(SCR *, VICMD *);
+ * PUBLIC: int v_increment __P((SCR *, VICMD *));
  */
 int
-v_increment(SCR *sp, VICMD *vp)
+v_increment(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	enum nresult nret;
 	u_long ulval;
@@ -96,7 +100,7 @@ v_increment(SCR *sp, VICMD *vp)
 	}
 
 #undef	ishex
-#define	ishex(c)	(isdigit(c) || strchr("abcdefABCDEF", (c)))
+#define	ishex(c)	(isdigit(c) || strchr("abcdefABCDEF", c))
 #undef	isoctal
 #define	isoctal(c)	(isdigit(c) && (c) != '8' && (c) != '9')
 
@@ -131,7 +135,7 @@ decimal:	base = 10;
 		end = beg;
 		ntype = fmt[DEC];
 		if (!isdigit(p[end])) {
-nonum:			msgq(sp, M_ERR, "Cursor not in a number");
+nonum:			msgq(sp, M_ERR, "181|Cursor not in a number");
 			return (1);
 		}
 	}
@@ -247,7 +251,9 @@ err:		rval = 1;
 }
 
 static void
-inc_err(SCR *sp, enum nresult nret)
+inc_err(sp, nret)
+	SCR *sp;
+	enum nresult nret;
 {
 	switch (nret) {
 	case NUM_ERR:
@@ -256,10 +262,10 @@ inc_err(SCR *sp, enum nresult nret)
 		abort();
 		/* NOREACHED */
 	case NUM_OVER:
-		msgq(sp, M_ERR, "Resulting number too large");
+		msgq(sp, M_ERR, "182|Resulting number too large");
 		break;
 	case NUM_UNDER:
-		msgq(sp, M_ERR, "Resulting number too small");
+		msgq(sp, M_ERR, "183|Resulting number too small");
 		break;
 	}
 }

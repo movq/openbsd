@@ -88,7 +88,7 @@ Name_Repository (dir, update_dir)
 	error (1, save_errno, "cannot open %s", tmp);
     }
 
-    if (get_line (&repos, &repos_allocated, fpin) < 0)
+    if (getline (&repos, &repos_allocated, fpin) < 0)
     {
 	/* FIXME: should be checking for end of file separately.  */
 	error (0, 0, "in directory %s:", xupdate_dir);
@@ -106,25 +106,25 @@ Name_Repository (dir, update_dir)
      * one by tacking on the CVSROOT environment variable. If the CVSROOT
      * environment variable is not set, die now.
      */
+    if (strcmp (repos, "..") == 0 || strncmp (repos, "../", 3) == 0)
+    {
+	error (0, 0, "in directory %s:", xupdate_dir);
+	error (0, 0, "`..'-relative repositories are not supported.");
+	error (1, 0, "illegal source repository");
+    }
     if (! isabsolute(repos))
     {
 	char *newrepos;
 
-	if (current_parsed_root == NULL)
+	if (CVSroot_original == NULL)
 	{
 	    error (0, 0, "in directory %s:", xupdate_dir);
 	    error (0, 0, "must set the CVSROOT environment variable\n");
 	    error (0, 0, "or specify the '-d' option to %s.", program_name);
 	    error (1, 0, "illegal repository setting");
 	}
-	if (pathname_levels (repos) > 0)
-	{
-	    error (0, 0, "in directory %s:", xupdate_dir);
-	    error (0, 0, "`..'-relative repositories are not supported.");
-	    error (1, 0, "illegal source repository");
-	}
-	newrepos = xmalloc (strlen (current_parsed_root->directory) + strlen (repos) + 2);
-	(void) sprintf (newrepos, "%s/%s", current_parsed_root->directory, repos);
+	newrepos = xmalloc (strlen (CVSroot_directory) + strlen (repos) + 10);
+	(void) sprintf (newrepos, "%s/%s", CVSroot_directory, repos);
 	free (repos);
 	repos = newrepos;
     }
@@ -147,10 +147,10 @@ Short_Repository (repository)
 
     /* If repository matches CVSroot at the beginning, strip off CVSroot */
     /* And skip leading '/' in rep, in case CVSroot ended with '/'. */
-    if (strncmp (current_parsed_root->directory, repository,
-		 strlen (current_parsed_root->directory)) == 0)
+    if (strncmp (CVSroot_directory, repository,
+		 strlen (CVSroot_directory)) == 0)
     {
-	char *rep = repository + strlen (current_parsed_root->directory);
+	char *rep = repository + strlen (CVSroot_directory);
 	return (*rep == '/') ? rep+1 : rep;
     }
     else

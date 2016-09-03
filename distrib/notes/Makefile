@@ -1,42 +1,30 @@
-#	$OpenBSD: Makefile,v 1.45 2016/09/01 10:08:28 deraadt Exp $
+#	$OpenBSD: Makefile,v 1.10 1998/05/18 00:33:16 todd Exp $
 
 NOPROG=
 NOMAN=
 
 M?=	$(MACHINE)
 
-.if exists(${M}/contents)
-
 TARG=	INSTALL.$M
 SRC=	$(.CURDIR)/INSTALL
 DEP=	$(SRC) $(.CURDIR)/mirrors $(.CURDIR)/$M/whatis $(.CURDIR)/$M/contents \
 	$(.CURDIR)/$M/hardware $(.CURDIR)/$M/xfer $(.CURDIR)/$M/prep \
-	$(.CURDIR)/$M/install $(.CURDIR)/$M/upgrade ${.CURDIR}/$M/features \
+	$(.CURDIR)/$M/install $(.CURDIR)/$M/upgrade $(.CURDIR)/donations \
 	$(.CURDIR)/packages $(.CURDIR)/m4.common
 
 all:	$(TARG)
 
 allarchs:
-	@cd $(.CURDIR); \
-	for arch in alpha amd64 armv7 hppa i386 landisk \
-	    loongson luna88k macppc octeon sgi socppc \
-	    sparc64 zaurus; \
-	do ${MAKE} M=$$arch; done
+	@cd $(.CURDIR); for m in alpha amiga arc atari hp300 i386 mac68k mvme68k pc532 pmax powerpc sparc sun3; do make MACHINE=$$m; done
 
 $(TARG): $(DEP)
 	m4 -DOSREV=$(OSREV) -DOSrev=$(OSrev) -DINCLUDE=$(.CURDIR)/$M \
 	-DMACHINE=$M -Uunix $(SRC) > $@
 
-.else
-all:
-.endif
-
-.ifdef RELEASEDIR
-beforeinstall:
-	cp ${TARG} ${RELEASEDIR}
-.endif
-
-clean:
+clean cleandir:
 	-/bin/rm -f INSTALL.*
+
+beforeinstall:
+	cp ${TARG} ${DESTDIR}/snapshot/
 
 .include <bsd.prog.mk>

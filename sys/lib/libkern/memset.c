@@ -1,4 +1,3 @@
-/*	$OpenBSD: memset.c,v 1.7 2014/06/10 04:16:57 deraadt Exp $	*/
 /*	$NetBSD: memset.c,v 1.6 1998/03/27 05:35:47 cgd Exp $	*/
 
 /*-
@@ -16,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,11 +36,24 @@
  * SUCH DAMAGE.
  */
 
+#include <sys/cdefs.h>
+#if defined(LIBC_SCCS) && !defined(lint)
+#if 0
+static char sccsid[] = "@(#)memset.c	8.1 (Berkeley) 6/4/93";
+#else
+__RCSID("$NetBSD: memset.c,v 1.6 1998/03/27 05:35:47 cgd Exp $");
+#endif
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
 
-#include <sys/limits.h>
-#include <sys/systm.h>
+#if !defined(_KERNEL) && !defined(_STANDALONE)
+#include <string.h>
+#include <limits.h>
+#else
 #include <lib/libkern/libkern.h>
+#include <machine/limits.h>
+#endif 
 
 #define	wsize	sizeof(u_int)
 #define	wmask	(wsize - 1)
@@ -48,20 +64,23 @@
 #define	WIDEVAL	0
 
 void
-bzero(void *dst0, size_t length)
+bzero(dst0, length)
+	void *dst0;
+	size_t length;
 #else
 #define	RETURN	return (dst0)
 #define	VAL	c0
 #define	WIDEVAL	c
 
 void *
-memset(void *dst0, int c0, size_t length)
+memset(dst0, c0, length)
+	void *dst0;
+	int c0;
+	size_t length;
 #endif
 {
 	size_t t;
-#ifndef BZERO
 	u_int c;
-#endif
 	u_char *dst;
 
 	dst = dst0;

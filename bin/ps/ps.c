@@ -1,4 +1,4 @@
-/*	$OpenBSD: ps.c,v 1.70 2016/03/17 05:27:10 bentley Exp $	*/
+/*	$OpenBSD: ps.c,v 1.12 1999/06/21 20:47:59 art Exp $	*/
 /*	$NetBSD: ps.c,v 1.15 1995/05/18 20:33:25 mycroft Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,21 +34,35 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/param.h>	/* MAXCOMLEN NODEV */
-#include <sys/types.h>
-#include <sys/sysctl.h>
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1990, 1993, 1994\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)ps.c	8.4 (Berkeley) 4/2/94";
+#else
+static char rcsid[] = "$OpenBSD: ps.c,v 1.12 1999/06/21 20:47:59 art Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
+#include <sys/user.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <sys/proc.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
+#include <sys/sysctl.h>
+#include <sys/types.h>
 
 #include <ctype.h>
 #include <err.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <kvm.h>
-#include <locale.h>
 #include <nlist.h>
 #include <paths.h>
 #include <pwd.h>
@@ -56,26 +74,26 @@
 
 #include "ps.h"
 
-extern char *__progname;
-
-struct varent *vhead;
+KINFO *kinfo;
+struct varent *vhead, *vtail;
 
 int	eval;			/* exit value */
+int	rawcpu;			/* -C */
 int	sumrusage;		/* -S */
 int	termwidth;		/* width of screen (0 == infinity) */
 int	totwidth;		/* calculated width of requested variables */
 
-int	needcomm, needenv, neednlist, commandonly;
+int	needuser, needcomm, needenv, commandonly;
 
 enum sort { DEFAULT, SORTMEM, SORTCPU } sortby = DEFAULT;
 
-static char	*kludge_oldps_options(char *);
-static int	 pscomp(const void *, const void *);
-static void	 scanvars(void);
-static void	 usage(void);
+static char	*kludge_oldps_options __P((char *));
+static int	 pscomp __P((const void *, const void *));
+static void	 saveuser __P((KINFO *));
+static void	 scanvars __P((void));
+static void	 usage __P((void));
 
 char dfmt[] = "pid tt state time command";
-char tfmt[] = "pid tid tt state time command";
 char jfmt[] = "user pid ppid pgid sess jobc state tt time command";
 char lfmt[] = "uid pid ppid cpu pri nice vsz rss wchan state tt time command";
 char   o1[] = "pid";
@@ -84,12 +102,13 @@ char ufmt[] = "user pid %cpu %mem vsz rss tt state start time command";
 char vfmt[] = "pid state time sl re pagein vsz rss lim tsiz %cpu %mem command";
 
 kvm_t *kd;
-int kvm_sysctl_only;
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
-	struct kinfo_proc *kp, **kinfo;
+	struct kinfo_proc *kp;
 	struct varent *vent;
 	struct winsize ws;
 	struct passwd *pwd;
@@ -97,51 +116,42 @@ main(int argc, char *argv[])
 	pid_t pid;
 	uid_t uid;
 	int all, ch, flag, i, fmt, lineno, nentries;
-	int prtheader, showthreads, wflag, kflag, what, Uflag, xflg;
-	char *nlistf, *memf, *swapf, *cols, errbuf[_POSIX2_LINE_MAX];
+	int prtheader, wflag, what, xflg;
+	char *nlistf, *memf, *swapf, errbuf[_POSIX2_LINE_MAX];
 
-	setlocale(LC_CTYPE, "");
-
-	termwidth = 0;
-	if ((cols = getenv("COLUMNS")) != NULL)
-		termwidth = strtonum(cols, 1, INT_MAX, NULL);
-	if (termwidth == 0 && ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 &&
-	    ws.ws_col > 0)
-		termwidth = ws.ws_col - 1;
-	if (termwidth == 0)
+	if ((ioctl(STDOUT_FILENO, TIOCGWINSZ, (char *)&ws) == -1 &&
+	     ioctl(STDERR_FILENO, TIOCGWINSZ, (char *)&ws) == -1 &&
+	     ioctl(STDIN_FILENO,  TIOCGWINSZ, (char *)&ws) == -1) ||
+	     ws.ws_col == 0)
 		termwidth = 79;
+	else
+		termwidth = ws.ws_col - 1;
 
 	if (argc > 1)
 		argv[1] = kludge_oldps_options(argv[1]);
 
-	all = fmt = prtheader = showthreads = wflag = kflag = Uflag = xflg = 0;
+	all = fmt = prtheader = wflag = xflg = 0;
 	pid = -1;
-	uid = 0;
+	uid = (uid_t) -1;
 	ttydev = NODEV;
 	memf = nlistf = swapf = NULL;
 	while ((ch = getopt(argc, argv,
-	    "AaCcegHhjkLlM:mN:O:o:p:rSTt:U:uvW:wx")) != -1)
-		switch (ch) {
-		case 'A':
-			all = 1;
-			xflg = 1;
-			break;
+	    "acCeghjLlM:mN:O:o:p:rSTt:U:uvW:wx")) != EOF)
+		switch((char)ch) {
 		case 'a':
 			all = 1;
 			break;
-		case 'C':
-			break;			/* no-op */
 		case 'c':
 			commandonly = 1;
 			break;
 		case 'e':			/* XXX set ufmt */
 			needenv = 1;
 			break;
+		case 'C':
+			rawcpu = 1;
+			break;
 		case 'g':
 			break;			/* no-op */
-		case 'H':
-			showthreads = 1;
-			break;
 		case 'h':
 			prtheader = ws.ws_row > 5 ? ws.ws_row : 22;
 			break;
@@ -149,9 +159,6 @@ main(int argc, char *argv[])
 			parsefmt(jfmt);
 			fmt = 1;
 			jfmt[0] = '\0';
-			break;
-		case 'k':
-			kflag = 1;
 			break;
 		case 'L':
 			showkey();
@@ -197,7 +204,7 @@ main(int argc, char *argv[])
 			/* FALLTHROUGH */
 		case 't': {
 			struct stat sb;
-			char *ttypath, pathbuf[PATH_MAX];
+			char *ttypath, pathbuf[MAXPATHLEN];
 
 			if (strcmp(optarg, "co") == 0)
 				ttypath = _PATH_CONSOLE;
@@ -219,7 +226,7 @@ main(int argc, char *argv[])
 				errx(1, "%s: no such user", optarg);
 			uid = pwd->pw_uid;
 			endpwent();
-			Uflag = xflg = 1;
+			xflg = 1;
 			break;
 		case 'u':
 			parsefmt(ufmt);
@@ -241,7 +248,7 @@ main(int argc, char *argv[])
 				termwidth = UNLIMITED;
 			else if (termwidth < 131)
 				termwidth = 131;
-			wflag = 1;
+			wflag++;
 			break;
 		case 'x':
 			xflg = 1;
@@ -263,45 +270,38 @@ main(int argc, char *argv[])
 		}
 	}
 #endif
-
-	if (nlistf == NULL && memf == NULL && swapf == NULL) {
-		kd = kvm_openfiles(NULL, NULL, NULL, KVM_NO_FILES, errbuf);
-		kvm_sysctl_only = 1;
-	} else {
-		kd = kvm_openfiles(nlistf, memf, swapf, O_RDONLY, errbuf);
+	/*
+	 * Discard setgid privileges if not the running kernel so that bad
+	 * guys can't print interesting stuff from kernel memory.
+	 */
+	if (nlistf != NULL || memf != NULL || swapf != NULL) {
+		setegid(getgid());
+		setgid(getgid());
 	}
-	if (kd == NULL)
+
+	kd = kvm_openfiles(nlistf, memf, swapf, O_RDONLY, errbuf);
+	if (kd == 0)
 		errx(1, "%s", errbuf);
 
-	if (pledge("stdio rpath getpw ps", NULL) == -1)
-		err(1, "pledge");
+	setegid(getgid());
+	setgid(getgid());
 
-	if (!fmt) {
-		if (showthreads)
-			parsefmt(tfmt);
-		else
-			parsefmt(dfmt);
-	}
+	if (!fmt)
+		parsefmt(dfmt);
 
 	/* XXX - should be cleaner */
-	if (!all && ttydev == NODEV && pid == -1 && !Uflag) {
+	if (!all && ttydev == NODEV && pid == -1 && uid == (uid_t)-1)
 		uid = getuid();
-		Uflag = 1;
-	}
 
 	/*
 	 * scan requested variables, noting what structures are needed,
-	 * and adjusting header widths as appropriate.
+	 * and adjusting header widths as appropiate.
 	 */
 	scanvars();
-
-	if (neednlist && !nlistread)
-		(void) donlist();
-
 	/*
 	 * get proc list
 	 */
-	if (Uflag) {
+	if (uid != (uid_t) -1) {
 		what = KERN_PROC_UID;
 		flag = uid;
 	} else if (ttydev != NODEV) {
@@ -310,23 +310,22 @@ main(int argc, char *argv[])
 	} else if (pid != -1) {
 		what = KERN_PROC_PID;
 		flag = pid;
-	} else if (kflag) {
-		what = KERN_PROC_KTHREAD;
-		flag = 0;
 	} else {
 		what = KERN_PROC_ALL;
 		flag = 0;
 	}
-	if (showthreads)
-		what |= KERN_PROC_SHOW_THREADS;
-
 	/*
 	 * select procs
 	 */
-	kp = kvm_getprocs(kd, what, flag, sizeof(*kp), &nentries);
-	if (kp == NULL)
+	if ((kp = kvm_getprocs(kd, what, flag, &nentries)) == 0)
 		errx(1, "%s", kvm_geterr(kd));
-
+	if ((kinfo = malloc(nentries * sizeof(*kinfo))) == NULL)
+		err(1, NULL);
+	for (i = nentries; --i >= 0; ++kp) {
+		kinfo[i].ki_p = kp;
+		if (needuser)
+			saveuser(&kinfo[i]);
+	}
 	/*
 	 * print header
 	 */
@@ -334,27 +333,20 @@ main(int argc, char *argv[])
 	if (nentries == 0)
 		exit(1);
 	/*
-	 * sort proc list, we convert from an array of structs to an array
-	 * of pointers to make the sort cheaper.
+	 * sort proc list
 	 */
-	if ((kinfo = reallocarray(NULL, nentries, sizeof(*kinfo))) == NULL)
-		err(1, "failed to allocate memory for proc pointers");
-	for (i = 0; i < nentries; i++)
-		kinfo[i] = &kp[i];
-	qsort(kinfo, nentries, sizeof(*kinfo), pscomp);
+	qsort(kinfo, nentries, sizeof(KINFO), pscomp);
 	/*
 	 * for each proc, call each variable output function.
 	 */
 	for (i = lineno = 0; i < nentries; i++) {
-		if (showthreads == 0 && (kinfo[i]->p_flag & P_THREAD) != 0)
-			continue;
-		if (xflg == 0 && ((int)kinfo[i]->p_tdev == NODEV ||
-		    (kinfo[i]->p_psflags & PS_CONTROLT ) == 0))
-			continue;
-		if (showthreads && kinfo[i]->p_tid == -1)
+		KINFO *ki = &kinfo[i];
+
+		if (xflg == 0 && (KI_EPROC(ki)->e_tdev == NODEV ||
+		    (KI_PROC(ki)->p_flag & P_CONTROLT ) == 0))
 			continue;
 		for (vent = vhead; vent; vent = vent->next) {
-			(vent->var->oproc)(kinfo[i], vent);
+			(vent->var->oproc)(ki, vent);
 			if (vent->next != NULL)
 				(void)putchar(' ');
 		}
@@ -369,7 +361,7 @@ main(int argc, char *argv[])
 }
 
 static void
-scanvars(void)
+scanvars()
 {
 	struct varent *vent;
 	VAR *v;
@@ -381,29 +373,53 @@ scanvars(void)
 		if (v->width < i)
 			v->width = i;
 		totwidth += v->width + 1;	/* +1 for space */
+		if (v->flag & USER)
+			needuser = 1;
 		if (v->flag & COMM)
 			needcomm = 1;
-		if (v->flag & NLIST)
-			neednlist = 1;
 	}
 	totwidth--;
 }
 
-static int
-pscomp(const void *v1, const void *v2)
+static void
+saveuser(ki)
+	KINFO *ki;
 {
-	const struct kinfo_proc *kp1 = *(const struct kinfo_proc **)v1;
-	const struct kinfo_proc *kp2 = *(const struct kinfo_proc **)v2;
-	int i;
-#define VSIZE(k) ((k)->p_vm_dsize + (k)->p_vm_ssize + (k)->p_vm_tsize)
+	struct pstats pstats;
+	struct usave *usp;
 
-	if (sortby == SORTCPU && (i = getpcpu(kp2) - getpcpu(kp1)) != 0)
-		return (i);
-	if (sortby == SORTMEM && (i = VSIZE(kp2) - VSIZE(kp1)) != 0)
-		return (i);
-	if ((i = kp1->p_tdev - kp2->p_tdev) == 0 &&
-	    (i = kp1->p_ustart_sec - kp2->p_ustart_sec) == 0)
-		i = kp1->p_ustart_usec - kp2->p_ustart_usec;
+	usp = &ki->ki_u;
+	if (kvm_read(kd, (u_long)&KI_PROC(ki)->p_addr->u_stats,
+	    &pstats, sizeof(pstats)) == sizeof(pstats)) {
+		/*
+		 * The u-area might be swapped out, and we can't get
+		 * at it because we have a crashdump and no swap.
+		 * If it's here fill in these fields, otherwise, just
+		 * leave them 0.
+		 */
+		usp->u_start = pstats.p_start;
+		usp->u_ru = pstats.p_ru;
+		usp->u_cru = pstats.p_cru;
+		usp->u_valid = 1;
+	} else
+		usp->u_valid = 0;
+}
+
+static int
+pscomp(a, b)
+	const void *a, *b;
+{
+	int i;
+#define VSIZE(k) (KI_EPROC(k)->e_vm.vm_dsize + KI_EPROC(k)->e_vm.vm_ssize + \
+		  KI_EPROC(k)->e_vm.vm_tsize)
+
+	if (sortby == SORTCPU)
+		return (getpcpu((KINFO *)b) - getpcpu((KINFO *)a));
+	if (sortby == SORTMEM)
+		return (VSIZE((KINFO *)b) - VSIZE((KINFO *)a));
+	i =  KI_EPROC((KINFO *)a)->e_tdev - KI_EPROC((KINFO *)b)->e_tdev;
+	if (i == 0)
+		i = KI_PROC((KINFO *)a)->p_pid - KI_PROC((KINFO *)b)->p_pid;
 	return (i);
 }
 
@@ -419,20 +435,20 @@ pscomp(const void *v1, const void *v2)
  * feature is available with the option 'T', which takes no argument.
  */
 static char *
-kludge_oldps_options(char *s)
+kludge_oldps_options(s)
+	char *s;
 {
 	size_t len;
 	char *newopts, *ns, *cp;
 
 	len = strlen(s);
-	if ((newopts = ns = malloc(2 + len + 1)) == NULL)
+	if ((newopts = ns = malloc(len + 3)) == NULL)
 		err(1, NULL);
 	/*
 	 * options begin with '-'
 	 */
 	if (*s != '-')
 		*ns++ = '-';	/* add option flag */
-
 	/*
 	 * gaze to end of argv[1]
 	 */
@@ -449,7 +465,7 @@ kludge_oldps_options(char *s)
 		 * otherwise check for trailing number, which *may* be a
 		 * pid.
 		 */
-		while (cp >= s && isdigit((unsigned char)*cp))
+		while (cp >= s && isdigit(*cp))
 			--cp;
 	}
 	cp++;
@@ -459,23 +475,22 @@ kludge_oldps_options(char *s)
 	 * if there's a trailing number, and not a preceding 'p' (pid) or
 	 * 't' (tty) flag, then assume it's a pid and insert a 'p' flag.
 	 */
-	if (isdigit((unsigned char)*cp) &&
-	    (cp == s || (cp[-1] != 't' && cp[-1] != 'p' &&
+	if (isdigit(*cp) && (cp == s || (cp[-1] != 't' && cp[-1] != 'p' &&
 	    (cp - 1 == s || cp[-2] != 't'))))
 		*ns++ = 'p';
-	/* and append the number */
-	(void)strlcpy(ns, cp, newopts + len + 3 - ns);
+	(void)strcpy(ns, cp);		/* and append the number */
 
 	return (newopts);
 }
 
 static void
-usage(void)
+usage()
 {
+
 	(void)fprintf(stderr,
-	    "usage: %s [-AaceHhjkLlmrSTuvwx] [-M core] [-N system] [-O fmt] [-o fmt] [-p pid]\n",
-	    __progname);
-	(void)fprintf(stderr,
-	    "%-*s[-t tty] [-U username] [-W swap]\n", (int)strlen(__progname) + 8, "");
+	    "usage:\t%s\n\t   %s\n\t%s\n",
+	    "ps [-aChjlmrSTuvwx] [-O|o fmt] [-p pid] [-t tty] [-U user]",
+	    "[-M core] [-N system] [-W swap]",
+	    "ps [-L]");
 	exit(1);
 }

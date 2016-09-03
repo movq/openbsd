@@ -1,4 +1,4 @@
-/*	$OpenBSD: init.c,v 1.15 2016/03/08 10:48:39 mestre Exp $	*/
+/*	$OpenBSD: init.c,v 1.6 1998/08/31 02:29:39 pjanzen Exp $	*/
 /*	$NetBSD: init.c,v 1.4 1996/05/21 21:53:05 mrg Exp $	*/
 
 /*-
@@ -18,7 +18,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -35,12 +39,25 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)init.c	8.1 (Berkeley) 6/2/93";
+#else
+static char rcsid[] = "$OpenBSD: init.c,v 1.6 1998/08/31 02:29:39 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
 /*	Re-coding of advent in C: data initialization	*/
 
+#include <sys/types.h>
+#include <signal.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
+#include <unistd.h>
 
-#include "extern.h"
 #include "hdr.h"
+#include "extern.h"
 
 int     blklin = TRUE;
 
@@ -49,20 +66,16 @@ int     setbit[16] = {1, 2, 4, 010, 020, 040, 0100, 0200, 0400, 01000, 02000,
 
 
 void
-init(void)			/* everything for 1st time run */
+init()				/* everything for 1st time run */
 {
-	/*
-	 * We need deterministic randomness for the obfuscation schemes
-	 * in io.c and setup.c.
-	 */
-	srandom_deterministic(1);
 	rdata();		/* read data from orig. file */
 	linkdata();
 	poof();
 }
 
 char *
-decr(char a, char b, char c, char d, char e)
+decr(a, b, c, d, e)
+	char a, b, c, d, e;
 {
 	static char buf[6];
 
@@ -76,12 +89,12 @@ decr(char a, char b, char c, char d, char e)
 }
 
 void
-linkdata(void)			/* secondary data manipulation */
+linkdata()			/* secondary data manipulation */
 {
 	int     i, j;
 
 	/* array linkages */
-	for (i = 1; i < LOCSIZ; i++)
+	for (i = 1; i <= LOCSIZ; i++)
 		if (ltext[i].seekadr != 0 && travel[i] != 0)
 			if ((travel[i]->tverb) == 1)
 				cond[i] = 2;
@@ -202,7 +215,8 @@ linkdata(void)			/* secondary data manipulation */
 
 
 void
-trapdel(int n)			/* come here if he hits a del	*/
+trapdel(n)			/* come here if he hits a del	*/
+	int n;
 {
 	delhit = 1;		/* main checks, treats as QUIT	*/
 	signal(SIGINT, trapdel);/* catch subsequent DELs	*/
@@ -210,9 +224,11 @@ trapdel(int n)			/* come here if he hits a del	*/
 
 
 void
-startup(void)
+startup()
 {
 	demo = Start();
+	srandom((unsigned int)(time((time_t *)NULL)));	/* random seed */
+	/* srand(371); */			/* non-random seed */
 	hinted[3] = yes(65, 1, 0);
 	newloc = 1;
 	delhit = 0;

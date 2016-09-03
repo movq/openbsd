@@ -1,4 +1,3 @@
-/*	$OpenBSD: pdb.c,v 1.9 2016/08/14 22:29:01 krw Exp $	*/
 /*
  * Copyright (c) 1994 Christopher G. Demetriou
  * All rights reserved.
@@ -29,6 +28,10 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifndef LINT
+static char rcsid[] = "$Id: pdb.c,v 1.2 1998/12/18 20:47:34 deraadt Exp $";
+#endif
+
 #include <sys/types.h>
 #include <sys/acct.h>
 #include <err.h>
@@ -39,14 +42,14 @@
 #include "extern.h"
 #include "pathnames.h"
 
-static int check_junk(struct cmdinfo *);
-static void add_ci(const struct cmdinfo *, struct cmdinfo *);
-static void print_ci(const struct cmdinfo *, const struct cmdinfo *);
+static int check_junk __P((struct cmdinfo *));
+static void add_ci __P((const struct cmdinfo *, struct cmdinfo *));
+static void print_ci __P((const struct cmdinfo *, const struct cmdinfo *));
 
 static DB	*pacct_db;
 
 int
-pacct_init(void)
+pacct_init()
 {
 	DB *saved_pacct_db;
 	int error;
@@ -103,14 +106,15 @@ out:	if (error != 0)
 }
 
 void
-pacct_destroy(void)
+pacct_destroy()
 {
 	if (DB_CLOSE(pacct_db) < 0)
 		warn("destroying process accounting stats");
 }
 
 int
-pacct_add(const struct cmdinfo *ci)
+pacct_add(ci)
+	const struct cmdinfo *ci;
 {
 	DBT key, data;
 	struct cmdinfo newci;
@@ -133,10 +137,10 @@ pacct_add(const struct cmdinfo *ci)
 		memset(&newci, 0, sizeof(newci));
 		memcpy(newci.ci_comm, key.data, key.size);
 	}
-
+	
 	add_ci(ci, &newci);
 
-	data.data = &newci;
+	data.data = &newci; 
 	data.size = sizeof(newci);
 	rv = DB_PUT(pacct_db, &key, &data, 0);
 	if (rv < 0) {
@@ -152,7 +156,7 @@ pacct_add(const struct cmdinfo *ci)
 }
 
 int
-pacct_update(void)
+pacct_update()
 {
 	DB *saved_pacct_db;
 	DBT key, data;
@@ -200,7 +204,7 @@ pacct_update(void)
 }
 
 void
-pacct_print(void)
+pacct_print()
 {
 	BTREEINFO bti;
 	DBT key, data, ndata;
@@ -209,11 +213,11 @@ pacct_print(void)
 	int rv;
 
 	memset(&ci_total, 0, sizeof(ci_total));
-	strlcpy(ci_total.ci_comm, "", sizeof ci_total.ci_comm);
+	strcpy(ci_total.ci_comm, "");
 	memset(&ci_other, 0, sizeof(ci_other));
-	strlcpy(ci_other.ci_comm, "***other", sizeof ci_other.ci_comm);
+	strcpy(ci_other.ci_comm, "***other");
 	memset(&ci_junk, 0, sizeof(ci_junk));
-	strlcpy(ci_junk.ci_comm, "**junk**", sizeof ci_junk.ci_comm);
+	strcpy(ci_junk.ci_comm, "**junk**");
 
 	/*
 	 * Retrieve them into new DB, sorted by appropriate key.
@@ -296,19 +300,22 @@ next:		rv = DB_SEQ(pacct_db, &key, &data, R_NEXT);
 }
 
 static int
-check_junk(struct cmdinfo *cip)
+check_junk(cip)
+	struct cmdinfo *cip;
 {
 	char *cp;
 	size_t len;
 
-	fprintf(stderr, "%s (%llu) -- ", cip->ci_comm, cip->ci_calls);
+	fprintf(stderr, "%s (%qu) -- ", cip->ci_comm, cip->ci_calls);
 	cp = fgetln(stdin, &len);
 
 	return (cp && (cp[0] == 'y' || cp[0] == 'Y')) ? 1 : 0;
 }
 
 static void
-add_ci(const struct cmdinfo *fromcip, struct cmdinfo *tocip)
+add_ci(fromcip, tocip)
+	const struct cmdinfo *fromcip;
+	struct cmdinfo *tocip;
 {
 	tocip->ci_calls += fromcip->ci_calls;
 	tocip->ci_etime += fromcip->ci_etime;
@@ -319,7 +326,8 @@ add_ci(const struct cmdinfo *fromcip, struct cmdinfo *tocip)
 }
 
 static void
-print_ci(const struct cmdinfo *cip, const struct cmdinfo *totalcip)
+print_ci(cip, totalcip)
+	const struct cmdinfo *cip, *totalcip;
 {
 	double t, c;
 	int uflow;
@@ -332,7 +340,7 @@ print_ci(const struct cmdinfo *cip, const struct cmdinfo *totalcip)
 	} else
 		uflow = 0;
 
-	printf("%8llu ", cip->ci_calls);
+	printf("%8qu ", cip->ci_calls);
 	if (cflag) {
 		if (cip != totalcip)
 			printf(" %4.2f%%  ",
@@ -389,20 +397,19 @@ print_ci(const struct cmdinfo *cip, const struct cmdinfo *totalcip)
 		}
 	}
 
-	if (tflag) {
+	if (tflag)
 		if (!uflow)
 			printf("%8.2fre/cp ", cip->ci_etime / (double) (cip->ci_utime + cip->ci_stime));
 		else
-			printf("%8s ", "*ignore*");
-	}
+			printf("%8 ", "*ignore*");
 
 	if (Dflag)
-		printf("%10llutio ", cip->ci_io);
+		printf("%10qutio ", cip->ci_io);
 	else
 		printf("%8.0favio ", cip->ci_io / c);
 
 	if (Kflag)
-		printf("%10lluk*sec ", cip->ci_mem);
+		printf("%10quk*sec ", cip->ci_mem);
 	else
 		printf("%8.0fk ", cip->ci_mem / t);
 

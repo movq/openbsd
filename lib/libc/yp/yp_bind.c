@@ -1,6 +1,6 @@
-/*	$OpenBSD: yp_bind.c,v 1.28 2016/05/30 02:53:29 guenther Exp $ */
 /*
- * Copyright (c) 1992, 1993, 1996 Theo de Raadt <deraadt@theos.com>
+ * Copyright (c) 1996 Theo de Raadt <deraadt@theos.com>
+ * Copyright (c) 1992, 1993 Theo de Raadt <deraadt@theos.com>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -11,6 +11,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Theo de Raadt.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
  * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -25,6 +30,11 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: yp_bind.c,v 1.10 1999/08/17 09:13:13 millert Exp $";
+#endif /* LIBC_SCCS and not lint */
+
+#include <sys/param.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
@@ -34,9 +44,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <limits.h>
-#include <paths.h>
-
 #include <rpc/rpc.h>
 #include <rpc/xdr.h>
 #include <rpcsvc/yp.h>
@@ -44,23 +51,25 @@
 #include "ypinternal.h"
 
 struct dom_binding *_ypbindlist;
-char _yp_domain[HOST_NAME_MAX+1];
+char _yp_domain[MAXHOSTNAMELEN];
 int _yplib_timeout = 10;
 
 int
-_yp_dobind(const char *dom, struct dom_binding **ypdb)
+_yp_dobind(dom, ypdb)
+	const char     *dom;
+	struct dom_binding **ypdb;
 {
-	static pid_t	pid = -1;
-	char            path[PATH_MAX];
+	static int      pid = -1;
+	char            path[MAXPATHLEN];
 	struct dom_binding *ysd, *ysd2;
 	struct ypbind_resp ypbr;
 	struct timeval  tv;
 	struct sockaddr_in clnt_sin;
 	struct ypbind_binding *bn;
-	int             clnt_sock, fd;
-	pid_t		gpid;
+	int             clnt_sock, fd, gpid;
 	CLIENT         *client;
 	int             new = 0, r;
+	int             count = 0;
 	u_short		port;
 
 	/*
@@ -98,21 +107,17 @@ _yp_dobind(const char *dom, struct dom_binding **ypdb)
 		if (strcmp(dom, ysd->dom_domain) == 0)
 			break;
 	if (ysd == NULL) {
-		if ((ysd = calloc(1, sizeof *ysd)) == NULL)
-			return YPERR_RESRC;
+		if ((ysd = malloc(sizeof *ysd)) == NULL)
+			return YPERR_YPERR;
+		(void)memset(ysd, 0, sizeof *ysd);
 		ysd->dom_socket = -1;
 		ysd->dom_vers = 0;
 		new = 1;
 	}
 again:
 	if (ysd->dom_vers == 0) {
-		r = snprintf(path, sizeof(path), "%s/%s.%d",
+		(void) snprintf(path, sizeof(path), "%s/%s.%d",
 		    BINDINGDIR, dom, 2);
-		if (r < 0 || r >= sizeof(path)) {
-			if (new)
-				free(ysd);
-			return YPERR_BADARGS;
-		}
 		if ((fd = open(path, O_RDONLY)) == -1) {
 			/*
 			 * no binding file, YP is dead, or not yet fully
@@ -164,14 +169,7 @@ trynet:
 			clnt_pcreateerror("clnttcp_create");
 			if (new)
 				free(ysd);
-			switch (rpc_createerr.cf_error.re_errno) {
-			case ECONNREFUSED:
-				return YPERR_YPBIND;
-			case ENOMEM:
-				return YPERR_RESRC;
-			default:
-				return YPERR_YPERR;
-			}
+			return YPERR_YPBIND;
 		}
 		if (ntohs(clnt_sin.sin_port) >= IPPORT_RESERVED ||
 		    ntohs(clnt_sin.sin_port) == 20) {
@@ -190,6 +188,11 @@ trynet:
 		r = clnt_call(client, YPBINDPROC_DOMAIN, xdr_domainname,
 		    &dom, xdr_ypbind_resp, &ypbr, tv);
 		if (r != RPC_SUCCESS) {
+			if (new == 0 || count)
+				fprintf(stderr,
+		    "YP server for domain %s not responding, still trying\n",
+				    dom);
+			count++;
 			clnt_destroy(client);
 			ysd->dom_vers = -1;
 			goto again;
@@ -211,7 +214,7 @@ gotdata:
 				free(ysd);
 			return YPERR_YPBIND;
 		}
-		(void)memset(&ysd->dom_server_addr, 0,
+		(void)memset(&ysd->dom_server_addr, 0, 
 		    sizeof ysd->dom_server_addr);
 		ysd->dom_server_addr.sin_len = sizeof(struct sockaddr_in);
 		ysd->dom_server_addr.sin_family = AF_INET;
@@ -223,7 +226,8 @@ gotdata:
 		    sizeof(ysd->dom_server_addr.sin_addr.s_addr));
 		ysd->dom_server_port = ysd->dom_server_addr.sin_port;
 		ysd->dom_vers = YPVERS;
-		strlcpy(ysd->dom_domain, dom, sizeof ysd->dom_domain);
+		(void)strncpy(ysd->dom_domain, dom, sizeof ysd->dom_domain-1);
+		ysd->dom_domain[sizeof ysd->dom_domain-1] = '\0';
 	}
 	tv.tv_sec = _yplib_timeout / 2;
 	tv.tv_usec = 0;
@@ -237,7 +241,7 @@ gotdata:
 		ysd->dom_vers = -1;
 		goto again;
 	}
-	if (fcntl(ysd->dom_socket, F_SETFD, FD_CLOEXEC) == -1)
+	if (fcntl(ysd->dom_socket, F_SETFD, 1) == -1)
 		perror("fcntl: F_SETFD");
 
 	if (new) {
@@ -250,7 +254,8 @@ gotdata:
 }
 
 void
-_yp_unbind(struct dom_binding *ypb)
+_yp_unbind(ypb)
+	struct dom_binding *ypb;
 {
 	clnt_destroy(ypb->dom_client);
 	ypb->dom_client = NULL;
@@ -258,14 +263,15 @@ _yp_unbind(struct dom_binding *ypb)
 }
 
 int
-yp_bind(const char *dom)
+yp_bind(dom)
+	const char     *dom;
 {
 	return _yp_dobind(dom, NULL);
 }
-DEF_WEAK(yp_bind);
 
 void
-yp_unbind(const char *dom)
+yp_unbind(dom)
+	const char     *dom;
 {
 	struct dom_binding *ypb, *ypbp;
 

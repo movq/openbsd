@@ -1,4 +1,4 @@
-/*	$OpenBSD: print.c,v 1.9 2016/01/08 18:09:59 mestre Exp $	*/
+/*	$OpenBSD: print.c,v 1.4 1999/09/25 15:52:20 pjanzen Exp $	*/
 /*	$NetBSD: print.c,v 1.4 1995/03/24 05:02:02 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,7 +34,15 @@
  * SUCH DAMAGE.
  */
 
-#include "mille.h"
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)print.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: print.c,v 1.4 1999/09/25 15:52:20 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
+# include	"mille.h"
 
 /*
  * @(#)print.c	1.1 (Berkeley) 4/1/82
@@ -40,7 +52,7 @@
 # define	CARD_STRT	2
 
 void
-prboard(void)
+prboard()
 {
 	PLAY	*pp;
 	int	i, j, k, temp;
@@ -95,7 +107,9 @@ prboard(void)
  *	Show the given card if it is different from the last one shown
  */
 void
-show_card(int y, int x, CARD c, CARD *lc)
+show_card(y, x, c, lc)
+	int	y, x;
+	CARD	c, *lc;
 {
 	if (c == *lc)
 		return;
@@ -107,7 +121,8 @@ show_card(int y, int x, CARD c, CARD *lc)
 static char	Score_fmt[] = "%4d";
 
 void
-prscore(bool for_real)
+prscore(for_real)
+	bool	for_real;
 {
 	PLAY	*pp;
 	int	x;
@@ -153,7 +168,9 @@ prscore(bool for_real)
  *	showed it.
  */
 void
-show_score(int y, int x, int s, int *ls)
+show_score(y, x, s, ls)
+	int	y, x;
+	int	s, *ls;
 {
 	if (s == *ls)
 		return;

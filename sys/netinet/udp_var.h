@@ -1,4 +1,4 @@
-/*	$OpenBSD: udp_var.h,v 1.27 2016/06/18 10:36:13 vgross Exp $	*/
+/*	$OpenBSD: udp_var.h,v 1.8 1999/03/27 21:04:21 provos Exp $	*/
 /*	$NetBSD: udp_var.h,v 1.12 1996/02/13 23:44:41 christos Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,9 +35,6 @@
  *
  *	@(#)udp_var.h	8.1 (Berkeley) 6/10/93
  */
-
-#ifndef _NETINET_UDP_VAR_H_
-#define _NETINET_UDP_VAR_H_
 
 /*
  * UDP kernel structures and variables.
@@ -64,10 +65,8 @@ struct	udpstat {
 	u_long	udps_nosec;		/* dropped for lack of ipsec */
 	u_long	udps_fullsock;		/* not delivered, input socket full */
 	u_long	udps_pcbhashmiss;	/* input packets missing pcb hash */
-	u_long	udps_inswcsum;		/* input software-csummed packets */
 				/* output statistics: */
 	u_long	udps_opackets;		/* total output packets */
-	u_long	udps_outswcsum;		/* output software-csummed packets */
 };
 
 /*
@@ -77,9 +76,7 @@ struct	udpstat {
 #define	UDPCTL_BADDYNAMIC	2 /* return bad dynamic port bitmap */
 #define UDPCTL_RECVSPACE	3 /* receive buffer space */
 #define UDPCTL_SENDSPACE	4 /* send buffer space */
-#define UDPCTL_STATS		5 /* UDP statistics */
-#define UDPCTL_ROOTONLY		6 /* root only port bitmap */
-#define UDPCTL_MAXID		7
+#define UDPCTL_MAXID		5
 
 #define UDPCTL_NAMES { \
 	{ 0, 0 }, \
@@ -87,37 +84,17 @@ struct	udpstat {
 	{ "baddynamic", CTLTYPE_STRUCT }, \
 	{ "recvspace",  CTLTYPE_INT }, \
 	{ "sendspace",  CTLTYPE_INT }, \
-	{ "stats",	CTLTYPE_STRUCT }, \
-	{ "rootonly", CTLTYPE_STRUCT }, \
-}
-
-#define UDPCTL_VARS { \
-	NULL, \
-	&udpcksum, \
-	NULL, \
-	&udp_recvspace, \
-	&udp_sendspace, \
-	NULL, \
-	NULL \
 }
 
 #ifdef _KERNEL
-extern struct	inpcbtable udbtable;
-extern struct	udpstat udpstat;
+struct	inpcbtable udbtable;
+struct	udpstat udpstat;
 
-#ifdef INET6
-void	udp6_ctlinput(int, struct sockaddr *, u_int, void *);
-int	udp6_input(struct mbuf **, int *, int);
-#endif /* INET6 */
-void	 *udp_ctlinput(int, struct sockaddr *, u_int, void *);
-void	 udp_init(void);
-void	 udp_input(struct mbuf *, ...);
-#ifdef INET6
-int	 udp6_output(struct inpcb *, struct mbuf *, struct mbuf *,
-	struct mbuf *);
-#endif /* INET6 */
-int	 udp_sysctl(int *, u_int, void *, size_t *, void *, size_t);
-int	 udp_usrreq(struct socket *,
-	    int, struct mbuf *, struct mbuf *, struct mbuf *, struct proc *);
-#endif /* _KERNEL */
-#endif /* _NETINET_UDP_VAR_H_ */
+void	 *udp_ctlinput __P((int, struct sockaddr *, void *));
+void	 udp_init __P((void));
+void	 udp_input __P((struct mbuf *, ...));
+int	 udp_output __P((struct mbuf *, ...));
+int	 udp_sysctl __P((int *, u_int, void *, size_t *, void *, size_t));
+int	 udp_usrreq __P((struct socket *,
+	    int, struct mbuf *, struct mbuf *, struct mbuf *));
+#endif

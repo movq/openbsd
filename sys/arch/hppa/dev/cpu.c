@@ -1,7 +1,7 @@
-/*	$OpenBSD: cpu.c,v 1.41 2014/01/19 12:45:35 deraadt Exp $	*/
+/*	$OpenBSD: cpu.c,v 1.5 1999/08/16 02:48:39 mickey Exp $	*/
 
 /*
- * Copyright (c) 1998-2003 Michael Shalayeff
+ * Copyright (c) 1998,1999 Michael Shalayeff
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -12,32 +12,31 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHOR OR HIS RELATIVES BE LIABLE FOR ANY DIRECT,
- * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF MIND, USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
- * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
- * THE POSSIBILITY OF SUCH DAMAGE.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-#include <sys/proc.h>
 #include <sys/reboot.h>
-#include <dev/rndvar.h>
-
-#include <uvm/uvm_extern.h>
 
 #include <machine/cpufunc.h>
 #include <machine/pdc.h>
-#include <machine/reg.h>
 #include <machine/iomod.h>
 #include <machine/autoconf.h>
 
@@ -45,15 +44,13 @@
 
 struct cpu_softc {
 	struct  device sc_dev;
+
+	hppa_hpa_t sc_hpa;
+	void *sc_ih;
 };
 
-#ifdef MULTIPROCESSOR
-struct cpu_info *cpu_hatch_info;
-static volatile int start_secondary_cpu;
-#endif
-
-int	cpumatch(struct device *, void *, void *);
-void	cpuattach(struct device *, struct device *, void *);
+int	cpumatch __P((struct device *, void *, void *));
+void	cpuattach __P((struct device *, struct device *, void *));
 
 struct cfattach cpu_ca = {
 	sizeof(struct cpu_softc), cpumatch, cpuattach
@@ -64,230 +61,111 @@ struct cfdriver cpu_cd = {
 };
 
 int
-cpumatch(struct device *parent, void *cfdata, void *aux)
+cpumatch(parent, cfdata, aux)   
+	struct device *parent;
+	void *cfdata;
+	void *aux;
 {
-	struct cfdata *cf = cfdata;
 	struct confargs *ca = aux;
+	struct cfdata *cf = cfdata;
 
+	/* there will be only one for now XXX */
 	/* probe any 1.0, 1.1 or 2.0 */
-	if (ca->ca_type.iodc_type != HPPA_TYPE_NPROC ||
+	if (cf->cf_unit > 0 ||
+	    ca->ca_type.iodc_type != HPPA_TYPE_NPROC ||
 	    ca->ca_type.iodc_sv_model != HPPA_NPROC_HPPA)
-		return 0;
-
-	if (cf->cf_unit >= MAXCPUS)
 		return 0;
 
 	return 1;
 }
 
 void
-cpuattach(struct device *parent, struct device *self, void *aux)
+cpuattach(parent, self, aux)
+	struct device *parent;
+	struct device *self;
+	void *aux;
 {
 	/* machdep.c */
-	extern struct pdc_model pdc_model;
 	extern struct pdc_cache pdc_cache;
 	extern struct pdc_btlb pdc_btlb;
 	extern u_int cpu_ticksnum, cpu_ticksdenom;
-	extern u_int fpu_enable;
-	/* clock.c */
-	extern int cpu_hardclock(void *);
-	/* ipi.c */
-	extern int hppa_ipi_intr(void *);
 
-	struct confargs *ca = (struct confargs *)aux;
-	struct cpu_info *ci;
+	struct pdc_model pdc_model PDC_ALIGNMENT;
+	struct pdc_cpuid pdc_cpuid PDC_ALIGNMENT;
+	u_int pdc_cversion[32] PDC_ALIGNMENT;
+	register struct cpu_softc *sc = (struct cpu_softc *)self;
+	register struct confargs *ca = aux;
+	const char *p = NULL;
 	u_int mhz = 100 * cpu_ticksnum / cpu_ticksdenom;
-	int cpuno = self->dv_unit;
-	struct pglist mlist;
-	struct vm_page *m;
-	const char *p;
-	int error;
+	int err;
 
-	ci = &cpu_info[cpuno];
-	ci->ci_dev = self;
-	ci->ci_cpuid = cpuno;
-	ci->ci_hpa = ca->ca_hpa;
+	bzero (&pdc_cpuid, sizeof(pdc_cpuid));
+	if (pdc_call((iodcio_t)pdc, 0, PDC_MODEL, PDC_MODEL_CPUID,
+		     &pdc_cpuid, sc->sc_dev.dv_unit, 0, 0, 0) >= 0) {
 
-	/* Allocate stack for spin up and FPU emulation. */
-	TAILQ_INIT(&mlist);
-	error = uvm_pglistalloc(PAGE_SIZE, 0, -1L, 0, 0, &mlist, 1,
-	    UVM_PLA_NOWAIT);
-	if (error) {
-		printf(": unable to allocate CPU stack!\n");
-		return;
+		/* patch for old 8200 */
+		if (pdc_cpuid.version == HPPA_CPU_PCXUP &&
+		    pdc_cpuid.revision > 0x0d)
+			pdc_cpuid.version = HPPA_CPU_PCXUP1;
+			
+		p = hppa_mod_info(HPPA_TYPE_CPU, pdc_cpuid.version);
 	}
-	m = TAILQ_FIRST(&mlist);
-	ci->ci_stack = VM_PAGE_TO_PHYS(m);
+	/* otherwise try to guess on component version numbers */
+	else if (pdc_call((iodcio_t)pdc, 0, PDC_MODEL, PDC_MODEL_COMP,
+		     &pdc_cversion, sc->sc_dev.dv_unit) >= 0) {
+		/* XXX p = hppa_mod_info(HPPA_TYPE_CPU,pdc_cversion[0]); */
+	}
 
-	printf (": %s ", cpu_typename);
-	if (pdc_model.hvers) {
+	printf (": %s v%d.%d, ", p? p : "PA7000",
+		pdc_cpuid.revision >> 4, pdc_cpuid.revision & 0xf);
+
+	if ((err = pdc_call((iodcio_t)pdc, 0, PDC_MODEL, PDC_MODEL_INFO,
+			    &pdc_model)) < 0) {
+#ifdef DEBUG
+		printf("WARNING: PDC_MODEL failed (%d)\n", err);
+#endif
+	} else {
 		static const char lvls[4][4] = { "0", "1", "1.5", "2" };
 
-		printf("L%s-%c ", lvls[pdc_model.pa_lvl], "AB"[pdc_model.mc]);
+		printf("level %s, category %c, ",
+		       lvls[pdc_model.pa_lvl], "AB"[pdc_model.mc]);
 	}
 
 	printf ("%d", mhz / 100);
 	if (mhz % 100 > 9)
 		printf(".%02d", mhz % 100);
-	printf("MHz");
 
-	if (fpu_enable) {
-		extern u_int fpu_version;
-		u_int32_t ver[2];
+	printf(" MHz clock\n%s: %s", self->dv_xname,
+	       pdc_model.sh? "shadows, ": "");
 
-		mtctl(fpu_enable, CR_CCR);
-		__asm volatile(
-		    "fstds   %%fr0,0(%0)\n\t"
-		    "copr,0,0\n\t"
-		    "fstds   %%fr0,0(%0)"
-		    :: "r" (&ver) : "memory");
-		mtctl(0, CR_CCR);
-		fpu_version = HPPA_FPUVER(ver[0]);
-		printf(", FPU %s rev %d",
-		    hppa_mod_info(HPPA_TYPE_FPU, fpu_version >> 5),
-		    fpu_version & 0x1f);
-	}
-
-	printf("\n%s: ", self->dv_xname);
-	p = "";
-	if (!pdc_cache.dc_conf.cc_sh) {
-		printf("%uK(%db/l) Icache, ",
-		    pdc_cache.ic_size / 1024, pdc_cache.ic_conf.cc_line * 16);
-		p = "D";
-	}
-
-	printf("%uK(%db/l) wr-%s %scache, ",
-	    pdc_cache.dc_size / 1024, pdc_cache.dc_conf.cc_line * 16,
-	    pdc_cache.dc_conf.cc_wt? "thru" : "back", p);
-
-	p = "";
-	if (!pdc_cache.dt_conf.tc_sh) {
-		printf("%u ITLB, ", pdc_cache.it_size);
-		p = "D";
-	}
-	printf("%u %scoherent %sTLB",
-	    pdc_cache.dt_size, pdc_cache.dt_conf.tc_cst? "" : "in", p);
+	if (pdc_cache.dc_conf.cc_sh)
+		printf("%uK cache", pdc_cache.dc_size / 1024);
+	else
+		printf("%uK/%uK D/I caches",
+		       pdc_cache.dc_size / 1024,
+		       pdc_cache.ic_size / 1024);
+	if (pdc_cache.dt_conf.tc_sh)
+		printf(", %u shared TLB", pdc_cache.dt_size);
+	else
+		printf(", %u/%u D/I TLBs",
+		       pdc_cache.dt_size, pdc_cache.it_size);
 
 	if (pdc_btlb.finfo.num_c)
-		printf(", %u BTLB", pdc_btlb.finfo.num_c);
-	else if (pdc_btlb.finfo.num_i || pdc_btlb.finfo.num_d)
+		printf(", %u shared BTLB", pdc_btlb.finfo.num_c);
+	else {
 		printf(", %u/%u D/I BTLBs",
-		    pdc_btlb.finfo.num_i, pdc_btlb.finfo.num_d);
-
-	cpu_intr_establish(IPL_CLOCK, 31, cpu_hardclock, NULL, "clock");
-#ifdef MULTIPROCESSOR
-	cpu_intr_establish(IPL_IPI, 30, hppa_ipi_intr, NULL, "ipi");
-#endif
-
-	printf("\n");
-}
-
-#ifdef MULTIPROCESSOR
-void
-cpu_boot_secondary_processors(void)
-{
-	struct cpu_info *ci;
-	struct iomod *cpu;
-	int i, j;
-
-	/* Initialise primary CPU. */
-	ci = curcpu();
-	ci->ci_flags |= CPUF_RUNNING;
-	hppa_ipi_init(ci);
-
-	for (i = 0; i < HPPA_MAXCPUS; i++) {
-
-		ci = &cpu_info[i];
-		if (ci->ci_cpuid == 0)
-			continue;
-
-		ci->ci_randseed = (arc4random() & 0x7fffffff) + 1;
-
-		sched_init_cpu(ci);
-
-		/* Release the specified CPU by triggering an EIR{0}. */
-		cpu_hatch_info = ci;
-		cpu = (struct iomod *)(ci->ci_hpa);
-		cpu->io_eir = 0;
-		asm volatile ("sync" ::: "memory");
-
-		/* Wait for CPU to wake up... */
-		j = 0;
-		while (!(ci->ci_flags & CPUF_RUNNING) && j++ < 10000)
-			delay(1000);
-		if (!(ci->ci_flags & CPUF_RUNNING))
-			printf("failed to hatch cpu %i!\n", ci->ci_cpuid);
+		       pdc_btlb.finfo.num_i,
+		       pdc_btlb.finfo.num_d);
 	}
 
-	/* Release secondary CPUs. */
-	start_secondary_cpu = 1;
-	asm volatile ("sync" ::: "memory");
-}
+	printf("\n");
 
-void
-cpu_hw_init(void)
-{
-	struct cpu_info *ci = curcpu();
-
-	/* Purge TLB and flush caches. */
-	ptlball();
-	ficacheall();
-	fdcacheall();
-
-	/* Enable address translations. */
-	ci->ci_psw = PSL_I | PSL_Q | PSL_P | PSL_C | PSL_D;
-	ci->ci_psw |= (cpu_info[0].ci_psw & PSL_O);
-}
-
-void
-cpu_hatch(void)
-{
-	struct cpu_info *ci = curcpu();
-	extern u_long cpu_hzticks;
-	u_long itmr;
-	int s;
-
-	/* Initialise IPIs. */
-	hppa_ipi_init(ci);
-
-	/* Initialise clock. */
-	mtctl((1U << 31), CR_EIRR);
-	mfctl(CR_ITMR, itmr);
-	ci->ci_itmr = itmr;
-	itmr += cpu_hzticks;
-	mtctl(itmr, CR_ITMR);
-	ci->ci_mask |= (1U << 31);
-
-	/* Enable interrupts. */
-	mtctl(ci->ci_mask, CR_EIEM);
-
-	ncpus++;
-	ci->ci_flags |= CPUF_RUNNING;
-
-	/* Wait for additional CPUs to spinup. */
-	while (!start_secondary_cpu)
-		;
-
-	SCHED_LOCK(s);
-	cpu_switchto(NULL, sched_chooseproc());
-}
-
-void
-cpu_unidle(struct cpu_info *ci)
-{
-	if (ci != curcpu())
-		hppa_ipi_send(ci, HPPA_IPI_NOP);
-}
-#endif
-
-void
-need_resched(struct cpu_info *ci)
-{
-	ci->ci_want_resched = 1;
-
-	/* There's a risk we'll be called before the idle threads start */
-	if (ci->ci_curproc) {
-		setsoftast(ci->ci_curproc);
-		cpu_unidle(ci);
+	if (ca->ca_irq == 31) {
+		sc->sc_ih = cpu_intr_establish(IPL_CLOCK, ca->ca_irq,
+					       clock_intr, NULL /*trapframe*/,
+					       &sc->sc_dev);
+	} else {
+		printf ("%s: bad irq number %d\n", sc->sc_dev.dv_xname,
+			ca->ca_irq);
 	}
 }

@@ -1,4 +1,3 @@
-/*	$OpenBSD: system.c,v 1.12 2016/03/13 18:34:21 guenther Exp $ */
 /*
  * Copyright (c) 1988 The Regents of the University of California.
  * All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,20 +31,26 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: system.c,v 1.3 1996/09/15 09:31:52 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <errno.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <paths.h>
 
+extern char **environ;
+
 int
-system(const char *command)
+system(command)
+	const char *command;
 {
-	pid_t pid, cpid;
-	struct sigaction intsave, quitsave;
-	sigset_t mask, omask;
+	pid_t pid;
+	sig_t intsave, quitsave;
+	int omask;
 	int pstat;
 	char *argp[] = {"sh", "-c", NULL, NULL};
 
@@ -50,27 +59,22 @@ system(const char *command)
 
 	argp[2] = (char *)command;
 
-	sigemptyset(&mask);
-	sigaddset(&mask, SIGCHLD);
-	sigprocmask(SIG_BLOCK, &mask, &omask);
-	switch (cpid = vfork()) {
+	omask = sigblock(sigmask(SIGCHLD));
+	switch(pid = vfork()) {
 	case -1:			/* error */
-		sigprocmask(SIG_SETMASK, &omask, NULL);
+		(void)sigsetmask(omask);
 		return(-1);
 	case 0:				/* child */
-		sigprocmask(SIG_SETMASK, &omask, NULL);
+		(void)sigsetmask(omask);
 		execve(_PATH_BSHELL, argp, environ);
 		_exit(127);
 	}
 
-	sigaction(SIGINT, NULL, &intsave);
-	sigaction(SIGQUIT, NULL, &quitsave);
-	do {
-		pid = waitpid(cpid, &pstat, 0);
-	} while (pid == -1 && errno == EINTR);
-	sigprocmask(SIG_SETMASK, &omask, NULL);
-	sigaction(SIGINT, &intsave, NULL);
-	sigaction(SIGQUIT, &quitsave, NULL);
-	return (pid == -1 ? -1 : pstat);
+	intsave = signal(SIGINT, SIG_IGN);
+	quitsave = signal(SIGQUIT, SIG_IGN);
+	pid = waitpid(pid, (int *)&pstat, 0);
+	(void)sigsetmask(omask);
+	(void)signal(SIGINT, intsave);
+	(void)signal(SIGQUIT, quitsave);
+	return(pid == -1 ? -1 : pstat);
 }
-DEF_STRONG(system);

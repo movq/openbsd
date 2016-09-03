@@ -1,21 +1,27 @@
-/*	$OpenBSD: if_indextoname.c,v 1.11 2015/10/23 13:09:19 claudio Exp $	*/
-/*	$KAME: if_indextoname.c,v 1.6 2000/11/07 22:33:25 jinmei Exp $	*/
-
-/*-
- * Copyright (c) 2015 Claudio Jeker <claudio@openbsd.org>
- * Copyright (c) 1997, 2000
- *	Berkeley Software Design, Inc.  All rights reserved.
+/*
+ * %%% copyright-cmetz-98-bsd
+ * Copyright (c) 1998-1999, Craig Metz, All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
  * 1. Redistributions of source code must retain the above copyright
  *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *      This product includes software developed by Craig Metz and
+ *      by other contributors.
+ * 4. Neither the name of the author nor the names of contributors
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY Berkeley Software Design, Inc. ``AS IS'' AND
+ * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL Berkeley Software Design, Inc. BE LIABLE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
  * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
@@ -23,56 +29,111 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- *
- *	BSDI Id: if_indextoname.c,v 2.3 2000/04/17 22:38:05 dab Exp
  */
 
 #include <sys/types.h>
-#include <sys/socket.h>
-#include <net/if.h>
 #include <stdlib.h>
-#include <string.h>
+#include <sys/socket.h>
+#include <sys/ioctl.h>
+#include <net/if.h>
+#include <net/if_dl.h>
 #include <errno.h>
+#include <string.h>
 
-/*
- * From RFC 2533:
- *
- * The second function maps an interface index into its corresponding
- * name.
- *
- *    #include <net/if.h>
- *
- *    char  *if_indextoname(unsigned int ifindex, char *ifname);
- *
- * The ifname argument must point to a buffer of at least IF_NAMESIZE
- * bytes into which the interface name corresponding to the specified
- * index is returned.  (IF_NAMESIZE is also defined in <net/if.h> and
- * its value includes a terminating null byte at the end of the
- * interface name.) This pointer is also the return value of the
- * function.  If there is no interface corresponding to the specified
- * index, NULL is returned, and errno is set to ENXIO, if there was a
- * system error (such as running out of memory), if_indextoname returns
- * NULL and errno would be set to the proper value (e.g., ENOMEM).
- */
+static char __name[IFNAMSIZ];
 
 char *
-if_indextoname(unsigned int ifindex, char *ifname)
+if_indextoname(unsigned int index, char *name)
 {
-	struct if_nameindex *ifni, *ifni2;
+	int     i, fd = -1, extra, len = 0;
+	struct ifconf ifconf;
+	char    lastname[IFNAMSIZ], iname[IFNAMSIZ], *retname = NULL, *inbuf;
+	struct sockaddr *sa;
+	void	*p;
 
-	if ((ifni = if_nameindex()) == NULL)
-		return NULL;
+	ifconf.ifc_buf = 0;
 
-	for (ifni2 = ifni; ifni2->if_index != 0; ifni2++) {
-		if (ifni2->if_index == ifindex) {
-			strlcpy(ifname, ifni2->if_name, IFNAMSIZ);
-			if_freenameindex(ifni);
-			return ifname;
+	if (!name)
+		name = __name;
+
+	if ((fd = socket(PF_INET, SOCK_DGRAM, 0)) < 0)
+		goto ret;
+
+	/*
+	 * Try ifc_len == 0 hack first, to get the actual length.
+	 * If that fails, revert to a loop which grows the ifc_buf
+	 * until it is sufficiently large.
+	 */
+	extra = sizeof(struct ifreq);
+	while (1) {
+		ifconf.ifc_len = len;
+		if (ioctl(fd, SIOCGIFCONF, (void *) &ifconf) == -1 &&
+		    ifconf.ifc_buf)
+			goto ret;
+		if (ifconf.ifc_buf &&
+		    ifconf.ifc_len + extra < len)
+			break;
+		if (ifconf.ifc_buf) {
+			if (len == 0)
+				len = 4096;
+			ifconf.ifc_len = len *= 2;
+		} else {
+			len = ifconf.ifc_len;
+			extra = 0;
 		}
+		inbuf = realloc(ifconf.ifc_buf, ifconf.ifc_len);
+		if (inbuf == NULL)
+			goto ret;
+		ifconf.ifc_buf = inbuf;
 	}
 
-	if_freenameindex(ifni);
-	errno = ENXIO;
-	return NULL;
+	i = 0;
+	p = ifconf.ifc_buf;
+	len = ifconf.ifc_len;
+	lastname[0] = 0;
+	lastname[sizeof(lastname)-1] = 0;
+	iname[0] = 0;
+
+	while (len > 0) {
+		if (len < (IFNAMSIZ + sizeof(struct sockaddr)))
+			goto ret;
+		if (strncmp(lastname, p, IFNAMSIZ)) {
+			if (i == index)
+				memcpy(iname, lastname, sizeof(iname));
+			strlcpy(lastname, p, sizeof(lastname));
+			i++;
+		}
+		len -= IFNAMSIZ;
+		p += IFNAMSIZ;
+		sa = p;
+
+		if (sa->sa_family == AF_LINK) {
+			struct sockaddr_dl *sd = p;
+
+			if (sd->sdl_index == index) {
+				strlcpy(name, lastname, sizeof(name));
+				retname = name;
+				goto ret;
+			}
+		}
+
+		if (len < sa->sa_len)
+			goto ret;
+		len -= sa->sa_len;
+		p += sa->sa_len;
+	}
+
+	if (i == index)
+		strlcpy(iname, lastname, sizeof(iname));
+
+	if (iname[0]) {
+		strlcpy(name, iname, sizeof(name));
+		retname = name;
+	}
+ret:
+	if (fd != -1)
+		close(fd);
+	if (ifconf.ifc_buf)
+		free(ifconf.ifc_buf);
+	return (retname);
 }
-DEF_WEAK(if_indextoname);

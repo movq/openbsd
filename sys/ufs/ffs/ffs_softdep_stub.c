@@ -1,12 +1,10 @@
-/*	$OpenBSD: ffs_softdep_stub.c,v 1.18 2013/06/11 16:42:18 deraadt Exp $	*/
+/*	$OpenBSD: ffs_softdep_stub.c,v 1.1 1998/03/15 03:53:51 millert Exp $	*/
 
 /*
- * Copyright 1998 Marshall Kirk McKusick. All Rights Reserved.
+ * Copyright 1997 Marshall Kirk McKusick. All Rights Reserved.
  *
- * The soft updates code is derived from the appendix of a University
- * of Michigan technical report (Gregory R. Ganger and Yale N. Patt,
- * "Soft Updates: A Solution to the Metadata Update Problem in File
- * Systems", CSE-TR-254-95, August 1995).
+ * This code is derived from work done by Greg Ganger and Yale Patt at the
+ * University of Michigan.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -16,9 +14,9 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. None of the names of McKusick, Ganger, or the University of Michigan
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
+ * 3. None of the names of McKusick, Ganger, Patt, or the University of 
+ *    Michigan may be used to endorse or promote products derived from 
+ *    this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY MARSHALL KIRK MCKUSICK ``AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -32,8 +30,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- *	from: @(#)ffs_softdep_stub.c	9.1 (McKusick) 7/10/97
- * $FreeBSD: src/sys/ufs/ffs/ffs_softdep_stub.c,v 1.14 2000/08/09 00:41:54 tegge Exp $
+ *	@(#)ffs_softdep.stub.c	9.1 (McKusick) 7/9/97
  */
 
 #ifndef FFS_SOFTUPDATES
@@ -47,147 +44,207 @@
 #include <ufs/ufs/ufs_extern.h>
 
 int
-softdep_flushfiles(struct mount *oldmnt, int flags, struct proc *p)
+softdep_flushfiles(oldmnt, flags, p)
+	struct mount *oldmnt;
+	int flags;
+	struct proc *p;
 {
+
 	panic("softdep_flushfiles called");
 }
 
 int
-softdep_mount(struct vnode *devvp, struct mount *mp, struct fs *fs,
-    struct ucred *cred)
+softdep_mount(devvp, mp, fs, cred)
+	struct vnode *devvp;
+	struct mount *mp;
+	struct fs *fs;
+	struct ucred *cred;
 {
+
 	return (0);
 }
 
 void 
-softdep_initialize(void)
+softdep_initialize()
 {
+
 	return;
 }
 
-#ifndef __OPTIMIZE__
-
 void
-softdep_setup_inomapdep(struct buf *bp, struct inode *ip, ufsino_t newinum)
+softdep_setup_inomapdep(bp, ip, newinum)
+	struct buf *bp;
+	struct inode *ip;
+	ino_t newinum;
 {
+
 	panic("softdep_setup_inomapdep called");
 }
 
 void
-softdep_setup_blkmapdep(struct buf *bp, struct fs *fs, daddr_t newblkno)
+softdep_setup_blkmapdep(bp, fs, newblkno)
+	struct buf *bp;
+	struct fs *fs;
+	ufs_daddr_t newblkno;
 {
+
 	panic("softdep_setup_blkmapdep called");
 }
 
 void 
-softdep_setup_allocdirect(struct inode *ip, daddr_t lbn, daddr_t newblkno,
-    daddr_t oldblkno, long newsize, long oldsize, struct buf *bp)
+softdep_setup_allocdirect(ip, lbn, newblkno, oldblkno, newsize, oldsize, bp)
+	struct inode *ip;
+	ufs_lbn_t lbn;
+	ufs_daddr_t newblkno;
+	ufs_daddr_t oldblkno;
+	long newsize;
+	long oldsize;
+	struct buf *bp;
 {
+	
 	panic("softdep_setup_allocdirect called");
 }
 
 void
-softdep_setup_allocindir_page(struct inode *ip, daddr_t lbn, struct buf *bp,
-    int ptrno, daddr_t newblkno, daddr_t oldblkno, struct buf *nbp)
+softdep_setup_allocindir_page(ip, lbn, bp, ptrno, newblkno, oldblkno, nbp)
+	struct inode *ip;
+	ufs_lbn_t lbn;
+	struct buf *bp;
+	int ptrno;
+	ufs_daddr_t newblkno;
+	ufs_daddr_t oldblkno;
+	struct buf *nbp;
 {
+
 	panic("softdep_setup_allocindir_page called");
 }
 
 void
-softdep_setup_allocindir_meta(struct buf *nbp, struct inode *ip,
-    struct buf *bp, int ptrno, daddr_t newblkno)
+softdep_setup_allocindir_meta(nbp, ip, bp, ptrno, newblkno)
+	struct buf *nbp;
+	struct inode *ip;
+	struct buf *bp;
+	int ptrno;
+	ufs_daddr_t newblkno;
 {
+
 	panic("softdep_setup_allocindir_meta called");
 }
 
 void
-softdep_setup_freeblocks(struct inode *ip, off_t length)
+softdep_setup_freeblocks(ip, length)
+	struct inode *ip;
+	off_t length;
 {
+	
 	panic("softdep_setup_freeblocks called");
 }
 
 void
-softdep_freefile(struct vnode *pvp, ufsino_t ino, mode_t mode)
+softdep_freefile(ap)
+	struct vop_vfree_args /* {
+		struct vnode *a_pvp;
+		ino_t a_ino;
+		int a_mode;
+	} */ *ap;
 {
+
 	panic("softdep_freefile called");
 }
 
-int
-softdep_setup_directory_add(struct buf *bp, struct inode *dp, off_t diroffset,
-    long newinum, struct buf *newdirbp, int isnewblk)
+void 
+softdep_setup_directory_add(bp, dp, diroffset, newinum, newdirbp)
+	struct buf *bp;
+	struct inode *dp;
+	off_t diroffset;
+	long newinum;
+	struct buf *newdirbp;
 {
+
 	panic("softdep_setup_directory_add called");
-	return (0);
 }
 
 void 
-softdep_change_directoryentry_offset(struct inode *dp, caddr_t base,
-    caddr_t oldloc, caddr_t newloc, int entrysize)
+softdep_change_directoryentry_offset(dp, base, oldloc, newloc, entrysize)
+	struct inode *dp;
+	caddr_t base;
+	caddr_t oldloc;
+	caddr_t newloc;
+	int entrysize;
 {
+
 	panic("softdep_change_directoryentry_offset called");
 }
 
 void 
-softdep_setup_remove(struct buf *bp, struct inode *dp, struct inode *ip,
-    int isrmdir)
+softdep_setup_remove(bp, dp, ip, isrmdir)
+	struct buf *bp;
+	struct inode *dp;
+	struct inode *ip;
+	int isrmdir;
 {
+	
 	panic("softdep_setup_remove called");
 }
 
 void 
-softdep_setup_directory_change(struct buf *bp, struct inode *dp,
-    struct inode *ip, long newinum, int isrmdir)
+softdep_setup_directory_change(bp, dp, ip, newinum, isrmdir)
+	struct buf *bp;
+	struct inode *dp;
+	struct inode *ip;
+	long newinum;
+	int isrmdir;
 {
+
 	panic("softdep_setup_directory_change called");
 }
 
 void
-softdep_change_linkcnt(struct inode *ip, int nodelay)
+softdep_increase_linkcnt(ip)
+	struct inode *ip;
 {
-	panic("softdep_change_linkcnt called");
+
+	panic("softdep_increase_linkcnt called");
 }
 
 void 
-softdep_load_inodeblock(struct inode *ip)
+softdep_load_inodeblock(ip)
+	struct inode *ip;
 {
+
 	panic("softdep_load_inodeblock called");
 }
 
 void 
-softdep_update_inodeblock(struct inode *ip, struct buf *bp, int waitfor)
+softdep_update_inodeblock(ip, bp, waitfor)
+	struct inode *ip;
+	struct buf *bp;
+	int waitfor;
 {
+
 	panic("softdep_update_inodeblock called");
 }
 
-#endif
-
-void
-softdep_fsync_mountdev(struct vnode *vp, int waitfor)
+int
+softdep_fsync(vp)
+	struct vnode *vp;
 {
-	return;
+
+	panic("softdep_fsync called");
+	return (EIO);
 }
 
 int
-softdep_flushworklist(struct mount *oldmnt, int *countp, struct proc *p)
+softdep_sync_metadata(ap)
+	struct vop_fsync_args /* {
+		struct vnode *a_vp;
+		struct ucred *a_cred;
+		int a_waitfor;
+		struct proc *a_p;
+	} */ *ap;
 {
-	*countp = 0;
+
 	return (0);
 }
-
-int
-softdep_sync_metadata(struct vop_fsync_args *ap)
-{
-	return (0);
-}
-
-#ifndef __OPTIMIZE__
-
-int
-softdep_slowdown(struct vnode *vp)
-{
-	panic("softdep_slowdown called");
-}
-
-#endif
 
 #endif /* !FFS_SOFTUPDATES */

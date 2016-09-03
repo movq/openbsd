@@ -1,5 +1,3 @@
-/*	$OpenBSD: seq.c,v 1.13 2016/05/27 09:18:11 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -11,6 +9,11 @@
 
 #include "config.h"
 
+#ifndef lint
+static const char sccsid[] = "@(#)seq.c	10.10 (Berkeley) 3/30/96";
+#endif /* not lint */
+
+#include <sys/types.h>
 #include <sys/queue.h>
 
 #include <bitstring.h>
@@ -23,18 +26,20 @@
 
 #include "common.h"
 
-#define MINIMUM(a, b)	(((a) < (b)) ? (a) : (b))
-
 /*
  * seq_set --
  *	Internal version to enter a sequence.
  *
- * PUBLIC: int seq_set(SCR *, CHAR_T *,
- * PUBLIC:    size_t, CHAR_T *, size_t, CHAR_T *, size_t, seq_t, int);
+ * PUBLIC: int seq_set __P((SCR *, CHAR_T *,
+ * PUBLIC:    size_t, CHAR_T *, size_t, CHAR_T *, size_t, seq_t, int));
  */
 int
-seq_set(SCR *sp, CHAR_T *name, size_t nlen, CHAR_T *input, size_t ilen,
-    CHAR_T *output, size_t olen, seq_t stype, int flags)
+seq_set(sp, name, nlen, input, ilen, output, olen, stype, flags)
+	SCR *sp;
+	CHAR_T *name, *input, *output;
+	size_t nlen, ilen, olen;
+	seq_t stype;
+	int flags;
 {
 	CHAR_T *p;
 	SEQ *lastqp, *qp;
@@ -66,7 +71,7 @@ seq_set(SCR *sp, CHAR_T *name, size_t nlen, CHAR_T *input, size_t ilen,
 	}
 
 	/* Allocate and initialize SEQ structure. */
-	CALLOC(sp, qp, 1, sizeof(SEQ));
+	CALLOC(sp, qp, SEQ *, 1, sizeof(SEQ));
 	if (qp == NULL) {
 		sv_errno = errno;
 		goto mem1;
@@ -126,10 +131,14 @@ mem1:		errno = sv_errno;
  * seq_delete --
  *	Delete a sequence.
  *
- * PUBLIC: int seq_delete(SCR *, CHAR_T *, size_t, seq_t);
+ * PUBLIC: int seq_delete __P((SCR *, CHAR_T *, size_t, seq_t));
  */
 int
-seq_delete(SCR *sp, CHAR_T *input, size_t ilen, seq_t stype)
+seq_delete(sp, input, ilen, stype)
+	SCR *sp;
+	CHAR_T *input;
+	size_t ilen;
+	seq_t stype;
 {
 	SEQ *qp;
 
@@ -142,10 +151,11 @@ seq_delete(SCR *sp, CHAR_T *input, size_t ilen, seq_t stype)
  * seq_mdel --
  *	Delete a map entry, without lookup.
  *
- * PUBLIC: int seq_mdel(SEQ *);
+ * PUBLIC: int seq_mdel __P((SEQ *));
  */
 int
-seq_mdel(SEQ *qp)
+seq_mdel(qp)
+	SEQ *qp;
 {
 	LIST_REMOVE(qp, q);
 	if (qp->name != NULL)
@@ -163,11 +173,17 @@ seq_mdel(SEQ *qp)
  *	isn't NULL, partial matches count.
  *
  * PUBLIC: SEQ *seq_find
- * PUBLIC:(SCR *, SEQ **, EVENT *, CHAR_T *, size_t, seq_t, int *);
+ * PUBLIC:    __P((SCR *, SEQ **, EVENT *, CHAR_T *, size_t, seq_t, int *));
  */
 SEQ *
-seq_find(SCR *sp, SEQ **lastqp, EVENT *e_input, CHAR_T *c_input, size_t ilen,
-    seq_t stype, int *ispartialp)
+seq_find(sp, lastqp, e_input, c_input, ilen, stype, ispartialp)
+	SCR *sp;
+	SEQ **lastqp;
+	EVENT *e_input;
+	CHAR_T *c_input;
+	size_t ilen;
+	seq_t stype;
+	int *ispartialp;
 {
 	SEQ *lqp, *qp;
 	int diff;
@@ -184,8 +200,8 @@ seq_find(SCR *sp, SEQ **lastqp, EVENT *e_input, CHAR_T *c_input, size_t ilen,
 	 */
 	if (ispartialp != NULL)
 		*ispartialp = 0;
-	for (lqp = NULL, qp = LIST_FIRST(&sp->gp->seqq);
-	    qp != NULL; lqp = qp, qp = LIST_NEXT(qp, q)) {
+	for (lqp = NULL, qp = sp->gp->seqq.lh_first;
+	    qp != NULL; lqp = qp, qp = qp->q.le_next) {
 		/*
 		 * Fast checks on the first character and type, and then
 		 * a real comparison.
@@ -196,7 +212,7 @@ seq_find(SCR *sp, SEQ **lastqp, EVENT *e_input, CHAR_T *c_input, size_t ilen,
 			if (qp->input[0] < c_input[0] ||
 			    qp->stype != stype || F_ISSET(qp, SEQ_FUNCMAP))
 				continue;
-			diff = memcmp(qp->input, c_input, MINIMUM(qp->ilen, ilen));
+			diff = memcmp(qp->input, c_input, MIN(qp->ilen, ilen));
 		} else {
 			if (qp->input[0] > e_input->e_c)
 				break;
@@ -204,7 +220,7 @@ seq_find(SCR *sp, SEQ **lastqp, EVENT *e_input, CHAR_T *c_input, size_t ilen,
 			    qp->stype != stype || F_ISSET(qp, SEQ_FUNCMAP))
 				continue;
 			diff =
-			    e_memcmp(qp->input, e_input, MINIMUM(qp->ilen, ilen));
+			    e_memcmp(qp->input, e_input, MIN(qp->ilen, ilen));
 		}
 		if (diff > 0)
 			break;
@@ -242,14 +258,15 @@ seq_find(SCR *sp, SEQ **lastqp, EVENT *e_input, CHAR_T *c_input, size_t ilen,
  * seq_close --
  *	Discard all sequences.
  *
- * PUBLIC: void seq_close(GS *);
+ * PUBLIC: void seq_close __P((GS *));
  */
 void
-seq_close(GS *gp)
+seq_close(gp)
+	GS *gp;
 {
 	SEQ *qp;
 
-	while ((qp = LIST_FIRST(&gp->seqq)) != NULL) {
+	while ((qp = gp->seqq.lh_first) != NULL) {
 		if (qp->name != NULL)
 			free(qp->name);
 		if (qp->input != NULL)
@@ -265,10 +282,13 @@ seq_close(GS *gp)
  * seq_dump --
  *	Display the sequence entries of a specified type.
  *
- * PUBLIC: int seq_dump(SCR *, seq_t, int);
+ * PUBLIC: int seq_dump __P((SCR *, seq_t, int));
  */
 int
-seq_dump(SCR *sp, seq_t stype, int isname)
+seq_dump(sp, stype, isname)
+	SCR *sp;
+	seq_t stype;
+	int isname;
 {
 	CHAR_T *p;
 	GS *gp;
@@ -277,7 +297,7 @@ seq_dump(SCR *sp, seq_t stype, int isname)
 
 	cnt = 0;
 	gp = sp->gp;
-	LIST_FOREACH(qp, &gp->seqq, q) {
+	for (qp = gp->seqq.lh_first; qp != NULL; qp = qp->q.le_next) {
 		if (stype != qp->stype || F_ISSET(qp, SEQ_FUNCMAP))
 			continue;
 		++cnt;
@@ -310,10 +330,14 @@ seq_dump(SCR *sp, seq_t stype, int isname)
  * seq_save --
  *	Save the sequence entries to a file.
  *
- * PUBLIC: int seq_save(SCR *, FILE *, char *, seq_t);
+ * PUBLIC: int seq_save __P((SCR *, FILE *, char *, seq_t));
  */
 int
-seq_save(SCR *sp, FILE *fp, char *prefix, seq_t stype)
+seq_save(sp, fp, prefix, stype)
+	SCR *sp;
+	FILE *fp;
+	char *prefix;
+	seq_t stype;
 {
 	CHAR_T *p;
 	SEQ *qp;
@@ -321,7 +345,7 @@ seq_save(SCR *sp, FILE *fp, char *prefix, seq_t stype)
 	int ch;
 
 	/* Write a sequence command for all keys the user defined. */
-	LIST_FOREACH(qp, &sp->gp->seqq, q) {
+	for (qp = sp->gp->seqq.lh_first; qp != NULL; qp = qp->q.le_next) {
 		if (stype != qp->stype || !F_ISSET(qp, SEQ_USERDEF))
 			continue;
 		if (prefix)
@@ -352,10 +376,13 @@ seq_save(SCR *sp, FILE *fp, char *prefix, seq_t stype)
  * e_memcmp --
  *	Compare a string of EVENT's to a string of CHAR_T's.
  *
- * PUBLIC: int e_memcmp(CHAR_T *, EVENT *, size_t);
+ * PUBLIC: int e_memcmp __P((CHAR_T *, EVENT *, size_t));
  */
 int
-e_memcmp(CHAR_T *p1, EVENT *ep, size_t n)
+e_memcmp(p1, ep, n)
+	CHAR_T *p1;
+	EVENT *ep;
+	size_t n;
 {
 	if (n != 0) {
                 do {

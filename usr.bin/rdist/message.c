@@ -1,4 +1,4 @@
-/*	$OpenBSD: message.c,v 1.28 2016/03/30 20:51:59 millert Exp $	*/
+/*	$OpenBSD: message.c,v 1.8 1999/02/04 23:18:57 millert Exp $	*/
 
 /*
  * Copyright (c) 1983 Regents of the University of California.
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,35 +33,38 @@
  * SUCH DAMAGE.
  */
 
-#include <errno.h>
-#include <limits.h>
-#include <paths.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <syslog.h>
-#include <unistd.h>
+#ifndef lint
+#if 0
+static char RCSid[] = 
+"$From: message.c,v 6.24 1996/07/19 17:00:35 michaelc Exp $";
+#else
+static char RCSid[] = 
+"$OpenBSD: message.c,v 1.8 1999/02/04 23:18:57 millert Exp $";
+#endif
 
-#include "defs.h"
+static char sccsid[] = "@(#)common.c";
+
+static char copyright[] =
+"@(#) Copyright (c) 1983 Regents of the University of California.\n\
+ All rights reserved.\n";
+#endif /* !lint */
 
 /*
  * Message handling functions for both rdist and rdistd.
  */
 
+#include "defs.h"
 
 #define MSGBUFSIZ	32*1024
 
 int			debug = 0;		/* Debugging level */
 int			nerrs = 0;		/* Number of errors */
+char		       *tempfile = NULL;	/* Name of temporary file */
 
 /*
  * Message Types
  */
-struct msgtype {
-	int		mt_type;		/* Type (bit) */
-	char	       *mt_name;		/* Name of message type */
-} msgtypes[] = {
+MSGTYPE msgtypes[] = {
 	{ MT_CHANGE,	"change" },
 	{ MT_INFO,	"info" },
 	{ MT_NOTICE,	"notice" },
@@ -70,38 +77,13 @@ struct msgtype {
 	{ 0 },
 };
 
-/*
- * Description of message facilities
- */
-struct msgfacility {
-	/* compile time initialized data */
-	int		mf_msgfac;		/* One of MF_* from below */
-	char	       *mf_name;		/* Name of this facility */
-	void	      (*mf_sendfunc)		/* Function to send msg */
-			(struct msgfacility *, int, int, char *);
-	/* run time initialized data */
-	int		mf_msgtypes;		/* Bitmask of MT_* from above*/
-	char	       *mf_filename;		/* Name of file */
-	FILE	       *mf_fptr;		/* File pointer to output to */
-};
+static void msgsendstdout(), msgsendfile(), msgsendsyslog(), 
+	msgsendnotify();
 
 /*
  * Message Facilities
  */
-#define MF_STDOUT	1			/* Standard Output */
-#define MF_NOTIFY	2			/* Notify mail service */
-#define MF_FILE		3			/* A normal file */
-#define MF_SYSLOG	4			/* syslog() */
-
-static void msgsendstdout(struct msgfacility *, int, int, char *);
-static void msgsendsyslog(struct msgfacility *, int, int, char *);
-static void msgsendfile(struct msgfacility *, int, int, char *);
-static void msgsendnotify(struct msgfacility *, int, int, char *);
-
-/*
- * Message Facilities
- */
-struct msgfacility msgfacility[] = {
+MSGFACILITY msgfacility[] = {
 	{ MF_STDOUT,	"stdout",	msgsendstdout },
 	{ MF_FILE,	"file",		msgsendfile },
 	{ MF_SYSLOG,	"syslog",	msgsendsyslog },
@@ -109,21 +91,12 @@ struct msgfacility msgfacility[] = {
 	{ 0 },
 };
 
-static struct msgfacility *getmsgfac(char *);
-static struct msgtype *getmsgtype(char *);
-static char *setmsgtypes(struct msgfacility *, char *);
-static void _message(int, char *);
-static void _debugmsg(int, char *);
-static void _error(const char *);
-static void _fatalerr(const char *);
-
 /*
  * Print message logging usage message
  */
-void
-msgprusage(void)
+extern void msgprusage()
 {
-	int i, x;
+	register int i, x;
 
 	(void) fprintf(stderr, "\nWhere <msgopt> is of form\n");
 	(void) fprintf(stderr, 
@@ -144,23 +117,21 @@ msgprusage(void)
 /*
  * Print enabled message logging info
  */
-void
-msgprconfig(void)
+extern void msgprconfig()
 {
-	int i, x;
+	register int i, x;
 	static char buf[MSGBUFSIZ];
 
 	debugmsg(DM_MISC, "Current message logging config:");
 	for (i = 0; msgfacility[i].mf_name; ++i) {
-		(void) snprintf(buf, sizeof(buf), "    %.*s=", 
-			       (int)(sizeof(buf) - 7), msgfacility[i].mf_name);
+		(void) snprintf(buf, sizeof(buf),
+				"    %s=", msgfacility[i].mf_name);
 		for (x = 0; msgtypes[x].mt_name; ++x)
 			if (IS_ON(msgfacility[i].mf_msgtypes, 
 				  msgtypes[x].mt_type)) {
 				if (x > 0)
-					(void) strlcat(buf, ",", sizeof(buf));
-				(void) strlcat(buf, msgtypes[x].mt_name,
-				    sizeof(buf));
+					(void) strcat(buf, ",");
+				(void) strcat(buf, msgtypes[x].mt_name);
 			}
 		debugmsg(DM_MISC, "%s", buf);
 	}
@@ -170,10 +141,10 @@ msgprconfig(void)
 /*
  * Get the Message Facility entry "name"
  */
-static struct msgfacility *
-getmsgfac(char *name)
+static MSGFACILITY *getmsgfac(name)
+	char *name;
 {
-	int i;
+	register int i;
 
 	for (i = 0; msgfacility[i].mf_name; ++i)
 		if (strcasecmp(name, msgfacility[i].mf_name) == 0)
@@ -185,10 +156,10 @@ getmsgfac(char *name)
 /*
  * Get the Message Type entry named "name"
  */
-static struct msgtype *
-getmsgtype(char *name)
+static MSGTYPE *getmsgtype(name)
+	char *name;
 {
-	int i;
+	register int i;
 
 	for (i = 0; msgtypes[i].mt_name; ++i)
 		if (strcasecmp(name, msgtypes[i].mt_name) == 0)
@@ -201,13 +172,14 @@ getmsgtype(char *name)
  * Set Message Type information for Message Facility "msgfac" as
  * indicated by string "str".
  */
-static char *
-setmsgtypes(struct msgfacility *msgfac, char *str)
+static char *setmsgtypes(msgfac, str)
+	MSGFACILITY *msgfac;
+	char *str;
 {
 	static char ebuf[BUFSIZ];
-	char *cp;
-	char *strptr, *word;
-	struct msgtype *mtp;
+	register char *cp;
+	register char *strptr, *word;
+	register MSGTYPE *mtp;
 
 	/*
 	 * MF_SYSLOG is the only supported message facility for the server
@@ -215,8 +187,8 @@ setmsgtypes(struct msgfacility *msgfac, char *str)
 	if (isserver && (msgfac->mf_msgfac != MF_SYSLOG && 
 			 msgfac->mf_msgfac != MF_FILE)) {
 		(void) snprintf(ebuf, sizeof(ebuf),
-		"The \"%.*s\" message facility cannot be used by the server.",
-			        100, msgfac->mf_name);
+		"The \"%s\" message facility cannot be used by the server.",
+				msgfac->mf_name);
 		return(ebuf);
 	}
 
@@ -251,7 +223,13 @@ setmsgtypes(struct msgfacility *msgfac, char *str)
 		break;
 
 	case MF_SYSLOG:
-		openlog(progname, LOG_PID, LOG_DAEMON);
+#if defined(LOG_OPTS)
+#if	defined(LOG_FACILITY)
+		openlog(progname, LOG_OPTS, LOG_FACILITY);
+#else
+		openlog(progname, LOG_OPTS);
+#endif	/* LOG_FACILITY */
+#endif	/* LOG_OPTS */
 		break;
 	}
 
@@ -261,11 +239,11 @@ setmsgtypes(struct msgfacility *msgfac, char *str)
 	msgfac->mf_msgtypes = 0;	/* Start from scratch */
 	while (strptr) {
 		word = strptr;
-		if ((cp = strchr(strptr, ',')) != NULL)
+		if ((cp = strchr(strptr, ',')))
 			*cp++ = CNULL;
 		strptr = cp;
 
-		if ((mtp = getmsgtype(word)) != NULL) {
+		if ((mtp = getmsgtype(word))) {
 			msgfac->mf_msgtypes |= mtp->mt_type;
 			/*
 			 * XXX This is really a kludge until we add real
@@ -276,8 +254,8 @@ setmsgtypes(struct msgfacility *msgfac, char *str)
 				debug = DM_ALL;
 		} else {
 			(void) snprintf(ebuf, sizeof(ebuf),
-				        "Message type \"%.*s\" is invalid.",
-				        100, word);
+					"Message type \"%s\" is invalid.",
+					word);
 			return(ebuf);
 		}
 	}
@@ -288,22 +266,23 @@ setmsgtypes(struct msgfacility *msgfac, char *str)
 /*
  * Parse a message logging option string
  */
-char *
-msgparseopts(char *msgstr, int doset)
+extern char *msgparseopts(msgstr, doset)
+	char *msgstr;
+	int doset;
 {
 	static char ebuf[BUFSIZ], msgbuf[MSGBUFSIZ];
-	char *cp, *optstr;
-	char *word;
-	struct msgfacility *msgfac;
+	register char *cp, *optstr;
+	register char *word;
+	MSGFACILITY *msgfac;
 
 	if (msgstr == NULL)
 		return("NULL message string");
 
 	/* strtok() is harmful */
-	(void) strlcpy(msgbuf, msgstr, sizeof(msgbuf));
+	(void) strcpy(msgbuf, msgstr);
 
 	/*
-	 * Each <facility>=<types> list is separated by ":".
+	 * Each <facility>=<types> list is seperated by ":".
 	 */
 	for (optstr = strtok(msgbuf, ":"); optstr;
 	     optstr = strtok(NULL, ":")) {
@@ -320,15 +299,15 @@ msgparseopts(char *msgstr, int doset)
 
 		if ((msgfac = getmsgfac(word)) == NULL) {
 			(void) snprintf(ebuf, sizeof(ebuf),
-				        "%.*s is not a valid message facility", 
-				        100, word);
+					"%s is not a valid message facility", 
+					word);
 			return(ebuf);
 		}
 		
 		if (doset) {
 			char *mcp;
 
-			if ((mcp = setmsgtypes(msgfac, cp)) != NULL)
+			if ((mcp = setmsgtypes(msgfac, cp)))
 				return(mcp);
 		}
 	}
@@ -345,8 +324,12 @@ msgparseopts(char *msgstr, int doset)
  * Send a message to facility "stdout".
  * For rdistd, this is really the rdist client.
  */
-static void
-msgsendstdout(struct msgfacility *msgfac, int mtype, int flags, char *msgbuf)
+static void msgsendstdout(msgfac, mtype, flags, msgbuf)
+	/*ARGSUSED*/
+	MSGFACILITY *msgfac;
+	int mtype;
+	int flags;
+	char *msgbuf;
 {
 	char cmd;
 
@@ -399,8 +382,12 @@ msgsendstdout(struct msgfacility *msgfac, int mtype, int flags, char *msgbuf)
 /*
  * Send a message to facility "syslog"
  */
-static void
-msgsendsyslog(struct msgfacility *msgfac, int mtype, int flags, char *msgbuf)
+static void msgsendsyslog(msgfac, mtype, flags, msgbuf)
+	/*ARGSUSED*/
+	MSGFACILITY *msgfac;
+	int mtype;
+	int flags;
+	char *msgbuf;
 {
 	int syslvl = 0;
 
@@ -440,8 +427,12 @@ msgsendsyslog(struct msgfacility *msgfac, int mtype, int flags, char *msgbuf)
 /*
  * Send a message to a "file" facility.
  */
-static void
-msgsendfile(struct msgfacility *msgfac, int mtype, int flags, char *msgbuf)
+static void msgsendfile(msgfac, mtype, flags, msgbuf)
+	/*ARGSUSED*/
+	MSGFACILITY *msgfac;
+	int mtype;
+	int flags;
+	char *msgbuf;
 {
 	if (msgfac->mf_fptr == NULL)
 		return;
@@ -456,11 +447,13 @@ msgsendfile(struct msgfacility *msgfac, int mtype, int flags, char *msgbuf)
 /*
  * Same method as msgsendfile()
  */
-static void
-msgsendnotify(struct msgfacility *msgfac, int mtype, int flags, char *msgbuf)
+static void msgsendnotify(msgfac, mtype, flags, msgbuf)
+	/*ARGSUSED*/
+	MSGFACILITY *msgfac;
+	int mtype;
+	int flags;
+	char *msgbuf;
 {
-	char *tempfile;
-
 	if (IS_ON(flags, MT_DEBUG))
 		return;
 
@@ -468,24 +461,27 @@ msgsendnotify(struct msgfacility *msgfac, int mtype, int flags, char *msgbuf)
 		return;
 
 	if (!msgfac->mf_fptr) {
-		char *cp;
+		register char *cp;
 		int fd;
-		size_t len;
+		char *getenv();
 
 		/*
 		 * Create and open a new temporary file
 		 */
-		if ((cp = getenv("TMPDIR")) == NULL || *cp == '\0')
+		if ((cp = getenv("TMPDIR")) == NULL)
 			cp = _PATH_TMP;
-		len = strlen(cp) + 1 + sizeof(_RDIST_TMP);
-		tempfile = xmalloc(len);
-		(void) snprintf(tempfile, len, "%s/%s", cp, _RDIST_TMP);
+		tempfile = (char *) xmalloc(strlen(cp) + 1 + 
+					    strlen(_RDIST_TMP) + 2);
+		(void) sprintf(tempfile, "%s/%s", cp, _RDIST_TMP);
 
 		msgfac->mf_filename = tempfile;
-		if ((fd = mkstemp(msgfac->mf_filename)) < 0 ||
-		    (msgfac->mf_fptr = fdopen(fd, "w")) == NULL)
-		    fatalerr("Cannot open notify file for writing: %s: %s.",
-			msgfac->mf_filename, SYSERR);
+		if ((fd = mkstemp(msgfac->mf_filename)) == -1 ||
+		    (msgfac->mf_fptr = fdopen(fd, "w")) == NULL) {
+			if (fd != -1)
+				close(fd);
+			fatalerr("Cannot open notify file for writing: %s: %s.",
+			      msgfac->mf_filename, SYSERR);
+		}
 		debugmsg(DM_MISC, "Created notify temp file '%s'",
 			 msgfac->mf_filename);
 	}
@@ -500,10 +496,9 @@ msgsendnotify(struct msgfacility *msgfac, int mtype, int flags, char *msgbuf)
 /*
  * Insure currenthost is set to something reasonable.
  */
-void
-checkhostname(void)
+extern void checkhostname()
 {
-	static char mbuf[HOST_NAME_MAX+1];
+	static char mbuf[MAXHOSTNAMELEN];
 	char *cp;
 
 	if (!currenthost) {
@@ -519,26 +514,28 @@ checkhostname(void)
 /*
  * Print a message contained in "msgbuf" if a level "lvl" is set.
  */
-static void
-_message(int flags, char *msgbuf)
+static void _message(flags, msgbuf)
+	int flags;
+	char *msgbuf;
 {
-	int i, x;
+	register int i, x;
+	register char *cp;
 	static char mbuf[2048];
 
 	if (msgbuf && *msgbuf) {
 		/*
 		 * Ensure no stray newlines are present
 		 */
-		msgbuf[strcspn(msgbuf, "\n")] = CNULL;
+		if ((cp = strchr(msgbuf, '\n')))
+			*cp = CNULL;
 
 		checkhostname();
 		if (strncmp(currenthost, msgbuf, strlen(currenthost)) == 0)
-			(void) strlcpy(mbuf, msgbuf, sizeof(mbuf));
+			(void) strcpy(mbuf, msgbuf);
 		else
-			(void) snprintf(mbuf, sizeof(mbuf), 
-					"%s: %s", currenthost, msgbuf);
+			(void) sprintf(mbuf, "%s: %s", currenthost, msgbuf);
 	} else
-		mbuf[0] = '\0';
+		(void) strcpy(mbuf, "");
 
 	/*
 	 * Special case for messages that only get
@@ -582,55 +579,137 @@ _message(int flags, char *msgbuf)
 							      mbuf);
 }
 
+#if	defined(ARG_TYPE) && ARG_TYPE == ARG_VARARGS
 /*
- * Front-end to _message()
+ * Varargs front-end to _message()
  */
-void
-message(int lvl, const char *fmt, ...)
+extern void message(va_alist)
+	va_dcl
 {
 	static char buf[MSGBUFSIZ];
 	va_list args;
+	char *fmt;
+	int lvl;
 
-	if (fmt != NULL) {
-		va_start(args, fmt);
-		(void) vsnprintf(buf, sizeof(buf), fmt, args);
-		va_end(args);
-	}
+	va_start(args);
+	lvl = (int) va_arg(args, int);
+	fmt = (char *) va_arg(args, char *);
+	va_end(args);
 
-	_message(lvl, fmt ? buf : NULL);
+	(void) vsprintf(buf, fmt, args);
+
+	_message(lvl, buf);
 }
+#endif	/* ARG_VARARGS */
 
+#if	defined(ARG_TYPE) && ARG_TYPE == ARG_STDARG
 /*
- * Display a debugging message
+ * Stdarg front-end to _message()
  */
-static void
-_debugmsg(int lvl, char *buf)
-{
-	if (IS_ON(debug, lvl))
-		_message(MT_DEBUG, buf);
-}
-
-/*
- * Front-end to _debugmsg()
- */
-void
-debugmsg(int lvl, const char *fmt, ...)
+extern void message(int lvl, char *fmt, ...)
 {
 	static char buf[MSGBUFSIZ];
 	va_list args;
 
 	va_start(args, fmt);
-	(void) vsnprintf(buf, sizeof(buf), fmt, args);
+	(void) vsprintf(buf, fmt, args);
+	va_end(args);
+
+	_message(lvl, buf);
+}
+#endif	/* ARG_STDARG */
+
+
+#if	!defined(ARG_TYPE)
+/*
+ * Simple front-end to _message()
+ */
+/*VARARGS2*/
+extern void message(lvl, fmt, a1, a2, a3, a4, a5)
+	int lvl;
+	char *fmt;
+{
+	static char buf[MSGBUFSIZ];
+
+	(void) sprintf(buf, fmt, a1, a2, a3, a4, a5);
+
+	_message(lvl, buf);
+}
+#endif	/* !ARG_TYPE */
+
+/*
+ * Display a debugging message
+ */
+static void _debugmsg(lvl, buf)
+	int lvl;
+	char *buf;
+{
+	if (IS_ON(debug, lvl))
+		_message(MT_DEBUG, buf);
+}
+
+#if	defined(ARG_TYPE) && ARG_TYPE == ARG_VARARGS
+/*
+ * Varargs front-end to _debugmsg()
+ */
+extern void debugmsg(va_alist)
+	va_dcl
+{
+	static char buf[MSGBUFSIZ];
+	va_list args;
+	char *fmt;
+	int lvl;
+
+	va_start(args);
+	lvl = (int) va_arg(args, int);
+	fmt = (char *) va_arg(args, char *);
+	va_end(args);
+
+	(void) vsprintf(buf, fmt, args);
+
+	_debugmsg(lvl, buf);
+}
+#endif	/* ARG_VARARGS */
+
+#if	defined(ARG_TYPE) && ARG_TYPE == ARG_STDARG
+/*
+ * Stdarg front-end to _debugmsg()
+ */
+extern void debugmsg(int lvl, char *fmt, ...)
+{
+	static char buf[MSGBUFSIZ];
+	va_list args;
+
+	va_start(args, fmt);
+	(void) vsprintf(buf, fmt, args);
 	va_end(args);
 
 	_debugmsg(lvl, buf);
 }
+#endif	/* ARG_STDARG */
+
+#if	!defined(ARG_TYPE)
+/*
+ * Simple front-end to _debugmsg()
+ */
+/*VARARGS2*/
+extern void debugmsg(lvl, fmt, a1, a2, a3, a4, a5)
+	int lvl;
+	char *fmt;
+{
+	static char buf[MSGBUFSIZ];
+
+	(void) sprintf(buf, fmt, a1, a2, a3, a4, a5);
+
+	_debugmsg(lvl, buf);
+}
+#endif	/* ARG_TYPE */
 
 /*
  * Print an error message
  */
-static void
-_error(const char *msg)
+static void _error(msg)
+	char *msg;
 {
 	static char buf[MSGBUFSIZ];
 
@@ -639,21 +718,41 @@ _error(const char *msg)
 
 	if (msg) {
 		if (isserver)
-			(void) snprintf(buf, sizeof(buf),
-					"REMOTE ERROR: %s", msg);
+			(void) sprintf(buf, "REMOTE ERROR: %s", msg);
 		else
-			(void) snprintf(buf, sizeof(buf),
-					"LOCAL ERROR: %s", msg);
+			(void) sprintf(buf, "LOCAL ERROR: %s", msg);
 	}
 
 	_message(MT_NERROR, (buf[0]) ? buf : NULL);
 }
 
+#if	defined(ARG_TYPE) && ARG_TYPE == ARG_VARARGS
 /*
- * Frontend to _error()
+ * Varargs frontend to _error()
  */
-void
-error(const char *fmt, ...)
+extern void error(va_alist)
+	va_dcl
+{
+	static char buf[MSGBUFSIZ];
+	va_list args;
+	char *fmt;
+
+	buf[0] = CNULL;
+	va_start(args);
+	fmt = (char *) va_arg(args, char *);
+	if (fmt)
+		(void) vsprintf(buf, fmt, args);
+	va_end(args);
+
+	_error((buf[0]) ? buf : NULL);
+}
+#endif	/* ARG_VARARGS */
+
+#if	defined(ARG_TYPE) && ARG_TYPE == ARG_STDARG
+/*
+ * Stdarg frontend to _error()
+ */
+extern void error(char *fmt, ...)
 {
 	static char buf[MSGBUFSIZ];
 	va_list args;
@@ -661,47 +760,103 @@ error(const char *fmt, ...)
 	buf[0] = CNULL;
 	va_start(args, fmt);
 	if (fmt)
-		(void) vsnprintf(buf, sizeof(buf), fmt, args);
+		(void) vsprintf(buf, fmt, args);
 	va_end(args);
 
 	_error((buf[0]) ? buf : NULL);
 }
+#endif	/* ARG_STDARG */
+
+#if	!defined(ARG_TYPE)
+/*
+ * Simple frontend to _error()
+ */
+/*VARARGS1*/
+extern void error(fmt, a1, a2, a3, a4, a5, a6)
+	char *fmt;
+{
+	static char buf[MSGBUFSIZ];
+
+	buf[0] = CNULL;
+	if (fmt)
+		(void) sprintf(buf, fmt, a1, a2, a3, a4, a5, a6);
+
+	_error((buf[0]) ? buf : NULL);
+}
+#endif /* ARG_TYPE */
 
 /*
  * Display a fatal message
  */
-static void
-_fatalerr(const char *msg)
+static void _fatalerr(msg)
+	char *msg;
 {
 	static char buf[MSGBUFSIZ];
 
 	++nerrs;
 
 	if (isserver)
-		(void) snprintf(buf, sizeof(buf), "REMOTE ERROR: %s", msg);
+		(void) sprintf(buf, "REMOTE ERROR: %s", msg);
 	else
-		(void) snprintf(buf, sizeof(buf), "LOCAL ERROR: %s", msg);
+		(void) sprintf(buf, "LOCAL ERROR: %s", msg);
 
 	_message(MT_FERROR, buf);
 
 	exit(nerrs);
 }
 
+#if	defined(ARG_TYPE) && ARG_TYPE == ARG_VARARGS
 /*
- * Front-end to _fatalerr()
+ * Varargs front-end to _fatalerr()
  */
-void
-fatalerr(const char *fmt, ...)
+extern void fatalerr(va_alist)
+	va_dcl
+{
+	static char buf[MSGBUFSIZ];
+	va_list args;
+	char *fmt;
+
+	va_start(args);
+	fmt = (char *) va_arg(args, char *);
+	(void) vsprintf(buf, fmt, args);
+	va_end(args);
+
+	_fatalerr(buf);
+}
+#endif	/* ARG_VARARGS */
+
+#if	defined(ARG_TYPE) && ARG_TYPE == ARG_STDARG
+/*
+ * Stdarg front-end to _fatalerr()
+ */
+extern void fatalerr(char *fmt, ...)
 {
 	static char buf[MSGBUFSIZ];
 	va_list args;
 
 	va_start(args, fmt);
-	(void) vsnprintf(buf, sizeof(buf), fmt, args);
+	(void) vsprintf(buf, fmt, args);
 	va_end(args);
 
 	_fatalerr(buf);
 }
+#endif	/* ARG_STDARG */
+
+#if	!defined(ARG_TYPE)
+/*
+ * Simple front-end to _fatalerr()
+ */
+/*VARARGS1*/
+extern void fatalerr(fmt, a1, a2, a3, a4, a5)
+	char *fmt;
+{
+	static char buf[MSGBUFSIZ];
+
+	(void) sprintf(buf, fmt, a1, a2, a3, a4, a5);
+
+	_fatalerr(buf);
+}
+#endif	/* !ARG_TYPE */
 
 /*
  * Get the name of the file used for notify.
@@ -709,10 +864,9 @@ fatalerr(const char *fmt, ...)
  * is closed.  We assume this function is only called when
  * we are ready to read the file.
  */
-char *
-getnotifyfile(void)
+extern char *getnotifyfile()
 {
-	int i;
+	register int i;
 
 	for (i = 0; msgfacility[i].mf_name; i++)
 		if (msgfacility[i].mf_msgfac == MF_NOTIFY &&

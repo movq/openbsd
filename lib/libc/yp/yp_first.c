@@ -1,4 +1,3 @@
-/*	$OpenBSD: yp_first.c,v 1.11 2015/09/13 20:57:28 guenther Exp $ */
 /*
  * Copyright (c) 1992, 1993 Theo de Raadt <deraadt@theos.com>
  * All rights reserved.
@@ -11,6 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Theo de Raadt.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
  * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -25,10 +29,20 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: yp_first.c,v 1.5 1996/12/03 08:20:03 deraadt Exp $";
+#endif /* LIBC_SCCS and not lint */
+
+#include <sys/param.h>
 #include <sys/types.h>
-#include <limits.h>
+#include <sys/socket.h>
+#include <sys/file.h>
+#include <sys/uio.h>
+#include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <rpc/rpc.h>
 #include <rpc/xdr.h>
 #include <rpcsvc/yp.h>
@@ -36,8 +50,13 @@
 #include "ypinternal.h"
 
 int
-yp_first(const char *indomain, const char *inmap, char **outkey, int *outkeylen,
-    char **outval, int *outvallen)
+yp_first(indomain, inmap, outkey, outkeylen, outval, outvallen)
+	const char     *indomain;
+	const char     *inmap;
+	char          **outkey;
+	int            *outkeylen;
+	char          **outval;
+	int            *outvallen;
 {
 	struct ypresp_key_val yprkv;
 	struct ypreq_nokey yprnk;
@@ -74,14 +93,16 @@ again:
 	}
 	if (!(r = ypprot_err(yprkv.stat))) {
 		*outkeylen = yprkv.key.keydat_len;
-		*outvallen = yprkv.val.valdat_len;
-		if ((*outkey = malloc(*outkeylen + 1)) == NULL ||
-		    (*outval = malloc(*outvallen + 1)) == NULL) {
-			free(*outkey);
+		if ((*outkey = malloc(*outkeylen + 1)) == NULL)
 			r = YPERR_RESRC;
-		} else {
+		else {
 			(void)memcpy(*outkey, yprkv.key.keydat_val, *outkeylen);
 			(*outkey)[*outkeylen] = '\0';
+		}
+		*outvallen = yprkv.val.valdat_len;
+		if ((*outval = malloc(*outvallen + 1)) == NULL)
+			r = YPERR_RESRC;
+		else {
 			(void)memcpy(*outval, yprkv.val.valdat_val, *outvallen);
 			(*outval)[*outvallen] = '\0';
 		}
@@ -90,4 +111,3 @@ again:
 	_yp_unbind(ysd);
 	return r;
 }
-DEF_WEAK(yp_first);

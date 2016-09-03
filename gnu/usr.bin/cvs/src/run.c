@@ -207,18 +207,6 @@ run_exec (stin, stout, sterr, flags)
 	    (void) close (sherr);
 	}
 
-#ifdef SETXID_SUPPORT
-	/*
-	** This prevents a user from creating a privileged shell
-	** from the text editor when the SETXID_SUPPORT option is selected.
-	*/
-	if (!strcmp (run_argv[0], Editor) && setegid (getgid ()))
-	{
-	    error (0, errno, "cannot set egid to gid");
-	    _exit (127);
-	}
-#endif
-
 	/* dup'ing is done.  try to run it now */
 	(void) execvp (run_argv[0], run_argv);
 	error (0, errno, "cannot exec %s", run_argv[0]);
@@ -324,19 +312,9 @@ run_exec (stin, stout, sterr, flags)
   out:
     if (sterr)
 	(void) close (sherr);
-    else
-	/* ensure things are received by the parent in the correct order
-	 * relative to the protocol pipe
-	 */
-	cvs_flusherr();
   out2:
     if (stout)
 	(void) close (shout);
-    else
-	/* ensure things are received by the parent in the correct order
-	 * relative to the protocol pipe
-	 */
-	cvs_flushout();
   out1:
     if (stin)
 	(void) close (shin);
@@ -454,7 +432,7 @@ void
 close_on_exec (fd)
      int fd;
 {
-#ifdef F_SETFD
+#if defined (FD_CLOEXEC) && defined (F_SETFD)
     if (fcntl (fd, F_SETFD, 1))
 	error (1, errno, "can't set close-on-exec flag on %d", fd);
 #endif

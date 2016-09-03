@@ -1,4 +1,4 @@
-/*	$OpenBSD: rwall.c,v 1.13 2015/01/16 06:40:11 deraadt Exp $	*/
+/*	$OpenBSD: rwall.c,v 1.5 1999/05/30 08:21:15 deraadt Exp $	*/
 
 /*
  * Copyright (c) 1993 Christopher G. Demetriou
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +34,17 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+char copyright[] =
+"@(#) Copyright (c) 1988 Regents of the University of California.\n\
+ All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+/*static char sccsid[] = "from: @(#)wall.c	5.14 (Berkeley) 3/2/91";*/
+static char rcsid[] = "$OpenBSD: rwall.c,v 1.5 1999/05/30 08:21:15 deraadt Exp $";
+#endif /* not lint */
+
 /*
  * This program is not related to David Wall, whose Stanford Ph.D. thesis
  * is entitled "Mechanisms for Broadcast and Selective Broadcast".
@@ -39,13 +54,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <sys/param.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <pwd.h>
 #include <unistd.h>
-#include <limits.h>
 #include <paths.h>
-#include <err.h>
 
 #include <rpc/rpc.h>
 #include <rpcsvc/rwall.h>
@@ -54,17 +68,18 @@ struct timeval timeout = { 25, 0 };
 int mbufsize;
 char *mbuf;
 
-void makemsg(char *);
+void makemsg ();
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
-	extern char *__progname;
 	char *wallhost, res;
 	CLIENT *cl;
 
 	if ((argc < 2) || (argc > 3)) {
-		fprintf(stderr, "usage: %s host [file]\n", __progname);
+		fprintf(stderr, "usage: %s hostname [file]\n", argv[0]);
 		exit(1);
 	}
 
@@ -87,10 +102,9 @@ main(int argc, char *argv[])
 		exit(1);
 	}
 
-	if (clnt_call(cl, WALLPROC_WALL, xdr_wrapstring, &mbuf, xdr_void,
-	    &res, timeout) != RPC_SUCCESS) {
+	if (clnt_call(cl, WALLPROC_WALL, xdr_wrapstring, &mbuf, xdr_void, &res, timeout) != RPC_SUCCESS) {
 		/*
-		 * An error occurred while calling the server.
+		 * An error occurred while calling the server. 
 		 * Print error message and die.
 		 */
 		clnt_perror(cl, wallhost);
@@ -101,7 +115,8 @@ main(int argc, char *argv[])
 }
 
 void
-makemsg(char *fname)
+makemsg(fname)
+	char *fname;
 {
 	struct tm *lt;
 	struct passwd *pw;
@@ -109,11 +124,13 @@ makemsg(char *fname)
 	time_t now;
 	FILE *fp;
 	int fd;
-	char *whom, hostname[HOST_NAME_MAX+1], lbuf[100], tmpname[PATH_MAX];
+	char *whom, hostname[MAXHOSTNAMELEN], lbuf[100], tmpname[64];
 
-	snprintf(tmpname, sizeof(tmpname), "%s/wall.XXXXXXXXXX", _PATH_TMP);
-	if ((fd = mkstemp(tmpname)) == -1 || !(fp = fdopen(fd, "r+")))
-		err(1, "can't open temporary file");
+	snprintf(tmpname, sizeof(tmpname), "%s/wall.XXXXXX", _PATH_TMP);	
+	if ((fd = mkstemp(tmpname)) == -1 || !(fp = fdopen(fd, "r+"))) {
+		(void)fprintf(stderr, "wall: can't open temporary file.\n");
+		exit(1);
+	}
 	(void)unlink(tmpname);
 
 	if (!(whom = getlogin()))
@@ -136,18 +153,26 @@ makemsg(char *fname)
 
 	putc('\n', fp);
 
-	if (fname && !(freopen(fname, "r", stdin)))
-		err(1, "%s", fname);
+	if (fname && !(freopen(fname, "r", stdin))) {
+		(void)fprintf(stderr, "wall: can't read %s.\n", fname);
+		exit(1);
+	}
 	while (fgets(lbuf, sizeof(lbuf), stdin))
 		fputs(lbuf, fp);
 	rewind(fp);
 
-	if (fstat(fd, &sbuf))
-		err(1, "can't stat temporary file");
+	if (fstat(fd, &sbuf)) {
+		(void)fprintf(stderr, "wall: can't stat temporary file.\n");
+		exit(1);
+	}
 	mbufsize = sbuf.st_size;
-	if (!(mbuf = malloc((u_int)mbufsize)))
-		err(1, "malloc");
-	if (fread(mbuf, sizeof(*mbuf), mbufsize, fp) != mbufsize)
-		err(1, "can't read temporary file");
+	if (!(mbuf = malloc((u_int)mbufsize))) {
+		(void)fprintf(stderr, "wall: out of memory.\n");
+		exit(1);
+	}
+	if (fread(mbuf, sizeof(*mbuf), mbufsize, fp) != mbufsize) {
+		(void)fprintf(stderr, "wall: can't read temporary file.\n");
+		exit(1);
+	}
 	(void)close(fd);
 }

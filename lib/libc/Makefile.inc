@@ -1,6 +1,6 @@
-#	$OpenBSD: Makefile.inc,v 1.29 2016/05/07 19:05:21 guenther Exp $
+#	$OpenBSD: Makefile.inc,v 1.1 1998/11/20 11:18:28 d Exp $
 #
-# This file contains make rules used to build libc
+# This file contains make rules that are shared by libc and libc_r.
 #
 
 .ifndef LIBCSRCDIR
@@ -8,65 +8,58 @@ all:
 	@echo "need to define LIBCSRCDIR" >&2; exit 1
 .endif
 
-CFLAGS+=-I${LIBCSRCDIR}/include -I${LIBCSRCDIR}/hidden -D__LIBC__ \
-	-Werror-implicit-function-declaration -include namespace.h
+CFLAGS+=	-DLIBC_SCCS -DSYSLIBC_SCCS -I${LIBCSRCDIR}/include
 
-.if ${COMPILER_VERSION:L} != "gcc3"
-CFLAGS+=-Werror=deprecated-declarations
-.endif
-
-# Include link-time warnings about unsafe API uses (ie. strcpy)
-CFLAGS+=-DAPIWARN
-
-.if (${YP:L} == "yes")
+.if (${YP} == "yes")
 CFLAGS+=-DYP -I${LIBCSRCDIR}/yp
 .endif
 
 LLIBS=
-AINC=   -I${LIBCSRCDIR}/arch/${MACHINE_CPU}
+AINC=   -I${LIBCSRCDIR}/arch/${MACHINE_ARCH}
 .if defined(DESTDIR)
 AINC+=  -nostdinc -idirafter ${DESTDIR}/usr/include
 .endif
 
-.if exists (${LIBCSRCDIR}/arch/${MACHINE_CPU}/Makefile.inc)
-.PATH:	${LIBCSRCDIR}/arch/${MACHINE_CPU}
-.include "${LIBCSRCDIR}/arch/${MACHINE_CPU}/Makefile.inc"
+.if exists (${LIBCSRCDIR}/arch/${MACHINE_ARCH}/Makefile.inc)
+.PATH:	${LIBCSRCDIR}/arch/${MACHINE_ARCH}
+.include "${LIBCSRCDIR}/arch/${MACHINE_ARCH}/Makefile.inc"
 .endif
 
 .include "${LIBCSRCDIR}/db/Makefile.inc"
-.include "${LIBCSRCDIR}/dlfcn/Makefile.inc"
-.include "${LIBCSRCDIR}/citrus/Makefile.inc"
 .include "${LIBCSRCDIR}/compat-43/Makefile.inc"
 .include "${LIBCSRCDIR}/gen/Makefile.inc"
 .include "${LIBCSRCDIR}/crypt/Makefile.inc"
-.include "${LIBCSRCDIR}/gdtoa/Makefile.inc"
 .include "${LIBCSRCDIR}/gmon/Makefile.inc"
 .include "${LIBCSRCDIR}/hash/Makefile.inc"
 .include "${LIBCSRCDIR}/locale/Makefile.inc"
-.include "${LIBCSRCDIR}/asr/Makefile.inc"
+.include "${LIBCSRCDIR}/md/Makefile.inc"
 .include "${LIBCSRCDIR}/net/Makefile.inc"
 .include "${LIBCSRCDIR}/nls/Makefile.inc"
-
-# 32-bit systems need these
-.if (${MACHINE_CPU} == "i386") || (${MACHINE_CPU} == "powerpc") || \
-    (${MACHINE_CPU} == "hppa") || (${MACHINE_CPU} == "arm") || \
-    (${MACHINE_CPU} == "sparc") || (${MACHINE_CPU} == "sh") || \
-    (${MACHINE_CPU} == "m88k")
+.if (${MACHINE_ARCH} != "alpha")
 .include "${LIBCSRCDIR}/quad/Makefile.inc"
 .endif
-
 .include "${LIBCSRCDIR}/regex/Makefile.inc"
 .include "${LIBCSRCDIR}/rpc/Makefile.inc"
 .include "${LIBCSRCDIR}/stdio/Makefile.inc"
 .include "${LIBCSRCDIR}/stdlib/Makefile.inc"
 .include "${LIBCSRCDIR}/string/Makefile.inc"
 .include "${LIBCSRCDIR}/termios/Makefile.inc"
-.include "${LIBCSRCDIR}/thread/Makefile.inc"
 .include "${LIBCSRCDIR}/time/Makefile.inc"
-.include "${LIBCSRCDIR}/uuid/Makefile.inc"
 .include "${LIBCSRCDIR}/sys/Makefile.inc"
-.if (${YP:L} == "yes")
+.if (${YP} == "yes")
 .include "${LIBCSRCDIR}/yp/Makefile.inc"
 .endif
 
-${OBJS} ${GOBJS} ${POBJS} ${SOBJS} ${DOBJS}: ${LIBCSRCDIR}/include/namespace.h
+CFLAGS+=-DNLS
+
+LIBKERN=	${LIBCSRCDIR}/../../sys/lib/libkern
+
+KSRCS=	bcmp.c bzero.c ffs.c strcat.c strcmp.c strcpy.c strlen.c strncmp.c \
+	strncpy.c htonl.c htons.c ntohl.c ntohs.c
+.if (${MACHINE_ARCH} != "alpha")
+KSRCS+=	adddi3.c anddi3.c ashldi3.c ashrdi3.c cmpdi2.c divdi3.c iordi3.c \
+	lshldi3.c lshrdi3.c moddi3.c muldi3.c negdi2.c notdi2.c qdivrem.c \
+	subdi3.c  ucmpdi2.c udivdi3.c umoddi3.c xordi3.c
+KINCLUDES+=	quad/quad.h
+.endif
+

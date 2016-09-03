@@ -1,4 +1,4 @@
-/*	$OpenBSD: print-cnfp.c,v 1.9 2015/11/15 20:35:36 mmcc Exp $	*/
+/*	$OpenBSD: print-cnfp.c,v 1.2 1998/06/25 20:26:59 mickey Exp $	*/
 
 /*
  * Copyright (c) 1998 Michael Shalayeff
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -34,13 +39,11 @@
 
 #include <netinet/in.h>
 #include <netinet/tcp.h>
-#include <arpa/inet.h>
 
 #include <stdio.h>
 #include <string.h>
 
 #include "interface.h"
-#include "addrtoname.h"
 
 struct nfhdr {
 	u_int32_t	ver_cnt;	/* version [15], and # of records */
@@ -52,9 +55,9 @@ struct nfhdr {
 };
 
 struct nfrec {
-	struct in_addr  src_ina;
-	struct in_addr  dst_ina;
-	struct in_addr  nhop_ina;
+	in_addr_t	src_ina;
+	in_addr_t	dst_ina;
+	in_addr_t	nhop_ina;
 	u_int32_t	ifaces;		/* src,dst ifaces */
 	u_int32_t	packets;
 	u_int32_t	octets;
@@ -68,13 +71,15 @@ struct nfrec {
 };
 
 void
-cnfp_print(const u_char *cp, u_int len, const u_char *bp)
+cnfp_print(register const u_char *cp, u_int len, register const u_char *bp)
 {
-	const struct nfhdr *nh;
-	const struct nfrec *nr;
-	const struct ip *ip;
-	int nrecs, ver, proto;
+	register const struct nfhdr *nh;
+	register const struct nfrec *nr;
+	register const struct ip *ip;
+	struct protoent *pent;
+	int nrecs, ver;
 	time_t t;
+	char *p;
 
 	ip = (struct ip *)bp;
 	nh = (struct nfhdr *)cp;
@@ -94,8 +99,11 @@ cnfp_print(const u_char *cp, u_int len, const u_char *bp)
 	if (ver == 5) {
 		printf("#%u, ", htonl(nh->sequence));
 		nr = (struct nfrec *)&nh[1];
-	} else
+		snaplen -= 24;
+	} else {
 		nr = (struct nfrec *)&nh->sequence;
+		snaplen -= 16;
+	}
 
 	printf("%2u recs", nrecs);
 
@@ -109,30 +117,29 @@ cnfp_print(const u_char *cp, u_int len, const u_char *bp)
 
 		asbuf[0] = buf[0] = '\0';
 		if (ver == 5) {
-			snprintf(buf, sizeof buf, "/%d",
-			    (ntohl(nr->masks) >> 24) & 0xff);
-			snprintf(asbuf, sizeof asbuf, ":%d",
-			    (ntohl(nr->asses) >> 16) & 0xffff);
+			sprintf(buf, "/%d", (ntohl(nr->masks) >> 24) & 0xff);
+			sprintf(asbuf, "%d:", (ntohl(nr->asses) >> 16) & 0xffff);
 		}
 		printf("\n    %s%s%s:%u ", inet_ntoa(nr->src_ina), buf, asbuf,
 			ntohl(nr->ports) >> 16);
 
 		if (ver == 5) {
-			snprintf(buf, sizeof buf, "/%d",
-			    (ntohl(nr->masks) >> 16) & 0xff);
-			snprintf(asbuf, sizeof asbuf, ":%d",
-			    ntohl(nr->asses) & 0xffff);
+			sprintf(buf, "/%d", (ntohl(nr->masks) >> 16) & 0xff);
+			sprintf(asbuf, "%d:", ntohl(nr->asses) & 0xffff);
 		}
 		printf("> %s%s%s:%u ", inet_ntoa(nr->dst_ina), buf, asbuf,
 			ntohl(nr->ports) & 0xffff);
 
 		printf(">> %s\n    ", inet_ntoa(nr->nhop_ina));
 
-		proto = (ntohl(nr->proto_tos) >> 8) & 0xff;
-		printf("%s ", ipproto_string(proto));
+		pent = getprotobynumber((ntohl(nr->proto_tos) >> 8) & 0xff);
+		if (!pent || nflag)
+			printf("%u ", (ntohl(nr->proto_tos) >> 8) & 0xff);
+		else
+			printf("%s ", pent->p_name);
 
 		/* tcp flags for tcp only */
-		if (proto == IPPROTO_TCP) {
+		if (pent && pent->p_proto == IPPROTO_TCP) {
 			int flags;
 			if (ver == 1)
 				flags = (ntohl(nr->asses) >> 24) & 0xff;

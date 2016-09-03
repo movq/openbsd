@@ -1,4 +1,4 @@
-/*	$OpenBSD: cons.c,v 1.14 2010/05/09 15:30:28 jsg Exp $	*/
+/*	$OpenBSD: cons.c,v 1.9 1997/08/13 14:18:09 niklas Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -17,7 +17,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -44,12 +48,10 @@
 #include "stand.h"
 #include <dev/cons.h>
 
-extern struct consdev constab[];
-
 void
-cninit(void)
+cninit()
 {
-	struct consdev *cp;
+	register struct consdev *cp;
 
 	/*
 	 * Collect information about all possible consoles
@@ -57,7 +59,7 @@ cninit(void)
 	 */
 	for (cp = constab; cp->cn_probe; cp++) {
 		(*cp->cn_probe)(cp);
-		if (cp->cn_pri != CN_DEAD &&
+		if (cp->cn_pri > CN_DEAD &&
 		    (cn_tab == NULL || cp->cn_pri > cn_tab->cn_pri))
 			cn_tab = cp;
 	}
@@ -73,7 +75,8 @@ cninit(void)
 }
 
 int
-cnset(dev_t dev)
+cnset(dev)
+	dev_t dev;
 {
 	struct consdev *cp;
 
@@ -85,11 +88,11 @@ cnset(dev_t dev)
 			/* short-circuit noop */
 			if (cp == cn_tab && cp->cn_dev == dev)
 				return (0);
-			if (cp->cn_pri != CN_DEAD) {
+			if (cp->cn_pri > CN_DEAD) {
 				cn_tab = cp;
 				cp->cn_dev = dev;
 				/* Turn it on.  */
-				(*cp->cn_init)(cp);
+				(cp->cn_init)(cp);
 				return (0);
 			}
 			break;
@@ -99,7 +102,7 @@ cnset(dev_t dev)
 }
 
 int
-cngetc(void)
+cngetc()
 {
 	if (cn_tab == NULL)
 		return (0);
@@ -107,7 +110,8 @@ cngetc(void)
 }
 
 void
-cnputc(int c)
+cnputc(c)
+	register int c;
 {
 	if (cn_tab != NULL && c) {
 		(*cn_tab->cn_putc)(cn_tab->cn_dev, c);
@@ -117,9 +121,10 @@ cnputc(int c)
 }
 
 int
-cnischar(void)
+cnischar()
 {
 	if (cn_tab != NULL)
 		return ((*cn_tab->cn_getc)(cn_tab->cn_dev|0x80));
-	return 0;
+	else
+		return 0;
 }

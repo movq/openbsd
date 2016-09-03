@@ -1,4 +1,4 @@
-.\"	$OpenBSD: apply.1,v 1.24 2014/09/08 01:27:55 schwarze Exp $
+.\"	$OpenBSD: apply.1,v 1.9 1999/07/04 11:53:50 aaron Exp $
 .\"	$NetBSD: apply.1,v 1.4 1996/03/18 23:16:57 jtc Exp $
 .\"
 .\" Copyright (c) 1983, 1990, 1993
@@ -12,7 +12,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -30,7 +34,7 @@
 .\"
 .\"     @(#)apply.1	8.2 (Berkeley) 4/4/94
 .\"
-.Dd $Mdocdate: September 8 2014 $
+.Dd April 4, 1994
 .Dt APPLY 1
 .Os
 .Sh NAME
@@ -38,15 +42,16 @@
 .Nd apply a command to a set of arguments
 .Sh SYNOPSIS
 .Nm apply
-.Op Fl Ar #
-.Op Fl d
-.Op Fl a Ar magic
-.Ar command argument ...
+.Op Fl a Ns Ar c
+.Op Fl Ns Ar #
+.Ar command argument
+.Op Ar ...
 .Sh DESCRIPTION
 .Nm
 runs the named
 .Ar command
-on each given
+on each
+argument
 .Ar argument
 in turn.
 .Pp
@@ -55,9 +60,9 @@ Character sequences of the form
 in
 .Ar command ,
 where
-.Sq d
+.Sq Li d
 is a digit from 1 to 9, are replaced by the
-.Li d Ns 'th
+.Li d Ns \'th
 following unused
 .Ar argument .
 In this case, the largest digit number of arguments are discarded for
@@ -65,10 +70,10 @@ each execution of
 .Ar command .
 .Pp
 The options are as follows:
-.Bl -tag -width Ds
+.Bl -tag -width "-ac"
 .It Fl Ns Ar #
 Normally arguments are taken singly; the optional number
-.Fl Ns Ar #
+.Fl #
 specifies the number of arguments to be passed to
 .Ar command .
 If the number is zero,
@@ -81,65 +86,53 @@ If any sequences of
 occur in
 .Ar command ,
 the
-.Fl Ns Ar #
+.Fl #
 option is ignored.
-.It Fl a Ar magic
-Use
-.Ar magic
-as the magic character instead of the default
-.Ql % .
-.It Fl d
-Debug mode.
-Print commands to the standard output but do not actually execute them.
+.It Fl a Ns Ar c
+The use of the character
+.Sq Li %
+as a magic character may be changed with the
+.Fl a
+option.
 .El
 .Sh ENVIRONMENT
+The following environment variable affects the execution of
+.Nm apply :
 .Bl -tag -width SHELL
 .It Ev SHELL
 Pathname of shell to use.
 If this variable is not defined, the Bourne shell is used.
+.El
+.Sh EXAMPLES
+.Bl -tag -width apply -compact
+.It Li "apply echo a*"
+is similar to
+.Xr ls 1 ;
+.It Li "apply \-2 cmp a1 b1 a2 b2 a3 b3"
+compares the `a' files to the `b' files;
+.It Li "apply \-0 who 1 2 3 4 5"
+runs
+.Xr who 1
+5 times; and
+.It Li "apply \'ln %1 /usr/joe\'" *
+links all files in the current directory to the directory
+.Pa /usr/joe .
 .El
 .Sh FILES
 .Bl -tag -width /bin/sh -compact
 .It Pa /bin/sh
 default shell
 .El
-.Sh EXAMPLES
-Operate similar to
-.Xr ls 1 :
-.Pp
-.Dl "$ apply echo *"
-.Pp
-Compare the
-.Pa a*
-files to the
-.Pa b*
-files:
-.Pp
-.Dl "$ apply -2 cmp a1 b1 a2 b2 a3 b3"
-.Pp
-Run
-.Xr who 1
-five times:
-.Pp
-.Dl "$ apply -0 who 1 2 3 4 5"
-.Pp
-Link all files in the current directory to the directory
-.Pa /home/joe :
-.Pp
-.Dl "$ apply 'ln %1 /home/joe'" *
-.Sh SEE ALSO
-.Xr sh 1 ,
-.Xr xargs 1
-.Sh HISTORY
-The
-.Nm
-command appeared in
-.Bx 4.2 .
-.Sh AUTHORS
-.An Rob Pike
+.Sh AUTHOR
+Rob Pike
 .Sh BUGS
 Shell metacharacters in
 .Ar command
 may have bizarre effects; it is best to enclose complicated
 commands in single quotes
 .Pq '' .
+.Sh HISTORY
+The
+.Nm
+command appeared in
+.Bx 4.2 .

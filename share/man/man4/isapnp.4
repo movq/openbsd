@@ -1,4 +1,4 @@
-.\"	$OpenBSD: isapnp.4,v 1.41 2016/08/31 16:54:33 jmc Exp $
+.\"	$OpenBSD: isapnp.4,v 1.13 1999/08/04 17:18:45 deraadt Exp $
 .\"	$NetBSD: isapnp.4,v 1.8 1998/06/07 09:08:46 enami Exp $
 .\"
 .\" Copyright (c) 1997 Jonathan Stone
@@ -29,7 +29,7 @@
 .\" (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 .\" THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: August 31 2016 $
+.Dd July 12, 1998
 .Dt ISAPNP 4
 .Os
 .Sh NAME
@@ -37,11 +37,11 @@
 .Nd introduction to ISA Plug-and-Play support
 .Sh SYNOPSIS
 .Cd "isapnp0 at isa?"
-.Sh DESCRIPTION
-An
-.Nm
-bus can be configured for each supported ISA bus.
 .Pp
+An
+.Nm isapnp
+bus can be configured for each supported ISA bus.
+.Sh DESCRIPTION
 .Ox
 provides machine-independent bus support and drivers for ISA
 Plug-and-Play (isapnp) autoconfiguration of PnP-compatible
@@ -50,62 +50,54 @@ devices on an ISA bus.
 .Ox
 includes machine-independent ISAPNP drivers, sorted by function
 and driver name:
+.Pp
 .Ss Disk controllers
-.Bl -tag -width 12n -offset ind -compact
-.It Xr aha 4
-Adaptec 154x SCSI interface
-.It Xr aic 4
-Adaptec AIC-6260 and AIC-6360 SCSI interface
-.It Xr wdc 4
-WD100x compatible hard disk controller driver
+.Bl -tag -width speaker -offset indent -compact
+.It aic
+Adaptec AHA-1520B SCSI controller card.
+.It aha
+Adaptec AHA-154x SCSI controller card.
+.It wdc
+IDE controllers (typically found on sound cards)
 .El
+.Pp
 .Ss Serial and parallel interfaces
-.Bl -tag -width 12n -offset ind -compact
-.It Xr com 4
-serial communications interface
+.Bl -tag -width speaker -offset indent -compact
+.It com & pccom
+8250/16450/16550/16650/16850-compatible ISA PnP serial cards and internal
+modems (i386 only).
+Win-modems are not supported.
 .El
+.Pp
 .Ss Network interfaces
-.Bl -tag -width 12n -offset ind -compact
-.It Xr an 4
-Aironet 4500/4800 IEEE 802.11FH/b wireless interfaces
-.It Xr ef 4
-3Com Fast EtherLink ISA (3c515) 10/100 Ethernet device
-.It Xr ep 4
-3Com EtherLink III and Fast EtherLink III 10/100 Ethernet device
-.It Xr le 4
-AMD LANCE Ethernet device
-.It Xr ne 4
-NE2000 and compatible 10/100 Ethernet device
-.It Xr we 4
-Western Digital/SMC WD80x3, SMC Elite Ultra, and SMC EtherEZ Ethernet device
+.Bl -tag -width speaker -offset indent -compact
+.It ep
+3Com 3C509B Etherlink-III Ethernet interface.
+.It le
+Ethernet driver for Lance based Ethernet interfaces.
+.It ne
+NE2000-compatible Ethernet interfaces.
+.It we
+SMC EtherEZ ethernet cards
 .El
 .Ss Sound
-.Bl -tag -width 12n -offset ind -compact
-.It Xr ess 4
-ESS Technology AudioDrive family audio device
-.It Xr gus 4
-Gravis UltraSound/UltraSound MAX audio device
-.It Xr mpu 4
-Roland/Yamaha MPU401 MIDI UART device
-.It Xr sb 4
-SoundBlaster family audio device
+.Bl -tag -width speaker -offset indent -compact
+.It sb
+SoundBlaster series sound cards (SB16 PnP through AWE64).
+.It gus
+Gravis Ultrasound PnP sound cards.
+.It ym
+Yamaha OPL3-SA3 sound cards.
+.It wss
+Windows Sound System cards.
+.It mpu
+MIDI interfaces.
 .El
-.Ss Miscellaneous devices
-.Bl -tag -width 12n -offset ind -compact
-.It Xr joy 4
-games adapter
-.It Xr pcic 4
-introduction to PCMCIA (PC Card) support
+.Ss Misc devices
+.Bl -tag -width speaker -offset indent -compact
+.It joy
+Joystick driver.
 .El
-.Sh SEE ALSO
-.Xr intro 4 ,
-.Xr isa 4
-.Sh HISTORY
-The
-.Nm
-driver
-appeared in
-.Nx 1.3 .
 .Sh CAVEATS
 From time to time an
 .Nm
@@ -113,30 +105,47 @@ device will be found which the kernel does not recognize.
 The kernel matches
 .Nm
 devices to device drivers based on identifiers which each device
-provides.
-For example, this device:
+provides.  For example, this device:
 .Pp
-joy0 at isapnp0 "Creative SB16 PnP, CTL7001, PNPB02F, Game" port 0x200/8
+joy0 at isapnp0 <Creative SB16 PnP, CTL7001, PNPB02F, Game> port 0x200/8
 .Pp
 This joystick calls itself by the two names
 .Dq CTL7001
 and
 .Dq PNPB02F .
-The latter is a standard name (which the kernel automatically recognizes),
+The latter is a standard name (which the kernel automatically recognises),
 but
 .Dq CTL7001
-is a vendor-specific name which needs to be added to a table.
-Unfortunately,
+is a vendor-specific name which needs to be added to a table.  Unfortunately,
 some devices advertise only their vendor-specific name; for instance:
 .Pp
-"PnP Sound Chip, @P@1001, , " at isapnp0 port 0x200/8 not configured
+isapnp0: <PnP Sound Chip, @P@1001, , > port 0x200/8 not configured
 .Pp
-Testing will show that this device is actually a joystick.
-To resolve the issue, the actual name
+Testing will show that this device is actually a joystick.  To resolve
+the issue, the actual name
 .Dq @P@1001
 has to be entered into the database found in
 .Pa /sys/dev/isa/pnpdevs
 and a new kernel must be built.
 Then the device will probe like this:
 .Pp
-joy0 at isapnp0 "PnP Sound Chip, @P@1001, , " port 0x200/8
+joy0 at isapnp0 <PnP Sound Chip, @P@1001, , > port 0x200/8
+.Pp
+.Sh SEE ALSO
+.Xr aha 4 ,
+.Xr aic 4 ,
+.Xr ep 4 ,
+.Xr intro 4 ,
+.Xr joy 4 ,
+.Xr le 4 ,
+.Xr ne 4 ,
+.Xr pccom 4 ,
+.Xr sb 4 ,
+.Xr wss 4 ,
+.Xr ym 4
+.Sh HISTORY
+The
+.Nm
+driver
+appeared in
+.Nx 1.3 .

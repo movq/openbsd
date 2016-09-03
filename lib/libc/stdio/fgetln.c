@@ -1,4 +1,3 @@
-/*	$OpenBSD: fgetln.c,v 1.15 2016/08/25 19:21:33 schwarze Exp $ */
 /*-
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,6 +34,10 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: fgetln.c,v 1.2 1996/08/19 08:32:29 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,12 +45,21 @@
 
 /*
  * Expand the line buffer.  Return -1 on error.
+#ifdef notdef
+ * The `new size' does not account for a terminating '\0',
+ * so we add 1 here.
+#endif
  */
-static int
-__slbexpand(FILE *fp, size_t newsize)
+int
+__slbexpand(fp, newsize)
+	FILE *fp;
+	size_t newsize;
 {
 	void *p;
 
+#ifdef notdef
+	++newsize;
+#endif
 	if (fp->_lb._size >= newsize)
 		return (0);
 	if ((p = realloc(fp->_lb._base, newsize)) == NULL)
@@ -61,22 +77,24 @@ __slbexpand(FILE *fp, size_t newsize)
  * it if they wish.  Thus, we set __SMOD in case the caller does.
  */
 char *
-fgetln(FILE *fp, size_t *lenp)
+fgetln(fp, lenp)
+	register FILE *fp;
+	size_t *lenp;
 {
-	unsigned char *p;
-	char *ret;
-	size_t len;
+	register unsigned char *p;
+	register size_t len;
 	size_t off;
 
-	FLOCKFILE(fp);
-	_SET_ORIENTATION(fp, -1);
-
 	/* make sure there is input */
-	if (fp->_r <= 0 && __srefill(fp))
-		goto error;
+	if (fp->_r <= 0 && __srefill(fp)) {
+		*lenp = 0;
+		return (NULL);
+	}
 
 	/* look for a newline in the input */
 	if ((p = memchr((void *)fp->_p, '\n', fp->_r)) != NULL) {
+		register char *ret;
+
 		/*
 		 * Found one.  Flag buffer as modified to keep fseek from
 		 * `optimising' a backward seek, in case the user stomps on
@@ -88,7 +106,6 @@ fgetln(FILE *fp, size_t *lenp)
 		fp->_flags |= __SMOD;
 		fp->_r -= len;
 		fp->_p = p;
-		FUNLOCKFILE(fp);
 		return (ret);
 	}
 
@@ -97,13 +114,13 @@ fgetln(FILE *fp, size_t *lenp)
 	 * As a bonus, though, we can leave off the __SMOD.
 	 *
 	 * OPTIMISTIC is length that we (optimistically) expect will
-	 * accommodate the `rest' of the string, on each trip through the
+	 * accomodate the `rest' of the string, on each trip through the
 	 * loop below.
 	 */
 #define OPTIMISTIC 80
 
 	for (len = fp->_r, off = 0;; len += fp->_r) {
-		size_t diff;
+		register size_t diff;
 
 		/*
 		 * Make sure there is room for more bytes.  Copy data from
@@ -115,11 +132,8 @@ fgetln(FILE *fp, size_t *lenp)
 		(void)memcpy((void *)(fp->_lb._base + off), (void *)fp->_p,
 		    len - off);
 		off = len;
-		if (__srefill(fp)) {
-			if (fp->_flags & __SEOF)
-				break;
-			goto error;
-		}
+		if (__srefill(fp))
+			break;	/* EOF or error: return partial line */
 		if ((p = memchr((void *)fp->_p, '\n', fp->_r)) == NULL)
 			continue;
 
@@ -136,13 +150,12 @@ fgetln(FILE *fp, size_t *lenp)
 		break;
 	}
 	*lenp = len;
-	ret = (char *)fp->_lb._base;
-	FUNLOCKFILE(fp);
-	return (ret);
+#ifdef notdef
+	fp->_lb._base[len] = 0;
+#endif
+	return ((char *)fp->_lb._base);
 
 error:
-	FUNLOCKFILE(fp);
-	*lenp = 0;
-	return (NULL);
+	*lenp = 0;		/* ??? */
+	return (NULL);		/* ??? */
 }
-DEF_WEAK(fgetln);

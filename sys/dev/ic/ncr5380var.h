@@ -1,4 +1,4 @@
-/*	$OpenBSD: ncr5380var.h,v 1.13 2014/01/18 07:36:35 dlg Exp $	*/
+/*	$OpenBSD: ncr5380var.h,v 1.5 1997/09/11 01:07:13 kstailey Exp $	*/
 /*	$NetBSD: ncr5380var.h,v 1.6 1996/05/10 18:04:06 gwr Exp $	*/
 
 /*
@@ -35,13 +35,13 @@
 
 /*
  * This file defines the interface between the machine-dependent
- * module and the machine-independent ncr5380sbc.c module.
+ * module and the machine-indepenedent ncr5380sbc.c module.
  */
 
 #define SCI_CLR_INTR(sc)	(*(sc)->sci_iack)
 #define	SCI_BUSY(sc)		(*sc->sci_bus_csr & SCI_BUS_BSY)
 
-/* These are NOT arbitrary, but map to bits in sci_tcmd */
+/* These are NOT artibtrary, but map to bits in sci_tcmd */
 #define PHASE_DATA_OUT	0x0
 #define PHASE_DATA_IN	0x1
 #define PHASE_COMMAND	0x2
@@ -71,10 +71,7 @@ struct sci_req {
 #define	SR_SENSE			2	/* We are getting sense */
 #define	SR_OVERDUE			4	/* Timeout while not current */
 #define	SR_ERROR			8	/* Error occurred */
-#define SR_FREE				16	/* We are free */
 	int		sr_status;		/* Status code from last cmd */
-
-	struct timeout	sr_timeout;
 };
 #define	SCI_OPENINGS	16		/* How many commands we can enqueue. */
 
@@ -94,20 +91,21 @@ struct ncr5380_softc {
 	volatile u_char *sci_r7;
 
 	/* Functions set from MD code */
-	int		(*sc_pio_out)(struct ncr5380_softc *,
-					   int, int, u_char *);
-	int		(*sc_pio_in)(struct ncr5380_softc *,
-					  int, int, u_char *);
-	void		(*sc_dma_alloc)(struct ncr5380_softc *);
-	void		(*sc_dma_free)(struct ncr5380_softc *);
+	int		(*sc_pio_out) __P((struct ncr5380_softc *,
+					   int, int, u_char *));
+	int		(*sc_pio_in) __P((struct ncr5380_softc *,
+					  int, int, u_char *));
+	void		(*sc_dma_alloc) __P((struct ncr5380_softc *));
+	void		(*sc_dma_free) __P((struct ncr5380_softc *));
 
-	void		(*sc_dma_setup)(struct ncr5380_softc *);
-	void		(*sc_dma_start)(struct ncr5380_softc *);
-	void		(*sc_dma_poll)(struct ncr5380_softc *);
-	void		(*sc_dma_stop)(struct ncr5380_softc *);
+	void		(*sc_dma_setup) __P((struct ncr5380_softc *));
+	void		(*sc_dma_start) __P((struct ncr5380_softc *));
+	void		(*sc_dma_poll) __P((struct ncr5380_softc *));
+	void		(*sc_dma_eop) __P((struct ncr5380_softc *));
+	void		(*sc_dma_stop) __P((struct ncr5380_softc *));
 
-	void		(*sc_intr_on)(struct ncr5380_softc *);
-	void		(*sc_intr_off)(struct ncr5380_softc *);
+	void		(*sc_intr_on) __P((struct ncr5380_softc *));
+	void		(*sc_intr_off) __P((struct ncr5380_softc *));
 
 	int		sc_flags;	/* Misc. flags and capabilities */
 #define	NCR5380_PERMIT_RESELECT		1  /* Allow disconnect/reselect */
@@ -146,8 +144,6 @@ struct ncr5380_softc {
 	struct		sci_req sc_ring[SCI_OPENINGS];
 	int		sc_rr;		/* Round-robin scan pointer */
 
-	struct scsi_iopool sc_iopool;
-
 	/* Active requests, by target/LUN */
 	struct		sci_req *sc_matrix[8][8];
 
@@ -170,18 +166,19 @@ struct ncr5380_softc {
 	u_char	*sc_omp;		/* Outgoing message pointer */
 	u_char	sc_imess[NCR_MAX_MSG_LEN];
 	u_char	*sc_imp;		/* Incoming message pointer */
+
 };
 
-void	ncr5380_init(struct ncr5380_softc *);
-void	ncr5380_reset_scsibus(struct ncr5380_softc *);
-int 	ncr5380_intr(struct ncr5380_softc *);
-void 	ncr5380_scsi_cmd(struct scsi_xfer *);
-int 	ncr5380_pio_in(struct ncr5380_softc *, int, int, u_char *);
-int 	ncr5380_pio_out(struct ncr5380_softc *, int, int, u_char *);
+void	ncr5380_init __P((struct ncr5380_softc *));
+void	ncr5380_reset_scsibus __P((struct ncr5380_softc *));
+int 	ncr5380_intr __P((struct ncr5380_softc *));
+int 	ncr5380_scsi_cmd __P((struct scsi_xfer *));
+int 	ncr5380_pio_in __P((struct ncr5380_softc *, int, int, u_char *));
+int 	ncr5380_pio_out __P((struct ncr5380_softc *, int, int, u_char *));
 
 #ifdef	NCR5380_DEBUG
 struct ncr5380_softc *ncr5380_debug_sc;
-void ncr5380_trace(char *msg, long val);
+void ncr5380_trace __P((char *msg, long val));
 #define	NCR_TRACE(msg, val) ncr5380_trace(msg, val)
 #else	/* NCR5380_DEBUG */
 #define	NCR_TRACE(msg, val)	/* nada */

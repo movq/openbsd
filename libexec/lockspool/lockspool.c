@@ -1,4 +1,4 @@
-/*	$OpenBSD: lockspool.c,v 1.18 2015/11/24 00:19:29 deraadt Exp $	*/
+/*	$OpenBSD: lockspool.c,v 1.2 1998/09/27 20:23:02 millert Exp $	*/
 
 /*
  * Copyright (c) 1998 Theo de Raadt <deraadt@theos.com>
@@ -13,6 +13,8 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. The name of the authors may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
  * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
@@ -26,54 +28,59 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <signal.h>
+#ifndef lint
+static char rcsid[] = "$OpenBSD: lockspool.c,v 1.2 1998/09/27 20:23:02 millert Exp $";
+#endif /* not lint */
+
+#include <sys/signal.h>
 #include <pwd.h>
 #include <syslog.h>
 #include <unistd.h>
 #include <errno.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <poll.h>
-#include <err.h>
-
 #include "mail.local.h"
 
-void unhold(int);
-void usage(void);
+void unhold __P((int));
+void usage __P((void));
 
 extern char *__progname;
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
 	struct passwd *pw;
-	struct pollfd pfd;
-	ssize_t nread;
 	char *from, c;
 	int holdfd;
-
-	if (pledge("stdio rpath wpath getpw cpath fattr", NULL) == -1)
-		err(1, "pledge");
 
 	openlog(__progname, LOG_PERROR, LOG_MAIL);
 
 	if (argc != 1 && argc != 2)
 		usage();
 	if (argc == 2 && getuid() != 0)
-		merr(FATAL, "you must be root to lock someone else's spool");
+		err(1, "you must be root to lock someone else's spool");
 
 	signal(SIGTERM, unhold);
 	signal(SIGINT, unhold);
 	signal(SIGHUP, unhold);
-	signal(SIGPIPE, unhold);
 
 	if (argc == 2)
-		pw = getpwnam(argv[1]);
+		from = argv[1];
 	else
+		from = getlogin();
+
+	if (from) {
+		pw = getpwnam(from);
+		if (pw == NULL)
+			exit (1);
+	} else {
 		pw = getpwuid(getuid());
-	if (pw == NULL)
-		exit (1);
-	from = pw->pw_name;
+		if (pw)
+			from = pw->pw_name;
+		else
+			exit (1);
+	}
 
 	holdfd = getlock(from, pw);
 	if (holdfd == -1) {
@@ -82,34 +89,24 @@ main(int argc, char *argv[])
 	}
 	write(STDOUT_FILENO, "1\n", 2);
 
-	/* wait for the other end of the pipe to close, then release the lock */
-	pfd.fd = STDIN_FILENO;
-	pfd.events = POLLIN;
-	do {
-		if (poll(&pfd, 1, INFTIM) == -1) {
-			if (errno != EINTR)
-				break;
-		}
-		do {
-			nread = read(STDIN_FILENO, &c, 1);
-		} while (nread == 1 || (nread == -1 && errno == EINTR));
-	} while (nread == -1 && errno == EAGAIN);
+	while (read(0, &c, 1) == -1 && errno == EINTR)
+		;
 	rellock();
 	exit (0);
 }
 
-/*ARGSUSED*/
 void
-unhold(int signo)
+unhold(sig)
+	int sig;
 {
 
 	rellock();
-	_exit(0);
+	exit(0);
 }
 
 void
-usage(void)
+usage()
 {
 
-	merr(FATAL, "usage: %s [username]", __progname);
+	err(FATAL, "usage: %s [username]", __progname);
 }

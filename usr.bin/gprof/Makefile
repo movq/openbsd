@@ -1,18 +1,22 @@
-#	$OpenBSD: Makefile,v 1.21 2013/10/17 10:51:57 deraadt Exp $
+#	$OpenBSD: Makefile,v 1.7 1998/07/06 15:19:31 millert Exp $
 
-.include <bsd.own.mk>
-
-TARGET_MACHINE_ARCH?=	${MACHINE_ARCH}
-TARGET_MACHINE_CPU?=	${MACHINE_CPU}
-
+.if (${MACHINE_ARCH} == "alpha") || (${MACHINE_ARCH} == "mips") || \
+	(${MACHINE_ARCH} == "powerpc")
+NOPROG=
+.else
 PROG=	gprof
-SRCS=	gprof.c arcs.c dfn.c elf.c lookup.c ${TARGET_MACHINE_CPU}.c \
-	hertz.c printgprof.c printlist.c
-CFLAGS+= -I. -DMD_INCLUDE=\"${TARGET_MACHINE_CPU}.h\"
+SRCS=	gprof.c arcs.c dfn.c lookup.c ${MACHINE_ARCH}.c hertz.c \
+	printgprof.c printlist.c
+CFLAGS+= -D${MACHINE_ARCH}
+.endif
 
 beforeinstall:
 	${INSTALL} ${INSTALL_COPY} -o ${BINOWN} -g ${BINGRP} -m 444 \
 	    ${.CURDIR}/gprof.flat ${.CURDIR}/gprof.callg \
 	    ${DESTDIR}/usr/share/misc
+
+.if make(install)
+SUBDIR+= PSD.doc
+.endif
 
 .include <bsd.prog.mk>

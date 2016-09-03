@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_open.c,v 1.7 2016/01/06 22:28:52 millert Exp $	*/
-
 /*-
  * Copyright (c) 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)ex_open.c	10.7 (Berkeley) 3/6/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -25,18 +27,20 @@
  *
  *	Switch to single line "open" mode.
  *
- * PUBLIC: int ex_open(SCR *, EXCMD *);
+ * PUBLIC: int ex_open __P((SCR *, EXCMD *));
  */
 int
-ex_open(SCR *sp, EXCMD *cmdp)
+ex_open(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	/* If open option off, disallow open command. */
 	if (!O_ISSET(sp, O_OPEN)) {
 		msgq(sp, M_ERR,
-	    "The open command requires that the open option be set");
+	    "140|The open command requires that the open option be set");
 		return (1);
 	}
 
-	msgq(sp, M_ERR, "The open command is not yet implemented");
+	msgq(sp, M_ERR, "141|The open command is not yet implemented");
 	return (1);
 }

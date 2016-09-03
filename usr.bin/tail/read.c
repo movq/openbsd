@@ -1,4 +1,4 @@
-/*	$OpenBSD: read.c,v 1.17 2015/11/19 17:50:04 tedu Exp $	*/
+/*	$OpenBSD: read.c,v 1.3 1997/01/12 23:43:06 millert Exp $	*/
 /*	$NetBSD: read.c,v 1.4 1994/11/23 07:42:07 jtc Exp $	*/
 
 /*-
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,12 +37,20 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)read.c	8.1 (Berkeley) 6/6/93";
+#endif
+static char rcsid[] = "$OpenBSD: read.c,v 1.3 1997/01/12 23:43:06 millert Exp $";
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/stat.h>
 
 #include <err.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -54,36 +66,30 @@
  * routine has the usual nastiness of trying to find the newlines.  Otherwise,
  * it is displayed from the character closest to the beginning of the input to
  * the end.
- *
- * A non-zero return means an (non-fatal) error occurred.
- *
  */
-int
-bytes(struct tailfile *tf, off_t off)
+void
+bytes(fp, off)
+	register FILE *fp;
+	off_t off;
 {
-	int ch;
-	size_t len, tlen;
-	char *ep, *p, *t;
+	register int ch, len, tlen;
+	register char *ep, *p, *t;
 	int wrap;
 	char *sp;
-
-	if (off > SIZE_MAX)
-		errx(1, "offset too large");
 
 	if ((sp = p = malloc(off)) == NULL)
 		err(1, NULL);
 
-	for (wrap = 0, ep = p + off; (ch = getc(tf->fp)) != EOF;) {
+	for (wrap = 0, ep = p + off; (ch = getc(fp)) != EOF;) {
 		*p = ch;
 		if (++p == ep) {
 			wrap = 1;
 			p = sp;
 		}
 	}
-	if (ferror(tf->fp)) {
-		ierr(tf->fname);
-		free(sp);
-		return(1);
+	if (ferror(fp)) {
+		ierr();
+		return;
 	}
 
 	if (rflag) {
@@ -91,7 +97,7 @@ bytes(struct tailfile *tf, off_t off)
 			if (*t == '\n' && len) {
 				WR(t + 1, len);
 				len = 0;
-			}
+		}
 		if (wrap) {
 			tlen = len;
 			for (t = ep - 1, len = 0; t >= p; --t, ++len)
@@ -116,9 +122,6 @@ bytes(struct tailfile *tf, off_t off)
 		if ((len = p - sp))
 			WR(sp, len);
 	}
-
-	free(sp);
-	return(0);
 }
 
 /*
@@ -130,50 +133,40 @@ bytes(struct tailfile *tf, off_t off)
  * routine has the usual nastiness of trying to find the newlines.  Otherwise,
  * it is displayed from the line closest to the beginning of the input to
  * the end.
- *
- * A non-zero return means an (non-fatal) error occurred.
- *
  */
-int
-lines(struct tailfile *tf, off_t off)
+void
+lines(fp, off)
+	register FILE *fp;
+	off_t off;
 {
 	struct {
-		size_t blen;
-		size_t len;
+		u_int blen;
+		u_int len;
 		char *l;
 	} *lines;
-	int ch, rc = 0;
-	char *p = NULL;
-	int wrap;
-	size_t cnt, recno, blen, newsize;
-	char *sp = NULL, *newp = NULL;
-
-	if (off > SIZE_MAX)
-		errx(1, "offset too large");
+	register int ch;
+	register char *p = NULL;
+	int blen, cnt, recno, wrap;
+	char *sp = NULL;
 
 	if ((lines = calloc(off, sizeof(*lines))) == NULL)
 		err(1, NULL);
 
 	blen = cnt = recno = wrap = 0;
 
-	while ((ch = getc(tf->fp)) != EOF) {
+	while ((ch = getc(fp)) != EOF) {
 		if (++cnt > blen) {
-			newsize = blen + 1024;
-			if ((newp = realloc(sp, newsize)) == NULL)
+			if ((sp = realloc(sp, blen += 1024)) == NULL)
 				err(1, NULL);
-			sp = newp;
-			blen = newsize;
 			p = sp + cnt - 1;
 		}
 		*p++ = ch;
 		if (ch == '\n') {
 			if (lines[recno].blen < cnt) {
-				newsize = cnt + 256;
-				if ((newp = realloc(lines[recno].l,
-				    newsize)) == NULL)
+				lines[recno].blen = cnt + 256;
+				if ((lines[recno].l = realloc(lines[recno].l,
+				    lines[recno].blen)) == NULL)
 					err(1, NULL);
-				lines[recno].l = newp;
-				lines[recno].blen = newsize;
 			}
 			memcpy(lines[recno].l, sp, (lines[recno].len = cnt));
 			cnt = 0;
@@ -184,15 +177,13 @@ lines(struct tailfile *tf, off_t off)
 			}
 		}
 	}
-	if (ferror(tf->fp)) {
-		ierr(tf->fname);
-		rc = 1;
-		goto done;
+	if (ferror(fp)) {
+		ierr();
+		return;
 	}
 	if (cnt) {
 		lines[recno].l = sp;
 		lines[recno].len = cnt;
-		sp = NULL;
 		if (++recno == off) {
 			wrap = 1;
 			recno = 0;
@@ -200,11 +191,11 @@ lines(struct tailfile *tf, off_t off)
 	}
 
 	if (rflag) {
-		for (cnt = recno; cnt > 0; --cnt)
-			WR(lines[cnt - 1].l, lines[cnt - 1].len);
+		for (cnt = recno - 1; cnt >= 0; --cnt)
+			WR(lines[cnt].l, lines[cnt].len);
 		if (wrap)
-			for (cnt = off; cnt > recno; --cnt)
-				WR(lines[cnt - 1].l, lines[cnt - 1].len);
+			for (cnt = off - 1; cnt >= recno; --cnt)
+				WR(lines[cnt].l, lines[cnt].len);
 	} else {
 		if (wrap)
 			for (cnt = recno; cnt < off; ++cnt)
@@ -212,10 +203,4 @@ lines(struct tailfile *tf, off_t off)
 		for (cnt = 0; cnt < recno; ++cnt)
 			WR(lines[cnt].l, lines[cnt].len);
 	}
-done:
-	for (cnt = 0; cnt < off; cnt++)
-		free(lines[cnt].l);
-	free(sp);
-	free(lines);
-	return(rc);
 }

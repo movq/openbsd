@@ -1,4 +1,4 @@
-/*	$OpenBSD: gidt.S,v 1.36 2012/10/31 13:55:58 jsing Exp $	*/
+/*	$OpenBSD: gidt.S,v 1.23 1998/09/25 06:48:52 mickey Exp $	*/
 
 /*
  * Copyright (c) 1997 Michael Shalayeff
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR 
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
@@ -36,21 +41,37 @@
 #undef _LOCORE
 #include <assym.h>
 
-#include "gidt.h"
+#define addr32  .byte 0x67
+#define data32  .byte 0x66
+
+#define	SNULL	0x00
+#define S32TEXT	0x08
+#define	S32DATA	0x10
+#define S16TEXT	0x18
+#define	S16DATA	0x20
 
 #ifdef GIDT_DEBUG
 #define	gidt_debug0		; \
-	mov	$0xb8000, %eax	; \
-	mov	$0x47314730, (%eax)
+	movl	$0xb8000, %eax	; \
+	movl	$0x47314730, (%eax)
 #define	gidt_debug1		; \
-	mov	$(0xb8000 - LINKADDR), %eax	; \
-	mov	$0x4f314f30, (%eax)
+	data32			; \
+	movl	$(0xb8000 - LINKADDR), %eax	; \
+	data32			; \
+	addr32			; \
+	movl	$0x4f314f30, (%eax)
 #define	gidt_debug2		; \
-	mov	$0xb8004, %eax	; \
-	mov	$0x47334732, (%eax)
+	data32			; \
+	movl	$0xb8004, %eax	; \
+	data32			; \
+	addr32			; \
+	movl	$0x47334732, (%eax)
 #define	gidt_debug3		; \
-	mov	$0xb8004, %eax	; \
-	mov	$0x4f334f32, (%eax)
+	data32			; \
+	movl	$0xb8004, %eax	; \
+	data32			; \
+	addr32			; \
+	movl	$0x4f334f32, (%eax)
 #define gidt_debug4		; \
 	movl	$0xb8008, %eax	; \
 	movl	$0x47344733, (%eax)
@@ -65,50 +86,58 @@
 #define prot2real						\
 	gidt_debug0;						\
 								\
-	ljmp	$S16TEXT, $1f - LINKADDR;			\
+	movl	$S16DATA, %ax;					\
+	/* ljmp	$S16TEXT, $1f */;				\
+	.byte	0xea;		/* Change to 16bit mode */	\
+	.long	1f - LINKADDR;					\
+	.word	S16TEXT;					\
 1:								\
-	.code16;						\
-	movw	$S16DATA, %ax;					\
-	movw	%ax, %ds;					\
-	movw	%ax, %es;					\
+	movl	%ax, %ds;					\
+	movl	%ax, %es;					\
 	gidt_debug1;						\
 								\
 	movl	%cr0, %eax;	/* disable pmmm */		\
+	data32;							\
 	andl 	$~CR0_PE, %eax;					\
 	movl	%eax, %cr0;					\
 								\
-	/* reload real cs:ip */					\
-	data32 ljmp	$(LINKADDR >> 4), $1f - LINKADDR;	\
+	/* ljmp	(LINKADDR >> 4), $1f */;			\
+	.byte	0xea;		/* load real mode cs:ip */	\
+	.word	1f;						\
+	.word	(LINKADDR >> 4);				\
 1:								\
-	movw	%cs, %ax;	/* setup: %ds, %es, %ss = %cs */ \
-	movw	%ax, %ds;					\
-	movw	%ax, %es;					\
-	xorw	%ax, %ax;					\
-	movw	%ax, %ss;					\
+	data32;							\
+	xorl	%eax, %eax;	/* setup: %ds, %es, %ss */	\
+	movl	%ax, %ds;					\
+	movl	%ax, %es;					\
+	movl	%ax, %ss;					\
 								\
 	gidt_debug2;						\
 								\
-	data32 addr32 lidt (Idtr_real - LINKADDR); /* load idtr for real mode */
+	addr32;							\
+	data32;							\
+	lidt	Idtr_real;	/* load idtr for real mode */
 
 #define real2prot						\
 	gidt_debug3;						\
 								\
-	movw	$LINKADDR >> 4, %ax;				\
-	movw	%ax, %ds;					\
-	data32 addr32 lgdt (Gdtr - LINKADDR); 	/* load the gdtr */	\
+	addr32;							\
+	data32;							\
+	lgdt	Gdtr;		/* load the gdtr */		\
 								\
 	movl	%cr0, %eax;	/* enable pmmm */		\
+	data32;							\
 	orl	$CR0_PE, %eax;					\
 	movl	%eax, %cr0;					\
 								\
-	data32 ljmp	$S32TEXT, $1f;   /* reload %cs,flush pipeline */\
+	data32;							\
+	ljmp	$S32TEXT, $1f;   /* reload %cs,flush pipeline */\
 1:								\
-	.code32;						\
 	/* reload 32bit %ds, %ss, %es */			\
-	mov	$S32DATA, %eax;					\
-	mov	%ax, %ds;					\
-	mov	%ax, %ss;					\
-	mov	%ax, %es;					\
+	movl	$S32DATA, %eax;					\
+	movl	%ax, %ds;					\
+	movl	%ax, %ss;					\
+	movl	%ax, %es;					\
 								\
 	gidt_debug4;						\
 								\
@@ -119,14 +148,10 @@
 	.globl	_C_LABEL(BIOS_regs)
 
 	.text
-	.code32
 	.globl	_ASM_LABEL(pmm_init)
 	.globl	_C_LABEL(_rtt)
 
 ENTRY(_rtt)
-#ifdef SOFTRAID
-	call	_C_LABEL(sr_clear_keys)
-#endif
 #ifdef GIDT_DEBUG
 	movl	$0xb8000, %ebx
 	movl	$0x4f514f51, (%ebx)
@@ -150,8 +175,8 @@ ENTRY(_rtt)
 	movl	$0x07310731, (%ebx)
 #endif
 
-	/* Try to cause a triple fault... */
-	lidt	Idtr_reset
+	/* Try to cause a tripple fault... */
+	lidt    Idtr_reset
 	xorl	%eax, %eax
 	divl	%eax, %eax
 
@@ -162,33 +187,30 @@ ENTRY(_rtt)
 	movl	$0, %esp	/* segment violation */
 	ret
 
-#define IPROC(n)	X##n
-#define IEMU(n)		IPROC(emu##n)
+	.align	3, 0x90
+pmm_init:
+	/* reload new gdt */
+	lgdt	Gdtr
+	ljmp	$S32TEXT, $1f
+1:	
+	movl	$S32DATA, %eax
+	movl	%eax, %ds
+	movl	%eax, %ss
+	movl	%eax, %es
+	movl	%eax, %fs
+	movl	%eax, %gs
 
-create_idt_entry:
-	movw	%ax, (%ebx)
-	movw	$S32TEXT, 2(%ebx)
-	movw	$((0x80|SDT_SYS386TGT) << 8), 4(%ebx)
-	shr	$16, %eax
-	movw	%ax, 6(%ebx)
-	addl	$8, %ebx
+	/* load idtr for interrupts */
+	lidt	Idtr
 	ret
 
-	.align	8, 0x90
-pmm_init:
-
+#define IPROC(n)	X/**/n
+#define IEMU(n)		IPROC(emu/**/n)
+	.align 3
+idt:
 #define idte(e)	\
-	movl $IPROC(e), %eax; call create_idt_entry
-#define idtb(b)	idte(emu##b)
-
-	/* Build interrupt descriptor table. */
-	/* Maskable interrupts (32-255) */
-	movl	$idt, %ebx
-	movl	$Idtr, %eax
-	movw	$(640 - 1), (%eax)
-	movl	%ebx, 2(%eax)
-
-	/* Internal (0-31) */
+	.word IPROC(e), S32TEXT, (0x80|SDT_SYS386TGT) << 8, (LINKADDR >> 16)
+		/* internal (0-31) */
 	idte(de); idte(db); idte(nmi); idte(bp); idte(of); idte(br)
 	idte(ud); idte(nm); idte(df);  idte(fo); idte(ts); idte(np)
 	idte(ss); idte(gp); idte(pf);  idte(xx); idte(mf); idte(ac)
@@ -196,7 +218,10 @@ pmm_init:
 	idte(xx); idte(xx); idte(xx);  idte(xx); idte(xx); idte(xx)
 	idte(xx); idte(xx); idte(xx);  idte(xx); idte(xx); idte(xx)
 	idte(xx) 
-	/* BIOS entry points (32-63) */
+		/* Maskable interrupts (32-255) */
+		/* BIOS entry points (32-63) */
+		/* DOS entry points (64-80) */
+#define idtb(b)	idte(emu/**/b)
 	idtb(0);  idtb(1);  idtb(2);  idtb(3);  idtb(4);  idtb(5)
 	idtb(6);  idtb(7);  idtb(8);  idtb(9);  idtb(10); idtb(11)
 	idtb(12); idtb(13); idtb(14); idtb(15); idtb(16); idtb(17)
@@ -205,39 +230,20 @@ pmm_init:
 	idtb(30); idtb(31); idtb(32); idtb(33); idtb(34); idtb(35)
 	idtb(36); idtb(37); idtb(38); idtb(39); idtb(40); idtb(41)
 	idtb(42); idtb(43); idtb(44); idtb(45); idtb(46); idtb(47)
-	/* DOS entry points (64-80) */
-
-#undef idtb
 #undef idte
-
-	/* load idtr for interrupts */
-	lidt	Idtr
-	ret
-
-	.bss
-	.align 8, 0x90
-idt:
-	/* IDT has 80 entries at 8 bytes each. */
-	.space  640
-
-	.globl	Idtr
-Idtr:	.word	0  // 640 - 1
-	.long	0  // idt
+Idtr:	.word	. - idt - 1
+	.long	idt
 	.word	0
 
-	.text
-	.align	8
-	.globl	Idtr_real
-Idtr_real:
-	.word	1023
-	.long	0
-	.word	0
+	.align	3
+Idtr_real:	.word	1023
+		.long	0
+		.word	0
 
-	.align	8
-Idtr_reset:
-	.long	0, 0
+	.align	3
+Idtr_reset:	.long	0, 0
 
-	.align	8
+	.align	3
 gdt:
 		/* 0x00 : null */
 	.space	8
@@ -260,17 +266,16 @@ gdt:
 	.word	(LINKADDR & 0xffff)	# lobase
 	.byte	(LINKADDR >> 16) & 0xff	# midbase
 	.byte	SDT_MEMERAC | 0 | 0x80	# RXAC, dpl = 0, present
-	.byte	0x0 | 0 | 0 | 0		# hilimit, xx, 16bit, byte granularity
+	.byte	0xf | 0 | 0 | 0		# hilimit, xx, 16bit, byte granularity
 	.byte	(LINKADDR >> 20) & 0xff	# hibase
 		/* 0x20 : 16 bit data */
 	.word	0xFFFF			# lolimit
 	.word	(LINKADDR & 0xffff)	# lobase
 	.byte	(LINKADDR >> 16) & 0xff	# midbase
 	.byte	SDT_MEMRWA | 0 | 0x80	# RWA, dpl = 0, present
-	.byte	0x0 | 0 | 0 | 0		# hilimit, xx, 16bit, byte granularity
+	.byte	0xf | 0 | 0 | 0		# hilimit, xx, 16bit, byte granularity
 	.byte	(LINKADDR >> 20) & 0xff	# hibase
 
-.globl Gdtr
 Gdtr:	.word	. - gdt - 1
 	.long	gdt
 	.word	0
@@ -300,8 +305,8 @@ IENTRY_ERR(ud,0,T_PRIVINFLT)	/* #UD invalid opcode */
 IENTRY_ERR(nm,0,T_DNA)		/* #NM device not available */
 IENTRY(df,T_DOUBLEFLT)		/* #DF double fault */
 IENTRY_ERR(fo,0,T_FPOPFLT)	/* #FO coprocessor segment overrun */
-IENTRY(ts,T_TSSFLT)		/* #TS invalid TSS */
-IENTRY(np,T_SEGNPFLT)		/* #NP segment not present */
+IENTRY(ts,T_TSSFLT)		/* #TS innvalid TSS */
+IENTRY(np,T_SEGNPFLT)		/* #NP segmant not present */
 IENTRY(ss,T_STKFLT)		/* #SS stack fault */
 IENTRY(gp,T_PROTFLT)		/* #GP general protection */
 IENTRY(pf,T_PAGEFLT)		/* #PF page fault */
@@ -334,91 +339,68 @@ IEMUENT(44); IEMUENT(45); IEMUENT(46); IEMUENT(47)
  * entry point for BIOS real-mode interface
  * all the magic for real-prot mode switching is here
  *
- * Note: Once in real mode access to .data or .bss should be avoided since it
- * may not be reachable within the current segment. The following code also
- * assumes that .text is writeable.
- *
  * Call:	%eax, %ecx, %edx, %ebx, %ebp, %esi, %edi, %es, %ds
  * Return:	%eax, %edx, %ecx, %eflags (as returned from BIOS)
  *
  */
 	.globl	EMUh
-	.align	8, 0x90
+	.align	3, 0x90
 EMUh:
 	/* save %eax */
-	mov	%eax, 5f
-	pop	%eax
+	movl	%eax, 3f
+	popl	%eax
 
-	pusha
-	push	%ds
-	push	%es
-	push	%fs
-	push	%gs
+	pushal
+	pushl	%ds
+	pushl	%es
+	pushl	%fs
+	pushl	%gs
 
 	/* save BIOS int vector */
-	mov	%al, intno
-
-	/* Load BIOS registers prior to switching to real mode. */
-	movl	_C_LABEL(BIOS_regs)+BIOSR_ES, %eax
-	mov	%eax, 7f
-	movl	_C_LABEL(BIOS_regs)+BIOSR_DS, %eax
-	mov	%eax, 6f
+	movb	%al, intno
 
 	prot2real
 
-	push	%ds
+	pushl	%ds
 
-	# data32 movl $Leax, %eax
-	.byte	0x66, 0xb8
-7:	.long	0x90909090
-	mov	%ax, %es
+	addr32
+	movl	_C_LABEL(BIOS_regs)+(biosr_es), %eax
+	movl	%ax, %es
+	addr32
+	movl	_C_LABEL(BIOS_regs)+(biosr_ds), %eax
+	movl	%ax, %ds
 
-	# data32 movl $Leax, %eax
-	.byte	0x66, 0xb8
-6:	.long	0x90909090
-	mov	%ax, %ds
-
-	# data32 movl $Leax, %eax
-	.byte	0x66, 0xb8
-5:	.long	0x90909090
+	data32
+	# movl	$Leax, %eax
+	.byte	0xb8
+3:	.long	0x90909090	/* restore %eax */
 
 	;sti
 	int	$0
 intno	= . - 1
 	;cli
 
-	pop	%ds
+	popl	%ds
 
-	/* Preserve BX and ES for protected mode. */
-	addr32 movl %eax, (2f - LINKADDR)
-	movl	%ebx, %eax
-	addr32 movl %eax, (4f - LINKADDR)
-	movl	%es, %eax
-	addr32 movl %eax, (3f - LINKADDR)
-	addr32 movl (2f - LINKADDR), %eax
-
-	movb	%ah, %bh
+	addr32
+	data32
+	movl	%ebx, _C_LABEL(BIOS_regs)+(biosr_bx)
+	movl	%es, %bx
+	addr32
+	movl	%bx, _C_LABEL(BIOS_regs)+(biosr_es)
+	movb	%ah, %bh	/* save flags to return to caller */
 	lahf
 	xchgb	%ah, %bh
 
-	/* Preserve AX for protected mode. */
-	addr32 movl %eax, (2f - LINKADDR)
+	addr32
+	data32
+	movl	%eax, 2f	/* save %eax */
 
 	real2prot
 
-	# movl $Leax, %eax
+	# movl	$Leax, %eax
 	.byte	0xb8
-4:	.long	0x90909090
-	movl	%eax, _C_LABEL(BIOS_regs)+BIOSR_BX
-
-	# movl $Leax, %eax
-	.byte	0xb8
-3:	.long	0x90909090
-	movl	%eax, _C_LABEL(BIOS_regs)+BIOSR_ES
-
-	# movl $Leax, %eax
-	.byte	0xb8
-2:	.long	0x90909090
+2:	.long	0x90909090	/* eax */
 
 	/* pass BIOS return values back to caller */
 	movl	%eax, 0xb*4(%esp)
@@ -429,41 +411,42 @@ intno	= . - 1
 	/* clear NT flag in eflags */
 	/* Martin Fredriksson <martin@gbg.netman.se> */
 	pushf
-	pop	%eax
-	and	$0xffffbfff, %eax
-	push	%eax
+	popl	%eax
+	andl	$0xffffbfff, %eax
+	pushl	%eax
 	popf
 
 	/* save registers into save area */
-	movl	%eax, _C_LABEL(BIOS_regs)+BIOSR_AX
-	movl	%ecx, _C_LABEL(BIOS_regs)+BIOSR_CX
-	movl	%edx, _C_LABEL(BIOS_regs)+BIOSR_DX
-	movl	%ebp, _C_LABEL(BIOS_regs)+BIOSR_BP
-	movl	%esi, _C_LABEL(BIOS_regs)+BIOSR_SI
-	movl	%edi, _C_LABEL(BIOS_regs)+BIOSR_DI
+	movl	%eax, _C_LABEL(BIOS_regs)+biosr_ax
+	movl	%ecx, _C_LABEL(BIOS_regs)+biosr_cx
+	movl	%edx, _C_LABEL(BIOS_regs)+biosr_dx
+	movl	%ebp, _C_LABEL(BIOS_regs)+biosr_bp
+	movl	%esi, _C_LABEL(BIOS_regs)+biosr_si
+	movl	%edi, _C_LABEL(BIOS_regs)+biosr_di
 
-	pop	%gs
-	pop	%fs
-	pop	%es
-	pop	%ds
-	popa
+	popl	%gs
+	popl	%fs
+	popl	%es
+	popl	%ds
+	popal
 	iret
 
 /* Call buffer at 07c0:0000 in real mode to simulate a BIOS boot */
 ENTRY(bootbuf)
-	pop	%eax		/* Don't need return address */
-	pop	%esi		/* Buffer */
-	pop	%edx		/* Device */
+	popl	%eax		/* Don't need return address */
+	popl	%esi		/* Buffer */
+	popl	%edx		/* Device */
 	prot2real		/* Switch */
 
 	/* Set up stack */
 	cli
-	xor	%ax, %ax
-	mov	%ax, %ss
-	mov	$0xfffc, %esp
+	xorl	%ax, %ax
+	movl	%ax, %ss
+	data32
+	movl	$0xfffc, %esp
 	sti
 
 	/* Jump to buffer */
-	ljmp	$0x0, $0x7c00
+	addr32
+	ljmp $0x0, $0x7c00
 
-	.end

@@ -1,4 +1,4 @@
-/*	$OpenBSD: subr.c,v 1.11 2016/03/08 10:48:39 mestre Exp $	*/
+/*	$OpenBSD: subr.c,v 1.4 1998/09/02 06:36:07 pjanzen Exp $	*/
 /*	$NetBSD: subr.c,v 1.2 1995/03/21 12:05:11 cgd Exp $	*/
 
 /*-
@@ -18,7 +18,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -35,17 +39,24 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)subr.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: subr.c,v 1.4 1998/09/02 06:36:07 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
 /*	Re-coding of advent in C: subroutines from main			*/
 
 #include <stdio.h>
-#include <stdlib.h>
-
-#include "extern.h"
 #include "hdr.h"
+#include "extern.h"
 
 /*		Statement functions	*/
 int
-toting(int objj)
+toting(objj)
+	int     objj;
 {
 	if (place[objj] == -1)
 		return (TRUE);
@@ -53,7 +64,8 @@ toting(int objj)
 }
 
 int
-here(int objj)
+here(objj)
+	int     objj;
 {
 	if (place[objj] == loc || toting(objj))
 		return (TRUE);
@@ -61,7 +73,8 @@ here(int objj)
 }
 
 int
-at(int objj)
+at(objj)
+	int     objj;
 {
 	if (place[objj] == loc || fixed[objj] == loc)
 		return (TRUE);
@@ -70,13 +83,14 @@ at(int objj)
 }
 
 int
-liq2(int pbotl)
+liq2(pbotl)
+	int     pbotl;
 {
 	return ((1 - pbotl) * water + (pbotl / 2) * (water + oil));
 }
 
 int
-liq(void)
+liq()
 {
 	int     i;
 
@@ -87,7 +101,8 @@ liq(void)
 }
 
 int
-liqloc(int locc)	/* may want to clean this one up a bit */
+liqloc(locc)	/* may want to clean this one up a bit */
+	int     locc;
 {
 	int     i, j, l;
 
@@ -99,7 +114,8 @@ liqloc(int locc)	/* may want to clean this one up a bit */
 }
 
 int
-bitset(int l, int n)
+bitset(l, n)
+	int     l, n;
 {
 	if (cond[l] & setbit[n])
 		return (TRUE);
@@ -107,7 +123,8 @@ bitset(int l, int n)
 }
 
 int
-forced(int locc)
+forced(locc)
+	int     locc;
 {
 	if (cond[locc] == 2)
 		return (TRUE);
@@ -115,7 +132,7 @@ forced(int locc)
 }
 
 int
-dark(void)
+dark()
 {
 	if ((cond[loc] % 2) == 0 && (prop[lamp] == 0 || !here(lamp)))
 		return (TRUE);
@@ -123,7 +140,8 @@ dark(void)
 }
 
 int
-pct(int n)
+pct(n)
+	int     n;
 {
 	if (ran(100) < n)
 		return (TRUE);
@@ -132,7 +150,7 @@ pct(int n)
 
 
 int
-fdwarf(void)	/* 71 */
+fdwarf()	/* 71 */
 {
 	int     i, j;
 	struct travlist *kk;
@@ -279,7 +297,7 @@ l82:		if (stick <= 1)	{		/* 82 */
 
 
 int
-march(void)			/* label 8	*/
+march()				/* label 8	*/
 {
 	int     ll1, ll2;
 
@@ -357,7 +375,7 @@ l12:	/* alternative to probability move	*/
 
 
 int
-mback(void)			/* 20			*/
+mback()				/* 20			*/
 {
 	struct travlist *tk2,*j;
 	int     ll;
@@ -396,7 +414,7 @@ mback(void)			/* 20			*/
 
 
 int
-specials(void)			/* 30000		*/
+specials()			/* 30000		*/
 {
 	switch(newloc -= 300) {
 	case 1:			/* 30100		*/
@@ -418,7 +436,7 @@ specials(void)			/* 30000		*/
 
 
 int
-trbridge(void)			/* 30300		*/
+trbridge()			/* 30300		*/
 {
 	if (prop[troll] == 1) {
 		pspeak(troll, 1);
@@ -450,7 +468,7 @@ trbridge(void)			/* 30300		*/
 
 
 void
-badmove(void)					/* 20			*/
+badmove()					/* 20			*/
 {
 	spk = 12;
 	if (k >= 43 && k <= 50)
@@ -471,7 +489,8 @@ badmove(void)					/* 20			*/
 }
 
 void
-bug(int n)
+bug(n)
+	int     n;
 {
 /*	printf("Please tell jim@rand.org that fatal bug %d happened.\n",n); */
 	fprintf(stderr,
@@ -481,7 +500,7 @@ bug(int n)
 
 
 void
-checkhints(void)				/* 2600 &c		*/
+checkhints()					/* 2600 &c		*/
 {
 	int     hint;
 
@@ -532,15 +551,15 @@ l40020:		hintlc[hint] = 0;
 
 
 int
-trsay(void)			/* 9030			*/
+trsay()				/* 9030			*/
 {
 	int i;
 
-	if (wd2[0] != 0)
-		strlcpy(wd1, wd2, sizeof(wd1));
+	if (*wd2 != 0)
+		copystr(wd2, wd1);
 	i = vocab(wd1, -1, 0);
 	if (i == 62 || i == 65 || i == 71 || i == 2025) {
-		wd2[0] = 0;
+		*wd2 = 0;
 		obj = 0;
 		return (2630);
 	}
@@ -550,7 +569,7 @@ trsay(void)			/* 9030			*/
 
 
 int
-trtake(void)			/* 9010			*/
+trtake()			/* 9010			*/
 {
 	if (toting(obj))
 		return (2011);	/* 9010 */
@@ -605,7 +624,7 @@ l9014:	if ((obj == bird || obj == cage) && prop[bird] != 0)
 
 
 int
-dropper(void)			/* 9021			*/
+dropper()			/* 9021			*/
 {
 	k = liq();
 	if (k == obj)
@@ -621,7 +640,7 @@ dropper(void)			/* 9021			*/
 }
 
 int
-trdrop(void)			/* 9020			*/
+trdrop()			/* 9020			*/
 {
 	if (toting(rod2) && obj == rod && !toting(rod))
 		obj = rod2;
@@ -674,7 +693,7 @@ trdrop(void)			/* 9020			*/
 
 
 int
-tropen(void)					/* 9040			*/
+tropen()					/* 9040			*/
 {
 	if (obj == clam || obj == oyster) {
 		k = 0;				/* 9046			*/
@@ -752,7 +771,7 @@ tropen(void)					/* 9040			*/
 
 
 int
-trkill(void)				/* 9120				*/
+trkill()				/* 9120				*/
 {
 	int i;
 
@@ -814,7 +833,7 @@ trkill(void)				/* 9120				*/
 	rspeak(49);
 	verb = 0;
 	obj = 0;
-	getin(wd1, sizeof(wd1), wd2, sizeof(wd2));
+	getin(&wd1, &wd2);
 	if (!weq(wd1, "y") && !weq(wd1, "yes"))
 		return (2608);
 	pspeak(dragon, 1);
@@ -835,7 +854,7 @@ trkill(void)				/* 9120				*/
 
 
 int
-trtoss(void)				/* 9170: throw			*/
+trtoss()				/* 9170: throw			*/
 {
 	int i;
 
@@ -898,7 +917,7 @@ l9175:
 
 
 int
-trfeed(void)					/* 9210			*/
+trfeed()					/* 9210			*/
 {
 	if (obj == bird) {
 		spk = 100;
@@ -945,7 +964,7 @@ trfeed(void)					/* 9210			*/
 
 
 int
-trfill(void)					/* 9220 */
+trfill()					/* 9220 */
 {
 	if (obj == vase) {
 		spk = 29;
@@ -980,7 +999,7 @@ trfill(void)					/* 9220 */
 
 
 void
-closing(void)				/* 10000 */
+closing()				/* 10000 */
 {
 	int i;
 
@@ -1007,7 +1026,7 @@ closing(void)				/* 10000 */
 
 
 void
-caveclose(void)				/* 11000 */
+caveclose()				/* 11000 */
 {
 	int i;
 

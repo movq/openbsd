@@ -1,147 +1,9 @@
 -*- text -*-
 
-* The linker script operator DEFINED() will now yield 1 only for a symbol that
-  is defined before the statement where DEFINED is used.
-
-* The MIPS --embedded-relocs (used to embed relocations into binaries for
-  Embedded-PIC code) is deprecated and will be removed in a future release.
-
-* m32r Linux (ELF) support added by Renesas.
-
-* Improved linker's handling of unresolved symbols.  The switch
-  --unresolved-symbols=<method> has been added to tell the linker when it
-  should report them and the switch --warn-unresolved-symbols has been added to
-  make reports be issued as warning messages rather than errors.
-
-Changes in 2.14:
-
-* Added support for Xtensa architecture.
-
-* Added --with-sysroot configure switch to specify a target system root, for
-  linking against a target filesystem image.
-
-* Added --accept-unknown-linker-format to restore old linker behaviour (pre
-  2.14) of silently accepting and linking in any files in an unknown binary
-  file format.
-
-* Added --no-omagic to undo the effects of the -N option.
-
-* Support for Texas Instruments TMS320C4x and TMS320C3x series of
-  DSP's contributed by Michael Hayes and Svein E. Seldal.
-  
-* Added --with-lib-path configure switch to specify default value for
-  LIB_PATH.
-
-* ARM port to QNX operating system added by Graeme Peterson.
-
-* IP2K support added by Denis Chertykov.
-
-Changes in 2.13:
-
-* Support for the Fujitsu FRV architecture added by Red Hat. Models for FR400
-  and FR500 included.
-
-Changes in version 2.13:
-
-* DEC VAX ELF support, by Matt Thomas.
-
-Changes in version 2.12:
-
-* Support for Don Knuth's MMIX, by Hans-Peter Nilsson.
-
-* Support for the OpenRISC 32-bit embedded processor by OpenCores.
-
-* Support for -z nocopyreloc in the x86 ELF linker, which disables
-  production of copy relocs.  Warning: using this option may result in
-  non-sharable applications.
-
-* Support for -z combreloc in the ELF linker, which puts dynamic
-  relocations against the same symbol together, so that dynamic linker
-  can use an one-entry symbol lookup cache.
-
-* Support for ELF SHF_MERGE section merging, by Jakub Jelinek.
-
-Changes in version 2.11:
-
-* Support for AMD x86-64 architecture, by Jan Hubicka, SuSE Labs.
-
-* Support added for eliminating duplicate DWARF2 debug information by
-  having the compiler generate the information in sections called
-  .gnu.linkonce.wi.XXXX where XXXX is a checksum for the contents.  The
-  linker then merges these sections together into the normal .debug_info
-  section.
-
-* The native ELF linker now searches the directories in DT_RUNPATH or
-  DT_RPATH of a shared library for shared libraries needed by it.
-
-* TI C54x support, by Timothy Wall.
-
-* Added command line switch --section-start to set the start address of any
-  specified section. 
-
-* Added ability to emit full relocation information in linked executables,
-  enabled by --emit-relocs.  Some post-linkage optimization tools need
-  this information in order to be able to correctly identify and perform
-  symbol relative addressing in the event of changes in section contents
-  (instructions being added or deleted, extending data sections, etc.)
-
-* Support for i860, by Jason Eckhardt (preliminary, alpha quality).
-
-* Support for CRIS (Axis Communications ETRAX series).
-
-* Support for PDP-11 and 2.11BSD a.out format, by Lars Brinkhoff.
-
-Changes in version 2.10:
-
-* Added AT> to the linker script language to allow load-time allocation of 
-  sections into regions.
-
-* Added garbage collection of unused sections, enabled by --gc-sections. 
-  It does require a bit of backend support; currently implemented are
-  arm-elf, avr-elf, d10v-elf, fr30-elf, i386-elf, m32r-elf, m68k-elf,
-  mcore-elf, mips-elf, mn10300-elf, ppc-elf, sh-elf, sparc-elf, and v850-elf.
-  Others will ignore the option.
-
-* Added SORT to the linker script language to permit sorting sections by file
-  name or section name.
-
-* Added EXTERN to the linker script language as an equivalent to the -u
-  command-line option.
-
-* Added ASSERT to the linker script language.
-
-* Added EXCLUDE_FILE to the linker script language for further control over
-  wildcard file names.
-
-* Added -O option to optimize linker output (as of this writing, this only
-  affects ELF shared library generation).
-
-* The -e option now accepts a number as well as a symbol name.
-
-* Added --no-undefined option to disallow undefined symbols when creating a
-  shared library.
-
-* The linker now issues a warning, not an error, for an undefined symbol when
-  using -Bsymbolic; use the new --no-undefined option to get the old
-  behaviour.
-
-* Added --demangle and --no-demangle options.
-
-Changes in version 2.9:
-
-* Added SQUAD to the linker script language.
-
-* New option --no-warn-mismatch.
-
-* The MEMORY command now parses the attributes to determine where sections that
-  are not placed in a specific memory region are placed.
-
-Changes in version 2.8:
+Changes since version 2.7:
 
 * Linker scripts may now contain shell wildcard characters for file and section
   names.
-
-* The linker now supports symbol versions in ELF.
 
 * The NOCROSSREFS command was added to the linker script language.
 
@@ -154,9 +16,7 @@ Changes in version 2.8:
 * New option --warn-section-align to warn when the address of an output section
   changes due to alignment of an input section.
 
-* New options --filter/-F and --auxiliary/-f.
-
-Changes in version 2.7:
+Changes since version 2.6:
 
 * New option --cref to print out a cross reference table.
 
@@ -171,7 +31,7 @@ Changes in version 2.7:
   the N_BINCL and N_EINCL stab types.  This reduces the amount of debugging
   information generated.
 
-Changes in version 2.6:
+Changes since version 2.5:
 
 * When an ELF section name is representable as a C identifier (this is not true
 of most ELF section names), the linker will automatically define symbols
@@ -185,7 +45,7 @@ not copied into the output file.  This is used by glibc.
 * When an ELF section named .gnu.warning.SYMBOL is encountered in an input
 file, and the symbol SYMBOL is referenced by some object file, the contents of
 the section are displayed as an error message.  The section is not copied into
-the output file, unless doing a relocatable or shared link.  This is used by
+the output file, unless doing a relocateable or shared link.  This is used by
 glibc.
 
 * New options -split-by-reloc and -split-by-file.
@@ -204,11 +64,11 @@ enums, so that even if the same type is defined in multiple input files it will
 only be defined once in the output file.  The --traditional-format switch will
 prevent this optimization.
 
-Changes in version 2.5:
+Changes since version 2.4:
 
 * The linker now supports linking against SunOS shared libraries.  It still can
 not link SunOS PIC (Position Independent Code) files, so it can not be used to
-generate shared libraries.
+generate shared libaries.
 
 * The linker now supports linking against ELF shared libraries for the i386
 (UnixWare) and SPARC (Solaris).  It can also link ELF PIC files, and can be
@@ -243,7 +103,7 @@ far, this function has been written for the i386, m68k, a29k and SH targets.
 * The -V flag was made a synonym for -v, for SVR4 compatibility.  The old -V
 behaviour is available via --verbose.
 
-Changes in version 2.4:
+Changes since version 2.3:
 
 * New linker code, by Steve Chamberlain and Ian Taylor.  For a.out and ecoff
   formats (so far), this should result in considerable savings in time
@@ -267,7 +127,7 @@ Changes in version 2.4:
   forgot to note it.)  Some of their C library routines don't work when
   statically linked, and the GNU linker doesn't support dynamic linking yet.
 
-Changes in version 2.3:
+Changes since version 2.2:
 
 * Weak symbols are now supported.
 
@@ -276,14 +136,14 @@ Changes in version 2.3:
 
 * Alpha OSF/1 support has been added (non dynamic linking only).
 
-Changes in version 2.2:
+Changes since version 2.1:
 
 * The `bfd' library has been updated to reduce a.out-format string
   table size.  The effect of this is that files linked from many input
   files with duplicate symbols (`-g' debugging records, or identical
   static symbols) should be much smaller.
 
-Changes in version 2.1:
+Changes since version 2.0:
 
 * The ld -ySYMBOL flag (to trace references to SYMBOL) is now implemented.
 

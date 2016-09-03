@@ -1,11 +1,21 @@
-#	$OpenBSD: Makefile.inc,v 1.24 2015/01/12 17:10:38 deraadt Exp $
+#	$OpenBSD: Makefile.inc,v 1.10 1997/09/26 19:51:28 deraadt Exp $
+#	etc.i386/Makefile.inc -- i386-specific etc Makefile targets
 
-KERNELS += GENERIC.MP bsd.mp
+.ifdef DESTDIR
+snap_md: bsd notes distrib
 
-bootblocks:
-	cp ${DESTDIR}/usr/mdec/pxeboot ${RELEASEDIR}
-	cp ${DESTDIR}/usr/mdec/cdboot ${RELEASEDIR}
-	cp ${DESTDIR}/usr/mdec/cdbr ${RELEASEDIR}
+bsd:
+	cd ${.CURDIR}/../sys/arch/i386/conf && config GENERIC
+	cd ${.CURDIR}/../sys/arch/i386/compile/GENERIC && \
+	    make clean && make depend && make
+	cp ${.CURDIR}/../sys/arch/i386/compile/GENERIC/bsd \
+	    ${DESTDIR}/snapshot/bsd
 
-MDEXT=	bsd.rd cd${OSrev}.iso floppy${OSrev}.fs miniroot${OSrev}.fs \
-	pxeboot cdboot cdbr
+notes:
+	cp ${.CURDIR}/etc.i386/INSTALL.* ${DESTDIR}/snapshot
+
+distrib:
+	cd ${.CURDIR}/../distrib && make cleandir && \
+	    make && make install
+
+.endif	# DESTDIR check

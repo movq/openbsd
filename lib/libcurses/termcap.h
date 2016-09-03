@@ -1,7 +1,7 @@
-/* $OpenBSD: termcap.h,v 1.10 2013/12/10 20:33:51 naddy Exp $ */
+/*	$OpenBSD: termcap.h,v 1.4 1999/05/08 20:28:59 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998,2000 Free Software Foundation, Inc.                   *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -33,26 +33,13 @@
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
  ****************************************************************************/
 
-/* $Id: termcap.h,v 1.10 2013/12/10 20:33:51 naddy Exp $ */
+/* $From: termcap.h.in,v 1.10 1999/01/09 22:38:04 Uchiyama.Yasushi Exp $ */
 
-#ifndef NCURSES_TERMCAP_H_incl
-#define NCURSES_TERMCAP_H_incl	1
+#ifndef _NCU_TERMCAP_H
+#define _NCU_TERMCAP_H	1
 
 #undef  NCURSES_VERSION
-#define NCURSES_VERSION "5.7"
-
-#if !defined(NCURSES_IMPEXP)
-#  define NCURSES_IMPEXP /* nothing */
-#endif
-#if !defined(NCURSES_API)
-#  define NCURSES_API /* nothing */
-#endif
-#if !defined(NCURSES_EXPORT)
-#  define NCURSES_EXPORT(type) NCURSES_IMPEXP type NCURSES_API
-#endif
-#if !defined(NCURSES_EXPORT_VAR)
-#  define NCURSES_EXPORT_VAR(type) NCURSES_IMPEXP type
-#endif
+#define NCURSES_VERSION "5.0"
 
 #ifdef __cplusplus
 extern "C"
@@ -60,29 +47,27 @@ extern "C"
 #endif /* __cplusplus */
 
 #include <sys/types.h>
+#include <termios.h> 
 
 #undef  NCURSES_CONST 
-#define NCURSES_CONST /*nothing*/ 
+#define NCURSES_CONST  
 
-#undef  NCURSES_OSPEED 
-#define NCURSES_OSPEED int 
+extern char PC;
+extern char *UP;
+extern char *BC;
+extern speed_t ospeed; 
 
-extern NCURSES_EXPORT_VAR(char) PC;
-extern NCURSES_EXPORT_VAR(char *) UP;
-extern NCURSES_EXPORT_VAR(char *) BC;
-extern NCURSES_EXPORT_VAR(NCURSES_OSPEED) ospeed; 
-
-#if !defined(NCURSES_TERM_H_incl)
-extern NCURSES_EXPORT(char *) tgetstr (NCURSES_CONST char *, char **);
-extern NCURSES_EXPORT(char *) tgoto (const char *, int, int);
-extern NCURSES_EXPORT(int) tgetent (char *, const char *);
-extern NCURSES_EXPORT(int) tgetflag (NCURSES_CONST char *);
-extern NCURSES_EXPORT(int) tgetnum (NCURSES_CONST char *);
-extern NCURSES_EXPORT(int) tputs (const char *, int, int (*)(int));
+#if !defined(_NCU_TERM_H)
+extern char *tgetstr(NCURSES_CONST char *, char **);
+extern char *tgoto(const char *, int, int);
+extern int tgetent(char *, const char *);
+extern int tgetflag(NCURSES_CONST char *);
+extern int tgetnum(NCURSES_CONST char *);
+extern int tputs(const char *, int, int (*)(int));
 #endif
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* NCURSES_TERMCAP_H_incl */
+#endif /* _NCU_TERMCAP_H */

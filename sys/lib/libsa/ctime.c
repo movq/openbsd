@@ -1,4 +1,4 @@
-/*	$OpenBSD: ctime.c,v 1.5 2003/08/11 06:23:09 deraadt Exp $	*/
+/*	$OpenBSD: ctime.c,v 1.2 1998/06/11 01:34:10 mickey Exp $	*/
 
 /*
  * Copyright (c) 1998 Michael Shalayeff
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -31,7 +36,8 @@
 #define isleap(y) ((((y) % 4) == 0 && ((y) % 100) != 0) || ((y) % 400) == 0)
 
 char *
-ctime(const time_t *clock)
+ctime(clock)
+	const time_t	*clock;
 {
 	static const char wdays[][4] = {
 		"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
@@ -45,7 +51,7 @@ ctime(const time_t *clock)
 	};
 	static char buf[64];
 	int ss, mm, hh, wday, month, year;
-	time_t tt = *clock;
+	register time_t tt = *clock;
 
 	ss = tt % 60;
 	tt /= 60;	/* minutes */
@@ -67,9 +73,9 @@ ctime(const time_t *clock)
 		tt--;
 
 	/* no field widths in printf() */
-	snprintf(buf, sizeof buf, "%s %s %d %d:%d:%d %d\n",
-	    ((wday  < 0 || wday  >=  7)? "???": wdays[wday]),
-	    ((month < 0 || month >= 12)? "???": months[month]),
-	    (int)tt, hh, mm, ss, year);
+	sprintf(buf, "%s %s %d %d:%d:%d %d\n",
+		((wday  < 0 || wday  >=  7)? "???": wdays[wday]),
+		((month < 0 || month >= 12)? "???": months[month]),
+		(int)tt, hh, mm, ss, year);
 	return buf;
 }

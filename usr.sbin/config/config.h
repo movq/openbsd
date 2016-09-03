@@ -1,4 +1,4 @@
-/*	$OpenBSD: config.h,v 1.28 2015/01/16 06:40:16 deraadt Exp $	*/
+/*	$OpenBSD: config.h,v 1.13 1999/10/04 20:00:50 deraadt Exp $	*/
 /*	$NetBSD: config.h,v 1.30 1997/02/02 21:12:30 thorpej Exp $	*/
 
 /*
@@ -22,7 +22,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -46,10 +50,23 @@
  */
 
 #include <sys/types.h>
+#include <sys/param.h>
 
+#if !defined(MAKE_BOOTSTRAP) && defined(BSD)
+#include <sys/cdefs.h>
 #include <paths.h>
+#else /* ...BSD */
+#if defined(__STDC__) || defined(__cplusplus)
+#define	__P(protos)	protos		/* full-blown ANSI C */
+#else /* ...STDC */
+#define	__P(protos)	()		/* traditional C preprocessor */    
+#endif /* ...STDC */
+#endif /* ...BSD */
+
+#ifdef __STDC__
 #include <stdlib.h>
 #include <unistd.h>
+#endif
 
 /* These are really for MAKE_BOOTSTRAP but harmless. */
 #ifndef __dead
@@ -187,7 +204,7 @@ struct devi {
 	int	i_lineno;	/* line # in config, for later errors */
 
 	/* created during packing or ioconf.c generation */
-/*		i_loclen	   via i_atattr->a_loclen */
+/* 		i_loclen	   via i_atattr->a_loclen */
 	short	i_collapsed;	/* set => this alias no longer needed */
 	short	i_cfindex;	/* our index in cfdata */
 	short	i_pvlen;	/* number of parents */
@@ -205,11 +222,11 @@ struct devi {
  * Files.  Each file is either standard (always included) or optional,
  * depending on whether it has names on which to *be* optional.  The
  * options field (fi_optx) is actually an expression tree, with nodes
- * for OR, AND, and NOT, as well as atoms (words) representing some
+ * for OR, AND, and NOT, as well as atoms (words) representing some   
  * particular option.  The node type is stored in the nv_int field.
  * Subexpressions appear in the `next' field; for the binary operators
  * AND and OR, the left subexpression is first stored in the nv_ptr field.
- *
+ * 
  * For any file marked as needs-count or needs-flag, fixfiles() will
  * build fi_optf, a `flat list' of the options with nv_int fields that
  * contain counts or `need' flags; this is used in mkheaders().
@@ -220,11 +237,12 @@ struct files {
 	u_short	fi_srcline;	/* and the line number */
 	u_char	fi_flags;	/* as below */
 	char	fi_lastc;	/* last char from path */
-	struct nvlist *fi_nvpath; /* list of paths */
+	const char *fi_path;	/* full file path */
+	const char *fi_tail;	/* name, i.e., strrchr(fi_path, '/') + 1 */
 	const char *fi_base;	/* tail minus ".c" (or whatever) */
 	struct  nvlist *fi_optx;/* options expression */
 	struct  nvlist *fi_optf;/* flattened version of above, if needed */
-	const char *fi_mkrule;/* special make rules, if any */
+	const char *fi_mkrule;	/* special make rule, if any */
 };
 
 /*
@@ -234,9 +252,9 @@ struct files {
 struct objects {
 	struct  objects *oi_next;/* linked list */
 	const char *oi_srcfile; /* the name of the "objects" file that got us */
-	u_short oi_srcline;	/* and the line number */
-	u_char  oi_flags;	/* as below */
-	char    oi_lastc;	/* last char from path */
+	u_short oi_srcline;     /* and the line number */
+	u_char  oi_flags;       /* as below */
+	char    oi_lastc;       /* last char from path */
 	const char *oi_path;    /* full object path */
 	struct  nvlist *oi_optx;/* options expression */
 	struct  nvlist *oi_optf;/* flattened version of above, if needed */
@@ -310,69 +328,63 @@ struct {			/* loc[] table for config */
 } locators;
 
 /* files.c */
-void	initfiles(void);
-void	checkfiles(void);
-int	fixfiles(void);		/* finalize */
-int	fixobjects(void);
-void	addfile(struct nvlist *, struct nvlist *, int, const char *);
-void	addobject(const char *, struct nvlist *, int);
+void	initfiles __P((void));
+void	checkfiles __P((void));
+int	fixfiles __P((void));	/* finalize */
+int	fixobjects __P((void));
+void	addfile __P((const char *, struct nvlist *, int, const char *));
+void	addobject __P((const char *, struct nvlist *, int));
 
 /* hash.c */
-struct	hashtab *ht_new(void);
-int	ht_insrep(struct hashtab *, const char *, void *, int);
-int	ht_remove(struct hashtab *, const char *);
+struct	hashtab *ht_new __P((void));
+int	ht_insrep __P((struct hashtab *, const char *, void *, int));
 #define	ht_insert(ht, nam, val) ht_insrep(ht, nam, val, 0)
 #define	ht_replace(ht, nam, val) ht_insrep(ht, nam, val, 1)
-void	*ht_lookup(struct hashtab *, const char *);
-void	initintern(void);
-const char *intern(const char *);
+void	*ht_lookup __P((struct hashtab *, const char *));
+void	initintern __P((void));
+const char *intern __P((const char *));
 
 /* main.c */
-void	addoption(const char *name, const char *value);
-void	removeoption(const char *name);
-void	addmkoption(const char *name, const char *value);
-void	defoption(const char *name);
-int	devbase_has_instances(struct devbase *, int);
-int	deva_has_instances(struct deva *, int);
-void	setupdirs(void);
-int	pflag;
-char 	*sflag;
-char	*bflag;
-char	*startdir;
+void	addoption __P((const char *name, const char *value));
+void	addmkoption __P((const char *name, const char *value));
+void	defoption __P((const char *name));
+int	devbase_has_instances __P((struct devbase *, int));
+int	deva_has_instances __P((struct deva *, int));
+void	setupdirs __P((void));
 
 /* mkheaders.c */
-int	mkheaders(void);
+int	mkheaders __P((void));
 
 /* mkioconf.c */
-int	mkioconf(void);
+int	mkioconf __P((void));
 
 /* mkmakefile.c */
-int	mkmakefile(void);
+int	mkmakefile __P((void));
 
 /* mkswap.c */
-int	mkswap(void);
+int	mkswap __P((void));
 
 /* pack.c */
-void	pack(void);
+void	pack __P((void));
 
 /* scan.l */
-int	currentline(void);
-int	firstfile(const char *);
-int	include(const char *, int);
+int	currentline __P((void));
+int	firstfile __P((const char *));
+int	include __P((const char *, int));
 
 /* sem.c, other than for yacc actions */
-void	initsem(void);
+void	initsem __P((void));
 
 /* util.c */
-void	*emalloc(size_t);
-void	*ereallocarray(void *, size_t, size_t);
-void	*ecalloc(size_t, size_t);
-char	*sourcepath(const char *);
-void	error(const char *, ...);			/* immediate errs */
-void	xerror(const char *, int, const char *, ...);	/* delayed errs */
-__dead void panic(const char *, ...);
-struct nvlist *newnv(const char *, const char *, void *, int, struct nvlist *);
-void	nvfree(struct nvlist *);
-void	nvfreel(struct nvlist *);
+void	*emalloc __P((size_t));
+void	*erealloc __P((void *, size_t));
+char	*sourcepath __P((const char *));
+void	error __P((const char *, ...));			/* immediate errs */
+void	xerror __P((const char *, int, const char *, ...)); /* delayed errs */
+__dead void panic __P((const char *, ...));
+struct nvlist *newnv __P((const char *, const char *, void *, int,
+	    struct nvlist *));
+void	nvfree __P((struct nvlist *));
+void	nvfreel __P((struct nvlist *));
 
-int	ukc(char *, char *, int, int);
+int	ukc __P((char *, char *, int, int));

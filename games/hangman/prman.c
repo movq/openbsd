@@ -1,4 +1,4 @@
-/*	$OpenBSD: prman.c,v 1.7 2015/12/31 15:20:36 mestre Exp $	*/
+/*	$OpenBSD: prman.c,v 1.3 1999/09/25 20:51:53 pjanzen Exp $	*/
 /*	$NetBSD: prman.c,v 1.3 1995/03/23 08:32:56 cgd Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,9 +34,15 @@
  * SUCH DAMAGE.
  */
 
-#include <curses.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)prman.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: prman.c,v 1.3 1999/09/25 20:51:53 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
-#include "hangman.h"
+#include	"hangman.h"
 
 /*
  * prman:
@@ -40,7 +50,7 @@
  *	of incorrect guesses.
  */
 void
-prman(void)
+prman()
 {
 	int	i;
 

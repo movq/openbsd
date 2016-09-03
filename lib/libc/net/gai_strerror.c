@@ -1,6 +1,5 @@
-/*	$OpenBSD: gai_strerror.c,v 1.8 2015/09/14 07:38:38 guenther Exp $	*/
-
 /*
+ * %%% copyright-cmetz-97-bsd
  * Copyright (c) 1997-1999, Craig Metz, All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -38,7 +37,7 @@
 #include <netdb.h>
 #include <errno.h>
 
-const char *
+char *
 gai_strerror(int errnum)
 {
 	switch (errnum) {
@@ -66,14 +65,7 @@ gai_strerror(int errnum)
 		return "memory allocation failure";
 	case EAI_SYSTEM:
 		return "system error";
-	case EAI_BADHINTS:
-		return "invalid value for hints";
-	case EAI_PROTOCOL:
-		return "resolved protocol is unknown";
-	case EAI_OVERFLOW:
-		return "argument buffer overflow";
 	default:
 		return "unknown/invalid error";
 	}
 }
-DEF_WEAK(gai_strerror);

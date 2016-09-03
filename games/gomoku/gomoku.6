@@ -1,4 +1,4 @@
-.\"	$OpenBSD: gomoku.6,v 1.15 2014/09/08 01:27:54 schwarze Exp $
+.\"	$OpenBSD: gomoku.6,v 1.7 1999/07/09 13:35:56 aaron Exp $
 .\"
 .\" Copyright (c) 1994
 .\"	The Regents of the University of California.  All rights reserved.
@@ -14,7 +14,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -32,7 +36,7 @@
 .\"
 .\"     @(#)gomoku.6	8.2 (Berkeley) 8/4/94
 .\"
-.Dd $Mdocdate: September 8 2014 $
+.Dd August 4, 1994
 .Dt GOMOKU 6
 .Os
 .Sh NAME
@@ -46,15 +50,13 @@
 .Sh DESCRIPTION
 .Nm
 is a two player game where the object is to get 5 in a row horizontally,
-vertically or diagonally on a 19 by 19 grid.
-By convention, black always moves first.
+vertically or diagonally on a 19 by 19 grid. By convention, black always
+moves first.
 With no arguments,
 .Nm
 will display a playing board and prompt for moves from the user.
 The interface is visual and straightforward; you move to a spot
-using the
-.Xr hack 6
-motion keys
+using the rogue(6) / hack(6) motion keys
 .Em hjklyubn
 and select it with either
 .Sq space
@@ -72,39 +74,36 @@ can be used to restore a saved game.
 The options are:
 .Bl -tag -width Ds
 .It Fl b
-This option sets background mode.
-Input moves are read from standard input,
-the computer picks a move, and prints it to standard output.
-The first input line should be either
+This option sets background mode. Input moves are read from standard input,
+the computer picks a move, and prints it to standard output. The first
+input line should be either
 .Dq black
 or
 .Dq white
 to specify whether
 .Nm
-has the first move or not respectively.
-This option was intended for game tournaments where a referee program
-handles the board display and pits one program against another.
+has the first move or not respectively. This
+option was intended for game tournaments where a referee program handles
+the board display and pits one program against another.
 .It Fl c
 Computer versus computer.
 .Nm
-will play a game against itself.
-This is mostly used for testing.
+will play a game against itself. This is mostly used for testing.
+.It Fl d
+Print debugging information. Repeating this option more than
+once yields more detailed information.
 .It Fl D Ar debugfile
 Print the debug information to
 .Ar debugfile
 instead of to the standard output.
-.It Fl d
-Print debugging information.
-Repeating this option more than once yields more detailed information.
 .It Fl u
-User versus user.
-This is mostly used for testing.
+User versus user. This is mostly used for testing.
 .El
-.Sh AUTHORS
-.An Ralph Campbell
 .Sh BUGS
 The program is far too slow and uses far too much memory for the quality of
 game it provides.
+.Sh AUTHOR
+Ralph Campbell
 .Sh ACKNOWLEDGEMENTS
 The board display routines were based on the
 .Nm goref

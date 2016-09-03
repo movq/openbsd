@@ -1,4 +1,4 @@
-/* $OpenBSD: blf.h,v 1.7 2007/03/14 17:59:41 grunk Exp $ */
+/* $OpenBSD: blf.h,v 1.4 1998/08/10 18:40:53 provos Exp $ */
 /*
  * Blowfish - a fast block cipher designed by Bruce Schneier
  *
@@ -34,16 +34,15 @@
 #ifndef _BLF_H_
 #define _BLF_H_
 
-/* Schneier specifies a maximum key length of 56 bytes.
- * This ensures that every key bit affects every cipher
- * bit.  However, the subkeys can hold up to 72 bytes.
+/* Schneier states the maximum key length to be 56 bytes.
+ * The way how the subkeys are initalized by the key up
+ * to (N+2)*4 i.e. 72 bytes are utilized.
  * Warning: For normal blowfish encryption only 56 bytes
  * of the key affect all cipherbits.
  */
 
 #define BLF_N	16			/* Number of Subkeys */
 #define BLF_MAXKEYLEN ((BLF_N-2)*4)	/* 448 bits */
-#define BLF_MAXUTILIZED ((BLF_N+2)*4)	/* 576 bits */
 
 /* Blowfish context */
 typedef struct BlowfishContext {
@@ -57,26 +56,26 @@ typedef struct BlowfishContext {
  *	Blowfish_expand0state( state, key, keylen )
  */
 
-void Blowfish_encipher(blf_ctx *, u_int32_t *, u_int32_t *);
-void Blowfish_decipher(blf_ctx *, u_int32_t *, u_int32_t *);
-void Blowfish_initstate(blf_ctx *);
-void Blowfish_expand0state(blf_ctx *, const u_int8_t *, u_int16_t);
+void Blowfish_encipher __P((blf_ctx *, u_int32_t *, u_int32_t *));
+void Blowfish_decipher __P((blf_ctx *, u_int32_t *, u_int32_t *));
+void Blowfish_initstate __P((blf_ctx *));
+void Blowfish_expand0state __P((blf_ctx *, const u_int8_t *, u_int16_t));
 void Blowfish_expandstate
-(blf_ctx *, const u_int8_t *, u_int16_t, const u_int8_t *, u_int16_t);
+    __P((blf_ctx *, const u_int8_t *, u_int16_t, const u_int8_t *, u_int16_t));
 
 /* Standard Blowfish */
 
-void blf_key(blf_ctx *, const u_int8_t *, u_int16_t);
-void blf_enc(blf_ctx *, u_int32_t *, u_int16_t);
-void blf_dec(blf_ctx *, u_int32_t *, u_int16_t);
+void blf_key __P((blf_ctx *, const u_int8_t *, u_int16_t));
+void blf_enc __P((blf_ctx *, u_int32_t *, u_int16_t));
+void blf_dec __P((blf_ctx *, u_int32_t *, u_int16_t));
 
-void blf_ecb_encrypt(blf_ctx *, u_int8_t *, u_int32_t);
-void blf_ecb_decrypt(blf_ctx *, u_int8_t *, u_int32_t);
+void blf_ecb_encrypt __P((blf_ctx *, u_int8_t *, u_int32_t));
+void blf_ecb_decrypt __P((blf_ctx *, u_int8_t *, u_int32_t));
 
-void blf_cbc_encrypt(blf_ctx *, u_int8_t *, u_int8_t *, u_int32_t);
-void blf_cbc_decrypt(blf_ctx *, u_int8_t *, u_int8_t *, u_int32_t);
+void blf_cbc_encrypt __P((blf_ctx *, u_int8_t *, u_int8_t *, u_int32_t));
+void blf_cbc_decrypt __P((blf_ctx *, u_int8_t *, u_int8_t *, u_int32_t));
 
 /* Converts u_int8_t to u_int32_t */
-u_int32_t Blowfish_stream2word(const u_int8_t *, u_int16_t , u_int16_t *);
+u_int32_t Blowfish_stream2word __P((const u_int8_t *, u_int16_t , u_int16_t *));
 
 #endif

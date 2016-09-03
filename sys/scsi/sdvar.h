@@ -1,4 +1,4 @@
-/*	$OpenBSD: sdvar.h,v 1.42 2013/10/02 18:59:04 krw Exp $	*/
+/*	$OpenBSD: sdvar.h,v 1.1 1999/07/25 07:09:20 csapuntz Exp $	*/
 /*	$NetBSD: sdvar.h,v 1.7 1998/08/17 00:49:03 mycroft Exp $	*/
 
 /*-
@@ -16,6 +16,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -47,35 +54,53 @@
  * Ported to run under 386BSD by Julian Elischer (julian@dialix.oz.au) Sept 1992
  */
 
-#ifdef _KERNEL
-struct sd_softc {
-	struct device		sc_dev;
-	struct disk		sc_dk;
-	struct bufq		sc_bufq;
+#define	SDRETRIES	4
 
-	int			flags;
+struct sd_ops;
+
+struct sd_softc {
+	struct device sc_dev;
+	struct disk sc_dk;
+
+	int flags;
+#define	SDF_LOCKED	0x01
+#define	SDF_WANTED	0x02
+#define	SDF_WLABEL	0x04		/* label is writable */
+#define	SDF_LABELLING	0x08		/* writing label */
 #define	SDF_ANCIENT	0x10		/* disk is ancient; for minphys */
 #define	SDF_DIRTY	0x20		/* disk is dirty; needs cache flush */
-#define	SDF_DYING	0x40		/* dying, when deactivated */
-#define	SDF_WAITING	0x80
-#define	SDF_THIN	0x01		/* disk is thin provisioned */
-	struct scsi_link	*sc_link; /* contains our targ, lun, etc. */
+#define	SDF_FLUSHING	0x40		/* flushing, for sddone() */
+	struct scsi_link *sc_link;	/* contains our targ, lun, etc. */
 	struct disk_parms {
 		u_long	heads;		/* number of heads */
 		u_long	cyls;		/* number of cylinders */
 		u_long	sectors;	/* number of sectors/track */
-		u_long	secsize;	/* number of bytes/sector */
-		u_int64_t	disksize;	/* total number sectors */
-		u_int32_t	unmap_sectors;	/* maximum sectors/unmap */
-		u_int32_t	unmap_descs;	/* maximum descriptors/unmap */
+		u_long	blksize;	/* number of bytes/sector */
+		u_long	disksize;	/* total number sectors */
+		u_long	rot_rate;	/* rotational rate, in RPM */
 	} params;
-	void *sc_sdhook;		/* our shutdown hook */
-	struct timeout sc_timeout;
+	struct buf buf_queue;
+	u_int8_t type;
+        struct disk_name {
+                char vendor[9];         /* disk vendor/manufacturer */
+                char product[17];       /* disk product model */
+                char revision[5];       /* drive/firmware revision */
+        } name;
+	const struct sd_ops *sc_ops;	/* our bus-dependent ops vector */
 
-	struct scsi_xshandler sc_xsh;
+	void *sc_sdhook;		/* our shutdown hook */
+
+#if NRND > 0
+	rndsource_element_t rnd_source;
+#endif
 };
 
-#define	SDGP_RESULT_OK		0	/* parameters obtained */
+struct sd_ops {
+	int	(*sdo_get_parms) __P((struct sd_softc *, struct disk_parms *,
+		    int));
+	void	(*sdo_flush) __P((struct sd_softc *, int));
+};
+#define	SDGP_RESULT_OK		0	/* paramters obtained */
 #define	SDGP_RESULT_OFFLINE	1	/* no media, or otherwise losing */
+#define	SDGP_RESULT_UNFORMATTED	2	/* unformatted media (max params) */
 
-#endif /* _KERNEL */

@@ -1,4 +1,3 @@
-/*	$OpenBSD: getnetent.c,v 1.17 2015/01/16 18:20:14 millert Exp $ */
 /*
  * Copyright (c) 1983, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,13 +31,17 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: getnetent.c,v 1.8 1998/03/16 05:06:57 millert Exp $";
+#endif /* LIBC_SCCS and not lint */
+
+#include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <stdio.h>
 #include <string.h>
-#include <limits.h>
 
 #define	MAXALIASES	35
 
@@ -45,17 +52,18 @@ static char *net_aliases[MAXALIASES];
 int _net_stayopen;
 
 void
-setnetent(int f)
+setnetent(f)
+	int f;
 {
 	if (netf == NULL)
-		netf = fopen(_PATH_NETWORKS, "re" );
+		netf = fopen(_PATH_NETWORKS, "r" );
 	else
 		rewind(netf);
 	_net_stayopen |= f;
 }
 
 void
-endnetent(void)
+endnetent()
 {
 	if (netf) {
 		fclose(netf);
@@ -65,12 +73,12 @@ endnetent(void)
 }
 
 struct netent *
-getnetent(void)
+getnetent()
 {
 	char *p, *cp, **q;
 	size_t len;
 
-	if (netf == NULL && (netf = fopen(_PATH_NETWORKS, "re" )) == NULL)
+	if (netf == NULL && (netf = fopen(_PATH_NETWORKS, "r" )) == NULL)
 		return (NULL);
 again:
 	if ((p = fgetln(netf, &len)) == NULL)
@@ -86,8 +94,8 @@ again:
 	if ((cp = strchr(p, '#')) != NULL)
 		*cp = '\0';
 	net.n_name = p;
-	if (strlen(net.n_name) > HOST_NAME_MAX)
-		net.n_name[HOST_NAME_MAX] = '\0';
+	if (strlen(net.n_name) >= MAXHOSTNAMELEN-1)
+		net.n_name[MAXHOSTNAMELEN-1] = '\0';
 	cp = strpbrk(p, " \t");
 	if (cp == NULL)
 		goto again;
@@ -100,7 +108,8 @@ again:
 	net.n_net = inet_network(cp);
 	net.n_addrtype = AF_INET;
 	q = net.n_aliases = net_aliases;
-	cp = p;
+	if (p != NULL) 
+		cp = p;
 	while (cp && *cp) {
 		if (*cp == ' ' || *cp == '\t') {
 			cp++;
@@ -108,8 +117,8 @@ again:
 		}
 		if (q < &net_aliases[MAXALIASES - 1]) {
 			*q++ = cp;
-			if (strlen(cp) > HOST_NAME_MAX)
-				cp[HOST_NAME_MAX] = '\0';
+			if (strlen(cp) >= MAXHOSTNAMELEN-1)
+				cp[MAXHOSTNAMELEN-1] = '\0';
 		}
 		cp = strpbrk(cp, " \t");
 		if (cp != NULL)

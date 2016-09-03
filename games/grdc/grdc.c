@@ -1,8 +1,5 @@
-/*	$OpenBSD: grdc.c,v 1.26 2016/03/07 12:07:56 mestre Exp $	*/
+/*	$OpenBSD: grdc.c,v 1.5 1998/03/19 11:41:51 pjanzen Exp $	*/
 /*
- *
- * Copyright 2002 Amos Shapir.  Public domain.
- *
  * Grand digital clock for curses compatible terminals
  * Usage: grdc [-s] [n]   -- run for n seconds (default infinity)
  * Flags: -s: scroll
@@ -11,19 +8,21 @@
  * 10-18-89 added signal handling
  */
 
-#include <sys/ioctl.h>
-
-#include <curses.h>
-#include <err.h>
-#include <limits.h>
+#include <time.h>
 #include <signal.h>
+#include <curses.h>
 #include <stdlib.h>
+#ifndef NONPOSIX
 #include <unistd.h>
+#endif
 
+#define YBASE	10
+#define XBASE	10
 #define XLENGTH 58
 #define YDEPTH  7
 
-struct timespec now;
+/* it won't be */
+time_t now; /* yeah! */
 struct tm *tm;
 
 short disp[11] = {
@@ -31,77 +30,41 @@ short disp[11] = {
 	074717, 074757, 071111, 075757, 075717, 002020
 };
 long old[6], next[6], new[6], mask;
+char scrol;
 
-volatile sig_atomic_t sigtermed = 0;
-volatile sig_atomic_t sigwinched = 0;
+int sigtermed=0;
 
 int hascolor = 0;
 
 void set(int, int);
 void standt(int);
-void getwinsize(int *, int *);
-__dead void usage(void);
+void movto(int, int);
 
 void
-sighndl(int signo)
+sighndl(signo)
+	int signo;
 {
 	sigtermed=signo;
 }
 
-void
-sigresize(int signo)
-{
-	sigwinched = signo;
-}
-
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	long t, a;
 	int i, j, s, k;
-	int scrol;
 	int n = 0;
-	struct timeval nowtv, endtv;
-	struct timespec delay;
-	const char *errstr;
-	long scroldelay = 50000000;
-	int xbase;
-	int ybase;
-	int wintoosmall;
 
-	if (pledge("stdio rpath tty", NULL) == -1)
-		err(1, "pledge");
-
-	scrol = wintoosmall = 0;
-	while ((i = getopt(argc, argv, "sh")) != -1)
-		switch (i) {
-		case 's':
-			scrol = 1;
-			break;
-		case 'h':
-		default:
-			usage();
-		}
-	argv += optind;
-	argc -= optind;
-
-	if (argc > 1)
-		usage();
-	if (argc == 1) {
-		n = strtonum(*argv, 1, INT_MAX, &errstr);
-		if (errstr) {
-			fprintf(stderr, "number of seconds is %s\n", errstr);
-			usage();
-		}
-	}
+	/* revoke privs */
+	setegid(getgid());
+	setgid(getgid());
 
 	initscr();
 
 	signal(SIGINT,sighndl);
 	signal(SIGTERM,sighndl);
 	signal(SIGHUP,sighndl);
-	signal(SIGWINCH, sigresize);
-	signal(SIGCONT, sigresize);	/* for resizes during suspend */
 
 	cbreak();
 	noecho();
@@ -116,53 +79,38 @@ main(int argc, char *argv[])
 		attrset(COLOR_PAIR(2));
 	}
 
-	curs_set(0);
-	sigwinched = 1;	/* force initial sizing */
+	clear();
+	refresh();
+	while(--argc > 0) {
+		if(**++argv == '-')
+			scrol = 1;
+		else
+			n = atoi(*argv);
+	}
 
-	gettimeofday(&nowtv, NULL);
-	TIMEVAL_TO_TIMESPEC(&nowtv, &now);
-	if (n)
-		endtv.tv_sec = nowtv.tv_sec + n - 1;
+	if(hascolor) {
+		attrset(COLOR_PAIR(3));
+
+		mvaddch(YBASE - 2,  XBASE - 3, ACS_ULCORNER);
+		hline(ACS_HLINE, XLENGTH);
+		mvaddch(YBASE - 2,  XBASE - 2 + XLENGTH, ACS_URCORNER);
+
+		mvaddch(YBASE + YDEPTH - 1,  XBASE - 3, ACS_LLCORNER);
+		hline(ACS_HLINE, XLENGTH);
+		mvaddch(YBASE + YDEPTH - 1,  XBASE - 2 + XLENGTH, ACS_LRCORNER);
+
+		move(YBASE - 1,  XBASE - 3);
+		vline(ACS_VLINE, YDEPTH);
+
+		move(YBASE - 1,  XBASE - 2 + XLENGTH);
+		vline(ACS_VLINE, YDEPTH);
+
+		attrset(COLOR_PAIR(2));
+	}
 	do {
-		if (sigwinched) {
-			sigwinched = 0;
-			wintoosmall = 0;
-			getwinsize(&i, &j);
-			if (i >= XLENGTH + 2)
-				xbase = (i - XLENGTH) / 2;
-			else
-				wintoosmall = 1;
-			if (j >= YDEPTH + 2)
-				ybase = (j - YDEPTH) / 2;
-			else
-				wintoosmall = 1;
-			resizeterm(j, i);
-			clear();
-			refresh();
-			if (hascolor && !wintoosmall) {
-				attrset(COLOR_PAIR(3));
-
-				mvaddch(ybase - 1,  xbase - 1, ACS_ULCORNER);
-				hline(ACS_HLINE, XLENGTH);
-				mvaddch(ybase - 1,  xbase + XLENGTH, ACS_URCORNER);
-
-				mvaddch(ybase + YDEPTH,  xbase - 1, ACS_LLCORNER);
-				hline(ACS_HLINE, XLENGTH);
-				mvaddch(ybase + YDEPTH,  xbase + XLENGTH, ACS_LRCORNER);
-
-				move(ybase,  xbase - 1);
-				vline(ACS_VLINE, YDEPTH);
-
-				move(ybase,  xbase + XLENGTH);
-				vline(ACS_VLINE, YDEPTH);
-
-				attrset(COLOR_PAIR(2));
-			}
-			for (k = 0; k < 6; k++)
-				old[k] = 0;
-		}
 		mask = 0;
-		tm = localtime(&now.tv_sec);
+		time(&now);
+		tm = localtime(&now);
 		set(tm->tm_sec%10, 0);
 		set(tm->tm_sec/10, 4);
 		set(tm->tm_min%10, 10);
@@ -171,11 +119,7 @@ main(int argc, char *argv[])
 		set(tm->tm_hour/10, 24);
 		set(10, 7);
 		set(10, 17);
-		if (wintoosmall) {
-			move(0, 0);
-			printw("%02d:%02d:%02d", tm->tm_hour, tm->tm_min,
-			    tm->tm_sec);
-		} else for (k = 0; k < 6; k++) {
+		for(k=0; k<6; k++) {
 			if(scrol) {
 				for(i=0; i<5; i++)
 					new[i] = (new[i]&~mask) | (new[i+1]&mask);
@@ -190,7 +134,7 @@ main(int argc, char *argv[])
 						for(j=0,t=1<<26; t; t>>=1,j++) {
 							if(a&t) {
 								if(!(a&(t<<1))) {
-									move(ybase + i+1, xbase + 2*(j+1));
+									movto(YBASE + i, XBASE + 2*j);
 								}
 								addstr("  ");
 							}
@@ -204,44 +148,24 @@ main(int argc, char *argv[])
 					refresh();
 				}
 			}
-			if (scrol && k <= 4) {
-				gettimeofday(&nowtv, NULL);
-				TIMEVAL_TO_TIMESPEC(&nowtv, &now);
-				delay.tv_sec = 0;
-				delay.tv_nsec = 1000000000 - now.tv_nsec
-				    - (4-k) * scroldelay;
-				if (delay.tv_nsec <= scroldelay &&
-				    delay.tv_nsec > 0)
-					nanosleep(&delay, NULL);
-			}
 		}
-		move(6, 0);
+		movto(6, 0);
 		refresh();
-		gettimeofday(&nowtv, NULL);
-		TIMEVAL_TO_TIMESPEC(&nowtv, &now);
-		delay.tv_sec = 0;
-		delay.tv_nsec = (1000000000 - now.tv_nsec);
-		/* want scrolling to END on the second */
-		if (scrol && !wintoosmall)
-			delay.tv_nsec -= 5 * scroldelay;
-		nanosleep(&delay, NULL);
-		now.tv_sec++;
-
+		sleep(1);
 		if (sigtermed) {
 			standend();
 			clear();
 			refresh();
 			endwin();
-			fprintf(stderr, "%s terminated by signal %d\n",
-			    getprogname(), sigtermed);
-			return 1;
+			fprintf(stderr, "grdc terminated by signal %d\n", sigtermed);
+			exit(1);
 		}
-	} while (n == 0 || nowtv.tv_sec < endtv.tv_sec);
+	} while(--n);
 	standend();
 	clear();
 	refresh();
 	endwin();
-	return 0;
+	return(0);
 }
 
 void
@@ -277,22 +201,8 @@ standt(int on)
 }
 
 void
-getwinsize(int *wid, int *ht)
+movto(int line, int col)
 {
-	struct winsize size;
-
-	if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &size) < 0) {
-		*wid = 80;     /* Default */
-		*ht = 24;
-	} else {
-		*wid = size.ws_col;
-		*ht = size.ws_row;
-	}
+	move(line, col);
 }
 
-void
-usage(void)
-{
-	(void)fprintf(stderr, "usage: %s [-s] [number]\n", getprogname());
-	exit(1);
-}

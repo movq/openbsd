@@ -1,4 +1,4 @@
-/*	$OpenBSD: forward.c,v 1.31 2016/07/05 05:06:27 jsg Exp $	*/
+/*	$OpenBSD: forward.c,v 1.8 1999/08/04 18:24:10 mickey Exp $	*/
 /*	$NetBSD: forward.c,v 1.7 1996/02/13 16:49:10 ghudson Exp $	*/
 
 /*-
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,12 +37,21 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)forward.c	8.1 (Berkeley) 6/6/93";
+#endif
+static char rcsid[] = "$OpenBSD: forward.c,v 1.8 1999/08/04 18:24:10 mickey Exp $";
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/event.h>
+#include <sys/mman.h>
 
 #include <err.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -46,12 +59,7 @@
 
 #include "extern.h"
 
-static int rlines(struct tailfile *, off_t);
-static inline void tfprint(FILE *fp);
-static int tfqueue(struct tailfile *tf);
-static const struct timespec *tfreopen(struct tailfile *tf);
-
-static int kq = -1;
+static int rlines __P((FILE *, long, struct stat *));
 
 /*
  * forward -- display the file, from an offset, forward.
@@ -72,165 +80,121 @@ static int kq = -1;
  *	NOREG	cyclically read characters into a wrap-around buffer
  *
  * RLINES
- *	REG	step back until the correct offset is reached.
+ *	REG	mmap the file and step back until reach the correct offset.
  *	NOREG	cyclically read lines into a wrap-around array of buffers
  */
 void
-forward(struct tailfile *tf, int nfiles, enum STYLE style, off_t origoff)
+forward(fp, style, off, sbp)
+	FILE *fp;
+	enum STYLE style;
+	long off;
+	struct stat *sbp;
 {
-	int ch;
-	struct tailfile *ctf, *ltf;
-	struct kevent ke;
-	const struct timespec *ts = NULL;
-	int i;
-	int nevents;
+	register int ch;
+	struct stat nsb;
 
-	if (nfiles < 1)
-		return;
-
-	if (fflag && (kq = kqueue()) < 0)
-		warn("kqueue");
-
-	for (i = 0; i < nfiles; i++) {
-		off_t off = origoff;
-		if (nfiles > 1)
-			printfname(tf[i].fname);
-
-		switch(style) {
-		case FBYTES:
-			if (off == 0)
-				break;
-			if (S_ISREG(tf[i].sb.st_mode)) {
-				if (tf[i].sb.st_size < off)
-					off = tf[i].sb.st_size;
-				if (fseeko(tf[i].fp, off, SEEK_SET) == -1) {
-					ierr(tf[i].fname);
-					return;
-				}
-			} else while (off--)
-				if ((ch = getc(tf[i].fp)) == EOF) {
-					if (ferror(tf[i].fp)) {
-						ierr(tf[i].fname);
-						return;
-					}
-					break;
-				}
+	switch(style) {
+	case FBYTES:
+		if (off == 0)
 			break;
-		case FLINES:
-			if (off == 0)
-				break;
-			for (;;) {
-				if ((ch = getc(tf[i].fp)) == EOF) {
-					if (ferror(tf[i].fp)) {
-						ierr(tf[i].fname);
-						return;
-					}
-					break;
-				}
-				if (ch == '\n' && !--off)
-					break;
-			}
-			break;
-		case RBYTES:
-			if (S_ISREG(tf[i].sb.st_mode)) {
-				if (tf[i].sb.st_size >= off &&
-				    fseeko(tf[i].fp, -off, SEEK_END) == -1) {
-					ierr(tf[i].fname);
-					return;
-				}
-			} else if (off == 0) {
-				while (getc(tf[i].fp) != EOF)
-					;
-				if (ferror(tf[i].fp)) {
-					ierr(tf[i].fname);
-					return;
-				}
-			} else {
-				if (bytes(&(tf[i]), off))
-					return;
-			}
-			break;
-		case RLINES:
-			if (S_ISREG(tf[i].sb.st_mode)) {
-				if (!off) {
-					if (fseeko(tf[i].fp, (off_t)0,
-					    SEEK_END) == -1) {
-						ierr(tf[i].fname);
-						return;
-					}
-				} else if (rlines(&(tf[i]), off) != 0)
-					lines(&(tf[i]), off);
-			} else if (off == 0) {
-				while (getc(tf[i].fp) != EOF)
-					;
-				if (ferror(tf[i].fp)) {
-					ierr(tf[i].fname);
-					return;
-				}
-			} else {
-				if (lines(&(tf[i]), off))
-					return;
-			}
-			break;
-		default:
-			err(1, "Unsupported style");
-		}
-
-		tfprint(tf[i].fp);
-		if (fflag && tfqueue(&(tf[i])) == -1)
-			warn("Unable to follow %s", tf[i].fname);
-
-	}
-	ltf = &(tf[i-1]);
-
-	(void)fflush(stdout);
-	if (!fflag || kq < 0)
-		return;
-
-	while (1) {
-		if ((nevents = kevent(kq, NULL, 0, &ke, 1, ts)) <= 0) {
-			if (errno == EINTR) {
-				close(kq);
+		if (S_ISREG(sbp->st_mode)) {
+			if (sbp->st_size < off)
+				off = sbp->st_size;
+			if (fseek(fp, off, SEEK_SET) == -1) {
+				ierr();
 				return;
 			}
-		}
-
-		ctf = ke.udata;
-		if (nevents > 0) {
-			if (ke.filter == EVFILT_READ) {
-				if (ctf != ltf) {
-					printfname(ctf->fname);
-					ltf = ctf;
+		} else while (off--)
+			if ((ch = getc(fp)) == EOF) {
+				if (ferror(fp)) {
+					ierr();
+					return;
 				}
-				clearerr(ctf->fp);
-				tfprint(ctf->fp);
-				if (ferror(ctf->fp)) {
-					ierr(ctf->fname);
-					fclose(ctf->fp);
-					warn("Lost file %s", ctf->fname);
-					continue;
-				}
-				(void)fflush(stdout);
-				clearerr(ctf->fp);
-			} else if (ke.filter == EVFILT_VNODE) {
-				if (ke.fflags & (NOTE_DELETE | NOTE_RENAME)) {
-					/*
-					 * File was deleted or renamed.
-					 *
-					 * Continue to look at it until
-					 * a new file reappears with
-					 * the same name. 
-					 */
-					(void) tfreopen(ctf);
-				} else if (ke.fflags & NOTE_TRUNCATE) {
-					warnx("%s has been truncated, "
-					    "resetting.", ctf->fname);
-					fpurge(ctf->fp);
-					rewind(ctf->fp);
-				}
+				break;
 			}
+		break;
+	case FLINES:
+		if (off == 0)
+			break;
+		for (;;) {
+			if ((ch = getc(fp)) == EOF) {
+				if (ferror(fp)) {
+					ierr();
+					return;
+				}
+				break;
+			}
+			if (ch == '\n' && !--off)
+				break;
 		}
-		ts = tfreopen(NULL);
+		break;
+	case RBYTES:
+		if (S_ISREG(sbp->st_mode)) {
+			if (sbp->st_size >= off &&
+			    fseek(fp, -off, SEEK_END) == -1) {
+				ierr();
+				return;
+			}
+		} else if (off == 0) {
+			while (getc(fp) != EOF)
+				;
+			if (ferror(fp)) {
+				ierr();
+				return;
+			}
+		} else
+			bytes(fp, off);
+		break;
+	case RLINES:
+		if (S_ISREG(sbp->st_mode)) {
+			if (!off) {
+				if (fseek(fp, 0L, SEEK_END) == -1) {
+					ierr();
+					return;
+				}
+			} else if (rlines(fp, off, sbp) != 0)
+				lines(fp, off);
+		} else if (off == 0) {
+			while (getc(fp) != EOF)
+				;
+			if (ferror(fp)) {
+				ierr();
+				return;
+			}
+		} else
+			lines(fp, off);
+		break;
+	}
+
+	for (;;) {
+		while (!feof(fp) && (ch = getc(fp)) != EOF)
+			if (putchar(ch) == EOF)
+				oerr();
+		if (ferror(fp)) {
+			ierr();
+			return;
+		}
+		(void)fflush(stdout);
+		if (!fflag)
+			break;
+		sleep(1);
+		clearerr(fp);
+
+		if (stat(fname, &nsb) != 0)
+			continue;
+		/* Reopen file if the inode changes or file was truncated */
+		if (nsb.st_ino != sbp->st_ino) {
+			warnx("%s has been replaced, reopening.", fname);
+			if ((fp = freopen(fname, "r", fp)) == NULL) {
+				ierr();
+				return;
+			}
+			(void)memcpy(sbp, &nsb, sizeof(nsb));
+		} else if (nsb.st_size < sbp->st_size) {
+			warnx("%s has been truncated, resetting.", fname);
+			rewind(fp);
+			(void)memcpy(sbp, &nsb, sizeof(nsb));
+		}
 	}
 }
 
@@ -238,143 +202,43 @@ forward(struct tailfile *tf, int nfiles, enum STYLE style, off_t origoff)
  * rlines -- display the last offset lines of the file.
  */
 static int
-rlines(struct tailfile *tf, off_t off)
+rlines(fp, off, sbp)
+	FILE *fp;
+	long off;
+	struct stat *sbp;
 {
-	off_t pos;
-	int ch;
+	register off_t size;
+	register char *p;
+	char *start;
 
-	pos = tf->sb.st_size;
-	if (pos == 0)
+	if (!(size = sbp->st_size))
 		return (0);
 
-	/*
-	 * Position before char.
-	 * Last char is special, ignore it whether newline or not.
-	 */
-	pos -= 2;
-	ch = EOF;
-	for (; off > 0 && pos >= 0; pos--) {
-		/* A seek per char isn't a problem with a smart stdio */
-		if (fseeko(tf[0].fp, pos, SEEK_SET) == -1) {
-			ierr(tf->fname);
-			return (1);
-		}
-		if ((ch = getc(tf[0].fp)) == '\n')
-			off--;
-		else if (ch == EOF) {
-			if (ferror(tf[0].fp)) {
-				ierr(tf->fname);
-				return (1);
-			}
+	if (size > SIZE_T_MAX)
+		return (1);
+
+	if ((start = mmap(NULL, (size_t)size, PROT_READ, MAP_PRIVATE,
+	    fileno(fp), (off_t)0)) == (caddr_t)-1)
+		return (1);
+
+	/* Last char is special, ignore whether newline or not. */
+	for (p = start + size - 1; --size;)
+		if (*--p == '\n' && !--off) {
+			++p;
 			break;
 		}
-	}
-	/* If we read until start of file, put back last read char */
-	if (pos < 0 && off > 0 && ch != EOF && ungetc(ch, tf[0].fp) == EOF) {
-		ierr(tf->fname);
+
+	/* Set the file pointer to reflect the length displayed. */
+	size = sbp->st_size - size;
+	WR(p, size);
+	if (fseek(fp, (long)sbp->st_size, SEEK_SET) == -1) {
+		ierr();
 		return (1);
 	}
-
-	while (!feof(tf[0].fp) && (ch = getc(tf[0].fp)) != EOF)
-		if (putchar(ch) == EOF)
-			oerr();
-	if (ferror(tf[0].fp)) {
-		ierr(tf->fname);
+	if (munmap(start, (size_t)sbp->st_size)) {
+		ierr();
 		return (1);
 	}
 
 	return (0);
-}
-
-static inline void
-tfprint(FILE *fp)
-{
-	int ch;
-
-	while (!feof(fp) && (ch = getc(fp)) != EOF)
-		if (putchar(ch) == EOF)
-			oerr();
-}
-
-static int
-tfqueue(struct tailfile *tf)
-{
-	struct kevent ke[2];
-	int i = 1;
-
-	if (kq < 0) {
-		errno = EBADF;
-		return -1;
-	}
-
-	EV_SET(&(ke[0]), fileno(tf->fp), EVFILT_READ,
-	    EV_ENABLE | EV_ADD | EV_CLEAR, 0, 0, tf);
-
-	if (S_ISREG(tf->sb.st_mode)) {
-		i = 2;
-		EV_SET(&(ke[1]), fileno(tf->fp), EVFILT_VNODE,
-		    EV_ENABLE | EV_ADD | EV_CLEAR,
-		    NOTE_DELETE | NOTE_RENAME | NOTE_TRUNCATE,
-		    0, tf);
-	}
-	if (kevent(kq, ke, i, NULL, 0, NULL) < 0) {
-		ierr(tf->fname);
-		return -1;
-	}
-	return 0;
-}
-
-#define AFILESINCR 8
-static const struct timespec *
-tfreopen(struct tailfile *tf) {
-	static struct tailfile		**reopen = NULL;
-	static int			  nfiles = 0, afiles = 0;
-	static const struct timespec	  ts = {1, 0};
-
-	struct stat			  sb;
-	struct tailfile			**treopen, *ttf;
-	int				  i;
-
-	if (tf && ((stat(tf->fname, &sb) != 0) || sb.st_ino != tf->sb.st_ino)) {
-		if (afiles < ++nfiles) {
-			afiles += AFILESINCR;
-			treopen = reallocarray(reopen, afiles, sizeof(*reopen));
-			if (treopen)
-				reopen = treopen;
-			else
-				afiles -= AFILESINCR;
-		}
-		if (nfiles <= afiles) {
-			for (i = 0; i < nfiles - 1; i++)
-				if (strcmp(reopen[i]->fname, tf->fname) == 0)
-					break;
-			if (i < nfiles - 1)
-				nfiles--;
-			else
-				reopen[nfiles-1] = tf;
-		} else {
-			warnx("Lost track of %s", tf->fname);
-			nfiles--;
-		}
-	}
-
-	for (i = 0; i < nfiles; i++) {
-		ttf = reopen[i];
-		if (stat(ttf->fname, &sb) == -1)
-			continue;
-		if (sb.st_ino != ttf->sb.st_ino) {
-			(void) memcpy(&(ttf->sb), &sb, sizeof(ttf->sb));
-			ttf->fp = freopen(ttf->fname, "r", ttf->fp);
-			if (ttf->fp == NULL)
-				ierr(ttf->fname);
-			else {
-				warnx("%s has been replaced, reopening.",
-				    ttf->fname);
-				tfqueue(ttf);
-			}
-		}
-		reopen[i] = reopen[--nfiles];
-	}
-
-	return nfiles ? &ts : NULL;
 }

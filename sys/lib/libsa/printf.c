@@ -1,4 +1,4 @@
-/*	$OpenBSD: printf.c,v 1.27 2015/06/14 10:55:50 miod Exp $	*/
+/*	$OpenBSD: printf.c,v 1.14 1999/08/16 09:21:38 downsj Exp $	*/
 /*	$NetBSD: printf.c,v 1.10 1996/11/30 04:19:21 gwr Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -55,25 +59,67 @@
  *	reg=3<BITTWO,BITONE>
  */
 
+#include <sys/cdefs.h>
 #include <sys/types.h>
-#include <sys/stdarg.h>
+#ifdef __STDC__
+#include <machine/stdarg.h>
+#else
+#include <machine/varargs.h>
+#endif
 
 #include "stand.h"
 
-void kprintn(void (*)(int), u_long, int);
-#ifdef LIBSA_LONGLONG_PRINTF
-void kprintn64(void (*)(int), u_int64_t, int);
-#endif
-void kdoprnt(void (*)(int), const char *, va_list);
+static void kprintn __P((void (*)(int), u_long, int));
+static void kdoprnt __P((void (*)(int), const char *, va_list));
 
-const char hexdig[] = "0123456789abcdef";
+#ifndef	STRIPPED
+static void sputchar __P((int));
+static char *sbuf;
+
+static void
+sputchar(c)
+	int c;
+{
+	*sbuf++ = c;
+}
 
 void
-printf(const char *fmt, ...)
+#ifdef __STDC__
+sprintf(char *buf, const char *fmt, ...)
+#else
+sprintf(buf, fmt, va_alist)
+	char *buf, *fmt;
+#endif
 {
 	va_list ap;
 
+	sbuf = buf;
+#ifdef __STDC__
 	va_start(ap, fmt);
+#else
+	va_start(ap);
+#endif
+	kdoprnt(sputchar, fmt, ap);
+	va_end(ap);
+	*sbuf = '\0';
+}
+#endif	/* NO_SPRINTF */
+
+void
+#ifdef __STDC__
+printf(const char *fmt, ...)
+#else
+printf(fmt, va_alist)
+	char *fmt;
+#endif
+{
+	va_list ap;
+
+#ifdef __STDC__
+	va_start(ap, fmt);
+#else
+	va_start(ap);
+#endif
 	kdoprnt(putchar, fmt, ap);
 	va_end(ap);
 }
@@ -84,15 +130,16 @@ vprintf(const char *fmt, va_list ap)
 	kdoprnt(putchar, fmt, ap);
 }
 
-void
-kdoprnt(void (*put)(int), const char *fmt, va_list ap)
+static void
+kdoprnt(put, fmt, ap)
+	void (*put)__P((int));
+	const char *fmt;
+	va_list ap;
 {
-#ifdef LIBSA_LONGLONG_PRINTF
-	u_int64_t ull;
-#endif
+	register char *p;
+	register int ch;
 	unsigned long ul;
-	int ch, lflag;
-	char *p;
+	int lflag;
 
 	for (;;) {
 		while ((ch = *fmt++) != '%') {
@@ -103,13 +150,12 @@ kdoprnt(void (*put)(int), const char *fmt, va_list ap)
 		lflag = 0;
 reswitch:	switch (ch = *fmt++) {
 		case 'l':
-			lflag++;
+			lflag = 1;
 			goto reswitch;
 #ifndef	STRIPPED
 		case 'b':
 		{
-			int set, n;
-
+			register int set, n;
 			ul = va_arg(ap, int);
 			p = va_arg(ap, char *);
 			kprintn(put, ul, *p++);
@@ -124,8 +170,7 @@ reswitch:	switch (ch = *fmt++) {
 						put(n);
 					set = 1;
 				} else
-					for (; *p > ' '; ++p)
-						;
+					for (; *p > ' '; ++p);
 			}
 			if (set)
 				put('>');
@@ -134,7 +179,7 @@ reswitch:	switch (ch = *fmt++) {
 #endif
 		case 'c':
 			ch = va_arg(ap, int);
-			put(ch & 0x7f);
+				put(ch & 0x7f);
 			break;
 		case 's':
 			p = va_arg(ap, char *);
@@ -142,17 +187,6 @@ reswitch:	switch (ch = *fmt++) {
 				put(ch);
 			break;
 		case 'd':
-#ifdef LIBSA_LONGLONG_PRINTF
-			if (lflag > 1) {
-				ull = va_arg(ap, int64_t);
-				if ((int64_t)ull < 0) {
-					put('-');
-					ull = -(int64_t)ull;
-				}
-				kprintn64(put, ull, 10);
-				break;
-			} 
-#endif
 			ul = lflag ?
 			    va_arg(ap, long) : va_arg(ap, int);
 			if ((long)ul < 0) {
@@ -162,25 +196,11 @@ reswitch:	switch (ch = *fmt++) {
 			kprintn(put, ul, 10);
 			break;
 		case 'o':
-#ifdef LIBSA_LONGLONG_PRINTF
-			if (lflag > 1) {
-				ull = va_arg(ap, u_int64_t);
-				kprintn64(put, ull, 8);
-				break;
-			} 
-#endif
 			ul = lflag ?
 			    va_arg(ap, u_long) : va_arg(ap, u_int);
 			kprintn(put, ul, 8);
 			break;
 		case 'u':
-#ifdef LIBSA_LONGLONG_PRINTF
-			if (lflag > 1) {
-				ull = va_arg(ap, u_int64_t);
-				kprintn64(put, ull, 10);
-				break;
-			} 
-#endif
 			ul = lflag ?
 			    va_arg(ap, u_long) : va_arg(ap, u_int);
 			kprintn(put, ul, 10);
@@ -190,82 +210,42 @@ reswitch:	switch (ch = *fmt++) {
 			put('x');
 			lflag += sizeof(void *)==sizeof(u_long)? 1 : 0;
 		case 'x':
-#ifdef LIBSA_LONGLONG_PRINTF
-			if (lflag > 1) {
-				ull = va_arg(ap, u_int64_t);
-				kprintn64(put, ull, 16);
-				break;
-			}
-#else
- 			if (lflag > 1) {
-				/* hold an int64_t in base 16 */
-				char *p, buf[(sizeof(u_int64_t) * NBBY / 4) + 1];
-				u_int64_t ull;
-
- 				ull = va_arg(ap, u_int64_t);
-				p = buf;
-				do {
-					*p++ = hexdig[ull & 15];
-				} while (ull >>= 4);
-				do {
-					put(*--p);
-				} while (p > buf);
- 				break;
- 			}
-#endif
 			ul = lflag ?
 			    va_arg(ap, u_long) : va_arg(ap, u_int);
 			kprintn(put, ul, 16);
 			break;
 		default:
 			put('%');
-#ifdef LIBSA_LONGLONG_PRINTF
-			while (--lflag)
-#else
 			if (lflag)
-#endif
 				put('l');
 			put(ch);
 		}
 	}
+	va_end(ap);
 }
 
-void
-kprintn(void (*put)(int), unsigned long ul, int base)
+static void
+kprintn(put, ul, base)
+	void (*put)__P((int));
+	unsigned long ul;
+	int base;
 {
-	/* hold a long in base 8 */
+					/* hold a long in base 8 */
 	char *p, buf[(sizeof(long) * NBBY / 3) + 1];
 
 	p = buf;
 	do {
-		*p++ = hexdig[ul % base];
+		*p++ = "0123456789abcdef"[ul % base];
 	} while (ul /= base);
 	do {
 		put(*--p);
 	} while (p > buf);
 }
 
-#ifdef LIBSA_LONGLONG_PRINTF
-void
-kprintn64(void (*put)(int), u_int64_t ull, int base)
-{
-	/* hold an int64_t in base 8 */
-	char *p, buf[(sizeof(u_int64_t) * NBBY / 3) + 1];
-
-	p = buf;
-	do {
-		*p++ = hexdig[ull % base];
-	} while (ull /= base);
-	do {
-		put(*--p);
-	} while (p > buf);
-}
-#endif
-
 int donottwiddle = 0;
 
 void
-twiddle(void)
+twiddle()
 {
 	static int pos;
 

@@ -13,7 +13,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -29,69 +33,48 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.\"	$OpenBSD: strtoul.3,v 1.24 2014/11/30 21:21:59 schwarze Exp $
+.\"	$OpenBSD: strtoul.3,v 1.5 1999/09/14 03:59:55 pjanzen Exp $
 .\"
-.Dd $Mdocdate: November 30 2014 $
+.Dd June 25, 1992
 .Dt STRTOUL 3
 .Os
 .Sh NAME
-.Nm strtoul ,
-.Nm strtoull ,
-.Nm strtoumax ,
-.Nm strtouq
-.Nd convert a string to an unsigned long, unsigned long long or uintmax_t integer
+.Nm strtoul, strtouq
+.Nd convert a string to an unsigned long or uquad_t integer
 .Sh SYNOPSIS
-.In limits.h
-.In stdlib.h
+.Fd #include <stdlib.h>
+.Fd #include <limits.h>
 .Ft unsigned long
 .Fn strtoul "const char *nptr" "char **endptr" "int base"
-.Ft unsigned long long
-.Fn strtoull "const char *nptr" "char **endptr" "int base"
-.In inttypes.h
-.Ft uintmax_t
-.Fn strtoumax "const char *nptr" "char **endptr" "int base"
-.In sys/types.h
-.In limits.h
-.In stdlib.h
+
+.Fd #include <sys/types.h>
+.Fd #include <stdlib.h>
+.Fd #include <limits.h>
 .Ft u_quad_t
 .Fn strtouq "const char *nptr" "char **endptr" "int base"
 .Sh DESCRIPTION
 The
 .Fn strtoul
-function converts the string in
+function
+converts the string in
 .Fa nptr
 to an
-.Vt unsigned long
-value.
-The
-.Fn strtoull
-function converts the string in
-.Fa nptr
-to an
-.Vt unsigned long long
-value.
-The
-.Fn strtoumax
-function converts the string in
-.Fa nptr
-to a
-.Vt umaxint_t
+.Li unsigned long
 value.
 The
 .Fn strtouq
-function is a deprecated equivalent of
-.Fn strtoull
-and is provided for backwards compatibility with legacy programs.
+function
+converts the string in
+.Fa nptr
+to a
+.Li u_quad_t
+value.
 The conversion is done according to the given
 .Fa base ,
-which must be a number between 2 and 36 inclusive or the special value 0.
-If the string in
-.Fa nptr
-represents a negative number, it will be converted to its unsigned equivalent.
-This behavior is consistent with what happens when a signed integer type is
-cast to its unsigned counterpart.
+which must be a number between 2 and 36 inclusive
+or the special value 0.
 .Pp
-The string may begin with an arbitrary amount of whitespace
+The string may begin with an arbitrary amount of white space
 (as determined by
 .Xr isspace 3 )
 followed by a single optional
@@ -101,25 +84,26 @@ or
 sign.
 If
 .Fa base
-is zero or 16, the string may then include a
+is zero or 16,
+the string may then include a
 .Ql 0x
-prefix, and the number will be read in base 16; otherwise, a zero
+prefix,
+and the number will be read in base 16; otherwise, a zero
 .Fa base
 is taken as 10 (decimal) unless the next character is
 .Ql 0 ,
 in which case it is taken as 8 (octal).
 .Pp
 The remainder of the string is converted to an
-.Vt unsigned long ,
-.Vt unsigned long long ,
-or
-.Vt uintmax_t
+.Li unsigned long
 value in the obvious manner,
-stopping at the first character which is not a valid digit
+stopping at the end of the string
+or at the first character that does not produce a valid digit
 in the given base.
 (In bases above 10, the letter
 .Ql A
-in either upper or lower case represents 10,
+in either upper or lower case
+represents 10,
 .Ql B
 represents 11, and so forth, with
 .Ql Z
@@ -127,7 +111,7 @@ representing 35.)
 .Pp
 If
 .Fa endptr
-is non-null,
+is non nil,
 .Fn strtoul
 stores the address of the first invalid character in
 .Fa *endptr .
@@ -148,31 +132,26 @@ is
 on return, the entire string was valid.)
 .Sh RETURN VALUES
 The
-.Fn strtoul ,
-.Fn strtoull ,
-.Fn strtoumax
-and
-.Fn strtouq
-functions return either the result of the conversion or,
-if there was a leading minus sign,
-the negation of the result of the conversion,
-unless the original (non-negated) value would overflow.
-If overflow occurs,
 .Fn strtoul
-returns
-.Dv ULONG_MAX ,
-.Fn strtoull
-returns
-.Dv ULLONG_MAX ,
-.Fn strtoumax
-returns
-.Dv UINTMAX_MAX ,
-.Fn strtouq
-returns
-.Dv ULLONG_MAX
-and the global variable
+function
+returns the result of the conversion,
+unless the value would overflow, in which case
+.Dv ULONG_MAX
+is returned and
 .Va errno
 is set to
+.Er ERANGE .
+If there was a leading minus sign,
+.Fn strtoul
+returns the (unsigned) negation of the absolute value of the number, unless
+the absolute value would overflow.
+In this case,
+.Fn strtoul
+returns
+.Dv ULONG_MAX
+and sets the global variable
+.Va errno
+to
 .Er ERANGE .
 .Pp
 There is no way to determine if
@@ -181,14 +160,6 @@ has processed a negative number (and returned an unsigned value) short of
 examining the string in
 .Fa nptr
 directly.
-.Pp
-If there is no valid digit, 0 is returned.
-If
-.Ar base
-is invalid, 0 is returned and the global variable
-.Va errno
-is set to
-.Er EINVAL .
 .Sh EXAMPLES
 Ensuring that a string is a valid number (i.e., in range and containing no
 trailing characters) requires clearing
@@ -226,10 +197,6 @@ alternately, use
 .Xr sscanf 3 .
 .Sh ERRORS
 .Bl -tag -width Er
-.It Bq Er EINVAL
-The value of
-.Ar base
-was neither between 2 and 36 inclusive nor the special value 0.
 .It Bq Er ERANGE
 The given string was out of range; the value converted has been clamped.
 .El
@@ -238,23 +205,9 @@ The given string was out of range; the value converted has been clamped.
 .Xr strtol 3
 .Sh STANDARDS
 The
-.Fn strtoul ,
-.Fn strtoull ,
-and
-.Fn strtoumax
-functions conform to
-.St -isoC-99 .
-Setting
-.Va errno
-to
-.Dv EINVAL
-is an extension to that standard required by
-.St -p1003.1-2008 .
-.Pp
-The
-.Fn strtouq
-function is a
-.Bx
-extension and is provided for backwards compatibility with legacy programs.
+.Fn strtoul
+function
+conforms to
+.St -ansiC .
 .Sh BUGS
 Ignores the current locale.

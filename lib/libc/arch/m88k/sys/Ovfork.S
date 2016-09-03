@@ -1,5 +1,3 @@
-/*	$OpenBSD: Ovfork.S,v 1.11 2016/05/07 19:05:21 guenther Exp $	*/
-
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
  * All rights reserved.
@@ -16,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,6 +35,20 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+	.data
+	/*.asciz "from: @(#)fork.s	5.1 (Berkeley) 5/12/90"*/
+	.asciz "$Id: Ovfork.S,v 1.1 1998/12/15 07:10:32 smurph Exp $"
+	.text
+#endif /* LIBC_SCCS and not lint */
+
 #include "SYS.h"
 
-RSYSCALL_HIDDEN(vfork)
+/* r2 = pid. r3 = 0 in parent, 1 in child */
+
+SYSCALL(vfork)
+	bcnd	eq0,r3,parent
+	or	r2,r0,0
+	or	r3,r0,0
+parent:
+	jmp	r1		/* pid = vfork() */

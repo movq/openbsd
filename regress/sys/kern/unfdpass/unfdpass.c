@@ -1,4 +1,3 @@
-/*	$OpenBSD: unfdpass.c,v 1.18 2015/01/19 00:22:30 guenther Exp $	*/
 /*	$NetBSD: unfdpass.c,v 1.3 1998/06/24 23:51:30 thorpej Exp $	*/
 
 /*-
@@ -17,6 +16,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the NetBSD
+ *	Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -32,7 +38,7 @@
  */
 
 /*
- * Test passing of file descriptors over Unix domain sockets and socketpairs.
+ * Test passing of file descriptors and credentials over Unix domain sockets.
  */
 
 #include <sys/param.h>
@@ -45,89 +51,80 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 #define	SOCK_NAME	"test-sock"
 
-int	main(int, char *[]);
-void	child(int, int);
-void	catch_sigchld(int);
+int	main __P((int, char *[]));
+void	child __P((void));
+void	catch_sigchld __P((int));
+
+struct fdcmessage {
+	struct cmsghdr cm;
+	int files[2];
+};
+
+struct crcmessage {
+	struct cmsghdr cm;
+	char creds[SOCKCREDSIZE(NGROUPS)];
+};
 
 /* ARGSUSED */
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	struct msghdr msg;
-	int listensock, sock, pfd[2], fd, i;
+	int listensock, sock, fd, i, status;
 	char fname[16], buf[64];
 	struct cmsghdr *cmp;
+	struct {
+		struct fdcmessage fdcm;
+		struct crcmessage crcm;
+	} message;
 	int *files = NULL;
+	struct sockcred *sc = NULL;
 	struct sockaddr_un sun, csun;
 	int csunlen;
+	fd_set oob;
 	pid_t pid;
-	union {
-		struct cmsghdr hdr;
-		char buf[CMSG_SPACE(sizeof(int) * 3)];
-	} cmsgbuf;
-	int pflag;
-	int type = SOCK_STREAM;
-	extern char *__progname;
-
-	pflag = 0;
-	while ((i = getopt(argc, argv, "pq")) != -1) {
-		switch (i) {
-		case 'p':
-			pflag = 1;
-			break;
-		case 'q':
-			type = SOCK_SEQPACKET;
-			break;
-		default:
-			fprintf(stderr, "usage: %s [-p]\n", __progname);
-			exit(1);
-		}
-	}
 
 	/*
 	 * Create the test files.
 	 */
-	for (i = 0; i < 3; i++) {
-		(void) snprintf(fname, sizeof fname, "file%d", i + 1);
+	for (i = 0; i < 2; i++) {
+		(void) sprintf(fname, "file%d", i + 1);
 		if ((fd = open(fname, O_WRONLY|O_CREAT|O_TRUNC, 0666)) == -1)
 			err(1, "open %s", fname);
-		(void) snprintf(buf, sizeof buf, "This is file %d.\n", i + 1);
+		(void) sprintf(buf, "This is file %d.\n", i + 1);
 		if (write(fd, buf, strlen(buf)) != strlen(buf))
 			err(1, "write %s", fname);
 		(void) close(fd);
 	}
 
-	if (pflag) {
-		/*
-		 * Create the socketpair
-		 */
-		if (socketpair(PF_LOCAL, type, 0, pfd) == -1)
-			err(1, "socketpair");
-	} else {
-		/*
-		 * Create the listen socket.
-		 */
-		if ((listensock = socket(PF_LOCAL, type, 0)) == -1)
-			err(1, "socket");
+	/*
+	 * Create the listen socket.
+	 */
+	if ((listensock = socket(PF_LOCAL, SOCK_STREAM, 0)) == -1)
+		err(1, "socket");
 
-		(void) unlink(SOCK_NAME);
-		(void) memset(&sun, 0, sizeof(sun));
-		sun.sun_family = AF_LOCAL;
-		(void) strlcpy(sun.sun_path, SOCK_NAME, sizeof sun.sun_path);
+	(void) unlink(SOCK_NAME);
+	(void) memset(&sun, 0, sizeof(sun));
+	sun.sun_family = AF_LOCAL;
+	(void) strcpy(sun.sun_path, SOCK_NAME);
+	sun.sun_len = SUN_LEN(&sun);
 
-		if (bind(listensock, (struct sockaddr *)&sun, sizeof(sun)) == -1)
-			err(1, "bind");
+	i = 1;
+	if (setsockopt(listensock, 0, LOCAL_CREDS, &i, sizeof(i)) == -1)
+		err(1, "setsockopt");
 
-		if (listen(listensock, 1) == -1)
-			err(1, "listen");
-		pfd[0] = pfd[1] = -1;
-	}
+	if (bind(listensock, (struct sockaddr *)&sun, sizeof(sun)) == -1)
+		err(1, "bind");
+
+	if (listen(listensock, 1) == -1)
+		err(1, "listen");
 
 	/*
 	 * Create the sender.
@@ -140,23 +137,16 @@ main(int argc, char *argv[])
 		/* NOTREACHED */
 
 	case 0:
-		if (pfd[0] != -1)
-			close(pfd[0]);
-		child(pfd[1], type);
+		child();
 		/* NOTREACHED */
 	}
 
-	if (pfd[0] != -1) {
-		close(pfd[1]);
-		sock = pfd[0];
-	} else {
-		/*
-		 * Wait for the sender to connect.
-		 */
-		if ((sock = accept(listensock, (struct sockaddr *)&csun,
-		    &csunlen)) == -1)
+	/*
+	 * Wait for the sender to connect.
+	 */
+	if ((sock = accept(listensock, (struct sockaddr *)&csun,
+	    &csunlen)) == -1)
 		err(1, "accept");
-	}
 
 	/*
 	 * Give sender a chance to run.  We will get going again
@@ -165,11 +155,11 @@ main(int argc, char *argv[])
 	(void) sleep(10);
 
 	/*
-	 * Grab the descriptors passed to us.
+	 * Grab the descriptors and credentials passed to us.
 	 */
 	(void) memset(&msg, 0, sizeof(msg));
-	msg.msg_control = &cmsgbuf.buf;
-	msg.msg_controllen = sizeof(cmsgbuf.buf);
+	msg.msg_control = (caddr_t) &message;
+	msg.msg_controllen = sizeof(message);
 
 	if (recvmsg(sock, &msg, 0) < 0)
 		err(1, "recvmsg");
@@ -182,6 +172,7 @@ main(int argc, char *argv[])
 	if (msg.msg_flags & MSG_CTRUNC)
 		errx(1, "lost control message data");
 
+	cmp = CMSG_FIRSTHDR(&msg);
 	for (cmp = CMSG_FIRSTHDR(&msg); cmp != NULL;
 	    cmp = CMSG_NXTHDR(&msg, cmp)) {
 		if (cmp->cmsg_level != SOL_SOCKET)
@@ -190,11 +181,17 @@ main(int argc, char *argv[])
 
 		switch (cmp->cmsg_type) {
 		case SCM_RIGHTS:
-			if (cmp->cmsg_len != CMSG_LEN(sizeof(int) * 3))
-				errx(1, "bad fd control message length %d",
-				    cmp->cmsg_len);
+			if (cmp->cmsg_len != sizeof(message.fdcm))
+				errx(1, "bad fd control message length");
 
 			files = (int *)CMSG_DATA(cmp);
+			break;
+
+		case SCM_CREDS:
+			if (cmp->cmsg_len < sizeof(struct sockcred))
+				errx(1, "bad cred control message length");
+
+			sc = (struct sockcred *)CMSG_DATA(cmp);
 			break;
 
 		default:
@@ -209,12 +206,27 @@ main(int argc, char *argv[])
 	if (files == NULL)
 		warnx("didn't get fd control message");
 	else {
-		for (i = 0; i < 3; i++) {
+		for (i = 0; i < 2; i++) {
 			(void) memset(buf, 0, sizeof(buf));
 			if (read(files[i], buf, sizeof(buf)) <= 0)
-				err(1, "read file %d (%d)", i + 1, files[i]);
+				err(1, "read file %d", i + 1);
 			printf("%s", buf);
 		}
+	}
+
+	/*
+	 * Double-check credentials.
+	 */
+	if (sc == NULL)
+		warnx("didn't get cred control message");
+	else {
+		if (sc->sc_uid == getuid() &&
+		    sc->sc_euid == geteuid() &&
+		    sc->sc_gid == getgid() &&
+		    sc->sc_egid == getegid())
+			printf("Credentials match.\n");
+		else
+			printf("Credentials do NOT match.\n");
 	}
 
 	/*
@@ -227,61 +239,53 @@ void
 catch_sigchld(sig)
 	int sig;
 {
-	int save_errno = errno;
 	int status;
 
 	(void) wait(&status);
-	errno = save_errno;
 }
 
 void
-child(int sock, int type)
+child()
 {
 	struct msghdr msg;
-	char fname[16];
+	char fname[16], buf[64];
 	struct cmsghdr *cmp;
-	int i, fd;
+	struct fdcmessage fdcm;
+	int i, fd, sock;
 	struct sockaddr_un sun;
-	union {
-		struct cmsghdr hdr;
-		char buf[CMSG_SPACE(sizeof(int) * 3)];
-	} cmsgbuf;
-	int *files;
 
 	/*
-	 * Create socket if needed and connect to the receiver.
+	 * Create socket and connect to the receiver.
 	 */
-	if (sock == -1) {
-		if ((sock = socket(PF_LOCAL, type, 0)) == -1)
-			err(1, "child socket");
+	if ((sock = socket(PF_LOCAL, SOCK_STREAM, 0)) == -1)
+		errx(1, "child socket");
 
-		(void) memset(&sun, 0, sizeof(sun));
-		sun.sun_family = AF_LOCAL;
-		(void) strlcpy(sun.sun_path, SOCK_NAME, sizeof sun.sun_path);
+	(void) memset(&sun, 0, sizeof(sun));
+	sun.sun_family = AF_LOCAL;
+	(void) strcpy(sun.sun_path, SOCK_NAME);
+	sun.sun_len = SUN_LEN(&sun);
 
-		if (connect(sock, (struct sockaddr *)&sun, sizeof(sun)) == -1)
-			err(1, "child connect");
-	}
-
-	(void) memset(&msg, 0, sizeof(msg));
-	msg.msg_control = &cmsgbuf.buf;
-	msg.msg_controllen = sizeof(cmsgbuf.buf);
-
-	cmp = CMSG_FIRSTHDR(&msg);
-	cmp->cmsg_len = CMSG_LEN(sizeof(int) * 3);
-	cmp->cmsg_level = SOL_SOCKET;
-	cmp->cmsg_type = SCM_RIGHTS;
+	if (connect(sock, (struct sockaddr *)&sun, sizeof(sun)) == -1)
+		err(1, "child connect");
 
 	/*
 	 * Open the files again, and pass them to the child over the socket.
 	 */
-	files = (int *)CMSG_DATA(cmp);
-	for (i = 0; i < 3; i++) {
-		(void) snprintf(fname, sizeof fname, "file%d", i + 1);
+	for (i = 0; i < 2; i++) {
+		(void) sprintf(fname, "file%d", i + 1);
 		if ((fd = open(fname, O_RDONLY, 0666)) == -1)
 			err(1, "child open %s", fname);
-		files[i] = fd;
+		fdcm.files[i] = fd;
 	}
+
+	(void) memset(&msg, 0, sizeof(msg));
+	msg.msg_control = (caddr_t) &fdcm;
+	msg.msg_controllen = sizeof(fdcm);
+
+	cmp = CMSG_FIRSTHDR(&msg);
+	cmp->cmsg_len = sizeof(fdcm);
+	cmp->cmsg_level = SOL_SOCKET;
+	cmp->cmsg_type = SCM_RIGHTS;
 
 	if (sendmsg(sock, &msg, 0))
 		err(1, "child sendmsg");

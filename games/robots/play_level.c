@@ -1,4 +1,4 @@
-/*	$OpenBSD: play_level.c,v 1.10 2016/01/04 17:33:24 mestre Exp $	*/
+/*	$OpenBSD: play_level.c,v 1.3 1998/08/22 08:55:57 pjanzen Exp $	*/
 /*	$NetBSD: play_level.c,v 1.3 1995/04/22 10:09:03 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,16 +34,24 @@
  * SUCH DAMAGE.
  */
 
-#include "robots.h"
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)play_level.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: play_level.c,v 1.3 1998/08/22 08:55:57 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
+# include	"robots.h"
 
 /*
  * play_level:
  *	Let the player play the current level
  */
 void
-play_level(void)
+play_level()
 {
-	COORD	*cp;
+	register COORD	*cp;
 
 	move(My_pos.y, My_pos.x);
 	addch(PLAYER);
@@ -58,17 +70,20 @@ play_level(void)
 	move(Max.y, Max.x);
 	addch(inch());
 	standend();
-#endif /* DEBUG */
-	flushinp();
+#endif DEBUG
+	setjmp(End_move);
+	flush_in();
 	while (!Dead && Num_robots > 0) {
 		move(My_pos.y, My_pos.x);
 		if (!jumping())
 			refresh();
 		get_move();
+		if (Real_time)
+			alarm(0);
 		if (Field[My_pos.y][My_pos.x] != 0)
 			Dead = TRUE;
 		if (!Dead)
-			move_robots();
+			move_robots(FALSE);
 		if (Was_bonus) {
 			move(Y_PROMPT, X_PROMPT);
 			clrtoeol();

@@ -1,20 +1,11 @@
-/*	$OpenBSD: interplayer.c,v 1.8 2016/01/06 14:28:09 mestre Exp $	*/
+/*	$OpenBSD: interplayer.c,v 1.3 1998/11/29 19:56:56 pjanzen Exp $	*/
 /*	$NetBSD: interplayer.c,v 1.2 1995/03/24 03:58:47 cgd Exp $	*/
 
 /*
  * interplayer.c - player to player routines for Phantasia
  */
 
-#include <curses.h>
-#include <math.h>
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-
-#include "macros.h"
-#include "pathnames.h"
-#include "phantdefs.h"
-#include "phantglobs.h"
+#include "include.h"
 
 /************************************************************************
 /
@@ -42,14 +33,14 @@
 *************************************************************************/
 
 void
-checkbattle(void)
+checkbattle()
 {
 	long    foeloc = 0L;	/* location in file of person to fight */
 
 	Users = 0;
-	fseek(Playersfp, 0L, SEEK_SET);
+	fseek(Playersfp, 0L, 0);
 
-	while (fread(&Other, SZ_PLAYERSTRUCT, 1, Playersfp) == 1) {
+	while (fread((char *) &Other, SZ_PLAYERSTRUCT, 1, Playersfp) == 1) {
 		if (Other.p_status != S_OFF
 		    && Other.p_status != S_NOTUSED
 		    && Other.p_status != S_HUNGUP
@@ -119,7 +110,8 @@ checkbattle(void)
 *************************************************************************/
 
 void
-battleplayer(long foeplace)
+battleplayer(foeplace)
+	long    foeplace;
 {
 	double  dtemp;		/* for temporary calculations */
 	double  oldhits = 0.0;	/* previous damage inflicted by foe */
@@ -131,6 +123,10 @@ battleplayer(long foeplace)
 	Luckout = FALSE;
 	mvaddstr(4, 0, "Preparing for battle!\n");
 	refresh();
+
+#ifdef SYS5
+	flushinp();
+#endif
 
 	/* set up variables, file, etc. */
 	Player.p_status = S_INBATTLE;
@@ -365,7 +361,7 @@ LEAVE:
 *************************************************************************/
 
 void
-myturn(void)
+myturn()
 {
 	double  dtemp;		/* for temporary calculations */
 	int     ch;		/* input */
@@ -467,13 +463,13 @@ HIT:
 *************************************************************************/
 
 void
-checktampered(void)
+checktampered()
 {
 	long    loc = 0L;	/* location in energy void file */
 
 	/* first check for energy voids */
-	fseek(Energyvoidfp, 0L, SEEK_SET);
-	while (fread(&Enrgyvoid, SZ_VOIDSTRUCT, 1, Energyvoidfp) == 1)
+	fseek(Energyvoidfp, 0L, 0);
+	while (fread((char *) &Enrgyvoid, SZ_VOIDSTRUCT, 1, Energyvoidfp) == 1)
 		if (Enrgyvoid.ev_active
 		    && Enrgyvoid.ev_x == Player.p_x
 		    && Enrgyvoid.ev_y == Player.p_y)
@@ -528,7 +524,10 @@ checktampered(void)
 *************************************************************************/
 
 void
-tampered(int what, double arg1, double arg2)
+tampered(what, arg1, arg2)
+	int     what;
+	double  arg1;
+	double  arg2;
 {
 	long    loc;		/* location in file of other players */
 
@@ -649,9 +648,9 @@ tampered(int what, double arg1, double arg2)
 					addstr("You made to position of Valar!\n");
 					Player.p_specialtype = SC_VALAR;
 					Player.p_lives = 5;
-					fseek(Playersfp, 0L, SEEK_SET);
+					fseek(Playersfp, 0L, 0);
 					loc = 0L;
-					while (fread(&Other, SZ_PLAYERSTRUCT, 1, Playersfp) == 1)
+					while (fread((char *) &Other, SZ_PLAYERSTRUCT, 1, Playersfp) == 1)
 						/* search for existing valar */
 						if (Other.p_specialtype == SC_VALAR
 						    && Other.p_status != S_NOTUSED)
@@ -709,7 +708,8 @@ tampered(int what, double arg1, double arg2)
 *************************************************************************/
 
 void
-userlist(bool ingameflag)
+userlist(ingameflag)
+	bool    ingameflag;
 {
 	int     numusers = 0;	/* number of users on file */
 
@@ -717,11 +717,11 @@ userlist(bool ingameflag)
 		mvaddstr(8, 0, "You cannot see anyone.\n");
 		return;
 	}
-	fseek(Playersfp, 0L, SEEK_SET);
+	fseek(Playersfp, 0L, 0);
 	mvaddstr(8, 0,
 	    "Name                         X         Y    Lvl Type Login    Status\n");
 
-	while (fread(&Other, SZ_PLAYERSTRUCT, 1, Playersfp) == 1) {
+	while (fread((char *) &Other, SZ_PLAYERSTRUCT, 1, Playersfp) == 1) {
 		if (Other.p_status == S_NOTUSED
 		/* record is unused */
 		    || (Other.p_specialtype == SC_VALAR && Other.p_status == S_CLOAKED))
@@ -799,7 +799,7 @@ userlist(bool ingameflag)
 *************************************************************************/
 
 void
-throneroom(void)
+throneroom()
 {
 	FILE   *fp;		/* to clear energy voids */
 	long    loc = 0L;	/* location of old king in player file */
@@ -807,8 +807,8 @@ throneroom(void)
 	if (Player.p_specialtype < SC_KING)
 		/* not already king -- assumes crown */
 	{
-		fseek(Playersfp, 0L, SEEK_SET);
-		while (fread(&Other, SZ_PLAYERSTRUCT, 1, Playersfp) == 1)
+		fseek(Playersfp, 0L, 0);
+		while (fread((char *) &Other, SZ_PLAYERSTRUCT, 1, Playersfp) == 1)
 			if (Other.p_specialtype == SC_KING && Other.p_status != S_NOTUSED)
 				/* found old king */
 			{
@@ -843,10 +843,10 @@ throneroom(void)
 		fclose(fp);
 
 		/* clear all energy voids; retain location of holy grail */
-		fseek(Energyvoidfp, 0L, SEEK_SET);
-		fread(&Enrgyvoid, SZ_VOIDSTRUCT, 1, Energyvoidfp);
+		fseek(Energyvoidfp, 0L, 0);
+		fread((char *) &Enrgyvoid, SZ_VOIDSTRUCT, 1, Energyvoidfp);
 		fp = fopen(_PATH_VOID, "w");
-		fwrite(&Enrgyvoid, SZ_VOIDSTRUCT, 1, fp);
+		fwrite((char *) &Enrgyvoid, SZ_VOIDSTRUCT, 1, fp);
 		fclose(fp);
 	}
 	mvaddstr(6, 0, "0:Decree  ");
@@ -880,7 +880,7 @@ throneroom(void)
 *************************************************************************/
 
 void
-dotampered(void)
+dotampered()
 {
 	short   tamper;		/* value for tampering with other players */
 	char   *option;		/* pointer to option description */
@@ -944,11 +944,11 @@ dotampered(void)
 			if ((fp = fopen(_PATH_GOLD, "r+")) != NULL)
 				/* collect taxes */
 			{
-				fread(&temp1, sizeof(double), 1, fp);
-				fseek(fp, 0L, SEEK_SET);
+				fread((char *) &temp1, sizeof(double), 1, fp);
+				fseek(fp, 0L, 0);
 				/* clear out value */
 				temp2 = 0.0;
-				fwrite(&temp2, sizeof(double), 1, fp);
+				fwrite((char *) &temp2, sizeof(double), 1, fp);
 				fclose(fp);
 			}
 			mvprintw(4, 0, "You have collected %.0f in gold.\n", temp1);
@@ -992,8 +992,8 @@ dotampered(void)
 			if (Player.p_palantir)
 				/* need a palantir to seek */
 			{
-				fseek(Energyvoidfp, 0L, SEEK_SET);
-				fread(&Enrgyvoid, SZ_VOIDSTRUCT, 1, Energyvoidfp);
+				fseek(Energyvoidfp, 0L, 0);
+				fread((char *) &Enrgyvoid, SZ_VOIDSTRUCT, 1, Energyvoidfp);
 				temp1 = distance(Player.p_x, Enrgyvoid.ev_x, Player.p_y, Enrgyvoid.ev_y);
 				temp1 += ROLL(-temp1 / 10.0, temp1 / 5.0);	/* add some error */
 				mvprintw(5, 0, "The palantir says the Grail is about %.0f away.\n", temp1);
@@ -1112,13 +1112,15 @@ dotampered(void)
 *************************************************************************/
 
 void
-writevoid(struct energyvoid *vp, long loc)
+writevoid(vp, loc)
+	struct energyvoid *vp;
+	long    loc;
 {
 
-	fseek(Energyvoidfp, loc, SEEK_SET);
-	fwrite(vp, SZ_VOIDSTRUCT, 1, Energyvoidfp);
+	fseek(Energyvoidfp, loc, 0);
+	fwrite((char *) vp, SZ_VOIDSTRUCT, 1, Energyvoidfp);
 	fflush(Energyvoidfp);
-	fseek(Energyvoidfp, 0L, SEEK_SET);
+	fseek(Energyvoidfp, 0L, 0);
 }
 /**/
 /************************************************************************
@@ -1147,12 +1149,12 @@ writevoid(struct energyvoid *vp, long loc)
 *************************************************************************/
 
 long
-allocvoid(void)
+allocvoid()
 {
 	long    loc = 0L;	/* location of new energy void */
 
-	fseek(Energyvoidfp, 0L, SEEK_SET);
-	while (fread(&Enrgyvoid, SZ_VOIDSTRUCT, 1, Energyvoidfp) == 1)
+	fseek(Energyvoidfp, 0L, 0);
+	while (fread((char *) &Enrgyvoid, SZ_VOIDSTRUCT, 1, Energyvoidfp) == 1)
 		if (Enrgyvoid.ev_active)
 			loc += SZ_VOIDSTRUCT;
 		else

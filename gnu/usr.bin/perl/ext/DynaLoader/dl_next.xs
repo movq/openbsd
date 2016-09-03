@@ -8,13 +8,11 @@
  */
 
 /*
- *  And Gandalf said: 'Many folk like to know beforehand what is to
- *  be set on the table; but those who have laboured to prepare the
- *  feast like to keep their secret; for wonder makes the words of
- *  praise louder.'
- *
- *     [p.970 of _The Lord of the Rings_, VI/v: "The Steward and the King"]
- */
+    And Gandalf said: 'Many folk like to know beforehand what is to
+    be set on the table; but those who have laboured to prepare the
+    feast like to keep their secret; for wonder makes the words of
+    praise louder.'
+*/
 
 /* Porting notes:
 
@@ -46,19 +44,14 @@ Anno Siegel
 
 #define DL_LOADONCEONLY
 
-typedef struct {
-    AV *	x_resolve_using;
-} my_cxtx_t;		/* this *must* be named my_cxtx_t */
-
-#define DL_CXT_EXTRA	/* ask for dl_cxtx to be defined in dlutils.c */
 #include "dlutils.c"	/* SaveError() etc	*/
 
-#define dl_resolve_using	(dl_cxtx.x_resolve_using)
+
+static char * dl_last_error = (char *) 0;
+static AV *dl_resolve_using = Nullav;
 
 static char *dlerror()
 {
-    dTHX;
-    dMY_CXT;
     return dl_last_error;
 }
 
@@ -79,15 +72,13 @@ enum dyldErrorSource
 static void TranslateError
     (const char *path, enum dyldErrorSource type, int number)
 {
-    dTHX;
-    dMY_CXT;
     char *error;
     unsigned int index;
     static char *OFIErrorStrings[] =
     {
 	"%s(%d): Object Image Load Failure\n",
 	"%s(%d): Object Image Load Success\n",
-	"%s(%d): Not a recognisable object file\n",
+	"%s(%d): Not an recognisable object file\n",
 	"%s(%d): No valid architecture\n",
 	"%s(%d): Object image has an invalid format\n",
 	"%s(%d): Invalid access (permissions?)\n",
@@ -101,11 +92,11 @@ static void TranslateError
 	index = number;
 	if (index > NUM_OFI_ERRORS - 1)
 	    index = NUM_OFI_ERRORS - 1;
-	error = Perl_form_nocontext(OFIErrorStrings[index], path, number);
+	error = form(OFIErrorStrings[index], path, number);
 	break;
 
     default:
-	error = Perl_form_nocontext("%s(%d): Totally unknown error type %d\n",
+	error = form("%s(%d): Totally unknown error type %d\n",
 		     path, number, type);
 	break;
     }
@@ -158,14 +149,12 @@ static void TransferError(NXStream *s)
 {
     char *buffer;
     int len, maxlen;
-    dTHX;
-    dMY_CXT;
 
     if ( dl_last_error ) {
         Safefree(dl_last_error);
     }
     NXGetMemoryBuffer(s, &buffer, &len, &maxlen);
-    Newx(dl_last_error, len, char);
+    New(1097, dl_last_error, len, char);
     strcpy(dl_last_error, buffer);
 }
 
@@ -184,8 +173,6 @@ static char *dlopen(char *path, int mode /* mode is ignored */)
     char *result;
     char **p;
     STRLEN n_a;
-    dTHX;
-    dMY_CXT;
 	
     /* Do not load what is already loaded into this process */
     if (hv_fetch(dl_loaded_files, path, strlen(path), 0))
@@ -222,7 +209,7 @@ char *symbol;
     NXStream	*nxerr = OpenError();
     unsigned long	symref = 0;
 
-    if (!rld_lookup(nxerr, Perl_form_nocontext("_%s", symbol), &symref))
+    if (!rld_lookup(nxerr, form("_%s", symbol), &symref))
 	TransferError(nxerr);
     CloseError(nxerr);
     return (void*) symref;
@@ -235,68 +222,62 @@ char *symbol;
 
 
 static void
-dl_private_init(pTHX)
+dl_private_init()
 {
-    (void)dl_generic_private_init(aTHX);
-    {
-	dMY_CXT;
-	dl_resolve_using = get_av("DynaLoader::dl_resolve_using", GV_ADDMULTI);
-    }
+    (void)dl_generic_private_init();
+    dl_resolve_using = perl_get_av("DynaLoader::dl_resolve_using", 0x4);
 }
  
 MODULE = DynaLoader     PACKAGE = DynaLoader
 
 BOOT:
-    (void)dl_private_init(aTHX);
+    (void)dl_private_init();
 
 
 
-void
+void *
 dl_load_file(filename, flags=0)
     char *	filename
     int		flags
     PREINIT:
     int mode = 1;
-    void *retv;
     CODE:
-    DLDEBUG(1,PerlIO_printf(Perl_debug_log, "dl_load_file(%s,%x):\n", filename,flags));
+    DLDEBUG(1,PerlIO_printf(PerlIO_stderr(), "dl_load_file(%s,%x):\n", filename,flags));
     if (flags & 0x01)
-	Perl_warn(aTHX_ "Can't make loaded symbols global on this platform while loading %s",filename);
-    retv = dlopen(filename, mode) ;
-    DLDEBUG(2,PerlIO_printf(Perl_debug_log, " libref=%x\n", retv));
+	warn("Can't make loaded symbols global on this platform while loading %s",filename);
+    RETVAL = dlopen(filename, mode) ;
+    DLDEBUG(2,PerlIO_printf(PerlIO_stderr(), " libref=%x\n", RETVAL));
     ST(0) = sv_newmortal() ;
-    if (retv == NULL)
-	SaveError(aTHX_ "%s",dlerror()) ;
+    if (RETVAL == NULL)
+	SaveError("%s",dlerror()) ;
     else
-	sv_setiv( ST(0), PTR2IV(retv) );
+	sv_setiv( ST(0), (IV)RETVAL);
 
 
-void
+void *
 dl_find_symbol(libhandle, symbolname)
     void *		libhandle
     char *		symbolname
-    PREINIT:
-    void *retv;
     CODE:
 #if NS_TARGET_MAJOR >= 4
-    symbolname = Perl_form_nocontext("_%s", symbolname);
+    symbolname = form("_%s", symbolname);
 #endif
-    DLDEBUG(2, PerlIO_printf(Perl_debug_log,
+    DLDEBUG(2, PerlIO_printf(PerlIO_stderr(),
 			     "dl_find_symbol(handle=%lx, symbol=%s)\n",
 			     (unsigned long) libhandle, symbolname));
-    retv = dlsym(libhandle, symbolname);
-    DLDEBUG(2, PerlIO_printf(Perl_debug_log,
-			     "  symbolref = %lx\n", (unsigned long) retv));
+    RETVAL = dlsym(libhandle, symbolname);
+    DLDEBUG(2, PerlIO_printf(PerlIO_stderr(),
+			     "  symbolref = %lx\n", (unsigned long) RETVAL));
     ST(0) = sv_newmortal() ;
-    if (retv == NULL)
-	SaveError(aTHX_ "%s",dlerror()) ;
+    if (RETVAL == NULL)
+	SaveError("%s",dlerror()) ;
     else
-	sv_setiv( ST(0), PTR2IV(retv) );
+	sv_setiv( ST(0), (IV)RETVAL);
 
 
 void
 dl_undef_symbols()
-    CODE:
+    PPCODE:
 
 
 
@@ -306,40 +287,18 @@ void
 dl_install_xsub(perl_name, symref, filename="$Package")
     char *	perl_name
     void *	symref 
-    const char *	filename
+    char *	filename
     CODE:
-    DLDEBUG(2,PerlIO_printf(Perl_debug_log, "dl_install_xsub(name=%s, symref=%x)\n",
+    DLDEBUG(2,PerlIO_printf(PerlIO_stderr(), "dl_install_xsub(name=%s, symref=%x)\n",
 	    perl_name, symref));
-    ST(0) = sv_2mortal(newRV((SV*)newXS_flags(perl_name,
-					      (void(*)(pTHX_ CV *))symref,
-					      filename, NULL,
-					      XS_DYNAMIC_FILENAME)));
+    ST(0)=sv_2mortal(newRV((SV*)newXS(perl_name, (void(*)())symref, filename)));
 
 
 char *
 dl_error()
     CODE:
-    dMY_CXT;
-    RETVAL = dl_last_error ;
+    RETVAL = LastError ;
     OUTPUT:
     RETVAL
-
-#if defined(USE_ITHREADS)
-
-void
-CLONE(...)
-    CODE:
-    MY_CXT_CLONE;
-
-    PERL_UNUSED_VAR(items);
-
-    /* MY_CXT_CLONE just does a memcpy on the whole structure, so to avoid
-     * using Perl variables that belong to another thread, we create our 
-     * own for this thread.
-     */
-    MY_CXT.x_dl_last_error = newSVpvn("", 0);
-    dl_resolve_using = get_av("DynaLoader::dl_resolve_using", GV_ADDMULTI);
-
-#endif
 
 # end.

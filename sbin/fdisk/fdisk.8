@@ -1,488 +1,277 @@
-.\"	$OpenBSD: fdisk.8,v 1.92 2016/02/23 03:34:17 krw Exp $
-.\"
+.\"	$OpenBSD: fdisk.8,v 1.28 1999/09/23 23:23:30 aaron Exp $
 .\"
 .\" Copyright (c) 1997 Tobias Weingartner
+.\" All rights reserved.
 .\"
-.\" Permission to use, copy, modify, and distribute this software for any
-.\" purpose with or without fee is hereby granted, provided that the above
-.\" copyright notice and this permission notice appear in all copies.
+.\" Redistribution and use in source and binary forms, with or without
+.\" modification, are permitted provided that the following conditions
+.\" are met:
+.\" 1. Redistributions of source code must retain the above copyright
+.\"    notice, this list of conditions and the following disclaimer.
+.\" 2. Redistributions in binary form must reproduce the above copyright
+.\"    notice, this list of conditions and the following disclaimer in the
+.\"    documentation and/or other materials provided with the distribution.
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"    This product includes software developed by Tobias Weingartner.
+.\" 4. The name of the author may not be used to endorse or promote products
+.\"    derived from this software without specific prior written permission.
 .\"
-.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\" THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+.\" IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+.\" OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+.\" IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+.\" INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+.\" NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+.\" DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+.\" THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+.\" (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+.\" THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: February 23 2016 $
+.Dd April 4, 1993
 .Dt FDISK 8
 .Os
 .Sh NAME
 .Nm fdisk
-.Nd partition table maintenance program
+.Nd DOS partition maintenance program
 .Sh SYNOPSIS
 .Nm fdisk
-.Op Fl egvy
-.Op Fl i | u
-.Op Fl b Ar blocks
-.Oo
-.Fl c Ar cylinders
-.Fl h Ar heads
-.Fl s Ar sectors
-.Oc
-.Op Fl f Ar mbrfile
-.Op Fl l Ar blocks
-.Ar disk
+.Op Fl ie
+.Op Fl f Ar mbrname
+.Op Fl c Ar cylinders
+.Op Fl h Ar heads
+.Op Fl s Ar sectors
+.Ar device
 .Sh DESCRIPTION
-.Nm fdisk
-makes changes to the MBR and GPT tables found on some disks.
-On such disks sector 0 contains a 4-entry MBR partition table
-that divides the space.
-The GPT partition table, when present, starts at sector 1.
+In order for the BIOS to boot the kernel, certain conventions must be
+adhered to.  Sector 0 of a bootable hard disk must contain boot code,
+an MBR partition table, and a magic number.  These MBR partitions (also
+known as BIOS partitions) can be used to break the disk up into several
+pieces.  The BIOS loads sector 0 of the boot disk into memory, verifies
+the magic number, and begins executing the code at the first byte.
+The normal DOS MBR boot code searches the MBR partition table for an
+.Dq active
+partition (indicated by a
+.Dq \&*
+in the first column), and if one
+is found, the boot block from that partition is loaded and executed in
+place of the original (MBR) boot block.
 .Pp
-Each entry has a type.
-A type of
-.Ar 0xA6
-indicates an
-.Ox
-MBR partition, which starts with its own
-16-entry partition table known as a
-.Xr disklabel 5 .
-This can be edited using
-.Xr disklabel 8 .
+The following options are available:
 .Pp
-Caution is advised when editing these tables, since some platforms
-use tricks to boot and may rely on specific configurations created
-at install time.
+.Bl -tag -width "-c cylinders" -compact
+.It Fl i
+Initialize the MBR sector.
 .Pp
-The options are as follows:
-.Bl -tag -width Ds
-.It Fl b Ar blocks
-A special boot partition of the specified size will be written to disk
-on architectures that need one.
-Only valid with
-.Fl i .
-.It Xo
-.Fl c Ar cylinders
-.Fl h Ar heads
-.Fl s Ar sectors
-.Xc
+.It Fl e
+Edit existing MBR sectors.
+.Pp
+.It Fl f Ar mbrname
+Specifies an alternate MBR template file.
+.Pp
+.It Fl c Ar cylinders
+.It Fl h Ar heads
+.It Fl s Ar sectors
 Specifies an alternate BIOS geometry for
 .Nm
 to use.
-By default, an automatic calculation of disk size will be built
-using heuristics.
-These figures are taken from the in-core disklabel
-(see
-.Xr disklabel 8 ) ,
-or values that
-.Em /boot
-has passed to the kernel.
-.Pp
-Only one of
-.Fl chs
-or
-.Fl l
-can be specified.
-.It Fl e
-Use the
-.Nm
-interactive editor to modify the partition table.
-See
-.Sx COMMAND MODE ,
-below, for more information.
-.It Fl f Ar mbrfile
-Specifies an alternate MBR template file.
-The default file is
-.Pa /usr/mdec/mbr .
-.It Fl g
-A protective MBR and a default GPT will be written to disk.
-The default GPT will have a single
-.Ox
-partition containing all available space not allocated by a
-.Fl b
-specification.
-Only valid with
-.Fl i .
-.It Fl i
-Requests that the partition table data be re-initialized.
-In this mode,
-.Nm
-will completely overwrite the primary MBR bootcode and MBR partition table.
-.Pp
-If
-.Fl g
-is not specified then the MBR will be overwritten by
-the default MBR template
-.Pa /usr/mdec/mbr
-(or the one optionally specified by the
-.Fl f
-flag).
-In the default template, MBR partition number 3 will be configured as an
-.Ox
-MBR partition containing all available space not allocated by a
-.Fl b
-specification.
-.Pp
-Only one of
-.Fl i
-or
-.Fl u
-can be specified.
-.It Fl l Ar blocks
-Specify the number of blocks in the disk, and force the MBR to be in LBA
-mode only.
-.Pp
-Only one of
-.Fl chs
-or
-.Fl l
-can be specified.
-.It Fl u
-Update MBR bootcode, preserving existing MBR partition table.
-The MBR bootcode extends from offset 0x000 to the start of the MBR partition
-table at offset 0x1BE.
-It is similar to the
-.Fl i
-flag, except the existing MBR partition table is preserved.
-This is useful for writing new MBR bootcode onto an existing drive, and is
-equivalent to the DOS command
-.Dq FDISK /MBR .
-Note that this option will overwrite the NT disk signature, if present.
-.Pp
-Only one of
-.Fl i
-or
-.Fl u
-can be specified.
-.It Fl v
-Print the contents of the MBR, the Primary GPT and the Secondary GPT.
-Also print more detailed GPT header and partition entry information.
-Cannot be used with
-.Fl i ,
-.Fl u ,
-or
-.Fl e .
-.It Fl y
-Avoid asking yes/no questions when not desirable.
-.It Ar disk
-Specify the
-.Ar disk
-to operate on.
-It can be specified either by its full pathname or an abbreviated disk form.
-In its abbreviated form, the path to the device and the
-.Sq r
-denoting
-.Qq raw device
-are omitted and the partition letter is optional.
-For example, the first IDE disk can be specified as either
-.Pa /dev/rwd0c ,
-.Pa wd0c ,
-or
-.Pa wd0 .
 .El
-.Sh TYPICAL LAYOUT
-When called with no special flags,
-.Nm
-prints the partition table of the specified disk.
 .Pp
-If the disk does not contain a valid GPT the contents
-of the MBR are displayed.
-For example:
-.Bd -literal -offset 1n
-# fdisk sd0
-Disk: sd0       geometry: 121601/255/63 [1953525168 Sectors]
-Offset: 0       Signature: 0xAA55
-          Starting     Ending    LBA Info:
- #: id     C H S -      C   H  S [     start:       size ]
-------------------------------------------------------------------------
- 0: 0B     0 1 1 -  26108   0 63 [        63:  419425020 ] Win95 FAT-32
- 1: 00     0 0 0 -      0   0  0 [         0:          0 ] unused
- 2: 00     0 0 0 -      0   0  0 [         0:          0 ] unused
-*3: A6 26108 1 1 - 121600 254 63 [ 419425083: 1534094982 ] OpenBSD
+The DOS
+.Nm
+program can be used to divide space on the disk into partitions and set
+one active.
+This
+.Nm
+program serves a similar purpose to the DOS program.
+When called with no special flags, it prints the MBR partition
+table of the specified device, ie.
+.Bd -literal
+    # fdisk fd0
+    Disk: fd0       geometry: 80/2/18 [2880 sectors]
+    Offset: 0       Signatures: 0xAA55,0x0
+             Starting        Ending
+     #: id  cyl  hd sec -  cyl  hd sec [     start -       size]
+    ----------------------------------------------------------------------
+    *0: A6    0   0   1 -   79   1  18 [         0 -       2880] OpenBSD
+     1: 00    0   0   0 -    0   0   0 [         0 -          0] unused
+     2: A7    0   0   2 -   79   1  18 [         1 -       2879] NEXTSTEP
+     3: 00    0   0   0 -    0   0   0 [         0 -          0] unused
 .Ed
 .Pp
-This 1953525168 sector (931GB) disk drive is divided into two MBR
-partitions that span the whole disk.
-The first MBR partition is a 200GB FAT-32 partition;
-the second is a 731GB
-.Ox
-MBR partition using the remainder of the disk.
-The fields of the output are:
+The geometry displayed is the BIOS geometry unless another geometry
+has been selected using the
+.Fl c ,
+.Fl h ,
+and
+.Fl s
+options.
+.Pp
+This disk is divided into two partitions that happen to fill the disk.
+The first partition overlaps the third partition.  (Used for debugging
+purposes.)
 .Bl -tag -width "start/size"
 .It Em "#"
-Number identifying each MBR partition table entry.
-There are a total of four slots.
-.Sq *
-denotes the MBR partition which is declared bootable.
+Number of partition table entry.  A
+.Dq \&*
+denotes the bootable partition.
 .It Em "id"
-MBR partition type identifier.
-.Ox
+System identifier.
+.Os
 reserves the
-magic number hexadecimal A6 (166 decimal).
-.It Em "C/H/S"
-These fields provide the starting and ending address of the MBR partition
-in BIOS geometry.
+magic number 166 decimal (A6 in hex).
+If no 166 partition is found, it will use an older FreeBSD partition
+(with a magic number of 165 or A5 in hex).
+.It Em "cyl/hd/sec"
+These fields provide the starting and ending address of the partition
+in BIOS geometry
 .It Em "start/size"
 These fields provide the starting sector and size in sectors of the
-MBR partition in linear block addresses.
+partition in linear block addresses.
 .El
 .Pp
 .Em NOTE :
-The BIOS geometry sectors field (C/H/S) is
+The sectors field is
 .Dq 1 based ,
-but the LBA "start" field is
+and the start field is
 .Dq 0 based .
-.Pp
 The CHS values will need to be in the BIOS's geometry
 for the system to be able to boot and use the drive correctly.
-These values must be kept correctly synchronized or a variety of
-problems develop which are very difficult to diagnose.
 .Pp
-If the disk contains a protective MBR and a valid GPT, the contents of the GPT
-are displayed.
-For example:
-.Bd -literal -offset 1n
-Disk: sd2       Usable LBA: 64 to 7765952 [7766016 Sectors]
-   #: type                                 [       start:         size ]
-------------------------------------------------------------------------
-   1: EFI Sys                              [          64:          960 ]
-   3: OpenBSD                              [        1024:      7764929 ]
-.Ed
-.Pp
-This 7766016 sector disk drive is divided into two
-partitions that span the whole disk.
-The first partition is a 960 sector EFI Sys partition;
-the second is a 7764929 sector
-.Ox
-partition using the remainder of the disk.
-The fields of the output are:
-.Bl -tag -width "type"
-.It Em "#"
-Number identifying each partition table entry.
-.It Em "type"
-The partition type identifier.
-If the type is recognized the name of the type is displayed.
-Otherwise the type GUID is displayed.
-.It Em "start"
-The sector the partition starts on.
-.It Em "size"
-The number of sectors in the partition.
-.El
-.Pp
-If the
-.Fl v
-option is specified, the disk GUID and each partition's GUID and name are
-also displayed.
-.Pp
-In either the MBR or GPT case the
-.Ox
-partition shown above is subdivided further using the
-functionality provided by
-.Xr disklabel 8 ,
-which provides
-.Ox
-partitions.
-.Bd -literal -offset 1n
-# /dev/rsd0c:
-type: SCSI
-disk: SCSI disk
-label: WDC WD10EADS-65L
-duid: 085ef8d68623f5b3
-flags:
-bytes/sector: 512
-sectors/track: 63
-tracks/cylinder: 255
-sectors/cylinder: 16065
-cylinders: 121601
-total sectors: 1953525168
-boundstart: 419425083
-boundend: 1953520065
-drivedata: 0
-
-16 partitions:
-#                size           offset  fstype [fsize bsize  cpg]
-  a:          2097125        419425083  4.2BSD   2048 16384    1
-  b:          4715520        421522208    swap
-  c:       1953525168                0  unused
-  d:          8388608        426237728  4.2BSD   2048 16384    1
-  e:         16771072        434626336  4.2BSD   2048 16384    1
-  f:          4194304        451397408  4.2BSD   2048 16384    1
-  g:          2097152        455591712  4.2BSD   2048 16384    1
-  h:         20971520        457688864  4.2BSD   2048 16384    1
-  i:        419425020               63   MSDOS
-  j:          4194304        478660384  4.2BSD   2048 16384    1
-  k:          4194304        482854688  4.2BSD   2048 16384    1
-  l:        629145536        487049024  4.2BSD   4096 32768    1
-.Ed
-.Pp
-These
-.Ox
-partitions are then mounted as follows using
-.Pa /etc/fstab :
-.Bd -literal -offset indent
-/dev/sd0a / ffs rw,softdep 1 1
-/dev/sd0d /tmp ffs rw,softdep,nodev,nosuid 1 2
-/dev/sd0e /var ffs rw,softdep,nodev,nosuid 1 2
-/dev/sd0f /usr ffs rw,softdep,nodev 1 2
-/dev/sd0g /usr/X11R6 ffs rw,softdep,nodev 1 2
-/dev/sd0h /usr/local ffs rw,softdep,nodev 1 2
-/dev/sd0i /mnt/example msdos rw,nodev,nosuid 1 2
-/dev/sd0j /usr/src ffs rw,softdep,nodev,nosuid 1 2
-/dev/sd0k /usr/obj ffs rw,softdep,nodev,nosuid 1 2
-/dev/sd0l /home ffs rw,softdep,nodev,nosuid 1 2
-.Ed
-.Sh COMMAND MODE
 The
-.Fl e
-flag causes
+.Fl i
+flag is used to indicate that the partition data is to be initialized.
+In this mode,
 .Nm
-to enter an interactive command mode.
-The prompt contains information about the state of the edit
-process.
+will completely overwrite the primary MBR, and start with a fresh one using
+a default template, or one given by the
+.Fl f
+flag.  It will set up partition number 3 to be an
+.Os
+partition, that will start at cylinder 0, head 1, sector 1, and extend
+to the end of the disk.
+This mode is designed to initialize an MBR the very first time,
+or when it has been corrupted beyond repair.  It is almost equivalent
+to the DOS command
+.Dq FDISK /MBR .
 .Pp
-.Dl fdisk:*1>
-.Pp
-.Sq *
-means that the in-memory copy of the partition table has been modified, but
-not yet written to disk.
-.Pp
-1 is the disk offset of the currently selected boot block being edited.
-This number will be 2 when editing an extended MBR partition,
-3 when editing an extended MBR partition within an extended MBR partition,
-and so on.
-.Pp
-The list of commands and their explanations are given below.
-Commands may be abbreviated provided enough characters are given to ensure
-unambiguity.
-.Bl -tag -width Ds
-.It Cm ?\&
-A synonym for
-.Cm help .
-.It Cm help
+The flag
+.Fl e
+is used to modify a partition table using a interactive edit mode of the
+.Nm
+program.  This mode is designed to allow you to change any partition on the
+drive you choose, including extended partitions.  It is a very powerful mode,
+but is safe as long as you do not execute the
+.Em write
+command, or answer in the negative (the default) when
+.Nm
+asks you about writing out changes.
+.Sh COMMAND MODE
+When you first enter this mode, you are presented with a prompt, that looks
+like so:
+.Em "fdisk: 0>" .
+This prompt has two important pieces of information for you.  It will tell
+you if the in-memory copy of the boot block has been modified or not.  If it
+has been modified, the prompt will change to look like:
+.Em "fdisk:*0>" .
+The second piece of information pertains to the number given in the prompt.
+This number specifies the disk offset of the currently selected boot block
+you are editing.  This number could be something different that zero when
+you are editing extended partitions.  The list of commands and their
+explanations are given below.
+.Bl -tag -width "update"
+.It Em help
 Display a list of commands that
 .Nm
 understands in the interactive edit mode.
-.It Cm manual
+.It Em manual
 Display this manual page.
-.It Cm reinit Op Cm gpt | Cm mbr
+.It Em reinit
 Initialize the currently selected, in-memory copy of the
 boot block.
-If
-.Cm gpt
-is specified a protective MBR and a GPT are initialized.
-If
-.Cm mbr
-is specified only an MBR is initialized.
-If neither
-.Cm mbr
-nor
-.Cm gpt
-are specified then a protective MBR and a GPT are initialized if a protective
-MBR already exists.
-Otherwise only an MBR is initialized.
-.It Cm disk
+.It Em disk
 Display the current drive geometry that
 .Nm
-probed using kernel provided information and various heuristics.
-The disk geometry may be changed at this point.
-Not available when editing a GPT.
-.It Cm edit Ar #
+has
+probed.  You are given a chance to edit it if you wish.
+.It Em edit
 Edit a given table entry in the memory copy of
-the current boot block.
-Sizes may be adjusted in BIOS geometry mode (MBR only) or using
-sector offsets and sizes.
-A unit
-.Sq b ,
-.Sq k ,
-.Sq m ,
-or
-.Sq g
-may be appended to indicate bytes, kilobytes, megabytes, or gigabytes.
-The special size value
-.Sq *
-will cause the partition to be sized to use the remainder of the disk.
-.It Cm flag Ar # Op Ar value
-Make the given MBR partition table entry bootable
-and mark all others as not bootable
-(only one entry can be marked bootable).
-The bootable partition is denoted with
-.Sq * .
-.\" If you wish to boot from an extended
-.\" MBR partition, you will need to mark the MBR partition table entry for the
-.\" extended MBR partition as bootable.
-If a
-.Ar value
-of 0 is given,
-the MBR partition is marked as not bootable,
-but no other MBR partitions are touched.
-.It Cm update
-Update the machine MBR bootcode and 0xAA55 signature in the memory copy
-of the currently selected MBR.
-Note that this option will overwrite an NT disk
-signature, if present.
-Not available when editing a GPT.
-.It Cm select Ar #
-Select and load into memory the MBR pointed
-to by the extended MBR partition table entry in the current boot block.
-Not available when editing a GPT.
-.It Cm setpid Ar #
-Change the partition
-identifier of the given partition table entry.
-This command is particularly useful for reassigning
-an existing partition to
-.Ox .
-.It Cm swap Ar # Ar #
-Swap two partition entries.
-.It Cm print Op Ar unit
-Print the currently selected in-memory copy of the
-partition table to the terminal.
-A
-.Ar unit
-.Sq b ,
-.Sq k ,
-.Sq m ,
-or
-.Sq g
-may be appended to indicate bytes, kilobytes, megabytes, or gigabytes.
-Otherwise the number of sectors is printed.
-.It Cm write
-Write the in-memory copy of the partition table to disk.
-.It Cm exit
+the current boot block.  You may edit either in BIOS geometry mode,
+or in sector offsets and sizes.
+.It Em flag
+Make the given partition table entry bootable.  Only one
+entry can be marked bootable. If you wish to boot from an extended
+partition, you will need to mark the partition table entry for the
+extended partition as bootable.
+.It Em update
+Update the machine code in the memory copy of the
+currently selected boot block.
+.It Em select
+Select and load into memory the boot block pointed
+to by the extended partition table entry in the current boot block.
+.It Em print
+Print the currently selected in-memory copy of the boot
+block and its MBR table to the terminal.
+.It Em write
+Write the in-memory copy of the boot block to disk.  You will
+be asked to confirm this operation.
+.It Em exit
 Exit the current level of
 .Nm fdisk ,
 either returning to the
-previously selected in-memory copy of a MBR, or exiting the
+previously selected in-memory copy of a boot block, or exiting the
 program if there is none.
-.It Cm quit
+.It Em quit
 Exit the current level of
 .Nm fdisk ,
 either returning to the
-previously selected in-memory copy of a MBR, or exiting the
-program if there is none.
-Unlike
+previously selected in-memory copy of a boot block, or exiting the
+program if there is none.  Unlike
 .Em exit
 it does write the modified block out.
-.It Cm abort
+.It Em abort
 Quit program without saving current changes.
 .El
+.Sh NOTES
+The automatic calculation of starting cylinder etc. uses
+a set of figures that represent what the BIOS thinks is the
+geometry of the drive.
+These figures are by default taken from the in-core disklabel, or
+values that
+.Em /boot
+has passed to the kernel, but
+.Nm
+gives you an opportunity to change them if there is a need to.
+This allows the user to create a bootblock that can work with drives
+that use geometry translation under a potentially different BIOS.
+.Pp
+If you hand craft your disk layout,
+please make sure that the
+.Os
+partition starts on a cylinder boundary.
+(This restriction may be changed in the future.)
+.Pp
+Editing an existing partition is risky, and may cause you to
+lose all the data in that partition.
+.Pp
+You should run this program interactively once or twice to see how it works.
+This is completely safe as long as you answer the
+.Dq write
+questions in the
+negative.
 .Sh FILES
 .Bl -tag -width /usr/mdec/mbr -compact
 .It Pa /usr/mdec/mbr
 default MBR template
 .El
 .Sh SEE ALSO
-.Xr fstab 5 ,
-.Xr boot_amd64 8 ,
 .Xr boot_i386 8 ,
-.Xr boot_macppc 8 ,
-.Xr boot_zaurus 8 ,
 .Xr disklabel 8
-.Sh CAVEATS
-Hand crafted disk layouts are highly error prone.
-It is common practice,
-though by no means required,
-that MBR partitions start on a cylinder boundary
-(generally head 0, sector 1, but head 1, sector 1 for track 0),
-and that MBR partitions also end at cylinder boundaries.
+.Sh BUGS
+There are subtleties
+.Nm
+detects that are not explained in this manual page.
+As well, chances are that some of the subtleties it should detect are being
+steamrolled.
+Caveat Emptor.
+

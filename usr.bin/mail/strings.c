@@ -1,4 +1,4 @@
-/*	$OpenBSD: strings.c,v 1.10 2015/10/16 17:56:07 mmcc Exp $	*/
+/*	$OpenBSD: strings.c,v 1.6 1997/11/14 00:23:58 millert Exp $	*/
 /*	$NetBSD: strings.c,v 1.5 1996/06/08 19:48:40 christos Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,6 +33,14 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)strings.c	8.1 (Berkeley) 6/6/93";
+#else
+static char rcsid[] = "$OpenBSD: strings.c,v 1.6 1997/11/14 00:23:58 millert Exp $";
+#endif
+#endif /* not lint */
 
 /*
  * Mail -- a mail program
@@ -48,8 +60,10 @@
  * The string spaces are of exponentially increasing size, to satisfy
  * the occasional user with enormous string size requests.
  */
+
 char *
-salloc(int size)
+salloc(size)
+	int size;
 {
 	char *t;
 	int s;
@@ -71,9 +85,9 @@ salloc(int size)
 		errx(1, "String too large");
 	if (sp->s_topFree == NULL) {
 		index = sp - &stringdope[0];
-		sp->s_topFree = malloc(STRINGSIZE << index);
+		sp->s_topFree = (char *)malloc(STRINGSIZE << index);
 		if (sp->s_topFree == NULL)
-			err(1, "malloc");
+			errx(1, "No room for space %d", index);
 		sp->s_nextFree = sp->s_topFree;
 		sp->s_nleft = STRINGSIZE << index;
 	}
@@ -89,7 +103,7 @@ salloc(int size)
  * since last reset.
  */
 void
-sreset(void)
+sreset()
 {
 	struct strings *sp;
 	int index;
@@ -111,7 +125,7 @@ sreset(void)
  * Meant to be called in main, after initialization.
  */
 void
-spreserve(void)
+spreserve()
 {
 	struct strings *sp;
 

@@ -1,4 +1,4 @@
-/*	$OpenBSD: paste.c,v 1.22 2015/12/09 19:39:10 mmcc Exp $	*/
+/*	$OpenBSD: paste.c,v 1.7 1999/08/24 18:49:45 aaron Exp $	*/
 
 /*
  * Copyright (c) 1989 The Regents of the University of California.
@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,9 +36,18 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/queue.h>
+#ifndef lint
+char copyright[] =
+"@(#) Copyright (c) 1989 The Regents of the University of California.\n\
+ All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+/*static char sccsid[] = "from: @(#)paste.c	5.7 (Berkeley) 10/30/90";*/
+static char rcsid[] = "$OpenBSD: paste.c,v 1.7 1999/08/24 18:49:45 aaron Exp $";
+#endif /* not lint */
+
 #include <sys/types.h>
-#include <err.h>
 #include <errno.h>
 #include <limits.h>
 #include <stdio.h>
@@ -45,24 +58,23 @@
 char *delim;
 int delimcnt;
 
-int	tr(char *);
-void	usage(void);
-void	parallel(char **);
-void	sequential(char **);
+int	tr __P((char *));
+void	usage __P((void));
+void	parallel __P((char **));
+void	sequential __P((char **));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
 	extern char *optarg;
 	extern int optind;
 	int ch, seq;
 
-	if (pledge("stdio rpath", NULL) == -1)
-		err(1, "pledge");
-
 	seq = 0;
-	while ((ch = getopt(argc, argv, "d:s")) != -1) {
-		switch (ch) {
+	while ((ch = getopt(argc, argv, "d:s")) != -1)
+		switch(ch) {
 		case 'd':
 			delimcnt = tr(delim = optarg);
 			break;
@@ -73,7 +85,6 @@ main(int argc, char *argv[])
 		default:
 			usage();
 		}
-	}
 	argc -= optind;
 	argv += optind;
 
@@ -89,41 +100,51 @@ main(int argc, char *argv[])
 	exit(0);
 }
 
-struct list {
-	SIMPLEQ_ENTRY(list) entries;
+typedef struct _list {
+	struct _list *next;
 	FILE *fp;
 	int cnt;
 	char *name;
-};
+} LIST;
 
 void
-parallel(char **argv)
+parallel(argv)
+	char **argv;
 {
-	SIMPLEQ_HEAD(, list) head = SIMPLEQ_HEAD_INITIALIZER(head);
-	struct list *lp;
-	int cnt;
-	char ch, *p;
+	register LIST *lp;
+	register int cnt;
+	register char ch, *p;
+	LIST *head, *tmp;
 	int opencnt, output;
 	char *buf, *lbuf;
 	size_t len;
 
-	for (cnt = 0; (p = *argv); ++argv, ++cnt) {
-		if (!(lp = malloc(sizeof(struct list))))
-			err(1, "malloc");
-
+	for (cnt = 0, head = NULL; (p = *argv); ++argv, ++cnt) {
+		if (!(lp = (LIST *)malloc((u_int)sizeof(LIST)))) {
+			(void)fprintf(stderr, "paste: %s.\n", strerror(ENOMEM));
+			exit(1);
+		}
 		if (p[0] == '-' && !p[1])
 			lp->fp = stdin;
-		else if (!(lp->fp = fopen(p, "r")))
-			err(1, "%s", p);
+		else if (!(lp->fp = fopen(p, "r"))) {
+			(void)fprintf(stderr, "paste: %s: %s.\n", p,
+			    strerror(errno));
+			exit(1);
+		}
+		lp->next = NULL;
 		lp->cnt = cnt;
 		lp->name = p;
-		SIMPLEQ_INSERT_TAIL(&head, lp, entries);
+		if (!head)
+			head = tmp = lp;
+		else {
+			tmp->next = lp;
+			tmp = lp;
+		}
 	}
 
 	for (opencnt = cnt; opencnt;) {
-		output = 0;
-		SIMPLEQ_FOREACH(lp, &head, entries) {
-			lbuf = NULL;
+		lbuf = NULL;
+		for (output = 0, lp = head; lp; lp = lp->next) {
 			if (!lp->fp) {
 				if (output && lp->cnt &&
 				    (ch = delim[(lp->cnt - 1) % delimcnt]))
@@ -133,19 +154,16 @@ parallel(char **argv)
 			if (!(buf = fgetln(lp->fp, &len))) {
 				if (!--opencnt)
 					break;
-				if (lp->fp != stdin)
-					(void)fclose(lp->fp);
 				lp->fp = NULL;
 				if (output && lp->cnt &&
 				    (ch = delim[(lp->cnt - 1) % delimcnt]))
 					putchar(ch);
 				continue;
 			}
-			if (buf[len - 1] == '\n')
-				buf[len - 1] = '\0';
+			if (*(buf + len - 1) == '\n')
+				*(buf + len - 1) = '\0';
 			else {
-				if ((lbuf = malloc(len + 1)) == NULL)
-					err(1, "malloc");
+				lbuf = (char *)malloc(len + 1);
 				memcpy(lbuf, buf, len);
 				lbuf[len] = '\0';
 				buf = lbuf;
@@ -162,8 +180,10 @@ parallel(char **argv)
 			} else if ((ch = delim[(lp->cnt - 1) % delimcnt]))
 				putchar(ch);
 			(void)printf("%s", buf);
-			if (lbuf)
+			if (lbuf != NULL) {
 				free(lbuf);
+				lbuf = NULL;
+			}
 		}
 		if (output)
 			putchar('\n');
@@ -171,29 +191,30 @@ parallel(char **argv)
 }
 
 void
-sequential(char **argv)
+sequential(argv)
+	char **argv;
 {
-	FILE *fp;
-	int cnt;
-	char ch, *p, *dp;
+	register FILE *fp;
+	register int cnt;
+	register char ch, *p, *dp;
 	char *buf, *lbuf;
 	size_t len;
 
+	lbuf = NULL;
 	for (; (p = *argv); ++argv) {
-		lbuf = NULL;
 		if (p[0] == '-' && !p[1])
 			fp = stdin;
 		else if (!(fp = fopen(p, "r"))) {
-			warn("%s", p);
+			(void)fprintf(stderr, "paste: %s: %s.\n", p,
+			    strerror(errno));
 			continue;
 		}
 		if ((buf = fgetln(fp, &len))) {
 			for (cnt = 0, dp = delim;;) {
-				if (buf[len - 1] == '\n')
-					buf[len - 1] = '\0';
+				if (*(buf + len - 1) == '\n')
+					*(buf + len - 1) = '\0';
 				else {
-					if ((lbuf = malloc(len + 1)) == NULL)
-						err(1, "malloc");
+					lbuf = (char *)malloc(len + 1);
 					memcpy(lbuf, buf, len);
 					lbuf[len] = '\0';
 					buf = lbuf;
@@ -212,19 +233,23 @@ sequential(char **argv)
 		}
 		if (fp != stdin)
 			(void)fclose(fp);
-		free(lbuf);
+		if (lbuf != NULL) {
+			free(lbuf);
+			lbuf = NULL;
+		}
 	}
 }
 
 int
-tr(char *arg)
+tr(arg)
+	char *arg;
 {
-	int cnt;
-	char ch, *p;
+	register int cnt;
+	register char ch, *p;
 
-	for (p = arg, cnt = 0; (ch = *p++); ++arg, ++cnt) {
-		if (ch == '\\') {
-			switch (ch = *p++) {
+	for (p = arg, cnt = 0; (ch = *p++); ++arg, ++cnt)
+		if (ch == '\\')
+			switch(ch = *p++) {
 			case 'n':
 				*arg = '\n';
 				break;
@@ -237,21 +262,19 @@ tr(char *arg)
 			default:
 				*arg = ch;
 				break;
-			}
 		} else
 			*arg = ch;
-	}
 
-	if (!cnt)
-		errx(1, "no delimiters specified");
-	return (cnt);
+	if (!cnt) {
+		(void)fprintf(stderr, "paste: no delimiters specified.\n");
+		exit(1);
+	}
+	return(cnt);
 }
 
 void
-usage(void)
+usage()
 {
-	extern char *__progname;
-	(void)fprintf(stderr, "usage: %s [-s] [-d list] file ...\n",
-	    __progname);
+	(void)fprintf(stderr, "paste: [-s] [-d delimiters] file ...\n");
 	exit(1);
 }

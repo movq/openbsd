@@ -1,4 +1,4 @@
-/*	$OpenBSD: sigsuspend.S,v 1.8 2016/05/07 19:05:21 guenther Exp $	*/
+/*	$OpenBSD: sigsuspend.S,v 1.4 1999/01/06 06:10:13 d Exp $	*/
 /*	$NetBSD: sigsuspend.S,v 1.2 1996/10/17 03:08:22 cgd Exp $	*/
 
 /*
@@ -30,9 +30,14 @@
 
 #include "SYS.h"
 
-SYSLEAF_HIDDEN(sigsuspend, 1)
+#if defined(SYSLIBC_SCCS)
+	.text
+	.asciz "$OpenBSD: sigsuspend.S,v 1.4 1999/01/06 06:10:13 d Exp $"
+#endif /* SYSLIBC_SCCS */
+
+LEAF(sigsuspend, 1)
 	ldl	a0, 0(a0)		/* pass *mask instead of mask */
 	CALLSYS_ERROR(sigsuspend)
 	mov	zero, v0		/* shouldn't need; just in case... */
 	RET
-SYSCALL_END_HIDDEN(sigsuspend)
+SYSEND(sigsuspend)

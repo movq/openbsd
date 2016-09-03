@@ -1,4 +1,5 @@
-/*	$OpenBSD: at.c,v 1.77 2015/11/16 16:43:06 millert Exp $	*/
+/*	$OpenBSD: at.c,v 1.16 1998/07/09 20:40:58 mickey Exp $	*/
+/*	$NetBSD: at.c,v 1.4 1995/03/25 18:13:31 glass Exp $	*/
 
 /*
  *  at.c : Put file into atrun queue
@@ -6,9 +7,6 @@
  *
  *  Atrun & Atq modifications
  *  Copyright (C) 1993  David Parsons
- *
- *  Traditional BSD behavior and other significant modifications
- *  Copyright (C) 2002-2003  Todd C. Miller
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,177 +24,165 @@
  * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
  * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
  * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * THEORY OF LIABILITY, WETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+/* System Headers */
 #include <sys/types.h>
+#include <sys/param.h>
 #include <sys/stat.h>
-
-#include <bitstring.h>                  /* for structs.h */
+#include <sys/wait.h>
 #include <ctype.h>
 #include <dirent.h>
-#include <err.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <limits.h>
-#include <locale.h>
 #include <pwd.h>
 #include <signal.h>
-#include <stdarg.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <syslog.h>
 #include <time.h>
 #include <unistd.h>
+#include <utmp.h>
+#include <locale.h>
+#include <err.h>
 
-#include "pathnames.h"
-#include "macros.h"
-#include "structs.h"
-#include "funcs.h"
-#include "globals.h"
+#if (MAXLOGNAME-1) > UT_NAMESIZE
+#define LOGNAMESIZE UT_NAMESIZE
+#else
+#define LOGNAMESIZE (MAXLOGNAME-1)
+#endif
 
+/* Local headers */
 #include "at.h"
+#include "panic.h"
+#include "parsetime.h"
+#include "perm.h"
+#include "pathnames.h"
+#define MAIN
+#include "privs.h"
 
+/* Macros */
 #define ALARMC 10		/* Number of seconds to wait for timeout */
-#define TIMESIZE 50		/* Size of buffer passed to strftime() */
 
-/* Variables to remove from the job's environment. */
+#define TIMESIZE 50
+
+enum { ATQ, ATRM, AT, BATCH, CAT };	/* what program we want to run */
+
+/* File scope variables */
+#ifndef lint
+static char rcsid[] = "$OpenBSD: at.c,v 1.16 1998/07/09 20:40:58 mickey Exp $";
+#endif
+
 char *no_export[] =
 {
-	"TERM", "TERMCAP", "DISPLAY", "_", "SHELLOPTS", "BASH_VERSINFO",
-	"EUID", "GROUPS", "PPID", "UID", "SSH_AUTH_SOCK", "SSH_AGENT_PID",
+	"TERM", "TERMCAP", "DISPLAY", "_"
 };
+static int send_mail = 0;
 
-static int program = AT;	/* default program mode */
-static char atfile[PATH_MAX];	/* path to the at spool file */
-static char user_name[MAX_UNAME];/* invoking user name */
-static int fcreated;		/* whether or not we created the file yet */
-static char atqueue = 0;	/* which queue to examine for jobs (atq) */
-static char vflag = 0;		/* show completed but unremoved jobs (atq) */
-static char force = 0;		/* suppress errors (atrm) */
-static char interactive = 0;	/* interactive mode (atrm) */
-static int send_mail = 0;	/* whether we are sending mail */
-static uid_t user_uid;		/* user's real uid */
-static gid_t user_gid;		/* user's real gid */
-static gid_t spool_gid;		/* gid for writing to at spool */
+/* External variables */
 
-static void sigc(int);
-static void writefile(const char *, time_t, char);
-static void list_jobs(int, char **, int, int);
-static time_t ttime(char *);
-static __dead void fatal(const char *, ...)
-    __attribute__((__format__ (printf, 1, 2)));
-static __dead void fatalx(const char *, ...)
-    __attribute__((__format__ (printf, 1, 2)));
-static __dead void usage(void);
-static int rmok(long long);
-time_t parsetime(int, char **);
+extern char **environ;
+int fcreated;
+char *namep;
+char atfile[FILENAME_MAX];
 
-/*
- * Something fatal has happened, print error message and exit.
- */
-static __dead void
-fatal(const char *fmt, ...)
-{
-	va_list ap;
+char *atinput = (char *)0;	/* where to get input from */
+char atqueue = 0;		/* which queue to examine for jobs (atq) */
+char atverify = 0;		/* verify time instead of queuing job */
 
-	va_start(ap, fmt);
-	vwarn(fmt, ap);
-	va_end(ap);
+/* Function declarations */
 
-	if (fcreated)
-		unlink(atfile);
+static void sigc	__P((int));
+static void alarmc	__P((int));
+static char *cwdname	__P((void));
+static void writefile	__P((time_t, char));
+static void list_jobs	__P((void));
 
-	exit(EXIT_FAILURE);
-}
+/* Signal catching functions */
 
-/*
- * Something fatal has happened, print error message and exit.
- */
-static __dead void
-fatalx(const char *fmt, ...)
-{
-	va_list ap;
-
-	va_start(ap, fmt);
-	vwarnx(fmt, ap);
-	va_end(ap);
-
-	if (fcreated)
-		unlink(atfile);
-
-	exit(EXIT_FAILURE);
-}
-
-/* ARGSUSED */
-static void
-sigc(int signo)
+static void 
+sigc(signo)
+	int signo;
 {
 	/* If the user presses ^C, remove the spool file and exit. */
-	if (fcreated)
+	if (fcreated) {
+		PRIV_START
 		(void)unlink(atfile);
-
-	_exit(EXIT_FAILURE);
-}
-
-static int
-strtot(const char *nptr, char **endptr, time_t *tp)
-{
-	long long ll;
-
-	errno = 0;
-	ll = strtoll(nptr, endptr, 10);
-	if (*endptr == nptr)
-		return (-1);
-	if (ll < 0 || (errno == ERANGE && ll == LLONG_MAX) || (time_t)ll != ll)
-		return (-1);
-	*tp = (time_t)ll;
-	return (0);
-}
-
-static int
-newjob(time_t runtimer, int queue)
-{
-	int fd, i;
-
-	/*
-	 * If we have a collision, try shifting the time by up to
-	 * two minutes.  Perhaps it would be better to try different
-	 * queues instead...
-	 */
-	for (i = 0; i < 120; i++) {
-		snprintf(atfile, sizeof(atfile), "%s/%lld.%c", _PATH_AT_SPOOL,
-		    (long long)runtimer, queue);
-		fd = open(atfile, O_WRONLY | O_CREAT | O_EXCL, S_IRUSR);
-		if (fd >= 0)
-			return (fd);
-		runtimer++;
+		PRIV_END
 	}
-	return (-1);
+
+	exit(EXIT_FAILURE);
 }
 
-/*
- * This does most of the work if at or batch are invoked for
- * writing a job.
- */
-static void
-writefile(const char *cwd, time_t runtimer, char queue)
+static void 
+alarmc(signo)
+	int signo;
 {
-	const char *ap;
-	char *mailname, *shell;
-	char timestr[TIMESIZE];
+	/* Time out after some seconds. */
+	panic("File locking timed out");
+}
+
+/* Local functions */
+
+static char *
+cwdname()
+{
+	/*
+	 * Read in the current directory; the name will be overwritten on
+	 * subsequent calls.
+	 */
+	static char path[MAXPATHLEN];
+
+	return (getcwd(path, sizeof(path)));
+}
+
+static int
+nextjob()
+{
+	int jobno;
+	FILE *fid;
+
+	if ((fid = fopen(_PATH_SEQFILE, "r+")) != NULL) {
+		if (fscanf(fid, "%5x", &jobno) == 1) {
+			(void)rewind(fid);
+			jobno = (1+jobno) % 0xfffff;	/* 2^20 jobs enough? */
+			(void)fprintf(fid, "%05x\n", jobno);
+		} else
+			jobno = EOF;
+		(void)fclose(fid);
+		return (jobno);
+	} else if ((fid = fopen(_PATH_SEQFILE, "w")) != NULL) {
+		(void)fprintf(fid, "%05x\n", jobno = 1);
+		(void)fclose(fid);
+		return (1);
+	}
+	return (EOF);
+}
+
+static void
+writefile(runtimer, queue)
+	time_t runtimer;
+	char queue;
+{
+	/*
+	 * This does most of the work if at or batch are invoked for
+	 * writing a job.
+	 */
+	int jobno;
+	char *ap, *ppos, *mailname;
 	struct passwd *pass_entry;
-	struct tm runtime;
-	int fd;
-	FILE *fp;
+	struct stat statbuf;
+	int fdes, lockdes, fd2;
+	FILE *fp, *fpin;
 	struct sigaction act;
 	char **atenv;
 	int ch;
 	mode_t cmask;
-	extern char **environ;
+	struct flock lock;
 
 	(void)setlocale(LC_TIME, "");
 
@@ -204,11 +190,59 @@ writefile(const char *cwd, time_t runtimer, char queue)
 	 * Install the signal handler for SIGINT; terminate after removing the
 	 * spool file if necessary
 	 */
-	bzero(&act, sizeof act);
+	memset(&act, 0, sizeof act);
 	act.sa_handler = sigc;
-	sigemptyset(&act.sa_mask);
+	sigemptyset(&(act.sa_mask));
 	act.sa_flags = 0;
+
 	sigaction(SIGINT, &act, NULL);
+
+	(void)strcpy(atfile, _PATH_ATJOBS);
+	ppos = atfile + strlen(atfile);
+
+	/*
+	 * Loop over all possible file names for running something at this
+	 * particular time, see if a file is there; the first empty slot at
+	 * any particular time is used.  Lock the file _PATH_LOCKFILE first
+	 * to make sure we're alone when doing this.
+	 */
+
+	PRIV_START
+
+	if ((lockdes = open(_PATH_LOCKFILE, O_WRONLY | O_CREAT, S_IWUSR | S_IRUSR)) < 0)
+		perr2("Cannot open lockfile ", _PATH_LOCKFILE);
+
+	lock.l_type = F_WRLCK;
+	lock.l_whence = SEEK_SET;
+	lock.l_start = 0;
+	lock.l_len = 0;
+
+	act.sa_handler = alarmc;
+	sigemptyset(&(act.sa_mask));
+	act.sa_flags = 0;
+
+	/*
+	 * Set an alarm so a timeout occurs after ALARMC seconds, in case
+	 * something is seriously broken.
+	 */
+	sigaction(SIGALRM, &act, NULL);
+	alarm(ALARMC);
+	fcntl(lockdes, F_SETLKW, &lock);
+	alarm(0);
+
+	if ((jobno = nextjob()) == EOF)
+	    perr("Cannot generate job number");
+
+	(void)snprintf(ppos, sizeof(atfile) - (ppos - atfile),
+	    "%c%5x%8x", queue, jobno, (unsigned) (runtimer/60));
+
+	for (ap = ppos; *ap != '\0'; ap++)
+		if (*ap == ' ')
+			*ap = '0';
+
+	if (stat(atfile, &statbuf) != 0)
+		if (errno != ENOENT)
+			perr2("Cannot access ", _PATH_ATJOBS);
 
 	/*
 	 * Create the file. The x bit is only going to be set after it has
@@ -217,11 +251,16 @@ writefile(const char *cwd, time_t runtimer, char queue)
 	 * their r bit.  Yes, this is a kluge.
 	 */
 	cmask = umask(S_IRUSR | S_IWUSR | S_IXUSR);
-	if ((fd = newjob(runtimer, queue)) == -1)
-		fatal("unable to create atjob file");
+	if ((fdes = open(atfile, O_CREAT | O_TRUNC | O_WRONLY, S_IRUSR)) == -1)
+		perr("Cannot create atjob file");
 
-	if (fchown(fd, -1, user_gid) != 0)
-		fatal("fchown");
+	if ((fd2 = dup(fdes)) < 0)
+		perr("Error in dup() of job file");
+
+	if (fchown(fd2, real_uid, real_gid) != 0)
+		perr("Cannot give away file");
+
+	PRIV_END
 
 	/*
 	 * We've successfully created the file; let's set the flag so it
@@ -229,38 +268,39 @@ writefile(const char *cwd, time_t runtimer, char queue)
 	 */
 	fcreated = 1;
 
-	if ((fp = fdopen(fd, "w")) == NULL)
-		fatal("unable to reopen atjob file");
+	/* Now we can release the lock, so other people can access it */
+	lock.l_type = F_UNLCK;
+	lock.l_whence = SEEK_SET;
+	lock.l_start = 0;
+	lock.l_len = 0;
+	(void)fcntl(lockdes, F_SETLKW, &lock);
+	(void)close(lockdes);
+
+	if ((fp = fdopen(fdes, "w")) == NULL)
+		panic("Cannot reopen atjob file");
 
 	/*
-	 * Get the userid to mail to, first by trying getlogin(), which asks
-	 * the kernel, then from $LOGNAME or $USER, finally from getpwuid().
+	 * Get the userid to mail to, first by trying getlogin(), which reads
+	 * /etc/utmp, then from $LOGNAME or $USER, finally from getpwuid().
 	 */
 	mailname = getlogin();
 	if (mailname == NULL && (mailname = getenv("LOGNAME")) == NULL)
 		mailname = getenv("USER");
 
 	if ((mailname == NULL) || (mailname[0] == '\0') ||
-	    (strlen(mailname) > MAX_UNAME) || (getpwnam(mailname) == NULL)) {
-		mailname = user_name;
+	    (strlen(mailname) > LOGNAMESIZE) || (getpwnam(mailname) == NULL)) {
+		pass_entry = getpwuid(real_uid);
+		if (pass_entry != NULL)
+			mailname = pass_entry->pw_name;
 	}
 
-	/*
-	 * Get the shell to run the job under.  First check $SHELL, falling
-	 * back to the user's shell in the password database or, failing
-	 * that, /bin/sh.
-	 */
-	if ((shell = getenv("SHELL")) == NULL || *shell == '\0') {
-		pass_entry = getpwuid(user_uid);
-		if (pass_entry != NULL && *pass_entry->pw_shell != '\0')
-			shell = pass_entry->pw_shell;
-		else
-			shell = _PATH_BSHELL;
+	if (atinput != NULL) {
+		fpin = freopen(atinput, "r", stdin);
+		if (fpin == NULL)
+			perr("Cannot open input file");
 	}
-
-	(void)fprintf(fp, "#!/bin/sh\n# atrun uid=%lu gid=%lu\n# mail %*s %d\n",
-	    (unsigned long)user_uid, (unsigned long)user_gid,
-	    MAX_UNAME, mailname, send_mail);
+	(void)fprintf(fp, "#!/bin/sh\n# atrun uid=%u gid=%u\n# mail %*s %d\n",
+	    real_uid, real_gid, LOGNAMESIZE, mailname, send_mail);
 
 	/* Write out the umask at the time of invocation */
 	(void)fprintf(fp, "umask %o\n", cmask);
@@ -268,7 +308,7 @@ writefile(const char *cwd, time_t runtimer, char queue)
 	/*
 	 * Write out the environment. Anything that may look like a special
 	 * character to the shell is quoted, except for \n, which is done
-	 * with a pair of "'s.  Don't export the no_export list (such as
+	 * with a pair of "'s.  Dont't export the no_export list (such as
 	 * TERM or DISPLAY) because we don't want these.
 	 */
 	for (atenv = environ; *atenv != NULL; atenv++) {
@@ -276,7 +316,7 @@ writefile(const char *cwd, time_t runtimer, char queue)
 		char *eqp;
 
 		eqp = strchr(*atenv, '=');
-		if (eqp == NULL)
+		if (ap == NULL)
 			eqp = *atenv;
 		else {
 			int i;
@@ -291,13 +331,12 @@ writefile(const char *cwd, time_t runtimer, char queue)
 		}
 
 		if (export) {
-			(void)fputs("export ", fp);
 			(void)fwrite(*atenv, sizeof(char), eqp - *atenv, fp);
 			for (ap = eqp; *ap != '\0'; ap++) {
 				if (*ap == '\n')
 					(void)fprintf(fp, "\"\n\"");
 				else {
-					if (!isalnum((unsigned char)*ap)) {
+					if (!isalnum(*ap)) {
 						switch (*ap) {
 						case '%': case '/': case '{':
 						case '[': case ']': case '=':
@@ -313,6 +352,8 @@ writefile(const char *cwd, time_t runtimer, char queue)
 					(void)fputc(*ap, fp);
 				}
 			}
+			(void)fputs("; export ", fp);
+			(void)fwrite(*atenv, sizeof(char), eqp - *atenv - 1, fp);
 			(void)fputc('\n', fp);
 		}
 	}
@@ -321,11 +362,11 @@ writefile(const char *cwd, time_t runtimer, char queue)
 	 * commands the user supplies from stdin.
 	 */
 	(void)fputs("cd ", fp);
-	for (ap = cwd; *ap != '\0'; ap++) {
+	for (ap = cwdname(); *ap != '\0'; ap++) {
 		if (*ap == '\n')
 			fprintf(fp, "\"\n\"");
 		else {
-			if (*ap != '/' && !isalnum((unsigned char)*ap))
+			if (*ap != '/' && !isalnum(*ap))
 				(void)fputc('\\', fp);
 
 			(void)fputc(*ap, fp);
@@ -335,589 +376,230 @@ writefile(const char *cwd, time_t runtimer, char queue)
 	 * Test cd's exit status: die if the original directory has been
 	 * removed, become unreadable or whatever.
 	 */
-	(void)fprintf(fp, " || {\n\t echo 'Execution directory inaccessible'"
-	    " >&2\n\t exit 1\n}\n");
+	(void)fprintf(fp, " || {\n\t echo 'Execution directory inaccessible' >&2\n\t exit 1\n}\n");
 
 	if ((ch = getchar()) == EOF)
-		fatalx("unexpected EOF");
-
-	/* We want the job to run under the user's shell. */
-	fprintf(fp, "%s << '_END_OF_AT_JOB'\n", shell);
+		panic("Input error");
 
 	do {
 		(void)fputc(ch, fp);
 	} while ((ch = getchar()) != EOF);
 
-	(void)fprintf(fp, "\n_END_OF_AT_JOB\n");
-	(void)fflush(fp);
+	(void)fprintf(fp, "\n");
 	if (ferror(fp))
-		fatalx("write error");
+		panic("Output error");
 
 	if (ferror(stdin))
-		fatalx("read error");
+		panic("Input error");
+
+	(void)fclose(fp);
 
 	/*
 	 * Set the x bit so that we're ready to start executing
 	 */
-	if (fchmod(fileno(fp), S_IRUSR | S_IWUSR | S_IXUSR) < 0)
-		fatal("fchmod");
+	if (fchmod(fd2, S_IRUSR | S_IWUSR | S_IXUSR) < 0)
+		perr("Cannot give away file");
 
-	(void)fclose(fp);
-
-	/* Poke cron so it knows to reload the at spool. */
-	poke_daemon(RELOAD_AT);
-
-	runtime = *localtime(&runtimer);
-	strftime(timestr, TIMESIZE, "%a %b %e %T %Y", &runtime);
-	(void)fprintf(stderr, "commands will be executed using %s\n", shell);
-	(void)fprintf(stderr, "job %s at %s\n", &atfile[sizeof(_PATH_AT_SPOOL)],
-	    timestr);
-
-	syslog(LOG_INFO, "(%s) CREATE (%s)", user_name,
-	    &atfile[sizeof(_PATH_AT_SPOOL)]);
-}
-
-/* Sort by creation time. */
-static int
-byctime(const void *v1, const void *v2)
-{
-	const struct atjob *j1 = *(const struct atjob **)v1;
-	const struct atjob *j2 = *(const struct atjob **)v2;
-
-	return (j1->ctime - j2->ctime);
-}
-
-/* Sort by job number (and thus execution time). */
-static int
-byjobno(const void *v1, const void *v2)
-{
-	const struct atjob *j1 = *(struct atjob **)v1;
-	const struct atjob *j2 = *(struct atjob **)v2;
-
-	if (j1->runtimer == j2->runtimer)
-		return (j1->queue - j2->queue);
-	return (j1->runtimer - j2->runtimer);
+	(void)close(fd2);
+	(void)fprintf(stderr, "Job %d will be executed using /bin/sh\n", jobno);
 }
 
 static void
-print_job(struct atjob *job, int n, int shortformat)
+list_jobs()
 {
-	struct passwd *pw;
-	struct tm runtime;
-	char timestr[TIMESIZE];
-	static char *ranks[] = {
-		"th", "st", "nd", "rd", "th", "th", "th", "th", "th", "th"
-	};
-
-	runtime = *localtime(&job->runtimer);
-	if (shortformat) {
-		strftime(timestr, TIMESIZE, "%a %b %e %T %Y", &runtime);
-		(void)printf("%lld.%c\t%s\n", (long long)job->runtimer,
-		    job->queue, timestr);
-	} else {
-		pw = getpwuid(job->uid);
-		/* Rank hack shamelessly stolen from lpq */
-		if (n / 10 == 1)
-			printf("%3d%-5s", n,"th");
-		else
-			printf("%3d%-5s", n, ranks[n % 10]);
-		strftime(timestr, TIMESIZE, "%b %e, %Y %R", &runtime);
-		(void)printf("%-21.18s%-11.8s%10lld.%c   %c%s\n",
-		    timestr, pw ? pw->pw_name : "???",
-		    (long long)job->runtimer, job->queue, job->queue,
-		    (S_IXUSR & job->mode) ? "" : " (done)");
-	}
-}
-
-/*
- * List all of a user's jobs in the queue, by looping through
- * _PATH_AT_SPOOL, or all jobs if we are root.  If argc is > 0, argv
- * contains the list of users whose jobs shall be displayed. By
- * default, the list is sorted by execution date and queue.  If
- * csort is non-zero jobs will be sorted by creation/submission date.
- */
-static void
-list_jobs(int argc, char **argv, int count_only, int csort)
-{
-	struct passwd *pw;
-	struct dirent *dirent;
-	struct atjob **atjobs, **newatjobs, *job;
-	struct stat stbuf;
-	time_t runtimer;
-	char **jobs;
-	uid_t *uids;
-	char queue, *ep;
-	DIR *spool;
-	int job_matches, jobs_len, uids_len;
-	int dfd, i, shortformat;
-	size_t numjobs, maxjobs;
-
-	syslog(LOG_INFO, "(%s) LIST (%s)", user_name,
-	    user_uid ? user_name : "ALL");
-
-	/* Convert argv into a list of jobs and uids. */
-	jobs = NULL;
-	uids = NULL;
-	jobs_len = uids_len = 0;
-
-	if (argc) {
-		if ((jobs = reallocarray(NULL, argc, sizeof(char *))) == NULL ||
-		    (uids = reallocarray(NULL, argc, sizeof(uid_t))) == NULL)
-			fatal(NULL);
-
-		for (i = 0; i < argc; i++) {
-			if (strtot(argv[i], &ep, &runtimer) == 0 &&
-			    *ep == '.' && isalpha((unsigned char)*(ep + 1)) &&
-			    *(ep + 2) == '\0')
-				jobs[jobs_len++] = argv[i];
-			else if ((pw = getpwnam(argv[i])) != NULL) {
-				if (pw->pw_uid != user_uid && user_uid != 0)
-					fatalx("only the superuser may "
-					    "display other users' jobs");
-				uids[uids_len++] = pw->pw_uid;
-			} else
-				fatalx("unknown user %s", argv[i]);
-		}
-	}
-
-	shortformat = strcmp(__progname, "at") == 0;
-
-	if ((dfd = open(_PATH_AT_SPOOL, O_RDONLY|O_DIRECTORY)) == -1 ||
-	    (spool = fdopendir(dfd)) == NULL)
-		fatal(_PATH_AT_SPOOL);
-
-	if (fstat(dfd, &stbuf) != 0)
-		fatal(_PATH_AT_SPOOL);
-
 	/*
-	 * The directory's link count should give us a good idea
-	 * of how many files are in it.  Fudge things a little just
-	 * in case someone adds a job or two.
+	 * List all a user's jobs in the queue, by looping through
+	 * _PATH_ATJOBS, or everybody's if we are root
 	 */
-	numjobs = 0;
-	maxjobs = stbuf.st_nlink + 4;
-	atjobs = reallocarray(NULL, maxjobs, sizeof(struct atjob *));
-	if (atjobs == NULL)
-		fatal(NULL);
+	struct passwd *pw;
+	DIR *spool;
+	struct dirent *dirent;
+	struct stat buf;
+	struct tm runtime;
+	unsigned long ctm;
+	char queue;
+	int jobno;
+	time_t runtimer;
+	char timestr[TIMESIZE];
+	int first = 1;
 
-	/* Loop over every file in the directory. */
+	PRIV_START
+
+	if (chdir(_PATH_ATJOBS) != 0)
+		perr2("Cannot change to ", _PATH_ATJOBS);
+
+	if ((spool = opendir(".")) == NULL)
+		perr2("Cannot open ", _PATH_ATJOBS);
+
+	/* Loop over every file in the directory */
 	while ((dirent = readdir(spool)) != NULL) {
-		if (fstatat(dfd, dirent->d_name, &stbuf, AT_SYMLINK_NOFOLLOW) != 0)
-			fatal("%s", dirent->d_name);
+		if (stat(dirent->d_name, &buf) != 0)
+			perr2("Cannot stat in ", _PATH_ATJOBS);
 
 		/*
 		 * See it's a regular file and has its x bit turned on and
 		 * is the user's
 		 */
-		if (!S_ISREG(stbuf.st_mode)
-		    || ((stbuf.st_uid != user_uid) && !(user_uid == 0))
-		    || !(S_IXUSR & stbuf.st_mode || vflag))
+		if (!S_ISREG(buf.st_mode)
+		    || ((buf.st_uid != real_uid) && !(real_uid == 0))
+		    || !(S_IXUSR & buf.st_mode || atverify))
 			continue;
 
-		if (strtot(dirent->d_name, &ep, &runtimer) == -1)
+		if (sscanf(dirent->d_name, "%c%5x%8lx", &queue, &jobno, &ctm) != 3)
 			continue;
-		if (*ep != '.' || !isalpha((unsigned char)*(ep + 1)) ||
-		    *(ep + 2) != '\0')
-			continue;
-		queue = *(ep + 1);
 
 		if (atqueue && (queue != atqueue))
 			continue;
 
-		/* Check against specified jobs and/or user(s). */
-		job_matches = (argc == 0) ? 1 : 0;
-		if (!job_matches) {
-			for (i = 0; i < jobs_len; i++) {
-				if (strcmp(dirent->d_name, jobs[i]) == 0) {
-					job_matches = 1;
-					break;
-				}
-			}
+		runtimer = 60 * (time_t) ctm;
+		runtime = *localtime(&runtimer);
+		strftime(timestr, TIMESIZE, "%X %x", &runtime);
+		if (first) {
+			(void)printf("Date\t\t\tOwner\tQueue\tJob#\n");
+			first = 0;
 		}
-		if (!job_matches) {
-			for (i = 0; i < uids_len; i++) {
-				if (uids[i] == stbuf.st_uid) {
-					job_matches = 1;
-					break;
-				}
-			}
-		}
-		if (!job_matches)
-			continue;
+		pw = getpwuid(buf.st_uid);
 
-		if (count_only) {
-			numjobs++;
-			continue;
-		}
-
-		job = malloc(sizeof(struct atjob));
-		if (job == NULL)
-			fatal(NULL);
-		job->runtimer = runtimer;
-		job->ctime = stbuf.st_ctime;
-		job->uid = stbuf.st_uid;
-		job->mode = stbuf.st_mode;
-		job->queue = queue;
-		if (numjobs == maxjobs) {
-			size_t newjobs = maxjobs * 2;
-			newatjobs = reallocarray(atjobs, newjobs, sizeof(job));
-			if (newatjobs == NULL)
-				fatal(NULL);
-			atjobs = newatjobs;
-			maxjobs = newjobs;
-		}
-		atjobs[numjobs++] = job;
+		(void)printf("%s\t%s\t%c%s\t%d\n",
+		    timestr,
+		    pw ? pw->pw_name : "???",
+		    queue,
+		    (S_IXUSR & buf.st_mode) ? "" : "(done)",
+		    jobno);
 	}
-	free(uids);
-	closedir(spool);
-
-	if (count_only || numjobs == 0) {
-		if (numjobs == 0 && !shortformat)
-			warnx("no files in queue");
-		else if (count_only)
-			printf("%zu\n", numjobs);
-		free(atjobs);
-		return;
-	}
-
-	/* Sort by job run time or by job creation time. */
-	qsort(atjobs, numjobs, sizeof(struct atjob *),
-	    csort ? byctime : byjobno);
-
-	if (!shortformat)
-		(void)puts(" Rank     Execution Date     Owner          "
-		    "Job       Queue");
-
-	for (i = 0; i < numjobs; i++) {
-		print_job(atjobs[i], i + 1, shortformat);
-		free(atjobs[i]);
-	}
-	free(atjobs);
+	PRIV_END
 }
 
-static int
-rmok(long long job)
+static void
+process_jobs(argc, argv, what)
+	int argc;
+	char **argv;
+	int what;
 {
-	int ch, junk;
-
-	printf("%lld: remove it? ", job);
-	ch = getchar();
-	while ((junk = getchar()) != EOF && junk != '\n')
-		;
-	return (ch == 'y' || ch == 'Y');
-}
-
-/*
- * Loop through all jobs in _PATH_AT_SPOOL and display or delete ones
- * that match argv (may be job or username), or all if argc == 0.
- * Only the superuser may display/delete other people's jobs.
- */
-static int
-process_jobs(int argc, char **argv, int what)
-{
-	struct stat stbuf;
-	struct dirent *dirent;
-	struct passwd *pw;
-	time_t runtimer;
-	uid_t *uids;
-	char **jobs, *ep;
-	FILE *fp;
+	/* Delete every argument (job - ID) given */
+	int i;
+	struct stat buf;
 	DIR *spool;
-	int job_matches, jobs_len, uids_len;
-	int error, i, ch, changed, dfd;
+	struct dirent *dirent;
+	unsigned long ctm;
+	char queue;
+	int jobno;
 
-	if ((dfd = open(_PATH_AT_SPOOL, O_RDONLY|O_DIRECTORY)) == -1 ||
-	    (spool = fdopendir(dfd)) == NULL)
-		fatal(_PATH_AT_SPOOL);
+	PRIV_START
 
-	/* Convert argv into a list of jobs and uids. */
-	jobs = NULL;
-	uids = NULL;
-	jobs_len = uids_len = 0;
-	if (argc > 0) {
-		if ((jobs = reallocarray(NULL, argc, sizeof(char *))) == NULL ||
-		    (uids = reallocarray(NULL, argc, sizeof(uid_t))) == NULL)
-			fatal(NULL);
+	if (chdir(_PATH_ATJOBS) != 0)
+		perr2("Cannot change to ", _PATH_ATJOBS);
 
-		for (i = 0; i < argc; i++) {
-			if (strtot(argv[i], &ep, &runtimer) == 0 &&
-			    *ep == '.' && isalpha((unsigned char)*(ep + 1)) &&
-			    *(ep + 2) == '\0')
-				jobs[jobs_len++] = argv[i];
-			else if ((pw = getpwnam(argv[i])) != NULL) {
-				if (user_uid != pw->pw_uid && user_uid != 0) {
-					fatalx("only the superuser may %s "
-					    "other users' jobs",
-					    what == ATRM ? "remove" : "view");
-				}
-				uids[uids_len++] = pw->pw_uid;
-			} else
-				fatalx("unknown user %s", argv[i]);
-		}
-	}
+	if ((spool = opendir(".")) == NULL)
+		perr2("Cannot open ", _PATH_ATJOBS);
+
+	PRIV_END
 
 	/* Loop over every file in the directory */
-	changed = 0;
-	while ((dirent = readdir(spool)) != NULL) {
-		if (fstatat(dfd, dirent->d_name, &stbuf, AT_SYMLINK_NOFOLLOW) != 0)
-			fatal("%s", dirent->d_name);
+	while((dirent = readdir(spool)) != NULL) {
 
-		if (stbuf.st_uid != user_uid && user_uid != 0)
+		PRIV_START
+		if (stat(dirent->d_name, &buf) != 0)
+			perr2("Cannot stat in ", _PATH_ATJOBS);
+		PRIV_END
+
+		if (sscanf(dirent->d_name, "%c%5x%8lx", &queue, &jobno, &ctm) !=3)
 			continue;
 
-		if (strtot(dirent->d_name, &ep, &runtimer) == -1)
-			continue;
-		if (*ep != '.' || !isalpha((unsigned char)*(ep + 1)) ||
-		    *(ep + 2) != '\0')
-			continue;
+		for (i = optind; i < argc; i++) {
+			if (atoi(argv[i]) == jobno) {
+				if ((buf.st_uid != real_uid) && !(real_uid == 0))
+					errx(EXIT_FAILURE,
+					     "%s: Not owner\n", argv[i]);
+				switch (what) {
+				case ATRM:
+					PRIV_START
 
-		/* Check runtimer against argv; argc==0 means do all. */
-		job_matches = (argc == 0) ? 1 : 0;
-		if (!job_matches) {
-			for (i = 0; i < jobs_len; i++) {
-				if (jobs[i] != NULL &&
-				    strcmp(dirent->d_name, jobs[i]) == 0) {
-					jobs[i] = NULL;
-					job_matches = 1;
+					if (unlink(dirent->d_name) != 0)
+						perr(dirent->d_name);
+
+					PRIV_END
+
+					break;
+
+				case CAT:
+					{
+						FILE *fp;
+						int ch;
+
+						PRIV_START
+
+						fp = fopen(dirent->d_name, "r");
+
+						PRIV_END
+
+						if (!fp)
+							perr("Cannot open file");
+
+						while((ch = getc(fp)) != EOF)
+							putchar(ch);
+					}
+					break;
+
+				default:
+					errx(EXIT_FAILURE,
+					    "Internal error, process_jobs = %d",
+					    what);
 					break;
 				}
 			}
 		}
-		if (!job_matches) {
-			for (i = 0; i < uids_len; i++) {
-				if (uids[i] == stbuf.st_uid) {
-					job_matches = 1;
-					break;
-				}
-			}
-		}
-
-		if (job_matches) {
-			switch (what) {
-			case ATRM:
-				if (!interactive ||
-				    (interactive && rmok(runtimer))) {
-					if (unlinkat(dfd, dirent->d_name, 0) == 0) {
-						syslog(LOG_INFO,
-						    "(%s) DELETE (%s)",
-						    user_name, dirent->d_name);
-						changed = 1;
-					} else if (!force)
-						fatal("%s", dirent->d_name);
-					if (!force && !interactive)
-						warnx("%s removed",
-						    dirent->d_name);
-				}
-				break;
-
-			case CAT:
-				i = openat(dfd, dirent->d_name,
-				    O_RDONLY|O_NOFOLLOW);
-				if (i == -1 || (fp = fdopen(i, "r")) == NULL)
-					fatal("%s", dirent->d_name);
-				syslog(LOG_INFO, "(%s) CAT (%s)",
-				    user_name, dirent->d_name);
-
-				while ((ch = getc(fp)) != EOF)
-					putchar(ch);
-
-				fclose(fp);
-				break;
-
-			default:
-				fatalx("internal error");
-				break;
-			}
-		}
 	}
-	closedir(spool);
+}				/* delete_jobs */
 
-	for (error = 0, i = 0; i < jobs_len; i++) {
-		if (jobs[i] != NULL) {
-			if (!force)
-				warnx("%s: no such job", jobs[i]);
-			error++;
-		}
-	}
-	free(jobs);
-	free(uids);
-
-	/* If we modied the spool, poke cron so it knows to reload. */
-	if (changed)
-		poke_daemon(RELOAD_AT);
-
-	return (error);
-}
-
-#define	ATOI2(s)	((s) += 2, ((s)[-2] - '0') * 10 + ((s)[-1] - '0'))
-
-/*
- * Adapted from date(1)
- */
-static time_t
-ttime(char *arg)
-{
-	time_t now, then;
-	struct tm *lt;
-	int yearset;
-	char *dot, *p;
-
-	if (time(&now) == (time_t)-1 || (lt = localtime(&now)) == NULL)
-		fatal("unable to get current time");
-
-	/* Valid date format is [[CC]YY]MMDDhhmm[.SS] */
-	for (p = arg, dot = NULL; *p != '\0'; p++) {
-		if (*p == '.' && dot == NULL)
-			dot = p;
-		else if (!isdigit((unsigned char)*p))
-			goto terr;
-	}
-	if (dot == NULL)
-		lt->tm_sec = 0;
-	else {
-		*dot++ = '\0';
-		if (strlen(dot) != 2)
-			goto terr;
-		lt->tm_sec = ATOI2(dot);
-		if (lt->tm_sec > 61)	/* could be leap second */
-			goto terr;
-	}
-
-	yearset = 0;
-	switch(strlen(arg)) {
-	case 12:			/* CCYYMMDDhhmm */
-		lt->tm_year = ATOI2(arg) * 100;
-		lt->tm_year -= 1900;	/* Convert to Unix time */
-		yearset = 1;
-		/* FALLTHROUGH */
-	case 10:			/* YYMMDDhhmm */
-		if (yearset) {
-			yearset = ATOI2(arg);
-			lt->tm_year += yearset;
-		} else {
-			yearset = ATOI2(arg);
-			/* POSIX logic: [00,68]=>20xx, [69,99]=>19xx */
-			lt->tm_year = yearset;
-			if (yearset < 69)
-				lt->tm_year += 100;
-		}
-		/* FALLTHROUGH */
-	case 8:				/* MMDDhhmm */
-		lt->tm_mon = ATOI2(arg);
-		if (lt->tm_mon > 12 || lt->tm_mon == 0)
-			goto terr;
-		--lt->tm_mon;		/* Convert from 01-12 to 00-11 */
-		lt->tm_mday = ATOI2(arg);
-		if (lt->tm_mday > 31 || lt->tm_mday == 0)
-			goto terr;
-		lt->tm_hour = ATOI2(arg);
-		if (lt->tm_hour > 23)
-			goto terr;
-		lt->tm_min = ATOI2(arg);
-		if (lt->tm_min > 59)
-			goto terr;
-		break;
-	default:
-		goto terr;
-	}
-
-	lt->tm_isdst = -1;		/* mktime will deduce DST. */
-	then = mktime(lt);
-	if (then == (time_t)-1) {
-    terr:
-		fatalx("illegal time specification: [[CC]YY]MMDDhhmm[.SS]");
-	}
-	if (then < now)
-		fatalx("cannot schedule jobs in the past");
-	return (then);
-}
-
-static __dead void
-usage(void)
-{
-	/* Print usage and exit.  */
-	switch (program) {
-	case AT:
-	case CAT:
-		(void)fprintf(stderr,
-		    "usage: at [-bm] [-f file] [-l [job ...]] [-q queue] "
-		    "-t time_arg | timespec\n"
-		    "       at -c | -r job ...\n");
-		break;
-	case ATQ:
-		(void)fprintf(stderr,
-		    "usage: atq [-cnv] [-q queue] [name ...]\n");
-		break;
-	case ATRM:
-		(void)fprintf(stderr,
-		    "usage: atrm [-afi] [[job] [name] ...]\n");
-		break;
-	case BATCH:
-		(void)fprintf(stderr,
-		    "usage: batch [-m] [-f file] [-q queue] [timespec]\n");
-		break;
-	}
-	exit(EXIT_FAILURE);
-}
+/* Global functions */
 
 int
-main(int argc, char **argv)
+main(argc, argv)
+	int argc;
+	char **argv;
 {
-	time_t timer = -1;
-	char *atinput = NULL;			/* where to get input from */
+	int c;
 	char queue = DEFAULT_AT_QUEUE;
 	char queue_set = 0;
-	char *options = "q:f:t:bcdlmrv";	/* default options for at */
-	char cwd[PATH_MAX];
-	struct passwd *pw;
-	int ch;
-	int aflag = 0;
-	int cflag = 0;
-	int nflag = 0;
+	char *pgm;
 
-	if (pledge("stdio rpath wpath cpath fattr getpw unix id", NULL) == -1)
-		fatal("pledge");
+	enum {
+		ATQ, ATRM, AT, BATCH, CAT
+	};				/* what program we want to run */
+	int program = AT;		/* our default program */
+	char *options = "q:f:mvldbVc";	/* default options for at */
+	int disp_version = 0;
+	time_t timer;
 
-	openlog(__progname, LOG_PID, LOG_CRON);
+	RELINQUISH_PRIVS
 
-	if (argc < 1)
-		usage();
+	/* Eat any leading paths */
+	if ((pgm = strrchr(argv[0], '/')) == NULL)
+		pgm = argv[0];
+	else
+		pgm++;
 
-	user_uid = getuid();
-	user_gid = getgid();
-	spool_gid = getegid();
+	namep = pgm;
 
 	/* find out what this program is supposed to do */
-	if (strcmp(__progname, "atq") == 0) {
+	if (strcmp(pgm, "atq") == 0) {
 		program = ATQ;
-		options = "cnvq:";
-	} else if (strcmp(__progname, "atrm") == 0) {
+		options = "q:vV";
+	} else if (strcmp(pgm, "atrm") == 0) {
 		program = ATRM;
-		options = "afi";
-	} else if (strcmp(__progname, "batch") == 0) {
+		options = "V";
+	} else if (strcmp(pgm, "batch") == 0) {
 		program = BATCH;
-		options = "f:q:mv";
+		options = "f:q:mvV";
 	}
 
 	/* process whatever options we can process */
-	while ((ch = getopt(argc, argv, options)) != -1) {
-		switch (ch) {
-		case 'a':
-			aflag = 1;
-			break;
-
-		case 'i':
-			interactive = 1;
-			force = 0;
-			break;
-
-		case 'v':	/* show completed but unremoved jobs */
-			/*
-			 * This option is only useful when we are invoked
-			 * as atq but we accept (and ignore) this flag in
-			 * the other programs for backwards compatibility.
-			 */
-			vflag = 1;
+	opterr = 1;
+	while ((c = getopt(argc, argv, options)) != -1)
+		switch (c) {
+		case 'v':	/* verify time settings */
+			atverify = 1;
 			break;
 
 		case 'm':	/* send mail when job is complete */
@@ -925,11 +607,7 @@ main(int argc, char **argv)
 			break;
 
 		case 'f':
-			if (program == ATRM) {
-				force = 1;
-				interactive = 0;
-			} else
-				atinput = optarg;
+			atinput = optarg;
 			break;
 
 		case 'q':	/* specify queue */
@@ -937,124 +615,103 @@ main(int argc, char **argv)
 				usage();
 
 			atqueue = queue = *optarg;
-			if (!(islower((unsigned char)queue) ||
-			    isupper((unsigned char)queue)))
+			if (!(islower(queue) || isupper(queue)))
 				usage();
 
 			queue_set = 1;
 			break;
 
-		case 'd':		/* for backwards compatibility */
-		case 'r':
-			program = ATRM;
-			options = "";
-			break;
+		case 'd':
+			if (program != AT)
+				usage();
 
-		case 't':
-			timer = ttime(optarg);
+			program = ATRM;
+			options = "V";
 			break;
 
 		case 'l':
+			if (program != AT)
+				usage();
+
 			program = ATQ;
-			options = "cnvq:";
+			options = "q:vV";
 			break;
 
 		case 'b':
+			if (program != AT)
+				usage();
+
 			program = BATCH;
-			options = "f:q:mv";
+			options = "f:q:mvV";
+			break;
+
+		case 'V':
+			disp_version = 1;
 			break;
 
 		case 'c':
-			if (program == ATQ) {
-				cflag = 1;
-			} else {
-				program = CAT;
-				options = "";
-			}
-			break;
-
-		case 'n':
-			nflag = 1;
+			program = CAT;
+			options = "";
 			break;
 
 		default:
 			usage();
 			break;
 		}
-	}
-	argc -= optind;
-	argv += optind;
+	/* end of options eating */
 
-	switch (program) {
-	case AT:
-	case BATCH:
-		if (atinput != NULL) {
-			if (setegid(user_gid) != 0)
-				fatal("setegid(user_gid)");
-			if (freopen(atinput, "r", stdin) == NULL)
-				fatal("%s", atinput);
-			if (setegid(spool_gid) != 0)
-				fatal("setegid(spool_gid)");
-		}
-		break;
-	default:
-		;
-	}
+	if (disp_version)
+		(void)fprintf(stderr, "%s version %.1f\n", namep, AT_VERSION);
 
-	if ((pw = getpwuid(user_uid)) == NULL)
-	    fatalx("unknown uid %u", user_uid);
-	if (strlcpy(user_name, pw->pw_name, sizeof(user_name)) >= sizeof(user_name))
-	    fatalx("username too long");
-
-	if (getcwd(cwd, sizeof(cwd)) == NULL)
-		fatal("unable to get current working directory");
-
-	if (!allowed(pw->pw_name, _PATH_AT_ALLOW, _PATH_AT_DENY)) {
-		syslog(LOG_WARNING, "(%s) AUTH (at command not allowed)",
-		    pw->pw_name);
-		fatalx("you do not have permission to use at.");
-	}
+	if (!check_permission())
+		errx(EXIT_FAILURE, "You do not have permission to use %s.",
+		     namep);
 
 	/* select our program */
 	switch (program) {
 	case ATQ:
-		list_jobs(argc, argv, nflag, cflag);
+		if (optind != argc)
+			usage();
+		list_jobs();
 		break;
 
 	case ATRM:
 	case CAT:
-		if ((aflag && argc) || (!aflag && !argc))
+		if (optind == argc)
 			usage();
-		exit(process_jobs(argc, argv, program));
+		process_jobs(argc, argv, program);
 		break;
 
 	case AT:
-		/* Time may have been specified via the -t flag. */
-		if (timer == -1) {
-			if (argc == 0)
-				usage();
-			else if ((timer = parsetime(argc, argv)) == -1)
-				exit(EXIT_FAILURE);
+		timer = parsetime(argc, argv);
+		if (atverify) {
+			struct tm *tm = localtime(&timer);
+			(void)fprintf(stderr, "%s\n", asctime(tm));
 		}
-		writefile(cwd, timer, queue);
+		writefile(timer, queue);
 		break;
 
 	case BATCH:
 		if (queue_set)
-			queue = toupper((unsigned char)queue);
+			queue = toupper(queue);
 		else
 			queue = DEFAULT_BATCH_QUEUE;
 
-		if (argc == 0)
+		if (argc > optind)
+			timer = parsetime(argc, argv);
+		else
 			timer = time(NULL);
-		else if ((timer = parsetime(argc, argv)) == -1)
-			exit(EXIT_FAILURE);
 
-		writefile(cwd, timer, queue);
+		if (atverify) {
+			struct tm *tm = localtime(&timer);
+			(void)fprintf(stderr, "%s\n", asctime(tm));
+		}
+
+		writefile(timer, queue);
 		break;
 
 	default:
-		fatalx("internal error");
+		panic("Internal error");
 		break;
 	}
 	exit(EXIT_SUCCESS);

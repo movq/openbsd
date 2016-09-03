@@ -1,23 +1,12 @@
-/*	$OpenBSD: misc.c,v 1.21 2016/01/10 13:35:10 mestre Exp $	*/
+/*	$OpenBSD: misc.c,v 1.5 1998/11/29 19:56:58 pjanzen Exp $	*/
 /*	$NetBSD: misc.c,v 1.2 1995/03/24 03:59:03 cgd Exp $	*/
 
 /*
  * misc.c  Phantasia miscellaneous support routines
  */
 
-#include <curses.h>
-#include <err.h>
-#include <math.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
+#include "include.h"
 
-#include "macros.h"
-#include "pathnames.h"
-#include "phantdefs.h"
-#include "phantglobs.h"
 
 /************************************************************************
 /
@@ -47,7 +36,7 @@
 *************************************************************************/
 
 void
-movelevel(void)
+movelevel()
 {
 	struct charstats *statptr;	/* for pointing into Stattable */
 	double  new;		/* new level */
@@ -113,7 +102,7 @@ movelevel(void)
 /
 / RETURN VALUE: pointer to string containing result
 /
-/ MODULES CALLED: fabs(), floor(), snprintf(), distance()
+/ MODULES CALLED: fabs(), floor(), sprintf(), distance()
 /
 / GLOBAL INPUTS: Databuf[]
 /
@@ -125,8 +114,10 @@ movelevel(void)
 /
 *************************************************************************/
 
-char *
-descrlocation(struct player *playerp, bool shortflag)
+char   *
+descrlocation(playerp, shortflag)
+	struct player *playerp;
+	bool    shortflag;
 {
 	double  circle;		/* corresponding circle for coordinates */
 	int     quadrant;	/* quandrant of grid */
@@ -169,10 +160,9 @@ descrlocation(struct player *playerp, bool shortflag)
 	}
 
 	if (shortflag)
-		snprintf(Databuf, sizeof Databuf, "%.29s", label);
+		sprintf(Databuf, "%.29s", label);
 	else
-		snprintf(Databuf, sizeof Databuf,
-			" is in %s  (%.0f,%.0f)", label, playerp->p_x, playerp->p_y);
+		sprintf(Databuf, " is in %s  (%.0f,%.0f)", label, playerp->p_x, playerp->p_y);
 
 	return (Databuf);
 }
@@ -223,7 +213,7 @@ descrlocation(struct player *playerp, bool shortflag)
 *************************************************************************/
 
 void
-tradingpost(void)
+tradingpost()
 {
 	double  numitems;	/* number of items to purchase */
 	double  cost;		/* cost of purchase */
@@ -494,7 +484,7 @@ tradingpost(void)
 *************************************************************************/
 
 void
-displaystats(void)
+displaystats()
 {
 	mvprintw(0, 0, "%s%s\n", Player.p_name, descrlocation(&Player, FALSE));
 	mvprintw(1, 0, "Level :%7.0f   Energy  :%9.0f(%9.0f)  Mana :%9.0f  Users:%3d\n",
@@ -529,7 +519,7 @@ displaystats(void)
 *************************************************************************/
 
 void
-allstatslist(void)
+allstatslist()
 {
 	static char *flags[] =	/* to print value of some bools */
 	{
@@ -575,7 +565,7 @@ allstatslist(void)
 /
 / RETURN VALUE: pointer to string describing player type
 /
-/ MODULES CALLED: strlcpy()
+/ MODULES CALLED: strcpy()
 /
 / GLOBAL INPUTS: Databuf[]
 /
@@ -583,15 +573,17 @@ allstatslist(void)
 /
 / DESCRIPTION:
 /	Return a string describing the player type.
-/	King, council, valar, supersedes other types.
+/	King, council, valar, supercedes other types.
 /	The first character of the string is '*' if the player
 /	has a crown.
 /	If 'shortflag' is TRUE, return a 3 character string.
 /
 *************************************************************************/
 
-char *
-descrtype(struct player *playerp, bool shortflag)
+char   *
+descrtype(playerp, shortflag)
+	struct player *playerp;
+	bool    shortflag;
 {
 	int     type;		/* for caluculating result subscript */
 	static char *results[] =/* description table */
@@ -645,7 +637,7 @@ descrtype(struct player *playerp, bool shortflag)
 		++type;
 
 	if (playerp->p_crowns > 0) {
-		strlcpy(Databuf, results[type], sizeof Databuf);
+		strcpy(Databuf, results[type]);
 		Databuf[0] = '*';
 		return (Databuf);
 	} else
@@ -679,12 +671,14 @@ descrtype(struct player *playerp, bool shortflag)
 *************************************************************************/
 
 long
-findname(char *name, struct player *playerp)
+findname(name, playerp)
+	char   *name;
+	struct player *playerp;
 {
 	long    loc = 0;	/* location in the file */
 
-	fseek(Playersfp, 0L, SEEK_SET);
-	while (fread(playerp, SZ_PLAYERSTRUCT, 1, Playersfp) == 1) {
+	fseek(Playersfp, 0L, 0);
+	while (fread((char *) playerp, SZ_PLAYERSTRUCT, 1, Playersfp) == 1) {
 		if (strcmp(playerp->p_name, name) == 0) {
 			if (playerp->p_status != S_NOTUSED || Wizard)
 				/* found it */
@@ -721,12 +715,12 @@ findname(char *name, struct player *playerp)
 *************************************************************************/
 
 long
-allocrecord(void)
+allocrecord()
 {
 	long    loc = 0L;	/* location in file */
 
-	fseek(Playersfp, 0L, SEEK_SET);
-	while (fread(&Other, SZ_PLAYERSTRUCT, 1, Playersfp) == 1) {
+	fseek(Playersfp, 0L, 0);
+	while (fread((char *) &Other, SZ_PLAYERSTRUCT, 1, Playersfp) == 1) {
 		if (Other.p_status == S_NOTUSED)
 			/* found an empty record */
 			return (loc);
@@ -768,7 +762,9 @@ allocrecord(void)
 *************************************************************************/
 
 void
-freerecord(struct player *playerp, long loc)
+freerecord(playerp, loc)
+	struct player *playerp;
+	long    loc;
 {
 	playerp->p_name[0] = CH_MARKDELETE;
 	playerp->p_status = S_NOTUSED;
@@ -800,7 +796,7 @@ freerecord(struct player *playerp, long loc)
 *************************************************************************/
 
 void
-leavegame(void)
+leavegame()
 {
 
 	if (Player.p_level < 1.0)
@@ -812,6 +808,7 @@ leavegame(void)
 	}
 
 	cleanup(TRUE);
+	/* NOTREACHED */
 }
 /**/
 /************************************************************************
@@ -829,7 +826,7 @@ leavegame(void)
 /
 / MODULES CALLED: freerecord(), enterscore(), more(), exit(), fread(), 
 /	fseek(), execl(), fopen(), floor(), wmove(), drandom(), wclear(), strcmp(), 
-/	fwrite(), fflush(), printw(), strlcpy(), fclose(), waddstr(), cleanup(), 
+/	fwrite(), fflush(), printw(), strcpy(), fclose(), waddstr(), cleanup(), 
 /	fprintf(), wrefresh(), getanswer(), descrtype()
 /
 / GLOBAL INPUTS: Curmonster, Wizard, Player, *stdscr, Fileloc, *Monstfp
@@ -846,7 +843,8 @@ leavegame(void)
 *************************************************************************/
 
 void
-death(char *how)
+death(how)
+	char   *how;
 {
 	FILE   *fp;		/* for updating various files */
 	int     ch;		/* input */
@@ -900,12 +898,11 @@ death(char *how)
 		{
 			mvaddstr(4, 0,
 			    "Your ring has taken control of you and turned you into a monster!\n");
-			fseek(Monstfp, 13L * SZ_MONSTERSTRUCT, SEEK_SET);
-			fread(&Curmonster, SZ_MONSTERSTRUCT, 1, Monstfp);
-			strlcpy(Curmonster.m_name, Player.p_name,
-			    sizeof Curmonster.m_name);
-			fseek(Monstfp, 13L * SZ_MONSTERSTRUCT, SEEK_SET);
-			fwrite(&Curmonster, SZ_MONSTERSTRUCT, 1, Monstfp);
+			fseek(Monstfp, 13L * SZ_MONSTERSTRUCT, 0);
+			fread((char *) &Curmonster, SZ_MONSTERSTRUCT, 1, Monstfp);
+			strcpy(Curmonster.m_name, Player.p_name);
+			fseek(Monstfp, 13L * SZ_MONSTERSTRUCT, 0);
+			fwrite((char *) &Curmonster, SZ_MONSTERSTRUCT, 1, Monstfp);
 			fflush(Monstfp);
 		}
 	}
@@ -934,10 +931,12 @@ death(char *how)
 	if (ch == 'Y') {
 		cleanup(FALSE);
 		execl(_PATH_GAMEPROG, "phantasia", "-s",
-		    (Wizard ? "-S" : (char *)NULL), (char *)NULL);
+		    (Wizard ? "-S" : (char *) NULL), 0);
 		exit(0);
+		/* NOTREACHED */
 	}
 	cleanup(TRUE);
+	/* NOTREACHED */
 }
 /**/
 /************************************************************************
@@ -966,10 +965,12 @@ death(char *how)
 *************************************************************************/
 
 void
-writerecord(struct player *playerp, long place)
+writerecord(playerp, place)
+	struct player *playerp;
+	long    place;
 {
-	fseek(Playersfp, place, SEEK_SET);
-	fwrite(playerp, SZ_PLAYERSTRUCT, 1, Playersfp);
+	fseek(Playersfp, place, 0);
+	fwrite((char *) playerp, SZ_PLAYERSTRUCT, 1, Playersfp);
 	fflush(Playersfp);
 }
 /**/
@@ -999,7 +1000,8 @@ writerecord(struct player *playerp, long place)
 *************************************************************************/
 
 double
-explevel(double experience)
+explevel(experience)
+	double  experience;
 {
 	if (experience < 1.1e7)
 		return (floor(pow((experience / 1000.0), 0.4875)));
@@ -1032,7 +1034,8 @@ explevel(double experience)
 *************************************************************************/
 
 void
-truncstring(char *string)
+truncstring(string)
+	char   *string;
 {
 	int     length;		/* length of string */
 
@@ -1069,7 +1072,10 @@ truncstring(char *string)
 *************************************************************************/
 
 void
-altercoordinates(double xnew, double ynew, int operation)
+altercoordinates(xnew, ynew, operation)
+	double  xnew;
+	double  ynew;
+	int     operation;
 {
 	switch (operation) {
 	case A_FORCED:		/* move with no checks */
@@ -1142,10 +1148,12 @@ altercoordinates(double xnew, double ynew, int operation)
 *************************************************************************/
 
 void
-readrecord(struct player *playerp, long loc)
+readrecord(playerp, loc)
+	struct player *playerp;
+	long    loc;
 {
-	fseek(Playersfp, loc, SEEK_SET);
-	fread(playerp, SZ_PLAYERSTRUCT, 1, Playersfp);
+	fseek(Playersfp, loc, 0);
+	fread((char *) playerp, SZ_PLAYERSTRUCT, 1, Playersfp);
 }
 /**/
 /************************************************************************
@@ -1172,7 +1180,7 @@ readrecord(struct player *playerp, long loc)
 *************************************************************************/
 
 void
-adjuststats(void)
+adjuststats()
 {
 	double  dtemp;		/* for temporary calculations */
 
@@ -1189,7 +1197,7 @@ adjuststats(void)
 
 	/* calculate effective quickness */
 	dtemp = ((Player.p_gold + Player.p_gems / 2.0) - 1000.0) / Statptr->c_goldtote
-	    - Player.p_level;
+	    - Player.p_level;;
 	dtemp = MAX(0.0, dtemp);/* gold slows player down */
 	Player.p_speed = Player.p_quickness + Player.p_quksilver - dtemp;
 
@@ -1287,7 +1295,8 @@ adjuststats(void)
 *************************************************************************/
 
 void
-initplayer(struct player *playerp)
+initplayer(playerp)
+	struct player *playerp;
 {
 	playerp->p_experience =
 	    playerp->p_level =
@@ -1369,11 +1378,11 @@ initplayer(struct player *playerp)
 *************************************************************************/
 
 void
-readmessage(void)
+readmessage()
 {
 	move(3, 0);
 	clrtoeol();
-	fseek(Messagefp, 0L, SEEK_SET);
+	fseek(Messagefp, 0L, 0);
 	if (fgets(Databuf, SZ_DATABUF, Messagefp) != NULL)
 		addstr(Databuf);
 }
@@ -1382,7 +1391,7 @@ readmessage(void)
 /
 / FUNCTION NAME: error()
 /
-/ FUNCTION: process environment error
+/ FUNCTION: process evironment error
 /
 / AUTHOR: E. A. Estes, 12/4/85
 /
@@ -1402,17 +1411,19 @@ readmessage(void)
 /
 *************************************************************************/
 
-__dead void
-error(char *whichfile)
+void
+error(whichfile)
+	char	*whichfile;
 {
 
 	if (Windows)
 		clear();
 	cleanup(FALSE);
 
-	warn("%s", whichfile);
-	fprintf(stderr, "Please run 'setup' to determine the problem.\n");
+	printf("An unrecoverable error has occurred reading %s.  (errno = %d)\n", whichfile, errno);
+	printf("Please run 'setup' to determine the problem.\n");
 	exit(1);
+	/* NOTREACHED */
 }
 /**/
 /************************************************************************
@@ -1442,7 +1453,8 @@ error(char *whichfile)
 *************************************************************************/
 
 double
-distance(double x1, double x2, double y1, double y2)
+distance(x1, x2, y1, y2)
+	double  x1, x2, y1, y2;
 {
 	double  deltax, deltay;
 
@@ -1450,6 +1462,42 @@ distance(double x1, double x2, double y1, double y2)
 	deltay = y1 - y2;
 	return (sqrt(deltax * deltax + deltay * deltay));
 }
+/**/
+/************************************************************************
+/
+/ FUNCTION NAME: ill_sig()
+/
+/ FUNCTION: exit upon trapping an illegal signal
+/
+/ AUTHOR: E. A. Estes, 12/4/85
+/
+/ ARGUMENTS:
+/	int whichsig - signal which occured to cause jump to here
+/
+/ RETURN VALUE: none
+/
+/ MODULES CALLED: wclear(), printw(), cleanup()
+/
+/ GLOBAL INPUTS: *stdscr
+/
+/ GLOBAL OUTPUTS: none
+/
+/ DESCRIPTION:
+/	When an illegal signal is caught, print a message, and cleanup.
+/
+*************************************************************************/
+
+void
+ill_sig(whichsig)
+	int     whichsig;
+{
+	clear();
+	if (!(whichsig == SIGINT || whichsig == SIGQUIT))
+		printw("Error: caught signal # %d.\n", whichsig);
+	cleanup(TRUE);
+	/* NOTREACHED */
+}
+/**/
 /************************************************************************
 /
 / FUNCTION NAME: descrstatus()
@@ -1476,7 +1524,8 @@ distance(double x1, double x2, double y1, double y2)
 *************************************************************************/
 
 char *
-descrstatus(struct player *playerp)
+descrstatus(playerp)
+	struct player *playerp;
 {
 	switch (playerp->p_status) {
 	case S_PLAYING:
@@ -1522,7 +1571,7 @@ descrstatus(struct player *playerp)
 /
 / RETURN VALUE: none
 /
-/ MODULES CALLED: arc4random()
+/ MODULES CALLED: random()
 /
 / GLOBAL INPUTS: none
 /
@@ -1531,13 +1580,19 @@ descrstatus(struct player *playerp)
 / DESCRIPTION:
 /	Convert random integer from library routine into a floating
 /	point number, and divide by the largest possible random number.
+/	We mask large integers with 32767 to handle sites that return
+/	31 bit random integers.
 /
 *************************************************************************/
 
 double
-drandom(void)
+drandom()
 {
-	return ((double) arc4random() / (UINT32_MAX + 1.0));
+	if (sizeof(int) != 2)
+		/* use only low bits */
+		return ((double) (random() & 0x7fff) / 32768.0);
+	else
+		return ((double) random() / 32768.0);
 }
 /**/
 /************************************************************************
@@ -1569,7 +1624,9 @@ drandom(void)
 *************************************************************************/
 
 void
-collecttaxes(double gold, double gems)
+collecttaxes(gold, gems)
+	double  gold;
+	double  gems;
 {
 	FILE   *fp;		/* to update Goldfile */
 	double  dtemp;		/* for temporary calculations */
@@ -1608,10 +1665,10 @@ collecttaxes(double gold, double gems)
 		/* update taxes */
 	{
 		dtemp = 0.0;
-		fread(&dtemp, sizeof(double), 1, fp);
+		fread((char *) &dtemp, sizeof(double), 1, fp);
 		dtemp += floor(taxes);
-		fseek(fp, 0L, SEEK_SET);
-		fwrite(&dtemp, sizeof(double), 1, fp);
+		fseek(fp, 0L, 0);
+		fwrite((char *) &dtemp, sizeof(double), 1, fp);
 		fclose(fp);
 	}
 }

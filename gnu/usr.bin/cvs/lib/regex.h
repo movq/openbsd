@@ -1,7 +1,7 @@
 /* Definitions for data structures and routines for the regular
    expression library, version 0.12.
 
-   Copyright (C) 1985, 89, 90, 91, 92, 93, 95 Free Software Foundation, Inc.
+   Copyright (C) 1985, 1989, 1990, 1991, 1992, 1993 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -11,12 +11,7 @@
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
-
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307,
-   USA.  */
+   GNU General Public License for more details.  */
 
 #ifndef __REGEXP_LIBRARY_H__
 #define __REGEXP_LIBRARY_H__
@@ -24,7 +19,7 @@
 /* POSIX says that <sys/types.h> must be included (by the caller) before
    <regex.h>.  */
 
-#if !defined (_POSIX_C_SOURCE) && !defined (_POSIX_SOURCE) && defined (VMS)
+#ifdef VMS
 /* VMS doesn't have `size_t' in <sys/types.h>, even though POSIX says it
    should be there.  */
 #include <stddef.h>
@@ -131,22 +126,11 @@ typedef unsigned reg_syntax_t;
    If not set, then an unmatched ) is invalid.  */
 #define RE_UNMATCHED_RIGHT_PAREN_ORD (RE_NO_EMPTY_RANGES << 1)
 
-/* If this bit is set, succeed as soon as we match the whole pattern,
-   without further backtracking.  */
-#define RE_NO_POSIX_BACKTRACKING (RE_UNMATCHED_RIGHT_PAREN_ORD << 1)
-
 /* This global variable defines the particular regexp syntax to use (for
    some interfaces).  When a regexp is compiled, the syntax used is
    stored in the pattern buffer, so changing this does not affect
    already-compiled regexps.  */
 extern reg_syntax_t re_syntax_options;
-
-#ifdef emacs
-/* In Emacs, this is the string or buffer in which we
-   are matching.  It is used for looking up syntax properties.  */
-extern Lisp_Object re_match_object;
-#endif
-
 
 /* Define combinations of the above bits for the standard possibilities.
    (The [[[ comments delimit what gets put into the Texinfo file, so
@@ -287,12 +271,6 @@ typedef enum
    compiled, the `re_nsub' field is available.  All other fields are
    private to the regex routines.  */
 
-#ifndef RE_TRANSLATE_TYPE 
-#define RE_TRANSLATE_TYPE char *
-#define RE_TRANSLATE(TBL, C) ((TBL)[C])
-#define RE_TRANSLATE_P(TBL) (TBL)
-#endif
-
 struct re_pattern_buffer
 {
 /* [[[begin pattern_buffer]]] */
@@ -319,7 +297,7 @@ struct re_pattern_buffer
            comparing them, or zero for no translation.  The translation
            is applied to a pattern when it is compiled and to a string
            when it is matched.  */
-  RE_TRANSLATE_TYPE translate;
+  char *translate;
 
 	/* Number of subexpressions found by the compiler.  */
   size_t re_nsub;
@@ -358,14 +336,15 @@ struct re_pattern_buffer
         /* If true, an anchor at a newline matches.  */
   unsigned newline_anchor : 1;
 
-  /* If true, multi-byte form in the `buffer' should be recognized as a
-     multibyte character. */
-  unsigned multibyte : 1;
-
 /* [[[end pattern_buffer]]] */
 };
 
 typedef struct re_pattern_buffer regex_t;
+
+
+/* search.c (search_buffer) in Emacs needs this one opcode value.  It is
+   defined both in `regex.c' and here.  */
+#define RE_EXACTN_VALUE 1
 
 /* Type for byte offsets within the string.  POSIX mandates this.  */
 typedef int regoff_t;
@@ -482,12 +461,11 @@ extern void re_set_registers
   _RE_ARGS ((struct re_pattern_buffer *buffer, struct re_registers *regs,
              unsigned num_regs, regoff_t *starts, regoff_t *ends));
 
-#ifdef _REGEX_RE_COMP
-/* 4.2 bsd compatibility.  */
-/* CVS: don't use prototypes: they may conflict with system headers.  */
-extern char *re_comp _RE_ARGS (());
-extern int re_exec _RE_ARGS (());
-#endif
+/* 4.2 bsd compatibility.  System headers may declare the argument as
+   either "char *" (e.g. Cray unistd.h) or "const char *" (e.g. linux
+   regex.h), so don't prototype them here.  */
+extern char *re_comp ();
+extern int re_exec ();
 
 /* POSIX compatibility.  */
 extern int regcomp _RE_ARGS ((regex_t *preg, const char *pattern, int cflags));

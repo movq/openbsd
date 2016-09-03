@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_sm_isa.c,v 1.14 2015/11/24 17:11:39 mpi Exp $	*/
+/*	$OpenBSD: if_sm_isa.c,v 1.1 1998/09/26 19:09:15 fgsch Exp $	*/
 /*	$NetBSD: if_sm_isa.c,v 1.4 1998/07/05 06:49:14 jonathan Exp $	*/
 
 /*-
@@ -17,6 +17,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the NetBSD
+ *	Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -40,33 +47,48 @@
 #include <sys/ioctl.h>
 #include <sys/errno.h>
 #include <sys/syslog.h>
-#include <sys/selinfo.h>
-#include <sys/timeout.h>
+#include <sys/select.h>
 #include <sys/device.h>
 
 #include <net/if.h>
+#include <net/if_dl.h>
+#ifdef __NetBSD__
+#include <net/if_ether.h>
+#endif
 #include <net/if_media.h>
 
+#ifdef INET
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
+#include <netinet/in_var.h>
+#include <netinet/ip.h>
+#ifdef __NetBSD__
+#include <netinet/if_inarp.h>
+#else
 #include <netinet/if_ether.h>
+#endif
+#endif
+
+#ifdef NS
+#include <netns/ns.h>
+#include <netns/ns_if.h>
+#endif
 
 #if NBPFILTER > 0
 #include <net/bpf.h>
+#include <net/bpfdesc.h>
 #endif
 
 #include <machine/intr.h>
 #include <machine/bus.h>
-
-#include <dev/mii/mii.h>
-#include <dev/mii/miivar.h>
 
 #include <dev/ic/smc91cxxreg.h>
 #include <dev/ic/smc91cxxvar.h>
 
 #include <dev/isa/isavar.h>
 
-int	sm_isa_match(struct device *, void *, void *);
-void	sm_isa_attach(struct device *, struct device *, void *);
+int	sm_isa_match __P((struct device *, void *, void *));
+void	sm_isa_attach __P((struct device *, struct device *, void *));
 
 struct sm_isa_softc {
 	struct	smc91cxx_softc sc_smc;		/* real "smc" softc */
@@ -169,7 +191,7 @@ sm_isa_attach(parent, self, aux)
 
 	/* XXX Should get Ethernet address from EEPROM!! */
 
-	/* Perform generic initialization. */
+	/* Perform generic intialization. */
 	smc91cxx_attach(sc, NULL);
 
 	/* Establish the interrupt handler. */

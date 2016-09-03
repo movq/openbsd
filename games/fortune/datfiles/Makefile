@@ -1,10 +1,10 @@
-#	$OpenBSD: Makefile,v 1.7 2016/09/02 11:55:24 tb Exp $
+#	$OpenBSD: Makefile,v 1.5 1997/04/27 20:55:43 millert Exp $
 #	$NetBSD: Makefile,v 1.15 1996/02/29 00:21:16 jtc Exp $
 #	@(#)Makefile	8.2 (Berkeley) 4/19/94
 
-SRCS=	fortunes fortunes2 startrek zippy recipes
+SRCS=	fortunes fortunes2 startrek zippy
 BLDS=	fortunes.dat fortunes2.dat startrek.dat zippy.dat \
-	fortunes-o fortunes-o.dat recipes.dat
+	fortunes-o fortunes-o.dat
 
 # TO INSTALL THE POTENTIALLY OFFENSIVE FORTUNES, UNCOMMENT THE THREE
 # LINES AND COMMENT OUT THE FOURTH LINE.
@@ -31,11 +31,11 @@ install: ${SRCS} ${BLDS}
 	${INSTALL} ${INSTALL_COPY} -o ${BINOWN} -g ${BINGRP} -m 444 ${BLDS} \
 	    ${DESTDIR}/usr/share/games/fortune
 
-fortunes.dat fortunes2.dat fortunes2-o.dat limerick.dat startrek.dat zippy.dat recipes.dat:
-	${STRFILE} -s ${.CURDIR}/${.TARGET:R} ${.TARGET}
+fortunes.dat fortunes2.dat fortunes2-o.dat limerick.dat startrek.dat zippy.dat:
+	${STRFILE} -rs ${.CURDIR}/${.TARGET:R} ${.TARGET}
 
 fortunes-o.dat: fortunes-o
-	${STRFILE} -sx fortunes-o ${.TARGET}
+	${STRFILE} -rsx fortunes-o ${.TARGET}
 
 fortunes-o: fortunes-o.${TYPE}
 	tr [a-zA-Z] [n-za-mN-ZA-M] < ${.ALLSRC} > ${.TARGET}

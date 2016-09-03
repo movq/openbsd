@@ -1,5 +1,5 @@
 /* bfd back-end for we32k support
-   Copyright 1992, 2000, 2002 Free Software Foundation, Inc.
+   Copyright (C) 1992 Free Software Foundation, Inc.
    Contributed by Brendan Kehoe (brendan@cs.widener.edu).
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -32,8 +32,8 @@ const bfd_arch_info_type bfd_we32k_arch =
     "we32k",
     "we32k:32000",
     3,
-    TRUE, /* the one and only */
-    bfd_default_compatible,
+    true, /* the one and only */
+    bfd_default_compatible, 
     bfd_default_scan ,
     0,
   };

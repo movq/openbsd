@@ -5,45 +5,28 @@
  * Configuration file parser for mrouted.
  *
  * Written by Bill Fenner, NRL, 1994
- * Copyright (c) 1994
- * Naval Research Laboratory (NRL/CCS)
- *                    and the
- * Defense Advanced Research Projects Agency (DARPA)
- *
- * All Rights Reserved.
- *
- * Permission to use, copy, modify and distribute this software and its
- * documentation is hereby granted, provided that both the copyright notice and
- * this permission notice appear in all copies of the software, derivative
- * works or modified versions, and any portions thereof, and that both notices
- * appear in supporting documentation.
- *
- * NRL AND DARPA ALLOW FREE USE OF THIS SOFTWARE IN ITS "AS IS" CONDITION AND
- * DISCLAIM ANY LIABILITY OF ANY KIND FOR ANY DAMAGES WHATSOEVER RESULTING FROM
- * THE USE OF THIS SOFTWARE.
  */
 #include <stdio.h>
-#include <string.h>
+#ifdef __STDC__
 #include <stdarg.h>
+#else
+#include <string.h>
+#include <varargs.h>
+#endif
 #include "defs.h"
 #include <netdb.h>
-#include <ifaddrs.h>
 
 /*
  * Local function declarations
  */
-static void		fatal(const char *fmt, ...)
-    __attribute__((__format__ (printf, 1, 2)))
-    __attribute__((__nonnull__ (1)));
-static void		warn(const char *fmt, ...)
-    __attribute__((__format__ (printf, 1, 2)))
-    __attribute__((__nonnull__ (1)));
-static void		yyerror(char *s);
-static char *		next_word(void);
-static int		yylex(void);
-static u_int32_t	valid_if(char *s);
-static const char *	ifconfaddr(u_int32_t a);
-int			yyparse(void);
+static void		fatal __P((char *fmt, ...));
+static void		warn __P((char *fmt, ...));
+static void		yyerror __P((char *s));
+static char *		next_word __P((void));
+static int		yylex __P((void));
+static u_int32_t	valid_if __P((char *s));
+static struct ifreq *	ifconfaddr __P((struct ifconf *ifcp, u_int32_t a));
+int			yyparse __P((void));
 
 static FILE *f;
 
@@ -54,6 +37,8 @@ extern int cache_lifetime;
 extern int max_prune_lifetime;
 
 static int lineno;
+static struct ifreq ifbuf[32];
+static struct ifconf ifc;
 
 static struct uvif *v;
 
@@ -88,6 +73,7 @@ int numbounds = 0;			/* Number of named boundaries */
 %token PHYINT TUNNEL NAME
 %token DISABLE IGMPV1 SRCRT
 %token METRIC THRESHOLD RATE_LIMIT BOUNDARY NETMASK ALTNET
+%token SYSNAM SYSCONTACT SYSVERSION SYSLOCATION
 %token <num> BOOLEAN
 %token <num> NUMBER
 %token <ptr> STRING
@@ -109,7 +95,7 @@ stmts	: /* Empty */
 	;
 
 stmt	: error
-	| PHYINT interface		{
+	| PHYINT interface 		{
 
 			vifi_t vifi;
 
@@ -122,7 +108,7 @@ stmt	: error
 			    if (!(v->uv_flags & VIFF_TUNNEL) &&
 				$2 == v->uv_lcl_addr)
 				break;
-
+			
 			if (vifi == numvifs)
 			    fatal("%s is not a configured interface",
 				inet_fmt($2,s1));
@@ -130,25 +116,26 @@ stmt	: error
 					}
 		ifmods
 	| TUNNEL interface addrname	{
-			const char *ifname;
+
+			struct ifreq *ifr;
 			struct ifreq ffr;
 			vifi_t vifi;
 
 			order++;
 
-			ifname = ifconfaddr($2);
-			if (ifname == 0)
+			ifr = ifconfaddr(&ifc, $2);
+			if (ifr == 0)
 			    fatal("Tunnel local address %s is not mine",
 				inet_fmt($2, s1));
 
-			strlcpy(ffr.ifr_name, ifname, sizeof(ffr.ifr_name));
+			strncpy(ffr.ifr_name, ifr->ifr_name, IFNAMSIZ);
 			if (ioctl(udp_socket, SIOCGIFFLAGS, (char *)&ffr)<0)
 			    fatal("ioctl SIOCGIFFLAGS on %s",ffr.ifr_name);
 			if (ffr.ifr_flags & IFF_LOOPBACK)
 			    fatal("Tunnel local address %s is a loopback interface",
 				inet_fmt($2, s1));
 
-			if (ifconfaddr($3) != 0)
+			if (ifconfaddr(&ifc, $3) != 0)
 			    fatal("Tunnel remote address %s is one of mine",
 				inet_fmt($3, s1));
 
@@ -191,7 +178,7 @@ stmt	: error
 					}
 		tunnelmods
 					{
-			logit(LOG_INFO, 0,
+			log(LOG_INFO, 0,
 			    "installing tunnel from %s to %s as vif #%u - rate=%d",
 			    inet_fmt($2, s1), inet_fmt($3, s2),
 			    numvifs, v->uv_rate_limit);
@@ -206,9 +193,30 @@ stmt	: error
 					fatal("Too many named boundaries (max %d)", MAXBOUNDS);
 				      }
 
-				      boundlist[numbounds].name = strdup($2);
+				      boundlist[numbounds].name = malloc(strlen($2) + 1);
+				      strcpy(boundlist[numbounds].name, $2);
 				      boundlist[numbounds++].bound = $3;
 				    }
+	| SYSNAM STRING    {
+#ifdef SNMP
+			    set_sysName($2);
+#endif /* SNMP */
+			    }
+	| SYSCONTACT STRING {
+#ifdef SNMP
+			    set_sysContact($2);
+#endif /* SNMP */
+			    }
+        | SYSVERSION STRING {
+#ifdef SNMP
+			    set_sysVersion($2);
+#endif /* SNMP */
+			    }
+	| SYSLOCATION STRING {
+#ifdef SNMP
+			    set_sysLocation($2);
+#endif /* SNMP */
+			    }
 	;
 
 tunnelmods	: /* empty */
@@ -246,7 +254,7 @@ ifmod	: mod
 
 		    struct phaddr *ph;
 
-		    ph = malloc(sizeof(struct phaddr));
+		    ph = (struct phaddr *)malloc(sizeof(struct phaddr));
 		    if (ph == NULL)
 			fatal("out of memory");
 		    if ($2.mask) {
@@ -300,7 +308,7 @@ mod	: THRESHOLD NUMBER	{ if ($2 < 1 || $2 > 255)
 
 		    struct vif_acl *v_acl;
 
-		    v_acl = malloc(sizeof(struct vif_acl));
+		    v_acl = (struct vif_acl *)malloc(sizeof(struct vif_acl));
 		    if (v_acl == NULL)
 			fatal("out of memory");
 		    VAL_TO_MASK(v_acl->acl_mask, $2.mask);
@@ -371,37 +379,63 @@ addrmask	: ADDRMASK	{ $$ = $1; }
 	| ADDR			{ $$.addr = $1; $$.mask = 0; }
 	;
 %%
+#ifdef __STDC__
 static void
-fatal(const char *fmt, ...)
+fatal(char *fmt, ...)
 {
 	va_list ap;
 	char buf[200];
 
 	va_start(ap, fmt);
-	vsnprintf(buf, sizeof buf, fmt, ap);
+#else
+/*VARARGS1*/
+static void
+fatal(fmt, va_alist)
+char *fmt;
+va_dcl
+{
+	va_list ap;
+	char buf[200];
+
+	va_start(ap);
+#endif
+	vsprintf(buf, fmt, ap);
 	va_end(ap);
 
-	logit(LOG_ERR,0,"%s: %s near line %d", configfilename, buf, lineno);
+	log(LOG_ERR,0,"%s: %s near line %d", configfilename, buf, lineno);
 }
 
+#ifdef __STDC__
 static void
-warn(const char *fmt, ...)
+warn(char *fmt, ...)
 {
 	va_list ap;
 	char buf[200];
 
 	va_start(ap, fmt);
-	vsnprintf(buf, sizeof buf, fmt, ap);
+#else
+/*VARARGS1*/
+static void
+warn(fmt, va_alist)
+char *fmt;
+va_dcl
+{
+	va_list ap;
+	char buf[200];
+
+	va_start(ap);
+#endif
+	vsprintf(buf, fmt, ap);
 	va_end(ap);
 
-	logit(LOG_WARNING,0,"%s: %s near line %d", configfilename, buf, lineno);
+	log(LOG_WARNING,0,"%s: %s near line %d", configfilename, buf, lineno);
 }
 
 static void
 yyerror(s)
 char *s;
 {
-	logit(LOG_ERR, 0, "%s: %s near line %d", configfilename, s, lineno);
+	log(LOG_ERR, 0, "%s: %s near line %d", configfilename, s, lineno);
 }
 
 static char *
@@ -426,6 +460,15 @@ next_word()
 		continue;
 	    }
 	    q = p;
+#ifdef SNMP
+       if (*p == '"') {
+          p++;
+	       while (*p && *p != '"' && *p != '\n')
+		      p++;		/* find next whitespace */
+          if (*p == '"')
+             p++;
+       } else
+#endif
 	    while (*p && *p != ' ' && *p != '\t' && *p != '\n')
 		p++;		/* find next whitespace */
 	    *p++ = '\0';	/* null-terminate string */
@@ -496,7 +539,7 @@ yylex()
 	}
 	if (sscanf(q,"%[.0-9]%c",s1,s2) == 1) {
 		if ((addr = inet_parse(s1)) != 0xffffffff &&
-		    inet_valid_host(addr)) {
+		    inet_valid_host(addr)) { 
 			yylval.addr = addr;
 			return ADDR;
 		}
@@ -509,6 +552,22 @@ yylex()
 		yylval.num = n;
 		return NUMBER;
 	}
+#ifdef SNMP
+	if (!strcmp(q,"sysName"))
+		return SYSNAM;
+	if (!strcmp(q,"sysContact"))
+		return SYSCONTACT;
+	if (!strcmp(q,"sysVersion"))
+		return SYSVERSION;
+	if (!strcmp(q,"sysLocation"))
+		return SYSLOCATION;
+   if (*q=='"') {
+      if (q[ strlen(q)-1 ]=='"')
+         q[ strlen(q)-1 ]='\0'; /* trash trailing quote */
+      yylval.ptr = q+1;
+      return STRING;
+   }
+#endif
 	yylval.ptr = q;
 	return STRING;
 }
@@ -524,9 +583,14 @@ config_vifs_from_file()
 
 	if ((f = fopen(configfilename, "r")) == NULL) {
 	    if (errno != ENOENT)
-		logit(LOG_ERR, errno, "can't open %s", configfilename);
+		log(LOG_ERR, errno, "can't open %s", configfilename);
 	    return;
 	}
+
+	ifc.ifc_buf = (char *)ifbuf;
+	ifc.ifc_len = sizeof(ifbuf);
+	if (ioctl(udp_socket, SIOCGIFCONF, (char *)&ifc) < 0)
+	    log(LOG_ERR, errno, "ioctl SIOCGIFCONF");
 
 	yyparse();
 
@@ -547,24 +611,28 @@ char *s;
 	return 0;
 }
 
-static const char *
-ifconfaddr(a)
+static struct ifreq *
+ifconfaddr(ifcp, a)
+    struct ifconf *ifcp;
     u_int32_t a;
 {
-    static char ifname[IFNAMSIZ];
-    struct ifaddrs *ifap, *ifa;
+    int n;
+    struct ifreq *ifrp = (struct ifreq *)ifcp->ifc_buf;
+    struct ifreq *ifend = (struct ifreq *)((char *)ifrp + ifcp->ifc_len);
 
-    if (getifaddrs(&ifap) != 0)
-	return (NULL);
-
-    for (ifa = ifap; ifa; ifa = ifa->ifa_next) {
-	    if (ifa->ifa_addr->sa_family == AF_INET &&
-		((struct sockaddr_in *)ifa->ifa_addr)->sin_addr.s_addr == a) {
-		strlcpy(ifname, ifa->ifa_name, sizeof(ifname));
-		freeifaddrs(ifap);
-		return (ifname);
-	    }
+    while (ifrp < ifend) {
+	    if (ifrp->ifr_addr.sa_family == AF_INET &&
+		((struct sockaddr_in *)&ifrp->ifr_addr)->sin_addr.s_addr == a)
+		    return (ifrp);
+#if (defined(BSD) && (BSD >= 199006))
+		n = ifrp->ifr_addr.sa_len + sizeof(ifrp->ifr_name);
+		if (n < sizeof(*ifrp))
+			++ifrp;
+		else
+			ifrp = (struct ifreq *)((char *)ifrp + n);
+#else
+		++ifrp;
+#endif
     }
-    freeifaddrs(ifap);
     return (0);
 }

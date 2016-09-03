@@ -1,4 +1,4 @@
-/*	$OpenBSD: sleep.c,v 1.24 2015/10/11 20:17:49 guenther Exp $	*/
+/*	$OpenBSD: sleep.c,v 1.8 1997/09/12 04:44:32 millert Exp $	*/
 /*	$NetBSD: sleep.c,v 1.8 1995/03/21 09:11:11 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,32 +34,44 @@
  * SUCH DAMAGE.
  */
 
-#include <ctype.h>
-#include <errno.h>
-#include <signal.h>
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1988, 1993, 1994\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)sleep.c	8.3 (Berkeley) 4/2/94";
+#else
+static char rcsid[] = "$OpenBSD: sleep.c,v 1.8 1997/09/12 04:44:32 millert Exp $";
+#endif
+#endif /* not lint */
+
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
 #include <unistd.h>
-#include <err.h>
+#include <ctype.h>
+#include <locale.h>
+#include <time.h>
+#include <signal.h>
 
-extern char *__progname;
-
-void usage(void);
-void alarmh(int);
+void usage __P((void));
+void alarmh __P((int));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	int ch;
-	time_t secs = 0, t;
-	char *cp;
+	int secs = 0;
+	unsigned char *cp;
 	long nsecs = 0;
 	struct timespec rqtp;
 	int i;
 
-	if (pledge("stdio", NULL) == -1)
-		err(1, "pledge");
+	setlocale(LC_ALL, "");
 
 	signal(SIGALRM, alarmh);
 
@@ -72,22 +88,16 @@ main(int argc, char *argv[])
 
 	cp = *argv;
 	while ((*cp != '\0') && (*cp != '.')) {
-		if (!isdigit((unsigned char)*cp))
-			usage();
-		t = (secs * 10) + (*cp++ - '0');
-		if (t / 10 != secs)	/* oflow */
-			return (EINVAL);
-		secs = t;
+		if (!isdigit(*cp)) usage();
+		secs = (secs * 10) + (*cp++ - '0');
 	}
 
 	/* Handle fractions of a second */
 	if (*cp == '.') {
-		cp++;
+		*cp++ = '\0';
 		for (i = 100000000; i > 0; i /= 10) {
-			if (*cp == '\0')
-				break;
-			if (!isdigit((unsigned char)*cp))
-				usage();
+			if (*cp == '\0') break;
+			if (!isdigit(*cp)) usage();
 			nsecs += (*cp++ - '0') * i;
 		}
 
@@ -97,24 +107,23 @@ main(int argc, char *argv[])
 		 * checking the rest of the argument.
 		 */
 		while (*cp != '\0') {
-			if (!isdigit((unsigned char)*cp++))
-				usage();
+			if (!isdigit(*cp++)) usage();
 		}
 	}
 
-	rqtp.tv_sec = secs;
+	rqtp.tv_sec = (time_t) secs;
 	rqtp.tv_nsec = nsecs;
 
 	if ((secs > 0) || (nsecs > 0))
-		if (nanosleep(&rqtp, NULL))
-			err(1, NULL);
-	return (0);
+		(void)nanosleep(&rqtp, NULL);
+	exit(0);
 }
 
 void
-usage(void)
+usage()
 {
-	(void)fprintf(stderr, "usage: %s seconds\n", __progname);
+
+	(void)fprintf(stderr, "usage: sleep seconds\n");
 	exit(1);
 }
 
@@ -122,9 +131,9 @@ usage(void)
  * POSIX 1003.2 says sleep should exit with 0 return code on reception
  * of SIGALRM.
  */
-/* ARGSUSED */
 void
-alarmh(int signo)
+alarmh(sigraised)
+	int sigraised;
 {
 	/*
 	 * exit() flushes stdio buffers, which is not legal in a signal

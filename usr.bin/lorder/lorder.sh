@@ -1,5 +1,5 @@
 #!/bin/sh -
-#	$OpenBSD: lorder.sh,v 1.15 2015/07/03 11:43:55 jca Exp $
+#	$OpenBSD: lorder.sh,v 1.10 1999/05/21 01:24:04 espie Exp $
 #	$NetBSD: lorder.sh.gnm,v 1.3 1995/12/20 04:45:11 cgd Exp $
 #
 # Copyright (c) 1990, 1993
@@ -13,7 +13,11 @@
 # 2. Redistributions in binary form must reproduce the above copyright
 #    notice, this list of conditions and the following disclaimer in the
 #    documentation and/or other materials provided with the distribution.
-# 3. Neither the name of the University nor the names of its contributors
+# 3. All advertising materials mentioning features or use of this software
+#    must display the following acknowledgement:
+#	This product includes software developed by the University of
+#	California, Berkeley and its contributors.
+# 4. Neither the name of the University nor the names of its contributors
 #    may be used to endorse or promote products derived from this software
 #    without specific prior written permission.
 #
@@ -43,19 +47,24 @@ case $# in
 esac
 
 # temporary files
-R=`mktemp /tmp/_referenceXXXXXXXXXX` || exit 1
-S=`mktemp /tmp/_symbolXXXXXXXXXX` || {
-	rm -f ${R}
+TDIR=/tmp/_lorder$$
+R=$TDIR/reference
+S=$TDIR/symbol
+
+um=`umask`
+umask 022
+if ! mkdir $TDIR ; then
+	echo temporary directory exists $TDIR
 	exit 1
-}
+fi
+umask $um
 
 # remove temporary files on HUP, INT, QUIT, PIPE, TERM
-trap "rm -f $R $S; exit 0" 0
-trap "rm -f $R $S; exit 1" 1 2 3 13 15
+trap "rm -rf $TDIR; trap 2 ; kill -2 $$" 1 2 3 13 15
 
 # make sure files depend on themselves
 for file in "$@"; do echo "$file $file" ; done
-# if the line has " T ", " D ", " G ", " R ",  it's a globally defined
+# if the line has " T ", " D ", " G ", " R ",  it's a globally defined 
 # symbol, put it into the symbol file.
 #
 # if the line has " U " it's a globally undefined symbol, put it into
@@ -75,7 +84,7 @@ ${NM:-nm} -go "$@" | sed "
 
 # sort symbols and references on the first field (the symbol)
 # join on that field, and print out the file names (dependencies).
-sort -k 2 -o $R $R
-sort -k 2 -o $S $S
-join -j 2 -o 1.1,2.1 $R $S
-rm -f $R $S
+sort +1 $R -o $R
+sort +1 $S -o $S
+join -j 2 -o 1.1 2.1 $R $S
+rm -rf $TDIR

@@ -1,5 +1,4 @@
-/*	$OpenBSD: uvm_pdaemon.c,v 1.77 2015/10/08 15:58:38 kettenis Exp $	*/
-/*	$NetBSD: uvm_pdaemon.c,v 1.23 2000/08/20 10:24:14 bjh21 Exp $	*/
+/*	$NetBSD: uvm_pdaemon.c,v 1.14 1999/03/26 17:33:30 chs Exp $	*/
 
 /* 
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -18,7 +17,12 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Charles D. Cranor,
+ *      Washington University, the University of California, Berkeley and 
+ *      its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -67,21 +71,19 @@
  */
 
 #include <sys/param.h>
+#include <sys/proc.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/pool.h>
-#include <sys/buf.h>
-#include <sys/mount.h>
-#include <sys/atomic.h>
 
-#ifdef HIBERNATE
-#include <sys/hibernate.h>
-#endif
+#include <vm/vm.h>
+#include <vm/vm_page.h>
+#include <vm/vm_kern.h>
 
 #include <uvm/uvm.h>
 
 /*
- * UVMPD_NUMDIRTYREACTS is how many dirty pages the pagedaemon will reactivate
+ * UVMPD_NUMDIRTYREACTS is how many dirty pages the pagedeamon will reactivate
  * in a pass thru the inactive list when swap is full.  the value should be
  * "small"... if it's too large we'll cycle the active pages thru the inactive
  * queue too quickly to for them to be referenced and avoid being freed.
@@ -94,10 +96,10 @@
  * local prototypes
  */
 
-void		uvmpd_scan(void);
-boolean_t	uvmpd_scan_inactive(struct pglist *);
-void		uvmpd_tune(void);
-void		uvmpd_drop(struct pglist *);
+static void		uvmpd_scan __P((void));
+static boolean_t	uvmpd_scan_inactive __P((struct pglist *));
+static void		uvmpd_tune __P((void));
+
 
 /*
  * uvm_wait: wait (sleep) for the page daemon to free some pages
@@ -106,16 +108,17 @@ void		uvmpd_drop(struct pglist *);
  * => should _not_ be called by the page daemon (to avoid deadlock)
  */
 
-void
-uvm_wait(const char *wmsg)
+void uvm_wait(wmsg)
+	char *wmsg;
 {
-	int	timo = 0;
+	int timo = 0;
+	int s = splbio();
 
-	/* check for page daemon going to sleep (waiting for itself) */
+	/*
+	 * check for page daemon going to sleep (waiting for itself)
+	 */
+
 	if (curproc == uvm.pagedaemon_proc) {
-		printf("uvm_wait emergency bufbackoff\n");
-		if (bufbackoff(NULL, 4) == 0)
-			return;
 		/*
 		 * now we have a problem: the pagedaemon wants to go to
 		 * sleep until it frees more memory.   but how can it
@@ -141,34 +144,33 @@ uvm_wait(const char *wmsg)
 #endif
 	}
 
-	uvm_lock_fpageq();
-	wakeup(&uvm.pagedaemon);		/* wake the daemon! */
-	msleep(&uvmexp.free, &uvm.fpageqlock, PVM | PNORELOCK, wmsg, timo);
+	simple_lock(&uvm.pagedaemon_lock);
+	thread_wakeup(&uvm.pagedaemon);		/* wake the daemon! */
+	UVM_UNLOCK_AND_WAIT(&uvmexp.free, &uvm.pagedaemon_lock, FALSE, wmsg,
+	    timo);
+
+	splx(s);
 }
+
 
 /*
  * uvmpd_tune: tune paging parameters
  *
- * => called whenever memory is added to (or removed from?) the system
+ * => called when ever memory is added (or removed?) to the system
  * => caller must call with page queues locked
  */
 
-void
-uvmpd_tune(void)
+static void
+uvmpd_tune()
 {
+	UVMHIST_FUNC("uvmpd_tune"); UVMHIST_CALLED(pdhist);
 
-	uvmexp.freemin = uvmexp.npages / 30;
+	uvmexp.freemin = uvmexp.npages / 20;
 
-	/* between 16k and 512k */
+	/* between 16k and 256k */
 	/* XXX:  what are these values good for? */
 	uvmexp.freemin = max(uvmexp.freemin, (16*1024) >> PAGE_SHIFT);
-#if 0
-	uvmexp.freemin = min(uvmexp.freemin, (512*1024) >> PAGE_SHIFT);
-#endif
-
-	/* Make sure there's always a user page free. */
-	if (uvmexp.freemin < uvmexp.reserve_kernel + 1)
-		uvmexp.freemin = uvmexp.reserve_kernel + 1;
+	uvmexp.freemin = min(uvmexp.freemin, (256*1024) >> PAGE_SHIFT);
 
 	uvmexp.freetarg = (uvmexp.freemin * 4) / 3;
 	if (uvmexp.freetarg <= uvmexp.freemin)
@@ -177,20 +179,28 @@ uvmpd_tune(void)
 	/* uvmexp.inactarg: computed in main daemon loop */
 
 	uvmexp.wiredmax = uvmexp.npages / 3;
+	UVMHIST_LOG(pdhist, "<- done, freemin=%d, freetarg=%d, wiredmax=%d",
+	      uvmexp.freemin, uvmexp.freetarg, uvmexp.wiredmax, 0);
 }
 
 /*
  * uvm_pageout: the main loop for the pagedaemon
  */
-void
-uvm_pageout(void *arg)
-{
-	struct uvm_constraint_range constraint;
-	struct uvm_pmalloc *pma;
-	int work_done;
-	int npages = 0;
 
-	/* ensure correct priority and set paging parameters... */
+void
+uvm_pageout()
+{
+	int npages = 0;
+	int s;
+	struct uvm_aiodesc *aio, *nextaio;
+	UVMHIST_FUNC("uvm_pageout"); UVMHIST_CALLED(pdhist);
+	 
+	UVMHIST_LOG(pdhist,"<starting uvm pagedaemon>", 0, 0, 0, 0);
+
+	/*
+	 * ensure correct priority and set paging parameters...
+	 */
+
 	uvm.pagedaemon_proc = curproc;
 	(void) spl0();
 	uvm_lock_pageq();
@@ -198,138 +208,107 @@ uvm_pageout(void *arg)
 	uvmpd_tune();
 	uvm_unlock_pageq();
 
-	for (;;) {
-		long size;
-	  	work_done = 0; /* No work done this iteration. */
+	/*
+	 * main loop
+	 */
+	while (TRUE) {
 
-		uvm_lock_fpageq();
+		/*
+		 * carefully attempt to go to sleep (without losing "wakeups"!).
+		 * we need splbio because we want to make sure the aio_done list
+		 * is totally empty before we go to sleep.
+		 */
 
-		if (TAILQ_EMPTY(&uvm.pmr_control.allocs)) {
-			msleep(&uvm.pagedaemon, &uvm.fpageqlock, PVM,
-			    "pgdaemon", 0);
+		s = splbio();
+		simple_lock(&uvm.pagedaemon_lock);
+
+		/*
+		 * if we've got done aio's, then bypass the sleep
+		 */
+
+		if (uvm.aio_done.tqh_first == NULL) {
+			UVMHIST_LOG(maphist,"  <<SLEEPING>>",0,0,0,0);
+			UVM_UNLOCK_AND_WAIT(&uvm.pagedaemon,
+			    &uvm.pagedaemon_lock, FALSE, "daemon_slp", 0);
 			uvmexp.pdwoke++;
+			UVMHIST_LOG(pdhist,"  <<WOKE UP>>",0,0,0,0);
+
+			/* relock pagedaemon_lock, still at splbio */
+			simple_lock(&uvm.pagedaemon_lock);
 		}
 
-		if ((pma = TAILQ_FIRST(&uvm.pmr_control.allocs)) != NULL) {
-			pma->pm_flags |= UVM_PMA_BUSY;
-			constraint = pma->pm_constraint;
-		} else
-			constraint = no_constraint;
+		/*
+		 * check for done aio structures
+		 */
 
-		uvm_unlock_fpageq();
+		aio = uvm.aio_done.tqh_first;	/* save current list (if any)*/
+		if (aio) {
+			TAILQ_INIT(&uvm.aio_done);	/* zero global list */
+		}
 
-		/* now lock page queues and recompute inactive count */
+		simple_unlock(&uvm.pagedaemon_lock);	/* unlock */
+		splx(s);				/* drop splbio */
+ 
+		/*
+		 * first clear out any pending aios (to free space in case we
+		 * want to pageout more stuff).
+		 */
+
+		for (/*null*/; aio != NULL ; aio = nextaio) {
+
+			uvmexp.paging -= aio->npages;
+			nextaio = aio->aioq.tqe_next;
+			aio->aiodone(aio);
+
+		}
+
+		/* Next, drain pool resources */
+		pool_drain(0);
+
+		/*
+		 * now lock page queues and recompute inactive count
+		 */
 		uvm_lock_pageq();
+
 		if (npages != uvmexp.npages) {	/* check for new pages? */
 			npages = uvmexp.npages;
 			uvmpd_tune();
 		}
 
 		uvmexp.inactarg = (uvmexp.active + uvmexp.inactive) / 3;
-		if (uvmexp.inactarg <= uvmexp.freetarg) {
+		if (uvmexp.inactarg <= uvmexp.freetarg)
 			uvmexp.inactarg = uvmexp.freetarg + 1;
-		}
 
-		/* Reclaim pages from the buffer cache if possible. */
-		size = 0;
-		if (pma != NULL)
-			size += pma->pm_size >> PAGE_SHIFT;
-		if (uvmexp.free - BUFPAGES_DEFICIT < uvmexp.freetarg)
-			size += uvmexp.freetarg - (uvmexp.free -
-			    BUFPAGES_DEFICIT);
-		uvm_unlock_pageq();
-		(void) bufbackoff(&constraint, size * 2);
-		uvm_lock_pageq();
-
-		/* Scan if needed to meet our targets. */
-		if (pma != NULL ||
-		    ((uvmexp.free - BUFPAGES_DEFICIT) < uvmexp.freetarg) ||
-		    ((uvmexp.inactive + BUFPAGES_INACT) < uvmexp.inactarg)) {
-			uvmpd_scan();
-			work_done = 1; /* XXX we hope... */
-		}
+		UVMHIST_LOG(pdhist,"  free/ftarg=%d/%d, inact/itarg=%d/%d",
+		    uvmexp.free, uvmexp.freetarg, uvmexp.inactive,
+		    uvmexp.inactarg);
 
 		/*
-		 * if there's any free memory to be had,
-		 * wake up any waiters.
+		 * scan if needed
+		 * [XXX: note we are reading uvm.free without locking]
 		 */
-		uvm_lock_fpageq();
-		if (uvmexp.free > uvmexp.reserve_kernel ||
-		    uvmexp.paging == 0) {
-			wakeup(&uvmexp.free);
-		}
+		if (uvmexp.free < uvmexp.freetarg ||
+		    uvmexp.inactive < uvmexp.inactarg)
+			uvmpd_scan();
 
-		if (pma != NULL) {
-			pma->pm_flags &= ~UVM_PMA_BUSY;
-			if (!work_done)
-				pma->pm_flags |= UVM_PMA_FAIL;
-			if (pma->pm_flags & (UVM_PMA_FAIL | UVM_PMA_FREED)) {
-				pma->pm_flags &= ~UVM_PMA_LINKED;
-				TAILQ_REMOVE(&uvm.pmr_control.allocs, pma,
-				    pmq);
-			}
-			wakeup(pma);
-		}
-		uvm_unlock_fpageq();
-
-		/* scan done. unlock page queues (only lock we are holding) */
+		/*
+		 * done scan.  unlock page queues (the only lock we are holding)
+		 */
 		uvm_unlock_pageq();
 
-		sched_pause();
+		/*
+		 * done!    restart loop.
+		 */
+		if (uvmexp.free > uvmexp.reserve_kernel ||
+		    uvmexp.paging == 0)
+			thread_wakeup(&uvmexp.free);
 	}
 	/*NOTREACHED*/
 }
 
-
 /*
- * uvm_aiodone_daemon:  main loop for the aiodone daemon.
- */
-void
-uvm_aiodone_daemon(void *arg)
-{
-	int s, free;
-	struct buf *bp, *nbp;
-
-	uvm.aiodoned_proc = curproc;
-
-	for (;;) {
-		/*
-		 * Check for done aio structures. If we've got structures to
-		 * process, do so. Otherwise sleep while avoiding races.
-		 */
-		mtx_enter(&uvm.aiodoned_lock);
-		while ((bp = TAILQ_FIRST(&uvm.aio_done)) == NULL)
-			msleep(&uvm.aiodoned, &uvm.aiodoned_lock,
-			    PVM, "aiodoned", 0);
-		/* Take the list for ourselves. */
-		TAILQ_INIT(&uvm.aio_done);
-		mtx_leave(&uvm.aiodoned_lock);
-
-		/* process each i/o that's done. */
-		free = uvmexp.free;
-		while (bp != NULL) {
-			if (bp->b_flags & B_PDAEMON) {
-				uvmexp.paging -= bp->b_bufsize >> PAGE_SHIFT;
-			}
-			nbp = TAILQ_NEXT(bp, b_freelist);
-			s = splbio();	/* b_iodone must by called at splbio */
-			(*bp->b_iodone)(bp);
-			splx(s);
-			bp = nbp;
-
-			sched_pause();
-		}
-		uvm_lock_fpageq();
-		wakeup(free <= uvmexp.reserve_kernel ? &uvm.pagedaemon :
-		    &uvmexp.free);
-		uvm_unlock_fpageq();
-	}
-}
-
-
-
-/*
- * uvmpd_scan_inactive: scan an inactive list for pages to clean or free.
+ * uvmpd_scan_inactive: the first loop of uvmpd_scan broken out into
+ * 	its own function for ease of reading.
  *
  * => called with page queues locked
  * => we work on meeting our free target by converting inactive pages
@@ -338,11 +317,12 @@ uvm_aiodone_daemon(void *arg)
  * => we return TRUE if we are exiting because we met our target
  */
 
-boolean_t
-uvmpd_scan_inactive(struct pglist *pglst)
+static boolean_t
+uvmpd_scan_inactive(pglst)
+	struct pglist *pglst;
 {
 	boolean_t retval = FALSE;	/* assume we haven't hit target */
-	int free, result;
+	int s, free, result;
 	struct vm_page *p, *nextpg;
 	struct uvm_object *uobj;
 	struct vm_page *pps[MAXBSIZE >> PAGE_SHIFT], **ppsp;
@@ -354,17 +334,19 @@ uvmpd_scan_inactive(struct pglist *pglst)
 	boolean_t swap_backed;
 	vaddr_t start;
 	int dirtyreacts;
+	UVMHIST_FUNC("uvmpd_scan_inactive"); UVMHIST_CALLED(pdhist);
 
 	/*
-	 * note: we currently keep swap-backed pages on a separate inactive
+	 * note: we currently keep swap-backed pages on a seperate inactive
 	 * list from object-backed pages.   however, merging the two lists
 	 * back together again hasn't been ruled out.   thus, we keep our
 	 * swap cluster in "swpps" rather than in pps (allows us to mix
 	 * clustering types in the event of a mixed inactive queue).
 	 */
+
 	/*
 	 * swslot is non-zero if we are building a swap cluster.  we want
-	 * to stay in the loop while we have a page to scan or we have
+	 * to stay in the loop while we have a page to scan or we have 
 	 * a swap-cluster to build.
 	 */
 	swslot = 0;
@@ -372,41 +354,47 @@ uvmpd_scan_inactive(struct pglist *pglst)
 	free = 0;
 	dirtyreacts = 0;
 
-	for (p = TAILQ_FIRST(pglst); p != NULL || swslot != 0; p = nextpg) {
+	for (p = pglst->tqh_first ; p != NULL || swslot != 0 ; p = nextpg) {
+
 		/*
 		 * note that p can be NULL iff we have traversed the whole
 		 * list and need to do one final swap-backed clustered pageout.
 		 */
-		uobj = NULL;
-		anon = NULL;
-
 		if (p) {
 			/*
 			 * update our copy of "free" and see if we've met
 			 * our target
 			 */
-			free = uvmexp.free - BUFPAGES_DEFICIT;
+			s = splimp();
+			uvm_lock_fpageq();
+			free = uvmexp.free;
+			uvm_unlock_fpageq();
+			splx(s);
 
 			if (free + uvmexp.paging >= uvmexp.freetarg << 2 ||
 			    dirtyreacts == UVMPD_NUMDIRTYREACTS) {
-				retval = TRUE;
+				UVMHIST_LOG(pdhist,"  met free target: "
+				    "exit loop", 0, 0, 0, 0);
+				retval = TRUE;		/* hit the target! */
 
-				if (swslot == 0) {
+				if (swslot == 0)
 					/* exit now if no swap-i/o pending */
 					break;
-				}
 
 				/* set p to null to signal final swap i/o */
 				p = NULL;
 			}
 		}
 
+		uobj = NULL;	/* be safe and shut gcc up */
+		anon = NULL;	/* be safe and shut gcc up */
+
 		if (p) {	/* if (we have a new page to consider) */
 			/*
 			 * we are below target and have a new page to consider.
 			 */
 			uvmexp.pdscans++;
-			nextpg = TAILQ_NEXT(p, pageq);
+			nextpg = p->pageq.tqe_next;
 
 			/*
 			 * move referenced pages back to active queue and
@@ -414,60 +402,123 @@ uvmpd_scan_inactive(struct pglist *pglst)
 			 * inactive pages shouldn't have any valid mappings
 			 * and we cleared reference before deactivating).
 			 */
-
-			if (pmap_is_referenced(p)) {
+			if (pmap_is_referenced(PMAP_PGARG(p))) {
 				uvm_pageactivate(p);
 				uvmexp.pdreact++;
 				continue;
 			}
+			
+			/*
+			 * first we attempt to lock the object that this page
+			 * belongs to.  if our attempt fails we skip on to
+			 * the next page (no harm done).  it is important to
+			 * "try" locking the object as we are locking in the
+			 * wrong order (pageq -> object) and we don't want to
+			 * get deadlocked.
+			 *
+			 * the only time we exepct to see an ownerless page
+			 * (i.e. a page with no uobject and !PQ_ANON) is if an
+			 * anon has loaned a page from a uvm_object and the
+			 * uvm_object has dropped the ownership.  in that
+			 * case, the anon can "take over" the loaned page
+			 * and make it its own.
+			 */
+		
+			/* is page part of an anon or ownerless ? */
+			if ((p->pqflags & PQ_ANON) || p->uobject == NULL) {
 
-			if (p->pg_flags & PQ_ANON) {
 				anon = p->uanon;
-				KASSERT(anon != NULL);
-				if (p->pg_flags & PG_BUSY) {
+
+#ifdef DIAGNOSTIC
+				/* to be on inactive q, page must be part
+				 * of _something_ */
+				if (anon == NULL)
+					panic("pagedaemon: page with no anon "
+					    "or object detected - loop 1");
+#endif
+
+				if (!simple_lock_try(&anon->an_lock))
+					/* lock failed, skip this page */
+					continue;
+
+				/*
+				 * if the page is ownerless, claim it in the
+				 * name of "anon"!
+				 */
+				if ((p->pqflags & PQ_ANON) == 0) {
+#ifdef DIAGNOSTIC
+					if (p->loan_count < 1)
+						panic("pagedaemon: non-loaned "
+						    "ownerless page detected -"
+						    " loop 1");
+#endif
+					p->loan_count--;
+					p->pqflags |= PQ_ANON;      /* anon now owns it */
+				}
+
+				if (p->flags & PG_BUSY) {
+					simple_unlock(&anon->an_lock);
 					uvmexp.pdbusy++;
 					/* someone else owns page, skip it */
 					continue;
 				}
+
 				uvmexp.pdanscan++;
+
 			} else {
+
 				uobj = p->uobject;
-				KASSERT(uobj != NULL);
-				if (p->pg_flags & PG_BUSY) {
+
+				if (!simple_lock_try(&uobj->vmobjlock))
+					/* lock failed, skip this page */
+					continue;	
+
+				if (p->flags & PG_BUSY) {
+					simple_unlock(&uobj->vmobjlock);
 					uvmexp.pdbusy++;
 					/* someone else owns page, skip it */
-					continue;
+					continue;	
 				}
+
 				uvmexp.pdobscan++;
 			}
 
 			/*
-			 * we now have the page queues locked.
+			 * we now have the object and the page queues locked.
 			 * the page is not busy.   if the page is clean we
 			 * can free it now and continue.
 			 */
-			if (p->pg_flags & PG_CLEAN) {
-				if (p->pg_flags & PQ_SWAPBACKED) {
+
+			if (p->flags & PG_CLEAN) {
+				if (p->pqflags & PQ_SWAPBACKED) {
 					/* this page now lives only in swap */
+					simple_lock(&uvm.swap_data_lock);
 					uvmexp.swpgonly++;
+					simple_unlock(&uvm.swap_data_lock);
 				}
 
 				/* zap all mappings with pmap_page_protect... */
-				pmap_page_protect(p, PROT_NONE);
+				pmap_page_protect(PMAP_PGARG(p), VM_PROT_NONE);
 				uvm_pagefree(p);
 				uvmexp.pdfreed++;
-
+			
 				if (anon) {
-
+#ifdef DIAGNOSTIC
 					/*
 					 * an anonymous page can only be clean
-					 * if it has backing store assigned.
+					 * if it has valid backing store.
 					 */
-
-					KASSERT(anon->an_swslot != 0);
-
+					if (anon->an_swslot == 0)
+						panic("pagedaemon: clean anon "
+						 "page without backing store?");
+#endif
 					/* remove from object */
-					anon->an_page = NULL;
+					anon->u.an_page = NULL;
+					simple_unlock(&anon->an_lock);
+				} else {
+					/* pagefree has already removed the
+					 * page from the object */
+					simple_unlock(&uobj->vmobjlock);
 				}
 				continue;
 			}
@@ -477,6 +528,11 @@ uvmpd_scan_inactive(struct pglist *pglst)
 			 * free target when all the current pageouts complete.
 			 */
 			if (free + uvmexp.paging > uvmexp.freetarg << 2) {
+				if (anon) {
+					simple_unlock(&anon->an_lock);
+				} else {
+					simple_unlock(&uobj->vmobjlock);
+				}
 				continue;
 			}
 
@@ -486,11 +542,20 @@ uvmpd_scan_inactive(struct pglist *pglst)
 			 * reactivate it so that we eventually cycle
 			 * all pages thru the inactive queue.
 			 */
-			KASSERT(uvmexp.swpgonly <= uvmexp.swpages);
-			if ((p->pg_flags & PQ_SWAPBACKED) &&
+#ifdef DIAGNOSTIC
+			if (uvmexp.swpgonly > uvmexp.swpages) {
+				panic("uvmexp.swpgonly botch");
+			}
+#endif
+			if ((p->pqflags & PQ_SWAPBACKED) &&
 			    uvmexp.swpgonly == uvmexp.swpages) {
 				dirtyreacts++;
 				uvm_pageactivate(p);
+				if (anon) {
+					simple_unlock(&anon->an_lock);
+				} else {
+					simple_unlock(&uobj->vmobjlock);
+				}
 				continue;
 			}
 
@@ -499,16 +564,20 @@ uvmpd_scan_inactive(struct pglist *pglst)
 			 * is full, free any swap allocated to the page
 			 * so that other pages can be paged out.
 			 */
-			KASSERT(uvmexp.swpginuse <= uvmexp.swpages);
-			if ((p->pg_flags & PQ_SWAPBACKED) &&
+#ifdef DIAGNOSTIC
+			if (uvmexp.swpginuse > uvmexp.swpages) {
+				panic("uvmexp.swpginuse botch");
+			}
+#endif
+			if ((p->pqflags & PQ_SWAPBACKED) &&
 			    uvmexp.swpginuse == uvmexp.swpages) {
 
-				if ((p->pg_flags & PQ_ANON) &&
+				if ((p->pqflags & PQ_ANON) &&
 				    p->uanon->an_swslot) {
 					uvm_swap_free(p->uanon->an_swslot, 1);
 					p->uanon->an_swslot = 0;
 				}
-				if (p->pg_flags & PQ_AOBJ) {
+				if (p->pqflags & PQ_AOBJ) {
 					uao_dropswap(p->uobject,
 						     p->offset >> PAGE_SHIFT);
 				}
@@ -522,11 +591,11 @@ uvmpd_scan_inactive(struct pglist *pglst)
 			 * of the page so that no one touches it while it is
 			 * in I/O.
 			 */
-
-			swap_backed = ((p->pg_flags & PQ_SWAPBACKED) != 0);
-			atomic_setbits_int(&p->pg_flags, PG_BUSY);
+		
+			swap_backed = ((p->pqflags & PQ_SWAPBACKED) != 0);
+			p->flags |= PG_BUSY;		/* now we own it */
 			UVM_PAGE_OWN(p, "scan_inactive");
-			pmap_page_protect(p, PROT_READ);
+			pmap_page_protect(PMAP_PGARG(p), VM_PROT_READ);
 			uvmexp.pgswapout++;
 
 			/*
@@ -534,7 +603,10 @@ uvmpd_scan_inactive(struct pglist *pglst)
 			 * swap space.
 			 */
 			if (swap_backed) {
-				/* free old swap slot (if any) */
+
+				/*
+				 * free old swap slot (if any)
+				 */
 				if (anon) {
 					if (anon->an_swslot) {
 						uvm_swap_free(anon->an_swslot,
@@ -546,23 +618,34 @@ uvmpd_scan_inactive(struct pglist *pglst)
 						     p->offset >> PAGE_SHIFT);
 				}
 
-				/* start new cluster (if necessary) */
+				/*
+				 * start new cluster (if necessary)
+				 */
 				if (swslot == 0) {
+					/* want this much */
 					swnpages = MAXBSIZE >> PAGE_SHIFT;
+
 					swslot = uvm_swap_alloc(&swnpages,
 					    TRUE);
+
 					if (swslot == 0) {
 						/* no swap?  give up! */
-						atomic_clearbits_int(
-						    &p->pg_flags,
-						    PG_BUSY);
+						p->flags &= ~PG_BUSY;
 						UVM_PAGE_OWN(p, NULL);
+						if (anon)
+							simple_unlock(
+							    &anon->an_lock);
+						else
+							simple_unlock(
+							    &uobj->vmobjlock);
 						continue;
 					}
 					swcpages = 0;	/* cluster is empty */
 				}
 
-				/* add block to cluster */
+				/*
+				 * add block to cluster
+				 */
 				swpps[swcpages] = p;
 				if (anon)
 					anon->an_swslot = swslot + swcpages;
@@ -571,23 +654,34 @@ uvmpd_scan_inactive(struct pglist *pglst)
 					    p->offset >> PAGE_SHIFT,
 					    swslot + swcpages);
 				swcpages++;
+
+				/* done (swap-backed) */
 			}
+
+			/* end: if (p) ["if we have new page to consider"] */ 
 		} else {
+
 			/* if p == NULL we must be doing a last swap i/o */
 			swap_backed = TRUE;
 		}
 
 		/*
-		 * now consider doing the pageout.
+		 * now consider doing the pageout.   
 		 *
-		 * for swap-backed pages, we do the pageout if we have either
-		 * filled the cluster (in which case (swnpages == swcpages) or
+		 * for swap-backed pages, we do the pageout if we have either 
+		 * filled the cluster (in which case (swnpages == swcpages) or 
 		 * run out of pages (p == NULL).
 		 *
 		 * for object pages, we always do the pageout.
 		 */
 		if (swap_backed) {
+
 			if (p) {	/* if we just added a page to cluster */
+				if (anon)
+					simple_unlock(&anon->an_lock);
+				else
+					simple_unlock(&uobj->vmobjlock);
+
 				/* cluster not full yet? */
 				if (swcpages < swnpages)
 					continue;
@@ -604,18 +698,21 @@ uvmpd_scan_inactive(struct pglist *pglst)
 			if (swcpages < swnpages) {
 				uvm_swap_free(swslot + swcpages,
 				    (swnpages - swcpages));
-			}
+			} 
+	
 		} else {
+
 			/* normal object pageout */
 			ppsp = pps;
 			npages = sizeof(pps) / sizeof(struct vm_page *);
 			/* not looked at because PGO_ALLPAGES is set */
 			start = 0;
+
 		}
 
 		/*
 		 * now do the pageout.
-		 *
+		 * 
 		 * for swap_backed pages we have already built the cluster.
 		 * for !swap_backed pages, uvm_pager_put will call the object's
 		 * "make put cluster" function to build a cluster on our behalf.
@@ -627,14 +724,19 @@ uvmpd_scan_inactive(struct pglist *pglst)
 		 * with cluster pages at this level.
 		 *
 		 * note locking semantics of uvm_pager_put with PGO_PDFREECLUST:
-		 *  IN: locked: page queues
-		 * OUT: locked: 
-		 *     !locked: pageqs
+		 *  IN: locked: uobj (if !swap_backed), page queues
+		 * OUT: locked: uobj (if !swap_backed && result !=VM_PAGER_PEND)
+		 *     !locked: pageqs, uobj (if swap_backed || VM_PAGER_PEND)
+		 *
+		 * [the bit about VM_PAGER_PEND saves us one lock-unlock pair]
 		 */
 
+		/* locked: uobj (if !swap_backed), page queues */
 		uvmexp.pdpageouts++;
-		result = uvm_pager_put(swap_backed ? NULL : uobj, p,
+		result = uvm_pager_put((swap_backed) ? NULL : uobj, p,
 		    &ppsp, &npages, PGO_ALLPAGES|PGO_PDFREECLUST, start, 0);
+		/* locked: uobj (if !swap_backed && result != PEND) */
+		/* unlocked: pageqs, object (if swap_backed ||result == PEND) */
 
 		/*
 		 * if we did i/o to swap, zero swslot to indicate that we are
@@ -659,20 +761,25 @@ uvmpd_scan_inactive(struct pglist *pglst)
 
 		if (result == VM_PAGER_PEND) {
 			uvmexp.paging += npages;
-			uvm_lock_pageq();
+			uvm_lock_pageq();		/* relock page queues */
 			uvmexp.pdpending++;
 			if (p) {
-				if (p->pg_flags & PQ_INACTIVE)
-					nextpg = TAILQ_NEXT(p, pageq);
+				if (p->pqflags & PQ_INACTIVE)
+					/* reload! */
+					nextpg = p->pageq.tqe_next;
 				else
-					nextpg = TAILQ_FIRST(pglst);
-			} else {
-				nextpg = NULL;
+					/* reload! */
+					nextpg = pglst->tqh_first;
+				} else {
+					nextpg = NULL;		/* done list */
 			}
 			continue;
 		}
 
-		/* clean up "p" if we have one */
+		/*
+		 * clean up "p" if we have one
+		 */
+
 		if (p) {
 			/*
 			 * the I/O request to "p" is done and uvm_pager_put
@@ -696,6 +803,14 @@ uvmpd_scan_inactive(struct pglist *pglst)
 			/* relock p's object: page queues not lock yet, so
 			 * no need for "try" */
 
+			/* !swap_backed case: already locked... */
+			if (swap_backed) {
+				if (anon)
+					simple_lock(&anon->an_lock);
+				else
+					simple_lock(&uobj->vmobjlock);
+			}
+
 #ifdef DIAGNOSTIC
 			if (result == VM_PAGER_UNLOCK)
 				panic("pagedaemon: pageout returned "
@@ -703,49 +818,81 @@ uvmpd_scan_inactive(struct pglist *pglst)
 #endif
 
 			/* handle PG_WANTED now */
-			if (p->pg_flags & PG_WANTED)
-				wakeup(p);
+			if (p->flags & PG_WANTED)
+				/* still holding object lock */
+				thread_wakeup(p);
 
-			atomic_clearbits_int(&p->pg_flags, PG_BUSY|PG_WANTED);
+			p->flags &= ~(PG_BUSY|PG_WANTED);
 			UVM_PAGE_OWN(p, NULL);
 
-			/* released during I/O? Can only happen for anons */
-			if (p->pg_flags & PG_RELEASED) {
-				KASSERT(anon != NULL);
-				/*
-				 * remove page so we can get nextpg,
-				 * also zero out anon so we don't use
-				 * it after the free.
-				 */
-				anon->an_page = NULL;
-				p->uanon = NULL;
+			/* released during I/O? */
+			if (p->flags & PG_RELEASED) {
+				if (anon) {
+					/* remove page so we can get nextpg */
+					anon->u.an_page = NULL;
 
-				uvm_anfree(anon);	/* kills anon */
-				pmap_page_protect(p, PROT_NONE);
-				anon = NULL;
-				uvm_lock_pageq();
-				nextpg = TAILQ_NEXT(p, pageq);
-				/* free released page */
-				uvm_pagefree(p);
+					simple_unlock(&anon->an_lock);
+					uvm_anfree(anon);	/* kills anon */
+					pmap_page_protect(PMAP_PGARG(p),
+					    VM_PROT_NONE);
+					anon = NULL;
+					uvm_lock_pageq();
+					nextpg = p->pageq.tqe_next;
+					/* free released page */
+					uvm_pagefree(p);
+
+				} else {
+
+#ifdef DIAGNOSTIC
+					if (uobj->pgops->pgo_releasepg == NULL)
+						panic("pagedaemon: no "
+						   "pgo_releasepg function");
+#endif
+
+					/* 
+					 * pgo_releasepg nukes the page and
+					 * gets "nextpg" for us.  it returns
+					 * with the page queues locked (when
+					 * given nextpg ptr).
+					 */
+					if (!uobj->pgops->pgo_releasepg(p,
+					    &nextpg))
+						/* uobj died after release */
+						uobj = NULL;
+
+					/*
+					 * lock page queues here so that they're
+					 * always locked at the end of the loop.
+					 */
+					uvm_lock_pageq();
+				}
+
 			} else {	/* page was not released during I/O */
+
 				uvm_lock_pageq();
-				nextpg = TAILQ_NEXT(p, pageq);
+				nextpg = p->pageq.tqe_next;
+
 				if (result != VM_PAGER_OK) {
+
 					/* pageout was a failure... */
 					if (result != VM_PAGER_AGAIN)
 						uvm_pageactivate(p);
-					pmap_clear_reference(p);
+					pmap_clear_reference(PMAP_PGARG(p));
 					/* XXXCDC: if (swap_backed) FREE p's
 					 * swap block? */
+
 				} else {
+
 					/* pageout was a success... */
-					pmap_clear_reference(p);
-					pmap_clear_modify(p);
-					atomic_setbits_int(&p->pg_flags,
-					    PG_CLEAN);
+					pmap_clear_reference(PMAP_PGARG(p));
+					pmap_clear_modify(PMAP_PGARG(p));
+					p->flags |= PG_CLEAN;
+					/* XXX: could free page here, but old
+					 * pagedaemon does not */
+
 				}
 			}
-
+			
 			/*
 			 * drop object lock (if there is an object left).   do
 			 * a safety check of nextpg to make sure it is on the
@@ -754,23 +901,31 @@ uvmpd_scan_inactive(struct pglist *pglst)
 			 * true for active queue]).
 			 */
 
-			if (nextpg && (nextpg->pg_flags & PQ_INACTIVE) == 0) {
-				nextpg = TAILQ_FIRST(pglst);	/* reload! */
-			}
-		} else {
-			/*
-			 * if p is null in this loop, make sure it stays null
-			 * in the next loop.
-			 */
-			nextpg = NULL;
+			if (anon)
+				simple_unlock(&anon->an_lock);
+			else if (uobj)
+				simple_unlock(&uobj->vmobjlock);
 
+		} /* if (p) */ else {
+
+			/* if p is null in this loop, make sure it stays null
+			 * in next loop */
+			nextpg = NULL;
+			
 			/*
 			 * lock page queues here just so they're always locked
 			 * at the end of the loop.
 			 */
 			uvm_lock_pageq();
 		}
-	}
+
+		if (nextpg && (nextpg->pqflags & PQ_INACTIVE) == 0) {
+			printf("pagedaemon: invalid nextpg!   reverting to "
+			    "queue head\n");
+			nextpg = pglst->tqh_first;	/* reload! */
+		}
+
+	}	/* end of "inactive" 'for' loop */
 	return (retval);
 }
 
@@ -781,20 +936,27 @@ uvmpd_scan_inactive(struct pglist *pglst)
  */
 
 void
-uvmpd_scan(void)
+uvmpd_scan()
 {
-	int free, inactive_shortage, swap_shortage, pages_freed;
+	int s, free, inactive_shortage, swap_shortage, pages_freed;
 	struct vm_page *p, *nextpg;
 	struct uvm_object *uobj;
 	boolean_t got_it;
+	UVMHIST_FUNC("uvmpd_scan"); UVMHIST_CALLED(pdhist);
 
 	uvmexp.pdrevs++;		/* counter */
-	uobj = NULL;
 
+#ifdef __GNUC__
+	uobj = NULL;	/* XXX gcc */
+#endif
 	/*
 	 * get current "free" page count
 	 */
-	free = uvmexp.free - BUFPAGES_DEFICIT;
+	s = splimp();
+	uvm_lock_fpageq();
+	free = uvmexp.free;
+	uvm_unlock_fpageq();
+	splx(s);
 
 #ifndef __SWAP_BROKEN
 	/*
@@ -802,10 +964,15 @@ uvmpd_scan(void)
 	 * we need to unlock the page queues for this.
 	 */
 	if (free < uvmexp.freetarg) {
+
 		uvmexp.pdswout++;
+		UVMHIST_LOG(pdhist,"  free %d < target %d: swapout", free,
+		    uvmexp.freetarg, 0, 0);
 		uvm_unlock_pageq();
 		uvm_swapout_threads();
+		pmap_update();		/* update so we can scan inactive q */
 		uvm_lock_pageq();
+
 	}
 #endif
 
@@ -816,12 +983,15 @@ uvmpd_scan(void)
 	 * to inactive ones.
 	 */
 
+	UVMHIST_LOG(pdhist, "  starting 'free' loop",0,0,0,0);
+
 	/*
-	 * alternate starting queue between swap and object based on the
-	 * low bit of uvmexp.pdrevs (which we bump by one each call).
+	 * do loop #1!   alternate starting queue between swap and object based
+	 * on the low bit of uvmexp.pdrevs (which we bump by one each call).
 	 */
+
 	got_it = FALSE;
-	pages_freed = uvmexp.pdfreed;	/* XXX - int */
+	pages_freed = uvmexp.pdfreed;
 	if ((uvmexp.pdrevs & 1) != 0 && uvmexp.nswapdev != 0)
 		got_it = uvmpd_scan_inactive(&uvm.page_inactive_swp);
 	if (!got_it)
@@ -834,7 +1004,8 @@ uvmpd_scan(void)
 	 * we have done the scan to get free pages.   now we work on meeting
 	 * our inactive target.
 	 */
-	inactive_shortage = uvmexp.inactarg - uvmexp.inactive - BUFPAGES_INACT;
+
+	inactive_shortage = uvmexp.inactarg - uvmexp.inactive;
 
 	/*
 	 * detect if we're not going to be able to page anything out
@@ -847,107 +1018,92 @@ uvmpd_scan(void)
 	    pages_freed == 0) {
 		swap_shortage = uvmexp.freetarg - uvmexp.free;
 	}
-
-	for (p = TAILQ_FIRST(&uvm.page_active);
+ 
+	UVMHIST_LOG(pdhist, "  loop 2: inactive_shortage=%d swap_shortage=%d",
+		    inactive_shortage, swap_shortage,0,0);
+	for (p = TAILQ_FIRST(&uvm.page_active); 
 	     p != NULL && (inactive_shortage > 0 || swap_shortage > 0);
 	     p = nextpg) {
-		nextpg = TAILQ_NEXT(p, pageq);
+		nextpg = p->pageq.tqe_next;
+		if (p->flags & PG_BUSY)
+			continue;	/* quick check before trying to lock */
 
-		/* skip this page if it's busy. */
-		if (p->pg_flags & PG_BUSY)
+		/*
+		 * lock the page's owner.
+		 */
+		/* is page anon owned or ownerless? */
+		if ((p->pqflags & PQ_ANON) || p->uobject == NULL) {
+
+#ifdef DIAGNOSTIC
+			if (p->uanon == NULL)
+				panic("pagedaemon: page with no anon or "
+				    "object detected - loop 2");
+#endif
+			if (!simple_lock_try(&p->uanon->an_lock))
+				continue;
+
+			/* take over the page? */
+			if ((p->pqflags & PQ_ANON) == 0) {
+#ifdef DIAGNOSTIC
+				if (p->loan_count < 1)
+					panic("pagedaemon: non-loaned "
+					    "ownerless page detected - loop 2");
+#endif
+				p->loan_count--;
+				p->pqflags |= PQ_ANON;
+			}
+		} else {
+			if (!simple_lock_try(&p->uobject->vmobjlock))
+				continue;
+		}
+		/*
+		 * skip this page if it's busy.
+		 */
+		if ((p->flags & PG_BUSY) != 0) {
+			if (p->pqflags & PQ_ANON)
+				simple_unlock(&p->uanon->an_lock);
+			else
+				simple_unlock(&p->uobject->vmobjlock);
 			continue;
-
-		if (p->pg_flags & PQ_ANON)
-			KASSERT(p->uanon != NULL);
-		else
-			KASSERT(p->uobject != NULL);
-
+		}
+ 
 		/*
 		 * if there's a shortage of swap, free any swap allocated
 		 * to this page so that other pages can be paged out.
 		 */
 		if (swap_shortage > 0) {
-			if ((p->pg_flags & PQ_ANON) && p->uanon->an_swslot) {
+			if ((p->pqflags & PQ_ANON) && p->uanon->an_swslot) {
 				uvm_swap_free(p->uanon->an_swslot, 1);
 				p->uanon->an_swslot = 0;
-				atomic_clearbits_int(&p->pg_flags, PG_CLEAN);
+				p->flags &= ~PG_CLEAN;
 				swap_shortage--;
 			}
-			if (p->pg_flags & PQ_AOBJ) {
+			if (p->pqflags & PQ_AOBJ) {
 				int slot = uao_set_swslot(p->uobject,
 					p->offset >> PAGE_SHIFT, 0);
 				if (slot) {
 					uvm_swap_free(slot, 1);
-					atomic_clearbits_int(&p->pg_flags,
-					    PG_CLEAN);
+					p->flags &= ~PG_CLEAN;
 					swap_shortage--;
 				}
 			}
 		}
-
+ 
 		/*
 		 * deactivate this page if there's a shortage of
 		 * inactive pages.
 		 */
 		if (inactive_shortage > 0) {
-			pmap_page_protect(p, PROT_NONE);
+			pmap_page_protect(PMAP_PGARG(p), VM_PROT_NONE);
 			/* no need to check wire_count as pg is "active" */
 			uvm_pagedeactivate(p);
 			uvmexp.pddeact++;
 			inactive_shortage--;
 		}
+
+		if (p->pqflags & PQ_ANON)
+			simple_unlock(&p->uanon->an_lock);
+		else
+			simple_unlock(&p->uobject->vmobjlock);
 	}
 }
-
-#ifdef HIBERNATE
-
-/*
- * uvmpd_drop: drop clean pages from list
- */
-void
-uvmpd_drop(struct pglist *pglst)
-{
-	struct vm_page *p, *nextpg;
-
-	for (p = TAILQ_FIRST(pglst); p != NULL; p = nextpg) {
-		nextpg = TAILQ_NEXT(p, pageq);
-
-		if (p->pg_flags & PQ_ANON || p->uobject == NULL)
-			continue;
-
-		if (p->pg_flags & PG_BUSY)
-			continue;
-
-		if (p->pg_flags & PG_CLEAN) {
-			/*
-			 * we now have the page queues locked.
-			 * the page is not busy.   if the page is clean we
-			 * can free it now and continue.
-			 */
-			if (p->pg_flags & PG_CLEAN) {
-				if (p->pg_flags & PQ_SWAPBACKED) {
-					/* this page now lives only in swap */
-					uvmexp.swpgonly++;
-				}
-
-				/* zap all mappings with pmap_page_protect... */
-				pmap_page_protect(p, PROT_NONE);
-				uvm_pagefree(p);
-			}
-		}
-	}
-}
-
-void
-uvmpd_hibernate(void)
-{
-	uvm_lock_pageq();
-
-	uvmpd_drop(&uvm.page_inactive_swp);
-	uvmpd_drop(&uvm.page_inactive_obj);
-	uvmpd_drop(&uvm.page_active);
-
-	uvm_unlock_pageq();
-}
-
-#endif

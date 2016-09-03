@@ -1,5 +1,3 @@
-/*	$OpenBSD: v_ex.c,v 1.13 2016/01/06 22:28:52 millert Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)v_ex.c	10.42 (Berkeley) 6/28/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -25,20 +27,22 @@
 #include "../common/common.h"
 #include "vi.h"
 
-static int v_ecl(SCR *);
-static int v_ecl_init(SCR *);
-static int v_ecl_log(SCR *, TEXT *);
-static int v_ex_done(SCR *, VICMD *);
-static int v_exec_ex(SCR *, VICMD *, EXCMD *);
+static int v_ecl __P((SCR *));
+static int v_ecl_init __P((SCR *));
+static int v_ecl_log __P((SCR *, TEXT *));
+static int v_ex_done __P((SCR *, VICMD *));
+static int v_exec_ex __P((SCR *, VICMD *, EXCMD *));
 
 /*
  * v_again -- &
  *	Repeat the previous substitution.
  *
- * PUBLIC: int v_again(SCR *, VICMD *);
+ * PUBLIC: int v_again __P((SCR *, VICMD *));
  */
 int
-v_again(SCR *sp, VICMD *vp)
+v_again(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	ARGS *ap[2], a;
 	EXCMD cmd;
@@ -53,10 +57,12 @@ v_again(SCR *sp, VICMD *vp)
  * v_exmode -- Q
  *	Switch the editor into EX mode.
  *
- * PUBLIC: int v_exmode(SCR *, VICMD *);
+ * PUBLIC: int v_exmode __P((SCR *, VICMD *));
  */
 int
-v_exmode(SCR *sp, VICMD *vp)
+v_exmode(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	GS *gp;
 
@@ -65,7 +71,7 @@ v_exmode(SCR *sp, VICMD *vp)
 	/* Try and switch screens -- the screen may not permit it. */
 	if (gp->scr_screen(sp, SC_EX)) {
 		msgq(sp, M_ERR,
-		    "The Q command requires the ex terminal interface");
+		    "207|The Q command requires the ex terminal interface");
 		return (1);
 	}
 	(void)gp->scr_attr(sp, SA_ALTERNATE, 0);
@@ -89,10 +95,12 @@ v_exmode(SCR *sp, VICMD *vp)
  * v_join -- [count]J
  *	Join lines together.
  *
- * PUBLIC: int v_join(SCR *, VICMD *);
+ * PUBLIC: int v_join __P((SCR *, VICMD *));
  */
 int
-v_join(SCR *sp, VICMD *vp)
+v_join(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	EXCMD cmd;
 	int lno;
@@ -118,10 +126,12 @@ v_join(SCR *sp, VICMD *vp)
  * v_shiftl -- [count]<motion
  *	Shift lines left.
  *
- * PUBLIC: int v_shiftl(SCR *, VICMD *);
+ * PUBLIC: int v_shiftl __P((SCR *, VICMD *));
  */
 int
-v_shiftl(SCR *sp, VICMD *vp)
+v_shiftl(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	ARGS *ap[2], a;
 	EXCMD cmd;
@@ -135,10 +145,12 @@ v_shiftl(SCR *sp, VICMD *vp)
  * v_shiftr -- [count]>motion
  *	Shift lines right.
  *
- * PUBLIC: int v_shiftr(SCR *, VICMD *);
+ * PUBLIC: int v_shiftr __P((SCR *, VICMD *));
  */
 int
-v_shiftr(SCR *sp, VICMD *vp)
+v_shiftr(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	ARGS *ap[2], a;
 	EXCMD cmd;
@@ -152,10 +164,12 @@ v_shiftr(SCR *sp, VICMD *vp)
  * v_suspend -- ^Z
  *	Suspend vi.
  *
- * PUBLIC: int v_suspend(SCR *, VICMD *);
+ * PUBLIC: int v_suspend __P((SCR *, VICMD *));
  */
 int
-v_suspend(SCR *sp, VICMD *vp)
+v_suspend(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	ARGS *ap[2], a;
 	EXCMD cmd;
@@ -169,10 +183,12 @@ v_suspend(SCR *sp, VICMD *vp)
  * v_switch -- ^^
  *	Switch to the previous file.
  *
- * PUBLIC: int v_switch(SCR *, VICMD *);
+ * PUBLIC: int v_switch __P((SCR *, VICMD *));
  */
 int
-v_switch(SCR *sp, VICMD *vp)
+v_switch(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	ARGS *ap[2], a;
 	EXCMD cmd;
@@ -182,20 +198,14 @@ v_switch(SCR *sp, VICMD *vp)
 	 * Try the alternate file name, then the previous file
 	 * name.  Use the real name, not the user's current name.
 	 */
-	if (sp->alt_name == NULL) {
-		msgq(sp, M_ERR, "No previous file to edit");
-		return (1);
-	}
-	if ((name = strdup(sp->alt_name)) == NULL) {
-		msgq(sp, M_SYSERR, NULL);
+	if ((name = sp->alt_name) == NULL) {
+		msgq(sp, M_ERR, "180|No previous file to edit");
 		return (1);
 	}
 
 	/* If autowrite is set, write out the file. */
-	if (file_m1(sp, 0, FS_ALL)) {
-		free(name);
+	if (file_m1(sp, 0, FS_ALL))
 		return (1);
-	}
 
 	ex_cinit(&cmd, C_EDIT, 0, OOBLNO, OOBLNO, 0, ap);
 	ex_cadd(&cmd, &a, name, strlen(name));
@@ -206,10 +216,12 @@ v_switch(SCR *sp, VICMD *vp)
  * v_tagpush -- ^[
  *	Do a tag search on the cursor keyword.
  *
- * PUBLIC: int v_tagpush(SCR *, VICMD *);
+ * PUBLIC: int v_tagpush __P((SCR *, VICMD *));
  */
 int
-v_tagpush(SCR *sp, VICMD *vp)
+v_tagpush(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	ARGS *ap[2], a;
 	EXCMD cmd;
@@ -223,10 +235,12 @@ v_tagpush(SCR *sp, VICMD *vp)
  * v_tagpop -- ^T
  *	Pop the tags stack.
  *
- * PUBLIC: int v_tagpop(SCR *, VICMD *);
+ * PUBLIC: int v_tagpop __P((SCR *, VICMD *));
  */
 int
-v_tagpop(SCR *sp, VICMD *vp)
+v_tagpop(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	EXCMD cmd;
 
@@ -238,10 +252,12 @@ v_tagpop(SCR *sp, VICMD *vp)
  * v_filter -- [count]!motion command(s)
  *	Run range through shell commands, replacing text.
  *
- * PUBLIC: int v_filter(SCR *, VICMD *);
+ * PUBLIC: int v_filter __P((SCR *, VICMD *));
  */
 int
-v_filter(SCR *sp, VICMD *vp)
+v_filter(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	EXCMD cmd;
 	TEXT *tp;
@@ -290,7 +306,7 @@ v_filter(SCR *sp, VICMD *vp)
 	 * Entering <escape> on an empty line was historically an error,
 	 * this implementation doesn't bother.
 	 */
-	tp = TAILQ_FIRST(&sp->tiq);
+	tp = sp->tiq.cqh_first;
 	if (tp->term != TERM_OK) {
 		vp->m_final.lno = sp->lno;
 		vp->m_final.cno = sp->cno;
@@ -314,10 +330,12 @@ v_filter(SCR *sp, VICMD *vp)
  * v_event_exec --
  *	Execute some command(s) based on an event.
  *
- * PUBLIC: int v_event_exec(SCR *, VICMD *);
+ * PUBLIC: int v_event_exec __P((SCR *, VICMD *));
  */
 int
-v_event_exec(SCR *sp, VICMD *vp)
+v_event_exec(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	EXCMD cmd;
 
@@ -339,7 +357,10 @@ v_event_exec(SCR *sp, VICMD *vp)
  *	Execute an ex command.
  */
 static int
-v_exec_ex(SCR *sp, VICMD *vp, EXCMD *exp)
+v_exec_ex(sp, vp, exp)
+	SCR *sp;
+	VICMD *vp;
+	EXCMD *exp;
 {
 	int rval;
 
@@ -351,10 +372,12 @@ v_exec_ex(SCR *sp, VICMD *vp, EXCMD *exp)
  * v_ex -- :
  *	Execute a colon command line.
  *
- * PUBLIC: int v_ex(SCR *, VICMD *);
+ * PUBLIC: int v_ex __P((SCR *, VICMD *));
  */
 int
-v_ex(SCR *sp, VICMD *vp)
+v_ex(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	GS *gp;
 	TEXT *tp;
@@ -382,7 +405,7 @@ v_ex(SCR *sp, VICMD *vp)
 			if (v_tcmd(sp, vp, ':',
 			    TXT_BS | TXT_CEDIT | TXT_FILEC | TXT_PROMPT))
 				return (1);
-			tp = TAILQ_FIRST(&sp->tiq);
+			tp = sp->tiq.cqh_first;
 
 			/*
 			 * If the user entered a single <esc>, they want to
@@ -396,8 +419,8 @@ v_ex(SCR *sp, VICMD *vp)
 				break;
 			}
 
-			/* If the user changed their mind, return. */
-			if (tp->term != TERM_OK)
+			/* If the user didn't enter anything, return. */
+			if (tp->term == TERM_BS)
 				break;
 
 			/* Log the command. */
@@ -478,7 +501,9 @@ v_ex(SCR *sp, VICMD *vp)
  *	Cleanup from an ex command.
  */
 static int
-v_ex_done(SCR *sp, VICMD *vp)
+v_ex_done(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	size_t len;
 
@@ -520,7 +545,8 @@ v_ex_done(SCR *sp, VICMD *vp)
  *	Start an edit window on the colon command-line commands.
  */
 static int
-v_ecl(SCR *sp)
+v_ecl(sp)
+	SCR *sp;
 {
 	GS *gp;
 	SCR *new;
@@ -566,10 +592,11 @@ v_ecl(SCR *sp)
  * v_ecl_exec --
  *	Execute a command from a colon command-line window.
  *
- * PUBLIC: int v_ecl_exec(SCR *);
+ * PUBLIC: int v_ecl_exec __P((SCR *));
  */
 int
-v_ecl_exec(SCR *sp)
+v_ecl_exec(sp)
+	SCR *sp;
 {
 	size_t len;
 	char *p;
@@ -579,7 +606,7 @@ v_ecl_exec(SCR *sp)
 		return (1);
 	}
 	if (len == 0) {
-		msgq(sp, M_BERR, "No ex command to execute");
+		msgq(sp, M_BERR, "307|No ex command to execute");
 		return (1);
 	}
 	
@@ -598,7 +625,9 @@ v_ecl_exec(SCR *sp)
  *	Log a command into the colon command-line log file.
  */
 static int
-v_ecl_log(SCR *sp, TEXT *tp)
+v_ecl_log(sp, tp)
+	SCR *sp;
+	TEXT *tp;
 {
 	EXF *save_ep;
 	recno_t lno;
@@ -637,7 +666,8 @@ v_ecl_log(SCR *sp, TEXT *tp)
  *	Initialize the colon command-line log file.
  */
 static int
-v_ecl_init(SCR *sp)
+v_ecl_init(sp)
+	SCR *sp;
 {
 	FREF *frp;
 	GS *gp;

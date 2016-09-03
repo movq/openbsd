@@ -1,4 +1,4 @@
-/*	$OpenBSD: conf.c,v 1.59 2016/05/28 15:53:39 sthen Exp $	*/
+/*	$OpenBSD: conf.c,v 1.13 1998/07/20 18:14:52 mickey Exp $	*/
 
 /*
  * Copyright (c) 1996 Michael Shalayeff
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR 
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
@@ -24,9 +29,9 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
+ *
  */
 
-#include <sys/param.h>
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <libsa.h>
@@ -38,31 +43,18 @@
 #include <lib/libsa/tftp.h>
 #include <lib/libsa/netif.h>
 #endif
+#include <lib/libsa/unixdev.h>
 #include <biosdev.h>
 #include <dev/cons.h>
-#include "debug.h"
+#include <lib/libsa/exec.h>
 
-const char version[] = "3.29";
-int	debug = 1;
+const char version[] = "1.23";
+int	debug;
 
-
-void (*sa_cleanup)(void) = NULL;
-
-
-void (*i386_probe1[])(void) = {
-	ps2probe, gateA20on, debug_init, cninit,
-	apmprobe, pciprobe, /* smpprobe, */ memprobe
+const struct x_sw execsw[] = {
+	{ "aout", aout_probe,	aout_load },
+	{ "",     NULL,		NULL },
 };
-void (*i386_probe2[])(void) = {
- 	diskprobe
-};
-
-struct i386_boot_probes probe_list[] = {
-	{ "probing", i386_probe1, nitems(i386_probe1) },
-	{ "disk",    i386_probe2, nitems(i386_probe2) }
-};
-int nibprobes = nitems(probe_list);
-
 
 struct fs_ops file_system[] = {
 	{ ufs_open,    ufs_close,    ufs_read,    ufs_write,    ufs_seek,
@@ -75,27 +67,40 @@ struct fs_ops file_system[] = {
 	{ cd9660_open, cd9660_close, cd9660_read, cd9660_write, cd9660_seek,
 	  cd9660_stat, cd9660_readdir },
 #endif
+#ifdef _TEST
+	{ null_open,   null_close,   null_read,   null_write,   null_seek,
+	  null_stat,   null_readdir   }
+#endif
 };
-int nfsys = nitems(file_system);
+int nfsys = NENTS(file_system);
 
 struct devsw	devsw[] = {
+#ifdef _TEST
+	{ "UNIX", unixstrategy, unixopen, unixclose, unixioctl },
+#else
 	{ "BIOS", biosstrategy, biosopen, biosclose, biosioctl },
+#endif
 #if 0
 	{ "TFTP", tftpstrategy, tftpopen, tftpclose, tftpioctl },
 #endif
 };
-int ndevs = nitems(devsw);
+int ndevs = NENTS(devsw);
 
 #ifdef notdef
 struct netif_driver	*netif_drivers[] = {
 	NULL
 };
-int n_netif_drivers = nitems(netif_drivers);
+int n_netif_drivers = NENTS(netif_drivers);
 #endif
 
 struct consdev constab[] = {
+#ifdef _TEST
+	{ unix_probe, unix_init, unix_getc, unix_putc },
+#else
 	{ pc_probe, pc_init, pc_getc, pc_putc },
 	{ com_probe, com_init, com_getc, com_putc },
+#endif
 	{ NULL }
 };
 struct consdev *cn_tab = constab;
+

@@ -1,4 +1,4 @@
-.\" $OpenBSD: 2.t,v 1.5 2003/06/02 23:36:53 millert Exp $
+.\" $OpenBSD: 2.t,v 1.2 1997/01/17 15:54:16 millert Exp $
 .\"
 .\" Copyright (c) 1983, 1993
 .\"	The Regents of the University of California.  All rights reserved.
@@ -11,7 +11,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -47,7 +51,7 @@ database restarting any printers that have jobs.
 In normal operation
 .I lpd
 listens for service requests on multiple sockets,
-one in the LOCAL domain (named ``/var/run/printer'') for
+one in the UNIX domain (named ``/dev/printer'') for
 local requests, and one in the Internet domain
 (under the ``printer'' service specification)
 for requests for printer access from off machine;
@@ -63,7 +67,7 @@ Clients communicate with
 using a simple transaction oriented protocol.
 Authentication of remote clients is done based
 on the ``privilege port'' scheme employed by
-\fIrshd\fP\|(8) and \fIrcmd\fP\|(3).
+\fIrshd\fP\|(8C) and \fIrcmd\fP\|(3X).
 The following table shows the requests 
 understood by
 .IR lpd .

@@ -29,6 +29,10 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char *rcsid = "$Id: util.c,v 1.2 1997/04/15 15:06:13 deraadt Exp $";
+#endif
+
 #include <err.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,12 +43,14 @@
  *	Error checked malloc
  */
 void *
-emalloc(size_t s)
+emalloc(s)
+    size_t s;
 {
-	void *ptr = malloc(s);
-	if (ptr == NULL)
-		err(1, NULL);
-	return ptr;
+    void *ptr = malloc(s);
+    if (ptr == NULL)
+	/* Crappy gcc warning! */
+	err(1, "%s", "");
+    return ptr;
 }
 
 
@@ -52,41 +58,47 @@ emalloc(size_t s)
  *	Error checked realloc
  */
 void *
-erealloc(void *p, size_t s)
+erealloc(p, s)
+    void *p;
+    size_t s;
 {
-	void *ptr = realloc(p, s);
-	if (ptr == NULL)
-		err(1, NULL);
-	return ptr;
+    void *ptr = realloc(p, s);
+    if (ptr == NULL)
+	/* Crappy gcc warning! */
+	err(1, "%s", "");
+    return ptr;
 }
 
 
-/* get_line():
+/* getline():
  *	Read a line from a file parsing continuations ending in \
  *	and eliminating trailing newlines.
  */
 char *
-get_line(FILE *fp, size_t *size)
+getline(fp, size)
+    FILE *fp;
+    size_t *size;
 {
-	size_t s, len = 0;
-	char *buf = NULL, *ptr;
-	int cnt = 1;
+    size_t s, len = 0;
+    char *buf = NULL;
+    char *ptr;
+    int cnt = 1;
 
-	while (cnt) {
-		if ((ptr = fgetln(fp, &s)) == NULL) {
-			*size = len;
-			return buf;
-		}
-		if (ptr[s - 1] == '\n')		/* the newline may be missing at EOF */
-			s--;				/* forget newline */
-		if (s && (cnt = (ptr[s - 1] == '\\')))	/* check for \\ */
-			s--;				/* forget \\ */
-
-		buf = erealloc(buf, len + s + 1);
-		memcpy(buf + len, ptr, s);
-		len += s;
-		buf[len] = '\0';
+    while (cnt) {
+	if ((ptr = fgetln(fp, &s)) == NULL) {
+	    *size = len;
+	    return buf;
 	}
-	*size = len;
-	return buf;
+	if (ptr[s - 1] == '\n')		/* the newline may be missing at EOF */
+	    s--;			/* forget newline */
+	if (s && (cnt = (ptr[s - 1] == '\\')))	/* check for \\ */
+	    s--;			/* forget \\ */
+
+	buf = erealloc(buf, len + s + 1);
+	memcpy(buf + len, ptr, s);
+	len += s;
+	buf[len] = '\0';
+    }
+    *size = len;
+    return buf;
 }

@@ -1,170 +1,235 @@
-/*	$OpenBSD: disk.c,v 1.55 2016/03/09 12:55:18 krw Exp $	*/
+/*	$OpenBSD: disk.c,v 1.9 1997/10/28 10:06:32 deraadt Exp $	*/
 
 /*
  * Copyright (c) 1997 Tobias Weingartner
+ * All rights reserved.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *    This product includes software developed by Tobias Weingartner.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-
-#include <sys/types.h>
-#include <sys/fcntl.h>
-#include <sys/ioctl.h>
-#include <sys/dkio.h>
-#include <sys/stat.h>
-#include <sys/disklabel.h>
 
 #include <err.h>
-#include <errno.h>
+#include <util.h>
 #include <stdio.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <util.h>
-
+#include <sys/fcntl.h>
+#include <sys/ioctl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/reboot.h>
+#include <sys/disklabel.h>
+#include <sys/param.h>
+#include <sys/sysctl.h>
+#include <machine/cpu.h>
+#ifdef CPU_BIOS
+#include <machine/biosvar.h>
+#endif
 #include "disk.h"
-#include "misc.h"
 
-struct disk disk;
-struct disklabel dl;
-
-void
-DISK_open(int rw)
+int
+DISK_open(disk, mode)
+	char *disk;
+	int mode;
 {
+	int fd;
 	struct stat st;
-	u_int64_t sz, spc;
 
-	disk.fd = opendev(disk.name, rw ? O_RDWR : O_RDONLY, OPENDEV_PART,
-	    NULL);
-	if (disk.fd == -1)
-		err(1, "%s", disk.name);
-	if (fstat(disk.fd, &st) == -1)
-		err(1, "%s", disk.name);
-	if (!S_ISCHR(st.st_mode))
-		errx(1, "%s is not a character device", disk.name);
-
-	/* Get label geometry. */
-	if (ioctl(disk.fd, DIOCGPDINFO, &dl) == -1) {
-		warn("DIOCGPDINFO");
-	} else {
-		unit_types[SECTORS].conversion = dl.d_secsize;
-		if (disk.size == 0) {
-			/* -l or -c/-h/-s not used. Use disklabel info. */
-			disk.cylinders = dl.d_ncylinders;
-			disk.heads = dl.d_ntracks;
-			disk.sectors = dl.d_nsectors;
-			/* MBR handles only first UINT32_MAX sectors. */
-			spc = (u_int64_t)disk.heads * disk.sectors;
-			sz = DL_GETDSIZE(&dl);
-			if (sz > UINT32_MAX) {
-				disk.cylinders = UINT32_MAX / spc;
-				disk.size = disk.cylinders * spc;
-			} else
-				disk.size = sz;
-		}
-	}
-
-	if (disk.size == 0 || disk.cylinders == 0 || disk.heads == 0 ||
-	    disk.sectors == 0 || unit_types[SECTORS].conversion == 0)
-		errx(1, "Can't get disk geometry, please use [-chs] or [-l]"
-		    "to specify.");
+	fd = opendev(disk, mode, OPENDEV_PART, NULL);
+	if (fd < 0)
+		err(1, "%s", disk);
+	if (fstat(fd, &st) < 0)
+		err(1, "%s", disk);
+	if (!S_ISCHR(st.st_mode) && !S_ISREG(st.st_mode))
+		err(1, "%s is not a character device or a regular file", disk);
+	return (fd);
 }
 
+int
+DISK_close(fd)
+	int fd;
+{
+
+	return (close(fd));
+}
+
+/* Routine to go after the disklabel for geometry
+ * information.  This should work everywhere, but
+ * in the land of PC, things are not always what
+ * they seem.
+ */
+DISK_metrics *
+DISK_getlabelmetrics(name)
+	char *name;
+{
+	DISK_metrics *lm = NULL;
+	struct disklabel dl;
+	int fd;
+
+	/* Get label metrics */
+	if ((fd = DISK_open(name, O_RDONLY)) >= 0) {
+		lm = malloc(sizeof(DISK_metrics));
+
+		if (ioctl(fd, DIOCGDINFO, &dl) < 0) {
+			warn("DIOCGDINFO");
+			free(lm);
+			lm = NULL;
+		} else {
+			lm->cylinders = dl.d_ncylinders;
+			lm->heads = dl.d_ntracks;
+			lm->sectors = dl.d_nsectors;
+			lm->size = dl.d_secperunit;
+		}
+		DISK_close(fd);
+	}
+
+	return (lm);
+}
+
+#ifdef CPU_BIOS
 /*
- * Print the disk geometry information. Take an optional modifier
- * to indicate the units that should be used for display.
+ * Routine to go after sysctl info for BIOS
+ * geometry.  This should only really work on PC
+ * type machines.  There is still a problem with
+ * correlating the BIOS drive to the BSD drive.
+ */
+DISK_metrics *
+DISK_getbiosmetrics(name)
+	char *name;
+{
+	bios_diskinfo_t di;
+	DISK_metrics *bm;
+	struct stat st;
+	int mib[4], size, fd;
+	dev_t devno;
+
+	if ((fd = DISK_open(name, O_RDONLY)) < 0)
+		return (NULL);
+	fstat(fd, &st);
+	DISK_close(fd);
+
+	/* Get BIOS metrics */
+	mib[0] = CTL_MACHDEP;
+	mib[1] = CPU_CHR2BLK;
+	mib[2] = st.st_rdev;
+	size = sizeof(devno);
+	if (sysctl(mib, 3, &devno, &size, NULL, 0) < 0) {
+		warn("sysctl(machdep.chr2blk)");
+		return (NULL);
+	}
+	devno = MAKEBOOTDEV(major(devno), 0, 0, DISKUNIT(devno), RAW_PART);
+
+	mib[0] = CTL_MACHDEP;
+	mib[1] = CPU_BIOS;
+	mib[2] = BIOS_DISKINFO;
+	mib[3] = devno;
+	size = sizeof(di);
+	if (sysctl(mib, 4, &di, &size, NULL, 0) < 0) {
+		warn("sysctl");
+		return (NULL);
+	}
+
+	bm = malloc(sizeof(di));
+	bm->cylinders = di.bios_cylinders;
+	bm->heads = di.bios_heads;
+	bm->sectors = di.bios_sectors;
+	bm->size = di.bios_cylinders * di.bios_heads * di.bios_sectors;
+	return (bm);
+}
+#else
+/*
+ * We are not a PC, so we do not have BIOS metrics to contend
+ * with.  Return NULL to indicate so.
+ */
+DISK_metrics *
+DISK_getbiosmetrics(name)
+	char *name;
+{
+	return (NULL);
+}
+#endif
+
+/* This is ugly, and convoluted.  All the magic
+ * for disk geo/size happens here.  Basically,
+ * the real size is the one we will use in the
+ * rest of the program, the label size is what we
+ * got from the disklabel.  If the disklabel fails,
+ * we assume we are working with a normal file,
+ * and should request the user to specify the
+ * geometry he/she wishes to use.
  */
 int
-DISK_printgeometry(char *units)
+DISK_getmetrics(disk, user)
+	disk_t *disk;
+	DISK_metrics *user;
 {
-	const int secsize = unit_types[SECTORS].conversion;
-	double size;
-	int i;
 
-	i = unit_lookup(units);
-	size = ((double)disk.size * secsize) / unit_types[i].conversion;
-	printf("Disk: %s\t", disk.name);
-	if (disk.size) {
-		printf("geometry: %d/%d/%d [%.0f ", disk.cylinders,
-		    disk.heads, disk.sectors, size);
-		if (i == SECTORS && secsize != sizeof(struct dos_mbr))
-			printf("%d-byte ", secsize);
-		printf("%s]\n", unit_types[i].lname);
-	} else
+	disk->label = DISK_getlabelmetrics(disk->name);
+	disk->bios = DISK_getbiosmetrics(disk->name);
+
+	/* If user supplied, use that */
+	if (user) {
+		disk->real = user;
+		return (0);
+	}
+
+	/* If we have a label, use that */
+	if (!disk->real && disk->label)
+		disk->real = disk->label;
+
+	/* Can not get geometry, punt */
+	if (disk->real == NULL)
+		return (1);
+
+	/* If we have a bios, use that (if label looks bogus)
+	 *
+	 * XXX - This needs to be fixed!!!!
+	 * Currently machdep.bios.biosdev is USELESS
+	 * It needs to be, at least, a BSD device.
+	 * Or we need a mapping from biosdev -> BSD universe.
+	 */
+	if (disk->bios)
+		if (disk->real->cylinders > 1024 || disk->real->heads > 255 ||
+		    disk->real->sectors > 63)
+			disk->real = disk->bios;
+
+	return (0);
+}
+
+int
+DISK_printmetrics(disk)
+	disk_t *disk;
+{
+
+	printf("Disk: %s\t", disk->name);
+	if (disk->real)
+		printf("geometry: %d/%d/%d [%d sectors]\n", disk->real->cylinders,
+		    disk->real->heads, disk->real->sectors, disk->real->size);
+	else
 		printf("geometry: <none>\n");
 
 	return (0);
 }
 
-/*
- * Read the sector at 'where' from the file descriptor 'fd' into newly
- * calloc'd memory. Return a pointer to the memory if it contains the
- * requested data, or NULL if it does not.
- *
- * The caller must free() the memory it gets.
- */
-char *
-DISK_readsector(off_t where)
-{
-	int secsize;
-	char *secbuf;
-	ssize_t len;
-	off_t off;
-
-	secsize = dl.d_secsize;
-
-	where *= secsize;
-	off = lseek(disk.fd, where, SEEK_SET);
-	if (off != where)
-		return (NULL);
-
-	secbuf = calloc(1, secsize);
-	if (secbuf == NULL)
-		return (NULL);
-
-	len = read(disk.fd, secbuf, secsize);
-	if (len == -1 || len != secsize) {
-		free(secbuf);
-		return (NULL);
-	}
-
-	return (secbuf);
-}
-
-/*
- * Write the sector-sized 'secbuf' to the sector 'where' on the file
- * descriptor 'fd'. Return 0 if the write works. Return -1 and set
- * errno if the write fails.
- */
-int
-DISK_writesector(char *secbuf, off_t where)
-{
-	int secsize;
-	ssize_t len;
-	off_t off;
-
-	len = -1;
-	secsize = dl.d_secsize;
-
-	where *= secsize;
-	off = lseek(disk.fd, where, SEEK_SET);
-	if (off == where)
-		len = write(disk.fd, secbuf, secsize);
-
-	if (len == -1 || len != secsize) {
-		/* short read or write */
-		errno = EIO;
-		return (-1);
-	}
-
-	return (0);
-}

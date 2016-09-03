@@ -1,4 +1,4 @@
-/*	$OpenBSD: uhareg.h,v 1.5 2010/06/30 19:06:16 mk Exp $	*/
+/*	$OpenBSD: uhareg.h,v 1.2 1999/01/23 00:41:57 espie Exp $	*/
 /*	$NetBSD: uhareg.h,v 1.2 1996/09/01 00:54:41 mycroft Exp $	*/
 
 /*
@@ -218,7 +218,7 @@ struct uha_mscp {
 	struct uha_dma_seg uha_dma[UHA_NSEG];
 	struct scsi_sense_data mscp_sense;
 	/*-----------------end of hardware supported fields----------------*/
-	SLIST_ENTRY(uha_mscp) chain;
+	TAILQ_ENTRY(uha_mscp) chain;
 	struct uha_mscp *nexthash;
 	long hashkey;
 	struct scsi_xfer *xs;	/* the scsi_xfer for this cmd */
@@ -226,5 +226,5 @@ struct uha_mscp {
 #define MSCP_ALLOC	0x01
 #define MSCP_ABORT	0x02
 	int timeout;
-} __packed;
+} __attribute__((packed));
 

@@ -1,5 +1,5 @@
 /*
- *	$OpenBSD: locate.bigram.c,v 1.15 2015/12/09 01:58:34 jsg Exp $
+ *	$OpenBSD: locate.bigram.c,v 1.6 1996/10/20 00:52:51 michaels Exp $
  *
  * Copyright (c) 1995 Wolfram Schneider <wosch@FreeBSD.org>. Berlin.
  * Copyright (c) 1989, 1993
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,11 +36,25 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * 	$Id: locate.bigram.c,v 1.15 2015/12/09 01:58:34 jsg Exp $
+ * 	$Id: locate.bigram.c,v 1.6 1996/10/20 00:52:51 michaels Exp $
  */
 
+#ifndef lint
+#if 0
+static char copyright[] =
+"@(#) Copyright (c) 1989, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#else
+static char rcsid[] = "$OpenBSD: locate.bigram.c,v 1.6 1996/10/20 00:52:51 michaels Exp $";
+#endif
+#endif /* not lint */
+
+#ifndef lint
+static char sccsid[] = "@(#)locate.bigram.c	8.1 (Berkeley) 6/6/93";
+#endif /* not lint */
+
 /*
- *  bigram < sorted_file_names | sort -nr |
+ *  bigram < sorted_file_names | sort -nr | 
  *  	awk 'NR <= 128 { printf $2 }' > bigrams
  *
  * List bigrams for 'updatedb' script.
@@ -44,29 +62,23 @@
  */
 
 #include <stdio.h>
-#include <stdlib.h>
-#include <limits.h>
-#include <unistd.h>
-#include <err.h>
+#include <sys/param.h>			/* for MAXPATHLEN */
 #include "locate.h"
 
-u_char buf1[PATH_MAX] = " ";
-u_char buf2[PATH_MAX];
+u_char buf1[MAXPATHLEN] = " ";
+u_char buf2[MAXPATHLEN];
 u_int bigram[UCHAR_MAX + 1][UCHAR_MAX + 1];
 
 int
 main(void)
 {
-	u_char *cp;
-	u_char *oldpath = buf1, *path = buf2;
-	u_int i, j;
+  	register u_char *cp;
+	register u_char *oldpath = buf1, *path = buf2;
+	register u_int i, j;
 
-	if (pledge("stdio", NULL) == -1)
-		err(1, "pledge");
+     	while (fgets(path, sizeof(buf2), stdin) != NULL) {
 
-	while (fgets(path, sizeof(buf2), stdin) != NULL) {
-
-		/*
+		/* 
 		 * We don't need remove newline character '\n'.
 		 * '\n' is less than ASCII_MIN and will be later
 		 * ignored at output.
@@ -84,20 +96,20 @@ main(void)
 		}
 
 		/* swap pointers */
-		if (path == buf1) {
+		if (path == buf1) { 
 			path = buf2;
 			oldpath = buf1;
 		} else {
 			path = buf1;
 			oldpath = buf2;
 		}
-	}
+   	}
 
 	/* output, boundary check */
 	for (i = ASCII_MIN; i <= ASCII_MAX; i++)
 		for (j = ASCII_MIN; j <= ASCII_MAX; j++)
 			if (bigram[i][j] != 0)
-				(void)printf("%4u\t%c%c\n", bigram[i][j], i, j);
+				(void)printf("%4u %c%c\n", bigram[i][j], i, j);
 
 	exit(0);
 }

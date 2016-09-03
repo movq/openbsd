@@ -1,4 +1,4 @@
-/*	$OpenBSD: bioscons.c,v 1.36 2016/05/27 05:37:51 beck Exp $	*/
+/*	$OpenBSD: bioscons.c,v 1.17 1999/08/25 00:54:19 mickey Exp $	*/
 
 /*
  * Copyright (c) 1997-1999 Michael Shalayeff
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *      This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -37,7 +42,19 @@
 #include <dev/cons.h>
 #include <lib/libsa/stand.h>
 #include "debug.h"
-#include "biosdev.h"
+
+int comspeed __P((dev_t, int));
+
+int
+cnspeed(dev, sp)
+	dev_t	dev;
+	int	sp;
+{
+	if (major(dev) == 8)	/* comN */
+		return comspeed(dev, sp);
+	/* pc0 and anything else */
+	return 9600;
+}
 
 /* XXX cannot trust NVRAM on this.  Maybe later we make a real probe.  */
 #if 0
@@ -47,16 +64,17 @@
 #endif
 
 void
-pc_probe(struct consdev *cn)
+pc_probe(cn)
+	struct consdev *cn;
 {
-	cn->cn_pri = CN_MIDPRI;
+	cn->cn_pri = CN_INTERNAL;
 	cn->cn_dev = makedev(12, 0);
 	printf(" pc%d", minor(cn->cn_dev));
 
 #if 0
 	outb(IO_RTC, NVRAM_EQUIPMENT);
 	if ((inb(IO_RTC+1) & PRESENT_MASK) == PRESENT_MASK) {
-		cn->cn_pri = CN_MIDPRI;
+		cn->cn_pri = CN_INTERNAL;
 		/* XXX from i386/conf.c */
 		cn->cn_dev = makedev(12, 0);
 		printf(" pc%d", minor(cn->cn_dev));
@@ -65,134 +83,106 @@ pc_probe(struct consdev *cn)
 }
 
 void
-pc_init(struct consdev *cn)
+pc_init(cn)
+	struct consdev *cn;
 {
 }
 
 int
-pc_getc(dev_t dev)
+pc_getc(dev)
+	dev_t dev;
 {
 	register int rv;
 
 	if (dev & 0x80) {
-		__asm volatile(DOINT(0x16) "; setnz %b0" : "=a" (rv) :
+		__asm __volatile(DOINT(0x16) "; setnz %b0" : "=a" (rv) :
 		    "0" (0x100) : "%ecx", "%edx", "cc" );
 		return (rv & 0xff);
 	}
 
-	/*
-	 * Wait for a character to actually become available.  Appears to
-	 * be necessary on (at least) the Intel Mac Mini.
-	 */
-	do {
-		__asm volatile(DOINT(0x16) "; setnz %b0" : "=a" (rv) :
-		    "0" (0x100) : "%ecx", "%edx", "cc" );
-	} while ((rv & 0xff) == 0);
-
-	__asm volatile(DOINT(0x16) : "=a" (rv) : "0" (0x000) :
-	    "%ecx", "%edx", "cc" );
-
-	return (rv & 0xff);
-}
-
-int
-pc_getshifts(dev_t dev)
-{
-	register int rv;
-
-	__asm volatile(DOINT(0x16) : "=a" (rv) : "0" (0x200) :
-	    "%ecx", "%edx", "cc" );
-
+	__asm __volatile(DOINT(0x16) : "=a" (rv) : "0" (0x000) :
+	    "%ecx", "edx", "cc" );
 	return (rv & 0xff);
 }
 
 void
-pc_putc(dev_t dev, int c)
+pc_putc(dev, c)
+	dev_t dev;
+	int c;
 {
-	__asm volatile(DOINT(0x10) : : "a" (c | 0xe00), "b" (1) :
+	__asm __volatile(DOINT(0x10) : : "a" (c | 0xe00), "b" (1) :
 	    "%ecx", "%edx", "cc" );
 }
 
 const int comports[4] = { 0x3f8, 0x2f8, 0x3e8, 0x2e8 };
 
 void
-com_probe(struct consdev *cn)
+com_probe(cn)
+	struct consdev *cn;
 {
 	register int i, n;
 
 	/* get equip. (9-11 # of coms) */
-	__asm volatile(DOINT(0x11) : "=a" (n) : : "%ecx", "%edx", "cc");
+	__asm __volatile(DOINT(0x11) : "=a" (n) : : "%ecx", "%edx", "cc");
 	n >>= 9;
 	n &= 7;
 	for (i = 0; i < n; i++)
 		printf(" com%d", i);
-
-	cn->cn_pri = CN_LOWPRI;
-	/* XXX from i386/conf.c */
-	cn->cn_dev = makedev(8, 0);
+	if (n) {
+		cn->cn_pri = CN_NORMAL;
+		/* XXX from i386/conf.c */
+		cn->cn_dev = makedev(8, 0);
+	}
 }
 
-int com_speed = -1;
-int com_addr = -1;
-
 void
-com_init(struct consdev *cn)
+com_init(cn)
+	struct consdev *cn;
 {
-	int port = (com_addr == -1) ? comports[minor(cn->cn_dev)] : com_addr;
-	time_t tt = getsecs() + 1;
-	u_long i = 1;
+	register int unit = minor(cn->cn_dev);
 
-	outb(port + com_ier, 0);
-	if (com_speed == -1)
-		comspeed(cn->cn_dev, 9600); /* default speed is 9600 baud */
-	outb(port + com_mcr, MCR_DTR | MCR_RTS);
-	outb(port + com_fifo, FIFO_ENABLE | FIFO_RCV_RST | FIFO_XMT_RST |
-	    FIFO_TRIGGER_1);
-	(void) inb(port + com_iir);
-
-	/* A few ms delay for the chip, using the getsecs() API */
-	while (!(i++ % 1000) && getsecs() < tt)
-		;
-
-	/* drain the input buffer */
-	while (inb(port + com_lsr) & LSR_RXRDY)
-		(void)inb(port + com_data);
+	/* let bios do necessary init first, 9600-N-1 */
+	__asm __volatile(DOINT(0x14) : : "a" (0xe3), "d" (unit) :
+	    "%ecx", "cc" );
 }
 
 int
-com_getc(dev_t dev)
+com_getc(dev)
+	dev_t dev;
 {
-	int port = (com_addr == -1) ? comports[minor(dev & 0x7f)] : com_addr;
+	register int rv;
 
-	if (dev & 0x80)
-		return (inb(port + com_lsr) & LSR_RXRDY);
+	if (dev & 0x80) {
+		__asm __volatile(DOINT(0x14) : "=a" (rv) :
+		    "0" (0x300), "d" (minor(dev&0x7f)) : "%ecx", "cc" );
+		return ((rv & 0x100) == 0x100);
+	}
 
-	while ((inb(port + com_lsr) & LSR_RXRDY) == 0)
-		;
+	do
+		__asm __volatile(DOINT(0x14) : "=a" (rv) :
+		    "0" (0x200), "d" (minor(dev)) : "%ecx", "cc" );
+	while (rv & 0x8000);
 
-	return (inb(port + com_data) & 0xff);
+	return (rv & 0xff);
 }
 
 /* call with sp == 0 to query the current speed */
+int com_speed = 9600;  /* default speed is 9600 baud */
 int
-comspeed(dev_t dev, int sp)
+comspeed(dev, sp)
+	dev_t dev;
+	int sp;
 {
-	int port = (com_addr == -1) ? comports[minor(dev)] : com_addr;
 	int i, newsp;
-	int err;
+        int err;
 
 	if (sp <= 0)
 		return com_speed;
 	/* valid baud rate? */
-	if (115200 < sp || sp < 75)
+	if (sp > 38400 || sp < 75)
 		return -1;
 
-	/*
-	 * Accepted speeds:
-	 *   75 150 300 600 1200 2400 4800 9600 19200 38400 76800 and
-	 *   14400 28800 57600 115200
-	 */
-	for (i = sp; i != 75 && i != 14400; i >>= 1)
+	for (i = sp; i != 75; i >>= 1)
 		if (i & 1)
 			return -1;
 
@@ -206,22 +196,22 @@ comspeed(dev_t dev, int sp)
 		err = -err;
 	if (err > COM_TOLERANCE)
 		return -1;
-#undef  divrnd
+#undef  divrnd(n, q)
 
-	if (com_speed != -1 && cn_tab && cn_tab->cn_dev == dev &&
-	    com_speed != sp) {
-		printf("com%d: changing speed to %d baud in 5 seconds, "
-		    "change your terminal to match!\n\a",
-		    minor(dev), sp);
+	if (cn_tab && cn_tab->cn_dev == dev && com_speed != sp)
+	{
+		printf("com%d: changing speed to %d baud\n\a"
+		       "com%d: change your terminal to match!\n\a"
+		       "com%d: will change speed in 5 seconds....\n\a",
+		       minor(dev), sp, minor(dev), minor(dev));
 		sleep(5);
 	}
 
-	outb(port + com_cfcr, LCR_DLAB);
-	outb(port + com_dlbl, newsp);
-	outb(port + com_dlbh, newsp>>8);
-	outb(port + com_cfcr, LCR_8BITS);
-	if (com_speed != -1)
-		printf("\ncom%d: %d baud\n", minor(dev), sp);
+	outb(comports[minor(dev)] + com_cfcr, LCR_DLAB);
+	outb(comports[minor(dev)] + com_dlbl, newsp);
+	outb(comports[minor(dev)] + com_dlbh, newsp>>8);
+	outb(comports[minor(dev)] + com_cfcr, LCR_8BITS);
+	printf("\ncom%d: console is at %d baud\n", minor(dev), sp);
 
 	newsp = com_speed;
 	com_speed = sp;
@@ -229,12 +219,13 @@ comspeed(dev_t dev, int sp)
 }
 
 void
-com_putc(dev_t dev, int c)
+com_putc(dev, c)
+	dev_t dev;
+	int c;
 {
-	int port = (com_addr == -1) ? comports[minor(dev)] : com_addr;
+	register int rv;
 
-	while ((inb(port + com_lsr) & LSR_TXRDY) == 0)
-		;
-
-	outb(port + com_data, c);
+	__asm __volatile(DOINT(0x14) : "=a" (rv) :
+	    "d" (minor(dev)), "0" (c | 0x100) : "%ecx", "cc" );
 }
+

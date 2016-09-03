@@ -1,4 +1,4 @@
-/*	$OpenBSD: inet_addr.c,v 1.12 2015/09/13 21:36:08 guenther Exp $	*/
+/*	$OpenBSD: inet_addr.c,v 1.6 1999/05/03 22:31:14 yanick Exp $	*/
 
 /*
  * ++Copyright++ 1983, 1990, 1993
@@ -14,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ * 	This product includes software developed by the University of
+ * 	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  * 
@@ -51,7 +55,17 @@
  * --Copyright--
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+#if 0
+static char sccsid[] = "@(#)inet_addr.c	8.1 (Berkeley) 6/17/93";
+static char rcsid[] = "$From: inet_addr.c,v 8.5 1996/08/05 08:31:35 vixie Exp $";
+#else
+static char rcsid[] = "$OpenBSD: inet_addr.c,v 1.6 1999/05/03 22:31:14 yanick Exp $";
+#endif
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
+#include <sys/param.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <ctype.h>
@@ -61,7 +75,8 @@
  * The value returned is in network order.
  */
 in_addr_t
-inet_addr(const char *cp)
+inet_addr(cp)
+	register const char *cp;
 {
 	struct in_addr val;
 
@@ -78,13 +93,15 @@ inet_addr(const char *cp)
  * cannot distinguish between failure and a local broadcast address.
  */
 int
-inet_aton(const char *cp, struct in_addr *addr)
+inet_aton(cp, addr)
+	register const char *cp;
+	struct in_addr *addr;
 {
-	in_addr_t val;
-	int base, n;
-	char c;
+	register in_addr_t val;
+	register int base, n;
+	register char c;
 	u_int parts[4];
-	u_int *pp = parts;
+	register u_int *pp = parts;
 
 	c = *cp;
 	for (;;) {
@@ -93,7 +110,7 @@ inet_aton(const char *cp, struct in_addr *addr)
 		 * Values are specified as for C:
 		 * 0x=hex, 0=octal, isdigit=decimal.
 		 */
-		if (!isdigit((unsigned char)c))
+		if (!isdigit(c))
 			return (0);
 		val = 0; base = 10;
 		if (c == '0') {
@@ -104,15 +121,12 @@ inet_aton(const char *cp, struct in_addr *addr)
 				base = 8;
 		}
 		for (;;) {
-			if (isascii((unsigned char)c) &&
-			    isdigit((unsigned char)c)) {
+			if (isascii(c) && isdigit(c)) {
 				val = (val * base) + (c - '0');
 				c = *++cp;
-			} else if (base == 16 &&
-			    isascii((unsigned char)c) &&
-			    isxdigit((unsigned char)c)) {
+			} else if (base == 16 && isascii(c) && isxdigit(c)) {
 				val = (val << 4) |
-				    (c + 10 - (islower((unsigned char)c) ? 'a' : 'A'));
+					(c + 10 - (islower(c) ? 'a' : 'A'));
 				c = *++cp;
 			} else
 				break;
@@ -134,8 +148,7 @@ inet_aton(const char *cp, struct in_addr *addr)
 	/*
 	 * Check for trailing characters.
 	 */
-	if (c != '\0' &&
-	    (!isascii((unsigned char)c) || !isspace((unsigned char)c)))
+	if (c != '\0' && (!isascii(c) || !isspace(c)))
 		return (0);
 	/*
 	 * Concoct the address according to
@@ -172,4 +185,3 @@ inet_aton(const char *cp, struct in_addr *addr)
 		addr->s_addr = htonl(val);
 	return (1);
 }
-DEF_WEAK(inet_aton);

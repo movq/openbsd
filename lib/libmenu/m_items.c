@@ -1,7 +1,7 @@
-/* $OpenBSD: m_items.c,v 1.7 2010/01/12 23:22:08 nicm Exp $ */
+/*	$OpenBSD: m_items.c,v 1.5 1999/05/17 03:04:25 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2004,2005 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -29,7 +29,7 @@
  ****************************************************************************/
 
 /****************************************************************************
- *   Author:  Juergen Pfeifer, 1995,1997                                    *
+ *   Author: Juergen Pfeifer <juergen.pfeifer@gmx.net> 1995,1997            *
  ****************************************************************************/
 
 /***************************************************************************
@@ -39,7 +39,7 @@
 
 #include "menu.priv.h"
 
-MODULE_ID("$Id: m_items.c,v 1.7 2010/01/12 23:22:08 nicm Exp $")
+MODULE_ID("$From: m_items.c,v 1.8 1999/05/16 17:26:50 juergen Exp $")
 
 /*---------------------------------------------------------------------------
 |   Facility      :  libnmenu  
@@ -54,43 +54,38 @@ MODULE_ID("$Id: m_items.c,v 1.7 2010/01/12 23:22:08 nicm Exp $")
 |                    E_BAD_ARGUMENT - An incorrect menu or item array was
 |                                     passed to the function
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(int)
-set_menu_items(MENU * menu, ITEM ** items)
+int set_menu_items(MENU * menu, ITEM ** items)
 {
-  T((T_CALLED("set_menu_items(%p,%p)"), menu, items));
-
   if (!menu || (items && !(*items)))
     RETURN(E_BAD_ARGUMENT);
-
-  if (menu->status & _POSTED)
+  
+  if ( menu->status & _POSTED )
     RETURN(E_POSTED);
-
+  
   if (menu->items)
     _nc_Disconnect_Items(menu);
-
+  
   if (items)
     {
-      if (!_nc_Connect_Items(menu, items))
+      if(!_nc_Connect_Items( menu, items )) 
 	RETURN(E_CONNECTED);
     }
-
+  
   menu->items = items;
   RETURN(E_OK);
-}
+}		
 
 /*---------------------------------------------------------------------------
 |   Facility      :  libnmenu  
 |   Function      :  ITEM **menu_items(const MENU *menu)
 |   
-|   Description   :  Returns a pointer to the item pointer array of the menu
+|   Description   :  Returns a pointer to the item pointer arry of the menu
 |
 |   Return Values :  NULL on error
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(ITEM **)
-menu_items(const MENU * menu)
+ITEM **menu_items(const MENU *menu)
 {
-  T((T_CALLED("menu_items(%p)"), menu));
-  returnItemPtr(menu ? menu->items : (ITEM **) 0);
+  return(menu ? menu->items : (ITEM **)0);
 }
 
 /*---------------------------------------------------------------------------
@@ -102,11 +97,9 @@ menu_items(const MENU * menu)
 |
 |   Return Values :  Number of items or -1 to indicate error.
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(int)
-item_count(const MENU * menu)
+int item_count(const MENU *menu)
 {
-  T((T_CALLED("item_count(%p)"), menu));
-  returnCode(menu ? menu->nitems : -1);
+  return(menu ? menu->nitems : -1);
 }
 
 /* m_items.c ends here */

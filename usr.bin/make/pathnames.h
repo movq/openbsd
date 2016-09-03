@@ -1,4 +1,4 @@
-/*	$OpenBSD: pathnames.h,v 1.12 2010/07/19 19:46:44 espie Exp $	*/
+/*	$OpenBSD: pathnames.h,v 1.7 1998/12/05 00:06:29 espie Exp $	*/
 /*	$NetBSD: pathnames.h,v 1.6 1996/11/06 17:59:21 christos Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,24 +36,18 @@
  *	from: @(#)pathnames.h	5.2 (Berkeley) 6/1/90
  */
 
-#ifdef HAS_PATH_H
-# include <paths.h>
-#endif
-#ifndef _PATH_BSHELL
-# define _PATH_BSHELL	"/bin/sh"
-#endif
 #ifndef _PATH_OBJDIR
-#define _PATH_OBJDIR		"obj"
+#define	_PATH_OBJDIR		"obj"
 #endif /* !_PATH_OBJDIR */
 #ifndef _PATH_OBJDIRPREFIX
-#define _PATH_OBJDIRPREFIX	"/usr/obj"
+#define	_PATH_OBJDIRPREFIX	"/usr/obj"
 #endif /* !_PATH_OBJDIRPREFIX */
 #ifndef _PATH_DEFSHELLDIR
-#define _PATH_DEFSHELLDIR	"/bin"
+#define	_PATH_DEFSHELLDIR	"/bin"
 #endif /* !_PATH_DEFSHELLDIR */
 #ifndef _PATH_DEFSYSMK
-#define _PATH_DEFSYSMK		"sys.mk"
+#define	_PATH_DEFSYSMK		"sys.mk"
 #endif /* ! _PATH_DEFSYSMK */
 #ifndef _PATH_DEFSYSPATH
-#define _PATH_DEFSYSPATH	"/usr/share/mk"
+#define	_PATH_DEFSYSPATH	"/usr/share/mk"
 #endif /* ! _PATH_DEFSYSPATH */

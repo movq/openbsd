@@ -9,15 +9,10 @@
 #define __PROTO(args) ()
 #endif  /* GCC.  */
 
-#define GETLINE_NO_LIMIT -1
-
 int
-  get_line __PROTO ((char **_lineptr, size_t *_n, FILE *_stream));
-int
-  getline_safe __PROTO ((char **_lineptr, size_t *_n, FILE *_stream,
-                         int limit));
+  getline __PROTO ((char **_lineptr, size_t *_n, FILE *_stream));
 int
   getstr __PROTO ((char **_lineptr, size_t *_n, FILE *_stream,
-		   char _terminator, int _offset, int limit));
+		   char _terminator, int _offset));
 
 #endif /* _getline_h_ */

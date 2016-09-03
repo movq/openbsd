@@ -1,4 +1,4 @@
-/*	$OpenBSD: hash.c,v 1.18 2015/01/17 07:37:14 deraadt Exp $	*/
+/*	$OpenBSD: hash.c,v 1.6 1997/08/07 10:36:57 deraadt Exp $	*/
 /*	$NetBSD: hash.c,v 1.4 1996/11/07 22:59:43 gwr Exp $	*/
 
 /*
@@ -22,7 +22,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -41,12 +45,21 @@
  *	from: @(#)hash.c	8.1 (Berkeley) 6/6/93
  */
 
-#include <sys/param.h>	/* ALIGNBYTES */
-
+#include <sys/param.h>
 #include <stdlib.h>
 #include <string.h>
-
 #include "config.h"
+
+/*
+ * These are really for MAKE_BOOTSTRAP but harmless.
+ * XXX - Why not just use malloc in here, anyway?
+ */
+#ifndef	ALIGNBYTES
+#define	ALIGNBYTES 3
+#endif
+#ifndef ALIGN
+#define	ALIGN(p)	(((long)(p) + ALIGNBYTES) &~ ALIGNBYTES)
+#endif
 
 /*
  * Interned strings are kept in a hash table.  By making each string
@@ -77,17 +90,15 @@ static struct hashtab strings;
 /* round up to next multiple of y, where y is a power of 2 */
 #define	ROUND(x, y) (((x) + (y) - 1) & ~((y) - 1))
 
-static void *poolalloc(size_t);
-static void ht_init(struct hashtab *, size_t);
-static void ht_expand(struct hashtab *);
 /*
  * Allocate space that will never be freed.
  */
 static void *
-poolalloc(size_t size)
+poolalloc(size)
+	size_t size;
 {
-	char *p;
-	size_t alloc;
+	register char *p;
+	register size_t alloc;
 	static char *pool;
 	static size_t nleft;
 
@@ -112,12 +123,14 @@ poolalloc(size_t size)
  * Initialize a new hash table.  The size must be a power of 2.
  */
 static void
-ht_init(struct hashtab *ht, size_t sz)
+ht_init(ht, sz)
+	register struct hashtab *ht;
+	size_t sz;
 {
-	struct hashent **h;
-	u_int n;
+	register struct hashent **h;
+	register u_int n;
 
-	h = ereallocarray(NULL, sz, sizeof *h);
+	h = emalloc(sz * sizeof *h);
 	ht->ht_tab = h;
 	ht->ht_size = sz;
 	ht->ht_mask = sz - 1;
@@ -131,13 +144,16 @@ ht_init(struct hashtab *ht, size_t sz)
  * Expand an existing hash table.
  */
 static void
-ht_expand(struct hashtab *ht)
+ht_expand(ht)
+	register struct hashtab *ht;
 {
-	struct hashent *p, **h, **oldh, *q;
-	u_int n, i;
+	register struct hashent *p, **h, **oldh, *q;
+	register u_int n, i;
 
 	n = ht->ht_size * 2;
-	h = ecalloc(n, sizeof *h);
+	h = emalloc(n * sizeof *h);
+	for (i = 0; i < n; i++)
+		h[i] = NULL;
 	oldh = ht->ht_tab;
 	n--;
 	for (i = ht->ht_size; i != 0; i--) {
@@ -157,11 +173,13 @@ ht_expand(struct hashtab *ht)
 /*
  * Make a new hash entry, setting its h_next to NULL.
  */
-static __inline struct hashent *
-newhashent(const char *name, u_int h)
+static inline struct hashent *
+newhashent(name, h)
+	const char *name;
+	u_int h;
 {
-	struct	hashent *hp;
-	char	*m;
+	register struct hashent *hp;
+	register char *m;
 
 	m = poolalloc(sizeof(*hp) + ALIGNBYTES);
 	hp = (struct hashent *)ALIGN(m);
@@ -174,10 +192,11 @@ newhashent(const char *name, u_int h)
 /*
  * Hash a string.
  */
-static __inline u_int
-hash(const char *str)
+static inline u_int
+hash(str)
+	register const char *str;
 {
-	u_int h;
+	register u_int h;
 
 	for (h = 0; *str;)
 		h = (h << 5) + h + *str++;
@@ -185,7 +204,7 @@ hash(const char *str)
 }
 
 void
-initintern(void)
+initintern()
 {
 
 	ht_init(&strings, 128);
@@ -196,13 +215,14 @@ initintern(void)
  * function to be used frequently, so it should be fast.
  */
 const char *
-intern(const char *s)
+intern(s)
+	register const char *s;
 {
-	struct hashtab *ht;
-	struct hashent *hp, **hpp;
-	u_int h;
-	char *p;
-	size_t l;
+	register struct hashtab *ht;
+	register struct hashent *hp, **hpp;
+	register u_int h;
+	register char *p;
+	register size_t l;
 
 	ht = &strings;
 	h = hash(s);
@@ -220,9 +240,9 @@ intern(const char *s)
 }
 
 struct hashtab *
-ht_new(void)
+ht_new()
 {
-	struct hashtab *ht;
+	register struct hashtab *ht;
 
 	ht = emalloc(sizeof *ht);
 	ht_init(ht, 8);
@@ -230,44 +250,17 @@ ht_new(void)
 }
 
 /*
- * Remove.
- */
-int
-ht_remove(struct hashtab *ht, const char *nam)
-{
-	struct hashent *hp, *thp;
-	u_int h;
-
-	h = hash(nam);
-	hp = ht->ht_tab[h & ht->ht_mask];
-	while (hp && hp->h_name == nam)	{
-		ht->ht_tab[h & ht->ht_mask] = hp->h_next;
-		/* XXX free hp ? */
-		hp = ht->ht_tab[h & ht->ht_mask];
-	}
-
-	if ((hp = ht->ht_tab[h & ht->ht_mask]) == NULL)
-		return (0);
-
-	for (thp = hp->h_next; thp != NULL; thp = hp->h_next) {
-		if (thp->h_name == nam) {
-			hp->h_next = thp->h_next;
-			/* XXX free thp ? */
-		} else
-			hp = thp;
-	}
-
-	return (0);
-}
-
-/*
  * Insert and/or replace.
  */
 int
-ht_insrep(struct hashtab *ht, const char *nam, void *val, int replace)
+ht_insrep(ht, nam, val, replace)
+	register struct hashtab *ht;
+	register const char *nam;
+	void *val;
+	int replace;
 {
-	struct hashent *hp, **hpp;
-	u_int h;
+	register struct hashent *hp, **hpp;
+	register u_int h;
 
 	h = hash(nam);
 	hpp = &ht->ht_tab[h & ht->ht_mask];
@@ -286,10 +279,12 @@ ht_insrep(struct hashtab *ht, const char *nam, void *val, int replace)
 }
 
 void *
-ht_lookup(struct hashtab *ht, const char *nam)
+ht_lookup(ht, nam)
+	register struct hashtab *ht;
+	register const char *nam;
 {
-	struct hashent *hp, **hpp;
-	u_int h;
+	register struct hashent *hp, **hpp;
+	register u_int h;
 
 	h = hash(nam);
 	hpp = &ht->ht_tab[h & ht->ht_mask];

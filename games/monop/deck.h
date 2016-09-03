@@ -1,4 +1,4 @@
-/*	$OpenBSD: deck.h,v 1.6 2016/01/08 18:19:47 mestre Exp $	*/
+/*	$OpenBSD: deck.h,v 1.3 1998/09/20 23:36:50 pjanzen Exp $	*/
 /*	$NetBSD: deck.h,v 1.3 1995/03/23 08:34:36 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,6 +36,8 @@
  *	@(#)deck.h	8.1 (Berkeley) 5/31/93
  */
 
+#include <sys/types.h>
+
 #define	bool	int8_t
 
 #define	CC_D	deck[0]
@@ -39,7 +45,7 @@
 
 struct dk_st {			/* deck description structure		*/
 	int16_t	num_cards;		/* number of cards in deck	*/
-	int16_t	top_card;		/* number of last card picked	*/
+	int16_t	last_card;		/* number of last card picked	*/
 	bool	gojf_used;		/* set if gojf card out of deck	*/
 	int32_t	*offsets;		/* offsets for start of cards	*/
 };

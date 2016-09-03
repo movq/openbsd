@@ -1,5 +1,5 @@
-/*	$OpenBSD: pass1b.c,v 1.9 2015/01/16 06:39:57 deraadt Exp $	*/
-/*	$NetBSD: pass1b.c,v 1.2 1997/09/14 14:27:26 lukem Exp $	*/
+/*	$OpenBSD: pass1b.c,v 1.3 1997/06/14 04:16:55 downsj Exp $	*/
+/*	$NetBSD: pass1b.c,v 1.1 1997/06/11 11:21:53 bouyer Exp $	*/
 
 /*
  * Copyright (c) 1997 Manuel Bouyer.
@@ -14,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,6 +35,19 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)pass1b.c	8.1 (Berkeley) 6/5/93";
+#else
+#if 0
+static char rcsid[] = "$NetBSD: pass1b.c,v 1.1 1997/06/11 11:21:53 bouyer Exp $";
+#else
+static char rcsid[] = "$OpenBSD: pass1b.c,v 1.3 1997/06/14 04:16:55 downsj Exp $";
+#endif
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/time.h>
 #include <ufs/ext2fs/ext2fs_dinode.h>
 #include <ufs/ext2fs/ext2fs.h>
@@ -39,14 +56,14 @@
 #include "fsck.h"
 #include "extern.h"
 
-static int	pass1bcheck(struct inodesc *);
+static int	pass1bcheck __P((struct inodesc *));
 static  struct dups *duphead;
 
 void
-pass1b(void)
+pass1b()
 {
-	int c, i;
-	struct ext2fs_dinode *dp;
+	register int c, i;
+	register struct ext2fs_dinode *dp;
 	struct inodesc idesc;
 	ino_t inumber;
 
@@ -71,11 +88,12 @@ pass1b(void)
 }
 
 static int
-pass1bcheck(struct inodesc *idesc)
+pass1bcheck(idesc)
+	register struct inodesc *idesc;
 {
-	struct dups *dlp;
+	register struct dups *dlp;
 	int nfrags, res = KEEPON;
-	daddr32_t blkno = idesc->id_blkno;
+	daddr_t blkno = idesc->id_blkno;
 
 	for (nfrags = idesc->id_numfrags; nfrags > 0; blkno++, nfrags--) {
 		if (chkrange(blkno, 1))

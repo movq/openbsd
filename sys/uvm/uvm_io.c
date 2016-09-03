@@ -1,7 +1,7 @@
-/*	$OpenBSD: uvm_io.c,v 1.26 2016/01/09 11:34:27 kettenis Exp $	*/
-/*	$NetBSD: uvm_io.c,v 1.12 2000/06/27 17:29:23 mrg Exp $	*/
+/*	$NetBSD: uvm_io.c,v 1.7 1998/10/11 23:18:20 chuck Exp $	*/
 
 /*
+ *
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
  * All rights reserved.
  *
@@ -13,6 +13,12 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *      This product includes software developed by Charles D. Cranor and
+ *      Washington University.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -35,7 +41,13 @@
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/mman.h>
+#include <sys/proc.h>
+#include <sys/malloc.h>
 #include <sys/uio.h>
+
+#include <vm/vm.h>
+#include <vm/vm_page.h>
+#include <vm/vm_kern.h>
 
 #include <uvm/uvm.h>
 
@@ -51,18 +63,21 @@
  */
 
 int
-uvm_io(vm_map_t map, struct uio *uio, int flags)
+uvm_io(map, uio)
+	vm_map_t map;
+	struct uio *uio;
 {
 	vaddr_t baseva, endva, pageoffset, kva;
 	vsize_t chunksz, togo, sz;
-	struct uvm_map_deadq dead_entries;
-	int error, extractflags;
+	vm_map_entry_t dead_entries;
+	int error;
 
 	/*
 	 * step 0: sanity checks and set up for copy loop.  start with a
 	 * large chunk size.  if we have trouble finding vm space we will
 	 * reduce it.
 	 */
+
 	if (uio->uio_resid == 0)
 		return(0);
 	togo = uio->uio_resid;
@@ -83,15 +98,19 @@ uvm_io(vm_map_t map, struct uio *uio, int flags)
 	chunksz = min(round_page(togo + pageoffset), MAXBSIZE);
 	error = 0;
 
-	extractflags = 0;
-	if (flags & UVM_IO_FIXPROT)
-		extractflags |= UVM_EXTRACT_FIXPROT;
+	/*
+	 * step 1: main loop...  while we've got data to move
+	 */
 
-	/* step 1: main loop...  while we've got data to move */
 	for (/*null*/; togo > 0 ; pageoffset = 0) {
-		/* step 2: extract mappings from the map into kernel_map */
-		error = uvm_map_extract(map, baseva, chunksz, &kva,
-		    extractflags);
+
+		/*
+		 * step 2: extract mappings from the map into kernel_map
+		 */
+
+		error = uvm_map_extract(map, baseva, chunksz, kernel_map, &kva,
+			    UVM_EXTRACT_QREF | UVM_EXTRACT_CONTIG | 
+			    UVM_EXTRACT_FIXPROT);
 		if (error) {
 
 			/* retry with a smaller chunk... */
@@ -105,29 +124,36 @@ uvm_io(vm_map_t map, struct uio *uio, int flags)
 			break;
 		}
 
-		/* step 3: move a chunk of data */
+		/*
+		 * step 3: move a chunk of data
+		 */
+
 		sz = chunksz - pageoffset;
 		if (sz > togo)
 			sz = togo;
 		error = uiomove((caddr_t) (kva + pageoffset), sz, uio);
+		if (error)
+			break;
 		togo -= sz;
 		baseva += chunksz;
 
-		/* step 4: unmap the area of kernel memory */
-		vm_map_lock(kernel_map);
-		TAILQ_INIT(&dead_entries);
-		uvm_unmap_remove(kernel_map, kva, kva+chunksz,
-		    &dead_entries, FALSE, TRUE);
-		vm_map_unlock(kernel_map);
-		uvm_unmap_detach(&dead_entries, AMAP_REFALL);
 
 		/*
-		 * We defer checking the error return from uiomove until
-		 * here so that we won't leak memory.
+		 * step 4: unmap the area of kernel memory
 		 */
-		if (error)
-			break;
+
+		vm_map_lock(kernel_map);
+		(void)uvm_unmap_remove(kernel_map, kva, kva+chunksz,
+		    &dead_entries);
+		vm_map_unlock(kernel_map);
+
+		if (dead_entries != NULL)
+			uvm_unmap_detach(dead_entries, AMAP_REFALL);
 	}
+
+	/*
+	 * done
+	 */
 
 	return (error);
 }

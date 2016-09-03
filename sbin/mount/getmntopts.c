@@ -1,4 +1,4 @@
-/*	$OpenBSD: getmntopts.c,v 1.12 2015/01/16 06:39:59 deraadt Exp $	*/
+/*	$OpenBSD: getmntopts.c,v 1.2 1996/06/23 14:31:10 deraadt Exp $	*/
 /*	$NetBSD: getmntopts.c,v 1.3 1995/03/18 14:56:58 cgd Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,7 +34,15 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/types.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)getmntopts.c	8.1 (Berkeley) 3/27/94";
+#else
+static char rcsid[] = "$OpenBSD: getmntopts.c,v 1.2 1996/06/23 14:31:10 deraadt Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/mount.h>
 
 #include <err.h>
@@ -38,90 +50,53 @@
 #include <fstab.h>
 #include <stdlib.h>
 #include <string.h>
-#include <limits.h>
 
 #include "mntopts.h"
 
-int
-getmntopts(const char *optionp, const struct mntopt *m0, int *flagp)
-{
-	char *p, *q;
-	union mntval val;
-	int ret = 0;
-
-	p = q = strdup(optionp);
-	if (p == NULL)
-		err(1, NULL);
-	while (p != NULL) {
-		ret |= getmntopt(&p, &val, m0, flagp);
-	}
-	free(q);
-	return (ret);
-}
-
-int
-getmntopt(char **optionp, union mntval *valuep, const struct mntopt *m0,
-    int *flagp)
+void
+getmntopts(options, m0, flagp)
+	const char *options;
+	const struct mntopt *m0;
+	int *flagp;
 {
 	const struct mntopt *m;
-	char *opt, *value, *endp;
-	long l;
-	int inverse, negative, needval, ret = 0;
+	int negative;
+	char *opt, *optbuf, *p;
 
-	/* Pull out the next option. */
-	do {
-		if (*optionp == NULL)
-			return (0);
-		opt = strsep(optionp, ",");
-	} while (opt == NULL || *opt == '\0');
+	/* Copy option string, since it is about to be torn asunder... */
+	if ((optbuf = strdup(options)) == NULL)
+		err(1, NULL);
 
-	/* Check for "no" prefix. */
-	if (opt[0] == 'n' && opt[1] == 'o') {
-		negative = 1;
-		opt += 2;
-	} else
-		negative = 0;
+	for (opt = optbuf; (opt = strtok(opt, ",")) != NULL; opt = NULL) {
+		/* Check for "no" prefix. */
+		if (opt[0] == 'n' && opt[1] == 'o') {
+			negative = 1;
+			opt += 2;
+		} else
+			negative = 0;
 
-	/* Stash the value for options with assignments in them. */
-	if ((value = strchr(opt, '=')) != NULL)
-		*value++ = '\0';
+		/*
+		 * for options with assignments in them (ie. quotas)
+		 * ignore the assignment as it's handled elsewhere
+		 */
+		p = strchr(opt, '=');
+		if (p)
+			 *p = '\0';
 
-	/* Scan option table. */
-	for (m = m0; m->m_option != NULL; ++m)
-		if (strcasecmp(opt, m->m_option) == 0)
-			break;
+		/* Scan option table. */
+		for (m = m0; m->m_option != NULL; ++m)
+			if (strcasecmp(opt, m->m_option) == 0)
+				break;
 
-	/* Save flag, or fail if option is not recognised. */
-	if (m->m_option) {
-		needval = (m->m_oflags & (MFLAG_INTVAL|MFLAG_STRVAL)) != 0;
-		if (needval != (value != NULL) && !(m->m_oflags & MFLAG_OPT))
-			errx(1, "-o %s: option %s a value", opt,
-			    needval ? "needs" : "does not need");
-		inverse = (m->m_oflags & MFLAG_INVERSE) ? 1 : 0;
-		if (m->m_oflags & MFLAG_SET) {
-			if (negative == inverse)
+		/* Save flag, or fail if option is not recognised. */
+		if (m->m_option) {
+			if (negative == m->m_inverse)
 				*flagp |= m->m_flag;
 			else
 				*flagp &= ~m->m_flag;
-		}
-		else if (negative == inverse)
-			ret = m->m_flag;
-	} else
-		errx(1, "-o %s: option not supported", opt);
-
-	/* Store the value for options with assignments in them. */
-	if (value != NULL) {
-		if (m->m_oflags & MFLAG_INTVAL) {
-			errno = 0;
-			l = strtol(value, &endp, 10);
-			if (endp == value || l < 0 || l > INT_MAX ||
-			    (l == LONG_MAX && errno == ERANGE))
-				errx(1, "%s: illegal value '%s'",
-				    opt, value);
-			valuep->ival = (int)l;
 		} else
-			valuep->strval = value;
-	} else
-		memset(valuep, 0, sizeof(*valuep));
-	return (ret);
+			errx(1, "-o %s: option not supported", opt);
+	}
+
+	free(optbuf);
 }

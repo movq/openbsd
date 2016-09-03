@@ -1,9 +1,7 @@
-#	$OpenBSD: Makefile,v 1.12 2007/11/02 15:26:07 jmc Exp $
+#	$OpenBSD: Makefile,v 1.7 1997/09/21 11:34:41 deraadt Exp $
 
 PROG=	chio
-SRCS=	chio.c parse.y
-DPADD=	${LIBUTIL}
-LDADD=	-lutil
-MAN=	chio.1 chio.conf.5
+SRCS=	chio.c
+BINMODE=555
 
 .include <bsd.prog.mk>

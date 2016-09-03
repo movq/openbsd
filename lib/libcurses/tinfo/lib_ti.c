@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_ti.c,v 1.7 2010/01/12 23:22:06 nicm Exp $ */
+/*	$OpenBSD: lib_ti.c,v 1.2 1999/03/02 06:23:29 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2000,2003 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -33,73 +33,71 @@
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
  ****************************************************************************/
 
+
 #include <curses.priv.h>
 
 #include <term_entry.h>
 #include <tic.h>
 
-MODULE_ID("$Id: lib_ti.c,v 1.7 2010/01/12 23:22:06 nicm Exp $")
+MODULE_ID("$From: lib_ti.c,v 1.16 1999/02/28 23:11:28 tom Exp $")
 
-NCURSES_EXPORT(int)
-tigetflag(NCURSES_CONST char *str)
+int tigetflag(NCURSES_CONST char *str)
 {
-    unsigned i;
+int i;
 
-    T((T_CALLED("tigetflag(%s)"), str));
+	T((T_CALLED("tigetflag(%s)"), str));
 
-    if (cur_term != 0) {
-	TERMTYPE *tp = &(cur_term->type);
-	for_each_boolean(i, tp) {
-	    const char *capname = ExtBoolname(tp, i, boolnames);
-	    if (!strcmp(str, capname)) {
-		/* setupterm forces invalid booleans to false */
-		returnCode(tp->Booleans[i]);
+	if (cur_term != 0) {
+	    TERMTYPE *tp = &(cur_term->type);
+	    for_each_boolean(i,tp) {
+		const char *capname = ExtBoolname(tp, i, boolnames);
+		if (!strcmp(str, capname)) {
+		    /* setupterm forces invalid booleans to false */
+		    returnCode(tp->Booleans[i]);
+		}
 	    }
 	}
-    }
 
-    returnCode(ABSENT_BOOLEAN);
+	returnCode(ABSENT_BOOLEAN);
 }
 
-NCURSES_EXPORT(int)
-tigetnum(NCURSES_CONST char *str)
+int tigetnum(NCURSES_CONST char *str)
 {
-    unsigned i;
+int i;
 
-    T((T_CALLED("tigetnum(%s)"), str));
+	T((T_CALLED("tigetnum(%s)"), str));
 
-    if (cur_term != 0) {
-	TERMTYPE *tp = &(cur_term->type);
-	for_each_number(i, tp) {
-	    const char *capname = ExtNumname(tp, i, numnames);
-	    if (!strcmp(str, capname)) {
-		if (!VALID_NUMERIC(tp->Numbers[i]))
-		    returnCode(ABSENT_NUMERIC);
-		returnCode(tp->Numbers[i]);
+	if (cur_term != 0) {
+	    TERMTYPE *tp = &(cur_term->type);
+	    for_each_number(i, tp) {
+		const char *capname = ExtNumname(tp, i, numnames);
+		if (!strcmp(str, capname)) {
+		    if (!VALID_NUMERIC(tp->Numbers[i]))
+			return -1;
+		    returnCode(tp->Numbers[i]);
+		}
 	    }
 	}
-    }
 
-    returnCode(CANCELLED_NUMERIC);	/* Solaris returns a -1 instead */
+	returnCode(CANCELLED_NUMERIC);	/* Solaris returns a -1 instead */
 }
 
-NCURSES_EXPORT(char *)
-tigetstr(NCURSES_CONST char *str)
+char *tigetstr(NCURSES_CONST char *str)
 {
-    unsigned i;
+int i;
 
-    T((T_CALLED("tigetstr(%s)"), str));
+	T((T_CALLED("tigetstr(%s)"), str));
 
-    if (cur_term != 0) {
-	TERMTYPE *tp = &(cur_term->type);
-	for_each_string(i, tp) {
-	    const char *capname = ExtStrname(tp, i, strnames);
-	    if (!strcmp(str, capname)) {
-		/* setupterm forces cancelled strings to null */
-		returnPtr(tp->Strings[i]);
+	if (cur_term != 0) {
+	    TERMTYPE *tp = &(cur_term->type);
+	    for_each_string(i, tp) {
+		const char *capname = ExtStrname(tp, i, strnames);
+		if (!strcmp(str, capname)) {
+		    /* setupterm forces cancelled strings to null */
+		    returnPtr(tp->Strings[i]);
+		}
 	    }
 	}
-    }
 
-    returnPtr(CANCELLED_STRING);
+	returnPtr(CANCELLED_STRING);
 }

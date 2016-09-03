@@ -1,32 +1,19 @@
-#	$OpenBSD: Makefile,v 1.56 2015/06/01 17:36:19 miod Exp $
+#	$OpenBSD: Makefile,v 1.27 1999/05/26 16:02:54 espie Exp $
 #	$NetBSD: Makefile,v 1.35 1996/04/03 21:20:52 chuck Exp $
 
-.include <bsd.own.mk>
+SUBDIR+=	bc cvs deroff diff diff3 
+SUBDIR+=../egcs/gcc
+#SUBDIR+= gcc 
+SUBDIR+= grep groff gzip lynx rcs sdiff sendbug sudo
 
-.if make(obj)
-SUBDIR+=	cc gcc
-.else
-.  if ${COMPILER_VERSION:L} == "gcc3"
-SUBDIR+=	gcc
-.  else
-SUBDIR+=	cc
-.  endif
-.endif
-
-SUBDIR+=	cxxfilt cvs
-# binutils-2.17 needs to build gdb in binutils at the moment
 SUBDIR+=	binutils
-SUBDIR+=	binutils-2.17
+# some ports use binutils gas and ld, most do not (yet).
+.if (${MACHINE_ARCH} != "alpha") && (${MACHINE_ARCH} != "mips") && \
+	(${MACHINE_ARCH} != "powerpc") && (${MACHINE_ARCH} != "hppa")
+SUBDIR+=	gas ld
+.endif
 
 # Do these last; texinfo builds the info 'dir' file, perl must be after binutils
 SUBDIR+=	perl texinfo
-
-.if ${COMPILER_VERSION:L} == "gcc4"
-maninstall:
-	${INSTALL} ${INSTALL_COPY} -o ${MANOWN} -g ${MANGRP} -m ${MANMODE} \
-		gcc/protoize.1 ${DESTDIR}${MANDIR}1/protoize.1
-	@rm -f ${DESTDIR}${MANDIR}1/unprotoize.1
-	ln ${DESTDIR}${MANDIR}1/protoize.1 ${DESTDIR}${MANDIR}1/unprotoize.1
-.endif
 
 .include <bsd.subdir.mk>

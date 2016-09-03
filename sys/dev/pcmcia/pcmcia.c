@@ -1,4 +1,4 @@
-/*	$OpenBSD: pcmcia.c,v 1.47 2016/06/06 07:09:44 mpi Exp $	*/
+/*	$OpenBSD: pcmcia.c,v 1.24 1999/08/16 21:46:11 fgsch Exp $	*/
 /*	$NetBSD: pcmcia.c,v 1.9 1998/08/13 02:10:55 eeh Exp $	*/
 
 /*
@@ -52,21 +52,25 @@ int	pcmcia_verbose = 1;
 int	pcmcia_verbose = 0;
 #endif
 
-int	pcmcia_match(struct device *, void *, void *);
-int	pcmcia_submatch(struct device *, void *, void *);
-void	pcmcia_attach(struct device *, struct device *, void *);
-int	pcmcia_activate(struct device *, int);
-int	pcmcia_print(void *, const char *);
-void	pcmcia_card_detach_notify(struct device *, void *);
-int	pcmcia_card_intr(void *);
+int	pcmcia_match __P((struct device *, void *, void *));
+int	pcmcia_submatch __P((struct device *, void *, void *));
+void	pcmcia_attach __P((struct device *, struct device *, void *));
+int	pcmcia_print __P((void *, const char *));
+void	pcmcia_card_detach_notify __P((struct device *, void *));
+
+static inline void pcmcia_socket_enable __P((pcmcia_chipset_tag_t,
+					     pcmcia_chipset_handle_t *));
+static inline void pcmcia_socket_disable __P((pcmcia_chipset_tag_t,
+					      pcmcia_chipset_handle_t *));
+
+int pcmcia_card_intr __P((void *));
 
 struct cfdriver pcmcia_cd = {
 	NULL, "pcmcia", DV_DULL
 };
 
 struct cfattach pcmcia_ca = {
-	sizeof(struct pcmcia_softc), pcmcia_match, pcmcia_attach, NULL,
-	pcmcia_activate
+	sizeof(struct pcmcia_softc), pcmcia_match, pcmcia_attach
 };
 
 int
@@ -97,12 +101,6 @@ pcmcia_match(parent, match, aux)
 	struct device *parent;
 	void *match, *aux;
 {
-	struct cfdata *cf = match;
-	struct pcmciabus_attach_args *paa = aux;
-
-	if (strcmp(paa->paa_busname, cf->cf_driver->cd_name))
-		return 0;
-
 	/* If the autoconfiguration got this far, there's a socket here. */
 	return (1);
 }
@@ -126,38 +124,6 @@ pcmcia_attach(parent, self, aux)
 }
 
 int
-pcmcia_activate(struct device *self, int act)
-{
-	struct pcmcia_softc *sc = (struct pcmcia_softc *)self;
-	struct pcmcia_function *pf;
-
-	switch (act) {
-	case DVACT_QUIESCE:
-	case DVACT_SUSPEND:
-	case DVACT_POWERDOWN:
-	case DVACT_RESUME:
-		for (pf = SIMPLEQ_FIRST(&sc->card.pf_head); pf != NULL;
-		     pf = SIMPLEQ_NEXT(pf, pf_list)) {
-			if (SIMPLEQ_FIRST(&pf->cfe_head) == NULL ||
-			    pf->child == NULL)
-				continue;
-			config_suspend(pf->child, act);
-		}
-		break;
-	case DVACT_DEACTIVATE:
-		for (pf = SIMPLEQ_FIRST(&sc->card.pf_head); pf != NULL;
-		     pf = SIMPLEQ_NEXT(pf, pf_list)) {
-			if (SIMPLEQ_FIRST(&pf->cfe_head) == NULL ||
-			    pf->child == NULL)
-				continue;
-			config_deactivate(pf->child);
-		}
-		break;
-	}
-	return (0);
-}
-
-int
 pcmcia_card_attach(dev)
 	struct device *dev;
 {
@@ -169,7 +135,7 @@ pcmcia_card_attach(dev)
 	/*
 	 * this is here so that when socket_enable calls gettype, trt happens
 	 */
-	SIMPLEQ_FIRST(&sc->card.pf_head) = NULL;
+	sc->card.pf_head.sqh_first = NULL;
 
 	pcmcia_chip_socket_enable(sc->pct, sc->pch);
 
@@ -179,15 +145,15 @@ pcmcia_card_attach(dev)
 
 	pcmcia_check_cis_quirks(sc);
 
+#if 0
 	/*
-	 * Bail now if there was an error in the CIS.
+	 * Bail now if the card has no functions, or if there was an error in
+	 * the CIS.
 	 */
 
 	if (sc->card.error)
 		return (1);
-
-#if 0
-	if (SIMPLEQ_EMPTY(&sc->card.pf_head))
+	if (sc->card.pf_head.sqh_first == NULL)
 		return (1);
 #endif
 
@@ -199,9 +165,8 @@ pcmcia_card_attach(dev)
 	 * want to probe.  Fixup a function element for it.
 	 */
 	if (SIMPLEQ_FIRST(&sc->card.pf_head) == NULL) {
-		pf = malloc(sizeof *pf, M_DEVBUF, M_NOWAIT | M_ZERO);
-		if (pf == NULL)
-			panic("pcmcia_card_attach");
+		pf = malloc(sizeof *pf, M_DEVBUF, M_NOWAIT);
+		bzero(pf, sizeof *pf);
 		pf->number = 0;
 		pf->pf_flags = PFF_FAKE;
 		pf->last_config_index = -1;
@@ -232,8 +197,7 @@ pcmcia_card_attach(dev)
 		if (pf->child) {
 			attached++;
 
-			if ((pf->pf_flags & (PFF_FAKE | PFF_ENABLED)) ==
-			    PFF_ENABLED)
+			if ((pf->pf_flags & PFF_FAKE) == 0)
 				DPRINTF(("%s: function %d CCR at %d offset %lx"
 					": %x %x %x %x, %x %x %x %x, %x\n",
 					sc->dev.dv_xname, pf->number,
@@ -296,8 +260,9 @@ pcmcia_card_deactivate(dev)
 	 */
 	for (pf = SIMPLEQ_FIRST(&sc->card.pf_head); pf != NULL;
 	     pf = SIMPLEQ_NEXT(pf, pf_list)) {
-		if (SIMPLEQ_FIRST(&pf->cfe_head) == NULL ||
-		    pf->child == NULL)
+		if (SIMPLEQ_FIRST(&pf->cfe_head) == NULL)
+			continue;
+		if (pf->child == NULL)
 			continue;
 		DPRINTF(("%s: deactivating %s (function %d)\n",
 		    sc->dev.dv_xname, pf->child->dv_xname, pf->number));
@@ -334,12 +299,11 @@ pcmcia_print(arg, pnp)
 	if (pnp) {
 		for (i = 0; i < 4 && card->cis1_info[i]; i++)
 			printf("%s%s", i ? ", " : "\"", card->cis1_info[i]);
-		if (i != 0)
-			printf("\"");
+		printf("\"");
 
 		if (card->manufacturer != PCMCIA_VENDOR_INVALID &&
 		    card->product != PCMCIA_PRODUCT_INVALID) {
-			if (i != 0)
+			if (i)
 				printf(" ");
 			printf("(");
 			if (card->manufacturer != PCMCIA_VENDOR_INVALID)
@@ -352,7 +316,7 @@ pcmcia_print(arg, pnp)
 				    card->product);
 			printf(")");
 		}
-		if (i != 0)
+		if (i)
 			printf(" ");
 		printf("at %s", pnp);
 	}
@@ -361,14 +325,13 @@ pcmcia_print(arg, pnp)
 	if (!pnp) {
 		for (i = 0; i < 3 && card->cis1_info[i]; i++)
 			printf("%s%s", i ? ", " : " \"", card->cis1_info[i]);
-		if (i != 0)
-			printf("\"");
+		printf("\"");
 	}
 
 	return (UNCONF);
 }
 
-int
+int 
 pcmcia_card_gettype(dev)
 	struct device  *dev;
 {
@@ -405,6 +368,20 @@ pcmcia_function_init(pf, cfe)
 	pf->cfe = cfe;
 }
 
+static inline void pcmcia_socket_enable(pct, pch)
+     pcmcia_chipset_tag_t pct;
+     pcmcia_chipset_handle_t *pch;
+{
+	pcmcia_chip_socket_enable(pct, pch);
+}
+
+static inline void pcmcia_socket_disable(pct, pch)
+     pcmcia_chipset_tag_t pct;
+     pcmcia_chipset_handle_t *pch;
+{
+	pcmcia_chip_socket_disable(pct, pch);
+}
+
 /* Enable a PCMCIA function */
 int
 pcmcia_function_enable(pf)
@@ -429,8 +406,7 @@ pcmcia_function_enable(pf)
 		/*
 		 * Don't do anything if we're already enabled.
 		 */
-		DPRINTF(("%s: pcmcia_function_enable on enabled func\n",
-		    pf->sc->dev.dv_xname));
+		DPRINTF(("%s: pcmcia_function_enable on enabled func\n"));
 		return (0);
 	}
 
@@ -442,7 +418,8 @@ pcmcia_function_enable(pf)
 	 * It's possible for different functions' CCRs to be in the same
 	 * underlying page.  Check for that.
 	 */
-	SIMPLEQ_FOREACH(tmp, &pf->sc->card.pf_head, pf_list) {
+	for (tmp = pf->sc->card.pf_head.sqh_first; tmp != NULL;
+	    tmp = tmp->pf_list.sqe_next) {
 		if ((tmp->pf_flags & PFF_ENABLED) &&
 		    (pf->ccr_base >= (tmp->ccr_base - tmp->pf_ccr_offset)) &&
 		    ((pf->ccr_base + PCMCIA_CCR_SIZE) <=
@@ -479,14 +456,13 @@ pcmcia_function_enable(pf)
 	reg = (pf->cfe->number & PCMCIA_CCR_OPTION_CFINDEX);
 	reg |= PCMCIA_CCR_OPTION_LEVIREQ;
 	if (pcmcia_mfc(pf->sc)) {
-		reg |= PCMCIA_CCR_OPTION_FUNC_ENABLE;
-		if (pf->ccr_mask & (1 << (PCMCIA_CCR_IOBASE0 / 2)))
-			reg |= PCMCIA_CCR_OPTION_ADDR_DECODE;
+		reg |= (PCMCIA_CCR_OPTION_FUNC_ENABLE |
+			PCMCIA_CCR_OPTION_ADDR_DECODE);
 		if (pf->ih_fct)
 			reg |= PCMCIA_CCR_OPTION_IREQ_ENABLE;
 
 	}
-
+	
 	pcmcia_ccr_write(pf, PCMCIA_CCR_OPTION, reg);
 
 	reg = 0;
@@ -498,22 +474,29 @@ pcmcia_function_enable(pf)
 	pcmcia_ccr_write(pf, PCMCIA_CCR_STATUS, reg);
 
 	pcmcia_ccr_write(pf, PCMCIA_CCR_SOCKETCOPY, 0);
-
+	
 	if (pcmcia_mfc(pf->sc)) {
+		long tmp, iosize;
+
+		tmp = pf->pf_mfc_iomax - pf->pf_mfc_iobase;
+		/* round up to nearest (2^n)-1 */
+		for (iosize = 1; iosize < tmp; iosize <<= 1)
+			;
+		iosize--;
+
 		pcmcia_ccr_write(pf, PCMCIA_CCR_IOBASE0,
-				 (pf->pf_mfc_iobase >>  0) & 0xff);
+				 pf->pf_mfc_iobase & 0xff);
 		pcmcia_ccr_write(pf, PCMCIA_CCR_IOBASE1,
-				 (pf->pf_mfc_iobase >>  8) & 0xff);
-		pcmcia_ccr_write(pf, PCMCIA_CCR_IOBASE2,
-				 (pf->pf_mfc_iobase >> 16) & 0xff);
-		pcmcia_ccr_write(pf, PCMCIA_CCR_IOBASE3,
-				 (pf->pf_mfc_iobase >> 24) & 0xff);
-		pcmcia_ccr_write(pf, PCMCIA_CCR_IOSIZE,
-				 pf->pf_mfc_iomax - pf->pf_mfc_iobase);
+				 (pf->pf_mfc_iobase >> 8) & 0xff);
+		pcmcia_ccr_write(pf, PCMCIA_CCR_IOBASE2, 0);
+		pcmcia_ccr_write(pf, PCMCIA_CCR_IOBASE3, 0);
+
+		pcmcia_ccr_write(pf, PCMCIA_CCR_IOSIZE, iosize);
 	}
 
 #ifdef PCMCIADEBUG
-	SIMPLEQ_FOREACH(tmp, &pf->sc->card.pf_head, pf_list) {
+	for (tmp = pf->sc->card.pf_head.sqh_first; tmp != NULL;
+	     tmp = tmp->pf_list.sqe_next) {
 		printf("%s: function %d CCR at %d offset %lx: "
 		       "%x %x %x %x, %x %x %x %x, %x\n",
 		       tmp->sc->dev.dv_xname, tmp->number,
@@ -524,7 +507,7 @@ pcmcia_function_enable(pf)
 		       pcmcia_ccr_read(tmp, 0x06),
 
 		       pcmcia_ccr_read(tmp, 0x0A),
-		       pcmcia_ccr_read(tmp, 0x0C),
+		       pcmcia_ccr_read(tmp, 0x0C), 
 		       pcmcia_ccr_read(tmp, 0x0E),
 		       pcmcia_ccr_read(tmp, 0x10),
 
@@ -534,7 +517,6 @@ pcmcia_function_enable(pf)
 
  done:
 	pf->pf_flags |= PFF_ENABLED;
-	delay(1000);
 	return (0);
 
  bad:
@@ -579,7 +561,8 @@ pcmcia_function_disable(pf)
 	 * first to avoid matching ourself.
 	 */
 	pf->pf_flags &= ~PFF_ENABLED;
-	SIMPLEQ_FOREACH(tmp, &pf->sc->card.pf_head, pf_list) {
+	for (tmp = pf->sc->card.pf_head.sqh_first; tmp != NULL;
+	    tmp = tmp->pf_list.sqe_next) {
 		if ((tmp->pf_flags & PFF_ENABLED) &&
 		    (pf->ccr_base >= (tmp->ccr_base - tmp->pf_ccr_offset)) &&
 		    ((pf->ccr_base + PCMCIA_CCR_SIZE) <=
@@ -625,31 +608,34 @@ pcmcia_io_map(pf, width, offset, size, pcihp, windowp)
 	 * don't overlap, and that the ccr's are set correctly.
 	 */
 
-	if (pcmcia_mfc(pf->sc) &&
-	    (pf->ccr_mask & (1 << (PCMCIA_CCR_IOBASE0 / 2)))) {
-		bus_addr_t iobase = pcihp->addr;
-		bus_addr_t iomax = pcihp->addr + pcihp->size - 1;
+	if (pcmcia_mfc(pf->sc)) {
+		long tmp, iosize;
 
 		if (pf->pf_mfc_iomax == 0) {
-			pf->pf_mfc_iobase = iobase;
-			pf->pf_mfc_iomax = iomax;
+			pf->pf_mfc_iobase = pcihp->addr + offset;
+			pf->pf_mfc_iomax = pf->pf_mfc_iobase + size;
 		} else {
-			if (iobase < pf->pf_mfc_iobase)
-				pf->pf_mfc_iobase = iobase;
-			if (iomax > pf->pf_mfc_iomax)
-				pf->pf_mfc_iomax = iomax;
+			/* This makes the assumption that nothing overlaps. */
+			if (pf->pf_mfc_iobase > pcihp->addr + offset)
+				pf->pf_mfc_iobase = pcihp->addr + offset;
+			if (pf->pf_mfc_iomax < pcihp->addr + offset + size)
+				pf->pf_mfc_iomax = pcihp->addr + offset + size;
 		}
 
+		tmp = pf->pf_mfc_iomax - pf->pf_mfc_iobase;
+		/* round up to nearest (2^n)-1 */
+		for (iosize = 1; iosize >= tmp; iosize <<= 1)
+			;
+		iosize--;
+
 		pcmcia_ccr_write(pf, PCMCIA_CCR_IOBASE0,
-				 (pf->pf_mfc_iobase >>  0) & 0xff);
+				 pf->pf_mfc_iobase & 0xff);
 		pcmcia_ccr_write(pf, PCMCIA_CCR_IOBASE1,
-				 (pf->pf_mfc_iobase >>  8) & 0xff);
-		pcmcia_ccr_write(pf, PCMCIA_CCR_IOBASE2,
-				 (pf->pf_mfc_iobase >> 16) & 0xff);
-		pcmcia_ccr_write(pf, PCMCIA_CCR_IOBASE3,
-				 (pf->pf_mfc_iobase >> 24) & 0xff);
-		pcmcia_ccr_write(pf, PCMCIA_CCR_IOSIZE,
-				 pf->pf_mfc_iomax - pf->pf_mfc_iobase);
+				 (pf->pf_mfc_iobase >> 8) & 0xff);
+		pcmcia_ccr_write(pf, PCMCIA_CCR_IOBASE2, 0);
+		pcmcia_ccr_write(pf, PCMCIA_CCR_IOBASE3, 0);
+
+		pcmcia_ccr_write(pf, PCMCIA_CCR_IOSIZE, iosize);
 
 		reg = pcmcia_ccr_read(pf, PCMCIA_CCR_OPTION);
 		reg |= PCMCIA_CCR_OPTION_ADDR_DECODE;
@@ -659,12 +645,11 @@ pcmcia_io_map(pf, width, offset, size, pcihp, windowp)
 }
 
 void *
-pcmcia_intr_establish(pf, ipl, ih_fct, ih_arg, xname)
+pcmcia_intr_establish(pf, ipl, ih_fct, ih_arg)
 	struct pcmcia_function *pf;
 	int ipl;
-	int (*ih_fct)(void *);
+	int (*ih_fct) __P((void *));
 	void *ih_arg;
-	char *xname;
 {
 	void *ret;
 	int s, ihcnt, hiipl, reg;
@@ -677,7 +662,8 @@ pcmcia_intr_establish(pf, ipl, ih_fct, ih_arg, xname)
 		 * and find the highest ipl number (lowest priority).
 		 */
 		ihcnt = 0;
-		SIMPLEQ_FOREACH(pf2, &pf->sc->card.pf_head, pf_list) {
+		for (pf2 = pf->sc->card.pf_head.sqh_first; pf2 != NULL;
+		    pf2 = pf2->pf_list.sqe_next)
 			if (pf2->ih_fct) {
 				DPRINTF(("%s: function %d has ih_fct %p\n",
 				    pf->sc->dev.dv_xname, pf2->number,
@@ -690,7 +676,6 @@ pcmcia_intr_establish(pf, ipl, ih_fct, ih_arg, xname)
 
 				ihcnt++;
 			}
-		}
 
 		/*
 		 * Establish the real interrupt, changing the ipl if
@@ -710,8 +695,7 @@ pcmcia_intr_establish(pf, ipl, ih_fct, ih_arg, xname)
 			pf->ih_ipl = ipl;
 
 			pf->sc->ih = pcmcia_chip_intr_establish(pf->sc->pct,
-			    pf->sc->pch, pf, ipl, pcmcia_card_intr, pf->sc,
-			    xname);
+			    pf->sc->pch, pf, ipl, pcmcia_card_intr, pf->sc);
 			splx(s);
 		} else if (ipl > hiipl) {
 #ifdef DIAGNOSTIC
@@ -731,8 +715,7 @@ pcmcia_intr_establish(pf, ipl, ih_fct, ih_arg, xname)
 			pf->ih_ipl = ipl;
 
 			pf->sc->ih = pcmcia_chip_intr_establish(pf->sc->pct,
-			    pf->sc->pch, pf, ipl, pcmcia_card_intr, pf->sc,
-			    xname);
+			    pf->sc->pch, pf, ipl, pcmcia_card_intr, pf->sc);
 
 			splx(s);
 		} else {
@@ -759,7 +742,7 @@ pcmcia_intr_establish(pf, ipl, ih_fct, ih_arg, xname)
 		}
 	} else
 		ret = pcmcia_chip_intr_establish(pf->sc->pct, pf->sc->pch,
-		    pf, ipl, ih_fct, ih_arg, xname);
+		    pf, ipl, ih_fct, ih_arg);
 
 	return (ret);
 }
@@ -780,7 +763,8 @@ pcmcia_intr_disestablish(pf, ih)
 		 * the current function.
 		 */
 		ihcnt = 0;
-		SIMPLEQ_FOREACH(pf2, &pf->sc->card.pf_head, pf_list) {
+		for (pf2 = pf->sc->card.pf_head.sqh_first; pf2 != NULL;
+		    pf2 = pf2->pf_list.sqe_next) {
 			if (pf2 == pf)
 				continue;
 
@@ -828,8 +812,7 @@ pcmcia_intr_disestablish(pf, ih)
 			pcmcia_chip_intr_disestablish(pf->sc->pct, pf->sc->pch,
 			    pf->sc->ih);
 			pf->sc->ih = pcmcia_chip_intr_establish(pf->sc->pct,
-			    pf->sc->pch, pf, hiipl, pcmcia_card_intr, pf->sc,
-			    NULL);
+			    pf->sc->pch, pf, hiipl, pcmcia_card_intr, pf->sc);
 
 			/* Null out the handler for this function. */
 			pf->ih_fct = NULL;
@@ -848,15 +831,7 @@ pcmcia_intr_disestablish(pf, ih)
 		pcmcia_chip_intr_disestablish(pf->sc->pct, pf->sc->pch, ih);
 }
 
-const char *
-pcmcia_intr_string(pf, ih)
-	struct pcmcia_function *pf;
-	void *ih;
-{
-	return pcmcia_chip_intr_string(pf->sc->pct, pf->sc->pch, ih);
-}
-
-int
+int 
 pcmcia_card_intr(arg)
 	void *arg;
 {

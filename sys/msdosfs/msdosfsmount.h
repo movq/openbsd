@@ -1,4 +1,4 @@
-/*	$OpenBSD: msdosfsmount.h,v 1.21 2016/05/21 18:11:36 natano Exp $	*/
+/*	$OpenBSD: msdosfsmount.h,v 1.10 1998/02/08 22:41:44 tholo Exp $	*/
 /*	$NetBSD: msdosfsmount.h,v 1.16 1997/10/17 11:24:24 ws Exp $	*/
 
 /*-
@@ -34,17 +34,17 @@
  */
 /*
  * Written by Paul Popelka (paulp@uts.amdahl.com)
- *
+ * 
  * You can do anything you want with this software, just don't say you wrote
  * it, and don't remove this notice.
- *
+ * 
  * This software is provided "as is".
- *
+ * 
  * The author supplies this software to be publicly redistributed on the
  * understanding that the author is not responsible for the correct
  * functioning of this software in any circumstances and is not liable for
  * any damages caused by this software.
- *
+ * 
  * October 1992
  */
 
@@ -59,25 +59,25 @@ struct msdosfsmount {
 	mode_t pm_mask;		/* mask to and with file protection bits */
 	struct vnode *pm_devvp;	/* vnode for block device mntd */
 	struct bpb50 pm_bpb;	/* BIOS parameter blk for this fs */
-	uint32_t pm_BlkPerSec;	/* # of DEV_BSIZE blocks in MSDOSFS sector */
-	uint32_t pm_FATsecs;	/* actual number of fat sectors */
-	uint32_t pm_fatblk;	/* block # of first FAT */
-	uint32_t pm_rootdirblk;	/* block # (cluster # for FAT32) of root directory number */
-	uint32_t pm_rootdirsize;	/* size in blocks (not clusters) */
-	uint32_t pm_firstcluster;	/* block number of first cluster */
-	uint32_t pm_nmbrofclusters;	/* # of clusters in filesystem */
-	uint32_t pm_maxcluster;	/* maximum cluster number */
-	uint32_t pm_freeclustercount;	/* number of free clusters */
-	uint32_t pm_cnshift;	/* shift file offset right this amount to get a cluster number */
-	uint32_t pm_crbomask;	/* and a file offset with this mask to get cluster rel offset */
-	uint32_t pm_bnshift;	/* shift file offset right this amount to get a block number */
-	uint32_t pm_bpcluster;	/* bytes per cluster */
-	uint32_t pm_fmod;		/* ~0 if fs is modified, this can rollover to 0	*/
-	uint32_t pm_fatblocksize;	/* size of fat blocks in bytes */
-	uint32_t pm_fatblocksec;	/* size of fat blocks in sectors */
-	uint32_t pm_fatsize;	/* size of fat in bytes */
-	uint32_t pm_fatmask;	/* mask to use for fat numbers */
-	uint32_t pm_fsinfo;	/* fsinfo block number */
+	u_long pm_FATsecs;	/* actual number of fat sectors */
+	u_long pm_fatblk;	/* block # of first FAT */
+	u_long pm_rootdirblk;	/* block # (cluster # for FAT32) of root directory number */
+	u_long pm_rootdirsize;	/* size in blocks (not clusters) */
+	u_long pm_firstcluster;	/* block number of first cluster */
+	u_long pm_nmbrofclusters;	/* # of clusters in filesystem */
+	u_long pm_maxcluster;	/* maximum cluster number */
+	u_long pm_freeclustercount;	/* number of free clusters */
+	u_long pm_cnshift;	/* shift file offset right this amount to get a cluster number */
+	u_long pm_crbomask;	/* and a file offset with this mask to get cluster rel offset */
+	u_long pm_bnshift;	/* shift file offset right this amount to get a block number */
+	u_long pm_bpcluster;	/* bytes per cluster */
+	u_long pm_fmod;		/* ~0 if fs is modified, this can rollover to 0	*/
+	u_long pm_fatblocksize;	/* size of fat blocks in bytes */
+	u_long pm_fatblocksec;	/* size of fat blocks in sectors */
+	u_long pm_fatsize;	/* size of fat in bytes */
+	u_long pm_fatmask;	/* mask to use for fat numbers */
+	u_long pm_fsinfo;	/* fsinfo block number */
+	u_long pm_nxtfree;	/* next free cluster in fsinfo block */
 	u_int pm_fatmult;	/* these 2 values are used in fat */
 	u_int pm_fatdiv;	/*	offset computation */
 	u_int pm_curfat;	/* current fat for FAT32 (0 otherwise) */
@@ -93,14 +93,16 @@ struct msdosfsmount {
  */
 #if 0
     /* Defined in <sys/mount.h> */
-#define	MSDOSFSMNT_SHORTNAME	0x01
-#define	MSDOSFSMNT_LONGNAME	0x02
-#define	MSDOSFSMNT_NOWIN95	0x04
+#define	MSDOSFSMNT_SHORTNAME	1
+#define	MSDOSFSMNT_LONGNAME	2
+#define	MSDOSFSMNT_NOWIN95	4
+#define	MSDOSFSMNT_GEMDOSFS	8
 #endif
 
 /* All flags above: */
 #define	MSDOSFSMNT_MNTOPT \
-	(MSDOSFSMNT_SHORTNAME|MSDOSFSMNT_LONGNAME|MSDOSFSMNT_NOWIN95)
+	(MSDOSFSMNT_SHORTNAME|MSDOSFSMNT_LONGNAME|MSDOSFSMNT_NOWIN95 \
+	 |MSDOSFSMNT_GEMDOSFS)
 #define	MSDOSFSMNT_RONLY	0x80000000	/* mounted read-only	*/
 #define	MSDOSFSMNT_WAITONFAT	0x40000000	/* mounted synchronous	*/
 #define	MSDOSFS_FATMIRROR	0x20000000	/* FAT is mirrored */
@@ -193,20 +195,16 @@ struct msdosfsmount {
 	 ? roottobn((pmp), (dirofs)) \
 	 : cntobn((pmp), (dirclu)))
 
-/* Calculate size of fsinfo block */
-#define fsi_size(pmp) \
-	(1024 << ((pmp)->pm_BlkPerSec >> 2))
-
 /*
  * Prototypes for MSDOSFS virtual filesystem operations
  */
-int msdosfs_mount(struct mount *, const char *, void *, struct nameidata *, struct proc *);
-int msdosfs_start(struct mount *, int, struct proc *);
-int msdosfs_unmount(struct mount *, int, struct proc *);
-int msdosfs_root(struct mount *, struct vnode **);
-int msdosfs_quotactl(struct mount *, int, uid_t, caddr_t, struct proc *);
-int msdosfs_statfs(struct mount *, struct statfs *, struct proc *);
-int msdosfs_sync(struct mount *, int, struct ucred *, struct proc *);
-int msdosfs_fhtovp(struct mount *, struct fid *, struct vnode **);
-int msdosfs_vptofh(struct vnode *, struct fid *);
-int msdosfs_init(struct vfsconf *);
+int msdosfs_mount __P((struct mount *, const char *, caddr_t, struct nameidata *, struct proc *));
+int msdosfs_start __P((struct mount *, int, struct proc *));
+int msdosfs_unmount __P((struct mount *, int, struct proc *));
+int msdosfs_root __P((struct mount *, struct vnode **));
+int msdosfs_quotactl __P((struct mount *, int, uid_t, caddr_t, struct proc *));
+int msdosfs_statfs __P((struct mount *, struct statfs *, struct proc *));
+int msdosfs_sync __P((struct mount *, int, struct ucred *, struct proc *));
+int msdosfs_fhtovp __P((struct mount *, struct fid *, struct mbuf *, struct vnode **, int *, struct ucred **));
+int msdosfs_vptofh __P((struct vnode *, struct fid *));
+int msdosfs_init __P((struct vfsconf *));

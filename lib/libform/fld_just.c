@@ -1,6 +1,7 @@
-/*	$OpenBSD: fld_just.c,v 1.6 2015/01/23 22:48:51 krw Exp $	*/
+/*	$OpenBSD: fld_just.c,v 1.3 1999/05/17 03:04:14 millert Exp $	*/
+
 /****************************************************************************
- * Copyright (c) 1998-2003,2004 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -28,12 +29,12 @@
  ****************************************************************************/
 
 /****************************************************************************
- *   Author:  Juergen Pfeifer, 1995,1997                                    *
+ *   Author: Juergen Pfeifer <juergen.pfeifer@gmx.net> 1995,1997            *
  ****************************************************************************/
 
 #include "form.priv.h"
 
-MODULE_ID("$Id: fld_just.c,v 1.6 2015/01/23 22:48:51 krw Exp $")
+MODULE_ID("$From: fld_just.c,v 1.5 1999/05/16 17:18:06 juergen Exp $")
 
 /*---------------------------------------------------------------------------
 |   Facility      :  libnform  
@@ -45,23 +46,20 @@ MODULE_ID("$Id: fld_just.c,v 1.6 2015/01/23 22:48:51 krw Exp $")
 |                    E_BAD_ARGUMENT  - one of the arguments was incorrect
 |                    E_SYSTEM_ERROR  - system error
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(int)
-set_field_just(FIELD *field, int just)
+int set_field_just(FIELD * field, int just)
 {
   int res = E_BAD_ARGUMENT;
 
-  T((T_CALLED("set_field_just(%p,%d)"), field, just));
-
-  if ((just == NO_JUSTIFICATION) ||
-      (just == JUSTIFY_LEFT) ||
-      (just == JUSTIFY_CENTER) ||
-      (just == JUSTIFY_RIGHT))
+  if ((just==NO_JUSTIFICATION)  ||
+      (just==JUSTIFY_LEFT)	||
+      (just==JUSTIFY_CENTER)	||
+      (just==JUSTIFY_RIGHT)	)
     {
-      Normalize_Field(field);
+      Normalize_Field( field );
       if (field->just != just)
 	{
 	  field->just = just;
-	  res = _nc_Synchronize_Attributes(field);
+	  res = _nc_Synchronize_Attributes( field );
 	}
       else
 	res = E_OK;
@@ -77,11 +75,9 @@ set_field_just(FIELD *field, int just)
 |
 |   Return Values :  The justification type.
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(int)
-field_just(const FIELD *field)
+int field_just(const FIELD * field)
 {
-  T((T_CALLED("field_just(%p)"), field));
-  returnCode(Normalize_Field(field)->just);
+  return Normalize_Field( field )->just;
 }
 
 /* fld_just.c ends here */

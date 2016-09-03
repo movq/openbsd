@@ -1,4 +1,4 @@
-/*	$OpenBSD: lpt_gsc.c,v 1.12 2011/09/16 17:20:07 miod Exp $	*/
+/*	$OpenBSD: lpt_gsc.c,v 1.5 1999/08/16 02:48:39 mickey Exp $	*/
 
 /*
  * Copyright (c) 1998 Michael Shalayeff
@@ -68,8 +68,8 @@
 
 #define	LPTGSC_OFFSET	0x800
 
-int	lpt_gsc_probe(struct device *, void *, void *);
-void	lpt_gsc_attach(struct device *, struct device *, void *);
+int	lpt_gsc_probe __P((struct device *, void *, void *));
+void	lpt_gsc_attach __P((struct device *, struct device *, void *));
 
 struct cfattach lpt_gsc_ca = {
 	sizeof(struct lpt_softc), lpt_gsc_probe, lpt_gsc_attach
@@ -83,7 +83,7 @@ struct cfattach lpt_gsc_ca = {
  *
  *	2) You should be able to write to and read back the same value
  *	   to the control port lower 5 bits, the upper 3 bits are reserved
- *	   per the IBM PC technical reference manuals and different boards
+ *	   per the IBM PC technical reference manauls and different boards
  *	   do different things with them.  Do an alternating zeros, alternating
  *	   ones, walking zero, and walking one test to check for stuck bits.
  *
@@ -101,62 +101,55 @@ lpt_gsc_probe(parent, match, aux)
 	struct device *parent;
 	void *match, *aux;
 {
-	struct gsc_attach_args *ga = aux;
+	register struct confargs *ca = aux;
 	bus_space_handle_t ioh;
 	bus_addr_t base;
 	u_int8_t mask, data;
 	int i, rv;
 
-	if (ga->ga_type.iodc_type != HPPA_TYPE_FIO ||
-	    ga->ga_type.iodc_sv_model != HPPA_FIO_CENT)
+	if (ca->ca_type.iodc_type != HPPA_TYPE_FIO ||
+	    ca->ca_type.iodc_sv_model != HPPA_FIO_CENT)
 		return 0;
 
 #ifdef DEBUG
-#define	ABORT								\
-	do {								\
-		printf("lpt_gsc_probe: mask %x data %x failed\n", mask,	\
-		    data);						\
-		return 0;						\
+#define	ABORT								     \
+	do {								     \
+		printf("lpt_gsc_probe: mask %x data %x failed\n", mask,	     \
+		    data);						     \
+		return 0;						     \
 	} while (0)
 #else
-#define	ABORT	do {							\
-			bus_space_unmap(ga->ga_iot, ioh, LPT_NPORTS);	\
-			return 0;					\
-		} while (0)
+#define	ABORT	return 0
 #endif
 
-	base = ga->ga_hpa + LPTGSC_OFFSET;
-	if (bus_space_map(ga->ga_iot, base, LPT_NPORTS, 0, &ioh)) {
-		printf("lpt_gsc_probe: cannot map io space\n");
-		return 0;
-	}
+	base = ca->ca_hpa + LPTGSC_OFFSET;
+	ioh = ca->ca_hpa + LPTGSC_OFFSET;
 
 	rv = 0;
 	mask = 0xff;
 
 	data = 0x55;				/* Alternating zeros */
-	if (!lpt_port_test(ga->ga_iot, ioh, base, lpt_data, data, mask))
+	if (!lpt_port_test(ca->ca_iot, ioh, base, lpt_data, data, mask))
 		ABORT;
 
 	data = 0xaa;				/* Alternating ones */
-	if (!lpt_port_test(ga->ga_iot, ioh, base, lpt_data, data, mask))
+	if (!lpt_port_test(ca->ca_iot, ioh, base, lpt_data, data, mask))
 		ABORT;
 
 	for (i = 0; i < CHAR_BIT; i++) {	/* Walking zero */
 		data = ~(1 << i);
-		if (!lpt_port_test(ga->ga_iot, ioh, base, lpt_data, data, mask))
+		if (!lpt_port_test(ca->ca_iot, ioh, base, lpt_data, data, mask))
 			ABORT;
 	}
 
 	for (i = 0; i < CHAR_BIT; i++) {	/* Walking one */
 		data = (1 << i);
-		if (!lpt_port_test(ga->ga_iot, ioh, base, lpt_data, data, mask))
+		if (!lpt_port_test(ca->ca_iot, ioh, base, lpt_data, data, mask))
 			ABORT;
 	}
 
-	bus_space_write_1(ga->ga_iot, ioh, lpt_data, 0);
-	bus_space_write_1(ga->ga_iot, ioh, lpt_control, 0);
-	bus_space_unmap(ga->ga_iot, ioh, LPT_NPORTS);
+	bus_space_write_1(ca->ca_iot, ioh, lpt_data, 0);
+	bus_space_write_1(ca->ca_iot, ioh, lpt_control, 0);
 
 	return 1;
 }
@@ -166,22 +159,20 @@ lpt_gsc_attach(parent, self, aux)
 	struct device *parent, *self;
 	void *aux;
 {
-	struct lpt_softc *sc = (void *)self;
-	struct gsc_attach_args *ga = aux;
-	bus_addr_t base;
+	register struct lpt_softc *sc = (void *)self;
+	register struct gsc_attach_args *ga = aux;
 
 	/* sc->sc_flags |= LPT_POLLED; */
 
 	sc->sc_state = 0;
+
 	sc->sc_iot = ga->ga_iot;
-	base = ga->ga_hpa + LPTGSC_OFFSET;
-	if (bus_space_map(ga->ga_iot, base, LPT_NPORTS, 0, &sc->sc_ioh)) {
-		printf(": cannot map io space\n");
-		return;
-	}
+	sc->sc_ioh = ga->ga_hpa + LPTGSC_OFFSET;
 
-	lpt_attach_common(sc);
+	printf("\n");
 
-	sc->sc_ih = gsc_intr_establish((struct gsc_softc *)parent,
-	    ga->ga_irq, IPL_TTY, lptintr, sc, sc->sc_dev.dv_xname);
+	bus_space_write_1(sc->sc_iot, sc->sc_ioh, lpt_control, LPC_NINIT);
+
+	sc->sc_ih = gsc_intr_establish((struct gsc_softc *)parent, IPL_TTY,
+				       ga->ga_irq, lptintr, sc, &sc->sc_dev);
 }

@@ -1,4 +1,4 @@
-/*	$OpenBSD: gen_subs.c,v 1.32 2016/08/26 05:06:14 guenther Exp $	*/
+/*	$OpenBSD: gen_subs.c,v 1.8 1997/09/01 18:29:51 deraadt Exp $	*/
 /*	$NetBSD: gen_subs.c,v 1.5 1995/03/21 09:07:26 cgd Exp $	*/
 
 /*-
@@ -17,7 +17,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -34,18 +38,24 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)gen_subs.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: gen_subs.c,v 1.8 1997/09/01 18:29:51 deraadt Exp $";
+#endif
+#endif /* not lint */
+
 #include <sys/types.h>
+#include <sys/time.h>
 #include <sys/stat.h>
-#include <grp.h>
-#include <pwd.h>
+#include <sys/param.h>
 #include <stdio.h>
+#include <tzfile.h>
+#include <utmp.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
-#include <unistd.h>
-#include <utmp.h>
-#include <vis.h>
-
 #include "pax.h"
 #include "extern.h"
 
@@ -58,38 +68,40 @@
  */
 #define MODELEN 20
 #define DATELEN 64
-#define SECSPERDAY	(24 * 60 * 60)
-#define SIXMONTHS	(SECSPERDAY * 365 / 2)
+#define SIXMONTHS	 ((DAYSPERNYEAR / 2) * SECSPERDAY)
 #define CURFRMT		"%b %e %H:%M"
 #define OLDFRMT		"%b %e  %Y"
-#define NAME_WIDTH	8
-#define	TIMEFMT(t, now) \
-	(((t) + SIXMONTHS <= (now) || (t) > (now)) ? OLDFRMT : CURFRMT)
+#ifndef UT_NAMESIZE
+#define UT_NAMESIZE	8
+#endif
+#define UT_GRPSIZE	6
 
 /*
  * ls_list()
  *	list the members of an archive in ls format
  */
 
+#ifdef __STDC__
 void
-ls_list(ARCHD *arcn, time_t now, FILE *fp)
+ls_list(register ARCHD *arcn, time_t now, FILE *fp)
+#else
+void
+ls_list(arcn, now, fp)
+	register ARCHD *arcn;
+	time_t now;
+	FILE *fp;
+#endif
 {
-	struct stat *sbp;
+	register struct stat *sbp;
 	char f_mode[MODELEN];
 	char f_date[DATELEN];
-	int term;
-
-	term = zeroflag ? '\0' : '\n';	/* path termination character */
+	char *timefrmt;
 
 	/*
 	 * if not verbose, just print the file name
 	 */
 	if (!vflag) {
-		if (zeroflag)
-			(void)fputs(arcn->name, fp);
-		else
-			safe_print(arcn->name, fp);
-		(void)putc(term, fp);
+		(void)fprintf(fp, "%s\n", arcn->name);
 		(void)fflush(fp);
 		return;
 	}
@@ -100,83 +112,130 @@ ls_list(ARCHD *arcn, time_t now, FILE *fp)
 	sbp = &(arcn->sb);
 	strmode(sbp->st_mode, f_mode);
 
+	if (ltmfrmt == NULL) {
+		/*
+		 * no locale specified format. time format based on age
+		 * compared to the time pax was started.
+		 */
+		if ((sbp->st_mtime + SIXMONTHS) <= now)
+			timefrmt = OLDFRMT;
+		else
+			timefrmt = CURFRMT;
+	} else
+		timefrmt = ltmfrmt;
+
 	/*
 	 * print file mode, link count, uid, gid and time
 	 */
-	if (strftime(f_date, sizeof(f_date), TIMEFMT(sbp->st_mtime, now),
-	    localtime(&(sbp->st_mtime))) == 0)
+	if (strftime(f_date,DATELEN,timefrmt,localtime(&(sbp->st_mtime))) == 0)
 		f_date[0] = '\0';
-	(void)fprintf(fp, "%s%2u %-*.*s %-*.*s ", f_mode, sbp->st_nlink,
-		NAME_WIDTH, UT_NAMESIZE, user_from_uid(sbp->st_uid, 0),
-		NAME_WIDTH, UT_NAMESIZE, group_from_gid(sbp->st_gid, 0));
+	(void)fprintf(fp, "%s%2u %-*s %-*s ", f_mode, sbp->st_nlink,
+		UT_NAMESIZE, name_uid(sbp->st_uid, 1), UT_GRPSIZE,
+		name_gid(sbp->st_gid, 1));
 
 	/*
 	 * print device id's for devices, or sizes for other nodes
 	 */
 	if ((arcn->type == PAX_CHR) || (arcn->type == PAX_BLK))
-		(void)fprintf(fp, "%4lu, %4lu ",
-		    (unsigned long)MAJOR(sbp->st_rdev),
+#		ifdef NET2_STAT
+		(void)fprintf(fp, "%4u,%4u ", MAJOR(sbp->st_rdev),
+#		else
+		(void)fprintf(fp, "%4lu,%4lu ", (unsigned long)MAJOR(sbp->st_rdev),
+#		endif
 		    (unsigned long)MINOR(sbp->st_rdev));
 	else {
-		(void)fprintf(fp, "%9llu ", sbp->st_size);
+#		ifdef NET2_STAT
+		(void)fprintf(fp, "%9lu ", sbp->st_size);
+#		else
+		(void)fprintf(fp, "%9qu ", sbp->st_size);
+#		endif
 	}
 
 	/*
 	 * print name and link info for hard and soft links
 	 */
-	(void)fputs(f_date, fp);
-	(void)putc(' ', fp);
-	safe_print(arcn->name, fp);
-	if (PAX_IS_HARDLINK(arcn->type)) {
-		fputs(" == ", fp);
-		safe_print(arcn->ln_name, fp);
-	} else if (arcn->type == PAX_SLK) {
-		fputs(" -> ", fp);
-		safe_print(arcn->ln_name, fp);
-	}
-	(void)putc(term, fp);
+	(void)fprintf(fp, "%s %s", f_date, arcn->name);
+	if ((arcn->type == PAX_HLK) || (arcn->type == PAX_HRG))
+		(void)fprintf(fp, " == %s\n", arcn->ln_name);
+	else if (arcn->type == PAX_SLK)
+		(void)fprintf(fp, " => %s\n", arcn->ln_name);
+	else
+		(void)putc('\n', fp);
 	(void)fflush(fp);
+	return;
 }
 
 /*
  * tty_ls()
- *	print a short summary of file to tty.
+ * 	print a short summary of file to tty.
  */
 
+#ifdef __STDC__
 void
-ls_tty(ARCHD *arcn)
+ls_tty(register ARCHD *arcn)
+#else
+void
+ls_tty(arcn)
+	register ARCHD *arcn;
+#endif
 {
 	char f_date[DATELEN];
 	char f_mode[MODELEN];
-	time_t now = time(NULL);
+	char *timefrmt;
+
+	if (ltmfrmt == NULL) {
+		/*
+		 * no locale specified format
+		 */
+		if ((arcn->sb.st_mtime + SIXMONTHS) <= time(NULL))
+			timefrmt = OLDFRMT;
+		else
+			timefrmt = CURFRMT;
+	} else
+		timefrmt = ltmfrmt;
 
 	/*
 	 * convert time to string, and print
 	 */
-	if (strftime(f_date, DATELEN, TIMEFMT(arcn->sb.st_mtime, now),
+	if (strftime(f_date, DATELEN, timefrmt,
 	    localtime(&(arcn->sb.st_mtime))) == 0)
 		f_date[0] = '\0';
 	strmode(arcn->sb.st_mode, f_mode);
 	tty_prnt("%s%s %s\n", f_mode, f_date, arcn->name);
+	return;
 }
 
-void
-safe_print(const char *str, FILE *fp)
-{
-	char visbuf[5];
-	const char *cp;
+/*
+ * l_strncpy()
+ *	copy src to dest up to len chars (stopping at first '\0').
+ *	when src is shorter than len, pads to len with '\0'. 
+ * Return:
+ *	number of chars copied. (Note this is a real performance win over
+ *	doing a strncpy(), a strlen(), and then a possible memset())
+ */
 
-	/*
-	 * if printing to a tty, use vis(3) to print special characters.
-	 */
-	if (isatty(fileno(fp))) {
-		for (cp = str; *cp; cp++) {
-			(void)vis(visbuf, cp[0], VIS_CSTYLE, cp[1]);
-			(void)fputs(visbuf, fp);
-		}
-	} else {
-		(void)fputs(str, fp);
-	}
+#ifdef __STDC__
+int
+l_strncpy(register char *dest, register char *src, int len)
+#else
+int
+l_strncpy(dest, src, len)
+	register char *dest;
+	register char *src;
+	int len;
+#endif
+{
+	register char *stop;
+	register char *start;
+
+	stop = dest + len;
+	start = dest;
+	while ((dest < stop) && (*src != '\0'))
+		*dest++ = *src++;
+	len = dest - start;
+	while (dest < stop)
+		*dest++ = '\0';
+	return(len);
 }
 
 /*
@@ -189,10 +248,18 @@ safe_print(const char *str, FILE *fp)
  *	unsigned long value
  */
 
+#ifdef __STDC__
 u_long
-asc_ul(char *str, int len, int base)
+asc_ul(register char *str, int len, register int base)
+#else
+u_long
+asc_ul(str, len, base)
+	register char *str;
+	int len;
+	register int base;
+#endif
 {
-	char *stop;
+	register char *stop;
 	u_long tval = 0;
 
 	stop = str + len;
@@ -219,7 +286,7 @@ asc_ul(char *str, int len, int base)
 				break;
 		}
 	} else {
-		while ((str < stop) && (*str >= '0') && (*str <= '7'))
+ 		while ((str < stop) && (*str >= '0') && (*str <= '7'))
 			tval = (tval << 3) + (*str++ - '0');
 	}
 	return(tval);
@@ -232,10 +299,19 @@ asc_ul(char *str, int len, int base)
  *	NOTE: the string created is NOT TERMINATED.
  */
 
+#ifdef __STDC__
 int
-ul_asc(u_long val, char *str, int len, int base)
+ul_asc(u_long val, register char *str, register int len, register int base)
+#else
+int
+ul_asc(val, str, len, base)
+	u_long val;
+	register char *str;
+	register int len;
+	register int base;
+#endif
 {
-	char *pt;
+	register char *pt;
 	u_long digit;
 
 	/*
@@ -254,15 +330,13 @@ ul_asc(u_long val, char *str, int len, int base)
 				*pt-- = '0' + (char)digit;
 			else
 				*pt-- = 'a' + (char)(digit - 10);
-			val >>= 4;
-			if (val == 0)
+			if ((val = (val >> 4)) == (u_long)0)
 				break;
 		}
 	} else {
 		while (pt >= str) {
 			*pt-- = '0' + (char)(val & 0x7);
-			val >>= 3;
-			if (val == 0)
+			if ((val = (val >> 3)) == (u_long)0)
 				break;
 		}
 	}
@@ -272,26 +346,35 @@ ul_asc(u_long val, char *str, int len, int base)
 	 */
 	while (pt >= str)
 		*pt-- = '0';
-	if (val != 0)
+	if (val != (u_long)0)
 		return(-1);
 	return(0);
 }
 
+#ifndef NET2_STAT
 /*
- * asc_ull()
- *	Convert hex/octal character string into a unsigned long long.
- *	We do not have to check for overflow!  (The headers in all
- *	supported formats are not large enough to create an overflow).
+ * asc_uqd()
+ *	convert hex/octal character string into a u_quad_t. We do not have to
+ *	check for overflow! (the headers in all supported formats are not large
+ *	enough to create an overflow).
  *	NOTE: strings passed to us are NOT TERMINATED.
  * Return:
- *	unsigned long long value
+ *	u_quad_t value
  */
 
-unsigned long long
-asc_ull(char *str, int len, int base)
+#ifdef __STDC__
+u_quad_t
+asc_uqd(register char *str, int len, register int base)
+#else
+u_quad_t
+asc_uqd(str, len, base)
+	register char *str;
+	int len;
+	register int base;
+#endif
 {
-	char *stop;
-	unsigned long long tval = 0;
+	register char *stop;
+	u_quad_t tval = 0;
 
 	stop = str + len;
 
@@ -317,24 +400,33 @@ asc_ull(char *str, int len, int base)
 				break;
 		}
 	} else {
-		while ((str < stop) && (*str >= '0') && (*str <= '7'))
+ 		while ((str < stop) && (*str >= '0') && (*str <= '7'))
 			tval = (tval << 3) + (*str++ - '0');
 	}
 	return(tval);
 }
 
 /*
- * ull_asc()
- *	Convert an unsigned long long into a hex/oct ascii string.
- *	Pads with LEADING ascii 0's to fill string completely
+ * uqd_asc()
+ *	convert an u_quad_t into a hex/oct ascii string. pads with LEADING
+ *	ascii 0's to fill string completely
  *	NOTE: the string created is NOT TERMINATED.
  */
 
+#ifdef __STDC__
 int
-ull_asc(unsigned long long val, char *str, int len, int base)
+uqd_asc(u_quad_t val, register char *str, register int len, register int base)
+#else
+int
+uqd_asc(val, str, len, base)
+	u_quad_t val;
+	register char *str;
+	register int len;
+	register int base;
+#endif
 {
-	char *pt;
-	unsigned long long digit;
+	register char *pt;
+	u_quad_t digit;
 
 	/*
 	 * WARNING str is not '\0' terminated by this routine
@@ -352,15 +444,13 @@ ull_asc(unsigned long long val, char *str, int len, int base)
 				*pt-- = '0' + (char)digit;
 			else
 				*pt-- = 'a' + (char)(digit - 10);
-			val >>= 4;
-			if (val == 0)
+			if ((val = (val >> 4)) == (u_quad_t)0)
 				break;
 		}
 	} else {
 		while (pt >= str) {
 			*pt-- = '0' + (char)(val & 0x7);
-			val >>= 3;
-			if (val == 0)
+			if ((val = (val >> 3)) == (u_quad_t)0)
 				break;
 		}
 	}
@@ -370,29 +460,8 @@ ull_asc(unsigned long long val, char *str, int len, int base)
 	 */
 	while (pt >= str)
 		*pt-- = '0';
-	if (val != 0)
+	if (val != (u_quad_t)0)
 		return(-1);
 	return(0);
 }
-
-/*
- * Copy at max min(bufz, fieldsz) chars from field to buf, stopping
- * at the first NUL char. NUL terminate buf if there is room left.
- */
-size_t
-fieldcpy(char *buf, size_t bufsz, const char *field, size_t fieldsz)
-{
-	char *p = buf;
-	const char *q = field;
-	size_t i = 0;
-
-	if (fieldsz > bufsz)
-		fieldsz = bufsz;
-	while (i < fieldsz && *q != '\0') {
-		*p++ = *q++;
-		i++;
-	}
-	if (i < bufsz)
-		*p = '\0';
-	return(i);
-}
+#endif

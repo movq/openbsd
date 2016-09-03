@@ -1,4 +1,4 @@
-/*	$OpenBSD: memset.S,v 1.4 2014/11/29 18:51:23 tedu Exp $	*/
+/*	$OpenBSD: memset.S,v 1.2 1996/09/27 06:47:47 mickey Exp $	*/
 
 /*
  * Written by J.T. Conklin <jtc@netbsd.org>.
@@ -15,9 +15,11 @@ ENTRY(memset)
 	movl	20(%esp),%ecx
 	pushl	%edi			/* push address of buffer */
 
+	cld				/* set fill direction forward */
+
 	/*
 	 * if the string is too short, it's really not worth the overhead
-	 * of aligning to word boundaries, etc.  So we jump to a plain
+	 * of aligning to word boundries, etc.  So we jump to a plain
 	 * unaligned set.
 	 */
 	cmpl	$0x0f,%ecx

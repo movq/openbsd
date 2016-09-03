@@ -1,36 +1,5 @@
-/*	$OpenBSD: otto.c,v 1.13 2016/01/07 21:37:53 mestre Exp $	*/
+/*	$OpenBSD: otto.c,v 1.4 1999/02/01 06:53:55 d Exp $	*/
 /*	$NetBSD: otto.c,v 1.2 1997/10/10 16:32:39 lukem Exp $	*/
-/*
- * Copyright (c) 1983-2003, Regents of the University of California.
- * All rights reserved.
- * 
- * Redistribution and use in source and binary forms, with or without 
- * modification, are permitted provided that the following conditions are 
- * met:
- * 
- * + Redistributions of source code must retain the above copyright 
- *   notice, this list of conditions and the following disclaimer.
- * + Redistributions in binary form must reproduce the above copyright 
- *   notice, this list of conditions and the following disclaimer in the 
- *   documentation and/or other materials provided with the distribution.
- * + Neither the name of the University of California, San Francisco nor 
- *   the names of its contributors may be used to endorse or promote 
- *   products derived from this software without specific prior written 
- *   permission.
- * 
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS 
- * IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED 
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A 
- * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT 
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT 
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, 
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY 
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
-
 /*
  *	otto	- a hunt otto-matic player
  *
@@ -41,15 +10,17 @@
  *	subroutine library.
  */
 
+#include <sys/time.h>
 #include <ctype.h>
-#include <stdio.h>
+#include <signal.h>
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
-
-#include "display.h"
+#include <string.h>
 #include "hunt.h"
+#include "client.h"
+#include "display.h"
 
+#include <stdio.h>
 #define panic(m)	_panic(__FILE__,__LINE__,m)
 
 useconds_t	Otto_pause 	= 55000;
@@ -123,18 +94,22 @@ static	int		row, col;
 static	int		num_turns;		/* for wandering */
 static	char		been_there[HEIGHT][WIDTH2];
 
-static	void		attack(int, struct item *);
-static	void		duck(int);
-static	void		face_and_move_direction(int, int);
-static	int		go_for_ammo(char);
-static	void		ottolook(int, struct item *);
-static	void		look_around(void);
-static	int		stop_look(struct item *, char, int, int);
-static	void		wander(void);
-static	void		_panic(const char *, int, const char *);
+static	void		attack __P((int, struct item *));
+static	void		duck __P((int));
+static	void		face_and_move_direction __P((int, int));
+static	int		go_for_ammo __P((char));
+static	void		ottolook __P((int, struct item *));
+static	void		look_around __P((void));
+static	int		stop_look __P((struct item *, char, int, int));
+static	void		wander __P((void));
+static	void		_panic __P((const char *, int, const char *));
 
 int
-otto(int y, int x, char face, char *buf, size_t buflen)
+otto(y, x, face, buf, buflen)
+	int	y, x;
+	char	face;
+	char	*buf;
+	size_t	buflen;
 {
 	int		i;
 
@@ -147,7 +122,7 @@ otto(int y, int x, char face, char *buf, size_t buflen)
 	case '<':	facing = WEST; break;
 	case 'v':	facing = SOUTH; break;
 	case '>':	facing = EAST; break;
-	default:	panic("unknown face");
+	default:	panic("unknwown face");
 	}
 	row = y; col = x;
 	been_there[row][col] |= 1 << facing;
@@ -189,7 +164,11 @@ done:
 }
 
 static int
-stop_look(struct item *itemp, char c, int dist, int side)
+stop_look(itemp, c, dist, side)
+	struct	item	*itemp;
+	char	c;
+	int	dist;
+	int	side;
 {
 	switch (c) {
 
@@ -256,7 +235,9 @@ stop_look(struct item *itemp, char c, int dist, int side)
 }
 
 static void
-ottolook(int rel_dir, struct item *itemp)
+ottolook(rel_dir, itemp)
+	int		rel_dir;
+	struct	item	*itemp;
 {
 	int		r, c;
 	char		ch;
@@ -282,8 +263,7 @@ ottolook(int rel_dir, struct item *itemp)
 	cont_north:
 		if (itemp->flags & DEADEND) {
 			itemp->flags |= BEEN;
-			if (r >= 0)
-				been_there[r][col] |= NORTH;
+			been_there[r][col] |= NORTH;
 			for (r = row - 1; r > row - itemp->distance; r--)
 				been_there[r][col] = ALLDIRS;
 		}
@@ -303,8 +283,7 @@ ottolook(int rel_dir, struct item *itemp)
 	cont_south:
 		if (itemp->flags & DEADEND) {
 			itemp->flags |= BEEN;
-			if (r < HEIGHT)
-				been_there[r][col] |= SOUTH;
+			been_there[r][col] |= SOUTH;
 			for (r = row + 1; r < row + itemp->distance; r++)
 				been_there[r][col] = ALLDIRS;
 		}
@@ -356,7 +335,7 @@ ottolook(int rel_dir, struct item *itemp)
 }
 
 static void
-look_around(void)
+look_around()
 {
 	int	i;
 
@@ -370,7 +349,8 @@ look_around(void)
  */
 
 static void
-face_and_move_direction(int rel_dir, int distance)
+face_and_move_direction(rel_dir, distance)
+	int	rel_dir, distance;
 {
 	int	old_facing;
 	char	cmd;
@@ -382,7 +362,7 @@ face_and_move_direction(int rel_dir, int distance)
 		int	i;
 		struct	item	items[NUMDIRECTIONS];
 
-		command[comlen++] = toupper((unsigned char)cmd);
+		command[comlen++] = toupper(cmd);
 		if (distance == 0) {
 			/* rotate ottolook's to be in right position */
 			for (i = 0; i < NUMDIRECTIONS; i++)
@@ -406,7 +386,9 @@ face_and_move_direction(int rel_dir, int distance)
 }
 
 static void
-attack(int rel_dir, struct item *itemp)
+attack(rel_dir, itemp)
+	int		rel_dir;
+	struct	item	*itemp;
 {
 	if (!(itemp->flags & ON_SIDE)) {
 		face_and_move_direction(rel_dir, 0);
@@ -432,7 +414,8 @@ attack(int rel_dir, struct item *itemp)
 }
 
 static void
-duck(int rel_dir)
+duck(rel_dir)
+	int	rel_dir;
 {
 	int	dir;
 
@@ -481,7 +464,8 @@ duck(int rel_dir)
  */
 
 static int
-go_for_ammo(char mine)
+go_for_ammo(mine)
+	char	mine;
 {
 	int	i, rel_dir, dist;
 
@@ -507,7 +491,7 @@ go_for_ammo(char mine)
 }
 
 static void
-wander(void)
+wander()
 {
 	int	i, j, rel_dir, dir_mask, dir_count;
 
@@ -527,19 +511,28 @@ wander(void)
 			break;
 		}
 		if (j == FRONT
-		&& num_turns > 4 + (arc4random_uniform(
-				((flbr[FRONT].flags & BEEN) ? 7 : HEIGHT))))
+		&& num_turns > 4 + (random() %
+				((flbr[FRONT].flags & BEEN) ? 7 : HEIGHT)))
 			continue;
 		dir_mask |= 1 << j;
 		dir_count = 1;
 		break;
 	}
 	if (dir_count == 0) {
-		duck(arc4random_uniform(NUMDIRECTIONS));
+		duck(random() % NUMDIRECTIONS);
 		num_turns = 0;
 		return;
-	} else {
+	} else if (dir_count == 1)
 		rel_dir = ffs(dir_mask) - 1;
+	else {
+		rel_dir = ffs(dir_mask) - 1;
+		dir_mask &= ~(1 << rel_dir);
+		while (dir_mask != 0) {
+			i = ffs(dir_mask) - 1;
+			if (random() % 5 == 0)
+				rel_dir = i;
+			dir_mask &= ~(1 << i);
+		}
 	}
 	if (rel_dir == FRONT)
 		num_turns++;
@@ -551,13 +544,16 @@ wander(void)
 
 /* Otto always re-enters the game, cloaked. */
 int
-otto_quit(int old_status)
+otto_quit(old_status)
 {
 	return Q_CLOAK;
 }
 
 static void
-_panic(const char *file, int line, const char *msg)
+_panic(file, line, msg)
+	const char *file;
+	int line;
+	const char *msg;
 {
 
 	fprintf(stderr, "%s:%d: panic! %s\n", file, line, msg);

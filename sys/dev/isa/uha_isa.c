@@ -1,4 +1,4 @@
-/*	$OpenBSD: uha_isa.c,v 1.12 2014/09/14 14:17:25 jsg Exp $	*/
+/*	$OpenBSD: uha_isa.c,v 1.3 1998/01/18 18:58:39 niklas Exp $	*/
 /*	$NetBSD: uha_isa.c,v 1.5 1996/10/21 22:41:21 thorpej Exp $	*/
 
 /*
@@ -35,7 +35,8 @@
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/kernel.h>
-#include <uvm/uvm_extern.h>
+#include <sys/proc.h>
+#include <sys/user.h>
 
 #include <machine/bus.h>
 #include <machine/intr.h>
@@ -51,24 +52,28 @@
 
 #define	UHA_ISA_IOSIZE	16
 
-int	uha_isa_probe(struct device *, void *, void *);
-void	uha_isa_attach(struct device *, struct device *, void *);
+#ifndef DDB
+#define	Debugger() panic("should call debugger here (uha_isa.c)")
+#endif
+
+int	uha_isa_probe __P((struct device *, void *, void *));
+void	uha_isa_attach __P((struct device *, struct device *, void *));
 
 struct cfattach uha_isa_ca = {
 	sizeof(struct uha_softc), uha_isa_probe, uha_isa_attach
 };
 
-#define KVTOPHYS(x)	vtophys((vaddr_t)(x))
+#define KVTOPHYS(x)	vtophys(x)
 
-int u14_find(bus_space_tag_t, bus_space_handle_t, struct uha_softc *);
-void u14_start_mbox(struct uha_softc *, struct uha_mscp *);
-int u14_poll(struct uha_softc *, struct scsi_xfer *, int);
-int u14_intr(void *);
-void u14_init(struct uha_softc *);
+int u14_find __P((bus_space_tag_t, bus_space_handle_t, struct uha_softc *));
+void u14_start_mbox __P((struct uha_softc *, struct uha_mscp *));
+int u14_poll __P((struct uha_softc *, struct scsi_xfer *, int));
+int u14_intr __P((void *));
+void u14_init __P((struct uha_softc *));
 
 /*
  * Check the slots looking for a board we recognise
- * If we find one, note its address (slot) and call
+ * If we find one, note it's address (slot) and call
  * the actual probe routine to check it out.
  */
 int
@@ -251,9 +256,11 @@ u14_start_mbox(sc, mscp)
 			break;
 		delay(100);
 	}
-	if (!spincount)
-		panic("%s: uha_start_mbox, board not responding",
+	if (!spincount) {
+		printf("%s: uha_start_mbox, board not responding\n",
 		    sc->sc_dev.dv_xname);
+		Debugger();
+	}
 
 	bus_space_write_4(iot, ioh, U14_OGMPTR, KVTOPHYS(mscp));
 	if (mscp->flags & MSCP_ABORT)
@@ -262,7 +269,7 @@ u14_start_mbox(sc, mscp)
 		bus_space_write_1(iot, ioh, U14_LINT, U14_OGMFULL);
 
 	if ((mscp->xs->flags & SCSI_POLL) == 0)
-		timeout_add_msec(&mscp->xs->stimeout, mscp->timeout);
+		timeout(uha_timeout, mscp, (mscp->timeout * hz) / 1000);
 }
 
 /*
@@ -339,7 +346,7 @@ u14_intr(arg)
 			continue;	/* whatever it was, it'll timeout */
 		}
 
-		timeout_del(&mscp->xs->stimeout);
+		untimeout(uha_timeout, mscp);
 		uha_done(sc, mscp);
 
 		if ((bus_space_read_1(iot, ioh, U14_SINT) & U14_SDIP) == 0)

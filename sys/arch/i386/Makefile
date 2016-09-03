@@ -1,44 +1,35 @@
-#	$OpenBSD: Makefile,v 1.21 2013/12/08 14:46:39 espie Exp $
+#	$OpenBSD: Makefile,v 1.7 1997/11/05 02:53:21 mickey Exp $
+#	$NetBSD: Makefile,v 1.6 1996/02/01 22:31:28 mycroft Exp $
+#	@(#)Makefile	7.3 (Berkeley) 6/9/91
 
-S=	${.CURDIR}/../..
-KFILE=	GENERIC
-.if exists(conf/GENERIC.MP)
-KFILE=	GENERIC.MP
-.endif
-TDIRS=	${_arch} include pci isa eisa
-TAGS=	${.CURDIR}/tags
+# Makefile for i386 tags file and boot blocks
 
-NOPROG=
-NOMAN=
-NOOBJ=
-SUBDIR=	stand
+.include "../../kern/Make.tags.inc"
 
-# config the fattest kernel we can find into a temporary dir
-# to create a Makefile.  Then use make to pull some variables
-# out and push them into the sub-shell to expand the paths,
-# and finally run ctags.
-tags::
-	TDIR=`mktemp -d /tmp/_tagXXXXXXXXXX` || exit 1; \
-	eval "S=${S}" && \
-	config -s ${S} -b $${TDIR} ${.CURDIR}/conf/${KFILE} && \
-	eval "_arch=\"`make -V _arch -f $${TDIR}/Makefile`\"" && \
-	eval "_mach=\"`make -V _mach -f $${TDIR}/Makefile`\"" && \
-	eval "_machdir=\$S/arch/$${_mach}" && \
-	eval "_archdir=\$S/arch/$${_arch}" && \
-	eval "HFILES=\"`find $S \( -path $S/'arch' -o -path $S/stand -o -path $S/lib/libsa -o -path $S'/lib/libkern/arch' \) -prune -o -name '*.h'; find $${_machdir} $${_archdir} $S/lib/libkern/arch/$${_mach} \( -name boot -o -name stand \) -prune -o -name '*.h'`\"" && \
-	eval "SFILES=\"`make -V SFILES -f $${TDIR}/Makefile`\"" && \
-	eval "CFILES=\"`make -V CFILES -f $${TDIR}/Makefile`\"" && \
-	eval "AFILES=\"`make -V AFILES -f $${TDIR}/Makefile`\"" && \
-	ctags -wd -f ${TAGS} $${CFILES} $${HFILES} && \
-	egrep "^[_A-Z]*ENTRY[_A-Z]*\(.*\)" $${SFILES} $${AFILES} | \
-	    sed "s;\\([^:]*\\):\\([^(]*\\)(\\([^, )]*\\)\\(.*\\);\\3	\\1	/^\\2(\\3\\4$$/;" \
-	    >> ${TAGS} && \
-	sort -o ${TAGS} ${TAGS} && \
-	rm -rf $${TDIR}
+NOPROG=	noprog
+NOMAN=	noman
+
+SUBDIR=	stand isa/pcvt/Util
+
+TI386=	../i386/tags
+SI386=	../i386/eisa/*.[ch] ../i386/i386/*.[ch] ../i386/include/*.h \
+	../i386/include/pc/*.h ../i386/isa/*.[ch] ../i386/isa/pcvt/*.[ch] \
+	../i386/pci/*.[ch]
+AI386=	../i386/i386/*.s ../i386/isa/*.s
+
+# Directories in which to place i386 tags links
+DI386=	conf eisa i386 include isa pci
+
+tags:
+	-ctags -wdtf ${TI386} ${COMM} ${SI386}
+	egrep "^ENTRY(.*)|^ALTENTRY(.*)" ${AI386} | \
+	    sed "s;\([^:]*\):\([^(]*\)(\([^, )]*\)\(.*\);\3 \1 /^\2(\3\4$$/;" \
+		>> ${TI386}
+	sort -o ${TI386} ${TI386}
 
 links:
-	-for i in conf ${TDIRS}; do \
-	    (cd $$i && rm -f tags; ln -s tags tags); done
+	-for i in ${DI386}; do \
+	    cd $$i && rm -f tags; ln -s ../tags tags; done
 
 obj:	_SUBDIRUSE
 

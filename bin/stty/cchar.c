@@ -1,4 +1,4 @@
-/*	$OpenBSD: cchar.c,v 1.12 2016/03/23 14:52:42 mmcc Exp $	*/
+/*	$OpenBSD: cchar.c,v 1.8 1998/11/18 23:26:13 deraadt Exp $	*/
 /*	$NetBSD: cchar.c,v 1.10 1996/05/07 18:20:05 jtc Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,15 +34,21 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)cchar.c	8.5 (Berkeley) 4/2/94";
+#else
+static char rcsid[] = "$OpenBSD: cchar.c,v 1.8 1998/11/18 23:26:13 deraadt Exp $";
+#endif
+#endif /* not lint */
+
 #include <sys/types.h>
-#include <sys/ioctl.h>
 
 #include <err.h>
 #include <limits.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
-#include <termios.h>
 
 #include "stty.h"
 #include "extern.h"
@@ -80,13 +90,16 @@ const struct cchar cchars2[] = {
 };
 
 static int
-c_cchar(const void *a, const void *b)
+c_cchar(a, b)
+	const void *a, *b;
 {
 	return (strcmp(((struct cchar *)a)->name, ((struct cchar *)b)->name));
 }
 
 int
-csearch(char ***argvp, struct info *ip)
+csearch(argvp, ip)
+	char ***argvp;
+	struct info *ip;
 {
 	struct cchar *cp, tmp;
 	long val;

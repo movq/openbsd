@@ -1,7 +1,7 @@
-/*	$OpenBSD: SYS.h,v 1.22 2016/05/07 19:05:21 guenther Exp $	*/
+/*	$OpenBSD: SYS.h,v 1.4 1999/09/16 19:19:46 mickey Exp $	*/
 
 /*
- * Copyright (c) 1998-2002 Michael Shalayeff
+ * Copyright (c) 1998-1999 Michael Shalayeff
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -27,99 +32,60 @@
 
 #include <sys/syscall.h>
 #include <machine/asm.h>
+#include <machine/vmparam.h>
 #undef _LOCORE
 #define _LOCORE
 #include <machine/frame.h>
-#include <machine/vmparam.h>
-#undef _LOCORE
 
-/* offsetof(struct tib, tib_errno) - offsetof(struct tib, __tib_tcb) */
-#define TCB_OFFSET_ERRNO	-8
+#define	__ENTRY(p,x)	ENTRY(__CONCAT(p,x))
+#define	__EXIT(p,x)	EXIT(__CONCAT(p,x))
+
+
+#define	__RSYSCALL(p,x)			!\
+__ENTRY(p,x)				!\
+	stw rp, HPPA_FRAME_ERP(sr0,sp)	!\
+	ldil L%SYSCALLGATE, r1		!\
+	ble 4(sr7, r1)			!\
+	ldi __CONCAT(SYS_,x),r22	!\
+	or,<> r0,r22,r0			!\
+	ldw HPPA_FRAME_ERP(sr0,sp),rp	!\
+__EXIT(p,x)
+
+#define	__PSEUDO(p,x,y)			!\
+__ENTRY(p,x)				!\
+	stw rp, HPPA_FRAME_ERP(sr0,sp)	!\
+	ldil L%SYSCALLGATE, r1		!\
+	ble 4(sr7, r1)			!\
+	ldi __CONCAT(SYS_,y),r22	!\
+	or,<> r0,r22,r0			!\
+	ldw HPPA_FRAME_ERP(sr0,sp),rp	!\
+__EXIT(p,x)
 
 /*
- * We define a hidden alias with the prefix "_libc_" for each global symbol
- * that may be used internally.  By referencing _libc_x instead of x, other
- * parts of libc prevent overriding by the application and avoid unnecessary
- * relocations.
+ * Design note:
+ *
+ * When the syscalls need to be renamed so they can be handled
+ * specially by the threaded library, these macros insert `_thread_sys_'
+ * in front of their name. This avoids the need to #ifdef _THREAD_SAFE 
+ * everywhere that the renamed function needs to be called.
  */
-#define _HIDDEN(x)		_libc_##x
-#define _HIDDEN_ALIAS(x,y)			\
-	STRONG_ALIAS(_HIDDEN(x),y)		!\
-	.hidden _HIDDEN(x)
-#define _HIDDEN_FALIAS(x,y)			\
-	_HIDDEN_ALIAS(x,y)			!\
-	.type _HIDDEN(x),@function
-
+#ifdef _THREAD_SAFE
 /*
- * For functions implemented in ASM that aren't syscalls.
- *   EXIT_STRONG(x)	Like DEF_STRONG() in C; for standard/reserved C names
- *   EXIT_WEAK(x)	Like DEF_WEAK() in C; for non-ISO C names
- *   ALTEXIT_STRONG(x) and ALTEXIT_WEAK()
- *			Matching macros for ALTENTRY functions
+ * For the thread_safe versions, we prepend _thread_sys_ to the function
+ * name so that the 'C' wrapper can go around the real name.
  */
-#define	ALTEXIT_STRONG(x)					\
-			_HIDDEN_FALIAS(x,x)			!\
-			.size _HIDDEN(x), . - _HIDDEN(x)
-#define	ALTEXIT_WEAK(x)	ALTEXIT_STRONG(x)			!\
-			.weak x
-#define	EXIT_STRONG(x)	EXIT(x)					!\
-			ALTEXIT_STRONG(x)
-#define	EXIT_WEAK(x)	EXIT_STRONG(x)				!\
-			.weak x
- 
-
-#define SYSENTRY(x)				!\
-LEAF_ENTRY(__CONCAT(_thread_sys_,x))		!\
-	WEAK_ALIAS(x,__CONCAT(_thread_sys_,x))
-#define SYSENTRY_HIDDEN(x)			!\
-LEAF_ENTRY(__CONCAT(_thread_sys_,x))
-#define	SYSEXIT(x)				!\
-	SYSEXIT_HIDDEN(x)			!\
-	.size x, . - x
-#define	SYSEXIT_HIDDEN(x)			!\
-	EXIT(__CONCAT(_thread_sys_,x))		!\
-	_HIDDEN_FALIAS(x,_thread_sys_##x)	!\
-	.size _HIDDEN(x), . - _HIDDEN(x)
-
-#define	SYSCALL(x)				!\
-	stw	rp, HPPA_FRAME_ERP(sr0,sp)	!\
-	ldil	L%SYSCALLGATE, r1		!\
-	ble	4(sr7, r1)			!\
-	ldi	__CONCAT(SYS_,x), t1		!\
-	comb,=	0, t1, 1f			!\
-	ldw	HPPA_FRAME_ERP(sr0,sp), rp	!\
-	/* set errno */				\
-	mfctl	cr27, r1			!\
-	stw	t1, TCB_OFFSET_ERRNO(r1)	!\
-	ldi	-1, ret0			!\
-	bv	r0(rp)				!\
-	 ldi	-1, ret1			!\
-1:
-
-#define	PSEUDO(x,y)				!\
-SYSENTRY(x)					!\
-	SYSCALL(y)				!\
-	bv	r0(rp)				!\
-	nop					!\
-SYSEXIT(x)
-#define	PSEUDO_HIDDEN(x,y)			!\
-SYSENTRY_HIDDEN(x)				!\
-	SYSCALL(y)				!\
-	bv	r0(rp)				!\
-	nop					!\
-SYSEXIT_HIDDEN(x)
-
-#define	PSEUDO_NOERROR(x,y)			!\
-SYSENTRY(x)					!\
-	stw	rp, HPPA_FRAME_ERP(sr0,sp)	!\
-	ldil	L%SYSCALLGATE, r1		!\
-	ble	4(sr7, r1)			!\
-	ldi	__CONCAT(SYS_,y), t1		!\
-	ldw	HPPA_FRAME_ERP(sr0,sp), rp	!\
-	bv	r0(rp)				!\
-	nop					!\
-SYSEXIT(x)
-
-#define	RSYSCALL(x)		PSEUDO(x,x)
-#define	RSYSCALL_HIDDEN(x)	PSEUDO_HIDDEN(x,x)
-
+# define SYSCALL(x)	__SYSCALL(_thread_sys_,x)
+# define RSYSCALL(x)	__RSYSCALL(_thread_sys_,x)
+# define PSEUDO(x,y)	__PSEUDO(_thread_sys_,x,y)
+/*# define SYSENTRY(x)	__ENTRY(_thread_sys_,x)*/
+#else _THREAD_SAFE
+/*
+ * The non-threaded library defaults to traditional syscalls where
+ * the function name matches the syscall name.
+ */
+# define SYSCALL(x)	__SYSCALL(,x)
+# define RSYSCALL(x)	__RSYSCALL(,x)
+# define PSEUDO(x,y)	__PSEUDO(,x,y)
+/*# define SYSENTRY(x)	__ENTRY(,x)*/
+#endif _THREAD_SAFE
+	.import	cerror, code

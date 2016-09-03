@@ -1,4 +1,4 @@
-/*	$OpenBSD: spec.c,v 1.7 2016/01/08 18:20:33 mestre Exp $	*/
+/*	$OpenBSD: spec.c,v 1.2 1998/09/20 23:36:56 pjanzen Exp $	*/
 /*	$NetBSD: spec.c,v 1.3 1995/03/23 08:35:16 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,20 +34,26 @@
  * SUCH DAMAGE.
  */
 
-#include <stdio.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)spec.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: spec.c,v 1.2 1998/09/20 23:36:56 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
-#include "monop.ext"
+#include	"monop.ext"
 
 static char	*perc[]	= {
 	"10%", "ten percent", "%", "$200", "200", 0
 	};
 
 void
-inc_tax(void)			/* collect income tax			*/
+inc_tax()			/* collect income tax			*/
 {
 	int	worth, com_num;
 
-	com_num = getinp("Do you wish to lose 10% of your total worth or $200? ", perc);
+	com_num = getinp("Do you wish to lose 10%% of your total worth or $200? ", perc);
 	worth = cur_p->money + prop_worth(cur_p);
 	printf("You were worth $%d", worth);
 	worth /= 10;
@@ -67,26 +77,26 @@ inc_tax(void)			/* collect income tax			*/
 }
 
 void
-goto_jail(void)			/* move player to jail			*/
+goto_jail()			/* move player to jail			*/
 {
 	cur_p->loc = JAIL;
 }
 
 void
-lux_tax(void)			/* landing on luxury tax		*/
+lux_tax()			/* landing on luxury tax		*/
 {
 	printf("You lose $75\n");
 	cur_p->money -= 75;
 }
 
 void
-cc(void)				/* draw community chest card		*/
+cc()				/* draw community chest card		*/
 {
 	get_card(&CC_D);
 }
 
 void
-chance(void)			/* draw chance card			*/
+chance()			/* draw chance card			*/
 {
 	get_card(&CH_D);
 }

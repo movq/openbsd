@@ -1,11 +1,10 @@
-/*	$OpenBSD: uncompr.c,v 1.5 2003/12/16 22:33:02 henning Exp $	*/
 /* uncompr.c -- decompress a memory buffer
- * Copyright (C) 1995-2003 Jean-loup Gailly.
- * For conditions of distribution and use, see copyright notice in zlib.h
+ * Copyright (C) 1995-1998 Jean-loup Gailly.
+ * For conditions of distribution and use, see copyright notice in zlib.h 
  */
 
+/* @(#) $Id: uncompr.c,v 1.2 1998/08/08 20:57:30 millert Exp $ */
 
-#define ZLIB_INTERNAL
 #include "zlib.h"
 
 /* ===========================================================================
@@ -50,9 +49,7 @@ int ZEXPORT uncompress (dest, destLen, source, sourceLen)
     err = inflate(&stream, Z_FINISH);
     if (err != Z_STREAM_END) {
         inflateEnd(&stream);
-        if (err == Z_NEED_DICT || (err == Z_BUF_ERROR && stream.avail_in == 0))
-            return Z_DATA_ERROR;
-        return err;
+        return err == Z_OK ? Z_BUF_ERROR : err;
     }
     *destLen = stream.total_out;
 

@@ -1,4 +1,4 @@
-/*	$OpenBSD: vmparam.h,v 1.47 2015/11/01 20:09:59 miod Exp $	*/
+/*	$OpenBSD: vmparam.h,v 1.9 1999/09/18 20:05:55 mickey Exp $	*/
 
 /* 
  * Copyright (c) 1988-1994, The University of Utah and
@@ -29,35 +29,52 @@
 /*
  * Machine dependent constants for HP PA
  */
-#define	USRSTACK	0x78000000UL	/* start (bottom) of user stack */
-#define	SYSCALLGATE	0xC0000000	/* syscall gateway page */
+/*
+ * USRTEXT is the start of the user text/data space, while USRSTACK
+ * is the top (end) of the user stack.  LOWPAGES and HIGHPAGES are
+ * the number of pages from the beginning of the P0 region to the
+ * beginning of the text and from the beginning of the P1 region to the
+ * beginning of the stack respectively.
+ */
+#define	USRTEXT		0x00002000		/* Start of user .text */
+#define	USRSTACK	0x68FF3000		/* Start of user stack */
+#define	BTOPUSRSTACK	btop(USRSTACK)		/* btop(USRSTACK) */
+#define	P1PAGES		2
+#define	LOWPAGES	0
+#define	HIGHPAGES	UPAGES
+#define	SYSCALLGATE	0xC0000000		/* syscall gateway page */
 
 /*
  * Virtual memory related constants, all in bytes
  */
 #ifndef MAXTSIZ
-#define	MAXTSIZ		(512*1024*1024UL)	/* max text size */
+#define	MAXTSIZ		(0x40000000)		/* max text size */
 #endif
 #ifndef DFLDSIZ
 #define	DFLDSIZ		(16*1024*1024)		/* initial data size limit */
 #endif
 #ifndef MAXDSIZ
-#define	MAXDSIZ		(1*1024*1024*1024UL)	/* max data size */
-#endif
-#ifndef BRKSIZ
-#define	BRKSIZ		MAXDSIZ			/* heap gap size */
+#define	MAXDSIZ		(USRSTACK-MAXTSIZ)	/* max data size */
 #endif
 #ifndef	DFLSSIZ
-#define	DFLSSIZ		(2*1024*1024)		/* initial stack size limit */
+#define	DFLSSIZ		(512*1024)		/* initial stack size limit */
 #endif
 #ifndef	MAXSSIZ
-#define	MAXSSIZ		(32*1024*1024UL)	/* max stack size */
+#define	MAXSSIZ		(UADDR-USRSTACK)	/* max stack size */
 #endif
 
-#define	STACKGAP_RANDOM	256*1024
+/*
+ * Default sizes of swap allocation chunks (see dmap.h).
+ * The actual values may be changed in vminit() based on MAXDSIZ.
+ * With MAXDSIZ of 64Mb and NDMAP of 62, dmmax will be 4096.
+ * DMMIN should be at least ctod(1) so that vtod() works.
+ * vminit() ensures this.
+ */
+#define	DMMIN	32			/* smallest swap allocation */
+#define	DMMAX	4096			/* largest potential swap allocation */
 
 #ifndef USRIOSIZE
-#define	USRIOSIZE	((2*HPPA_PGALIAS)/PAGE_SIZE)	/* 8mb */
+#define	USRIOSIZE	128
 #endif
 
 /*
@@ -65,26 +82,63 @@
  * This is basically slop for kmempt which we actually allocate (malloc) from.
  */
 #ifndef SHMMAXPGS
-#define SHMMAXPGS	8192	/* 32mb */
+#define SHMMAXPGS	((1024*1024*10)/NBPG)	/* 10mb */
 #endif
 
+/*
+ * The size of the clock loop.
+ */
+#define	LOOPPAGES	(maxfree - firstfree)
+
+/*
+ * The time for a process to be blocked before being very swappable.
+ * This is a number of seconds which the system takes as being a non-trivial
+ * amount of real time.  You probably shouldn't change this;
+ * it is used in subtle ways (fractions and multiples of it are, that is, like
+ * half of a ``long time'', almost a long time, etc.)
+ * It is related to human patience and other factors which don't really
+ * change over time.
+ */
+#define	MAXSLP 		20
+
+/*
+ * A swapped in process is given a small amount of core without being bothered
+ * by the page replacement algorithm.  Basically this says that if you are
+ * swapped in you deserve some resources.  We protect the last SAFERSS
+ * pages against paging and will just swap you out rather than paging you.
+ * Note that each process has at least UPAGES+CLSIZE pages which are not
+ * paged anyways (this is currently 8+2=10 pages or 5k bytes), so this
+ * number just means a swapped in process is given around 25k bytes.
+ * Just for fun: current memory prices are 4600$ a megabyte on VAX (4/22/81),
+ * so we loan each swapped in process memory worth 100$, or just admit
+ * that we don't consider it worthwhile and swap it out to disk which costs
+ * $30/mb or about $0.75.
+ */
+#define	SAFERSS		(0x4000/NBPG)	/* nominal ``small'' resident set size
+					   protected against replacement */
+
 /* user/kernel map constants */
-#define	VM_MIN_ADDRESS		((vaddr_t)PAGE_SIZE)
+#define	VM_MIN_ADDRESS		((vaddr_t)0)
 #define	VM_MAXUSER_ADDRESS	((vaddr_t)0xc0000000)
 #define	VM_MAX_ADDRESS		VM_MAXUSER_ADDRESS
-#define	VM_MIN_KERNEL_ADDRESS	((vaddr_t)0xc0001000)
-#define	VM_MAX_KERNEL_ADDRESS	((vaddr_t)0xef000000)
-
-/* use a small range for PIE to minimize mmap pressure */
-#define	VM_PIE_MIN_ADDR		PAGE_SIZE
-#define	VM_PIE_MAX_ADDR		0x40000UL
+#define	VM_MIN_KERNEL_ADDRESS	((vaddr_t)0)
+#define	VM_MAX_KERNEL_ADDRESS	((vaddr_t)0xf0000000)
 
 /* virtual sizes (bytes) for various kernel submaps */
-#define VM_PHYS_SIZE		(USRIOSIZE*PAGE_SIZE)
+#define VM_MBUF_SIZE		(NMBCLUSTERS*MCLBYTES)
+#define VM_KMEM_SIZE		(NKMEMCLUSTERS*CLBYTES)
+#define VM_PHYS_SIZE		(USRIOSIZE*CLBYTES)
 
-#define	VM_PHYSSEG_MAX		1	/* this many physmem segments */
-#define	VM_PHYSSEG_STRAT	VM_PSTRAT_RANDOM
+#define	VM_PHYSSEG_MAX	8	/* this many physmem segments */
+#define	VM_PHYSSEG_STRAT	VM_PSTRAT_BIGFIRST
 
 #define	VM_PHYSSEG_NOADD	/* XXX until uvm code is fixed */
+
+#define	VM_NFREELIST		2
+#define	VM_FREELIST_DEFAULT	0
+#define	VM_FREELIST_FIRST16	1
+
+#define	MACHINE_NEW_NONCONTIG	1	/* defined this until we rely on vm */
+#define	PMAP_NEW
 
 #endif	/* _MACHINE_VMPARAM_H_ */

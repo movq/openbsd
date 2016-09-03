@@ -1,4 +1,4 @@
-/*	$OpenBSD: com7.c,v 1.13 2015/12/31 17:51:19 mestre Exp $	*/
+/*	$OpenBSD: com7.c,v 1.7 1999/09/25 20:30:45 pjanzen Exp $	*/
 /*	$NetBSD: com7.c,v 1.3 1995/03/21 15:07:12 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,13 +34,19 @@
  * SUCH DAMAGE.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)com7.c	8.2 (Berkeley) 4/28/95";
+#else
+static char rcsid[] = "$OpenBSD: com7.c,v 1.7 1999/09/25 20:30:45 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
 #include "extern.h"
 
 int
-fight(int enemy, int strength)
+fight(enemy, strength)
+	int     enemy, strength;
 {
 	int     lifeline = 0;
 	int     hurt;
@@ -45,7 +55,6 @@ fight(int enemy, int strength)
 	int     i;
 	int     exhaustion;
 
-	stop_cypher = 1;	/* Don't parse the existing input line further */
 fighton:
 	ourtime++;
 	snooze -= 5;
@@ -57,8 +66,8 @@ fighton:
 	}
 	if (snooze - ourtime < 20)
 		puts("You look tired! I hope you're able to fight.");
-	next = getcom(auxbuf, LINELENGTH, "<fight!>-: ", NULL);
-	for (i = 0; next && i < NWORD - 1; i++)
+	next = getcom(auxbuf, LINELENGTH, "<fight!>-: ", 0);
+	for (i = 0; next && i < 10; i++)
 		next = getword(next, words[i], -1);
 	parse();
 	switch (wordvalue[wordnumber]) {
@@ -140,7 +149,7 @@ fighton:
 				puts("His arm swings lifeless at his side.");
 				break;
 			case 2:
-				puts("Clutching his blood-drenched shirt, he collapses, stunned.");
+				puts("Clutching his blood drenched shirt, he collapses stunned.");
 				break;
 			}
 			lifeline += 20;
@@ -194,15 +203,15 @@ fighton:
 			puts("You escape stunned and disoriented from the fight.");
 			puts("A victorious bellow echoes from the battlescene.");
 			if (back && position != back)
-				moveplayer(back, BACK);
+				move(back, BACK);
 			else if (ahead &&position != ahead)
-				moveplayer(ahead, AHEAD);
+				move(ahead, AHEAD);
 			else if (left && position != left)
-				moveplayer(left, LEFT);
+				move(left, LEFT);
 			else if (right && position != right)
-				moveplayer(right, RIGHT);
+				move(right, RIGHT);
 			else
-				moveplayer(location[position].down, AHEAD);
+				move(location[position].down, AHEAD);
 			return (0);
 		}
 
@@ -224,7 +233,6 @@ fighton:
 
 	case DROP:
 	case DRAW:
-		/* One call to cypher() does only the first command on the line */
 		cypher();
 		ourtime--;
 		break;

@@ -1,4 +1,4 @@
-/*	$OpenBSD: mopd.c,v 1.19 2015/02/09 23:00:14 deraadt Exp $ */
+/*	$OpenBSD: mopd.c,v 1.4 1998/03/04 20:21:59 deraadt Exp $ */
 
 /*
  * Copyright (c) 1993-96 Mats O Jansson.  All rights reserved.
@@ -11,6 +11,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Mats O Jansson.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -24,10 +29,15 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifndef LINT
+static char rcsid[] = "$OpenBSD: mopd.c,v 1.4 1998/03/04 20:21:59 deraadt Exp $";
+#endif
+
 /*
  * mopd - MOP Dump/Load Daemon
  *
- * Usage:	mopd [-3 | -4] [-adfv] interface
+ * Usage:	mopd -a [ -d -f -v ] [ -3 | -4 ]
+ *		mopd [ -d -f -v ] [ -3 | -4 ] interface
  */
 
 #include "os.h"
@@ -42,141 +52,176 @@
 #include "common/rc.h"
 #include "process.h"
 
-#include "pwd.h"
-
 /*
  * The list of all interfaces that are being listened to. 
  * "selects" on the descriptors in this list.
  */
-struct if_info	*iflist;
+struct if_info *iflist;
 
-void		Usage(void);
-void		mopProcess(struct if_info *, u_char *);
+#ifdef NO__P
+void   Loop	     (/* void */);
+void   Usage         (/* void */);
+void   mopProcess    (/* struct if_info *, u_char * */);
+#else
+void   Loop	     __P((void));
+void   Usage         __P((void));
+void   mopProcess    __P((struct if_info *, u_char *));
+#endif
 
-int	 AllFlag = 0;		/* listen on "all" interfaces */
-int	 DebugFlag = 0;		/* print debugging messages   */
-int	 ForegroundFlag = 0;	/* run in foreground          */
-int	 VersionFlag = 0;	/* print version              */
-int	 Not3Flag = 0;		/* Not MOP V3 messages.       */
-int	 Not4Flag = 0;		/* Not MOP V4 messages.       */
-int	 promisc = 1;		/* Need promisc mode    */
-
-extern char *__progname;
+int     AllFlag = 0;		/* listen on "all" interfaces */
+int     DebugFlag = 0;		/* print debugging messages   */
+int	ForegroundFlag = 0;	/* run in foreground          */
+int	VersionFlag = 0;	/* print version              */
+int	Not3Flag = 0;		/* Not MOP V3 messages.       */
+int	Not4Flag = 0;		/* Not MOP V4 messages.       */
+int	promisc = 1;		/* Need promisc mode    */
+char    *Program;
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int     argc;
+	char  **argv;
 {
-	int		 c;
-	char		*interface;
-	struct passwd	*pw;
+	int	c, pid, devnull, f;
+	char   *interface;
 
+	extern int optind;
 	extern char version[];
+
+	if ((Program = strrchr(argv[0], '/')))
+		Program++;
+	else
+		Program = argv[0];
+
+	if (*Program == '-')
+		Program++;
 
 	while ((c = getopt(argc, argv, "34adfv")) != -1)
 		switch (c) {
-		case '3':
-			Not3Flag = 1;
-			break;
-		case '4':
-			Not4Flag = 1;
-			break;
-		case 'a':
-			AllFlag = 1;
-			break;
-		case 'd':
-			DebugFlag++;
-			break;
-		case 'f':
-			ForegroundFlag = 1;
-			break;
-		case 'v':
-			VersionFlag = 1;
-			break;
-		default:
-			Usage();
-			/* NOTREACHED */
+			case '3':
+				Not3Flag++;
+				break;
+			case '4':
+				Not4Flag++;
+				break;
+			case 'a':
+				AllFlag++;
+				break;
+			case 'd':
+				DebugFlag++;
+				break;
+			case 'f':
+				ForegroundFlag++;
+				break;
+			case 'v':
+				VersionFlag++;
+				break;
+			default:
+				Usage();
+				/* NOTREACHED */
 		}
-
+	
 	if (VersionFlag) {
-		fprintf(stdout,"%s: version %s\n", __progname, version);
+		fprintf(stdout,"%s: version %s\n", Program, version);
 		exit(0);
 	}
 
 	interface = argv[optind++];
 
-	if ((AllFlag && interface) || (!AllFlag && interface == 0) ||
-	    (argc > optind) || (Not3Flag && Not4Flag))
+	if ((AllFlag && interface) ||
+	    (!AllFlag && interface == 0) ||
+	    (argc > optind) ||
+	    (Not3Flag && Not4Flag))  
 		Usage();
 
 	/* All error reporting is done through syslogs. */
-	openlog(__progname, LOG_PID | LOG_CONS, LOG_DAEMON);
-	tzset();
+	openlog(Program, LOG_PID | LOG_CONS, LOG_DAEMON);
 
-	if ((pw = getpwnam("_mopd")) == NULL)
-		err(1, "getpwnam");
+	if ((!ForegroundFlag) && DebugFlag) {
+		fprintf(stdout,
+			"%s: not running as daemon, -d given.\n",
+			Program);
+	}
 
-	if ((!ForegroundFlag) && DebugFlag)
-		fprintf(stdout, "%s: not running as daemon, -d given.\n",
-		    __progname);
+	if ((!ForegroundFlag) && (!DebugFlag)) {
 
-	if ((!ForegroundFlag) && (!DebugFlag))
-		if (daemon(0, 0) == -1)
-			err(1, NULL);
+		pid = fork();
+		if (pid > 0)
+			/* Parent exits, leaving child in background. */
+			exit(0);
+		else
+			if (pid == -1) {
+				syslog(LOG_ERR, "cannot fork");
+				exit(0);
+			}
 
-	syslog(LOG_INFO, "%s %s started.", __progname, version);
+		/* Fade into the background */
+		f = open("/dev/tty", O_RDWR);
+		if (f >= 0) {
+			if (ioctl(f, TIOCNOTTY, 0) < 0) {
+				syslog(LOG_ERR, "TIOCNOTTY: %m");
+				exit(0);
+			}
+			(void) close(f);
+		}
+		
+		(void) chdir("/");
+#ifdef SETPGRP_NOPARAM
+		(void) setpgrp();
+#else
+		(void) setpgrp(0, getpid());
+#endif
+		devnull = open("/dev/null", O_RDWR);
+		if (devnull >= 0) {
+			(void) dup2(devnull, 0);
+			(void) dup2(devnull, 1);
+			(void) dup2(devnull, 2);
+			if (devnull > 2)
+				(void) close(devnull);
+		}
+	}
+
+	syslog(LOG_INFO, "%s %s started.", Program, version);
 
 	if (AllFlag)
-		deviceInitAll();
+ 		deviceInitAll();
 	else
 		deviceInitOne(interface);
 
-	if (chroot(MOP_FILE_PATH) == -1) {
-		syslog(LOG_CRIT, "chroot %s: %m", MOP_FILE_PATH);
-		exit(1);
-	}
-	if (chdir("/") == -1) {
-		syslog(LOG_CRIT, "chdir(\"/\"): %m");
-		exit(1);
-	}
-	if (setgroups(1, &pw->pw_gid) ||
-	    setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) ||
-	    setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid)) {
-		syslog(LOG_CRIT, "can't drop privileges: %m");
-		exit(1);
-	}
-	endpwent();
-
 	Loop();
-	/* NOTREACHED */
 }
 
 void
 Usage()
 {
-	fprintf(stderr, "usage: %s [-3 | -4] [-adfv] interface\n",
-	    __progname);
+	(void) fprintf(stderr, "usage: %s -a [ -d -f -v ] [ -3 | -4 ]\n",Program);
+	(void) fprintf(stderr, "       %s [ -d -f -v ] [ -3 | -4 ] interface\n",Program);
 	exit(1);
 }
 
 /*
- * Process incoming packages.
+ * Process incomming packages.
  */
 void
-mopProcess(struct if_info *ii, u_char *pkt)
+mopProcess(ii, pkt)
+	struct if_info *ii;
+	u_char *pkt;
 {
 	u_char	*dst, *src;
 	u_short  ptype;
-	int	 idx, trans, len;
+	int	 index, trans, len;
 
 	/* We don't known with transport, Guess! */
+
 	trans = mopGetTrans(pkt, 0);
 
 	/* Ok, return if we don't wan't this message */
+
 	if ((trans == TRANS_ETHER) && Not3Flag) return;
 	if ((trans == TRANS_8023) && Not4Flag)	return;
 
-	idx = 0;
-	mopGetHeader(pkt, &idx, &dst, &src, &ptype, &len, trans);
+	index = 0;
+	mopGetHeader(pkt, &index, &dst, &src, &ptype, &len, trans);
 
 	/*
 	 * Ignore our own transmissions
@@ -185,12 +230,12 @@ mopProcess(struct if_info *ii, u_char *pkt)
 	if (mopCmpEAddr(ii->eaddr,src) == 0)
 		return;
 
-	switch (ptype) {
+	switch(ptype) {
 	case MOP_K_PROTO_DL:
-		mopProcessDL(stdout, ii, pkt, &idx, dst, src, trans, len);
+		mopProcessDL(stdout, ii, pkt, &index, dst, src, trans, len);
 		break;
 	case MOP_K_PROTO_RC:
-		mopProcessRC(stdout, ii, pkt, &idx, dst, src, trans, len);
+		mopProcessRC(stdout, ii, pkt, &index, dst, src, trans, len);
 		break;
 	default:
 		break;

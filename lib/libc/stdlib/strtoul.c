@@ -1,6 +1,5 @@
-/*	$OpenBSD: strtoul.c,v 1.10 2015/09/13 08:31:48 guenther Exp $ */
 /*
- * Copyright (c) 1990 The Regents of the University of California.
+ * Copyright (c) 1990 Regents of the University of California.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,6 +31,10 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: strtoul.c,v 1.4 1996/08/19 08:33:52 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <ctype.h>
 #include <errno.h>
 #include <limits.h>
@@ -40,23 +47,19 @@
  * alphabets and digits are each contiguous.
  */
 unsigned long
-strtoul(const char *nptr, char **endptr, int base)
+strtoul(nptr, endptr, base)
+	const char *nptr;
+	char **endptr;
+	register int base;
 {
-	const char *s;
-	unsigned long acc, cutoff;
-	int c;
-	int neg, any, cutlim;
+	register const char *s;
+	register unsigned long acc, cutoff;
+	register int c;
+	register int neg, any, cutlim;
 
 	/*
 	 * See strtol for comments as to the logic used.
 	 */
-	if (base < 0 || base == 1 || base > 36) {
-		if (endptr != 0)
-			*endptr = (char *)nptr;
-		errno = EINVAL;
-		return 0;
-	}
-
 	s = nptr;
 	do {
 		c = (unsigned char) *s++;
@@ -91,7 +94,7 @@ strtoul(const char *nptr, char **endptr, int base)
 			break;
 		if (any < 0)
 			continue;
-		if (acc > cutoff || (acc == cutoff && c > cutlim)) {
+		if (acc > cutoff || acc == cutoff && c > cutlim) {
 			any = -1;
 			acc = ULONG_MAX;
 			errno = ERANGE;
@@ -107,4 +110,3 @@ strtoul(const char *nptr, char **endptr, int base)
 		*endptr = (char *) (any ? s - 1 : nptr);
 	return (acc);
 }
-DEF_STRONG(strtoul);

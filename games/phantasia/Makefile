@@ -1,12 +1,13 @@
-#	$OpenBSD: Makefile,v 1.18 2015/11/24 03:10:10 deraadt Exp $
+#	$OpenBSD: Makefile,v 1.13 1998/11/29 19:56:54 pjanzen Exp $
 
 PROG=	phantasia
 SRCS=	main.c fight.c io.c interplayer.c gamesupport.c misc.c phantglobs.c
 CFLAGS+=-DTERMIOS
 DPADD=	${LIBM} ${LIBCURSES}
 LDADD=	-lm -lcurses
+HIDEGAME=hidegame
 MAN=	phantasia.6
-CLEANFILES+=map setup setup.o phantglobs.o.bld phantasia.6
+CLEANFILES+=map setup setup.o phantglobs.o.bld
 
 all: setup phantasia
 
@@ -20,12 +21,9 @@ setup: phantglobs.o.bld setup.o monsters.asc ${DPADD}
 	${HOSTCC} ${CFLAGS} ${LDFLAGS} ${LDSTATIC} -o ${.TARGET} \
 		  phantglobs.o.bld setup.o ${LDADD}
 
-phantasia.6: phantasia.6tbl
-	cp ${.ALLSRC} ${.TARGET}
-
 beforeinstall: 
 	./setup -m ${.CURDIR}/monsters.asc
-	chown root:games ${DESTDIR}/var/games/phantasia/*
+	chown root.games ${DESTDIR}/var/games/phantasia/*
 
 # Make Phantasia map.  Change the map commands reflect your installation.
 # PLOTDEVICE is used for plotting the map.  Change as appropriate.

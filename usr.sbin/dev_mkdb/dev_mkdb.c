@@ -1,5 +1,3 @@
-/*	$OpenBSD: dev_mkdb.c,v 1.15 2015/10/16 13:37:44 millert Exp $	*/
-
 /*-
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -12,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,6 +31,18 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1990, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+/*static char sccsid[] = "from: @(#)dev_mkdb.c	8.1 (Berkeley) 6/6/93";*/
+static char rcsid[] = "$Id: dev_mkdb.c,v 1.3 1997/01/15 23:43:55 millert Exp $";
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/stat.h>
 
 #include <db.h>
@@ -36,19 +50,23 @@
 #include <err.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <kvm.h>
+#include <nlist.h>
 #include <paths.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
-void	usage(void);
+void	usage __P((void));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
-	DIR *dirp;
-	struct dirent *dp;
+	register DIR *dirp;
+	register struct dirent *dp;
 	struct stat sb;
 	struct {
 		mode_t type;
@@ -56,16 +74,12 @@ main(int argc, char *argv[])
 	} bkey;
 	DB *db;
 	DBT data, key;
-	HASHINFO info;
 	int ch;
 	u_char buf[MAXNAMLEN + 1];
-	char dbtmp[PATH_MAX], dbname[PATH_MAX];
-
-	if (pledge("stdio rpath wpath cpath flock", NULL) == -1)
-		err(1, "pledge");
+	char dbtmp[MAXPATHLEN + 1], dbname[MAXPATHLEN + 1];
 
 	while ((ch = getopt(argc, argv, "")) != -1)
-		switch(ch) {
+		switch((char)ch) {
 		case '?':
 		default:
 			usage();
@@ -83,10 +97,8 @@ main(int argc, char *argv[])
 
 	(void)snprintf(dbtmp, sizeof(dbtmp), "%sdev.tmp", _PATH_VARRUN);
 	(void)snprintf(dbname, sizeof(dbtmp), "%sdev.db", _PATH_VARRUN);
-	bzero(&info, sizeof(info));
-	info.bsize = 8192;
 	db = dbopen(dbtmp, O_CREAT|O_EXLOCK|O_RDWR|O_TRUNC,
-	    S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH, DB_HASH, &info);
+	    S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH, DB_HASH, NULL);
 	if (db == NULL)
 		err(1, "%s", dbtmp);
 
@@ -128,12 +140,11 @@ main(int argc, char *argv[])
 	(void)(db->close)(db);
 	if (rename(dbtmp, dbname))
 		err(1, "rename %s to %s", dbtmp, dbname);
-
-	return (0);
+	exit(0);
 }
 
 void
-usage(void)
+usage()
 {
 
 	(void)fprintf(stderr, "usage: dev_mkdb\n");

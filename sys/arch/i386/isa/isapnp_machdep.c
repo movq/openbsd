@@ -1,4 +1,4 @@
-/*	$OpenBSD: isapnp_machdep.c,v 1.4 2008/06/26 05:42:11 ray Exp $	*/
+/*	$OpenBSD: isapnp_machdep.c,v 1.2 1997/12/25 09:19:37 downsj Exp $	*/
 /*	$NetBSD: isapnp_machdep.c,v 1.5 1997/10/04 17:32:30 thorpej Exp $	*/
 
 /*-
@@ -17,6 +17,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the NetBSD
+ *	Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -89,7 +96,8 @@
  *	Map I/O regions used by PnP
  */
 int
-isapnp_map(struct isapnp_softc *sc)
+isapnp_map(sc)
+	struct isapnp_softc *sc;
 {
 
 #ifdef DIAGNOSTIC
@@ -106,7 +114,8 @@ isapnp_map(struct isapnp_softc *sc)
  *	Unmap I/O regions used by PnP
  */
 void
-isapnp_unmap(struct isapnp_softc *sc)
+isapnp_unmap(sc)
+	struct isapnp_softc *sc;
 {
 
 	/* Do nothing. */
@@ -119,7 +128,8 @@ isapnp_unmap(struct isapnp_softc *sc)
  *	NOTE: assumes the caller has filled in sc->sc_read_port!
  */
 int
-isapnp_map_readport(struct isapnp_softc *sc)
+isapnp_map_readport(sc)
+	struct isapnp_softc *sc;
 {
 #ifdef _KERNEL
 	int error;
@@ -150,7 +160,8 @@ isapnp_map_readport(struct isapnp_softc *sc)
  *	Pretend to unmap a previously mapped `read port'.
  */
 void
-isapnp_unmap_readport(struct isapnp_softc *sc)
+isapnp_unmap_readport(sc)
+	struct isapnp_softc *sc;
 {
 
 	/* Do nothing */

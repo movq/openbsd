@@ -1,4 +1,4 @@
-/*	$OpenBSD: lpt.c,v 1.14 2015/05/11 02:01:01 guenther Exp $ */
+/*	$OpenBSD: lpt.c,v 1.3 1999/01/07 15:55:54 niklas Exp $ */
 /*	$NetBSD: lpt.c,v 1.42 1996/10/21 22:41:14 thorpej Exp $	*/
 
 /*
@@ -56,8 +56,11 @@
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/proc.h>
+#include <sys/user.h>
 #include <sys/buf.h>
 #include <sys/kernel.h>
+#include <sys/ioctl.h>
 #include <sys/uio.h>
 #include <sys/device.h>
 #include <sys/conf.h>
@@ -97,20 +100,24 @@ struct cfdriver lpt_cd = {
 #define	LPS_INVERT	(LPS_SELECT|LPS_NERR|LPS_NBSY|LPS_NACK)
 #define	LPS_MASK	(LPS_SELECT|LPS_NERR|LPS_NBSY|LPS_NACK|LPS_NOPAPER)
 #define	NOT_READY() \
-    ((bus_space_read_1(sc->sc_iot, sc->sc_ioh, lpt_status) ^ LPS_INVERT) & LPS_MASK)
+    ((bus_space_read_1(iot, ioh, lpt_status) ^ LPS_INVERT) & LPS_MASK)
 #define	NOT_READY_ERR() \
-    lpt_not_ready(bus_space_read_1(sc->sc_iot, sc->sc_ioh, lpt_status), sc)
+    lpt_not_ready(bus_space_read_1(iot, ioh, lpt_status), sc)
 
-int	lpt_not_ready(u_int8_t, struct lpt_softc *);
-void	lptwakeup(void *arg);
-int	lptpushbytes(struct lpt_softc *);
+int	lpt_not_ready __P((u_int8_t, struct lpt_softc *));
+void	lptwakeup __P((void *arg));
+int	lptpushbytes __P((struct lpt_softc *));
 
 /*
  * Internal routine to lptprobe to do port tests of one byte value.
  */
 int
-lpt_port_test(bus_space_tag_t iot, bus_space_handle_t ioh, bus_addr_t base,
-    bus_size_t off, u_int8_t data, u_int8_t mask)
+lpt_port_test(iot, ioh, base, off, data, mask)
+	bus_space_tag_t iot;
+	bus_space_handle_t ioh;
+	bus_addr_t base;
+	bus_size_t off;
+	u_int8_t data, mask;
 {
 	int timeout;
 	u_int8_t temp;
@@ -127,35 +134,21 @@ lpt_port_test(bus_space_tag_t iot, bus_space_handle_t ioh, bus_addr_t base,
 	return (temp == data);
 }
 
-void
-lpt_attach_common(struct lpt_softc *sc)
-{
-	printf("\n");
-
-	bus_space_write_1(sc->sc_iot, sc->sc_ioh, lpt_control, LPC_NINIT);
-
-	timeout_set(&sc->sc_wakeup_tmo, lptwakeup, sc);
-}
-
-void
-lpt_detach_common(struct lpt_softc *sc)
-{
-	timeout_del(&sc->sc_wakeup_tmo);
-	if (sc->sc_state != 0) {
-		sc->sc_state = 0;
-		wakeup(sc);
-	}
-}
-
 /*
  * Reset the printer, then wait until it's selected and not busy.
  */
 int
-lptopen(dev_t dev, int flag, int mode, struct proc *p)
+lptopen(dev, flag, mode, p)
+	dev_t dev;
+	int flag;
+	int mode;
+	struct proc *p;
 {
 	int unit = LPTUNIT(dev);
 	u_int8_t flags = LPTFLAGS(dev);
 	struct lpt_softc *sc;
+	bus_space_tag_t iot;
+	bus_space_handle_t ioh;
 	u_int8_t control;
 	int error;
 	int spin;
@@ -181,15 +174,17 @@ lptopen(dev_t dev, int flag, int mode, struct proc *p)
 
 	sc->sc_state = LPT_INIT;
 	LPRINTF(("%s: open: flags=0x%x\n", sc->sc_dev.dv_xname, flags));
+	iot = sc->sc_iot;
+	ioh = sc->sc_ioh;
 
 	if ((flags & LPT_NOPRIME) == 0) {
 		/* assert INIT for 100 usec to start up printer */
-		bus_space_write_1(sc->sc_iot, sc->sc_ioh, lpt_control, LPC_SELECT);
+		bus_space_write_1(iot, ioh, lpt_control, LPC_SELECT);
 		delay(100);
 	}
 
 	control = LPC_SELECT | LPC_NINIT;
-	bus_space_write_1(sc->sc_iot, sc->sc_ioh, lpt_control, control);
+	bus_space_write_1(iot, ioh, lpt_control, control);
 
 	/* wait till ready (printer running diagnostics) */
 	for (spin = 0; NOT_READY_ERR(); spin += STEP) {
@@ -200,8 +195,6 @@ lptopen(dev_t dev, int flag, int mode, struct proc *p)
 
 		/* wait 1/4 second, give up if we get a signal */
 		error = tsleep((caddr_t)sc, LPTPRI | PCATCH, "lptopen", STEP);
-		if (sc->sc_state == 0)
-			return (EIO);
 		if (error != EWOULDBLOCK) {
 			sc->sc_state = 0;
 			return error;
@@ -213,7 +206,7 @@ lptopen(dev_t dev, int flag, int mode, struct proc *p)
 	if (flags & LPT_AUTOLF)
 		control |= LPC_AUTOLF;
 	sc->sc_control = control;
-	bus_space_write_1(sc->sc_iot, sc->sc_ioh, lpt_control, control);
+	bus_space_write_1(iot, ioh, lpt_control, control);
 
 	sc->sc_inbuf = geteblk(LPT_BSIZE);
 	sc->sc_count = 0;
@@ -227,7 +220,9 @@ lptopen(dev_t dev, int flag, int mode, struct proc *p)
 }
 
 int
-lpt_not_ready(u_int8_t status, struct lpt_softc *sc)
+lpt_not_ready(status, sc)
+	u_int8_t status;
+	struct lpt_softc *sc;
 {
 	u_int8_t new;
 
@@ -246,7 +241,8 @@ lpt_not_ready(u_int8_t status, struct lpt_softc *sc)
 }
 
 void
-lptwakeup(void *arg)
+lptwakeup(arg)
+	void *arg;
 {
 	struct lpt_softc *sc = arg;
 	int s;
@@ -255,15 +251,18 @@ lptwakeup(void *arg)
 	lptintr(sc);
 	splx(s);
 
-	if (sc->sc_state != 0)
-		timeout_add(&sc->sc_wakeup_tmo, STEP);
+	timeout(lptwakeup, sc, STEP);
 }
 
 /*
  * Close the device, and free the local line buffer.
  */
 int
-lptclose(dev_t dev, int flag, int mode, struct proc *p)
+lptclose(dev, flag, mode, p)
+	dev_t dev;
+	int flag;
+	int mode;
+	struct proc *p;
 {
 	int unit = LPTUNIT(dev);
 	struct lpt_softc *sc = lpt_cd.cd_devs[unit];
@@ -274,7 +273,7 @@ lptclose(dev_t dev, int flag, int mode, struct proc *p)
 		(void) lptpushbytes(sc);
 
 	if ((sc->sc_flags & LPT_NOINTR) == 0)
-		timeout_del(&sc->sc_wakeup_tmo);
+		untimeout(lptwakeup, sc);
 
 	bus_space_write_1(iot, ioh, lpt_control, LPC_NINIT);
 	sc->sc_state = 0;
@@ -286,7 +285,8 @@ lptclose(dev_t dev, int flag, int mode, struct proc *p)
 }
 
 int
-lptpushbytes(struct lpt_softc *sc)
+lptpushbytes(sc)
+	struct lpt_softc *sc;
 {
 	bus_space_tag_t iot = sc->sc_iot;
 	bus_space_handle_t ioh = sc->sc_ioh;
@@ -298,8 +298,6 @@ lptpushbytes(struct lpt_softc *sc)
 
 		while (sc->sc_count > 0) {
 			spin = 0;
-			if (sc->sc_state == 0)
-				return (EIO);
 			while (NOT_READY()) {
 				if (++spin < sc->sc_spinmax)
 					continue;
@@ -313,8 +311,6 @@ lptpushbytes(struct lpt_softc *sc)
 						tic = TIMEOUT;
 					error = tsleep((caddr_t)sc,
 					    LPTPRI | PCATCH, "lptpsh", tic);
-					if (sc->sc_state == 0)
-						error = EIO;
 					if (error != EWOULDBLOCK)
 						return error;
 				}
@@ -343,12 +339,8 @@ lptpushbytes(struct lpt_softc *sc)
 				(void) lptintr(sc);
 				splx(s);
 			}
-			if (sc->sc_state == 0)
-				return (EIO);
 			error = tsleep((caddr_t)sc, LPTPRI | PCATCH,
 			    "lptwrite2", 0);
-			if (sc->sc_state == 0)
-				error = EIO;
 			if (error)
 				return error;
 		}
@@ -361,16 +353,17 @@ lptpushbytes(struct lpt_softc *sc)
  * chars moved to the output queue.
  */
 int
-lptwrite(dev_t dev, struct uio *uio, int flags)
+lptwrite(dev, uio, flags)
+	dev_t dev;
+	struct uio *uio;
+	int flags;
 {
 	struct lpt_softc *sc = lpt_cd.cd_devs[LPTUNIT(dev)];
 	size_t n;
 	int error = 0;
 
-	while ((n = ulmin(LPT_BSIZE, uio->uio_resid)) != 0) {
-		error = uiomove(sc->sc_cp = sc->sc_inbuf->b_data, n, uio);
-		if (error != 0)
-			return error;
+	while ((n = min(LPT_BSIZE, uio->uio_resid)) != 0) {
+		uiomove(sc->sc_cp = sc->sc_inbuf->b_data, n, uio);
 		sc->sc_count = n;
 		error = lptpushbytes(sc);
 		if (error) {
@@ -391,7 +384,8 @@ lptwrite(dev_t dev, struct uio *uio, int flags)
  * another char.
  */
 int
-lptintr(void *arg)
+lptintr(arg)
+	void *arg;
 {
 	struct lpt_softc *sc = arg;
 	bus_space_tag_t iot = sc->sc_iot;
@@ -426,48 +420,19 @@ lptintr(void *arg)
 }
 
 int
-lpt_activate(struct device *self, int act)
+lptioctl(dev, cmd, data, flag, p)
+	dev_t dev;
+	u_long cmd;
+	caddr_t data;
+	int flag;
+	struct proc *p;
 {
-	struct lpt_softc *sc = (struct lpt_softc *)self;
+	int error = 0;
 
-	switch (act) {
-	case DVACT_SUSPEND:
-		timeout_del(&sc->sc_wakeup_tmo);
-		break;
-	case DVACT_RESUME:
-		bus_space_write_1(sc->sc_iot, sc->sc_ioh, lpt_control, LPC_NINIT);
-
-		if (sc->sc_state) {
-			int spin;
-
-			if ((sc->sc_flags & LPT_NOPRIME) == 0) {
-				/* assert INIT for 100 usec to start up printer */
-				bus_space_write_1(sc->sc_iot, sc->sc_ioh,
-				    lpt_control, LPC_SELECT);
-				delay(100);
-			}
-			
-			bus_space_write_1(sc->sc_iot, sc->sc_ioh, lpt_control,
-			    LPC_SELECT | LPC_NINIT);
-
-			/* wait till ready (printer running diagnostics) */
-			for (spin = 0; NOT_READY_ERR(); spin += STEP) {
-				if (spin >= TIMEOUT) {
-					sc->sc_state = 0;
-					goto fail;
-				}
-
-				/* wait 1/4 second, give up if we get a signal */
-				delay(STEP * 1000);
-			}
-
-			bus_space_write_1(sc->sc_iot, sc->sc_ioh,
-			    lpt_control, sc->sc_control);
-			wakeup(sc);
-		}
-fail:
-		break;
+	switch (cmd) {
+	default:
+		error = ENODEV;
 	}
- 
-	return (0);
+
+	return error;
 }

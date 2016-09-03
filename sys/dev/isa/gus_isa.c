@@ -1,4 +1,4 @@
-/*	$OpenBSD: gus_isa.c,v 1.7 2015/05/12 16:35:23 ratchov Exp $	*/
+/*	$OpenBSD: gus_isa.c,v 1.1 1999/07/05 20:08:37 deraadt Exp $	*/
 /*	$NetBSD: gus.c,v 1.51 1998/01/25 23:48:06 mycroft Exp $	*/
 
 /*-
@@ -16,6 +16,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD 
+ *	  Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its 
+ *    contributors may be used to endorse or promote products derived 
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -35,7 +42,7 @@
  * TODO:
  *	. figure out why mixer activity while sound is playing causes problems
  *	  (phantom interrupts?)
- *	. figure out a better deinterleave strategy that avoids sucking up
+ *  	. figure out a better deinterleave strategy that avoids sucking up
  *	  CPU, memory and cache bandwidth.  (Maybe a special encoding?
  *	  Maybe use the double-speed sampling/hardware deinterleave trick
  *	  from the GUS SDK?)  A 486/33 isn't quite fast enough to keep
@@ -51,7 +58,7 @@
  * available on the net at:
  *
  * ftp://freedom.nmsu.edu/pub/ultrasound/gravis/util/
- *	gusdkXXX.zip (developers' kit--get rev 2.22 or later)
+ * 	gusdkXXX.zip (developers' kit--get rev 2.22 or later)
  *		See ultrawrd.doc inside--it's MS Word (ick), but it's the bible
  *
  */
@@ -71,17 +78,17 @@
  *   |         | play (dram)  |      +----+    |	|
  *   |         |--------------(------|-\  |    |   +-+  |
  *   +---------+              |      |  >-|----|---|C|--|------  dma chan 1
- *                            |  +---|-/  |    |   +-+	|
+ *                            |  +---|-/  |    |   +-+ 	|
  *                            |  |   +----+    |    |   |
  *                            |	 |   +----+    |    |   |
  *   +---------+        +-+   +--(---|-\  |    |    |   |
  *   |         | play   |8|      |   |  >-|----|----+---|------  dma chan 2
  *   | ---C----|--------|/|------(---|-/  |    |        |
  *   |    ^    |record  |1|      |   +----+    |	|
- *   |    |    |   /----|6|------+	       +--------+
+ *   |    |    |   /----|6|------+   	       +--------+
  *   | ---+----|--/     +-+
  *   +---------+
- *     CS4231	8-to-16 bit bus conversion, if needed
+ *     CS4231   	8-to-16 bit bus conversion, if needed
  *
  *
  * "C" is an optional combiner.
@@ -94,11 +101,11 @@
 #include <sys/ioctl.h>
 #include <sys/syslog.h>
 #include <sys/device.h>
+#include <sys/proc.h>
 #include <sys/buf.h>
 #include <sys/fcntl.h>
 #include <sys/malloc.h>
 #include <sys/kernel.h>
-#include <sys/timeout.h>
 
 #include <machine/cpu.h>
 #include <machine/intr.h>
@@ -106,9 +113,12 @@
 #include <machine/cpufunc.h>
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
+#include <dev/mulaw.h>
+#include <dev/auconv.h>
 
 #include <dev/isa/isavar.h>
 #include <dev/isa/isadmavar.h>
+#include <i386/isa/icu.h>
 
 #include <dev/ic/ics2101reg.h>
 #include <dev/ic/cs4231reg.h>
@@ -123,8 +133,8 @@
  * ISA bus driver routines
  */
 
-int	gus_isa_match(struct device *, void *, void *);
-void	gus_isa_attach(struct device *, struct device *, void *);
+int	gus_isa_match __P((struct device *, void *, void *));
+void	gus_isa_attach __P((struct device *, struct device *, void *));
 
 struct cfattach gus_isa_ca = {
 	sizeof(struct gus_softc), gus_isa_match, gus_isa_attach,

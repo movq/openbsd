@@ -1,17 +1,17 @@
-#	$OpenBSD: Makefile,v 1.95 2016/09/01 09:53:08 tedu Exp $
+#	$OpenBSD: Makefile,v 1.23 1999/07/20 18:35:35 aaron Exp $
 #	$NetBSD: Makefile,v 1.13 1996/03/28 21:36:40 mark Exp $
 #	@(#)Makefile	8.1 (Berkeley) 6/5/93
 
-MAN=	afterboot.8 autoinstall.8 boot_config.8 \
-	crash.8 daily.8 \
-	diskless.8 genassym.sh.8 intro.8 netstart.8 rc.8 \
-	rc.conf.8 rc.d.8 rc.shutdown.8 rc.subr.8 release.8 \
-	security.8 ssl.8 starttls.8 sticky.8 yp.8
+MAN=	afterboot.8 compat_bsdos.8 compat_freebsd.8 compat_ibcs2.8 \
+	compat_linux.8 compat_sunos.8 \
+	compat_svr4.8 compat_ultrix.8 dhcp.8 diskless.8 intro.8 rc.8 \
+	rc.conf.8 rc.shutdown.8 ssl.8 sticky.8 update.8 yp.8 boot_config.8 \
+	vpn.8
+SUBDIR=	man8.amiga man8.arm32 man8.atari man8.hp300 man8.i386 man8.mac68k \
+	man8.sparc man8.sun3 man8.vax
 
-SUBDIR=	man8.alpha man8.amd64 man8.armv7 \
-	man8.hppa man8.i386 man8.landisk \
-	man8.loongson man8.luna88k man8.macppc \
-	man8.octeon man8.sgi man8.socppc man8.sparc64 \
-	man8.zaurus
+MLINKS=	afterboot.8 faq.8
+
+MLINKS+= rc.8 rc.local.8 rc.8 rc.securelevel.8 rc.8 netstart.8
 
 .include <bsd.prog.mk>

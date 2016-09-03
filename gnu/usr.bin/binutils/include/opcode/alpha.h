@@ -1,5 +1,5 @@
 /* alpha.h -- Header file for Alpha opcode table
-   Copyright 1996, 1999, 2001, 2003 Free Software Foundation, Inc.
+   Copyright 1996 Free Software Foundation, Inc.
    Contributed by Richard Henderson <rth@tamu.edu>,
    patterned after the PPC opcode table written by Ian Lance Taylor.
 
@@ -54,7 +54,7 @@ struct alpha_opcode
    in the order in which the disassembler should consider
    instructions.  */
 extern const struct alpha_opcode alpha_opcodes[];
-extern const unsigned alpha_num_opcodes;
+extern const int alpha_num_opcodes;
 
 /* Values defined for the flags field of a struct alpha_opcode.  */
 
@@ -62,12 +62,11 @@ extern const unsigned alpha_num_opcodes;
 #define AXP_OPCODE_BASE  0x0001  /* Base architecture -- all cpus.  */
 #define AXP_OPCODE_EV4   0x0002  /* EV4 specific PALcode insns.  */
 #define AXP_OPCODE_EV5   0x0004  /* EV5 specific PALcode insns.  */
-#define AXP_OPCODE_EV6   0x0008  /* EV6 specific PALcode insns.  */
 #define AXP_OPCODE_BWX   0x0100  /* Byte/word extension (amask bit 0).  */
 #define AXP_OPCODE_CIX   0x0200  /* "Count" extension (amask bit 1).  */
 #define AXP_OPCODE_MAX   0x0400  /* Multimedia extension (amask bit 8).  */
 
-#define AXP_OPCODE_NOPAL (~(AXP_OPCODE_EV4|AXP_OPCODE_EV5|AXP_OPCODE_EV6))
+#define AXP_OPCODE_NOPAL (~(AXP_OPCODE_EV4|AXP_OPCODE_EV5))
 
 /* A macro to extract the major opcode from an instruction.  */
 #define AXP_OP(i)	(((i) >> 26) & 0x3F)
@@ -81,16 +80,16 @@ extern const unsigned alpha_num_opcodes;
 struct alpha_operand
 {
   /* The number of bits in the operand.  */
-  unsigned int bits : 5;
+  int bits;
 
   /* How far the operand is left shifted in the instruction.  */
-  unsigned int shift : 5;
+  int shift;
 
   /* The default relocation type for this operand.  */
-  signed int default_reloc : 16;
+  int default_reloc;
 
   /* One bit syntax flags.  */
-  unsigned int flags : 16;
+  unsigned flags;
 
   /* Insertion function.  This is used by the assembler.  To insert an
      operand value into an instruction, check this field.
@@ -108,7 +107,8 @@ struct alpha_operand
      string (the operand will be inserted in any case).  If the
      operand value is legal, *ERRMSG will be unchanged (most operands
      can accept any value).  */
-  unsigned (*insert) (unsigned instruction, int op, const char **errmsg);
+  unsigned (*insert) PARAMS ((unsigned instruction, int op,
+			      const char **errmsg));
 
   /* Extraction function.  This is used by the disassembler.  To
      extract this operand type from an instruction, check this field.
@@ -127,14 +127,14 @@ struct alpha_operand
      non-zero if this operand type can not actually be extracted from
      this operand (i.e., the instruction does not match).  If the
      operand is valid, *INVALID will not be changed.  */
-  int (*extract) (unsigned instruction, int *invalid);
+  int (*extract) PARAMS ((unsigned instruction, int *invalid));
 };
 
 /* Elements in the table are retrieved by indexing with values from
    the operands field of the alpha_opcodes table.  */
 
 extern const struct alpha_operand alpha_operands[];
-extern const unsigned alpha_num_operands;
+extern const int alpha_num_operands;
 
 /* Values defined for the flags field of a struct alpha_operand.  */
 

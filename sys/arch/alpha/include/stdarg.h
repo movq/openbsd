@@ -1,4 +1,4 @@
-/*	$OpenBSD: stdarg.h,v 1.14 2014/03/11 19:45:27 guenther Exp $	*/
+/*	$OpenBSD: stdarg.h,v 1.4 1996/10/30 22:39:30 niklas Exp $	*/
 /*	$NetBSD: stdarg.h,v 1.4 1996/10/09 21:13:05 cgd Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,13 +36,12 @@
  *	@(#)stdarg.h	8.1 (Berkeley) 6/10/93
  */
 
-#ifndef _MACHINE_STDARG_H_
-#define	_MACHINE_STDARG_H_
+#ifndef _ALPHA_STDARG_H_
+#define	_ALPHA_STDARG_H_
 
-#include <sys/cdefs.h>
-#include <machine/_types.h>
+#include <machine/ansi.h>
 
-typedef __va_list	va_list;
+typedef _BSD_VA_LIST_	va_list;
 
 #define	__va_size(type) \
 	(((sizeof(type) + sizeof(long) - 1) / sizeof(long)) * sizeof(long))
@@ -55,6 +58,6 @@ typedef __va_list	va_list;
 	(*(type *)((ap).offset += __va_size(type),			\
 		   (ap).base + (ap).offset + __va_arg_offset(ap, type)))
 
-#define	va_end(ap)	
+#define	va_end(ap)	((void)0)
 
-#endif /* !_MACHINE_STDARG_H_ */
+#endif /* !_ALPHA_STDARG_H_ */

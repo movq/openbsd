@@ -1,67 +1,132 @@
 package B::Terse;
-
-our $VERSION = '1.06';
-
 use strict;
-use B qw(class @specialsv_name);
-use B::Concise qw(concise_subref set_style_standard);
-use Carp;
+use B qw(peekop class walkoptree_slow walkoptree_exec
+	 main_start main_root cstring svref_2object);
+use B::Asmdata qw(@specialsv_name);
 
 sub terse {
-    my ($order, $subref) = @_;
-    set_style_standard("terse");
+    my ($order, $cvref) = @_;
+    my $cv = svref_2object($cvref);
     if ($order eq "exec") {
-	concise_subref('exec', $subref);
+	walkoptree_exec($cv->START, "terse");
     } else {
-	concise_subref('basic', $subref);
+	walkoptree_slow($cv->ROOT, "terse");
     }
 }
 
 sub compile {
-    my @args = @_;
-    my $order = @args ? shift(@args) : "";
-    $order = "-exec" if $order eq "exec";
-    unshift @args, $order if $order ne "";
-    B::Concise::compile("-terse", @args);
+    my $order = shift;
+    my @options = @_;
+    if (@options) {
+	return sub {
+	    my $objname;
+	    foreach $objname (@options) {
+		$objname = "main::$objname" unless $objname =~ /::/;
+		eval "terse(\$order, \\&$objname)";
+		die "terse($order, \\&$objname) failed: $@" if $@;
+	    }
+	}
+    } else {
+	if ($order eq "exec") {
+	    return sub { walkoptree_exec(main_start, "terse") }
+	} else {
+	    return sub { walkoptree_slow(main_root, "terse") }
+	}
+    }
 }
 
 sub indent {
-    my ($level) = @_ ? shift : 0;
+    my $level = shift;
     return "    " x $level;
 }
 
-# Don't use this, at least on OPs in subroutines: it has no way of
-# getting to the pad, and will give wrong answers or crash.
 sub B::OP::terse {
-    carp "B::OP::terse is deprecated; use B::Concise instead";
-    B::Concise::b_terse(@_);
+    my ($op, $level) = @_;
+    my $targ = $op->targ;
+    $targ = ($targ > 0) ? " [$targ]" : "";
+    print indent($level), peekop($op), $targ, "\n";
 }
 
-sub B::SV::terse {
-    my($sv, $level) = (@_, 0);
-    my %info;
-    B::Concise::concise_sv($sv, \%info);
-    my $s = indent($level)
-	. B::Concise::fmt_line(\%info, $sv,
-				 "#svclass~(?((#svaddr))?)~#svval", 0);
-    chomp $s;
-    print "$s\n" unless defined wantarray;
-    $s;
+sub B::SVOP::terse {
+    my ($op, $level) = @_;
+    print indent($level), peekop($op), "  ";
+    $op->sv->terse(0);
+}
+
+sub B::GVOP::terse {
+    my ($op, $level) = @_;
+    print indent($level), peekop($op), "  ";
+    $op->gv->terse(0);
+}
+
+sub B::PMOP::terse {
+    my ($op, $level) = @_;
+    my $precomp = $op->precomp;
+    print indent($level), peekop($op),
+	defined($precomp) ? " /$precomp/\n" : " (regexp not compiled)\n";
+
+}
+
+sub B::PVOP::terse {
+    my ($op, $level) = @_;
+    print indent($level), peekop($op), " ", cstring($op->pv), "\n";
+}
+
+sub B::COP::terse {
+    my ($op, $level) = @_;
+    my $label = $op->label;
+    if ($label) {
+	$label = " label ".cstring($label);
+    }
+    print indent($level), peekop($op), $label, "\n";
+}
+
+sub B::PV::terse {
+    my ($sv, $level) = @_;
+    print indent($level);
+    printf "%s (0x%lx) %s\n", class($sv), $$sv, cstring($sv->PV);
+}
+
+sub B::AV::terse {
+    my ($sv, $level) = @_;
+    print indent($level);
+    printf "%s (0x%lx) FILL %d\n", class($sv), $$sv, $sv->FILL;
+}
+
+sub B::GV::terse {
+    my ($gv, $level) = @_;
+    my $stash = $gv->STASH->NAME;
+    if ($stash eq "main") {
+	$stash = "";
+    } else {
+	$stash = $stash . "::";
+    }
+    print indent($level);
+    printf "%s (0x%lx) *%s%s\n", class($gv), $$gv, $stash, $gv->NAME;
+}
+
+sub B::IV::terse {
+    my ($sv, $level) = @_;
+    print indent($level);
+    printf "%s (0x%lx) %d\n", class($sv), $$sv, $sv->IV;
+}
+
+sub B::NV::terse {
+    my ($sv, $level) = @_;
+    print indent($level);
+    printf "%s (0x%lx) %s\n", class($sv), $$sv, $sv->NV;
 }
 
 sub B::NULL::terse {
-    my ($sv, $level) = (@_, 0);
-    my $s = indent($level) . sprintf "%s (0x%lx)", class($sv), $$sv;
-    print "$s\n" unless defined wantarray;
-    $s;
+    my ($sv, $level) = @_;
+    print indent($level);
+    printf "%s (0x%lx)\n", class($sv), $$sv;
 }
-
+    
 sub B::SPECIAL::terse {
-    my ($sv, $level) = (@_, 0);
-    my $s = indent($level)
-	. sprintf( "%s #%d %s", class($sv), $$sv, $specialsv_name[$$sv]);
-    print "$s\n" unless defined wantarray;
-    $s;
+    my ($sv, $level) = @_;
+    print indent($level);
+    printf "%s #%d %s\n", class($sv), $$sv, $specialsv_name[$$sv];
 }
 
 1;
@@ -78,33 +143,10 @@ B::Terse - Walk Perl syntax tree, printing terse info about ops
 
 =head1 DESCRIPTION
 
-This module prints the contents of the parse tree, but without as much
-information as L<B::Debug>.  For comparison, C<print "Hello, world.">
-produced 96 lines of output from B::Debug, but only 6 from B::Terse.
-
-This module is useful for people who are writing their own back end,
-or who are learning about the Perl internals.  It's not useful to the
-average programmer.
-
-This version of B::Terse is really just a wrapper that calls L<B::Concise>
-with the B<-terse> option. It is provided for compatibility with old scripts
-(and habits) but using B::Concise directly is now recommended instead.
-
-For compatibility with the old B::Terse, this module also adds a
-method named C<terse> to B::OP and B::SV objects. The B::SV method is
-largely compatible with the old one, though authors of new software
-might be advised to choose a more user-friendly output format. The
-B::OP C<terse> method, however, doesn't work well. Since B::Terse was
-first written, much more information in OPs has migrated to the
-scratchpad datastructure, but the C<terse> interface doesn't have any
-way of getting to the correct pad. As a kludge, the new version will
-always use the pad for the main program, but for OPs in subroutines
-this will give the wrong answer or crash.
+See F<ext/B/README>.
 
 =head1 AUTHOR
 
-The original version of B::Terse was written by Malcolm Beattie,
-E<lt>mbeattie@sable.ox.ac.ukE<gt>. This wrapper was written by Stephen
-McCamant, E<lt>smcc@MIT.EDUE<gt>.
+Malcolm Beattie, C<mbeattie@sable.ox.ac.uk>
 
 =cut

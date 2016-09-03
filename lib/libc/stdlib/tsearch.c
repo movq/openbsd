@@ -1,15 +1,14 @@
-/*	$OpenBSD: tsearch.c,v 1.10 2015/09/26 16:03:48 guenther Exp $	*/
-
 /*
  * Tree search generalized from Knuth (6.2.2) Algorithm T just like
  * the AT&T man page says.
  *
- * The node_t structure is for internal use only
+ * The node_t structure is for internal use only, lint doesn't grok it.
  *
  * Written by reading the System V Interface Definition, not the code.
  *
  * Totally public domain.
  */
+/*LINTLIBRARY*/
 
 #include <search.h>
 #include <stdlib.h>
@@ -21,10 +20,12 @@ typedef struct node_t {
 
 /* find or insert datum into search tree */
 void *
-tsearch(const void *vkey, void **vrootp,
-    int (*compar)(const void *, const void *))
+tsearch(vkey, vrootp, compar)
+	const void 	*vkey;		/* key to be located */
+	void		**vrootp;	/* address of tree root */
+	int		(*compar) __P((const void *, const void *));
 {
-    node *q;
+    register node *q;
     char *key = (char *)vkey;
     node **rootp = (node **)vrootp;
 
@@ -39,7 +40,7 @@ tsearch(const void *vkey, void **vrootp,
 	    &(*rootp)->left :		/* T3: follow left branch */
 	    &(*rootp)->right;		/* T4: follow right branch */
     }
-    q = malloc(sizeof(node));	/* T5: key not found */
+    q = (node *) malloc(sizeof(node));	/* T5: key not found */
     if (q != (struct node_t *)0) {	/* make new node */
 	*rootp = q;			/* link new node to old */
 	q->key = key;			/* initialize new node */
@@ -50,17 +51,19 @@ tsearch(const void *vkey, void **vrootp,
 
 /* delete node with given key */
 void *
-tdelete(const void *vkey, void **vrootp,
-    int (*compar)(const void *, const void *))
+tdelete(vkey, vrootp, compar)
+	const void	*vkey;		/* key to be deleted */
+	void		**vrootp;	/* address of the root of tree */
+	int		(*compar) __P((const void *, const void *));
 {
     node **rootp = (node **)vrootp;
     char *key = (char *)vkey;
-    node *p = (node *)1;
-    node *q;
-    node *r;
+    node *p;
+    register node *q;
+    register node *r;
     int cmp;
 
-    if (rootp == (struct node_t **)0 || *rootp == (struct node_t *)0)
+    if (rootp == (struct node_t **)0 || (p = *rootp) == (struct node_t *)0)
 	return ((struct node_t *)0);
     while ((cmp = (*compar)(key, (*rootp)->key)) != 0) {
 	p = *rootp;
@@ -92,7 +95,10 @@ tdelete(const void *vkey, void **vrootp,
 
 /* Walk the nodes of a tree */
 static void
-trecurse(node *root, void (*action)(const void *, VISIT, int), int level)
+trecurse(root, action, level)
+	register node	*root;		/* Root of the tree to be walked */
+	register void	(*action)();	/* Function to be called at each node */
+	register int	level;
 {
     if (root->left == (struct node_t *)0 && root->right == (struct node_t *)0)
 	(*action)(root, leaf, level);
@@ -109,10 +115,12 @@ trecurse(node *root, void (*action)(const void *, VISIT, int), int level)
 
 /* Walk the nodes of a tree */
 void
-twalk(const void *vroot, void (*action)(const void *, VISIT, int))
+twalk(vroot, action)
+	const void	*vroot;		/* Root of the tree to be walked */
+	void		(*action) __P((const void *, VISIT, int));
 {
     node *root = (node *)vroot;
 
-    if (root != (node *)0 && action != (void (*)(const void *, VISIT, int))0)
+    if (root != (node *)0 && action != (void(*)())0)
 	trecurse(root, action, 0);
 }

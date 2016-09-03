@@ -1,7 +1,7 @@
-/*	$OpenBSD: clock.c,v 1.29 2014/03/29 18:09:29 guenther Exp $	*/
+/*	$OpenBSD: clock.c,v 1.6 1999/09/07 20:50:24 mickey Exp $	*/
 
 /*
- * Copyright (c) 1998-2003 Michael Shalayeff
+ * Copyright (c) 1998,1999 Michael Shalayeff
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -12,24 +12,28 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHOR OR HIS RELATIVES BE LIABLE FOR ANY DIRECT,
- * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF MIND, USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
- * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
- * THE POSSIBILITY OF SUCH DAMAGE.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
-#include <sys/timetc.h>
+#include <sys/time.h>
 
 #include <dev/clock_subr.h>
 
@@ -41,127 +45,94 @@
 #include <machine/cpufunc.h>
 #include <machine/autoconf.h>
 
-u_long	cpu_hzticks;
-int	timeset;
+#if defined(DDB)
+#include <vm/vm.h>
+#include <machine/db_machdep.h>
+#include <ddb/db_sym.h>
+#include <ddb/db_extern.h>
+#endif
 
-int	cpu_hardclock(void *);
-u_int	itmr_get_timecount(struct timecounter *);
+struct timeval time;
 
-struct timecounter itmr_timecounter = {
-	itmr_get_timecount, NULL, 0xffffffff, 0, "itmr", 0, NULL
-};
+void startrtclock __P((void));
 
 void
-cpu_initclocks(void)
+cpu_initclocks()
 {
-	struct cpu_info *ci = curcpu();
-	u_long __itmr;
+	extern u_int cpu_hzticks;
+	u_int time_inval;
+#ifdef USELEDS
+	static u_int hbcnt = 0;
 
-	cpu_hzticks = (PAGE0->mem_10msec * 100) / hz;
+	if (!(hbcnt % 50)) {
+		register u_int r = (hbcnt / 50) % 6;
 
-	itmr_timecounter.tc_frequency = PAGE0->mem_10msec * 100;
-	tc_init(&itmr_timecounter);
-
-	mfctl(CR_ITMR, __itmr);
-	ci->ci_itmr = __itmr;
-	__itmr += cpu_hzticks;
-	mtctl(__itmr, CR_ITMR);
+		heartbeat(r < 4 && !(r % 2));
+	}
+#endif
+	/* Start the interval timer. */
+	mfctl(CR_ITMR, time_inval);
+	mtctl(time_inval + cpu_hzticks, CR_ITMR);
 }
 
 int
-cpu_hardclock(void *v)
+clock_intr (v)
+	void *v;
 {
-	struct cpu_info *ci = curcpu();
-	u_long __itmr, delta, eta;
-	int wrap;
-	register_t eiem;
+	struct trapframe *frame = v;
 
-	/*
-	 * Invoke hardclock as many times as there has been cpu_hzticks
-	 * ticks since the last interrupt.
-	 */
-	for (;;) {
-		mfctl(CR_ITMR, __itmr);
-		delta = __itmr - ci->ci_itmr;
-		if (delta >= cpu_hzticks) {
-			hardclock(v);
-			ci->ci_itmr += cpu_hzticks;
-		} else
-			break;
-	}
+/*	printf ("#"); */
 
-	/*
-	 * Program the next clock interrupt, making sure it will
-	 * indeed happen in the future. This is done with interrupts
-	 * disabled to avoid a possible race.
-	 */
-	eta = ci->ci_itmr + cpu_hzticks;
-	wrap = eta < ci->ci_itmr;	/* watch out for a wraparound */
-	__asm volatile("mfctl	%%cr15, %0": "=r" (eiem));
-	__asm volatile("mtctl	%r0, %cr15");
-	mtctl(eta, CR_ITMR);
-	mfctl(CR_ITMR, __itmr);
-	/*
-	 * If we were close enough to the next tick interrupt
-	 * value, by the time we have programmed itmr, it might
-	 * have passed the value, which would cause a complete
-	 * cycle until the next interrupt occurs. On slow
-	 * models, this would be a disaster (a complete cycle
-	 * taking over two minutes on a 715/33).
-	 *
-	 * We expect that it will only be necessary to postpone
-	 * the interrupt once. Thus, there are two cases:
-	 * - We are expecting a wraparound: eta < cpu_itmr.
-	 *   itmr is in tracks if either >= cpu_itmr or < eta.
-	 * - We are not wrapping: eta > cpu_itmr.
-	 *   itmr is in tracks if >= cpu_itmr and < eta (we need
-	 *   to keep the >= cpu_itmr test because itmr might wrap
-	 *   before eta does).
-	 */
-	if ((wrap && !(eta > __itmr || __itmr >= ci->ci_itmr)) ||
-	    (!wrap && !(eta > __itmr && __itmr >= ci->ci_itmr))) {
-		eta += cpu_hzticks;
-		mtctl(eta, CR_ITMR);
-	}
-	__asm volatile("mtctl	%0, %%cr15":: "r" (eiem));
+	/* printf ("clock int 0x%x @ 0x%x for %p\n", t,
+	   frame->tf_iioq_head, curproc); */
 
-	return (1);
+	cpu_initclocks();
+	hardclock(frame);
+
+#if 0
+	ddb_regs = *frame;
+	db_show_regs(NULL, 0, 0, NULL);
+#endif
+
+	/* printf ("clock out 0x%x\n", t); */
+
+	return 1;
 }
+
 
 /*
  * initialize the system time from the time of day clock
  */
 void
-inittodr(time_t t)
+inittodr(t)
+	time_t t;
 {
 	struct pdc_tod tod PDC_ALIGNMENT;
-	int 	error, tbad = 0;
-	struct timespec ts;
+	int 	tbad = 0;
+	long	dt;
 
-	if (t < 12*SECYR) {
+	if (t < 5*SECYR) {
 		printf ("WARNING: preposterous time in file system");
 		t = 6*SECYR + 186*SECDAY + SECDAY/2;
 		tbad = 1;
 	}
 
-	if ((error = pdc_call((iodcio_t)pdc,
-	    1, PDC_TOD, PDC_TOD_READ, &tod, 0, 0, 0, 0, 0)))
-		printf("clock: failed to fetch (%d)\n", error);
+	pdc_call((iodcio_t)PAGE0->mem_pdc, 1, PDC_TOD, PDC_TOD_READ,
+		&tod, 0, 0, 0, 0, 0);
 
-	ts.tv_sec = tod.sec;
-	ts.tv_nsec = tod.usec * 1000;
-	tc_setclock(&ts);
-	timeset = 1;
+	time.tv_sec = tod.sec;
+	time.tv_usec = tod.usec;
 
 	if (!tbad) {
-		u_long	dt;
+		dt = time.tv_sec - t;
 
-		dt = (tod.sec < t)?  t - tod.sec : tod.sec - t;
+		if (dt < 0)
+			dt = -dt;
 
 		if (dt < 2 * SECDAY)
 			return;
-		printf("WARNING: clock %s %ld days",
-		    tod.sec < t? "lost" : "gained", dt / SECDAY);
+		printf ("WARNING: clock %s %d days",
+			time.tv_sec < t? "lost" : "gained", dt / SECDAY);
 	}
 
 	printf (" -- CHECK AND RESET THE DATE!\n");
@@ -173,34 +144,18 @@ inittodr(time_t t)
 void
 resettodr()
 {
-	struct timeval tv;
-	int error;
+	static struct pdc_tod tod;
 
-	/*
-	 * We might have been called by boot() due to a crash early
-	 * on.  Don't reset the clock chip in this case.
-	 */
-	if (!timeset)
-		return;
+	tod.sec = time.tv_sec;
+	tod.usec = time.tv_usec;
 
-	microtime(&tv);
-
-	if ((error = pdc_call((iodcio_t)pdc, 1, PDC_TOD, PDC_TOD_WRITE,
-	    tv.tv_sec, tv.tv_usec)))
-		printf("clock: failed to save (%d)\n", error);
+	pdc_call((iodcio_t)PAGE0->mem_pdc, 1, PDC_TOD, PDC_TOD_WRITE, &tod);
 }
 
 void
-setstatclockrate(int newhz)
+setstatclockrate(newhz)
+	int newhz;
 {
 	/* nothing we can do */
 }
 
-u_int
-itmr_get_timecount(struct timecounter *tc)
-{
-	u_long __itmr;
-
-	mfctl(CR_ITMR, __itmr);
-	return (__itmr);
-}

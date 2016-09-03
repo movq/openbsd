@@ -27,10 +27,11 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- *	$Id: extern.h,v 1.5 2016/08/14 22:29:01 krw Exp $
+ *	$Id: extern.h,v 1.2 1999/08/06 20:41:08 deraadt Exp $
  */
 
-#include <sys/param.h>	/* MAXCOMLEN */
+#include <sys/types.h>
+#include <sys/param.h>
 #include <db.h>
 
 /* structures */
@@ -38,45 +39,45 @@
 struct cmdinfo {
 	char		ci_comm[MAXCOMLEN+2];	/* command name (+ '*') */
 	uid_t		ci_uid;			/* user id */
-	uint64_t	ci_calls;		/* number of calls */
-	uint64_t	ci_etime;		/* elapsed time */
-	uint64_t	ci_utime;		/* user time */
-	uint64_t	ci_stime;		/* system time */
-	uint64_t	ci_mem;			/* memory use */
-	uint64_t	ci_io;			/* number of disk i/o ops */
+	u_quad_t	ci_calls;		/* number of calls */
+	u_quad_t	ci_etime;		/* elapsed time */
+	u_quad_t	ci_utime;		/* user time */
+	u_quad_t	ci_stime;		/* system time */
+	u_quad_t	ci_mem;			/* memory use */
+	u_quad_t	ci_io;			/* number of disk i/o ops */
 	u_int		ci_flags;		/* flags; see below */
 };
 #define	CI_UNPRINTABLE	0x0001			/* unprintable chars in name */
 
 struct userinfo {
 	uid_t		ui_uid;			/* user id; for consistency */
-	uint64_t	ui_calls;		/* number of invocations */
-	uint64_t	ui_utime;		/* user time */
-	uint64_t	ui_stime;		/* system time */
-	uint64_t	ui_mem;			/* memory use */
-	uint64_t	ui_io;			/* number of disk i/o ops */
+	u_quad_t	ui_calls;		/* number of invocations */
+	u_quad_t	ui_utime;		/* user time */
+	u_quad_t	ui_stime;		/* system time */
+	u_quad_t	ui_mem;			/* memory use */
+	u_quad_t	ui_io;			/* number of disk i/o ops */
 };
 
 /* typedefs */
 
-typedef	int (*cmpf_t)(const DBT *, const DBT *);
+typedef	int (*cmpf_t) __P((const DBT *, const DBT *));
 
 /* external functions in sa.c */
-int	main(int, char **);
+int	main		__P((int, char **));
 
 /* external functions in pdb.c */
-int	pacct_init(void);
-void	pacct_destroy(void);
-int	pacct_add(const struct cmdinfo *);
-int	pacct_update(void);
-void	pacct_print(void);
+int	pacct_init	__P((void));
+void	pacct_destroy	__P((void));
+int	pacct_add	__P((const struct cmdinfo *));
+int	pacct_update	__P((void));
+void	pacct_print	__P((void));
 
 /* external functions in usrdb.c */
-int	usracct_init(void);
-void	usracct_destroy(void);
-int	usracct_add(const struct cmdinfo *);
-int	usracct_update(void);
-void	usracct_print(void);
+int	usracct_init	__P((void));
+void	usracct_destroy	__P((void));
+int	usracct_add	__P((const struct cmdinfo *));
+int	usracct_update	__P((void));
+void	usracct_print	__P((void));
 
 /* variables */
 

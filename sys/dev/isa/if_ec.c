@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_ec.c,v 1.16 2015/11/24 17:11:39 mpi Exp $	*/
+/*	$OpenBSD: if_ec.c,v 1.2 1998/10/04 22:28:14 niklas Exp $	*/
 /*	$NetBSD: if_ec.c,v 1.9 1998/07/05 06:49:12 jonathan Exp $	*/
 
 /*-
@@ -17,6 +17,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the NetBSD
+ *	Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -58,13 +65,34 @@
 #include <sys/syslog.h>
 
 #include <net/if.h>
+#include <net/if_dl.h>
+#include <net/if_types.h>
 #include <net/if_media.h>
 
+#ifdef __NetBSD__
+#include <net/if_ether.h>
+#endif
+
+#ifdef INET
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
+#include <netinet/in_var.h> 
+#include <netinet/ip.h>
+#ifdef __NetBSD__
+#include <netinet/if_inarp.h> 
+#else
 #include <netinet/if_ether.h>
+#endif
+#endif 
+
+#ifdef NS
+#include <netns/ns.h>
+#include <netns/ns_if.h>
+#endif
 
 #if NBPFILTER > 0
 #include <net/bpf.h>
+#include <net/bpfdesc.h>
 #endif
 
 #include <machine/bus.h>
@@ -89,28 +117,26 @@ struct ec_softc {
 	void *sc_ih;			/* interrupt handle */
 };
 
-int	ec_probe(struct device *, void *, void *);
-void	ec_attach(struct device *, struct device *, void *);
+int	ec_probe __P((struct device *, void *, void *));
+void	ec_attach __P((struct device *, struct device *, void *));
 
 struct cfattach ec_ca = {
 	sizeof(struct ec_softc), ec_probe, ec_attach
 };
 
-int	ec_set_media(struct ec_softc *, uint64_t);
+int	ec_set_media __P((struct ec_softc *, int));
 
-void	ec_media_init(struct dp8390_softc *);
+int	ec_mediachange __P((struct dp8390_softc *));
+void	ec_mediastatus __P((struct dp8390_softc *, struct ifmediareq *));
 
-int	ec_mediachange(struct dp8390_softc *);
-void	ec_mediastatus(struct dp8390_softc *, struct ifmediareq *);
+void	ec_init_card __P((struct dp8390_softc *));
+int	ec_write_mbuf __P((struct dp8390_softc *, struct mbuf *, int));
+int	ec_ring_copy __P((struct dp8390_softc *, int, caddr_t, u_short));
+void	ec_read_hdr __P((struct dp8390_softc *, int, struct dp8390_ring *));
+int	ec_fake_test_mem __P((struct dp8390_softc *));
+int	ec_test_mem __P((struct dp8390_softc *));
 
-void	ec_init_card(struct dp8390_softc *);
-int	ec_write_mbuf(struct dp8390_softc *, struct mbuf *, int);
-int	ec_ring_copy(struct dp8390_softc *, int, caddr_t, u_short);
-void	ec_read_hdr(struct dp8390_softc *, int, struct dp8390_ring *);
-int	ec_fake_test_mem(struct dp8390_softc *);
-int	ec_test_mem(struct dp8390_softc *);
-
-__inline void ec_readmem(struct ec_softc *, int, u_int8_t *, int);
+__inline void ec_readmem __P((struct ec_softc *, int, u_int8_t *, int));
 
 static const int ec_iobase[] = {
 	0x2e0, 0x2a0, 0x280, 0x250, 0x350, 0x330, 0x310, 0x300,
@@ -123,12 +149,21 @@ static const int ec_membase[] = {
 };
 #define	NEC_MEMBASE	(sizeof(ec_membase) / sizeof(ec_membase[0]))
 
+int ec_media[] = {
+	IFM_ETHER|IFM_10_2,
+	IFM_ETHER|IFM_10_5,
+};
+#define	NEC_MEDIA	(sizeof(ec_media) / sizeof(ec_media[0]))
+#define	EC_DEFMEDIA	(IFM_ETHER|IFM_10_2)
+
 struct cfdriver ec_cd = {
 	NULL, "ec", DV_IFNET
 };
 
 int
-ec_probe(struct device *parent, void *match, void *aux)
+ec_probe(parent, match, aux)
+	struct device *parent;
+	void *match, *aux;
 {
 	struct isa_attach_args *ia = aux;
 	bus_space_tag_t nict, asict, memt;
@@ -233,7 +268,9 @@ ec_probe(struct device *parent, void *match, void *aux)
 }
 
 void
-ec_attach(struct device *parent, struct device *self, void *aux)
+ec_attach(parent, self, aux)
+	struct device *parent, *self;
+	void *aux;
 {
 	struct ec_softc *esc = (struct ec_softc *)self;
 	struct dp8390_softc *sc = &esc->sc_dp8390;
@@ -327,7 +364,11 @@ ec_attach(struct device *parent, struct device *self, void *aux)
 	    ELINK2_CR_XSEL | ELINK2_CR_EALO);
 
 	for (i = 0; i < ETHER_ADDR_LEN; i++)
+#ifdef __NetBSD__
+		sc->sc_enaddr[i] = NIC_GET(nict, nich, i);
+#else
 		sc->sc_arpcom.ac_enaddr[i] = NIC_GET(nict, nich, i);
+#endif
 
 	/*
 	 * Unmap PROM - select NIC registers.  The proper setting of the
@@ -355,7 +396,7 @@ ec_attach(struct device *parent, struct device *self, void *aux)
 	else
 		esc->sc_16bitp = 0;
 
-	printf("%s: 3Com 3c503 Ethernet (%s-bit)",
+	printf("%s: 3Com 3c503 Ethernet (%s-bit)\n",
 	    sc->sc_dev.dv_xname, esc->sc_16bitp ? "16" : "8");
 
 	/* Select page 0 registers. */
@@ -379,8 +420,6 @@ ec_attach(struct device *parent, struct device *self, void *aux)
 	sc->write_mbuf = ec_write_mbuf;
 	sc->read_hdr = ec_read_hdr;
 
-	sc->sc_media_init = ec_media_init;
-
 	sc->sc_mediachange = ec_mediachange;
 	sc->sc_mediastatus = ec_mediastatus;
 
@@ -388,8 +427,8 @@ ec_attach(struct device *parent, struct device *self, void *aux)
 	sc->mem_size = memsize;
 
 	/* Do generic parts of attach. */
-	if (dp8390_config(sc)) {
-		printf(": configuration failed\n");
+	if (dp8390_config(sc, ec_media, NEC_MEDIA, EC_DEFMEDIA)) {
+		printf("%s: configuration failed\n", sc->sc_dev.dv_xname);
 		return;
 	}
 
@@ -489,8 +528,10 @@ ec_attach(struct device *parent, struct device *self, void *aux)
 }
 
 int
-ec_fake_test_mem(struct dp8390_softc *sc)
+ec_fake_test_mem(sc)
+	struct dp8390_softc *sc;
 {
+
 	/*
 	 * We have to do this after we initialize the GA, but we
 	 * have to do that after calling dp8390_config(), which
@@ -501,7 +542,8 @@ ec_fake_test_mem(struct dp8390_softc *sc)
 }
 
 int
-ec_test_mem(struct dp8390_softc *sc)
+ec_test_mem(sc)
+	struct dp8390_softc *sc;
 {
 	struct ec_softc *esc = (struct ec_softc *)sc;
 	bus_space_tag_t memt = sc->sc_buft;
@@ -540,7 +582,11 @@ ec_test_mem(struct dp8390_softc *sc)
  * up to a word - ok as long as mbufs are word-sized.
  */
 __inline void
-ec_readmem(struct ec_softc *esc, int from, u_int8_t *to, int len)
+ec_readmem(esc, from, to, len)
+	struct ec_softc *esc;
+	int from;
+	u_int8_t *to;
+	int len;
 {
 	bus_space_tag_t memt = esc->sc_dp8390.sc_buft;
 	bus_space_handle_t memh = esc->sc_dp8390.sc_bufh;
@@ -556,7 +602,10 @@ ec_readmem(struct ec_softc *esc, int from, u_int8_t *to, int len)
 }
 
 int
-ec_write_mbuf(struct dp8390_softc *sc, struct mbuf *m, int buf)
+ec_write_mbuf(sc, m, buf)
+	struct dp8390_softc *sc;
+	struct mbuf *m;
+	int buf;
 {
 	struct ec_softc *esc = (struct ec_softc *)sc;
 	bus_space_tag_t asict = esc->sc_asict;
@@ -615,6 +664,12 @@ ec_write_mbuf(struct dp8390_softc *sc, struct mbuf *m, int buf)
 				    *(u_int16_t *)savebyte);
 				buf += 2;
 				leftover = 0;
+#ifdef i386
+#define ALIGNED_POINTER(p,t)	1
+#endif
+#ifdef alpha
+#define ALIGNED_POINTER(p,t)	((((u_long)(p)) & (sizeof(t)-1)) == 0)
+#endif
 			} else if (ALIGNED_POINTER(data, u_int16_t) == 0) {
 				/*
 				 * Unaligned data; buffer the next byte.
@@ -662,8 +717,11 @@ ec_write_mbuf(struct dp8390_softc *sc, struct mbuf *m, int buf)
 }
 
 int
-ec_ring_copy(struct dp8390_softc *sc, int src, caddr_t dst,
-    u_short amount)
+ec_ring_copy(sc, src, dst, amount)
+	struct dp8390_softc *sc;
+	int src;
+	caddr_t dst;
+	u_short amount;
 {
 	struct ec_softc *esc = (struct ec_softc *)sc;
 	u_short tmp_amount;
@@ -686,8 +744,10 @@ ec_ring_copy(struct dp8390_softc *sc, int src, caddr_t dst,
 }
 
 void
-ec_read_hdr(struct dp8390_softc *sc, int packet_ptr,
-    struct dp8390_ring *packet_hdrp)
+ec_read_hdr(sc, packet_ptr, packet_hdrp)
+	struct dp8390_softc *sc;
+	int packet_ptr;
+	struct dp8390_ring *packet_hdrp;
 {
 	struct ec_softc *esc = (struct ec_softc *)sc;
 
@@ -698,17 +758,9 @@ ec_read_hdr(struct dp8390_softc *sc, int packet_ptr,
 #endif
 }
 
-void
-ec_media_init(struct dp8390_softc *sc)
-{
-	ifmedia_init(&sc->sc_media, 0, dp8390_mediachange, dp8390_mediastatus);
-	ifmedia_add(&sc->sc_media, IFM_ETHER|IFM_10_2, 0, NULL);
-	ifmedia_add(&sc->sc_media, IFM_ETHER|IFM_10_5, 0, NULL);
-	ifmedia_set(&sc->sc_media, IFM_ETHER|IFM_10_2);
-}
-
 int
-ec_mediachange(struct dp8390_softc *sc)
+ec_mediachange(sc)
+	struct dp8390_softc *sc;
 {
 	struct ec_softc *esc = (struct ec_softc *)sc;
 	struct ifmedia *ifm = &sc->sc_media;
@@ -717,7 +769,9 @@ ec_mediachange(struct dp8390_softc *sc)
 }
 
 void
-ec_mediastatus(struct dp8390_softc *sc, struct ifmediareq *ifmr)
+ec_mediastatus(sc, ifmr)
+	struct dp8390_softc *sc;
+	struct ifmediareq *ifmr;
 {
 	struct ifmedia *ifm = &sc->sc_media;
 
@@ -728,7 +782,8 @@ ec_mediastatus(struct dp8390_softc *sc, struct ifmediareq *ifmr)
 }
 
 void
-ec_init_card(struct dp8390_softc *sc)
+ec_init_card(sc)
+	struct dp8390_softc *sc;
 {
 	struct ec_softc *esc = (struct ec_softc *)sc;
 	struct ifmedia *ifm = &sc->sc_media;
@@ -737,7 +792,9 @@ ec_init_card(struct dp8390_softc *sc)
 }
 
 int
-ec_set_media(struct ec_softc *esc, uint64_t media)
+ec_set_media(esc, media)
+	struct ec_softc *esc;
+	int media;
 {
 	u_int8_t new;
 

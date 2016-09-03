@@ -1,4 +1,4 @@
-/*	$OpenBSD: bt_seq.c,v 1.11 2005/08/05 13:03:00 espie Exp $	*/
+/*	$OpenBSD: bt_seq.c,v 1.4 1999/02/15 05:11:23 millert Exp $	*/
 
 /*-
  * Copyright (c) 1990, 1993, 1994
@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,6 +36,14 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+#if 0
+static char sccsid[] = "@(#)bt_seq.c	8.7 (Berkeley) 7/20/94";
+#else
+static char rcsid[] = "$OpenBSD: bt_seq.c,v 1.4 1999/02/15 05:11:23 millert Exp $";
+#endif
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
 
 #include <errno.h>
@@ -42,9 +54,9 @@
 #include <db.h>
 #include "btree.h"
 
-static int __bt_first(BTREE *, const DBT *, EPG *, int *);
-static int __bt_seqadv(BTREE *, EPG *, int);
-static int __bt_seqset(BTREE *, EPG *, DBT *, int);
+static int __bt_first __P((BTREE *, const DBT *, EPG *, int *));
+static int __bt_seqadv __P((BTREE *, EPG *, int));
+static int __bt_seqset __P((BTREE *, EPG *, DBT *, int));
 
 /*
  * Sequential scan support.
@@ -68,7 +80,10 @@ static int __bt_seqset(BTREE *, EPG *, DBT *, int);
  *	RET_ERROR, RET_SUCCESS or RET_SPECIAL if there's no next key.
  */
 int
-__bt_seq(const DB *dbp, DBT *key, DBT *data, u_int flags)
+__bt_seq(dbp, key, data, flags)
+	const DB *dbp;
+	DBT *key, *data;
+	u_int flags;
 {
 	BTREE *t;
 	EPG e;
@@ -140,7 +155,11 @@ __bt_seq(const DB *dbp, DBT *key, DBT *data, u_int flags)
  *	RET_ERROR, RET_SUCCESS or RET_SPECIAL if there's no next key.
  */
 static int
-__bt_seqset(BTREE *t, EPG *ep, DBT *key, int flags)
+__bt_seqset(t, ep, key, flags)
+	BTREE *t;
+	EPG *ep;
+	DBT *key;
+	int flags;
 {
 	PAGE *h;
 	pgno_t pg;
@@ -224,11 +243,14 @@ __bt_seqset(BTREE *t, EPG *ep, DBT *key, int flags)
  *	RET_ERROR, RET_SUCCESS or RET_SPECIAL if there's no next key.
  */
 static int
-__bt_seqadv(BTREE *t, EPG *ep, int flags)
+__bt_seqadv(t, ep, flags)
+	BTREE *t;
+	EPG *ep;
+	int flags;
 {
 	CURSOR *c;
 	PAGE *h;
-	indx_t idx;
+	indx_t index;
 	pgno_t pg;
 	int exact;
 
@@ -266,15 +288,15 @@ __bt_seqadv(BTREE *t, EPG *ep, int flags)
 		 */
 		if (F_ISSET(c, CURS_AFTER))
 			goto usecurrent;
-		idx = c->pg.index;
-		if (++idx == NEXTINDEX(h)) {
+		index = c->pg.index;
+		if (++index == NEXTINDEX(h)) {
 			pg = h->nextpg;
 			mpool_put(t->bt_mp, h, 0);
 			if (pg == P_INVALID)
 				return (RET_SPECIAL);
 			if ((h = mpool_get(t->bt_mp, pg, 0)) == NULL)
 				return (RET_ERROR);
-			idx = 0;
+			index = 0;
 		}
 		break;
 	case R_PREV:			/* Previous record. */
@@ -289,22 +311,22 @@ usecurrent:		F_CLR(c, CURS_AFTER | CURS_BEFORE);
 			ep->index = c->pg.index;
 			return (RET_SUCCESS);
 		}
-		idx = c->pg.index;
-		if (idx == 0) {
+		index = c->pg.index;
+		if (index == 0) {
 			pg = h->prevpg;
 			mpool_put(t->bt_mp, h, 0);
 			if (pg == P_INVALID)
 				return (RET_SPECIAL);
 			if ((h = mpool_get(t->bt_mp, pg, 0)) == NULL)
 				return (RET_ERROR);
-			idx = NEXTINDEX(h) - 1;
+			index = NEXTINDEX(h) - 1;
 		} else
-			--idx;
+			--index;
 		break;
 	}
 
 	ep->page = h;
-	ep->index = idx;
+	ep->index = index;
 	return (RET_SUCCESS);
 }
 
@@ -323,7 +345,11 @@ usecurrent:		F_CLR(c, CURS_AFTER | CURS_BEFORE);
  *	or RET_SPECIAL if no such key exists.
  */
 static int
-__bt_first(BTREE *t, const DBT *key, EPG *erval, int *exactp)
+__bt_first(t, key, erval, exactp)
+	BTREE *t;
+	const DBT *key;
+	EPG *erval;
+	int *exactp;
 {
 	PAGE *h;
 	EPG *ep, save;
@@ -338,7 +364,7 @@ __bt_first(BTREE *t, const DBT *key, EPG *erval, int *exactp)
 	 * page) and return it.
 	 */
 	if ((ep = __bt_search(t, key, exactp)) == NULL)
-		return (0);
+		return (NULL);
 	if (*exactp) {
 		if (F_ISSET(t, B_NODUPS)) {
 			*erval = *ep;
@@ -417,10 +443,13 @@ __bt_first(BTREE *t, const DBT *key, EPG *erval, int *exactp)
  * Parameters:
  *	t:	the tree
  *   pgno:	page number
- *    idx:	page index
+ *  index:	page index
  */
 void
-__bt_setcur(BTREE *t, pgno_t pgno, u_int idx)
+__bt_setcur(t, pgno, index)
+	BTREE *t;
+	pgno_t pgno;
+	u_int index;
 {
 	/* Lose any already deleted key. */
 	if (t->bt_cursor.key.data != NULL) {
@@ -432,6 +461,6 @@ __bt_setcur(BTREE *t, pgno_t pgno, u_int idx)
 
 	/* Update the cursor. */
 	t->bt_cursor.pg.pgno = pgno;
-	t->bt_cursor.pg.index = idx;
+	t->bt_cursor.pg.index = index;
 	F_SET(&t->bt_cursor, CURS_INIT);
 }

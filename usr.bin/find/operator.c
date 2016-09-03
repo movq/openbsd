@@ -1,4 +1,4 @@
-/*	$OpenBSD: operator.c,v 1.10 2009/10/27 23:59:38 deraadt Exp $	*/
+/*	$OpenBSD: operator.c,v 1.4 1999/01/04 21:36:01 millert Exp $	*/
 
 /*-
  * Copyright (c) 1990, 1993
@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,22 +36,26 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+/*static char sccsid[] = "from: @(#)operator.c	8.1 (Berkeley) 6/6/93";*/
+static char rcsid[] = "$OpenBSD: operator.c,v 1.4 1999/01/04 21:36:01 millert Exp $";
+#endif /* not lint */
+
 #include <sys/types.h>
-#include <sys/stat.h>
 
 #include <err.h>
 #include <fts.h>
 #include <stdio.h>
 
 #include "find.h"
-#include "extern.h"
     
 /*
  * yanknode --
  *	destructively removes the top from the plan
  */
 static PLAN *
-yanknode(PLAN **planp)		/* pointer to top of plan (modified) */
+yanknode(planp)    
+	PLAN **planp;		/* pointer to top of plan (modified) */
 {
 	PLAN *node;		/* top node removed from the plan */
     
@@ -65,13 +73,14 @@ yanknode(PLAN **planp)		/* pointer to top of plan (modified) */
  *	simple node or a N_EXPR node containing a list of simple nodes.
  */
 static PLAN *
-yankexpr(PLAN **planp)		/* pointer to top of plan (modified) */
+yankexpr(planp)    
+	PLAN **planp;		/* pointer to top of plan (modified) */
 {
-	PLAN *next;	/* temp node holding subexpression results */
+	register PLAN *next;	/* temp node holding subexpression results */
 	PLAN *node;		/* pointer to returned node or expression */
 	PLAN *tail;		/* pointer to tail of subplan */
 	PLAN *subplan;		/* pointer to head of ( ) expression */
-	extern int f_expr(PLAN *, FTSENT *);
+	int f_expr();
     
 	/* first pull the top node from the plan */
 	if ((node = yanknode(planp)) == NULL)
@@ -86,7 +95,7 @@ yankexpr(PLAN **planp)		/* pointer to top of plan (modified) */
 	if (node->type == N_OPENPAREN)
 		for (tail = subplan = NULL;;) {
 			if ((next = yankexpr(planp)) == NULL)
-				errx(1, "(: missing closing ')'");
+				err(1, "(: missing closing ')'");
 			/*
 			 * If we find a closing ')' we store the collected
 			 * subplan in our '(' node and convert the node to
@@ -119,10 +128,11 @@ yankexpr(PLAN **planp)		/* pointer to top of plan (modified) */
  *	replaces "parentheisized" plans in our search plan with "expr" nodes.
  */
 PLAN *
-paren_squish(PLAN *plan)		/* plan with ( ) nodes */
+paren_squish(plan)
+	PLAN *plan;		/* plan with ( ) nodes */
 {
-	PLAN *expr;	/* pointer to next expression */
-	PLAN *tail;	/* pointer to tail of result plan */
+	register PLAN *expr;	/* pointer to next expression */
+	register PLAN *tail;	/* pointer to tail of result plan */
 	PLAN *result;		/* pointer to head of result plan */
     
 	result = tail = NULL;
@@ -156,11 +166,12 @@ paren_squish(PLAN *plan)		/* plan with ( ) nodes */
  *	compresses "!" expressions in our search plan.
  */
 PLAN *
-not_squish(PLAN *plan)		/* plan to process */
+not_squish(plan)
+	PLAN *plan;		/* plan to process */
 {
-	PLAN *next;	/* next node being processed */
-	PLAN *node;	/* temporary node used in N_NOT processing */
-	PLAN *tail;	/* pointer to tail of result plan */
+	register PLAN *next;	/* next node being processed */
+	register PLAN *node;	/* temporary node used in N_NOT processing */
+	register PLAN *tail;	/* pointer to tail of result plan */
 	PLAN *result;		/* pointer to head of result plan */
     
 	tail = result = next = NULL;
@@ -215,10 +226,11 @@ not_squish(PLAN *plan)		/* plan to process */
  *	compresses -o expressions in our search plan.
  */
 PLAN *
-or_squish(PLAN *plan)		/* plan with ors to be squished */
+or_squish(plan)
+	PLAN *plan;		/* plan with ors to be squished */
 {
-	PLAN *next;	/* next node being processed */
-	PLAN *tail;	/* pointer to tail of result plan */
+	register PLAN *next;	/* next node being processed */
+	register PLAN *tail;	/* pointer to tail of result plan */
 	PLAN *result;		/* pointer to head of result plan */
     
 	tail = result = next = NULL;

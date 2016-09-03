@@ -1,4 +1,4 @@
-/*	$OpenBSD: network.c,v 1.17 2014/07/22 07:30:24 jsg Exp $	*/
+/*	$OpenBSD: network.c,v 1.6 1998/05/15 03:16:39 art Exp $	*/
 /*	$NetBSD: network.c,v 1.5 1996/02/28 21:04:06 thorpej Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,11 +35,7 @@
  */
 
 #include "telnet_locl.h"
-
-#include <sys/socket.h>
-#include <errno.h>
-#include <poll.h>
-#include <unistd.h>
+#include <err.h>
 
 Ring		netoring, netiring;
 unsigned char	netobuf[2*BUFSIZ], netibuf[BUFSIZ];
@@ -44,12 +44,16 @@ unsigned char	netobuf[2*BUFSIZ], netibuf[BUFSIZ];
  * Initialize internal network data structures.
  */
 
-void
-init_network(void)
+    void
+init_network()
 {
-	ring_init(&netoring, netobuf, sizeof netobuf);
-	ring_init(&netiring, netibuf, sizeof netibuf);
-	SetNetTrace(NULL);
+    if (ring_init(&netoring, netobuf, sizeof netobuf) != 1) {
+	exit(1);
+    }
+    if (ring_init(&netiring, netibuf, sizeof netibuf) != 1) {
+	exit(1);
+    }
+    NetTrace = stdout;
 }
 
 
@@ -58,27 +62,39 @@ init_network(void)
  * Telnet "synch" processing).
  */
 
-int
-stilloob(void)
+    int
+stilloob()
 {
-    struct pollfd pfd[1];
+    static struct timeval timeout = { 0 };
+    fd_set *fdsp;
+    int fdsn;
     int value;
 
+    fdsn = howmany(net+1, NFDBITS) * sizeof(fd_mask);
+    if ((fdsp = (fd_set *)malloc(fdsn)) == NULL)
+	err(1, "malloc");
+
     do {
-	pfd[0].fd = net;
-	pfd[0].events = POLLRDBAND;
-	value = poll(pfd, 1, 0);
+	memset(fdsp, 0, fdsn);
+	FD_SET(net, fdsp);
+	value = select(net+1, (fd_set *)0, (fd_set *)0, fdsp, &timeout);
     } while ((value == -1) && (errno == EINTR));
 
     if (value < 0) {
-	perror("poll");
-	quit();
+	perror("select");
+	free(fdsp);
+	(void) quit();
+	/* NOTREACHED */
     }
-    if (pfd[0].revents & POLLRDBAND)
+    if (FD_ISSET(net, fdsp)) {
+	free(fdsp);
 	return 1;
-    else
+    } else {
+   	free(fdsp);
 	return 0;
+    }
 }
+
 
 /*
  *  setneturg()
@@ -86,11 +102,12 @@ stilloob(void)
  *	Sets "neturg" to the current location.
  */
 
-void
-setneturg(void)
+    void
+setneturg()
 {
     ring_mark(&netoring);
 }
+
 
 /*
  *  netflush
@@ -101,11 +118,16 @@ setneturg(void)
  *	useful work.
  */
 
-int
-netflush(void)
-{
-    int n, n1;
 
+    int
+netflush()
+{
+    register int n, n1;
+
+#if    defined(ENCRYPTION)
+    if (encrypt_output)
+	ring_encrypt(&netoring, encrypt_output);
+#endif
     if ((n1 = n = ring_full_consecutive(&netoring)) > 0) {
 	if (!ring_at_mark(&netoring)) {
 	    n = send(net, (char *)netoring.consume, n, 0); /* normal write */
@@ -125,9 +147,10 @@ netflush(void)
 	if (errno != ENOBUFS && errno != EWOULDBLOCK) {
 	    setcommandmode();
 	    perror(hostname);
-	    (void)close(net);
+	    (void)NetClose(net);
 	    ring_clear_mark(&netoring);
 	    longjmp(peerdied, -1);
+	    /*NOTREACHED*/
 	}
 	n = 0;
     }

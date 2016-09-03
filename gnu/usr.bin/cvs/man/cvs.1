@@ -1,4 +1,17 @@
+.de Id
+.ds Rv \\$3
+.ds Dt \\$4
+..
 .TH CVS 1 "\*(Dt"
+.\" Full space in nroff; half space in troff
+.de SP
+.if n .sp
+.if t .sp .5
+..
+.\" quoted command
+.de `
+.RB ` "\|\\$1\|" '\\$2
+..
 .SH "NAME"
 cvs \- Concurrent Versions System
 .SH "SYNOPSIS"
@@ -31,7 +44,7 @@ consisting of version controlled files.  CVS helps to manage releases
 and to control the concurrent editing of source files among multiple
 authors.  CVS allows triggers to enable/log/control various
 operations and works well over a wide area network.
-.sp
+.SP
 .B cvs
 keeps a single copy of the master sources.
 This copy is called the source ``repository''; it contains all the
@@ -64,19 +77,19 @@ repository.
 Use this command to enroll new files in \fBcvs\fP records of your
 working directory.  The files will be added to the repository the next
 time you run
-.RB ` "\|cvs commit\|" '.
+.` "cvs commit".
 Note:
 You should use the
-.RB ` "\|cvs import\|" '
+.` "cvs import"
 command to bootstrap new sources into the source repository.
-.RB ` "\|cvs add\|" '
+.` "cvs add"
 is only used for new files to an already checked-out module.
 .TP
 \fBcvs remove\fP \fIfile\fP\|.\|.\|.
 Use this command (after erasing any files listed) to declare that you
 wish to eliminate files from the repository.  The removal does not
 affect others until you run
-.RB ` "\|cvs commit\|" '.
+.` "cvs commit".
 .TP
 \fBcvs commit\fP \fIfile\fP\|.\|.\|.
 Use this command when you wish to ``publish'' your changes to other
@@ -97,7 +110,7 @@ and
 to fully specify what the
 .I cvs_command
 will do.
-.sp
+.SP
 .I Warning:
 you must be careful of precisely where you place options relative to the
 .IR cvs_command .
@@ -111,18 +124,18 @@ command) or in the
 position (to the right of a
 .B cvs
 command).
-.sp
+.SP
 There are only two situations where you may omit
 .IR cvs_command :
-.RB ` "\|cvs \-H\|" '
+.` "cvs \-H"
 or
-.RB ` "\|cvs --help\|" '
+.` "cvs --help"
 elicits a list of available commands, and
-.RB ` "\|cvs \-v\|" '
+.` "cvs \-v"
 or
-.RB ` "\|cvs --version\|" '
+.` "cvs --version"
 displays version information on \fBcvs\fP itself.
-.sp
+.SP
 .SH "CVS OPTIONS"
 As of release 1.6,
 .B cvs
@@ -131,7 +144,7 @@ supports
 style long options as well as short options.  Only
 a few long options are currently supported, these are listed in
 brackets after the short options whose functions they duplicate.
-.sp
+.SP
 Use these options to control the overall
 .B cvs
 program:
@@ -141,15 +154,8 @@ Display usage information about the specified
 .I cvs_command
 (but do not actually execute the command).  If you don't specify a
 command name,
-.RB ` "\|cvs \-H\|" '
+.` "cvs \-H"
 displays a summary of all the commands available.
-.TP
-.B \-R
-Allows
-.B cvs
-to run properly without write access to its log file. See also the
-.SM CVSREADONLYFS
-environment variable.
 .TP
 .B \-Q
 Causes the command to be
@@ -186,10 +192,8 @@ Use
 .I editor
 to enter revision log information.
 Overrides the setting of the
-.SM CVSEDITOR\c
-,
-.SM VISUAL\c
-, and
+.SM CVSEDITOR
+and the
 .SM EDITOR
 environment variables.
 .TP
@@ -243,11 +247,15 @@ connection.
 \fB\-z\fP \fIcompression\-level\fP
 When transferring files across the network use
 .B gzip
-compression level \fIcompression\-level\fP to compress and
-de-compress data as it is transferred.
+with compression level \fIcompression\-level\fP to compress and
+de-compress data as it is transferred.  Requires the presence of
+the
+.SM GNU
+.B gzip
+program in the current search path at both ends of the link.
 .SH "USAGE"
 Except when requesting general help with
-.RB ` "\|cvs \-H\|" ',
+.` "cvs \-H",
 you must specify a
 .I cvs_command
 to
@@ -267,21 +275,21 @@ file from the home directory of the user reading it.  This startup
 procedure can be turned off with the
 .B \-f
 flag.
-.sp
+.SP
 The
 .I .cvsrc
 file lists CVS commands with a list of arguments, one command per
 line.  For example, the following line in \fI.cvsrc\fP:
-.sp
+.SP
 diff \-c
-.sp
+.SP
 will mean that the
-.RB ` "\|cvs diff\|" '
+.` "cvs diff"
 command will always be passed the \-c option in addition to any
 other options that are specified in the command line (in this case
 it will have the effect of producing context sensitive diffs for
 all executions of
-.RB ` "\|cvs diff\|" '
+.` "cvs diff"
 ).
 .SH "CVS COMMAND SUMMARY"
 Here are brief descriptions of all the
@@ -290,13 +298,13 @@ commands:
 .TP
 .B add
 Add a new file or directory to the repository, pending a
-.RB ` "\|cvs commit\|" '
+.` "cvs commit"
 on the same file.
 Can only be done from within sources created by a previous
-.RB ` "\|cvs checkout\|" '
+.` "cvs checkout"
 invocation.
 Use
-.RB ` "\|cvs import\|" '
+.` "cvs import"
 to place whole new hierarchies of sources under
 .B cvs
 control.
@@ -324,13 +332,13 @@ repository, or between two revisions in source repository.
 .B export
 Prepare copies of a set of source files for shipment off site.
 Differs from
-.RB ` "\|cvs checkout\|" '
+.` "cvs checkout"
 in that no
 .B cvs
 administrative directories are created (and therefore
-.RB ` "\|cvs commit\|" '
+.` "cvs commit"
 cannot be executed from a directory prepared with
-.RB ` "\|cvs export\|" '),
+.` "cvs export"),
 and a symbolic tag must be specified.
 (Does not change repository; creates directory similar to working
 directories).
@@ -342,18 +350,13 @@ commands that you or others have executed on a particular file or
 directory in the source repository.  (Does not change repository or
 working directory.)  History logs are kept only if enabled by creation
 of the
-.RB ` "\|$CVSROOT/CVSROOT/history\|" '
+.` "$CVSROOT/CVSROOT/history"
 file; see
 .BR cvs ( 5 ).
 .TP
 .B import
 Incorporate a set of updates from off-site into the source repository,
 as a ``vendor branch''.  (Changes repository.)
-.TP
-.B init
-Initialize a repository by adding the CVSROOT subdirectory and some default
-control files. You must use this command or initialize the repository in
-some other way before you can use it.
 .TP
 .B log
 Display
@@ -366,20 +369,20 @@ the repository.  (Does not change repository or working directory.)
 .TP
 .B release
 Cancel a
-.RB ` "\|cvs checkout\|" ',
+.` "cvs checkout",
 abandoning any changes.
 (Can delete working directory; no effect on repository.)
 .TP
 .B remove
 Remove files from the source repository, pending a
-.RB ` "\|cvs commit\|" '
+.` "cvs commit"
 on the same files.  (Does not directly affect repository;
 changes working directory.)
 .TP
 .B rtag
 Explicitly specify a symbolic tag for particular revisions of files in the
 source repository.  See also
-.RB ` "\|cvs tag\|" '.
+.` "cvs tag".
 (Changes repository directly; does not require or affect
 working directory.)
 .TP
@@ -470,6 +473,13 @@ is available with these commands:
 .BR checkout ", " export ", "
 .BR rdiff ", " rtag ", and " update .
 .TP
+.B \-H
+Help; describe the options available for this command.  This is the
+only option supported for
+.I all
+.B cvs
+commands.
+.TP
 \fB\-k\fP \fIkflag\fP
 Alter the default
 processing of keywords.
@@ -482,7 +492,7 @@ this option with the \fBcheckout\fP or \fBupdate\fP commands,
 \fBcvs\fP associates your selected \fIkflag\fP with the file, and
 continues to use it with future \fBupdate\fP commands on the same file
 until you specify otherwise.
-.sp
+.SP
 Some of the more useful \fIkflag\fPs are \-ko and \-kb (for binary files),
 and \-kv which is useful for an
 .B export
@@ -499,7 +509,7 @@ subdirectories.   Available with the following commands:
 .I Warning:
 this is not the same
 as the overall
-.RB ` "\|cvs \-l\|" '
+.` "cvs \-l"
 option, which you can specify to the
 .I left
 of a
@@ -520,7 +530,7 @@ commands.
 .I Warning:
 this is not the same
 as the overall
-.RB ` "\|cvs \-n\|" '
+.` "cvs \-n"
 option, which you can specify to the
 .I left
 of a
@@ -557,18 +567,18 @@ Use the revision specified by the
 argument instead of the default ``head'' revision.  As well as
 arbitrary tags defined with the \fBtag\fP or \fBrtag\fP command, two
 special tags are always available:
-.RB ` "\|HEAD\|" '
+.` "HEAD"
 refers to the most
 recent version available in the repository, and
-.RB ` "\|BASE\|" '
+.` "BASE"
 refers to the revision you last checked out into the current working
 directory.
-.sp
+.SP
 The \fItag\fP specification is ``sticky'' when you use
 this option with
-.RB ` "\|cvs checkout\|" '
+.` "cvs checkout"
 or
-.RB ` "\|cvs update\|" '
+.` "cvs update"
 to
 make your own copy of a file: \fBcvs\fP remembers the \fItag\fP and
 continues to use it on future \fBupdate\fP commands, until you specify
@@ -591,22 +601,12 @@ commands.
 .I Warning:
 this is not the same
 as the overall
-.RB ` "\|cvs \-r\|" '
+.` "cvs \-r"
 option, which you can specify to the
 .I left
 of a
 .B cvs
 command!
-.TP
-\fB\-t\fP \fIid\fP
-Expand the RCS identifier specified by the
-.I id
-argument in addition to the default ``Id'' identifier.
-.B \-t
-is available with the
-.BR checkout ", " export ", and " update
-commands.  If the identifier name is specified as ``-'', no additional
-identifiers will be expanded.
 .SH "CVS COMMANDS"
 Here (finally) are details on all the
 .B cvs
@@ -650,26 +650,26 @@ with the
 command).
 To add a whole new directory hierarchy to the source repository
 (for example, files received from a third-party vendor), use the
-.RB ` "\|cvs import\|" '
+.` "cvs import"
 command instead.
-.sp
+.SP
 If the argument to
-.RB ` "\|cvs add\|" '
+.` "cvs add"
 refers to an immediate sub-directory, the directory is
 created at the correct place in the
 source repository, and the necessary
 .B cvs
 administration files are created in your working directory.
 If the directory already exists in the source repository,
-.RB ` "\|cvs add\|" '
+.` "cvs add"
 still creates the administration files in your version of the directory.
 This allows you to use
-.RB ` "\|cvs add\|" '
+.` "cvs add"
 to add a particular directory to your private sources even if
 someone else created that directory after your
 .B checkout
 of the sources.  You can do the following:
-.sp
+.SP
 .in +1i
 .ft B
 .nf
@@ -679,11 +679,11 @@ example% cvs update new_directory
 .fi
 .ft P
 .in -1i
-.sp
+.SP
 An alternate approach using
-.RB ` "\|cvs update\|" '
+.` "cvs update"
 might be:
-.sp
+.SP
 .in +1i
 .ft B
 .nf
@@ -691,50 +691,50 @@ example% cvs update -d new_directory
 .fi
 .ft P
 .in -1i
-.sp
+.SP
 (To add \fIany available\fP new directories to your working directory, it's
 probably simpler to use
-.RB ` "\|cvs checkout\|" '
+.` "cvs checkout"
 or
-.RB ` "\|cvs update -d\|" '.)
-.sp
+.` "cvs update -d".)
+.SP
 The added files are not placed in the
 source repository until you use
-.RB ` "\|cvs commit\|" '
+.` "cvs commit"
 to make the change permanent.
 Doing a
-.RB ` "\|cvs add\|" '
+.` "cvs add"
 on a file that was removed with the
-.RB ` "\|cvs remove\|" '
+.` "cvs remove"
 command will resurrect the file, if no
-.RB ` "\|cvs commit\|" '
+.` "cvs commit"
 command intervened.
-.sp
+.SP
 You will have the opportunity to specify a logging message, as usual,
 when you use
-.RB ` "\|cvs commit\|" '
+.` "cvs commit"
 to make the new file permanent.  If you'd like to have another
 logging message associated with just
 .I creation
 of the file (for example, to describe the file's purpose), you can
 specify it with the
-.RB ` "\|\-m \fImessage\fP\|" '
+.` "\-m \fImessage\fP"
 option to the
 .B add
 command.
-.sp
+.SP
 The
-.RB ` "\|-k kflag\|" '
+.` "-k kflag"
 option specifies the default way that this
 file will be checked out.
 The
-.RB ` "\|kflag\|" '
+.` "kflag"
 argument is stored in the
 .SM RCS
 file and can be changed with
-.RB ` "\|cvs admin\|" '.
+.` "cvs admin".
 Specifying
-.RB ` "\|-ko\|" '
+.` "-ko"
 is useful for checking in binaries that
 shouldn't have
 keywords expanded.
@@ -770,19 +770,19 @@ working directory.
 Make a working directory containing copies of the source files specified by
 .IR modules .
 You must execute
-.RB ` "\|cvs checkout\|" '
+.` "cvs checkout"
 before using most of the other
 .B cvs
 commands, since most of them operate on your working directory.
-.sp
+.SP
 \fImodules\fP are either symbolic names (themselves defined as the
 module
-.RB ` "\|modules\|" '
+.` "modules"
 in the source repository; see
 .BR cvs ( 5 ))
 for some collection of source directories and files, or paths to
 directories or files in the repository.
-.sp
+.SP
 Depending on the
 .I modules
 you specify,
@@ -794,7 +794,7 @@ other software developers are editing their own copies of the sources);
 update them to include new changes applied by others to the source
 repository; or commit your work as a permanent change to the
 repository.
-.sp
+.SP
 Note that
 .B checkout
 is used to create directories.
@@ -812,9 +812,9 @@ will show the relative path leading to each file as it is extracted into
 your private work area (unless you specify the
 .B \-Q
 global option).
-.sp
+.SP
 Running
-.RB ` "\|cvs checkout\|" '
+.` "cvs checkout"
 on a directory that was already built by a prior
 .B checkout
 is also permitted, and
@@ -823,11 +823,11 @@ has the same effect as specifying the
 option to the
 .B update
 command described below.
-.sp
+.SP
 The
 .I options
 permitted with
-.RB ` "\|cvs checkout\|" '
+.` "cvs checkout"
 include the standard command options
 .BR \-P ", " \-f ", "
 .BI \-k " kflag"
@@ -837,11 +837,11 @@ include the standard command options
 .IR tag ", and"
 .BI \-D " date"\c
 \&.
-.sp
+.SP
 In addition to those, you can use these special command options
 with
 .BR checkout :
-.sp
+.SP
 Use the
 .B \-A
 option to reset any sticky tags, dates, or
@@ -851,7 +851,7 @@ options.  (If you get a working file using one of the
 corresponding tag, date, or \fIkflag\fP and continues using it on
 future updates; use the \fB\-A\fP option to make \fBcvs\fP forget these
 specifications, and retrieve the ``head'' version of the file).
-.sp
+.SP
 The
 .BI \-j " branch"
 option merges the changes made between the
@@ -859,21 +859,21 @@ resulting revision and the revision that it is based on (e.g., if
 the tag refers to a branch,
 .B cvs
 will merge all changes made in that branch into your working file).
-.sp
+.SP
 With two \fB-j\fP options,
 .B cvs
 will merge in the changes between the two respective revisions.
 This can be used to ``remove'' a certain delta from your working file.
-.sp
+.SP
 In addition, each \fB-j\fP option can contain on optional date
 specification which, when used with branches, can limit the chosen
 revision to one within a specific date.
 An optional date is specified by adding a colon (:) to the tag.
 An example might be what
-.RB ` "\|cvs import\|" '
+.` "cvs import"
 tells you to do when you have
 just imported sources that have conflicts with local changes:
-.sp
+.SP
 .in +1i
 .ft B
 .nf
@@ -881,19 +881,19 @@ example% cvs checkout -jTAG:yesterday -jTAG module
 .fi
 .ft P
 .in -1i
-.sp
+.SP
 Use the
 .B \-N
 option with
-.RB ` "\|\-d \fIdir\fP\|" '
+.` "\-d \fIdir\fP"
 to avoid shortening module paths in your working directory.   (Normally, \fBcvs\fP shortens paths as much as possible when you specify an explicit target directory.)
-.sp
+.SP
 Use the
 .B \-c
 option to copy the module file, sorted, to the standard output,
 instead of creating or modifying any files or directories in your
 working directory.
-.sp
+.SP
 Use the
 .BI \-d " dir"
 option to create a directory called
@@ -901,7 +901,7 @@ option to create a directory called
 for the working files, instead of using the module name.  Unless you
 also use \fB\-N\fP, the paths created under \fIdir\fP will be as short
 as possible.
-.sp
+.SP
 Use the
 .B \-s
 option to display per-module status information stored with
@@ -909,7 +909,7 @@ the
 .B \-s
 option within the modules file. 
 .TP
-\fBcommit\fP [\fB\-flnR\fP] [\fB\-m\fP '\fIlog_message\fP' | \fB\-F\fP \fIfile\fP] [\fB\-r\fP \fIrevision\fP] [\fIfiles.\|.\|.\fP]
+\fBcommit\fP [\fB\-lnR\fP] [\fB\-m\fP '\fIlog_message\fP' | \fB\-f\fP \fIfile\fP] [\fB\-r\fP \fIrevision\fP] [\fIfiles.\|.\|.\fP]
 .I Requires:
 working directory, repository.
 .br
@@ -920,10 +920,10 @@ repository.
 .B ci
 .br
 Use
-.RB ` "\|cvs commit\|" '
+.` "cvs commit"
 when you want to incorporate changes from your working source
 files into the general source repository.
-.sp
+.SP
 If you don't specify particular \fIfiles\fP to commit, all
 of the files in your working current directory are examined.
 .B commit
@@ -944,19 +944,19 @@ flag, which also has the effect of disabling recursion (you can turn
 it back on with
 .B \-R
 of course).
-.sp
+.SP
 .B commit
 verifies that the selected files are up to date with the current revisions
 in the source repository; it will notify you, and exit without
 committing, if any of the specified files must be made current first
 with
-.RB ` "\|cvs update\|" '.
+.` "cvs update".
 .B commit
 does not call the
 .B update
 command for you, but rather leaves that for you to do when
 the time is right.
-.sp
+.SP
 When all is well, an editor is invoked to allow you to enter a log
 message that will be written to one or more logging programs and placed in the
 source repository file.
@@ -965,25 +965,13 @@ You can instead specify the log message on the command line with the
 option, thus suppressing the editor invocation, or use the
 .B \-F
 option to specify that the argument \fIfile\fP contains the log message.
-.sp
-At
-.B commit
-a unique commitid is placed in the
-.SM rcs
-file inside the repository.
-All files committed at once get the same commitid.
-The commitid can be retrieved with the
-.B log
-and
-.B status
-commands.
-.sp
+.SP
 The
 .B \-r
 option can be used to commit to a particular symbolic or numeric revision.
 For example, to bring all your files up to the
 revision ``3.0'' (including those that haven't changed), you might do:
-.sp
+.SP
 .in +1i
 .ft B
 .nf
@@ -991,7 +979,7 @@ example% cvs commit -r3.0
 .fi
 .ft P
 .in -1i
-.sp
+.SP
 .B cvs
 will only allow you to commit to a revision that is on the main trunk (a
 revision with a single dot).
@@ -1015,7 +1003,7 @@ way.
 For example, if you had to create a patch to the 1.2 version of the
 product, even though the 2.0 version is already under development, you
 might do:
-.sp
+.SP
 .in +1i
 .ft B
 .nf
@@ -1027,7 +1015,7 @@ example% cvs commit
 .fi
 .ft P
 .in -1i
-.sp
+.SP
 Say you have been working on some extremely experimental software, based on
 whatever revision you happened to checkout last week.
 If others in your group would like to work on this software with you, but
@@ -1038,7 +1026,7 @@ benefit of
 .B cvs
 conflict resolution.
 The scenario might look like:
-.sp
+.SP
 .in +1i
 .ft B
 .nf
@@ -1049,9 +1037,9 @@ example% cvs commit
 .fi
 .ft P
 .in -1i
-.sp
+.SP
 Others would simply do
-.RB ` "\|cvs checkout -rEXPR1 whatever_module\|" '
+.` "cvs checkout -rEXPR1 whatever_module"
 to work with you on the experimental change.
 .TP
 \fBdiff\fP [\fB\-kl\fP] [\fIrcsdiff_options\fP] [[\fB\-r\fP \fIrev1\fP | \fB\-D\fP \fIdate1\fP] [\fB\-r\fP \fIrev2\fP | \fB\-D\fP \fIdate2\fP]] [\fIfiles.\|.\|.\fP]
@@ -1063,7 +1051,7 @@ nothing.
 .br
 You can compare your working files with revisions in the source
 repository, with the
-.RB ` "\|cvs diff\|" '
+.` "cvs diff"
 command.  If you don't specify a particular revision, your files
 are compared with the revisions they were based on.  You can also use
 the standard
@@ -1083,11 +1071,11 @@ The
 and
 .B \-D
 options can be mixed together with at most two options ever specified.
-.sp
+.SP
 See
 .BR rcsdiff ( 1 )
 for a list of other accepted options.
-.sp
+.SP
 If you don't specify any files,
 .B diff
 will display differences for all those files in the current directory
@@ -1107,26 +1095,26 @@ repository.
 current directory.
 .br
 This command is a variant of
-.RB ` "\|cvs checkout\|" ';
+.` "cvs checkout";
 use it when you want a copy of the source for \fImodule\fP
 without the \fBcvs\fP administrative directories.  For example, you
 might use
-.RB ` "\|cvs export\|" '
+.` "cvs export"
 to prepare source for shipment
 off-site.  This command \fIrequires\fP that you specify a date or tag
 (with \fB\-D\fP or \fB\-r\fP), so that you can count on reproducing
 the source you ship to others.
-.sp
+.SP
 The only non-standard options are
-.RB ` "\|\-d \fIdir\fP\|" '
+.` "\-d \fIdir\fP"
 (write the
 source into directory \fIdir\fP) and
-.RB ` "\|\-N\|" '
+.` "\-N"
 (don't shorten
 module paths).
 These have the same meanings as the same options in
-.RB ` "\|cvs checkout\|" '.
-.sp
+.` "cvs checkout".
+.SP
 The
 .B \-kv
 option is useful when
@@ -1137,14 +1125,14 @@ keywords to be expanded such that an
 .B import
 done at some other site will not lose the keyword revision information.
 Other \fIkflag\fPs may be used with
-.RB ` "\|cvs export\|" '
+.` "cvs export"
 and are described in
 .BR co ( 1 ).
 .TP
 \fBhistory\fP [\fB\-\fP\fIreport\fP] [\fB\-\fP\fIflags\fP] [\fB\-\fP\fIoptions args\fP] [\fIfiles\fP.\|.\|.]
 .I Requires:
 the file
-.RB ` "\|$CVSROOT/CVSROOT/history\|" '
+.` "$CVSROOT/CVSROOT/history"
 .br
 .I Changes:
 nothing.
@@ -1152,24 +1140,24 @@ nothing.
 \fBcvs\fP keeps a history file that tracks each use of the
 \fBcheckout\fP, \fBcommit\fP, \fBrtag\fP, \fBupdate\fP, and \fBrelease\fP
 commands.  You can use
-.RB ` "\|cvs history\|" '
+.` "cvs history"
 to display this
 information in various formats.
-.sp
+.SP
 .I Warning:
-.RB ` "\|cvs history\|" '
+.` "cvs history"
 uses
-.RB ` "\|\-f\|" ',
-.RB ` "\|\-l\|" ',
-.RB ` "\|\-n\|" ',
+.` "\-f",
+.` "\-l",
+.` "\-n",
 and
-.RB ` "\|\-p\|" '
+.` "\-p"
 in ways that conflict with the
 descriptions in
 .SM
 COMMON COMMAND OPTIONS\c
 \&.
-.sp
+.SP
 Several options (shown above as \fB\-\fP\fIreport\fP) control what
 kind of report is generated:
 .TP 1i
@@ -1204,7 +1192,7 @@ added; and `R', when a file is removed.
 .TP 1i
 .B \ \ \ \ \ \ \-e
 Everything (all record types); equivalent to specifying
-.RB ` "\|\-xMACFROGWUT\|" '.
+.` "\-xMACFROGWUT".
 .TP 1i
 \fB\ \ \ \ \ \ \-z\fP \fIzone\fP
 Use time zone
@@ -1226,7 +1214,7 @@ requiring option arguments:
 .B \ \ \ \ \ \ \-a
 Show data for all users (the default is to show data only for the user
 executing
-.RB ` "\|cvs history\|" ').
+.` "cvs history").
 .TP 1i
 .B \ \ \ \ \ \ \-l
 Show last modification only.
@@ -1234,7 +1222,7 @@ Show last modification only.
 .B \ \ \ \ \ \ \-w
 Show only the records for modifications done from the same working
 directory where
-.RB ` "\|cvs history\|" '
+.` "cvs history"
 is executing.
 .PP
 .RS .5i
@@ -1279,26 +1267,26 @@ Repository, source distribution directory.
 repository.
 .br
 Use
-.RB ` "\|cvs import\|" '
+.` "cvs import"
 to incorporate an entire source
 distribution from an outside source (e.g., a source vendor) into your
 source repository directory.  You can use this command both for
 initial creation of a repository, and for wholesale updates to the
 module form the outside source.
-.sp
+.SP
 The \fIrepository\fP argument gives a directory name (or a path to a
 directory) under the CVS root directory for repositories; if the
 directory did not exist, \fBimport\fP creates it.
-.sp
+.SP
 When you use \fBimport\fP for updates to source that has been modified in your
 source repository (since a prior \fBimport\fP), it
 will notify you of any files that conflict in the two branches of
 development; use
-.RB ` "\|cvs checkout -j\|" '
+.` "cvs checkout -j"
 to reconcile the differences, as \fBimport\fP instructs you to do.
-.sp
+.SP
 By default, certain file names are ignored during
-.RB ` "\|cvs import\|" ':
+.` "cvs import":
 names associated with
 .SM CVS
 administration, or with other common source control systems; common
@@ -1306,55 +1294,55 @@ names for patch files, object files, archive files, and editor backup
 files; and other names that are usually artifacts of assorted utilities.
 For an up to date list of ignored file names, see the Cederqvist manual (as
 described in the SEE ALSO section of this manpage).
-.sp
+.SP
 The outside source is saved in a first-level
 branch, by default
-.RB ` "\|1.1.1\|" '.
+.` "1.1.1".
 Updates are leaves of this
 branch; for example, files from the first imported collection of
 source will be revision
-.RB ` "\|1.1.1.1\|" ',
+.` "1.1.1.1",
 then files from the first
 imported update will be revision
-.RB ` "\|1.1.1.2\|" ',
+.` "1.1.1.2",
 and so on.
-.sp
+.SP
 At least three arguments are required.  \fIrepository\fP is needed to
 identify the collection of source.  \fIvendortag\fP is a tag for the
 entire branch (e.g., for
-.RB ` "\|1.1.1\|" ').
+.` "1.1.1").
 You must also specify at
 least one \fIreleasetag\fP to identify the files at the leaves created
 each time you execute
-.RB ` "\|cvs import\|" '.
-.sp
+.` "cvs import".
+.SP
 One of the standard
 .B cvs
 command options is available: \fB\-m\fP
 \fImessage\fP.  If you do not specify a logging message with
 \fB\-m\fP, your editor is invoked (as with \fBcommit\fP) to allow you
 to enter one.
-.sp
+.SP
 There are three additional special options.
-.sp
+.SP
 Use
-.RB ` "\|\-d\|" '
+.` "\-d"
 to specify that each file's time of last modification should be used
 for the checkin date and time.
-.sp
+.SP
 Use
-.RB ` "\|\-b \fIbranch\fP\|" '
+.` "\-b \fIbranch\fP"
 to specify a first-level branch other
 than
-.RB ` "\|1.1.1\|" '.
-.sp
+.` "1.1.1".
+.SP
 Use
-.RB ` "\|\-I \fIname\fP\|" '
+.` "\-I \fIname\fP"
 to specify file names that should be
 ignored during \fBimport\fP.  You can use this option repeatedly.
 To avoid ignoring any files at all (even those ignored by default),
 specify
-.RB ` "\|\-I !\|" '.
+.` "\-I !".
 .TP
 \fBlog\fP [\fB\-l\fP] \fIrlog-options [files\fP\|.\|.\|.]
 .I Requires:
@@ -1404,7 +1392,7 @@ patch file reflects differences between that revision or date and the
 current ``head'' revisions in the
 .SM RCS
 file.
-.sp
+.SP
 Note that if the software release affected
 is contained in more than one directory, then it may be necessary to
 specify the
@@ -1414,11 +1402,11 @@ option to the
 command when patching the old sources, so that
 .B patch
 is able to find the files that are located in other directories.
-.sp
+.SP
 The standard option \fIflags\fP \fB\-f\fP, and \fB\-l\fP
 are available with this command.  There are also several
 special options flags:
-.sp
+.SP
 If you use the
 .B \-s
 option, no patch output is produced.
@@ -1426,21 +1414,21 @@ Instead, a summary of the changed or added files between the two
 releases is sent to the standard output device.
 This is useful for finding out, for example, which files have changed
 between two dates or revisions.
-.sp
+.SP
 If you use the
 .B \-t
 option, a diff of the top two revisions is sent to the standard output device.
 This is most useful for seeing what the last change to a file was.
-.sp
+.SP
 If you use the
 .B \-u
 option, the patch output uses the newer ``unidiff'' format for context
 diffs.
-.sp
+.SP
 You can use
 .B \-c
 to explicitly specify the
-.RB ` "\|diff \-c\|" '
+.` "diff \-c"
 form of context diffs
 (which is the default), if you like.
 .TP
@@ -1452,7 +1440,7 @@ Working directory.
 Working directory, history log.
 .br
 This command is meant to safely cancel the effect of
-.RB ` "\|cvs checkout\|" '.
+.` "cvs checkout'.
 Since
 .B cvs
 doesn't lock files, it isn't strictly necessary to use this command.
@@ -1461,23 +1449,23 @@ like; but you risk losing changes you may have forgotten, and you
 leave no trace in the
 .B cvs
 history file that you've abandoned your checkout.
-.sp
+.SP
 Use
-.RB ` "\|cvs release\|" '
+.` "cvs release"
 to avoid these problems.  This command
 checks that no un-committed changes are present; that you are
 executing it from immediately above, or inside, a \fBcvs\fP working
 directory; and that the repository recorded for your files is the same
 as the repository defined in the module database.
-.sp
+.SP
 If all these conditions are true,
-.RB ` "\|cvs release\|" '
+.` "cvs release"
 leaves a
 record of its execution (attesting to your intentionally abandoning
 your checkout) in the
 .B cvs
 history log.
-.sp
+.SP
 You can use the \fB\-d\fP flag to request that your working copies of
 the source files be deleted if the \fBrelease\fP succeeds.
 .TP
@@ -1495,12 +1483,12 @@ Use this command to declare that you wish to remove \fIfiles\fP from
 the source repository.  Like most
 .B cvs
 commands,
-.RB ` "\|cvs remove\|" '
+.` "cvs remove"
 works on files in your working
 directory, not directly on the repository.  As a safeguard, it also
 requires that you first erase the specified files from your working
 directory.
-.sp
+.SP
 The files are not actually removed until you apply your changes to the
 repository with
 .BR commit ;
@@ -1509,9 +1497,9 @@ at that point, the corresponding
 files in the source repository are
 .I moved
 into the
-.RB ` "\|Attic\|" '
+.` "Attic"
 directory (also within the source repository).
-.sp
+.SP
 This command is recursive by default, scheduling all physically removed
 files that it finds for removal by the next
 .BR commit .
@@ -1532,59 +1520,59 @@ repository.
 .br
 You can use this command to assign symbolic tags to particular,
 explicitly specified source versions in the repository.
-.RB ` "\|cvs rtag\|" '
+.` "cvs rtag"
 works directly on the repository contents (and requires no
 prior
 .BR checkout ).
 Use
-.RB ` "\|cvs tag\|" '
+.` "cvs tag"
 instead, to base the selection of
 versions to tag on the contents of your working directory.
-.sp
+.SP
 In general, tags (often the symbolic names of software distributions)
 should not be removed, but the
 .B \-d
 option is available as a means to remove completely obsolete symbolic names
 if necessary (as might be the case for an Alpha release, say).
-.sp
-.RB ` "\|cvs rtag\|" '
+.SP
+.` "cvs rtag"
 will not move a tag that already exists.  With the \fB\-F\fP option,
 however,
-.RB ` "\|cvs rtag\|" '
+.` "cvs rtag"
 will re-locate any instance of \fIsymbolic_tag\fP that already exists
 on that file to the new repository versions.  Without the \fB\-F\fP
 option, attempting to use
-.RB ` "\|cvs rtag\|" '
+.` "cvs rtag"
 to apply a tag that already exists on that file will produce an error
 message.
-.sp
+.SP
 The \fB-b\fP option makes the tag a ``branch'' tag, allowing
 concurrent, isolated development.
 This is most useful for creating a patch to a previously released software
 distribution.
-.sp
+.SP
 You can use the standard \fB\-r\fP and \fB\-D\fP options to tag only those
 files that already contain a certain tag.  This method would be used
 to rename a tag: tag only the files identified by the old tag, then delete the
 old tag, leaving the new tag on exactly the same files as the old tag.
-.sp
+.SP
 .B rtag
 executes recursively by default, tagging all subdirectories of
 \fImodules\fP you specify in the argument.  You can restrict its
 operation to top-level directories with the standard \fB\-l\fP option;
 or you can explicitly request recursion with \fB\-R\fP.
-.sp
+.SP
 The modules database can specify a program to execute whenever a tag
 is specified; a typical use is to send electronic mail to a group of
 interested parties.  If you want to bypass that program, use the
 standard \fB\-n\fP option.
-.sp
+.SP
 Use the
 .B \-a
 option to have
 .B rtag
 look in the
-.RB ` "\|Attic\|" '
+.` "Attic"
 for removed files that contain the specified tag.
 The tag is removed from these files, which makes it convenient to re-use a
 symbolic tag as development continues (and files get removed from the
@@ -1600,13 +1588,13 @@ nothing.
 Display a brief report on the current status of \fIfiles\fP with
 respect to the source repository, including any ``sticky'' tags,
 dates, or \fB\-k\fP options.  (``Sticky'' options will restrict how
-.RB ` "\|cvs update\|" '
+.` "cvs update"
 operates until you reset them; see the
 description of
-.RB ` "\|cvs update \-A\|.\|.\|.\|" '.)
-.sp
+.` "cvs update \-A\|.\|.\|.".)
+.SP
 You can also use this command to anticipate the potential impact of a
-.RB ` "\|cvs update\|" '
+.` "cvs update"
 on your working source directory.  If you do
 not specify any \fIfiles\fP explicitly, reports are shown for all
 files that \fBcvs\fP has placed in your working directory.  You can
@@ -1614,7 +1602,7 @@ limit the scope of this search to the current directory itself (not
 its subdirectories) with the standard \fB\-l\fP option flag; or you
 can explicitly request recursive status reports with the \fB\-R\fP
 option.
-.sp
+.SP
 The
 .B \-v
 option causes the symbolic tags for the
@@ -1634,12 +1622,12 @@ repository.
 Use this command to assign symbolic tags to the nearest repository
 versions to your working sources.  The tags are applied immediately to
 the repository, as with \fBrtag\fP.
-.sp
+.SP
 One use for tags is to record a ``snapshot'' of the current sources
 when the software freeze date of a project arrives.  As bugs are fixed
 after the freeze date, only those changed sources that are to be part
 of the release need be re-tagged.
-.sp
+.SP
 The symbolic tags are meant to permanently record which revisions of which
 files were used in creating a software distribution.
 The
@@ -1650,53 +1638,53 @@ and
 commands allow you to extract an exact copy of a tagged release at any time in
 the future, regardless of whether files have been changed, added, or removed
 since the release was tagged.
-.sp
+.SP
 You can use the standard \fB\-r\fP and \fB\-D\fP options to tag only those
 files that already contain a certain tag.  This method would be used
 to rename a tag: tag only the files identified by the old tag, then delete the
 old tag, leaving the new tag on exactly the same files as the old tag.
-.sp
+.SP
 Specifying the \fB\-f\fP flag in addition to the \fB\-r\fP or \fB\-D\fP
 flags will tag those files named on the command line even if they do not
 contain the old tag or did not exist on the specified date.
-.sp
+.SP
 By default (without a \fB\-r\fP or \fB\-D\fP flag)
 the versions to be tagged are supplied
 implicitly by the \fBcvs\fP records of your working files' history
 rather than applied explicitly.
-.sp
+.SP
 If you use
-.RB ` "\|cvs tag \-d \fIsymbolic_tag\fP\|.\|.\|.\|" ',
+.` "cvs tag \-d \fIsymbolic_tag\fP\|.\|.\|.",
 the
 symbolic tag you specify is
 .I deleted
 instead of being added.  \fIWarning\fP: Be very certain of your ground
 before you delete a tag; doing this effectively discards some
 historical information, which may later turn out to have been valuable.
-.sp
-.RB ` "\|cvs tag\|" '
+.SP
+.` "cvs tag"
 will not move a tag that already exists.  With the \fB\-F\fP option,
 however,
-.RB ` "\|cvs tag\|" '
+.` "cvs tag"
 will re-locate any instance of \fIsymbolic_tag\fP that already exists
 on that file to the new repository versions.  Without the \fB\-F\fP
 option, attempting to use
-.RB ` "\|cvs tag\|" '
+.` "cvs tag"
 to apply a tag that already exists on that file will produce an error
 message.
-.sp
+.SP
 The \fB-b\fP option makes the tag a ``branch'' tag, allowing
 concurrent, isolated development.
 This is most useful for creating a patch to a previously released software
 distribution.
-.sp
+.SP
 Normally,
 .B tag
 executes recursively through subdirectories; you can prevent this by
 using the standard \fB\-l\fP option, or specify the recursion
 explicitly by using \fB\-R\fP.
 .TP
-\fBupdate\fP [\fB\-ACdf\|lPpQqR\fP] [\fB\-d\fP] [\fB\-r\fP \fItag\fP|\fB\-D\fP \fIdate\fP] \fIfiles\|.\|.\|.\fP
+\fBupdate\fP [\fB\-Adf\|lPpQqR\fP] [\fB\-d\fP] [\fB\-r\fP \fItag\fP|\fB\-D\fP \fIdate\fP] \fIfiles\|.\|.\|.\fP
 .I Requires:
 repository, working directory.
 .br
@@ -1716,30 +1704,24 @@ revisions applied to  the source repository since your last
 .B checkout
 or
 .BR update .
-.sp
+.SP
 .B update
 keeps you informed of its progress by printing a line for each file,
 prefaced with one of the characters
-.RB ` "\|U P A R M C ?\|" '
+.` "U A R M C ?"
 to indicate the status of the file:
 .TP 1i
 \fBU\fP \fIfile\fP
-The file has been brought \fIup to date\fP with respect to the repository.
+The file was brought \fIup to date\fP with respect to the repository.
 This is done for any file that exists in the repository but not in
 your source, and for files that you haven't changed but are not the most
 recent versions available in the repository.
-.TP 1i
-\fBP\fP \fIfile\fP
-As
-.RB ` "\|U\|" ',
-but instead of transferring the entire file a patch containing the required
-changes were sent.
 .TP 1i
 \fBA\fP \fIfile\fP
 The file has been \fIadded\fP to your private copy of the sources, and
 will be added to the
 source repository when you run
-.RB ` "\|cvs commit\|" '
+.` "cvs commit"
 on the file.
 This is a reminder to you that the file needs to be committed.
 .TP 1i
@@ -1747,13 +1729,13 @@ This is a reminder to you that the file needs to be committed.
 The file has been \fIremoved\fP from your private copy of the sources, and
 will be removed from the
 source repository when you run
-.RB ` "\|cvs commit\|" '
+.` "cvs commit"
 on the file.
 This is a reminder to you that the file needs to be committed.
 .TP 1i
 \fBM\fP \fIfile\fP
-The file has been \fImodified\fP in your working directory.
-.RB ` "\|M\|" '
+The file is \fImodified\fP in your working directory.
+.` "M"
 can indicate one of two states for a file you're working on: either
 there were no modifications to the same file in the repository, so
 that your file remains as you last saw it; or there were modifications
@@ -1762,7 +1744,7 @@ in the repository as well as in your copy, but they were
 directory.
 .TP 1i
 \fBC\fP \fIfile\fP
-A \fIconflict\fP has been detected while trying to merge your changes to
+A \fIconflict\fP was detected while trying to merge your changes to
 \fIfile\fP with changes from the source repository.  \fIfile\fP (the
 copy in your working directory) is now the result of merging
 the two versions; an unmodified copy of your file is also
@@ -1773,7 +1755,7 @@ is the
 revision that your modified file started from.
 (Note that some systems automatically purge files that begin with
 \&
-.RB ` "\|.#\|" '
+.` ".#"
 if they have not been accessed for a few days.
 If you intend to keep a copy of your original file, it is a very good
 idea to rename it.)
@@ -1784,7 +1766,7 @@ anything in the source repository, and is not in the list of files
 for \fBcvs\fP to ignore (see the description of the \fB\-I\fP option).
 .PP
 .RS .5i
-.sp
+.SP
 Use the
 .B \-A
 option to reset any sticky tags, dates, or
@@ -1794,7 +1776,7 @@ options.  (If you get a working copy of a file by using one of the
 corresponding tag, date, or \fIkflag\fP and continues using it on
 future updates; use the \fB\-A\fP option to make \fBcvs\fP forget these
 specifications, and retrieve the ``head'' version of the file).
-.sp
+.SP
 The \fB\-j\fP\fIbranch\fP option 
 merges the changes made between the
 resulting revision and the revision that it is based on (e.g., if
@@ -1802,7 +1784,7 @@ the tag refers to a branch,
 .B cvs
 will merge all changes made in
 that branch into your working file).
-.sp
+.SP
 With two \fB-j\fP options,
 .B cvs
 will merge in the changes between the two respective revisions.
@@ -1810,7 +1792,7 @@ This can be used to ``remove'' a certain delta from your working file.
 E.g., If the file foo.c is based on
 revision 1.6 and I want to remove the changes made between 1.3 and
 1.5, I might do:
-.sp
+.SP
 .in +1i
 .ft B
 .nf
@@ -1818,12 +1800,12 @@ example% cvs update -j1.5 -j1.3 foo.c	# note the order...
 .fi
 .ft P
 .in -1i
-.sp
+.SP
 In addition, each \fB-j\fP option can contain on optional date
 specification which, when used with branches, can limit the chosen
 revision to one within a specific date.
 An optional date is specified by adding a colon (:) to the tag.
-.sp
+.SP
 .in +1i
 .ft B
 .nf
@@ -1831,7 +1813,7 @@ An optional date is specified by adding a colon (:) to the tag.
 .fi
 .ft P
 .in -1i
-.sp
+.SP
 Use the
 .B \-d
 option to create any directories that exist in the repository if they're
@@ -1846,7 +1828,7 @@ listing explicitly the files and directories you wanted on the
 command line), then updating with
 .B \-d
 will create those directories, which may not be what you want.
-.sp
+.SP
 Use \fB\-I\fP \fIname\fP to ignore files whose names match \fIname\fP
 (in your working directory) during the update.  You can specify
 \fB\-I\fP more than once on the command line to specify several files
@@ -1854,17 +1836,11 @@ to ignore.  By default,
 \fBupdate\fP ignores files whose names match certain patterns; for
 an up to date list of ignored file names, see the Cederqvist manual (as
 described in the SEE ALSO section of this manpage).
-.sp
+.SP
 Use
-.RB ` "\|\-I !\|" '
+.` "\-I !"
 to avoid ignoring any files at all.
-.sp
-Use the
-.RB ` "\|\-C\|" '
-option to overwrite locally modified files with clean copies from
-the repository (the modified file is saved in
-`\fB.#\fP\fIfile\fP\fB.\fP\fIrevision\fP', however).
-.sp
+.SP
 The standard \fBcvs\fP command options \fB\-f\fP, \fB\-k\fP,
 \fB\-l\fP, \fB\-P\fP, \fB\-p\fP, and \fB\-r\fP
 are also available with \fBupdate\fP.
@@ -1885,9 +1861,9 @@ initialisation file.  Lines in this file can be used to specify default
 options for each
 .B cvs
 command.  For example the line
-.RB ` "\|diff \-c\|" '
+.` "diff \-c"
 will ensure that
-.RB ` "\|cvs diff\|" '
+.` "cvs diff"
 is always passed the
 .B \-c
 option in addition to any other options passed on the command line.
@@ -1909,11 +1885,11 @@ List and status of files in your working directory.
 .TP
 CVS/Entries.Backup
 A backup of
-.RB ` "\|CVS/Entries\|" '.
+.` "CVS/Entries".
 .TP
 CVS/Entries.Static
 Flag: do not add more entries on
-.RB ` "\|cvs update\|" '.
+.` "cvs update".
 .TP
 CVS/Root
 Pathname to the repository (
@@ -1947,11 +1923,11 @@ commands, and no files are specified.
 .TP
 CVS/Checkin.prog
 Name of program to run on
-.RB ` "\|cvs commit\|" '.
+.` "cvs commit".
 .TP
 CVS/Update.prog
 Name of program to run on
-.RB ` "\|cvs update\|" '.
+.` "cvs update".
 .LP
 .I
 Files in source repositories:
@@ -1961,7 +1937,7 @@ Directory of global administrative files for repository.
 .TP
 CVSROOT/commitinfo,v
 Records programs for filtering
-.RB ` "\|cvs commit\|" '
+.` "cvs commit"
 requests.
 .TP
 CVSROOT/cvswrappers,v
@@ -1975,7 +1951,7 @@ in, so all of the code in the repository looks the same.
 .TP
 CVSROOT/editinfo,v
 Records programs for editing/validating
-.RB ` "\|cvs commit\|" '
+.` "cvs commit"
 log entries.
 .TP
 CVSROOT/history
@@ -1983,7 +1959,7 @@ Log file of \fBcvs\fP transactions.
 .TP
 CVSROOT/loginfo,v
 Records programs for piping
-.RB ` "\|cvs commit\|" '
+.` "cvs commit"
 log entries.
 .TP
 CVSROOT/modules,v
@@ -1991,14 +1967,14 @@ Definitions for modules in this repository.
 .TP
 CVSROOT/rcsinfo,v
 Records pathnames to templates used during a
-.RB ` "\|cvs commit\|" '
+.` "cvs commit"
 operation.
 .TP
 CVSROOT/taginfo,v
 Records programs for validating/logging
-.RB ` "\|cvs tag\|" '
+.` "cvs tag"
 and
-.RB ` "\|cvs rtag\|" '
+.` "cvs rtag"
 operations.
 .TP
 MODULE/Attic
@@ -2030,11 +2006,11 @@ most commands to execute; if
 .SM CVSROOT
 is not set, or if you wish to override it for one invocation, you can
 supply it on the command line:
-.RB ` "\|cvs \-d \fIcvsroot cvs_command\fP\|.\|.\|.\|" '
+.` "cvs \-d \fIcvsroot cvs_command\fP\|.\|.\|."
 You may not need to set
 .SM CVSROOT
 if your \fBcvs\fP binary has the right path compiled in; use
-.RB ` "\|cvs \-v\|" '
+.` "cvs \-v"
 to display all compiled-in paths.
 .TP
 .SM CVSREAD
@@ -2059,19 +2035,12 @@ and
 Specifies the program to use for recording log messages during
 .BR commit .
 If not set, the
-.SM VISUAL
-and
 .SM EDITOR
-environment variables are tried (in that order).
-If neither is set, a system-dependent default editor (e.g.,
-.BR vi )
-is used.
-.TP
-.SM CVSREADONLYFS
-Setting this variable allows
-.B cvs
-to run properly without write access to its log file. This is especially
-useful when mounting a read-only source tree via NFS.
+environment variable is used instead.
+If
+.SM EDITOR
+is not set either, the default is
+.BR /usr/ucb/vi .
 .TP
 .SM CVS_IGNORE_REMOTE_ROOT
 If this variable is set then
@@ -2084,7 +2053,7 @@ uses the contents of this variable to determine the name of the
 remote shell command to use when starting a
 .B cvs
 server.  If this variable is not set then
-.RB ` "\|ssh\|" '
+.` "rsh"
 is used.
 .TP
 .SM CVS_SERVER
@@ -2092,12 +2061,12 @@ is used.
 uses the contents of this variable to determine the name of the
 .B cvs
 server command.  If this variable is not set then
-.RB ` "\|cvs\|" '
+.` "cvs"
 is used.
 .TP
 .SM CVSWRAPPERS
 This variable is used by the
-.RB ` "\|cvswrappers\|" '
+.` "cvswrappers"
 script to determine the name of the wrapper file, in addition to the
 wrappers defaults contained in the repository
 .SM (CVSROOT/cvswrappers)
@@ -2125,7 +2094,7 @@ Helped Brian with the design of the
 module and vendor branch support and author of the
 .BR checkin ( 1 )
 shell script (the ancestor of
-.RB ` "\|cvs import\|" ').
+.` "cvs import").
 .TP
 And many others too numerous to mention here.
 .SH "SEE ALSO"
@@ -2135,14 +2104,14 @@ your system, you may be able to get it with the
 .B info cvs
 command or it may be available as cvs.ps (postscript), cvs.texinfo
 (texinfo source), or cvs.html.
-.sp
+.SP
 For CVS updates, more information on documentation, software related
 to CVS, development of CVS, and more, see:
 .in +1i
 .B http://www.cyclic.com
 .B http://www.loria.fr/~molli/cvs-index.html
 .in -1i
-.sp
+.SP
 .BR ci ( 1 ),
 .BR co ( 1 ),
 .BR cvs ( 5 ),

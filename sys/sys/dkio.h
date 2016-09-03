@@ -1,4 +1,4 @@
-/*	$OpenBSD: dkio.h,v 1.9 2011/06/05 18:40:33 matthew Exp $	*/
+/*	$OpenBSD: dkio.h,v 1.4 1999/08/10 23:08:09 deraadt Exp $	*/
 /*	$NetBSD: dkio.h,v 1.1 1996/01/30 18:21:48 thorpej Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -50,6 +54,7 @@
 
 #define DIOCSSTEP	_IOW('d', 107, int)	/* set step rate */
 #define DIOCSRETRIES	_IOW('d', 108, int)	/* set # of retries */
+#define DIOCWLABEL	_IOW('d', 109, int)	/* write en/disable label */
 
 #define DIOCSBAD	_IOW('d', 110, struct dkbad)	/* set kernel dkbad */
 #define DIOCEJECT	_IO('d', 112)		/* eject removable disk */
@@ -57,30 +62,5 @@
 
 #define DIOCGPDINFO	_IOR('d', 114, struct disklabel)/* get physical */
 #define DIOCRLDINFO	_IO('d', 115)			/* reload disklabel */
-
-struct dk_inquiry {
-	char		vendor[64];
-	char		product[128];
-	char		revision[64];
-	char		serial[64];
-};
-
-#define DIOCINQ		_IOR('d', 116, struct dk_inquiry)
-
-struct dk_cache {
-	unsigned int	wrcache;
-	unsigned int	rdcache;
-};
-
-#define DIOCGCACHE	_IOR('d', 117, struct dk_cache)	/* get cache enabled */
-#define DIOCSCACHE	_IOW('d', 118, struct dk_cache)	/* set cache enabled */
-
-struct dk_diskmap {
-	char		*device;
-	int		fd;
-	int		flags;
-};
-
-#define	DIOCMAP		_IOWR('d', 119, struct dk_diskmap)
 
 #endif /* _SYS_DKIO_H_ */

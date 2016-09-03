@@ -1,4 +1,3 @@
-/*	$OpenBSD: ashrdi3.c,v 1.7 2015/10/01 02:32:07 guenther Exp $ */
 /*-
  * Copyright (c) 1992, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -15,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,35 +35,40 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: ashrdi3.c,v 1.2 1996/08/19 08:30:18 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include "quad.h"
 
 /*
  * Shift a (signed) quad value right (arithmetic shift right).
  */
 quad_t
-__ashrdi3(quad_t a, qshift_t shift)
+__ashrdi3(a, shift)
+	quad_t a;
+	qshift_t shift;
 {
 	union uu aa;
 
-	if (shift == 0)
-		return(a);
 	aa.q = a;
-	if (shift >= INT_BITS) {
-		int s;
+	if (shift >= LONG_BITS) {
+		long s;
 
 		/*
 		 * Smear bits rightward using the machine's right-shift
 		 * method, whether that is sign extension or zero fill,
 		 * to get the `sign word' s.  Note that shifting by
-		 * INT_BITS is undefined, so we shift (INT_BITS-1),
+		 * LONG_BITS is undefined, so we shift (LONG_BITS-1),
 		 * then 1 more, to get our answer.
 		 */
-		s = (aa.sl[H] >> (INT_BITS - 1)) >> 1;
-		aa.ul[L] = aa.sl[H] >> (shift - INT_BITS);
+		s = (aa.sl[H] >> (LONG_BITS - 1)) >> 1;
+		aa.ul[L] = shift >= QUAD_BITS ? s :
+		    aa.sl[H] >> (shift - LONG_BITS);
 		aa.ul[H] = s;
-	} else {
+	} else if (shift > 0) {
 		aa.ul[L] = (aa.ul[L] >> shift) |
-		    (aa.ul[H] << (INT_BITS - shift));
+		    (aa.ul[H] << (LONG_BITS - shift));
 		aa.sl[H] >>= shift;
 	}
 	return (aa.q);

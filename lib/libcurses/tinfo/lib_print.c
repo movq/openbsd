@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_print.c,v 1.5 2010/01/12 23:22:06 nicm Exp $ */
+/*	$OpenBSD: lib_print.c,v 1.2 1999/03/02 06:23:28 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2002,2006 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -33,45 +33,49 @@
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
  ****************************************************************************/
 
+
 #include <curses.priv.h>
 
 #include <term.h>
 
-MODULE_ID("$Id: lib_print.c,v 1.5 2010/01/12 23:22:06 nicm Exp $")
+MODULE_ID("$From: lib_print.c,v 1.11 1999/02/27 19:59:05 tom Exp $")
 
-NCURSES_EXPORT(int)
-mcprint(char *data, int len)
+int mcprint(char *data, int len)
 /* ship binary character data to the printer via mc4/mc5/mc5p */
 {
-    char *mybuf, *switchon;
-    size_t onsize, offsize, res;
+    char	*mybuf, *switchon;
+    size_t	onsize,	offsize, res;
 
     errno = 0;
-    if (!cur_term || (!prtr_non && (!prtr_on || !prtr_off))) {
+    if (!cur_term || (!prtr_non && (!prtr_on || !prtr_off)))
+    {
 	errno = ENODEV;
-	return (ERR);
+	return(ERR);
     }
 
-    if (prtr_non) {
-	switchon = TPARM_1(prtr_non, len);
+    if (prtr_non)
+    {
+	switchon = tparm(prtr_non, len);
 	onsize = strlen(switchon);
 	offsize = 0;
-    } else {
+    }
+    else
+    {
 	switchon = prtr_on;
 	onsize = strlen(prtr_on);
 	offsize = strlen(prtr_off);
     }
 
-    res = onsize + len + offsize + 1;
-    if (switchon == 0 || (mybuf = typeMalloc(char, res)) == 0) {
+    if ((mybuf = typeMalloc(char, onsize + len + offsize + 1)) == (char *)0)
+    {
 	errno = ENOMEM;
-	return (ERR);
+	return(ERR);
     }
 
-    (void) strlcpy(mybuf, switchon, res);
-    memcpy(mybuf + onsize, data, (unsigned) len);
+    (void) strcpy(mybuf, switchon);
+    memcpy(mybuf + onsize, data, len);
     if (offsize)
-	(void) strlcpy(mybuf + onsize + len, prtr_off, res - onsize - len);
+      (void) strcpy(mybuf + onsize + len, prtr_off);
 
     /*
      * We're relying on the atomicity of UNIX writes here.  The
@@ -90,5 +94,5 @@ mcprint(char *data, int len)
     (void) sleep(0);
 
     free(mybuf);
-    return (res);
+    return(res);
 }

@@ -1,7 +1,7 @@
-/*	$OpenBSD: lif.c,v 1.10 2004/11/22 18:41:41 mickey Exp $	*/
+/*	$OpenBSD: lif.c,v 1.6 1999/05/31 02:41:11 todd Exp $	*/
 
 /*
- * Copyright (c) 1998-2004 Michael Shalayeff
+ * Copyright (c) 1998 Michael Shalayeff
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -12,18 +12,22 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHOR OR HIS RELATIVES BE LIABLE FOR ANY DIRECT,
- * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF MIND, USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
- * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
- * THE POSSIBILITY OF SUCH DAMAGE.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include <sys/param.h>
@@ -51,12 +55,11 @@ lif_open (path, f)
 	char *path;
 	struct open_file *f;
 {
-	struct file *fp;
-	struct lifdir *dp;
-	char *p, *q;
+	register struct file *fp;
+	register struct lifdir *dp;
+	register char *p = NULL, *q = NULL; /* XXX shut up gcc */
 	struct lif_load load;
-	size_t buf_size;
-	int err, l;
+	int err, buf_size, l;
 
 #ifdef LIFDEBUG
 	if (debug)
@@ -99,10 +102,10 @@ lif_open (path, f)
 			if (debug)
 				printf("lif_open: "
 				       "%s <--> '%c%c%c%c%c%c%c%c%c%c'\n",
-				       path, dp->dir_name[0], dp->dir_name[1],
-				       dp->dir_name[2], dp->dir_name[3],
-				       dp->dir_name[4], dp->dir_name[5],
-				       dp->dir_name[6], dp->dir_name[7],
+				       path, dp->dir_name[0], dp->dir_name[1], 
+				       dp->dir_name[2], dp->dir_name[3], 
+				       dp->dir_name[4], dp->dir_name[5], 
+				       dp->dir_name[6], dp->dir_name[7], 
 				       dp->dir_name[8], dp->dir_name[9]);
 #endif
 			for (p = path, q = dp->dir_name;
@@ -138,10 +141,6 @@ lif_open (path, f)
 		free (fp, sizeof(*fp));
 		f->f_fsdata = NULL;
 	}
-#ifdef LIFDEBUG
-	if (debug)
-		printf("ret(%d)\n", err);
-#endif
 	return err;
 }
 
@@ -161,8 +160,8 @@ lif_read(f, buf, size, resid)
 	size_t size;
 	size_t *resid;
 {
-	struct file *fp = (struct file *)f->f_fsdata;
-	char *p;
+	register struct file *fp = (struct file *)f->f_fsdata;
+	register char *p;
 	char bbuf[DEV_BSIZE];
 	size_t bsize, count = sizeof(bbuf);
 	int err = 0;
@@ -210,7 +209,7 @@ lif_seek(f, offset, where)
 	off_t offset;
 	int where;
 {
-	struct file *fp = (struct file *)f->f_fsdata;
+	register struct file *fp = (struct file *)f->f_fsdata;
 
 	switch (where) {
 	case SEEK_SET:
@@ -233,7 +232,7 @@ lif_stat(f, sb)
 	struct open_file *f;
 	struct stat *sb;
 {
-	struct file *fp = (struct file *)f->f_fsdata;
+	register struct file *fp = (struct file *)f->f_fsdata;
 
 	sb->st_mode = 0755 | (fp->f_isdir? S_IFDIR: 0);	/* XXX */
 	sb->st_uid = 0;
@@ -247,8 +246,8 @@ lif_readdir(f, name)
 	struct open_file *f;
 	char *name;
 {
-	struct file *fp = (struct file *)f->f_fsdata;
-	char *p;
+	register struct file *fp = (struct file *)f->f_fsdata;
+	register char *p;
 
 	if (name) {
 		while ((fp->f_rd->dir_name[0] == ' ' ||

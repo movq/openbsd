@@ -1,4 +1,4 @@
-.\"	$OpenBSD: getc.3,v 1.14 2013/06/05 03:39:23 tedu Exp $
+.\"	$OpenBSD: getc.3,v 1.5 1999/05/25 01:50:58 aaron Exp $
 .\"
 .\" Copyright (c) 1990, 1991, 1993
 .\"	The Regents of the University of California.  All rights reserved.
@@ -15,7 +15,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -31,7 +35,7 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: June 5 2013 $
+.Dd June 4, 1993
 .Dt GETC 3
 .Os
 .Sh NAME
@@ -41,7 +45,7 @@
 .Nm getw
 .Nd get next character or word from input stream
 .Sh SYNOPSIS
-.In stdio.h
+.Fd #include <stdio.h>
 .Ft int
 .Fn fgetc "FILE *stream"
 .Ft int
@@ -53,36 +57,40 @@
 .Sh DESCRIPTION
 The
 .Fn fgetc
-function obtains the next input character (if present) from the stream
-pointed at by
+function
+obtains the next input character (if present) from the stream pointed at by
 .Fa stream ,
 or the next character pushed back on the stream via
-.Xr ungetc 3 .
+.Xr ungetc .
 .Pp
 The
 .Fn getc
-function acts essentially identically to
+function
+acts essentially identically to
 .Fn fgetc ,
 but is a macro that expands in-line.
 .Pp
 The
 .Fn getchar
-function is equivalent to
+function
+is equivalent to
 .Fn getc
-with the argument
-.Em stdin .
+with the argument stdin.
 .Pp
 The
 .Fn getw
-function obtains the next
-.Li int
+function
+obtains the next
+.Em int
 (if present)
 from the stream pointed at by
 .Fa stream .
 .Sh RETURN VALUES
-If successful, these routines return the next requested object from the
+If successful, these routines return the next requested object
+from the
 .Fa stream .
-If the stream is at end-of-file or a read error occurs, the routines return
+If the stream is at end-of-file or a read error occurs,
+the routines return
 .Dv EOF .
 The routines
 .Xr feof 3
@@ -96,7 +104,7 @@ The end-of-file condition is remembered, even on a terminal, and all
 subsequent attempts to read will return
 .Dv EOF
 until the condition is cleared with
-.Xr clearerr 3 .
+.Xr clearerr .
 .Sh SEE ALSO
 .Xr ferror 3 ,
 .Xr fopen 3 ,
@@ -106,44 +114,24 @@ until the condition is cleared with
 .Sh STANDARDS
 The
 .Fn fgetc ,
-.Fn getc ,
+.Fn getc
 and
 .Fn getchar
-functions conform to
+functions
+conform to
 .St -ansiC .
-.Sh HISTORY
-The
-.Fn getc
-and
-.Fn getw
-functions first appeared in
-.At v1 ;
-.Fn getchar
-in
-.At v2 ;
-and
-.Fn fgetc
-in
-.At v7 .
-.Sh AUTHORS
-.An Dennis Ritchie
-originally implemented
-.Fn getc
-and
-.Fn getw
-in PDP-11 assembler.
 .Sh BUGS
 Since
 .Dv EOF
 is a valid integer value,
-.Xr feof 3
+.Xr feof
 and
-.Xr ferror 3
+.Xr ferror
 must be used to check for failure after calling
 .Fn getw .
-.Pp
-Since the size and byte order of an
-.Vt int
-may vary from one machine to another,
+The size and byte order of an
+.Em int
+varies from one machine to another, and
 .Fn getw
 is not recommended for portable applications.
+.Pp

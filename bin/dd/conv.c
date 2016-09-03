@@ -1,4 +1,4 @@
-/*	$OpenBSD: conv.c,v 1.13 2016/08/16 16:44:55 krw Exp $	*/
+/*	$OpenBSD: conv.c,v 1.5 1997/02/14 07:05:19 millert Exp $	*/
 /*	$NetBSD: conv.c,v 1.6 1996/02/20 19:29:02 jtc Exp $	*/
 
 /*-
@@ -17,7 +17,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -34,16 +38,21 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/types.h>
-#include <sys/time.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)conv.c	8.3 (Berkeley) 4/2/94";
+#else
+static char rcsid[] = "$OpenBSD: conv.c,v 1.5 1997/02/14 07:05:19 millert Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
 
 #include <err.h>
 #include <string.h>
 
 #include "dd.h"
 #include "extern.h"
-
-#define MINIMUM(a, b)	(((a) < (b)) ? (a) : (b))
 
 /*
  * def --
@@ -52,7 +61,7 @@
  * Worst case buffer calculation is (ibs + obs - 1).
  */
 void
-def(void)
+def()
 {
 	size_t cnt;
 	u_char *inp;
@@ -74,14 +83,14 @@ def(void)
 		 * Ddout copies the leftover output to the beginning of
 		 * the buffer and resets the output buffer.  Reset the
 		 * input buffer to match it.
-		 */
+	 	 */
 		in.dbp = out.dbp;
 		in.dbcnt = out.dbcnt;
 	}
 }
 
 void
-def_close(void)
+def_close()
 {
 	/* Just update the count, everything is already in the buffer. */
 	if (in.dbcnt)
@@ -92,10 +101,10 @@ def_close(void)
 /* Build a smaller version (i.e. for a miniroot) */
 /* These can not be called, but just in case...  */
 static char no_block[] = "unblock and -DNO_CONV?";
-void block()       { errx(1, "%s", no_block + 2); }
-void block_close() { errx(1, "%s", no_block + 2); }
-void unblock()       { errx(1, "%s", no_block); }
-void unblock_close() { errx(1, "%s", no_block); }
+void block()       { errx(1, no_block + 2); }
+void block_close() { errx(1, no_block + 2); }
+void unblock()       { errx(1, no_block); }
+void unblock_close() { errx(1, no_block); }
 #else	/* NO_CONV */
 
 /*
@@ -106,7 +115,7 @@ void unblock_close() { errx(1, "%s", no_block); }
  * max out buffer: obs + cbsz
  */
 void
-block(void)
+block()
 {
 	static int intrunc;
 	int ch = -1;
@@ -139,7 +148,7 @@ block(void)
 	 * translation is done as we copy into the output buffer.
 	 */
 	for (inp = in.dbp - in.dbcnt, outp = out.dbp; in.dbcnt;) {
-		maxlen = MINIMUM(cbsz, in.dbcnt);
+		maxlen = MIN(cbsz, in.dbcnt);
 		if ((t = ctab) != NULL)
 			for (cnt = 0;
 			    cnt < maxlen && (ch = *inp++) != '\n'; ++cnt)
@@ -191,7 +200,7 @@ block(void)
 }
 
 void
-block_close(void)
+block_close()
 {
 	/*
 	 * Copy any remaining data into the output buffer and pad to a record.
@@ -218,7 +227,7 @@ block_close(void)
  * max out buffer: obs + cbsz
  */
 void
-unblock(void)
+unblock()
 {
 	size_t cnt;
 	u_char *inp;
@@ -226,8 +235,8 @@ unblock(void)
 
 	/* Translation and case conversion. */
 	if ((t = ctab) != NULL)
-		for (cnt = in.dbrcnt, inp = in.dbp - 1; cnt--; inp--)
-			*inp = t[*inp];
+		for (cnt = in.dbrcnt, inp = in.dbp; cnt--;)
+			*--inp = t[*inp];
 	/*
 	 * Copy records (max cbsz size chunks) into the output buffer.  The
 	 * translation has to already be done or we might not recognize the
@@ -252,7 +261,7 @@ unblock(void)
 }
 
 void
-unblock_close(void)
+unblock_close()
 {
 	size_t cnt;
 	u_char *t;

@@ -1,4 +1,3 @@
-/*	$OpenBSD: ttyname.c,v 1.18 2016/06/27 16:52:30 espie Exp $ */
 /*
  * Copyright (c) 1988, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,10 +31,15 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: ttyname.c,v 1.6 1998/11/20 11:18:40 d Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <dirent.h>
+#include <termios.h>
 #include <db.h>
 #include <string.h>
 #include <unistd.h>
@@ -41,32 +49,47 @@
 #include "thread_private.h"
 
 static char buf[TTY_NAME_MAX];
-static int oldttyname(struct stat *, char *, size_t);
+static int oldttyname __P((int, struct stat *, char *, size_t));
+static int __ttyname_r_basic __P((int, char *, size_t));
+
+int
+ttyname_r(int fd, char *buf, size_t buflen)
+{
+	int ret;
+
+	if ((ret = _FD_LOCK(fd, FD_READ, NULL)) == 0) {
+		ret = __ttyname_r_basic(fd, buf, buflen);
+		_FD_UNLOCK(fd, FD_READ);
+	}
+	return ret;
+}
 
 char *
 ttyname(int fd)
 {
-	_THREAD_PRIVATE_KEY(ttyname);
-	char *bufp = (char *) _THREAD_PRIVATE(ttyname, buf, NULL);
+	_THREAD_PRIVATE_KEY(ttyname)
+	char * bufp = (char*) _THREAD_PRIVATE(ttyname, buf, NULL);
 	int err;
 
-	if (bufp == NULL)
+	if (bufp == NULL) 
 		return NULL;
-
 	err = ttyname_r(fd, bufp, sizeof buf);
 	if (err) {
 		errno = err;
 		return NULL;
 	}
-
+	else
 	return bufp;
 }
-DEF_WEAK(ttyname);
 
-int
-ttyname_r(int fd, char *buf, size_t len)
+static int
+__ttyname_r_basic(fd, buf, len)
+	int fd;
+	char *buf;
+	size_t len;
 {
 	struct stat sb;
+	struct termios ttyb;
 	DB *db;
 	DBT data, key;
 	struct {
@@ -75,7 +98,7 @@ ttyname_r(int fd, char *buf, size_t len)
 	} bkey;
 
 	/* Must be a terminal. */
-	if (!isatty(fd))
+	if (tcgetattr(fd, &ttyb) < 0)
 		return (errno);
 	/* Must be a character device. */
 	if (fstat(fd, &sb))
@@ -105,31 +128,37 @@ ttyname_r(int fd, char *buf, size_t len)
 		}
 		(void)(db->close)(db);
 	}
-	return (oldttyname(&sb, buf, len));
+	return (oldttyname(fd, &sb, buf, len));
 }
-DEF_WEAK(ttyname_r);
 
+/* ARGSUSED */
 static int
-oldttyname(struct stat *sb, char *buf, size_t len)
+oldttyname(fd, sb, buf, len)
+	int fd;
+	struct stat *sb;
+	char *buf;
+	size_t len;
 {
-	struct dirent *dirp;
-	DIR *dp;
+	register struct dirent *dirp;
+	register DIR *dp;
 	struct stat dsb;
 
 	if ((dp = opendir(_PATH_DEV)) == NULL)
 		return (errno);
 
 	while ((dirp = readdir(dp))) {
-		if (dirp->d_type != DT_CHR && dirp->d_type != DT_UNKNOWN)
+		if (dirp->d_fileno != sb->st_ino)
 			continue;
-		if (fstatat(dirfd(dp), dirp->d_name, &dsb, AT_SYMLINK_NOFOLLOW) 
-		    || !S_ISCHR(dsb.st_mode) || sb->st_rdev != dsb.st_rdev)
-			continue;
-		(void)closedir(dp);
-		if (dirp->d_namlen > len - sizeof(_PATH_DEV))
+		if (dirp->d_namlen > len - sizeof(_PATH_DEV)) {
+			(void)closedir(dp);
 			return (ERANGE);
+		}
 		memcpy(buf + sizeof(_PATH_DEV) - 1, dirp->d_name,
 		    dirp->d_namlen + 1);
+		if (stat(buf, &dsb) || sb->st_dev != dsb.st_dev ||
+		    sb->st_ino != dsb.st_ino)
+			continue;
+		(void)closedir(dp);
 		return (0);
 	}
 	(void)closedir(dp);

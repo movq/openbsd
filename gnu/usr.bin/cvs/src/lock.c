@@ -172,16 +172,11 @@ lock_name (repository, name)
 
 	/* The interesting part of the repository is the part relative
 	   to CVSROOT.  */
-	assert (current_parsed_root != NULL);
-	assert (current_parsed_root->directory != NULL);
-	assert (strncmp (repository, current_parsed_root->directory,
-			 strlen (current_parsed_root->directory)) == 0);
-	short_repos = repository + strlen (current_parsed_root->directory) + 1;
-
-	if (strcmp (repository, current_parsed_root->directory) == 0)
-	    short_repos = ".";
-	else
-	    assert (short_repos[-1] == '/');
+	assert (CVSroot_directory != NULL);
+	assert (strncmp (repository, CVSroot_directory,
+			 strlen (CVSroot_directory)) == 0);
+	short_repos = repository + strlen (CVSroot_directory);
+	assert (*short_repos++ == '/');
 
 	retval = xmalloc (strlen (lock_dir)
 			  + strlen (short_repos)
@@ -634,7 +629,7 @@ again:
 	error (1, 0, "cannot open directory %s", repository);
 
     errno = 0;
-    while ((dp = CVS_READDIR (dirp)) != NULL)
+    while ((dp = readdir (dirp)) != NULL)
     {
 	if (CVS_FNMATCH (CVSRFLPAT, dp->d_name, 0) == 0)
 	{
@@ -655,7 +650,7 @@ again:
 		 */
 		if (now >= (sb.st_ctime + CVSLCKAGE) && CVS_UNLINK (line) != -1)
 		{
-		    (void) CVS_CLOSEDIR (dirp);
+		    (void) closedir (dirp);
 		    free (line);
 		    goto again;
 		}
@@ -681,7 +676,7 @@ again:
     if (errno != 0)
 	error (0, errno, "error reading directory %s", repository);
 
-    CVS_CLOSEDIR (dirp);
+    closedir (dirp);
     return (ret);
 }
 
@@ -760,8 +755,8 @@ set_lock (lock, will_wait)
 	if (errno != EEXIST)
 	{
 	    error (0, errno,
-		   "failed to create lock directory for `%s' (%s)",
-		   lock->repository, masterlock);
+		   "failed to create lock directory in repository `%s'",
+		   lock->repository);
 	    return (L_ERROR);
 	}
 
@@ -891,11 +886,10 @@ lock_filesdoneproc (callerdat, err, repository, update_dir, entries)
 }
 
 void
-lock_tree_for_write (argc, argv, local, which, aflag)
+lock_tree_for_write (argc, argv, local, aflag)
     int argc;
     char **argv;
     int local;
-    int which;
     int aflag;
 {
     int err;
@@ -906,7 +900,7 @@ lock_tree_for_write (argc, argv, local, which, aflag)
     lock_tree_list = getlist ();
     err = start_recursion ((FILEPROC) NULL, lock_filesdoneproc,
 			   (DIRENTPROC) NULL, (DIRLEAVEPROC) NULL, NULL, argc,
-			   argv, local, which, aflag, 0, (char *) NULL, 0);
+			   argv, local, W_LOCAL, aflag, 0, (char *) NULL, 0);
     sortlist (lock_tree_list, fsortcmp);
     if (Writer_Lock (lock_tree_list) != 0)
 	error (1, 0, "lock failed - giving up");

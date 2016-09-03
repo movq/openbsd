@@ -1,8 +1,8 @@
-#	$OpenBSD: Makefile,v 1.6 2015/11/12 21:12:05 millert Exp $
+#	$OpenBSD: Makefile,v 1.2 1997/09/21 11:43:33 deraadt Exp $
 
 PROG=	cron
 SRCS=	cron.c database.c user.c entry.c job.c do_command.c \
-	misc.c env.c popen.c atrun.c
+	misc.c env.c popen.c 
 CFLAGS+=-I${.CURDIR}
 MAN=	cron.8
 

@@ -1,4 +1,4 @@
-/*	$OpenBSD: tar.h,v 1.9 2014/01/08 06:43:34 deraadt Exp $	*/
+/*	$OpenBSD: tar.h,v 1.5 1997/04/16 03:50:25 millert Exp $	*/
 /*	$NetBSD: tar.h,v 1.3 1995/03/21 09:07:51 cgd Exp $	*/
 
 /*-
@@ -17,7 +17,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -62,18 +66,6 @@
 #define	CONTTYPE	'7'		/* high perf file */
 
 /*
- * Extended header - POSIX.1-2001
- */
-#define	XHDRTYPE	'x'		/* Extended header */
-#define	GHDRTYPE	'g'		/* Global header*/
-
-/*
- * GNU tar compatibility;
- */
-#define	LONGLINKTYPE	'K'		/* Long Symlink */
-#define	LONGNAMETYPE	'L'		/* Long File */
-
-/*
  * Mode field encoding of the different file types - values in octal
  */
 #define TSUID		04000		/* Set UID on execution */
@@ -102,8 +94,8 @@
  */
 typedef struct {
 	char name[TNMSZ];		/* name of entry */
-	char mode[8];			/* mode */
-	char uid[8];			/* uid */
+	char mode[8]; 			/* mode */
+	char uid[8]; 			/* uid */
 	char gid[8];			/* gid */
 	char size[12];			/* size */
 	char mtime[12];			/* modification time */
@@ -141,8 +133,8 @@ typedef struct {
 
 typedef struct {
 	char name[TNMSZ];		/* name of entry */
-	char mode[8];			/* mode */
-	char uid[8];			/* uid */
+	char mode[8]; 			/* mode */
+	char uid[8]; 			/* uid */
 	char gid[8];			/* gid */
 	char size[12];			/* size */
 	char mtime[12];			/* modification time */

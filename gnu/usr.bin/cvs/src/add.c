@@ -59,7 +59,6 @@ add (argc, argv)
     /* Nonzero if we found a slash, and are thus adding files in a
        subdirectory.  */
     int found_slash = 0;
-    size_t cvsroot_len;
 
     if (argc == 1 || argc == -1)
 	usage (add_usage);
@@ -93,8 +92,6 @@ add (argc, argv)
     if (argc <= 0)
 	usage (add_usage);
 
-    cvsroot_len = strlen (current_parsed_root->directory);
-
     /* First some sanity checks.  I know that the CVS case is (sort of)
        also handled by add_directory, but we need to check here so the
        client won't get all confused in send_file_names.  */
@@ -111,8 +108,7 @@ add (argc, argv)
 	    || strcmp (argv[i], "..") == 0
 	    || fncmp (argv[i], CVSADM) == 0)
 	{
-	    if (!quiet)
-		error (0, 0, "cannot add special file `%s'; skipping", argv[i]);
+	    error (0, 0, "cannot add special file `%s'; skipping", argv[i]);
 	    skip_file = 1;
 	}
 	else
@@ -148,7 +144,7 @@ add (argc, argv)
     }
 
 #ifdef CLIENT_SUPPORT
-    if (current_parsed_root->isremote)
+    if (client_active)
     {
 	int i;
 
@@ -161,11 +157,7 @@ add (argc, argv)
 
 	start_server ();
 	ign_setup ();
-	if (options)
-	{
-	    send_arg (options);
-	    free (options);
-	}
+	if (options) send_arg(options);
 	option_with_arg ("-m", message);
 
 	/* If !found_slash, refrain from sending "Directory", for
@@ -227,17 +219,6 @@ add (argc, argv)
 		/* find the repository associated with our current dir */
 		repository = Name_Repository (NULL, update_dir);
 
-		/* don't add stuff to Emptydir */
-		if (strncmp (repository, current_parsed_root->directory, cvsroot_len) == 0
-		    && ISDIRSEP (repository[cvsroot_len])
-		    && strncmp (repository + cvsroot_len + 1,
-				CVSROOTADM,
-				sizeof CVSROOTADM - 1) == 0
-		    && ISDIRSEP (repository[cvsroot_len + sizeof CVSROOTADM])
-		    && strcmp (repository + cvsroot_len + sizeof CVSROOTADM + 1,
-			       CVSNULLREPOS) == 0)
-		    error (1, 0, "cannot add to %s", repository);
-
 		/* before we do anything else, see if we have any
 		   per-directory tags */
 		ParseTag (&tag, &date, &nonbranch);
@@ -246,7 +227,7 @@ add (argc, argv)
 		sprintf (rcsdir, "%s/%s", repository, p);
 
 		Create_Admin (p, argv[i], rcsdir, tag, date,
-			      nonbranch, 0, 1);
+			      nonbranch, 0);
 
 		if (found_slash)
 		    send_a_repository ("", repository, update_dir);
@@ -323,17 +304,6 @@ add (argc, argv)
 	/* Find the repository associated with our current dir.  */
 	repository = Name_Repository (NULL, finfo.update_dir);
 
-	/* don't add stuff to Emptydir */
-	if (strncmp (repository, current_parsed_root->directory, cvsroot_len) == 0
-	    && ISDIRSEP (repository[cvsroot_len])
-	    && strncmp (repository + cvsroot_len + 1,
-			CVSROOTADM,
-			sizeof CVSROOTADM - 1) == 0
-	    && ISDIRSEP (repository[cvsroot_len + sizeof CVSROOTADM])
-	    && strcmp (repository + cvsroot_len + sizeof CVSROOTADM + 1,
-		       CVSNULLREPOS) == 0)
-	    error (1, 0, "cannot add to %s", repository);
-
 	entries = Entries_Open (0, NULL);
 
 	finfo.repository = repository;
@@ -357,7 +327,7 @@ add (argc, argv)
 		error (1, errno, "cannot read directory %s", finfo.repository);
 	    found_name = NULL;
 	    errno = 0;
-	    while ((dp = CVS_READDIR (dirp)) != NULL)
+	    while ((dp = readdir (dirp)) != NULL)
 	    {
 		if (cvs_casecmp (dp->d_name, finfo.file) == 0)
 		{
@@ -369,7 +339,7 @@ add (argc, argv)
 	    }
 	    if (errno != 0)
 		error (1, errno, "cannot read directory %s", finfo.repository);
-	    CVS_CLOSEDIR (dirp);
+	    closedir (dirp);
 
 	    if (found_name != NULL)
 	    {
@@ -449,8 +419,8 @@ add (argc, argv)
 		    if (vers->nonbranch)
 		    {
 			error (0, 0,
-				"cannot add file on non-branch tag %s",
-				vers->tag);
+			       "cannot add file on non-branch tag %s",
+			       vers->tag);
 			++err;
 		    }
 		    else
@@ -506,21 +476,18 @@ same name already exists in the repository.");
 		    }
 		    else
 		    {
-			if (!quiet)
-			{
-			    if (vers->tag)
-				error (0, 0, "\
+			if (vers->tag)
+			    error (0, 0, "\
 file `%s' will be added on branch `%s' from version %s",
-					finfo.fullname, vers->tag, vers->vn_rcs);
-			    else
-				/* I'm not sure that mentioning
-				   vers->vn_rcs makes any sense here; I
-				   can't think of a way to word the
-				   message which is not confusing.  */
-				error (0, 0, "\
+				   finfo.fullname, vers->tag, vers->vn_rcs);
+			else
+			    /* I'm not sure that mentioning
+			       vers->vn_rcs makes any sense here; I
+			       can't think of a way to word the
+			       message which is not confusing.  */
+			    error (0, 0, "\
 re-adding file %s (in place of dead revision %s)",
-					finfo.fullname, vers->vn_rcs);
-			}
+				   finfo.fullname, vers->vn_rcs);
 			Register (entries, finfo.file, "0", vers->ts_user,
 				  vers->options,
 				  vers->tag, NULL, NULL);
@@ -546,8 +513,7 @@ re-adding file %s (in place of dead revision %s)",
 	     * An entry for a new-born file, ts_rcs is dummy, but that is
 	     * inappropriate here
 	     */
-	    if (!quiet)
-		error (0, 0, "%s has already been entered", finfo.fullname);
+	    error (0, 0, "%s has already been entered", finfo.fullname);
 	    err++;
 	}
 	else if (vers->vn_user[0] == '-')
@@ -612,10 +578,9 @@ cannot resurrect %s; RCS file removed by second party", finfo.fullname);
 	else
 	{
 	    /* A normal entry, ts_rcs is valid, so it must already be there */
-	    if (!quiet)
-		error (0, 0, "%s already exists, with version number %s",
-			finfo.fullname,
-			vers->vn_user);
+	    error (0, 0, "%s already exists, with version number %s",
+		   finfo.fullname,
+		   vers->vn_user);
 	    err++;
 	}
 	freevers_ts (&vers);
@@ -647,15 +612,13 @@ cannot resurrect %s; RCS file removed by second party", finfo.fullname);
 	    free (found_name);
 #endif
     }
-    if (added_files && !really_quiet)
+    if (added_files)
 	error (0, 0, "use '%s commit' to add %s permanently",
 	       program_name,
 	       (added_files == 1) ? "this file" : "these files");
 
     if (message)
 	free (message);
-    if (options)
-	free (options);
 
     return (err);
 }
@@ -806,8 +769,10 @@ add_directory (finfo)
 
 #ifdef SERVER_SUPPORT
     if (!server_active)
+	Create_Admin (".", finfo->fullname, rcsdir, tag, date, nonbranch, 0);
+#else
+    Create_Admin (".", finfo->fullname, rcsdir, tag, date, nonbranch, 0);
 #endif
-        Create_Admin (".", finfo->fullname, rcsdir, tag, date, nonbranch, 0, 1);
     if (tag)
 	free (tag);
     if (date)

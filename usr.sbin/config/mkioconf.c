@@ -1,4 +1,4 @@
-/*	$OpenBSD: mkioconf.c,v 1.34 2015/09/11 07:13:58 miod Exp $	*/
+/*	$OpenBSD: mkioconf.c,v 1.15 1999/10/02 07:38:20 deraadt Exp $	*/
 /*	$NetBSD: mkioconf.c,v 1.41 1996/11/11 14:18:49 mycroft Exp $	*/
 
 /*
@@ -22,7 +22,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -41,25 +45,25 @@
  *	from: @(#)mkioconf.c	8.1 (Berkeley) 6/6/93
  */
 
+#include <sys/param.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
 #include "config.h"
 
 /*
  * Make ioconf.c.
  */
-static int cforder(const void *, const void *);
-static int emitcfdata(FILE *);
-static int emitexterns(FILE *);
-static int emithdr(FILE *);
-static int emitloc(FILE *);
-static int emitlocnames(FILE *);
-static int emitpseudo(FILE *);
-static int emitpv(FILE *);
-static int emitroots(FILE *);
+static int cforder __P((const void *, const void *));
+static int emitcfdata __P((FILE *));
+static int emitexterns __P((FILE *));
+static int emithdr __P((FILE *));
+static int emitloc __P((FILE *));
+static int emitlocnames __P((FILE *));
+static int emitpseudo __P((FILE *));
+static int emitpv __P((FILE *));
+static int emitroots __P((FILE *));
 
 #define	SEP(pos, max)	(((u_int)(pos) % (max)) == 0 ? "\n\t" : " ")
 
@@ -70,9 +74,9 @@ static int emitroots(FILE *);
 #define	NEWLINE		if (putc('\n', fp) < 0) return (1)
 
 int
-mkioconf(void)
+mkioconf()
 {
-	FILE *fp;
+	register FILE *fp;
 	int v;
 
 	qsort(packed, npacked, sizeof *packed, cforder);
@@ -98,9 +102,10 @@ mkioconf(void)
 }
 
 static int
-cforder(const void *a, const void *b)
+cforder(a, b)
+	const void *a, *b;
 {
-	int n1, n2;
+	register int n1, n2;
 
 	n1 = (*(struct devi **)a)->i_cfindex;
 	n2 = (*(struct devi **)b)->i_cfindex;
@@ -108,10 +113,11 @@ cforder(const void *a, const void *b)
 }
 
 static int
-emithdr(FILE *ofp)
+emithdr(ofp)
+	register FILE *ofp;
 {
-	FILE *ifp;
-	size_t n;
+	register FILE *ifp;
+	register size_t n;
 	char ifn[200], buf[BUFSIZ];
 
 	if (fprintf(ofp, "\
@@ -121,7 +127,7 @@ emithdr(FILE *ofp)
  * ioconf.c, from \"%s\"\n\
  */\n\n", conffile) < 0)
 		return (1);
-	(void)snprintf(ifn, sizeof ifn, "ioconf.incl.%s", machine);
+	(void)sprintf(ifn, "ioconf.incl.%s", machine);
 	if ((ifp = fopen(ifn, "r")) != NULL) {
 		while ((n = fread(buf, 1, sizeof(buf), ifp)) > 0)
 			if (fwrite(buf, 1, n, ofp) != n)
@@ -143,10 +149,11 @@ emithdr(FILE *ofp)
 }
 
 static int
-emitexterns(FILE *fp)
+emitexterns(fp)
+	register FILE *fp;
 {
-	struct devbase *d;
-	struct deva *da;
+	register struct devbase *d;
+	register struct deva *da;
 
 	NEWLINE;
 	for (d = allbases; d != NULL; d = d->d_next) {
@@ -169,12 +176,13 @@ emitexterns(FILE *fp)
 }
 
 static int
-emitloc(FILE *fp)
+emitloc(fp)
+	register FILE *fp;
 {
-	int i;
+	register int i;
 
 	if (fprintf(fp, "\n/* locators */\n\
-static long loc[%d] = {", locators.used) < 0)
+static int loc[%d] = {", locators.used) < 0)
 		return (1);
 	for (i = 0; i < locators.used; i++)
 		if (fprintf(fp, "%s%s,", SEP(i, 8), locators.vec[i]) < 0)
@@ -184,7 +192,7 @@ static long loc[%d] = {", locators.used) < 0)
 	return (fprintf(fp, "\n#ifndef MAXEXTRALOC\n\
 #define MAXEXTRALOC 32\n\
 #endif\n\
-long extraloc[MAXEXTRALOC] = { -1 };\n\
+int extraloc[MAXEXTRALOC];\n\
 int nextraloc = MAXEXTRALOC;\n\
 int uextraloc = 0;\n") < 0);
 }
@@ -193,19 +201,20 @@ static int nlocnames, maxlocnames = 8;
 static char **locnames;
 
 short
-addlocname(const char *name)
+addlocname(name)
+	char *name;
 {
 	int i;
 
 	if (locnames == NULL || nlocnames+1 > maxlocnames) {
 		maxlocnames *= 4;
-		locnames = ereallocarray(locnames, maxlocnames, sizeof(char *));
+		locnames = (char **)realloc(locnames, maxlocnames * sizeof(char *));
 	}
 	for (i = 0; i < nlocnames; i++)
 		if (strcmp(name, locnames[i]) == 0)
 			return (i);
 	/*printf("adding %s at %d\n", name, nlocnames);*/
-	locnames[nlocnames++] = (char *)name;
+	locnames[nlocnames++] = name;
 	return (nlocnames - 1);
 }
 
@@ -213,11 +222,12 @@ static int nlocnami, maxlocnami = 8;
 static short *locnami;
 
 void
-addlocnami(short index)
+addlocnami(index)
+	short index;
 {
 	if (locnami == NULL || nlocnami+1 > maxlocnami) {
 		maxlocnami *= 4;
-		locnami = ereallocarray(locnami, maxlocnami, sizeof(short));
+		locnami = (short *)realloc(locnami, maxlocnami * sizeof(short));
 	}
 	locnami[nlocnami++] = index;
 }
@@ -228,11 +238,12 @@ addlocnami(short index)
  * XXX the locnamp[] table is not compressed like it should be!
  */
 static int
-emitlocnames(FILE *fp)
+emitlocnames(fp)
+	register FILE *fp;
 {
-	struct devi **p, *i;
-	struct nvlist *nv;
-	struct attr *a;
+	register struct devi **p, *i;
+	register struct nvlist *nv;
+	register struct attr *a;
 	int added, start;
 	int v, j, x;
 
@@ -312,9 +323,10 @@ emitlocnames(FILE *fp)
  * Emit global parents-vector.
  */
 static int
-emitpv(FILE *fp)
+emitpv(fp)
+	register FILE *fp;
 {
-	int i;
+	register int i;
 
 	if (fprintf(fp, "\n/* size of parent vectors */\n\
 int pv_size = %d;\n", parents.used) < 0)
@@ -332,13 +344,14 @@ short pv[%d] = {", parents.used) < 0)
  * Emit the cfdata array.
  */
 static int
-emitcfdata(FILE *fp)
+emitcfdata(fp)
+	register FILE *fp;
 {
-	struct devi **p, *i;
-	int unit, v;
-	const char *state, *basename, *attachment;
-	struct nvlist *nv;
-	struct attr *a;
+	register struct devi **p, *i, **par;
+	register int unit, v;
+	register const char *vs, *state, *basename, *attachment;
+	register struct nvlist *nv;
+	register struct attr *a;
 	char *loc;
 	char locbuf[20];
 
@@ -349,12 +362,13 @@ emitcfdata(FILE *fp)
 #define DSTR FSTATE_DSTAR\n\
 \n\
 struct cfdata cfdata[] = {\n\
-    /* attachment       driver        unit  state loc     flags parents nm starunit1 */\n") < 0)
+    /* attachment       driver        unit  state loc     flags parents nm ivstubs starunit1 */\n") < 0)
 		return (1);
 	for (p = packed; (i = *p) != NULL; p++) {
 		/* the description */
 		if (fprintf(fp, "/*%3d: %s at ", i->i_cfindex, i->i_name) < 0)
 			return (1);
+		par = i->i_parents;
 		for (v = 0; v < i->i_pvlen; v++)
 			if (fprintf(fp, "%s%s", v == 0 ? "" : "|",
 			    i->i_parents[v]->i_name) < 0)
@@ -388,18 +402,19 @@ struct cfdata cfdata[] = {\n\
 				state = "NORM";
 			}
 		}
+		vs = "";
+		v = 0;
 		if (i->i_locoff >= 0) {
-			(void)snprintf(locbuf, sizeof locbuf, "loc+%3d",
-			    i->i_locoff);
+			(void)sprintf(locbuf, "loc+%3d", i->i_locoff);
 			loc = locbuf;
 		} else
 			loc = "loc";
 		if (fprintf(fp, "\
-    {&%s_ca,%s&%s_cd,%s%2d, %s, %7s, %#4x, pv+%2d, %d, %4d},\n",
+    {&%s_ca,%s&%s_cd,%s%2d, %s, %7s, %#4x, pv+%2d, %d, %s%d, %4d},\n",
 		    attachment, strlen(attachment) < 6 ? "\t\t" : "\t",
 		    basename, strlen(basename) < 3 ? "\t\t" : "\t", unit,
 		    state, loc, i->i_cfflags, i->i_pvoff, i->i_locnami,
-		    unit) < 0)
+		    vs, v, unit) < 0)
 			  return (1);
 	}
 	if (fprintf(fp, "    {0},\n    {0},\n    {0},\n    {0},\n") < 0)
@@ -413,9 +428,10 @@ struct cfdata cfdata[] = {\n\
  * Emit the table of potential roots.
  */
 static int
-emitroots(FILE *fp)
+emitroots(fp)
+	register FILE *fp;
 {
-	struct devi **p, *i;
+	register struct devi **p, *i;
 	int cnt = 0;
 
 	if (fputs("\nshort cfroots[] = {\n", fp) < 0)
@@ -443,40 +459,25 @@ emitroots(FILE *fp)
  * Emit pseudo-device initialization.
  */
 static int
-emitpseudo(FILE *fp)
+emitpseudo(fp)
+	register FILE *fp;
 {
-	struct devi *i;
-	struct devbase *d;
-	int cnt = 0, umax;
+	register struct devi *i;
+	register struct devbase *d;
 
 	if (fputs("\n/* pseudo-devices */\n", fp) < 0)
 		return (1);
 	for (i = allpseudo; i != NULL; i = i->i_next)
-		if (fprintf(fp, "extern void %sattach(int);\n",
+		if (fprintf(fp, "extern void %sattach __P((int));\n",
 		    i->i_base->d_name) < 0)
 			return (1);
-	if (fputs("\nchar *pdevnames[] = {\n", fp) < 0)
-		return (1);
-	for (i = allpseudo; i != NULL; i = i->i_next) {
-		d = i->i_base;
-		if (fprintf(fp, "\t\"%s\",\n", d->d_name) < 0)
-			return (1);
-		cnt++;
-	}
-	if (fputs("};\n", fp) < 0)
-		return (1);
-	if (fprintf(fp, "\nint pdevnames_size = %d;\n", cnt) < 0)
-		return (1);
 	if (fputs("\nstruct pdevinit pdevinit[] = {\n", fp) < 0)
 		return (1);
 	for (i = allpseudo; i != NULL; i = i->i_next) {
 		d = i->i_base;
-		umax = d->d_umax;
-		if (i->i_disable)
-		    umax*=-1;
 		if (fprintf(fp, "\t{ %sattach, %d },\n",
-		    d->d_name, umax) < 0)
+		    d->d_name, d->d_umax) < 0)
 			return (1);
 	}
-	return (fputs("\t{ NULL, 0 }\n};\n", fp) < 0);
+	return (fputs("\t{ 0, 0 }\n};\n", fp) < 0);
 }

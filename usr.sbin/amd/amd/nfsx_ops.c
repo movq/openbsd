@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,7 +36,7 @@
  * SUCH DAMAGE.
  *
  *	from: @(#)nfsx_ops.c	8.1 (Berkeley) 6/6/93
- *	$Id: nfsx_ops.c,v 1.10 2015/12/05 21:15:01 mmcc Exp $
+ *	$Id: nfsx_ops.c,v 1.1.1.1 1995/10/18 08:47:11 deraadt Exp $
  */
 
 #include "am.h"
@@ -60,10 +64,10 @@ struct nfsx {
 	nfsx_mnt *nx_try;
 };
 
-static int nfsx_fmount(mntfs *);
+static int nfsx_fmount P((mntfs*));
 
-static char *
-nfsx_match(am_opts *fo)
+static char *nfsx_match(fo)
+am_opts *fo;
 {
 	char *xmtab;
 	char *ptr;
@@ -82,7 +86,7 @@ nfsx_match(am_opts *fo)
 	/* fiddle sublink, must be last... */
 	if (fo->opt_sublink) {
 		plog(XLOG_WARNING, "nfsx: sublink %s ignored", fo->opt_sublink);
-		free(fo->opt_sublink);
+		free((voidp) fo->opt_sublink);
 		fo->opt_sublink = 0;
 	}
 #endif
@@ -99,16 +103,14 @@ nfsx_match(am_opts *fo)
 	 * After deslashifying, overwrite the end of ${fs} with "/"
 	 * to make sure it is unique.
 	 */
-	if ((ptr = strchr(fo->opt_fs, ',')))
+	if (ptr = strchr(fo->opt_fs, ','))
 		*ptr = '\0';
 	deslashify(fo->opt_fs);
 	/*
 	 * Bump string length to allow trailing /
 	 */
 	len = strlen(fo->opt_fs);
-	if (len > SIZE_MAX - 2)
-		 xmallocfailure();
-	fo->opt_fs = xreallocarray(fo->opt_fs, len + 1 + 1, 1);
+	fo->opt_fs = xrealloc(fo->opt_fs, len + 1 + 1);
 	ptr = fo->opt_fs + len;
 	/*
 	 * Make unique...
@@ -128,8 +130,9 @@ nfsx_match(am_opts *fo)
 	return xmtab;
 }
 
-static void
-nfsx_prfree(void *vp)
+static void nfsx_prfree P((voidp vp));
+static void nfsx_prfree(vp)
+voidp vp;
 {
 	struct nfsx *nx = (struct nfsx *) vp;
 	int i;
@@ -140,12 +143,12 @@ nfsx_prfree(void *vp)
 			free_mntfs(m);
 	}
 
-	free(nx->nx_v);
-	free(nx);
+	free((voidp) nx->nx_v);
+	free((voidp) nx);
 }
 
-static int
-nfsx_init(mntfs *mf)
+static int nfsx_init(mf)
+mntfs *mf;
 {
 	/*
 	 * mf_info has the form:
@@ -187,19 +190,19 @@ nfsx_init(mntfs *mf)
 			;
 
 		nx = ALLOC(nfsx);
-		mf->mf_private = nx;
+		mf->mf_private = (voidp) nx;
 		mf->mf_prfree = nfsx_prfree;
 
 		nx->nx_c = i - 1;	/* i-1 because we don't want the prefix */
-		nx->nx_v = xreallocarray(NULL, nx->nx_c, sizeof *nx->nx_v);
+		nx->nx_v = (nfsx_mnt *) xmalloc(nx->nx_c * sizeof(nfsx_mnt));
 		{ char *mp = 0;
 		  char *xinfo = 0;
 		  char *fs = mf->mf_fo->opt_fs;
 		  char *rfs = 0;
 		  for (i = 0; i < nx->nx_c; i++) {
-			char *path = ivec[i+1];
+		  	char *path = ivec[i+1];
 			rfs = str3cat(rfs, pref, "/", path);
-			/*
+		  	/*
 			 * Determine the mount point.
 			 * If this is the root, then don't remove
 			 * the trailing slash to avoid mntfs name clashes.
@@ -220,14 +223,15 @@ nfsx_init(mntfs *mf)
 			nx->nx_v[i].n_error = -1;
 			nx->nx_v[i].n_mnt = find_mntfs(&nfs_ops, mf->mf_fo, mp, xinfo, "", mf->mf_mopts, mf->mf_remopts);
 		  }
-		  free(rfs);
-		  free(mp);
-		  free(xinfo);
+		  if (rfs) free(rfs);
+		  if (mp) free(mp);
+		  if (xinfo) free(xinfo);
 		}
 
-		free(ivec);
+		free((voidp) ivec);
 errexit:
-		free(info);
+		if (info)
+			free(info);
 		if (error)
 			return error;
 	}
@@ -258,7 +262,7 @@ errexit:
 			glob_error = -1;
 			if (!asked_for_wakeup) {
 				asked_for_wakeup = 1;
-				sched_task(wakeup_task, mf, m);
+				sched_task(wakeup_task, (voidp) mf, (voidp) m);
 			}
 		}
 	}
@@ -266,8 +270,11 @@ errexit:
 	return glob_error;
 }
 
-static void
-nfsx_cont(int rc, int term, void *closure)
+static void nfsx_cont P((int rc, int term, voidp closure));
+static void nfsx_cont(rc, term, closure)
+int rc;
+int term;
+voidp closure;
 {
 	mntfs *mf = (mntfs *) closure;
 	struct nfsx *nx = (struct nfsx *) mf->mf_private;
@@ -279,7 +286,7 @@ nfsx_cont(int rc, int term, void *closure)
 	/*
 	 * Wakeup anything waiting for this mount
 	 */
-	wakeup(n->n_mnt);
+	wakeup((voidp) n->n_mnt);
 
 	if (rc || term) {
 		if (term) {
@@ -312,14 +319,15 @@ nfsx_cont(int rc, int term, void *closure)
 	 * Do the remaining bits
 	 */
 	if (nfsx_fmount(mf) >= 0) {
-		wakeup(mf);
+		wakeup((voidp) mf);
 		mf->mf_flags &= ~MFF_MOUNTING;
 		mf_mounted(mf);
 	}
 }
 
-static int
-try_nfsx_mount(void *mv)
+static int try_nfsx_mount P((voidp mv));
+static int try_nfsx_mount(mv)
+voidp mv;
 {
 	mntfs *mf = (mntfs *) mv;
 	int error;
@@ -330,8 +338,10 @@ try_nfsx_mount(void *mv)
 	return error;
 }
 
-static int
-nfsx_remount(mntfs *mf, int fg)
+static int nfsx_remount P((mntfs *mf, int fg));
+static int nfsx_remount(mf, fg)
+mntfs *mf;
+int fg;
 {
 	struct nfsx *nx = (struct nfsx *) mf->mf_private;
 	nfsx_mnt *n;
@@ -371,8 +381,7 @@ nfsx_remount(mntfs *mf, int fg)
 					dlog("backgrounding mount of \"%s\"", m->mf_info);
 #endif
 					nx->nx_try = n;
-					run_task(try_nfsx_mount, m,
-					    nfsx_cont, mf);
+					run_task(try_nfsx_mount, (voidp) m, nfsx_cont, (voidp) mf);
 					n->n_error = -1;
 					return -1;
 				} else {
@@ -399,8 +408,9 @@ nfsx_remount(mntfs *mf, int fg)
 	return glob_error < 0 ? 0 : glob_error;
 }
 
-static int
-nfsx_fmount(mntfs *mf)
+static int nfsx_fmount P((mntfs *mf));
+static int nfsx_fmount(mf)
+mntfs *mf;
 {
 	return nfsx_remount(mf, FALSE);
 }
@@ -410,8 +420,8 @@ nfsx_fmount(mntfs *mf)
  * Note that this is called in the foreground
  * and so may hang under extremely rare conditions.
  */
-static int
-nfsx_fumount(mntfs *mf)
+static int nfsx_fumount(mf)
+mntfs *mf;
 {
 	struct nfsx *nx = (struct nfsx *) mf->mf_private;
 	nfsx_mnt *n;

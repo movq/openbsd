@@ -1,4 +1,4 @@
-/*	$OpenBSD: sb_isapnp.c,v 1.15 2015/05/12 16:35:23 ratchov Exp $	*/
+/*	$OpenBSD: sb_isapnp.c,v 1.12 1999/03/16 17:56:13 deraadt Exp $	*/
 /*	$NetBSD: sb_isa.c,v 1.3 1997/03/20 11:03:11 mycroft Exp $	*/
 
 /*
@@ -41,10 +41,12 @@
 #include <sys/ioctl.h>
 #include <sys/syslog.h>
 #include <sys/device.h>
+#include <sys/proc.h>
 
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
 #include <dev/midi_if.h>
+#include <dev/mulaw.h>
 
 #include <dev/isa/isavar.h>
 #include <dev/isa/isadmavar.h>
@@ -54,8 +56,8 @@
 
 #include <dev/isa/sbdspvar.h>
 
-int	sb_isapnp_match(struct device *, void *, void *);
-void	sb_isapnp_attach(struct device *, struct device *, void *);
+int	sb_isapnp_match __P((struct device *, void *, void *));
+void	sb_isapnp_attach __P((struct device *, struct device *, void *));
 
 struct cfattach sb_isapnp_ca = {
 	sizeof(struct sbdsp_softc), sb_isapnp_match, sb_isapnp_attach

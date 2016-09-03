@@ -1,6 +1,5 @@
 /* Instruction printing code for the AMD 29000
-   Copyright 1990, 1993, 1994, 1995, 1998, 2000, 2001, 2002
-   Free Software Foundation, Inc.
+   Copyright (C) 1990 Free Software Foundation, Inc.
    Contributed by Cygnus Support.  Written by Jim Kingdon.
 
 This file is part of GDB.
@@ -19,21 +18,8 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
-#include "sysdep.h"
 #include "dis-asm.h"
 #include "opcode/a29k.h"
-
-static void print_general PARAMS ((int, struct disassemble_info *));
-static void print_special PARAMS ((unsigned int, struct disassemble_info *));
-static int is_delayed_branch PARAMS ((int));
-static void find_bytes_little
-  PARAMS ((char *, unsigned char *, unsigned char *, unsigned char *,
-	   unsigned char *));
-static void find_bytes_big
-  PARAMS ((char *, unsigned char *, unsigned char *, unsigned char *,
-	   unsigned char *));
-static int print_insn PARAMS ((bfd_vma, struct disassemble_info *));
-
 
 /* Print a symbolic representation of a general-purpose
    register number NUM on STREAM.
@@ -51,7 +37,7 @@ print_general (num, info)
 }
 
 /* Like print_general but a special-purpose register.
-
+   
    The mnemonics used by the AMD assembler are not quite the same
    as the ones in the User's Manual.  We use the ones that the
    assembler uses.  */
@@ -133,7 +119,7 @@ find_bytes_little (insn, insn0, insn8, insn16, insn24)
   *insn0 = insn[0];
 }
 
-typedef void (*find_byte_func_type)
+typedef (*find_byte_func_type)
      PARAMS ((char *, unsigned char *, unsigned char *,
 	      unsigned char *, unsigned char *));
 
@@ -153,7 +139,7 @@ print_insn (memaddr, info)
 
   find_byte_func_type find_byte_func = (find_byte_func_type)info->private_data;
 
-  struct a29k_opcode const * opcode;
+  struct a29k_opcode CONST * opcode;
 
   {
     int status =
@@ -183,7 +169,7 @@ print_insn (memaddr, info)
       if (((unsigned long) insn24 << 24) == opcode->opcode)
 	{
 	  char *s;
-
+	  
 	  (*info->fprintf_func) (info->stream, "%s ", opcode->name);
 	  for (s = opcode->args; *s != '\0'; ++s)
 	    {
@@ -192,7 +178,7 @@ print_insn (memaddr, info)
 		case 'a':
 		  print_general (insn8, info);
 		  break;
-
+		  
 		case 'b':
 		  print_general (insn0, info);
 		  break;
@@ -293,7 +279,7 @@ print_insn (memaddr, info)
 	      int errcode;
 	      char prev_insn[4];
 	      unsigned char prev_insn0, prev_insn8, prev_insn16, prev_insn24;
-
+	      
 	      errcode = (*info->read_memory_func) (memaddr - 4,
 						   (bfd_byte *) &prev_insn[0],
 						   4,
@@ -303,7 +289,7 @@ print_insn (memaddr, info)
 		  /* If it is a delayed branch, we need to look at the
 		     instruction before the delayed brach to handle
 		     things like
-
+		     
 		     const _foo
 		     call _printf
 		     consth _foo
@@ -318,7 +304,7 @@ print_insn (memaddr, info)
 					 &prev_insn16, &prev_insn24);
 		    }
 		}
-
+		  
 	      /* If there was a problem reading memory, then assume
 		 the previous instruction was not const.  */
 	      if (errcode == 0)

@@ -1,4 +1,9 @@
-#	$OpenBSD: Makefile.inc,v 1.7 2015/12/28 20:55:55 tb Exp $
+#	$OpenBSD: Makefile.inc,v 1.4 1997/09/21 11:35:10 deraadt Exp $
 
+BINGRP?=	games
+.if defined(HIDEGAME)
+BINDIR?=	/usr/games/hide
+BINMODE?=	550
+.else
 BINDIR?=	/usr/games
-COPTS+=		-Werror-implicit-function-declaration
+.endif

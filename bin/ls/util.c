@@ -1,4 +1,4 @@
-/*	$OpenBSD: util.c,v 1.17 2015/12/01 18:36:13 schwarze Exp $	*/
+/*	$OpenBSD: util.c,v 1.6 1999/05/05 07:06:01 deraadt Exp $	*/
 /*	$NetBSD: util.c,v 1.12 1995/09/07 06:43:02 jtc Exp $	*/
 
 /*
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,6 +37,14 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)util.c	8.5 (Berkeley) 4/28/95";
+#else
+static char rcsid[] = "$OpenBSD: util.c,v 1.6 1999/05/05 07:06:01 deraadt Exp $";
+#endif
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/stat.h>
 
@@ -45,26 +57,21 @@
 #include "ls.h"
 #include "extern.h"
 
-#ifdef SMALL
 int
-mbsprint(const char *name, int print)
+putname(name)
+	char *name;
 {
 	int len;
 
-	if (print == 0)
-		return strlen(name);
-
 	for (len = 0; *name; len++, name++)
-		putchar((!isprint((unsigned char)*name) && f_nonprint) ? '?' : *name);
+		putchar((!isprint(*name) && f_nonprint) ? '?' : *name);
 	return len;
 }
-#endif
 
 void
-usage(void)
+usage()
 {
 	(void)fprintf(stderr,
-	    "usage: %s [-1AaCcdFfgHhikLlmnopqRrSsTtux] [file ...]\n",
-	    __progname);
+	    "usage: ls [-1ACFLRSTWacdfiklmnopqrstux] [file ...]\n");
 	exit(1);
 }

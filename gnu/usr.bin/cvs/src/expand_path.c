@@ -272,7 +272,7 @@ expand_variable (name, file, line)
     int line;
 {
     if (strcmp (name, CVSROOT_ENV) == 0)
-	return current_parsed_root->original;
+	return CVSroot_original;
     else if (strcmp (name, "RCSBIN") == 0)
     {
 	error (0, 0, "RCSBIN internal variable is no longer supported");
@@ -286,8 +286,6 @@ expand_variable (name, file, line)
 	return Editor;
     else if (strcmp (name, "USER") == 0)
 	return getcaller ();
-    else if (strcmp (name, "SESSIONID") == 0 || strcmp (name, "COMMITID") == 0)
-	return global_session_id;
     else if (isalpha ((unsigned char) name[0]))
     {
 	/* These names are reserved for future versions of CVS,

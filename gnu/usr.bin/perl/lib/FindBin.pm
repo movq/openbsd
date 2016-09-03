@@ -24,9 +24,9 @@ Locates the full path to the script bin directory to allow the use
 of paths relative to the bin directory.
 
 This allows a user to setup a directory tree for some software with
-directories C<< <root>/bin >> and C<< <root>/lib >>, and then the above
-example will allow the use of modules in the lib directory without knowing
-where the software tree is installed.
+directories E<lt>rootE<gt>/bin and E<lt>rootE<gt>/lib and then the above example will allow
+the use of modules in the lib directory without knowing where the software
+tree is installed.
 
 If perl is invoked using the B<-e> option or the perl script is read from
 C<STDIN> then FindBin sets both C<$Bin> and C<$RealBin> to the current
@@ -39,31 +39,24 @@ directory.
  $RealBin     - $Bin with all links resolved
  $RealScript  - $Script with all links resolved
 
-=head1 KNOWN ISSUES
+=head1 KNOWN BUGS
 
-If there are two modules using C<FindBin> from different directories
-under the same interpreter, this won't work. Since C<FindBin> uses a
-C<BEGIN> block, it'll be executed only once, and only the first caller
-will get it right. This is a problem under mod_perl and other persistent
-Perl environments, where you shouldn't use this module. Which also means
-that you should avoid using C<FindBin> in modules that you plan to put
-on CPAN. To make sure that C<FindBin> will work is to call the C<again>
-function:
+if perl is invoked as
 
-  use FindBin;
-  FindBin::again(); # or FindBin->again;
+   perl filename
 
-In former versions of FindBin there was no C<again> function. The
-workaround was to force the C<BEGIN> block to be executed again:
+and I<filename> does not have executable rights and a program called I<filename>
+exists in the users C<$ENV{PATH}> which satisfies both B<-x> and B<-T> then FindBin
+assumes that it was invoked via the C<$ENV{PATH}>.
 
-  delete $INC{'FindBin.pm'};
-  require FindBin;
+Workaround is to invoke perl as
+
+ perl ./filename
 
 =head1 AUTHORS
 
 FindBin is supported as part of the core perl distribution. Please send bug
-reports to E<lt>F<perlbug@perl.org>E<gt> using the perlbug program
-included with perl.
+reports to E<lt>F<perlbug@perl.org>E<gt> using the perlbug program included with perl.
 
 Graham Barr E<lt>F<gbarr@pobox.com>E<gt>
 Nick Ing-Simmons E<lt>F<nik@tiuk.ti.com>E<gt>
@@ -80,7 +73,8 @@ package FindBin;
 use Carp;
 require 5.000;
 require Exporter;
-use Cwd qw(getcwd cwd abs_path);
+use Cwd qw(getcwd abs_path);
+use Config;
 use File::Basename;
 use File::Spec;
 
@@ -88,24 +82,9 @@ use File::Spec;
 %EXPORT_TAGS = (ALL => [qw($Bin $Script $RealBin $RealScript $Dir $RealDir)]);
 @ISA = qw(Exporter);
 
-$VERSION = "1.51";
+$VERSION = $VERSION = "1.42";
 
-
-# needed for VMS-specific filename translation
-if( $^O eq 'VMS' ) {
-    require VMS::Filespec;
-    VMS::Filespec->import;
-}
-
-sub cwd2 {
-   my $cwd = getcwd();
-   # getcwd might fail if it hasn't access to the current directory.
-   # try harder.
-   defined $cwd or $cwd = cwd();
-   $cwd;
-}
-
-sub init
+BEGIN
 {
  *Dir = \$Bin;
  *RealDir = \$RealBin;
@@ -113,9 +92,9 @@ sub init
  if($0 eq '-e' || $0 eq '-')
   {
    # perl invoked with -e or script is on C<STDIN>
+
    $Script = $RealScript = $0;
-   $Bin    = $RealBin    = cwd2();
-   $Bin = VMS::Filespec::unixify($Bin) if $^O eq 'VMS';
+   $Bin    = $RealBin    = getcwd();
   }
  else
   {
@@ -123,18 +102,45 @@ sub init
 
    if ($^O eq 'VMS')
     {
-     ($Bin,$Script) = VMS::Filespec::rmsexpand($0) =~ /(.*[\]>\/]+)(.*)/s;
-     # C<use disk:[dev]/lib> isn't going to work, so unixify first
-     ($Bin = VMS::Filespec::unixify($Bin)) =~ s/\/\z//;
+     ($Bin,$Script) = VMS::Filespec::rmsexpand($0) =~ /(.*\])(.*)/;
      ($RealBin,$RealScript) = ($Bin,$Script);
     }
    else
     {
+     my $IsWin32 = $^O eq 'MSWin32';
+     unless(($script =~ m#/# || ($IsWin32 && $script =~ m#\\#))
+            && -f $script)
+      {
+       my $dir;
+       foreach $dir (File::Spec->path)
+	{
+        my $scr = File::Spec->catfile($dir, $script);
+	if(-r $scr && (!$IsWin32 || -x _))
+         {
+          $script = $scr;
+
+	  if (-f $0)
+           {
+	    # $script has been found via PATH but perl could have
+	    # been invoked as 'perl file'. Do a dumb check to see
+	    # if $script is a perl program, if not then $script = $0
+            #
+            # well we actually only check that it is an ASCII file
+            # we know its executable so it is probably a script
+            # of some sort.
+
+            $script = $0 unless(-T $script);
+           }
+          last;
+         }
+       }
+     }
+
      croak("Cannot find current script '$0'") unless(-f $script);
 
-     # Ensure $script contains the complete path in case we C<chdir>
+     # Ensure $script contains the complete path incase we C<chdir>
 
-     $script = File::Spec->catfile(cwd2(), $script)
+     $script = File::Spec->catfile(getcwd(), $script)
        unless File::Spec->file_name_is_absolute($script);
 
      ($Script,$Bin) = fileparse($script);
@@ -153,18 +159,11 @@ sub init
       }
 
      # Get absolute paths to directories
-     if ($Bin) {
-      my $BinOld = $Bin;
-      $Bin = abs_path($Bin);
-      defined $Bin or $Bin = File::Spec->canonpath($BinOld);
-     }
+     $Bin     = abs_path($Bin)     if($Bin);
      $RealBin = abs_path($RealBin) if($RealBin);
     }
   }
 }
 
-BEGIN { init }
-
-*again = \&init;
-
 1; # Keep require happy
+

@@ -1,4 +1,4 @@
-/*	$OpenBSD: kvm_powerpc.c,v 1.10 2015/12/19 18:40:30 mmcc Exp $	*/
+/*	$NetBSD$	*/
 
 /*-
  * Copyright (C) 1996 Wolfgang Solfrank.
@@ -36,50 +36,43 @@
  */
 
 #include <sys/param.h>
-#include <sys/exec.h>
-#include <sys/proc.h>
-#include <sys/stat.h>
-#include <sys/core.h>
-#include <sys/kcore.h>
-#include <unistd.h>
-#include <nlist.h>
-#include <kvm.h>
 
-#include <uvm/uvm_extern.h>
-
-#include <stdlib.h>
 #include <db.h>
 #include <limits.h>
+#include <kvm.h>
 
 #include "kvm_private.h"
 
 void
-_kvm_freevtop(kvm_t *kd)
+_kvm_freevtop(kd)
+	kvm_t *kd;
 {
-	free(kd->vmst);
-	kd->vmst = NULL;
+	if (kd->vmst != 0)
+		free(kd->vmst);
 }
 
-/*ARGSUSED*/
 int
-_kvm_initvtop(kvm_t *kd)
+_kvm_initvtop(kd)
+	kvm_t *kd;
 {
-
-	return (0);
+	return 0;
 }
 
-/*ARGSUSED*/
 int
-_kvm_kvatop(kvm_t *kd, u_long va, paddr_t *pa)
+_kvm_kvatop(kd, va, pa)
+	kvm_t *kd;
+	u_long va;
+	u_long *pa;
 {
 	_kvm_err(kd, 0, "vatop not yet implemented!");
-	return (0);
+	return 0;
 }
 
-/*ARGSUSED*/
 off_t
-_kvm_pa2off(kvm_t *kd, paddr_t pa)
+_kvm_pa2off(kd, pa)
+	kvm_t *kd;
+	u_long pa;
 {
 	_kvm_err(kd, 0, "pa2off not yet implemented!");
-	return (0);
+	return 0;
 }

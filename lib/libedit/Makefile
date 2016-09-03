@@ -1,77 +1,68 @@
-#	$OpenBSD: Makefile,v 1.26 2016/05/24 18:06:30 schwarze Exp $
-#	$NetBSD: Makefile,v 1.41 2010/02/03 15:34:43 roy Exp $
-#	@(#)Makefile	8.1 (Berkeley) 6/4/93
+#	$OpenBSD: Makefile,v 1.7 1998/07/24 00:10:48 millert Exp $
+#	from: @(#)Makefile	8.1 (Berkeley) 6/4/93
 
 LIB=	edit
 
-SRCS =	chared.c chartype.c common.c el.c eln.c emacs.c filecomplete.c \
-	hist.c history.c historyn.c keymacro.c map.c \
-	parse.c prompt.c read.c readline.c refresh.c search.c sig.c \
-	terminal.c tokenizer.c tokenizern.c tty.c vi.c
+OSRCS=	chared.c common.c el.c emacs.c fcns.c hist.c key.c map.c parse.c \
+	prompt.c read.c refresh.c search.c sig.c term.c tty.c vi.c help.c
 
-MAN=	editline.3 editrc.5 editline.7
+MAN=	editline.3 editrc.5
 
-LIBEDITDIR?=${.CURDIR}
+MLINKS=	editline.3 el_init.3 editline.3 el_end.3 editline.3 el_reset.3 \
+	editline.3 el_gets.3 editline.3 el_getc.3 editline.3 el_push.3 \
+	editline.3 el_parse.3 editline.3 el_set.3 editline.3 el_source.3 \
+	editline.3 el_resize.3 editline.3 el_line.3 \
+	editline.3 el_insertstr.3 editline.3 el_deletestr.3 \
+	editline.3 history_init.3 editline.3 history_end.3 editline.3 history.3
 
-INCS= histedit.h
-INCSDIR=/usr/include
+# For speed and debugging
+#SRCS=   ${OSRCS} tokenizer.c history.c
+# For protection
+SRCS=	editline.c tokenizer.c history.c
 
-CLEANFILES+=common.h.tmp emacs.h.tmp fcns.h.tmp func.h.tmp
-CLEANFILES+=help.h.tmp vi.h.tmp tc1.o tc1 .depend
+CLEANFILES+=common.h emacs.h fcns.h help.h vi.h help.c fcns.c editline.c
+CFLAGS+=-I. -I${.CURDIR} 
+CFLAGS+=#-DDEBUG_TTY -DDEBUG_KEY -DDEBUG_READ -DDEBUG -DDEBUG_REFRESH
+CFLAGS+=#-DDEBUG_PASTE
 
-CFLAGS+=-Wall
-CPPFLAGS+=-I. -I${LIBEDITDIR}
-CPPFLAGS+=-I. -I${.CURDIR}
-#CPPFLAGS+=-DDEBUG_TTY -DDEBUG_KEY -DDEBUG -DDEBUG_REFRESH
-#CPPFLAGS+=-DDEBUG_PASTE -DDEBUG_EDIT
-
-AHDR=vi.h emacs.h common.h
-ASRC=${LIBEDITDIR}/vi.c ${LIBEDITDIR}/emacs.c ${LIBEDITDIR}/common.c
-
-CLEANFILES+=	${AHDR} fcns.h func.h help.h
-
-#SUBDIR+=	readline
-HOST_SH=	sh
-
-.depend: ${AHDR} fcns.h func.h help.h
+AHDR=vi.h emacs.h common.h 
+ASRC=${.CURDIR}/vi.c ${.CURDIR}/emacs.c ${.CURDIR}/common.c
 
 vi.h: vi.c makelist
-	${HOST_SH} ${LIBEDITDIR}/makelist -h ${LIBEDITDIR}/vi.c \
-	    > ${.TARGET}.tmp && \
-	    mv ${.TARGET}.tmp ${.TARGET}
+	sh ${.CURDIR}/makelist -h ${.CURDIR}/vi.c > ${.TARGET}
 
 emacs.h: emacs.c makelist
-	${HOST_SH} ${LIBEDITDIR}/makelist -h ${LIBEDITDIR}/emacs.c \
-	    > ${.TARGET}.tmp && \
-	    mv ${.TARGET}.tmp ${.TARGET}
+	sh ${.CURDIR}/makelist -h ${.CURDIR}/emacs.c > ${.TARGET}
 
 common.h: common.c makelist
-	${HOST_SH} ${LIBEDITDIR}/makelist -h ${LIBEDITDIR}/common.c \
-	    > ${.TARGET}.tmp && \
-	    mv ${.TARGET}.tmp ${.TARGET}
+	sh ${.CURDIR}/makelist -h ${.CURDIR}/common.c > ${.TARGET}
 
 fcns.h: ${AHDR} makelist
-	${HOST_SH} ${LIBEDITDIR}/makelist -fh ${AHDR} > ${.TARGET}.tmp && \
-	    mv ${.TARGET}.tmp ${.TARGET}
+	sh ${.CURDIR}/makelist -fh ${AHDR} > ${.TARGET}
 
-func.h: ${AHDR} makelist
-	${HOST_SH} ${LIBEDITDIR}/makelist -dh ${AHDR} > ${.TARGET}.tmp && \
-	    mv ${.TARGET}.tmp ${.TARGET}
+fcns.c: ${AHDR} fcns.h makelist
+	sh ${.CURDIR}/makelist -fc ${AHDR} > ${.TARGET}
+
+help.c: ${ASRC} makelist 
+	sh ${.CURDIR}/makelist -bc ${ASRC} > ${.TARGET}
 
 help.h: ${ASRC} makelist
-	${HOST_SH} ${LIBEDITDIR}/makelist -bh ${ASRC} > ${.TARGET}.tmp && \
-	    mv ${.TARGET}.tmp ${.TARGET}
+	sh ${.CURDIR}/makelist -bh ${ASRC} > ${.TARGET}
 
-tc1.o:	${LIBEDITDIR}/TEST/tc1.c
+editline.c: ${OSRCS}
+	sh ${.CURDIR}/makelist -e ${.ALLSRC:T} > ${.TARGET}
 
-tc1:	libedit.a tc1.o
-	${CC} ${LDFLAGS} ${.ALLSRC} -o ${.TARGET} libedit.a ${LDADD} -lcurses
+.depend: vi.h emacs.h common.h fcns.h help.h help.c
+all: vi.h emacs.h common.h fcns.h help.h help.c
+
+
+test:	libedit.a test.o 
+	${CC} ${CFLAGS} ${.ALLSRC} -o ${.TARGET} libedit.a ${LDADD} -lcurses
 
 includes:
 	-cd ${.CURDIR}; cmp -s histedit.h ${DESTDIR}/usr/include/histedit.h > \
-		/dev/null 2>&1 || \
-	${INSTALL} ${INSTALL_COPY} -o ${BINOWN} -g ${BINGRP} -m 444 histedit.h \
-		${DESTDIR}/usr/include
+	    /dev/null 2>&1 || \
+	    ${INSTALL} ${INSTALL_COPY} -o ${BINOWN} -g ${BINGRP} -m 444 histedit.h \
+	    ${DESTDIR}/usr/include
 
 .include <bsd.lib.mk>
-.include <bsd.subdir.mk>

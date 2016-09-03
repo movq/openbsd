@@ -1,4 +1,4 @@
-/*	$OpenBSD: dr_4.c,v 1.5 2016/01/08 20:26:33 mestre Exp $	*/
+/*	$OpenBSD: dr_4.c,v 1.2 1999/01/18 06:20:52 pjanzen Exp $	*/
 /*	$NetBSD: dr_4.c,v 1.3 1995/04/22 10:36:50 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,12 +34,20 @@
  * SUCH DAMAGE.
  */
 
-#include <stdlib.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)dr_4.c	8.2 (Berkeley) 4/28/95";
+#else
+static char rcsid[] = "$OpenBSD: dr_4.c,v 1.2 1999/01/18 06:20:52 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
 #include "extern.h"
+#include <stdlib.h>
 
 void
-ungrap(struct ship *from, struct ship *to)
+ungrap(from, to)
+	struct ship *from, *to;
 {
 	int k;
 	char friend;
@@ -52,7 +64,8 @@ ungrap(struct ship *from, struct ship *to)
 }
 
 void
-grap(struct ship *from, struct ship *to)
+grap(from, to)
+	struct ship *from, *to;
 {
 	if (capship(from)->nationality != capship(to)->nationality && die() > 2)
 		return;

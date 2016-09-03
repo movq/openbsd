@@ -1,161 +1,69 @@
-#!./perl -w
+#!./perl
 
-BEGIN {
-    chdir 't' if -d 't';
-    @INC = '../lib';
-    require './test.pl';
-}
+# $RCSfile: study.t,v $$Revision: 4.1 $$Date: 92/08/07 18:28:30 $
 
-watchdog(10);
-plan(tests => 43);
-use strict;
-use vars '$x';
-
-use Config;
-my $have_alarm = $Config{d_alarm};
+print "1..24\n";
 
 $x = "abc\ndef\n";
 study($x);
 
-ok($x =~ /^abc/);
-ok($x !~ /^def/);
+if ($x =~ /^abc/) {print "ok 1\n";} else {print "not ok 1\n";}
+if ($x !~ /^def/) {print "ok 2\n";} else {print "not ok 2\n";}
 
-# used to be a test for $*
-ok($x =~ /^def/m);
+$* = 1;
+if ($x =~ /^def/) {print "ok 3\n";} else {print "not ok 3\n";}
+$* = 0;
 
 $_ = '123';
 study;
-ok(/^([0-9][0-9]*)/);
+if (/^([0-9][0-9]*)/) {print "ok 4\n";} else {print "not ok 4\n";}
 
-ok(!($x =~ /^xxx/));
-ok(!($x !~ /^abc/));
+if ($x =~ /^xxx/) {print "not ok 5\n";} else {print "ok 5\n";}
+if ($x !~ /^abc/) {print "not ok 6\n";} else {print "ok 6\n";}
 
-ok($x =~ /def/);
-ok(!($x !~ /def/));
+if ($x =~ /def/) {print "ok 7\n";} else {print "not ok 7\n";}
+if ($x !~ /def/) {print "not ok 8\n";} else {print "ok 8\n";}
 
 study($x);
-ok($x !~ /.def/);
-ok(!($x =~ /.def/));
+if ($x !~ /.def/) {print "ok 9\n";} else {print "not ok 9\n";}
+if ($x =~ /.def/) {print "not ok 10\n";} else {print "ok 10\n";}
 
-ok($x =~ /\ndef/);
-ok(!($x !~ /\ndef/));
+if ($x =~ /\ndef/) {print "ok 11\n";} else {print "not ok 11\n";}
+if ($x !~ /\ndef/) {print "not ok 12\n";} else {print "ok 12\n";}
 
 $_ = 'aaabbbccc';
 study;
-ok(/(a*b*)(c*)/);
-is($1, 'aaabbb');
-is($2,'ccc');
-ok(/(a+b+c+)/);
-is($1, 'aaabbbccc');
+if (/(a*b*)(c*)/ && $1 eq 'aaabbb' && $2 eq 'ccc') {
+	print "ok 13\n";
+} else {
+	print "not ok 13\n";
+}
+if (/(a+b+c+)/ && $1 eq 'aaabbbccc') {
+	print "ok 14\n";
+} else {
+	print "not ok 14\n";
+}
 
-ok(!/a+b?c+/);
+if (/a+b?c+/) {print "not ok 15\n";} else {print "ok 15\n";}
 
 $_ = 'aaabccc';
 study;
-ok(/a+b?c+/);
-ok(/a*b+c*/);
+if (/a+b?c+/) {print "ok 16\n";} else {print "not ok 16\n";}
+if (/a*b+c*/) {print "ok 17\n";} else {print "not ok 17\n";}
 
 $_ = 'aaaccc';
 study;
-ok(/a*b?c*/);
-ok(!/a*b+c*/);
+if (/a*b?c*/) {print "ok 18\n";} else {print "not ok 18\n";}
+if (/a*b+c*/) {print "not ok 19\n";} else {print "ok 19\n";}
 
 $_ = 'abcdef';
 study;
-ok(/bcd|xyz/);
-ok(/xyz|bcd/);
+if (/bcd|xyz/) {print "ok 20\n";} else {print "not ok 20\n";}
+if (/xyz|bcd/) {print "ok 21\n";} else {print "not ok 21\n";}
 
-ok(m|bc/*d|);
+if (m|bc/*d|) {print "ok 22\n";} else {print "not ok 22\n";}
 
-ok(/^$_$/);
+if (/^$_$/) {print "ok 23\n";} else {print "not ok 23\n";}
 
-# used to be a test for $*
-ok("ab\ncd\n" =~ /^cd/m);
-
-TODO: {
-    # Even with the alarm() OS/390 and BS2000 can't manage these tests
-    # (Perl just goes into a busy loop, luckily an interruptable one)
-    todo_skip('busy loop - compiler bug?', 2)
-	      if $^O eq 'os390' or $^O eq 'posix-bc';
-
-    # [ID ] tests 25..26 may loop
-
-    $_ = 'FGF';
-    study;
-    ok(!/G.F$/, 'bug 20010618.006');
-    ok(!/[F]F$/, 'bug 20010618.006');
-}
-
-{
-    my $a = 'QaaQaabQaabbQ';
-    study $a;
-    my @a = split /aab*/, $a;
-    is("@a", 'Q Q Q Q', 'split with studied string passed to the regep engine');
-}
-
-{
-    $_ = "AABBAABB";
-    study;
-    is(s/AB+/1/ge, 2, 'studied scalar passed to pp_substconst');
-    is($_, 'A1A1');
-}
-
-{
-    $_ = "AABBAABB";
-    study;
-    is(s/(A)B+/1/ge, 2,
-       'studied scalar passed to pp_substconst with RX_MATCH_COPIED() true');
-    is($1, 'A');
-    is($2, undef);
-    is($_, 'A1A1');
-}
-
-{
-    my @got;
-    $a = "ydydydyd";
-    $b = "xdx";
-    push @got, $_ foreach $a =~ /[^x]d(?{})[^x]d/g;
-    is("@got", 'ydyd ydyd', '#92696 control');
-
-    @got = ();
-    $a = "ydydydyd";
-    $b = "xdx";
-    study $a;
-    push @got, $_ foreach $a =~ /[^x]d(?{})[^x]d/g;
-    is("@got", 'ydyd ydyd', '#92696 study $a');
-
-    @got = ();
-    $a = "ydydydyd";
-    $b = "xdx";
-    study $b;
-    push @got, $_ foreach $a =~ /[^x]d(?{})[^x]d/g;
-    is("@got", 'ydyd ydyd', '#92696 study $b');
-
-    @got = ();
-    $a = "ydydydyd";
-    $b = "xdx";
-    push @got, $_ foreach $a =~ /[^x]d(?{study $b})[^x]d/g;
-    is("@got", 'ydyd ydyd', '#92696 study $b inside (?{}), nothing studied');
-
-    @got = ();
-    $a = "ydydydyd";
-    $b = "xdx";
-    my $c = 'zz';
-    study $c;
-    push @got, $_ foreach $a =~ /[^x]d(?{study $b})[^x]d/g;
-    is("@got", 'ydyd ydyd', '#92696 study $b inside (?{}), $c studied');
-
-    @got = ();
-    $a = "ydydydyd";
-    $b = "xdx";
-    study $a;
-    push @got, $_ foreach $a =~ /[^x]d(?{study $b})[^x]d/g;
-    is("@got", 'ydyd ydyd', '#92696 study $b inside (?{}), $a studied');
-
-    @got = ();
-    $a = "ydydydyd";
-    $b = "xdx";
-    study $a;
-    push @got, $_ foreach $a =~ /[^x]d(?{$a .= ''})[^x]d/g;
-    is("@got", 'ydyd ydyd', '#92696 $a .= \'\' inside (?{}), $a studied');
-}
+$* = 1;		# test 3 only tested the optimized version--this one is for real
+if ("ab\ncd\n" =~ /^cd/) {print "ok 24\n";} else {print "not ok 24\n";}

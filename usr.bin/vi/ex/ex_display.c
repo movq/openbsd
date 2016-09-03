@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_display.c,v 1.13 2016/05/27 09:18:12 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)ex_display.c	10.12 (Berkeley) 4/10/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -23,18 +25,20 @@
 #include "../common/common.h"
 #include "tag.h"
 
-static int	bdisplay(SCR *);
-static void	db(SCR *, CB *, CHAR_T *);
+static int	bdisplay __P((SCR *));
+static void	db __P((SCR *, CB *, CHAR_T *));
 
 /*
- * ex_display -- :display b[uffers] | s[creens] | t[ags]
+ * ex_display -- :display b[uffers] | c[onnections] | s[creens] | t[ags]
  *
- *	Display buffers, tags or screens.
+ *	Display cscope connections, buffers, tags or screens.
  *
- * PUBLIC: int ex_display(SCR *, EXCMD *);
+ * PUBLIC: int ex_display __P((SCR *, EXCMD *));
  */
 int
-ex_display(SCR *sp, EXCMD *cmdp)
+ex_display(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	switch (cmdp->argv[0]->bp[0]) {
 	case 'b':
@@ -44,6 +48,13 @@ ex_display(SCR *sp, EXCMD *cmdp)
 		    memcmp(cmdp->argv[0]->bp, ARG, cmdp->argv[0]->len))
 			break;
 		return (bdisplay(sp));
+	case 'c':
+#undef	ARG
+#define	ARG	"connections"
+		if (cmdp->argv[0]->len >= sizeof(ARG) ||
+		    memcmp(cmdp->argv[0]->bp, ARG, cmdp->argv[0]->len))
+			break;
+		return (cscope_display(sp));
 	case 's':
 #undef	ARG
 #define	ARG	"screens"
@@ -69,29 +80,30 @@ ex_display(SCR *sp, EXCMD *cmdp)
  *	Display buffers.
  */
 static int
-bdisplay(SCR *sp)
+bdisplay(sp)
+	SCR *sp;
 {
 	CB *cbp;
 
-	if (LIST_FIRST(&sp->gp->cutq) == NULL && sp->gp->dcbp == NULL) {
-		msgq(sp, M_INFO, "No cut buffers to display");
+	if (sp->gp->cutq.lh_first == NULL && sp->gp->dcbp == NULL) {
+		msgq(sp, M_INFO, "123|No cut buffers to display");
 		return (0);
 	}
 
 	/* Display regular cut buffers. */
-	LIST_FOREACH(cbp, &sp->gp->cutq, q) {
+	for (cbp = sp->gp->cutq.lh_first; cbp != NULL; cbp = cbp->q.le_next) {
 		if (isdigit(cbp->name))
 			continue;
-		if (!TAILQ_EMPTY(&cbp->textq))
+		if (cbp->textq.cqh_first != (void *)&cbp->textq)
 			db(sp, cbp, NULL);
 		if (INTERRUPTED(sp))
 			return (0);
 	}
 	/* Display numbered buffers. */
-	LIST_FOREACH(cbp, &sp->gp->cutq, q) {
+	for (cbp = sp->gp->cutq.lh_first; cbp != NULL; cbp = cbp->q.le_next) {
 		if (!isdigit(cbp->name))
 			continue;
-		if (!TAILQ_EMPTY(&cbp->textq))
+		if (cbp->textq.cqh_first != (void *)&cbp->textq)
 			db(sp, cbp, NULL);
 		if (INTERRUPTED(sp))
 			return (0);
@@ -107,16 +119,22 @@ bdisplay(SCR *sp)
  *	Display a buffer.
  */
 static void
-db(SCR *sp, CB *cbp, CHAR_T *name)
+db(sp, cbp, name)
+	SCR *sp;
+	CB *cbp;
+	CHAR_T *name;
 {
 	CHAR_T *p;
+	GS *gp;
 	TEXT *tp;
 	size_t len;
 
+	gp = sp->gp;
 	(void)ex_printf(sp, "********** %s%s\n",
 	    name == NULL ? KEY_NAME(sp, cbp->name) : name,
 	    F_ISSET(cbp, CB_LMODE) ? " (line mode)" : " (character mode)");
-	TAILQ_FOREACH(tp, &cbp->textq, q) {
+	for (tp = cbp->textq.cqh_first;
+	    tp != (void *)&cbp->textq; tp = tp->q.cqe_next) {
 		for (len = tp->len, p = tp->lb; len--; ++p) {
 			(void)ex_puts(sp, KEY_NAME(sp, *p));
 			if (INTERRUPTED(sp))

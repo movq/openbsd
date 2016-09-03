@@ -1,4 +1,4 @@
-/*	$OpenBSD: extern.h,v 1.8 2005/08/10 00:42:09 millert Exp $	*/
+/*	$OpenBSD: extern.h,v 1.3 1997/07/18 05:49:03 millert Exp $	*/
 /*	$NetBSD: extern.h,v 1.3 1995/03/07 21:12:07 cgd Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,17 +36,12 @@
  *	@(#)extern.h	8.1 (Berkeley) 6/6/93
  */
 
-struct _node;
-struct _ftsent;
-
-int		 compare(char *, struct _node *, struct _ftsent *);
-int		 dsort(const struct _ftsent **, const struct _ftsent **);
-int		 crc(int, u_int32_t *, u_int32_t *);
-void		 cwalk(void);
-void		 error(const char *, ...)
-		    __attribute__((__format__ (printf, 1, 2)));
-char		*inotype(u_int);
-u_int		 parsekey(char *, int *);
-char		*rlink(char *);
-struct _node	*spec(void);
-int		 verify(void);
+int	 compare __P((char *, NODE *, FTSENT *));
+int	 crc __P((int, u_int32_t *, u_int32_t *));
+void	 cwalk __P((void));
+void	 error __P((const char *, ...));
+char	*inotype __P((u_int));
+u_int	 parsekey __P((char *, int *));
+char	*rlink __P((char *));
+NODE	*spec __P((void));
+int	 verify __P((void));

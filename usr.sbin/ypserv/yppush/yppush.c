@@ -1,4 +1,4 @@
-/*	$OpenBSD: yppush.c,v 1.31 2015/01/16 06:40:23 deraadt Exp $ */
+/*	$OpenBSD: yppush.c,v 1.11 1998/02/24 04:29:06 deraadt Exp $ */
 
 /*
  * Copyright (c) 1995 Mats O Jansson <moj@stacken.kth.se>
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Mats O Jansson
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
  * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -26,22 +31,22 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/resource.h>
-#include <sys/wait.h>
+#ifndef lint
+static char rcsid[] = "$OpenBSD: yppush.c,v 1.11 1998/02/24 04:29:06 deraadt Exp $";
+#endif /* not lint */
 
+#include <sys/types.h>
 #include <stdio.h>
 #include <unistd.h>
-#include <stdlib.h>
-#include <signal.h>
-#include <ctype.h>
 
 #include <rpc/rpc.h>
 #include <rpc/xdr.h>
 #include <rpcsvc/yp.h>
 #include <rpcsvc/ypclnt.h>
 
+#include <sys/stat.h>
+#include <sys/resource.h>
+#include <sys/signal.h>
 #include <netdb.h>
 #include <string.h>
 #include <errno.h>
@@ -52,66 +57,64 @@
 #include "ypdb.h"
 
 int  Verbose = 0;
-char Domain[HOST_NAME_MAX+1], Map[255];
+char Domain[MAXHOSTNAMELEN], Map[255];
 u_int32_t OrderNum;
 char *master;
 
 extern void yppush_xfrrespprog_1(struct svc_req *request, SVCXPRT *xprt);
 extern bool_t xdr_ypreq_xfr(XDR *, struct ypreq_xfr *);
 
-static void
-usage(void)
+void
+usage()
 {
-	fprintf(stderr,
-	    "usage: yppush [-v] [-d domainname] [-h hostname] mapname\n");
+	fprintf(stderr, "Usage:\n");
+/*
+	fprintf(stderr, "\typpush [-d domainname] [-t seconds] [-p #paralleljobs] [-h host] [-v] mapname\n");
+*/
+	fprintf(stderr, "\typpush [-d domainname] [-h host] [-v] mapname\n");
 	exit(1);
 }
 
-static void
-my_svc_run(void)
+void
+_svc_run()
 {
-	struct pollfd *pfd = NULL, *newp;
-	int nready, saved_max_pollfd = 0;
+	fd_set readfds;
+	struct timeval timeout;
 
-	for (;;) {
-		if (svc_max_pollfd > saved_max_pollfd) {
-			newp = reallocarray(pfd, svc_max_pollfd, sizeof(*pfd));
-			if (newp == NULL) {
-				free(pfd);
-				perror("svc_run: - realloc failed");
-				return;
-			}
-			pfd = newp;
-			saved_max_pollfd = svc_max_pollfd;
-		}
-		memcpy(pfd, svc_pollfd, sizeof(*pfd) * svc_max_pollfd);
+	timeout.tv_sec=60; timeout.tv_usec=0;
 
-		nready = poll(pfd, svc_max_pollfd, 60 * 1000);
-		switch (nready) {
+	for(;;) {
+		readfds = svc_fdset;
+		switch (select(_rpc_dtablesize(), &readfds, (void *) 0,
+			       (void *) 0, &timeout)) {
 		case -1:
-			if (errno == EINTR)
+			if (errno == EINTR) {
 				continue;
-			perror("yppush: my_svc_run: poll failed");
-			free(pfd);
+			}
+			perror("yppush: _svc_run: select failed");
 			return;
 		case 0:
 			fprintf(stderr, "yppush: Callback timed out.\n");
 			exit(0);
 		default:
-			svc_getreq_poll(pfd, nready);
-			break;
+			svc_getreqset(&readfds);
 		}
 	}
+	
 }
 
-static void
-req_xfr(pid_t pid, u_int prog, SVCXPRT *transp, char *host, CLIENT *client)
+void
+req_xfr(pid, prog, transp, host, client)
+pid_t pid;
+u_int prog;
+SVCXPRT *transp;
+char *host;
+CLIENT *client;
 {
 	struct ypreq_xfr request;
 	struct timeval tv;
 
-	tv.tv_sec = 0;
-	tv.tv_usec = 0;
+	tv.tv_sec=0; tv.tv_usec=0;
 
 	request.map_parms.domain=(char *)&Domain;
 	request.map_parms.map=(char *)&Map;
@@ -123,39 +126,44 @@ req_xfr(pid_t pid, u_int prog, SVCXPRT *transp, char *host, CLIENT *client)
 
 	if (Verbose)
 		printf("%d: %s(%u@%s) -> %s@%s\n",
-		    request.transid, request.map_parms.map,
-		    request.map_parms.ordernum, host,
-		    request.map_parms.peer, request.map_parms.domain);
+		       request.transid,
+		       request.map_parms.map,
+		       request.map_parms.ordernum,
+		       host,
+		       request.map_parms.peer,
+		       request.map_parms.domain);
 	switch (clnt_call(client, YPPROC_XFR, xdr_ypreq_xfr, &request,
-	    xdr_void, NULL, tv)) {
+			  xdr_void, NULL, tv)) {
 	case RPC_SUCCESS:
 	case RPC_TIMEDOUT:
 		break;
 	default:
 		clnt_perror(client, "yppush: Cannot call YPPROC_XFR");
 		kill(pid, SIGTERM);
-		break;
 	}
 }
 
-static void
-push(int inlen, char *indata)
+void
+push(inlen, indata)
+int inlen;
+char *indata;
 {
-	char host[HOST_NAME_MAX+1];
+	char host[MAXHOSTNAMELEN];
 	CLIENT *client;
 	SVCXPRT *transp;
-	int sock = RPC_ANYSOCK, status;
+	int sock = RPC_ANYSOCK;
 	u_int prog;
-	bool_t sts = 0;
+	bool_t sts;
 	pid_t pid;
+	int status;
 	struct rusage res;
 
-	snprintf(host, sizeof host, "%*.*s", inlen, inlen, indata);
+	snprintf(host,sizeof host,"%*.*s" ,inlen ,inlen, indata);
 
 	client = clnt_create(host, YPPROG, YPVERS, "tcp");
 	if (client == NULL) {
 		if (Verbose)
-			fprintf(stderr, "Target Host: %s\n", host);
+			fprintf(stderr,"Target Host: %s\n",host);
 		clnt_pcreateerror("yppush: Cannot create client");
 		return;
 	}
@@ -172,8 +180,8 @@ push(int inlen, char *indata)
 	}
 
 	for (prog=0x40000000; prog<0x5fffffff; prog++) {
-		if ((sts = svc_register(transp, prog, 1,
-		    yppush_xfrrespprog_1, IPPROTO_UDP)))
+		if (sts = svc_register(transp, prog, 1,
+		    yppush_xfrrespprog_1, IPPROTO_UDP))
 			break;
 	}
 
@@ -182,12 +190,12 @@ push(int inlen, char *indata)
 		return;
 	}
 
-	switch (pid=fork()) {
+	switch(pid=fork()) {
 	case -1:
 		fprintf(stderr, "yppush: Cannot fork.\n");
 		exit(1);
 	case 0:
-		my_svc_run();
+		_svc_run();
 		exit(0);
 	default:
 		close(transp->xp_sock);
@@ -202,128 +210,150 @@ push(int inlen, char *indata)
 
 }
 
-static int
-pushit(u_long instatus, char *inkey, int inkeylen, char *inval, int invallen,
-    void *indata)
+int
+pushit(instatus, inkey, inkeylen, inval, invallen, indata)
+int instatus;
+char *inkey;
+int inkeylen;
+char *inval;
+int invallen;
+char *indata;
 {
-	if (instatus != YP_TRUE)
+	if(instatus != YP_TRUE)
 		return instatus;
 	push(invallen, inval);
 	return 0;
 }
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+int  argc;
+char **argv;
 {
 	struct ypall_callback ypcb;
 	extern char *optarg;
 	extern int optind;
-	char	*domain, *map, *hostname;
+	char	*domain,*map,*hostname,*parallel,*timeout;
 	int c, r, i;
 	char *ypmap = "ypservers";
 	CLIENT *client;
-	static char map_path[PATH_MAX];
+	static char map_path[MAXPATHLEN];
 	struct stat finfo;
 	DBM *yp_databas;
 	char order_key[YP_LAST_LEN] = YP_LAST_KEY;
 	datum o;
 
-	yp_get_default_domain(&domain);
+        yp_get_default_domain(&domain);
 	hostname = NULL;
-	while ((c=getopt(argc, argv, "d:h:v")) != -1)
-		switch (c) {
+/*
+	while( (c=getopt(argc, argv, "d:h:p:t:v?")) != -1)
+*/
+	while( (c=getopt(argc, argv, "d:h:v?")) != -1)
+		switch(c) {
 		case 'd':
-			domain = optarg;
+                        domain = optarg;
 			break;
 		case 'h':
 			hostname = optarg;
 			break;
-		case 'v':
-			Verbose = 1;
+		case 'p':
+			parallel = optarg;
 			break;
-		default:
-			usage();
-			/*NOTREACHED*/
+		case 't':
+			timeout = optarg;
+			break;
+                case 'v':
+                        Verbose = 1;
+                        break;
+                case '?':
+                        usage();
+                        /*NOTREACHED*/
 		}
 
-	if (optind + 1 != argc )
+	if(optind + 1 != argc )
 		usage();
 
 	map = argv[optind];
 
-	strncpy(Domain, domain, sizeof(Domain)-1);
+	strncpy(Domain,domain,sizeof(Domain)-1);
 	Domain[sizeof(Domain)-1] = '\0';
-	strncpy(Map, map, sizeof(Map)-1);
+	strncpy(Map,map,sizeof(Map)-1);
 	Map[sizeof(Map)-1] = '\0';
 
 	/* Check domain */
-	snprintf(map_path, sizeof map_path, "%s/%s", YP_DB_PATH, domain);
-	if (!((stat(map_path, &finfo) == 0) && S_ISDIR(finfo.st_mode))) {
-		fprintf(stderr, "yppush: Map does not exist.\n");
+	snprintf(map_path,sizeof map_path,"%s/%s",YP_DB_PATH,domain);
+	if (!((stat(map_path, &finfo) == 0) &&
+	      ((finfo.st_mode & S_IFMT) == S_IFDIR))) {
+	  	fprintf(stderr,"yppush: Map does not exist.\n");
 		exit(1);
 	}
-
+		
+	
 	/* Check map */
-	snprintf(map_path, sizeof map_path, "%s/%s/%s%s",
-	    YP_DB_PATH, domain, Map, YPDB_SUFFIX);
+	snprintf(map_path,sizeof map_path,"%s/%s/%s%s",
+	    YP_DB_PATH,domain,Map,YPDB_SUFFIX);
 	if (!(stat(map_path, &finfo) == 0)) {
-		fprintf(stderr, "yppush: Map does not exist.\n");
+		fprintf(stderr,"yppush: Map does not exist.\n");
 		exit(1);
 	}
-
-	snprintf(map_path, sizeof map_path, "%s/%s/%s",
-	    YP_DB_PATH, domain, Map);
-	yp_databas = ypdb_open(map_path, 0, O_RDONLY);
+		
+	snprintf(map_path,sizeof map_path,"%s/%s/%s",YP_DB_PATH,domain,Map);
+	yp_databas = ypdb_open(map_path,0,O_RDONLY);
 	OrderNum=0xffffffff;
 	if (yp_databas == 0) {
 		fprintf(stderr, "yppush: %s%s: Cannot open database\n",
-		    map_path, YPDB_SUFFIX);
+			map_path, YPDB_SUFFIX);
 	} else {
 		o.dptr = (char *) &order_key;
 		o.dsize = YP_LAST_LEN;
-		o = ypdb_fetch(yp_databas, o);
+		o=ypdb_fetch(yp_databas,o);
 		if (o.dptr == NULL) {
 			fprintf(stderr,
-			    "yppush: %s: Cannot determine order number\n",
-			    Map);
+				"yppush: %s: Cannot determine order number\n",
+				Map);
 		} else {
 			OrderNum=0;
-			for (i=0; i<o.dsize-1; i++) {
-				if (!isdigit((unsigned char)o.dptr[i]))
+			for(i=0; i<o.dsize-1; i++) {
+				if (!isdigit(o.dptr[i])) {
 					OrderNum=0xffffffff;
+				}
 			}
 			if (OrderNum != 0) {
 				fprintf(stderr,
-				    "yppush: %s: Invalid order number '%s'\n",
-				    Map, o.dptr);
+					"yppush: %s: Invalid order number '%s'\n",
+					Map,
+					o.dptr);
 			} else {
 				OrderNum = atoi(o.dptr);
 			}
 		}
-	}
+        }
+	
 
 	yp_bind(Domain);
 
 	r = yp_master(Domain, ypmap, &master);
-	if (r != 0) {
+        if (r != 0) {
 		fprintf(stderr, "yppush: could not get ypservers map\n");
 		exit(1);
 	}
 
 	if (hostname != NULL) {
-		push(strlen(hostname), hostname);
+	  push(strlen(hostname), hostname);
 	} else {
-		if (Verbose) {
-			printf("Contacting master for ypservers (%s).\n",
-			    master);
-		}
+	  
+	  if (Verbose) {
+		printf("Contacting master for ypservers (%s).\n", master);
+	  }
 
-		client = yp_bind_host(master, YPPROG, YPVERS, 0, 1);
+	  client = yp_bind_host(master, YPPROG, YPVERS, 0, 1);
 
-		ypcb.foreach = pushit;
-		ypcb.data = NULL;
-		r = yp_all_host(client, Domain, ypmap, &ypcb);
+	  ypcb.foreach = pushit;
+	  ypcb.data = NULL;
+
+	  r = yp_all_host(client,Domain, ypmap, &ypcb);
 	}
-
-	exit(0);
+        
+        exit(0);
 }
+

@@ -1,5 +1,3 @@
-/*	$OpenBSD: ffs_df.c,v 1.19 2016/03/01 17:57:49 mmcc Exp $	*/
-
 /*
  * Copyright (c) 1980, 1990, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -17,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -34,62 +36,64 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/types.h>
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1980, 1990, 1993, 1994\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/mount.h>
-#include <ufs/ffs/fs.h>
 #include <ufs/ufs/dinode.h>
+#include <ufs/ffs/fs.h>
 
+#include <unistd.h>
+#include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
 
-int		ffs_df(int, char *, struct statfs *);
+int		ffs_df __P((int, char *, struct statfs *));
 
-extern int	bread(int, off_t, void *, int);
-extern char	*getmntpt(char *);
+extern int	bread __P((int, off_t, void *, int));
+extern char	*getmntpt __P((char *));
 
-static union {
+union {
 	struct fs iu_fs;
 	char dummy[SBSIZE];
 } sb;
 #define sblock sb.iu_fs
 
 int
-ffs_df(int rfd, char *file, struct statfs *sfsp)
+ffs_df(rfd, file, sfsp)
+	int rfd;
+	char *file;
+	struct statfs *sfsp;
 {
 	char *mntpt;
 
-	if (!((bread(rfd, (off_t)SBLOCK_UFS1, &sblock, SBSIZE) == 1 &&
-	    sblock.fs_magic == FS_UFS1_MAGIC) ||
-	    (bread(rfd, (off_t)SBLOCK_UFS2, &sblock, SBSIZE) == 1 &&
-	    sblock.fs_magic == FS_UFS2_MAGIC))) {
+	if (bread(rfd, (off_t)SBOFF, &sblock, SBSIZE) == 0) {
 		return (-1);
 	}
-
+	if (sblock.fs_magic != FS_MAGIC) {
+		return (-1);
+	}
 	sfsp->f_flags = 0;
 	sfsp->f_bsize = sblock.fs_fsize;
 	sfsp->f_iosize = sblock.fs_bsize;
-	if (sblock.fs_magic == FS_UFS1_MAGIC) {
-		sfsp->f_blocks = sblock.fs_ffs1_dsize;
-		sfsp->f_bfree = sblock.fs_ffs1_cstotal.cs_nbfree *
-		    sblock.fs_frag + sblock.fs_ffs1_cstotal.cs_nffree;
-		sfsp->f_bavail = sfsp->f_bfree -
-		    ((int64_t)sblock.fs_ffs1_dsize * sblock.fs_minfree / 100);
-		sfsp->f_files = sblock.fs_ncg * sblock.fs_ipg - ROOTINO;
-		sfsp->f_ffree = sblock.fs_ffs1_cstotal.cs_nifree;
-	} else {
-		sfsp->f_blocks = sblock.fs_dsize;
-		sfsp->f_bfree = sblock.fs_cstotal.cs_nbfree *
-		    sblock.fs_frag + sblock.fs_cstotal.cs_nffree;
-		sfsp->f_bavail = sfsp->f_bfree -
-		    ((int64_t)sblock.fs_dsize * sblock.fs_minfree / 100);
-		sfsp->f_files = sblock.fs_ncg * sblock.fs_ipg - ROOTINO;
-		sfsp->f_ffree = sblock.fs_cstotal.cs_nifree;
-	}
+	sfsp->f_blocks = sblock.fs_dsize;
+	sfsp->f_bfree = sblock.fs_cstotal.cs_nbfree * sblock.fs_frag +
+		sblock.fs_cstotal.cs_nffree;
+	sfsp->f_bavail = (sblock.fs_dsize * (100 - sblock.fs_minfree) / 100) -
+		(sblock.fs_dsize - sfsp->f_bfree);
+	sfsp->f_files = sblock.fs_ncg * sblock.fs_ipg - ROOTINO;
+	sfsp->f_ffree = sblock.fs_cstotal.cs_nifree;
 	sfsp->f_fsid.val[0] = 0;
 	sfsp->f_fsid.val[1] = 0;
 	if ((mntpt = getmntpt(file)) == 0)
 		mntpt = "";
-	strlcpy(sfsp->f_mntonname, mntpt, sizeof(sfsp->f_mntonname));
-	strlcpy(sfsp->f_mntfromname, file, sizeof(sfsp->f_mntfromname));
-	strlcpy(sfsp->f_fstypename, MOUNT_EXT2FS, sizeof(sfsp->f_fstypename));
+	memmove(&sfsp->f_mntonname[0], mntpt, MNAMELEN);
+	memmove(&sfsp->f_mntfromname[0], file, MNAMELEN);
+	strncpy(sfsp->f_fstypename, MOUNT_FFS, MFSNAMELEN-1);
+	sfsp->f_fstypename[MFSNAMELEN-1] = '\0';
 	return (0);
 }

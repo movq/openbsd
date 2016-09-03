@@ -1,25 +1,16 @@
-/*	$OpenBSD: setup.c,v 1.19 2016/03/07 12:07:56 mestre Exp $	*/
+/*	$OpenBSD: setup.c,v 1.4 1998/11/29 19:57:02 pjanzen Exp $	*/
 /*	$NetBSD: setup.c,v 1.4 1995/04/24 12:24:41 cgd Exp $	*/
 
 /*
  * setup.c - set up all files for Phantasia
  */
+#include <sys/param.h>
 #include <sys/stat.h>
-
+#include <sys/types.h>
+#include "include.h"
 #include <fcntl.h>
-#include <math.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
 
-#include "macros.h"
-#include "pathnames.h"
-#include "phantdefs.h"
-#include "phantglobs.h"
-
-__dead void Error(char *, char *);
+void Error __P((char *, char *));
 
 /**/
 /************************************************************************
@@ -34,8 +25,8 @@ __dead void Error(char *, char *);
 /
 / RETURN VALUE: none
 /
-/ MODULES CALLED: exit(), stat(), Error(), open(), close(), fopen(), 
-/	fgets(), floor(), umask(), strlcpy(),
+/ MODULES CALLED: time(), exit(), stat(), Error(), open(), close(), fopen(), 
+/	fgets(), floor(), srandom(), umask(), strcpy(),
 /	unlink(), fwrite(), fclose(), sscanf(), printf(), strlen(), fprintf()
 /
 / GLOBAL INPUTS: Curmonster, _iob[], Databuf[], *Monstfp, Enrgyvoid
@@ -68,26 +59,30 @@ static char *files[] = {		/* all files to create */
 char *monsterfile="monsters.asc";
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
-	char	**filename;	/* for pointing to file names */
-	int	fd;		/* file descriptor */
+	register char	**filename;	/* for pointing to file names */
+	register int	fd;		/* file descriptor */
 	FILE	*fp;			/* for opening files */
 	struct stat	fbuf;		/* for getting files statistics */
 	int ch;
-	char path[PATH_MAX], *prefix;
+	char path[MAXPATHLEN], *prefix;
 
-	while ((ch = getopt(argc, argv, "hm:")) != -1)
+	while ((ch = getopt(argc, argv, "m:")) != -1)
 		switch(ch) {
 		case 'm':
 			monsterfile = optarg;
 			break;
-		case 'h':
+		case '?':
 		default:
 			break;
 		}
 	argc -= optind;
 	argv += optind;
+
+    srandom((unsigned) time(NULL));	/* prime random numbers */
 
     umask(0117);		/* only owner can read/write created files */
 
@@ -118,10 +113,12 @@ main(int argc, char *argv[])
 
 	    if (unlink(path) < 0)
 		Error("Cannot unlink %s.\n", path);
+		/*NOTREACHED*/
 	    }
 
 	if ((fd = open(path, O_CREAT | O_TRUNC | O_WRONLY, 0660)) < 0)
 	    Error("Cannot create %s.\n", path);
+	    /*NOTREACHED*/
 
 	close(fd);			/* close newly created file */
 
@@ -129,7 +126,7 @@ main(int argc, char *argv[])
 	}
 
     /* put holy grail info into energy void file */
-    Enrgyvoid.ev_active = true;
+    Enrgyvoid.ev_active = TRUE;
     Enrgyvoid.ev_x = ROLL(-1.0e6, 2.0e6);
     Enrgyvoid.ev_y = ROLL(-1.0e6, 2.0e6);
     snprintf(path, sizeof(path), "%s%s", prefix?prefix:"", _PATH_VOID);
@@ -170,15 +167,52 @@ main(int argc, char *argv[])
 		    &Curmonster.m_experience, &Curmonster.m_treasuretype,
 		    &Curmonster.m_type, &Curmonster.m_flock);
 		Databuf[24] = '\0';
-		strlcpy(Curmonster.m_name, Databuf, sizeof Curmonster.m_name);
-		fwrite(&Curmonster, SZ_MONSTERSTRUCT, 1, Monstfp);
+		strcpy(Curmonster.m_name, Databuf);
+		fwrite((char *) &Curmonster, SZ_MONSTERSTRUCT, 1, Monstfp);
 		}
 	    fclose(fp);
 	    fclose(Monstfp);
 	    }
 	}
 
-    return 0;
+#ifdef MAKE_INSTALLS_THIS_AND_DOESNT_WANT_TO_HEAR_ABOUT_IT
+    /* write to motd file */
+    printf("One line 'motd' ? ");
+    if (fgets(Databuf, SZ_DATABUF, stdin) == NULL)
+	Databuf[0] = '\0';
+    snprintf(path, sizeof(path), "%s%s", prefix?prefix:"", _PATH_MOTD);
+    if ((fp = fopen(path, "w")) == NULL)
+	Error("Cannot update %s.\n", path);
+    else
+	{
+	fwrite(Databuf, sizeof(char), strlen(Databuf), fp);
+	fclose(fp);
+	}
+
+    /* report compile-time options */
+    printf("Compiled options:\n\n");
+    printf("Phantasia destination directory:  %s\n", _PATH_PHANTDIR);
+    printf("Wizard: root UID: 0\n");
+
+#ifdef BSD41
+    printf("Compiled for BSD 4.1\n");
+#endif
+
+#ifdef BSD42
+    printf("Compiled for BSD 4.2\n");
+#endif
+
+#ifdef SYS3
+    printf("Compiled for System III\n");
+#endif
+
+#ifdef SYS5
+    printf("Compiled for System V\n");
+#endif
+#endif
+
+    exit(0);
+    /*NOTREACHED*/
 }
 /**/
 /************************************************************************
@@ -207,12 +241,14 @@ main(int argc, char *argv[])
 *************************************************************************/
 
 void
-Error(char *str, char *file)
+Error(str, file)
+	char	*str, *file;
 {
 	fprintf(stderr, "Error: ");
 	fprintf(stderr, str, file);
 	perror(file);
 	exit(1);
+	/* NOTREACHED */
 }
 /**/
 /************************************************************************
@@ -227,7 +263,7 @@ Error(char *str, char *file)
 /
 / RETURN VALUE: none
 /
-/ MODULES CALLED: arc4random()
+/ MODULES CALLED: random()
 /
 / GLOBAL INPUTS: none
 /
@@ -238,7 +274,10 @@ Error(char *str, char *file)
 *************************************************************************/
 
 double
-drandom(void)
+drandom()
 {
-	return((double) arc4random() / (UINT32_MAX + 1.0));
+    if (sizeof(int) != 2)
+	return((double) (random() & 0x7fff) / 32768.0);
+    else
+	return((double) random() / 32768.0);
 }

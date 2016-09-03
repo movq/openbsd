@@ -1,4 +1,4 @@
-/*	$OpenBSD: utime.h,v 1.7 2013/04/02 05:16:14 guenther Exp $	*/
+/*	$OpenBSD: utime.h,v 1.3 1998/05/13 08:39:21 deraadt Exp $	*/
 /*	$NetBSD: utime.h,v 1.3 1994/10/26 00:56:39 cgd Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -35,12 +39,11 @@
 #ifndef	_UTIME_H_
 #define	_UTIME_H_
 
-#include <sys/cdefs.h>
-#include <sys/_types.h>
+#include <machine/ansi.h>
 
-#ifndef	_TIME_T_DEFINED_
-#define	_TIME_T_DEFINED_
-typedef	__time_t	time_t;
+#ifdef	_BSD_TIME_T_
+typedef	_BSD_TIME_T_	time_t;
+#undef	_BSD_TIME_T_
 #endif
 
 struct utimbuf {
@@ -48,8 +51,10 @@ struct utimbuf {
 	time_t modtime;		/* Modification time */
 };
 
+#include <sys/cdefs.h>
+
 __BEGIN_DECLS
-int utime(const char *, const struct utimbuf *);
+int utime __P((const char *, const struct utimbuf *));
 __END_DECLS
 
 #endif /* !_UTIME_H_ */

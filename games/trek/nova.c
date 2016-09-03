@@ -1,4 +1,4 @@
-/*	$OpenBSD: nova.c,v 1.7 2016/01/07 14:37:51 mestre Exp $	*/
+/*	$OpenBSD: nova.c,v 1.2 1998/08/19 07:41:51 pjanzen Exp $	*/
 /*	$NetBSD: nova.c,v 1.3 1995/04/22 10:59:14 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,8 +34,15 @@
  * SUCH DAMAGE.
  */
 
-#include <stdio.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)nova.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: nova.c,v 1.2 1998/08/19 07:41:51 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
+#include <stdio.h>
 #include "trek.h"
 
 /*
@@ -49,10 +60,11 @@
 */
 
 void
-nova(int x, int y)
+nova(x, y)
+	int	x, y;
 {
-	int		i, j;
-	int		se;
+	register int		i, j;
+	register int		se;
 
 	if (Sect[x][y] != STAR || Quad[Ship.quadx][Ship.quady].stars < 0)
 		return;

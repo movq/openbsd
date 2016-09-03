@@ -16,14 +16,16 @@ extern char *hex2mem (char *buf, void *mem, int count, int may_fault);
 extern int computeSignal (int exceptionVector);
 
 void
-flush_i_cache (void)
+flush_i_cache()
 {
 }
 
 /* Get the registers out of the frame information.  */
 
 void
-frame_to_registers (struct StackFrame *frame, char *regs)
+frame_to_registers (frame, regs)
+     struct StackFrame *frame;
+     char *regs;
 {
   /* Copy EAX -> EDI */
   mem2hex (&frame->ExceptionEAX, &regs[0 * 4 * 2], 4 * 8, 0);
@@ -44,7 +46,9 @@ frame_to_registers (struct StackFrame *frame, char *regs)
 /* Put the registers back into the frame information.  */
 
 void
-registers_to_frame (char *regs, struct StackFrame *frame)
+registers_to_frame (regs, frame)
+     char *regs;
+     struct StackFrame *frame;
 {
   /* Copy EAX -> EDI */
   hex2mem (&regs[0 * 4 * 2], &frame->ExceptionEAX, 4 * 8, 0);
@@ -63,19 +67,23 @@ registers_to_frame (char *regs, struct StackFrame *frame)
 }
 
 void
-set_step_traps (struct StackFrame *frame)
+set_step_traps (frame)
+     struct StackFrame *frame;
 {
   frame->ExceptionSystemFlags |= 0x100;
 }
 
 void
-clear_step_traps (struct StackFrame *frame)
+clear_step_traps (frame)
+     struct StackFrame *frame;
 {
   frame->ExceptionSystemFlags &= ~0x100;
 }
 
 void
-do_status (char *ptr, struct StackFrame *frame)
+do_status (ptr, frame)
+     char *ptr;
+     struct StackFrame *frame;
 {
   int sigval;
 
@@ -92,7 +100,7 @@ do_status (char *ptr, struct StackFrame *frame)
   ptr = mem2hex (&frame->ExceptionESP, ptr + 3, 4, 0);
   *ptr++ = ';';
 
-  sprintf (ptr, "%02x:", DEPRECATED_FP_REGNUM);
+  sprintf (ptr, "%02x:", FP_REGNUM);
   ptr = mem2hex (&frame->ExceptionEBP, ptr + 3, 4, 0);
   *ptr++ = ';';
 

@@ -1,8 +1,8 @@
-#	$OpenBSD: Makefile,v 1.10 2015/10/23 10:33:52 tedu Exp $
+#	$OpenBSD: Makefile,v 1.6 1997/09/21 11:48:31 deraadt Exp $
 
 PROG=	calendar
-SRCS=   calendar.c io.c day.c pesach.c ostern.c paskha.c
-INTER=	de_DE.UTF-8 hr_HR.UTF-8 ru_RU.UTF-8 fr_FR.UTF-8
+SRCS=   calendar.c io.c day.c ostern.c paskha.c
+INTER=	de_DE.ISO_8859-1 hr_HR.ISO_8859-2 ru_SU.KOI8-R
 
 beforeinstall:
 	${INSTALL} ${INSTALL_COPY} -o ${BINOWN} -g ${BINGRP} -m 444 \

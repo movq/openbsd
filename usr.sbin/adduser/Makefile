@@ -1,7 +1,8 @@
-#	$OpenBSD: Makefile,v 1.9 2016/03/30 06:38:46 jmc Exp $
+#	$OpenBSD: Makefile,v 1.8 1999/10/08 01:58:02 aaron Exp $
 
 SCRIPTS= adduser.perl rmuser.perl rmgroup.sh
 MAN=	 adduser.8 rmgroup.8
+MLINKS+= adduser.8 rmuser.8
 
 beforeinstall:
 .for script in ${SCRIPTS}

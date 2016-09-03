@@ -1,7 +1,7 @@
-/* $OpenBSD: name_match.c,v 1.4 2010/01/12 23:22:06 nicm Exp $ */
+/*	$OpenBSD: name_match.c,v 1.2 1999/03/11 21:03:57 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1999-2007,2008 Free Software Foundation, Inc.              *
+ * Copyright (c) 1999 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -29,48 +29,34 @@
  ****************************************************************************/
 
 /****************************************************************************
- *  Author: Thomas E. Dickey                    1999-on                     *
+ *  Author: Thomas E. Dickey <dickey@clark.net> 1999                        *
  ****************************************************************************/
 
 #include <curses.priv.h>
 #include <term.h>
 #include <tic.h>
 
-MODULE_ID("$Id: name_match.c,v 1.4 2010/01/12 23:22:06 nicm Exp $")
+MODULE_ID("$From: name_match.c,v 1.8 1999/03/07 01:58:36 tom Exp $")
 
 /*
  *	_nc_first_name(char *names)
  *
  *	Extract the primary name from a compiled entry.
  */
-#define FirstName _nc_globals.first_name
 
-NCURSES_EXPORT(char *)
-_nc_first_name(const char *const sp)
+char *_nc_first_name(const char *const sp)
 /* get the first name from the given name list */
 {
-    unsigned n;
+	static char	buf[MAX_NAME_SIZE+1];
+	register unsigned n;
 
-#if NO_LEAKS
-    if (sp == 0) {
-	if (FirstName != 0)
-	    FreeAndNull(FirstName);
-    } else
-#endif
-    {
-	if (FirstName == 0)
-	    FirstName = typeMalloc(char, MAX_NAME_SIZE + 1);
-
-	if (FirstName != 0) {
-	    for (n = 0; n < MAX_NAME_SIZE; n++) {
-		if ((FirstName[n] = sp[n]) == '\0'
-		    || (FirstName[n] == '|'))
-		    break;
-	    }
-	    FirstName[n] = '\0';
+	for (n = 0; n < sizeof(buf)-1; n++) {
+		if ((buf[n] = sp[n]) == '\0'
+		 || (buf[n] == '|'))
+			break;
 	}
-    }
-    return (FirstName);
+	buf[n] = '\0';
+	return(buf);
 }
 
 /*
@@ -79,35 +65,34 @@ _nc_first_name(const char *const sp)
  *	Is the given name matched in namelist?
  */
 
-NCURSES_EXPORT(int)
-_nc_name_match(const char *const namelst, const char *const name, const char *const delim)
+int _nc_name_match(const char *const namelst, const char *const name, const char *const delim)
 {
-    const char *s, *d, *t;
-    int code, found;
+	const char *s, *d, *t;
+	int code, found;
 
-    if ((s = namelst) != 0) {
-	while (*s != '\0') {
-	    for (d = name; *d != '\0'; d++) {
-		if (*s != *d)
-		    break;
-		s++;
-	    }
-	    found = FALSE;
-	    for (code = TRUE; *s != '\0'; code = FALSE, s++) {
-		for (t = delim; *t != '\0'; t++) {
-		    if (*s == *t) {
-			found = TRUE;
-			break;
-		    }
+	if ((s = namelst) != 0) {
+		while (*s != '\0') {
+			for (d = name; *d != '\0'; d++) {
+				if (*s != *d)
+					break;
+				s++;
+			}
+			found = FALSE;
+			for (code = TRUE; *s != '\0'; code = FALSE, s++) {
+				for (t = delim; *t != '\0'; t++) {
+					if (*s == *t) {
+						found = TRUE;
+						break;
+					}
+				}
+				if (found)
+					break;
+			}
+			if (code && *d == '\0')
+				return code;
+			if (*s++ == 0)
+				break;
 		}
-		if (found)
-		    break;
-	    }
-	    if (code && *d == '\0')
-		return code;
-	    if (*s++ == 0)
-		break;
 	}
-    }
-    return FALSE;
+	return FALSE;
 }

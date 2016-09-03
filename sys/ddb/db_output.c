@@ -1,28 +1,28 @@
-/*	$OpenBSD: db_output.c,v 1.29 2015/03/14 03:38:46 jsg Exp $	*/
+/*	$OpenBSD: db_output.c,v 1.14 1997/11/04 20:45:15 chuck Exp $	*/
 /*	$NetBSD: db_output.c,v 1.13 1996/04/01 17:27:14 christos Exp $	*/
 
-/*
+/* 
  * Mach Operating System
  * Copyright (c) 1993,1992,1991,1990 Carnegie Mellon University
  * All Rights Reserved.
- *
+ * 
  * Permission to use, copy, modify and distribute this software and its
  * documentation is hereby granted, provided that both the copyright
  * notice and this permission notice appear in all copies of the
  * software, derivative works or modified versions, and any portions
  * thereof, and that both notices appear in supporting documentation.
- *
+ * 
  * CARNEGIE MELLON ALLOWS FREE USE OF THIS SOFTWARE IN ITS "AS IS"
  * CONDITION.  CARNEGIE MELLON DISCLAIMS ANY LIABILITY OF ANY KIND FOR
  * ANY DAMAGES WHATSOEVER RESULTING FROM THE USE OF THIS SOFTWARE.
- *
+ * 
  * Carnegie Mellon requests users of this software to return to
- *
+ * 
  *  Software Distribution Coordinator  or  Software.Distribution@CS.CMU.EDU
  *  School of Computer Science
  *  Carnegie Mellon University
  *  Pittsburgh PA 15213-3890
- *
+ * 
  * any improvements or extensions that they make and grant Carnegie Mellon
  * the rights to redistribute these changes.
  */
@@ -31,10 +31,13 @@
  * Printf and character output for debugger.
  */
 #include <sys/param.h>
-#include <sys/stdarg.h>
-#include <sys/systm.h>
+#include <sys/proc.h>
+
+#include <machine/stdarg.h>
 
 #include <dev/cons.h>
+
+#include <vm/vm.h>
 
 #include <machine/db_machdep.h>
 
@@ -43,6 +46,9 @@
 #include <ddb/db_interface.h>
 #include <ddb/db_sym.h>
 #include <ddb/db_var.h>
+#include <ddb/db_extern.h>
+
+#include <lib/libkern/libkern.h>
 
 /*
  *	Character output - tracks position in line.
@@ -60,7 +66,7 @@
 #ifndef	DB_MAX_LINE
 #define	DB_MAX_LINE		24	/* maximum line */
 #define DB_MAX_WIDTH		80	/* maximum width */
-#endif	/* DB_MAX_LINE */
+#endif	DB_MAX_LINE
 
 #define DB_MIN_MAX_WIDTH	20	/* minimum max width */
 #define DB_MIN_MAX_LINE		3	/* minimum max line */
@@ -76,15 +82,17 @@ int	db_max_line = DB_MAX_LINE;	/* output max lines */
 int	db_max_width = DB_MAX_WIDTH;	/* output line width */
 int	db_radix = 16;			/* output numbers radix */
 
-static void db_more(void);
+#ifdef DDB
+static void db_more __P((void));
+#endif
 
 /*
  * Force pending whitespace.
  */
 void
-db_force_whitespace(void)
+db_force_whitespace()
 {
-	int last_print, next_tab;
+	register int last_print, next_tab;
 
 	last_print = db_last_non_space;
 	while (last_print < db_output_position) {
@@ -103,10 +111,11 @@ db_force_whitespace(void)
 	db_last_non_space = db_output_position;
 }
 
+#ifdef DDB
 static void
-db_more(void)
+db_more()
 {
-	char *p;
+	register  char *p;
 	int quit_output = 0;
 
 	for (p = "--db_more--"; *p; p++)
@@ -132,16 +141,19 @@ db_more(void)
 	    /* NOTREACHED */
 	}
 }
+#endif
 
 /*
  * Output character.  Buffer whitespace.
  */
 void
-db_putchar(int c)
+db_putchar(c)
+	int	c;		/* character to output */
 {
+#ifdef DDB
 	if (db_max_line >= DB_MIN_MAX_LINE && db_output_line >= db_max_line-1)
 	    db_more();
-
+#endif
 	if (c > ' ' && c <= '~') {
 	    /*
 	     * Printing character.
@@ -167,6 +179,9 @@ db_putchar(int c)
 	    db_output_position = 0;
 	    db_last_non_space = 0;
 	    db_output_line++;
+#ifdef DDB
+	    db_check_interrupt();
+#endif
 	}
 	else if (c == '\t') {
 	    /* assume tabs every 8 positions */
@@ -187,7 +202,7 @@ db_putchar(int c)
  * Return output position
  */
 int
-db_print_position(void)
+db_print_position()
 {
 	return (db_output_position);
 }
@@ -196,49 +211,9 @@ db_print_position(void)
  * End line if too long.
  */
 void
-db_end_line(int space)
+db_end_line(space)
+	int space;
 {
 	if (db_output_position >= db_max_width - space)
 	    db_printf("\n");
-}
-
-char *
-db_format(char *buf, size_t bufsize, long val, int format, int alt, int width)
-{
-	const char *fmt;
-
-	if (format == DB_FORMAT_Z || db_radix == 16)
-		fmt = alt ? "-%#*lx" : "-%*lx";
-	else if (db_radix == 8)
-		fmt = alt ? "-%#*lo" : "-%*lo";
-	else
-		fmt = alt ? "-%#*lu" : "-%*lu";
-
-	/* The leading '-' is a nasty (and beautiful) idea from NetBSD */
-	if (val < 0 && format != DB_FORMAT_N)
-		val = -val;
-	else
-		fmt++;
-
-	snprintf(buf, bufsize, fmt, width, val);
-
-	return (buf);
-}
-
-void
-db_stack_dump(void)
-{
-	static int intrace;
-
-	if (intrace) {
-		printf("Faulted in traceback, aborting...\n");
-		return;
-	}
-
-	intrace = 1;
-	printf("Starting stack trace...\n");
-	db_stack_trace_print((db_expr_t)__builtin_frame_address(0), TRUE,
-	    256 /* low limit */, "", printf);
-	printf("End of stack trace.\n");
-	intrace = 0;
 }

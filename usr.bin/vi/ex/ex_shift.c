@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_shift.c,v 1.8 2016/01/06 22:28:52 millert Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -11,6 +9,11 @@
 
 #include "config.h"
 
+#ifndef lint
+static const char sccsid[] = "@(#)ex_shift.c	10.11 (Berkeley) 9/15/96";
+#endif /* not lint */
+
+#include <sys/types.h>
 #include <sys/queue.h>
 
 #include <bitstring.h>
@@ -22,16 +25,18 @@
 #include "../common/common.h"
 
 enum which {LEFT, RIGHT};
-static int shift(SCR *, EXCMD *, enum which);
+static int shift __P((SCR *, EXCMD *, enum which));
 
 /*
  * ex_shiftl -- :<[<...]
  *
  *
- * PUBLIC: int ex_shiftl(SCR *, EXCMD *);
+ * PUBLIC: int ex_shiftl __P((SCR *, EXCMD *));
  */
 int
-ex_shiftl(SCR *sp, EXCMD *cmdp)
+ex_shiftl(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	return (shift(sp, cmdp, LEFT));
 }
@@ -39,10 +44,12 @@ ex_shiftl(SCR *sp, EXCMD *cmdp)
 /*
  * ex_shiftr -- :>[>...]
  *
- * PUBLIC: int ex_shiftr(SCR *, EXCMD *);
+ * PUBLIC: int ex_shiftr __P((SCR *, EXCMD *));
  */
 int
-ex_shiftr(SCR *sp, EXCMD *cmdp)
+ex_shiftr(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	return (shift(sp, cmdp, RIGHT));
 }
@@ -52,7 +59,10 @@ ex_shiftr(SCR *sp, EXCMD *cmdp)
  *	Ex shift support.
  */
 static int
-shift(SCR *sp, EXCMD *cmdp, enum which rl)
+shift(sp, cmdp, rl)
+	SCR *sp;
+	EXCMD *cmdp;
+	enum which rl;
 {
 	recno_t from, to;
 	size_t blen, len, newcol, newidx, oldcol, oldidx, sw;
@@ -62,7 +72,7 @@ shift(SCR *sp, EXCMD *cmdp, enum which rl)
 	NEEDFILE(sp, cmdp);
 
 	if (O_VAL(sp, O_SHIFTWIDTH) == 0) {
-		msgq(sp, M_INFO, "shiftwidth option set to 0");
+		msgq(sp, M_INFO, "152|shiftwidth option set to 0");
 		return (0);
 	}
 

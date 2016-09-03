@@ -1,4 +1,4 @@
-/*	$OpenBSD: lstDeQueue.c,v 1.19 2010/07/19 19:46:44 espie Exp $	*/
+/*	$OpenBSD: lstDeQueue.c,v 1.4 1998/12/05 00:06:31 espie Exp $	*/
 /*	$NetBSD: lstDeQueue.c,v 1.5 1996/11/06 17:59:36 christos Exp $	*/
 
 /*
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,13 +37,20 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)lstDeQueue.c	8.1 (Berkeley) 6/6/93";
+#else
+static char rcsid[] = "$OpenBSD: lstDeQueue.c,v 1.4 1998/12/05 00:06:31 espie Exp $";
+#endif
+#endif /* not lint */
+
 /*-
  * LstDeQueue.c --
  *	Remove the node and return its datum from the head of the list
  */
 
 #include	"lstInt.h"
-#include 	<stdlib.h>
 
 /*-
  *-----------------------------------------------------------------------
@@ -47,29 +58,31 @@
  *	Remove and return the datum at the head of the given list.
  *
  * Results:
- *	The datum in the node at the head or NULL if the list is empty.
+ *	The datum in the node at the head or (ick) NIL if the list
+ *	is empty.
  *
  * Side Effects:
  *	The head node is removed from the list.
+ *
  *-----------------------------------------------------------------------
  */
-void *
-Lst_DeQueue(Lst l)
+ClientData
+Lst_DeQueue (l)
+    Lst	    	  l;
 {
-	void *rd;
-	LstNode tln;
+    ClientData	  rd;
+    register ListNode	tln;
 
-	tln = l->firstPtr;
-	if (tln == NULL)
-		return NULL;
+    tln = (ListNode) Lst_First (l);
+    if (tln == NilListNode) {
+	return ((ClientData) NIL);
+    }
 
-	rd = tln->datum;
-	l->firstPtr = tln->nextPtr;
-	if (l->firstPtr)
-		l->firstPtr->prevPtr = NULL;
-	else
-		l->lastPtr = NULL;
-	free(tln);
-	return rd;
+    rd = tln->datum;
+    if (Lst_Remove (l, (LstNode)tln) == FAILURE) {
+	return ((ClientData) NIL);
+    } else {
+	return (rd);
+    }
 }
 

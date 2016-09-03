@@ -1,4 +1,4 @@
-/*	$OpenBSD: nameser.h,v 1.13 2015/01/16 00:01:28 deraadt Exp $	*/
+/*	$OpenBSD: nameser.h,v 1.3 1997/03/13 19:11:54 downsj Exp $	*/
 
 /*
  * ++Copyright++ 1983, 1989, 1993
@@ -14,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ * 	This product includes software developed by the University of
+ * 	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  * 
@@ -81,7 +85,17 @@
 #ifndef _NAMESER_H_
 #define _NAMESER_H_
 
-#include <sys/types.h>
+#include <sys/param.h>
+#if (!defined(BSD)) || (BSD < 199306)
+# include <sys/bitypes.h>
+#else
+# include <sys/types.h>
+#endif
+#include <sys/cdefs.h>
+
+#ifdef _AUX_SOURCE
+# include <sys/types.h>
+#endif
 
 /*
  * revision information.  this is the release date in YYYYMMDD format.
@@ -169,26 +183,12 @@
 #define T_SRV		33		/* Server selection */
 #define T_ATMA		34		/* ATM Address */
 #define T_NAPTR		35		/* Naming Authority PoinTeR */
-#define T_KX		36		/* Key Exchanger */
-#define T_CERT		37		/* CERT */
-#define T_A6		38		/* A6 */
-#define T_DNAME		39		/* DNAME */
-#define T_SINK		40		/* SINK */
-#define T_OPT		41		/* OPT pseudo-RR, RFC2671 */
-#define T_APL		42		/* APL */
-#define T_DS		43		/* Delegation Signer */
-#define T_SSHFP		44		/* SSH Key Fingerprint */
-#define T_RRSIG		46		/* RRSIG */
-#define T_NSEC		47		/* NSEC */
-#define T_DNSKEY	48		/* DNSKEY */
 	/* non standard */
 #define T_UINFO		100		/* user (finger) information */
 #define T_UID		101		/* user ID */
 #define T_GID		102		/* group ID */
 #define T_UNSPEC	103		/* Unspecified format (binary data) */
 	/* Query type values which do not appear in resource records */
-#define	T_TKEY		249		/* Transaction Key */
-#define	T_TSIG		250		/* Transaction Signature */
 #define	T_IXFR		251		/* incremental zone transfer */
 #define T_AXFR		252		/* transfer zone of authority */
 #define T_MAILB		253		/* transfer mailbox records */
@@ -248,11 +248,6 @@
 #define	MAX_KEY_BASE64			(((MAX_MD5RSA_KEY_BYTES+2)/3)*4)
 
 /*
- * EDNS0 Z-field extended flags
- */
-#define DNS_MESSAGEEXTFLAG_DO	0x8000U
-
-/*
  * Status return codes for T_UNSPEC conversion routines
  */
 #define CONV_SUCCESS	0
@@ -261,15 +256,45 @@
 #define CONV_BADCKSUM	(-3)
 #define CONV_BADBUFLEN	(-4)
 
-#if !defined(_BYTE_ORDER) || \
-    (_BYTE_ORDER != _BIG_ENDIAN && _BYTE_ORDER != _LITTLE_ENDIAN && \
-    _BYTE_ORDER != _PDP_ENDIAN)
+#ifndef BYTE_ORDER
+#if (BSD >= 199103)
+# include <machine/endian.h>
+#else
+#ifdef linux
+# include <endian.h>
+#else
+#define LITTLE_ENDIAN	1234	/* least-significant byte first (vax, pc) */
+#define BIG_ENDIAN	4321	/* most-significant byte first (IBM, net) */
+#define PDP_ENDIAN	3412	/* LSB first in word, MSW first in long (pdp)*/
+
+#if defined(vax) || defined(ns32000) || defined(sun386) || defined(i386) || \
+    defined(MIPSEL) || defined(_MIPSEL) || defined(BIT_ZERO_ON_RIGHT) || \
+    defined(__alpha__) || defined(__alpha)
+#define BYTE_ORDER	LITTLE_ENDIAN
+#endif
+
+#if defined(sel) || defined(pyr) || defined(mc68000) || defined(sparc) || \
+    defined(is68k) || defined(tahoe) || defined(ibm032) || defined(ibm370) || \
+    defined(MIPSEB) || defined(_MIPSEB) || defined(_IBMR2) || defined(DGUX) ||\
+    defined(apollo) || defined(__convex__) || defined(_CRAY) || \
+    defined(__hppa) || defined(__hp9000) || \
+    defined(__hp9000s300) || defined(__hp9000s700) || \
+    defined (BIT_ZERO_ON_LEFT) || defined(m68k)
+#define BYTE_ORDER	BIG_ENDIAN
+#endif
+#endif /* linux */
+#endif /* BSD */
+#endif /* BYTE_ORDER */
+
+#if !defined(BYTE_ORDER) || \
+    (BYTE_ORDER != BIG_ENDIAN && BYTE_ORDER != LITTLE_ENDIAN && \
+    BYTE_ORDER != PDP_ENDIAN)
 	/* you must determine what the correct bit order is for
 	 * your compiler - the next line is an intentional error
 	 * which will force your compiles to bomb until you fix
 	 * the above macros.
 	 */
-#error "Undefined or invalid _BYTE_ORDER";
+  error "Undefined or invalid BYTE_ORDER";
 #endif
 
 /*
@@ -281,7 +306,7 @@
 
 typedef struct {
 	unsigned	id :16;		/* query identification number */
-#if _BYTE_ORDER == _BIG_ENDIAN
+#if BYTE_ORDER == BIG_ENDIAN
 			/* fields in third byte */
 	unsigned	qr: 1;		/* response flag */
 	unsigned	opcode: 4;	/* purpose of message */
@@ -295,7 +320,7 @@ typedef struct {
 	unsigned	cd: 1;		/* checking disabled by resolver */
 	unsigned	rcode :4;	/* response code */
 #endif
-#if _BYTE_ORDER == _LITTLE_ENDIAN || _BYTE_ORDER == _PDP_ENDIAN
+#if BYTE_ORDER == LITTLE_ENDIAN || BYTE_ORDER == PDP_ENDIAN
 			/* fields in third byte */
 	unsigned	rd :1;		/* recursion desired */
 	unsigned	tc :1;		/* truncated message */
@@ -321,8 +346,8 @@ typedef struct {
  */
 #define INDIR_MASK	0xc0
 
-extern	u_int16_t	_getshort(const unsigned char *);
-extern	u_int32_t	_getlong(const unsigned char *);
+extern	u_int16_t	_getshort __P((const u_char *));
+extern	u_int32_t	_getlong __P((const u_char *));
 
 /*
  * Inline versions of get/put short/long.  Pointer is advanced.
@@ -331,7 +356,7 @@ extern	u_int32_t	_getlong(const unsigned char *);
  * portable or it can be elegant but rarely both.
  */
 #define GETSHORT(s, cp) { \
-	unsigned char *t_cp = (unsigned char *)(cp); \
+	register u_char *t_cp = (u_char *)(cp); \
 	(s) = ((u_int16_t)t_cp[0] << 8) \
 	    | ((u_int16_t)t_cp[1]) \
 	    ; \
@@ -339,7 +364,7 @@ extern	u_int32_t	_getlong(const unsigned char *);
 }
 
 #define GETLONG(l, cp) { \
-	unsigned char *t_cp = (unsigned char *)(cp); \
+	register u_char *t_cp = (u_char *)(cp); \
 	(l) = ((u_int32_t)t_cp[0] << 24) \
 	    | ((u_int32_t)t_cp[1] << 16) \
 	    | ((u_int32_t)t_cp[2] << 8) \
@@ -349,16 +374,16 @@ extern	u_int32_t	_getlong(const unsigned char *);
 }
 
 #define PUTSHORT(s, cp) { \
-	u_int16_t t_s = (u_int16_t)(s); \
-	unsigned char *t_cp = (unsigned char *)(cp); \
+	register u_int16_t t_s = (u_int16_t)(s); \
+	register u_char *t_cp = (u_char *)(cp); \
 	*t_cp++ = t_s >> 8; \
 	*t_cp   = t_s; \
 	(cp) += INT16SZ; \
 }
 
 #define PUTLONG(l, cp) { \
-	u_int32_t t_l = (u_int32_t)(l); \
-	unsigned char *t_cp = (unsigned char *)(cp); \
+	register u_int32_t t_l = (u_int32_t)(l); \
+	register u_char *t_cp = (u_char *)(cp); \
 	*t_cp++ = t_l >> 24; \
 	*t_cp++ = t_l >> 16; \
 	*t_cp++ = t_l >> 8; \

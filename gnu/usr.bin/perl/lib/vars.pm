@@ -1,45 +1,42 @@
 package vars;
 
-use 5.006;
+require 5.002;
 
-our $VERSION = '1.03';
-
-use warnings::register;
-use strict qw(vars subs);
+# The following require can't be removed during maintenance
+# releases, sadly, because of the risk of buggy code that does
+# require Carp; Carp::croak "..."; without brackets dying
+# if Carp hasn't been loaded in earlier compile time. :-(
+# We'll let those bugs get found on the development track.
+require Carp if $] < 5.00450;
 
 sub import {
     my $callpack = caller;
-    my (undef, @imports) = @_;
-    my ($sym, $ch);
-    foreach (@imports) {
-        if (($ch, $sym) = /^([\$\@\%\*\&])(.+)/) {
-	    if ($sym =~ /\W/) {
-		# time for a more-detailed check-up
-		if ($sym =~ /^\w+[[{].*[]}]$/) {
-		    require Carp;
-		    Carp::croak("Can't declare individual elements of hash or array");
-		} elsif (warnings::enabled() and length($sym) == 1 and $sym !~ tr/a-zA-Z//) {
-		    warnings::warn("No need to declare built-in vars");
-		} elsif  (($^H &= strict::bits('vars'))) {
-		    require Carp;
-		    Carp::croak("'$_' is not a valid variable name under strict vars");
-		}
+    my ($pack, @imports, $sym, $ch) = @_;
+    foreach $sym (@imports) {
+        ($ch, $sym) = unpack('a1a*', $sym);
+	if ($sym =~ tr/A-Za-Z_0-9//c) {
+	    # time for a more-detailed check-up
+	    if ($sym =~ /::/) {
+		require Carp;
+		Carp::croak("Can't declare another package's variables");
+	    } elsif ($sym =~ /^\w+[[{].*[]}]$/) {
+		require Carp;
+		Carp::croak("Can't declare individual elements of hash or array");
+	    } elsif ($^W and length($sym) == 1 and $sym !~ tr/a-zA-Z//) {
+		require Carp;
+		Carp::carp("No need to declare built-in vars");
 	    }
-	    $sym = "${callpack}::$sym" unless $sym =~ /::/;
-	    *$sym =
-		(  $ch eq "\$" ? \$$sym
-		 : $ch eq "\@" ? \@$sym
-		 : $ch eq "\%" ? \%$sym
-		 : $ch eq "\*" ? \*$sym
-		 : $ch eq "\&" ? \&$sym 
-		 : do {
-		     require Carp;
-		     Carp::croak("'$_' is not a valid variable name");
-		 });
-	} else {
-	    require Carp;
-	    Carp::croak("'$_' is not a valid variable name");
 	}
+        *{"${callpack}::$sym"} =
+          (  $ch eq "\$" ? \$   {"${callpack}::$sym"}
+           : $ch eq "\@" ? \@   {"${callpack}::$sym"}
+           : $ch eq "\%" ? \%   {"${callpack}::$sym"}
+           : $ch eq "\*" ? \*   {"${callpack}::$sym"}
+           : $ch eq "\&" ? \&   {"${callpack}::$sym"}
+           : do {
+		require Carp;
+		Carp::croak("'$ch$sym' is not a valid variable name");
+	     });
     }
 };
 
@@ -55,11 +52,6 @@ vars - Perl pragma to predeclare global variable names
     use vars qw($frob @mung %seen);
 
 =head1 DESCRIPTION
-
-NOTE: For use with variables in the current package for a single scope, the
-functionality provided by this pragma has been superseded by C<our>
-declarations, available in Perl v5.6.0 or later, and use of this pragma is
-discouraged.  See L<perlfunc/our>.
 
 This will predeclare all the variables whose names are 
 in the list, allowing you to use them under "use strict", and

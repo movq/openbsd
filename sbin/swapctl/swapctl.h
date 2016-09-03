@@ -1,4 +1,3 @@
-/*	$OpenBSD: swapctl.h,v 1.4 2007/07/16 21:05:46 millert Exp $	*/
 /*	$NetBSD: swapctl.h,v 1.2 1997/10/10 05:39:54 mrg Exp $	*/
 
 /*
@@ -29,5 +28,5 @@
  * SUCH DAMAGE.
  */
 
-/* pri, kflag, pflag, dolong (1 for long, 0 for short) */
-void list_swap(int, int, int, int);
+/* pri, kflag, pflag, tflag, dolong (1 for long, 0 for short) */
+void list_swap __P((int, int, int, int, int));

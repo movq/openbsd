@@ -1,5 +1,3 @@
-/*	$OpenBSD: v_delete.c,v 1.8 2014/11/12 04:28:41 bentley Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)v_delete.c	10.9 (Berkeley) 10/23/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -27,10 +29,12 @@
  *	       [buffer][count]D
  *	Delete a range of text.
  *
- * PUBLIC: int v_delete(SCR *, VICMD *);
+ * PUBLIC: int v_delete __P((SCR *, VICMD *));
  */
 int
-v_delete(SCR *sp, VICMD *vp)
+v_delete(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	recno_t nlines;
 	size_t len;

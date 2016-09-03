@@ -1,35 +1,5 @@
-/*	$OpenBSD: print-radius.c,v 1.11 2015/11/16 00:16:39 mmcc Exp $	*/
-
-/*
- * Copyright (c) 1997 Thomas H. Ptacek. All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- */
-
 #include <sys/types.h>
 #include <netinet/in.h>
-#include <arpa/inet.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -88,16 +58,16 @@ struct radius_atable {
 /* the right way to do this is probably to read these values out
  * of the actual RADIUS dictionary; this would require the machine
  * running tcpdump to have that file installed, and it's not my
- * program, so I'm not going to introduce new dependencies. Oh well. 
+ * program, so I'm not going to introduce new dependancies. Oh well. 
  */
 
 static struct radius_atable radius_atts[] = {
 
-{ RADIUS_ATT_USER_NAME, 	RD_STRING, 	"Name", 	{ NULL } },
-{ RADIUS_ATT_PASSWORD, 		RD_HEX, 	"Pass", 	{ NULL } },
-{ RADIUS_ATT_CHAP_PASS, 	RD_HEX, 	"CPass",	{ NULL } },
-{ RADIUS_ATT_NAS_IP, 		RD_ADDRESS, 	"NAS-IP", 	{ NULL } },
-{ RADIUS_ATT_NAS_PORT, 		RD_INT, 	"NAS-Pt", 	{ NULL } },
+{ RADIUS_ATT_USER_NAME, 	RD_STRING, 	"Name", 	NULL },
+{ RADIUS_ATT_PASSWORD, 		RD_HEX, 	"Pass", 	NULL },
+{ RADIUS_ATT_CHAP_PASS, 	RD_HEX, 	"CPass",	NULL },
+{ RADIUS_ATT_NAS_IP, 		RD_ADDRESS, 	"NAS-IP", 	NULL },
+{ RADIUS_ATT_NAS_PORT, 		RD_INT, 	"NAS-Pt", 	NULL },
 
 { RADIUS_ATT_USER_SERVICE, 	RD_INT, 	"USvc", 	
 { "", "Login", "Framed", "DB-Lgn", "DB-Frm", "Out", "Shell", NULL } },
@@ -105,38 +75,38 @@ static struct radius_atable radius_atts[] = {
 { RADIUS_ATT_PROTOCOL, 		RD_INT, 	"FProt", 
 { "", "PPP", "SLIP", NULL } },
 
-{ RADIUS_ATT_FRAMED_ADDRESS, 	RD_ADDRESS, 	"F-IP", 	{ NULL } },
-{ RADIUS_ATT_NETMASK, 		RD_ADDRESS, 	"F-Msk", 	{ NULL } },
-{ RADIUS_ATT_ROUTING, 		RD_INT, 	"F-Rtg", 	{ NULL } },
-{ RADIUS_ATT_FILTER, 		RD_STRING, 	"FltID", 	{ NULL } },
-{ RADIUS_ATT_MTU, 		RD_INT, 	"F-MTU", 	{ NULL } },
-{ RADIUS_ATT_COMPRESSION, 	RD_INT, 	"F-Comp", 	{ NULL } },
-{ RADIUS_ATT_LOGIN_HOST, 	RD_ADDRESS, 	"L-Hst", 	{ NULL } },
+{ RADIUS_ATT_FRAMED_ADDRESS, 	RD_ADDRESS, 	"F-IP", 	NULL },
+{ RADIUS_ATT_NETMASK, 		RD_ADDRESS, 	"F-Msk", 	NULL },
+{ RADIUS_ATT_ROUTING, 		RD_INT, 	"F-Rtg", 	NULL },
+{ RADIUS_ATT_FILTER, 		RD_STRING, 	"FltID", 	NULL },
+{ RADIUS_ATT_MTU, 		RD_INT, 	"F-MTU", 	NULL },
+{ RADIUS_ATT_COMPRESSION, 	RD_INT, 	"F-Comp", 	NULL },
+{ RADIUS_ATT_LOGIN_HOST, 	RD_ADDRESS, 	"L-Hst", 	NULL },
 
 { RADIUS_ATT_LOGIN_SERVICE, 	RD_INT, 	"L-Svc", 
 { "", "Telnt", "Rlog", "Clear", "PortM", NULL }				},
 
-{ RADIUS_ATT_LOGIN_TCP_PORT, 	RD_INT, 	"L-Pt", 	{ NULL } },
-{ RADIUS_ATT_OLD_PASSWORD, 	RD_HEX, 	"OPass", 	{ NULL } },
-{ RADIUS_ATT_PORT_MESSAGE, 	RD_STRING, 	"PMsg", 	{ NULL } },
-{ RADIUS_ATT_DIALBACK_NO, 	RD_STRING, 	"DB#", 		{ NULL } },
-{ RADIUS_ATT_DIALBACK_NAME, 	RD_STRING, 	"DBNm", 	{ NULL } },
-{ RADIUS_ATT_EXPIRATION, 	RD_DATE, 	"PExp", 	{ NULL } },
-{ RADIUS_ATT_FRAMED_ROUTE, 	RD_STRING, 	"F-Rt", 	{ NULL } },
-{ RADIUS_ATT_FRAMED_IPX, 	RD_ADDRESS, 	"F-IPX", 	{ NULL } },
-{ RADIUS_ATT_CHALLENGE_STATE, 	RD_STRING, 	"CState", 	{ NULL } },
-{ RADIUS_ATT_CLASS, 		RD_STRING, 	"Class", 	{ NULL } },
-{ RADIUS_ATT_VENDOR_SPECIFIC, 	RD_HEX, 	"Vendor", 	{ NULL } },
-{ RADIUS_ATT_SESSION_TIMEOUT, 	RD_INT, 	"S-TO", 	{ NULL } },
-{ RADIUS_ATT_IDLE_TIMEOUT, 	RD_INT, 	"I-TO", 	{ NULL } },
-{ RADIUS_ATT_TERMINATE_ACTION, 	RD_INT, 	"TermAct", 	{ NULL } },
-{ RADIUS_ATT_CALLED_ID, 	RD_STRING, 	"Callee", 	{ NULL } },
-{ RADIUS_ATT_CALLER_ID, 	RD_STRING, 	"Caller", 	{ NULL } },
+{ RADIUS_ATT_LOGIN_TCP_PORT, 	RD_INT, 	"L-Pt", 	NULL },
+{ RADIUS_ATT_OLD_PASSWORD, 	RD_HEX, 	"OPass", 	NULL },
+{ RADIUS_ATT_PORT_MESSAGE, 	RD_STRING, 	"PMsg", 	NULL },
+{ RADIUS_ATT_DIALBACK_NO, 	RD_STRING, 	"DB#", 		NULL },
+{ RADIUS_ATT_DIALBACK_NAME, 	RD_STRING, 	"DBNm", 	NULL },	
+{ RADIUS_ATT_EXPIRATION, 	RD_DATE, 	"PExp", 	NULL },
+{ RADIUS_ATT_FRAMED_ROUTE, 	RD_STRING, 	"F-Rt", 	NULL },
+{ RADIUS_ATT_FRAMED_IPX, 	RD_ADDRESS, 	"F-IPX", 	NULL },
+{ RADIUS_ATT_CHALLENGE_STATE, 	RD_STRING, 	"CState", 	NULL },
+{ RADIUS_ATT_CLASS, 		RD_STRING, 	"Class", 	NULL },
+{ RADIUS_ATT_VENDOR_SPECIFIC, 	RD_HEX, 	"Vendor", 	NULL },
+{ RADIUS_ATT_SESSION_TIMEOUT, 	RD_INT, 	"S-TO", 	NULL },
+{ RADIUS_ATT_IDLE_TIMEOUT, 	RD_INT, 	"I-TO", 	NULL },
+{ RADIUS_ATT_TERMINATE_ACTION, 	RD_INT, 	"TermAct", 	NULL },
+{ RADIUS_ATT_CALLED_ID, 	RD_STRING, 	"Callee", 	NULL },
+{ RADIUS_ATT_CALLER_ID, 	RD_STRING, 	"Caller", 	NULL },
 
 { RADIUS_ATT_STATUS_TYPE, 	RD_INT, 	"Stat", 
 { "", "Start", "Stop", NULL }					},
 
-{ -1,				-1,		NULL, 		{ NULL } }
+{ -1,				-1,		NULL, 		NULL }
 
 };
 
@@ -171,7 +141,7 @@ static void r_print_att(int code, int len, const u_char *data) {
 	fprintf(stdout, " %s =", atp->name);
 
 	if(atp->encoding == RD_INT && *atp->values) {
-		u_int32_t k = ntohl((*(int *)data));
+		int k = ntohl((*(int *)data));
 
 		for(i = 0; atp->values[i] != NULL; i++) 
 			/* SHOOT ME */ ;
@@ -218,8 +188,7 @@ static void r_print_string(int code, int len, const u_char *data) {
 	memset(string, 0, 128);
 	memcpy(string, data, len);
 
-	fprintf(stdout, " ");
-	safeputs(string);
+	fprintf(stdout, " %s", string);
 }
 
 static void r_print_hex(int code, int len, const u_char *data) {
@@ -230,15 +199,15 @@ static void r_print_hex(int code, int len, const u_char *data) {
 	fputs(" [", stdout);
 	
 	for(i = 0; i < len; i++)
-		fprintf(stdout, "%02x", data[i]);
+		fprintf(stdout, "%x", data[i]);
 
 	fputc(']', stdout);
 }
 
-void radius_print(const u_char *data, u_int len) {
+void radius_print(register const u_char *data, u_int len) {
 	const struct radius_header *rhp;
 	const u_char *pp;
-	int first, l, ac, al;
+	int i, l, ac, al;
 
 	if(len < sizeof(struct radius_header)) {
 		fputs(" [|radius]", stdout);
@@ -267,12 +236,8 @@ void radius_print(const u_char *data, u_int len) {
 	else
 		pp = data + RADFIXEDSZ;
 
-	first = 1;
 	while(l) {
-		if(!first)
-			fputc(',', stdout);
-		else
-			first = 0;
+		if(!i) fputc(',', stdout); i = 0;
 
 		ac = *pp++;
 		al = *pp++;

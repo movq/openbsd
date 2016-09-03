@@ -1,4 +1,4 @@
-/*	$OpenBSD: who.c,v 1.27 2015/10/21 16:06:57 millert Exp $	*/
+/*	$OpenBSD: who.c,v 1.7 1999/07/18 01:22:16 deraadt Exp $	*/
 /*	$NetBSD: who.c,v 1.4 1994/12/07 04:28:49 jtc Exp $	*/
 
 /*
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,9 +37,21 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1989, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)who.c	8.1 (Berkeley) 6/6/93";
+#endif
+static char rcsid[] = "$OpenBSD: who.c,v 1.7 1999/07/18 01:22:16 deraadt Exp $";
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <paths.h>
 #include <pwd.h>
 #include <utmp.h>
 #include <stdio.h>
@@ -46,11 +62,11 @@
 #include <err.h>
 #include <locale.h>
 
-void  output(struct utmp *);
-void  output_labels(void);
-void  who_am_i(FILE *);
-void  usage(void);
-FILE *file(char *);
+void  output		__P((struct utmp *));
+void  output_labels	__P((void));
+void  who_am_i		__P((FILE *));
+void  usage		__P((void));
+FILE *file		__P((char *));
 
 int only_current_term;		/* show info about the current terminal only */
 int show_term;			/* show term state */
@@ -58,30 +74,16 @@ int show_idle;			/* show idle time */
 int show_labels;		/* show column labels */
 int show_quick;			/* quick, names only */
 
-#define NAME_WIDTH	8
-#define HOST_WIDTH	45
-
-int hostwidth = HOST_WIDTH;
-char *mytty;
-
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
 	struct utmp usr;
 	FILE *ufp;
-	char *t;
 	int c;
 
 	setlocale(LC_ALL, "");
-
-	if (pledge("stdio rpath getpw", NULL) == -1)
-		err(1, "pledge");
-
-	if ((mytty = ttyname(0))) {
-		/* strip any directory component */
-		if ((t = strrchr(mytty, '/')))
-			mytty = t + 1;
-	}
 
 	only_current_term = show_term = show_idle = show_labels = 0;
 	show_quick = 0;
@@ -113,11 +115,11 @@ main(int argc, char *argv[])
 	if (show_quick) {
 		only_current_term = show_term = show_idle = show_labels = 0;
 	}
-	
-	if (show_term)
-		hostwidth -= 2;
-	if (show_idle)
-		hostwidth -= 6;
+
+	if (chdir("/dev")) {
+		err(1, "cannot change directory to /dev");
+		/* NOTREACHED */
+	}
 
 	if (show_labels)
 		output_labels();
@@ -133,7 +135,7 @@ main(int argc, char *argv[])
 	
 			while (fread((char *)&usr, sizeof(usr), 1, ufp) == 1) {
 				if (*usr.ut_name && *usr.ut_line) {
-					(void)printf("%-*.*s ", NAME_WIDTH,
+					(void)printf("%-*.*s ", UT_NAMESIZE,
 						UT_NAMESIZE, usr.ut_name);
 					if ((++count % 8) == 0)
 						(void) printf("\n");
@@ -159,7 +161,7 @@ main(int argc, char *argv[])
 
 			while (fread((char *)&usr, sizeof(usr), 1, ufp) == 1) {
 				if (*usr.ut_name && *usr.ut_line) {
-					(void)printf("%-*.*s ", NAME_WIDTH,
+					(void)printf("%-*.*s ", UT_NAMESIZE,
 						UT_NAMESIZE, usr.ut_name);
 					if ((++count % 8) == 0)
 						(void) printf("\n");
@@ -186,22 +188,28 @@ main(int argc, char *argv[])
 }
 
 void
-who_am_i(FILE *ufp)
+who_am_i(ufp)
+	FILE *ufp;
 {
 	struct utmp usr;
 	struct passwd *pw;
+	register char *p;
+	char *t;
 
 	/* search through the utmp and find an entry for this tty */
-	if (mytty) {
+	if ((p = ttyname(0))) {
+		/* strip any directory component */
+		if ((t = strrchr(p, '/')))
+			p = t + 1;
 		while (fread((char *)&usr, sizeof(usr), 1, ufp) == 1)
-			if (*usr.ut_name && !strcmp(usr.ut_line, mytty)) {
+			if (*usr.ut_name && !strcmp(usr.ut_line, p)) {
 				output(&usr);
 				return;
 			}
 		/* well, at least we know what the tty is */
-		(void)strncpy(usr.ut_line, mytty, UT_LINESIZE);
+		(void)strncpy(usr.ut_line, p, UT_LINESIZE);
 	} else
-		(void)strncpy(usr.ut_line, "tty??", UT_LINESIZE);
+		(void)strcpy(usr.ut_line, "tty??");
 
 	pw = getpwuid(getuid());
 	(void)strncpy(usr.ut_name, pw ? pw->pw_name : "?", UT_NAMESIZE);
@@ -211,10 +219,11 @@ who_am_i(FILE *ufp)
 }
 
 void
-output(struct utmp *up)
+output(up)
+	struct utmp *up;
 {
 	struct stat sb;
-	char line[sizeof(_PATH_DEV) + sizeof (up->ut_line)];
+	char line[sizeof (up->ut_line) + 1];
 	char state = '?';
 	static time_t now = 0;
 	time_t idle = 0;
@@ -223,9 +232,8 @@ output(struct utmp *up)
 		if (now == 0)
 			time(&now);
 		
-		memset(line, 0, sizeof line);
-		strlcpy(line, _PATH_DEV, sizeof line);
-		strlcat(line, up->ut_line, sizeof line);
+		strncpy(line, up->ut_line, sizeof (up->ut_line));
+		line[sizeof (up->ut_line)] = '\0';
 
 		if (stat(line, &sb) == 0) {
 			state = (sb.st_mode & 020) ? '+' : '-';
@@ -237,7 +245,7 @@ output(struct utmp *up)
 		
 	}
 
-	(void)printf("%-*.*s ", NAME_WIDTH, UT_NAMESIZE, up->ut_name);
+	(void)printf("%-*.*s ", UT_NAMESIZE, UT_NAMESIZE, up->ut_name);
 
 	if (show_term) {
 		(void)printf("%c ", state);
@@ -251,21 +259,21 @@ output(struct utmp *up)
 			(void)printf("  .   ");
 		else if (idle < (24 * 60 * 60))
 			(void)printf("%02d:%02d ", 
-				     ((int)idle / (60 * 60)),
-				     ((int)idle % (60 * 60)) / 60);
+				     (idle / (60 * 60)),
+				     (idle % (60 * 60)) / 60);
 		else
 			(void)printf(" old  ");
 	}
 	
 	if (*up->ut_host)
-		printf("  (%.*s)", hostwidth, up->ut_host);
+		printf("\t(%.*s)", UT_HOSTSIZE, up->ut_host);
 	(void)putchar('\n');
 }
 
 void
-output_labels(void)
+output_labels()
 {
-	(void)printf("%-*.*s ", NAME_WIDTH, UT_NAMESIZE, "USER");
+	(void)printf("%-*.*s ", UT_NAMESIZE, UT_NAMESIZE, "USER");
 
 	if (show_term)
 		(void)printf("S ");
@@ -276,13 +284,14 @@ output_labels(void)
 	if (show_idle)
 		(void)printf("IDLE  ");
 
-	(void)printf("  %.*s", hostwidth, "FROM");
+	(void)printf("\t%.*s", UT_HOSTSIZE, "FROM");
 
 	(void)putchar('\n');
 }
 
 FILE *
-file(char *name)
+file(name)
+	char *name;
 {
 	FILE *ufp;
 
@@ -290,19 +299,12 @@ file(char *name)
 		err(1, "%s", name);
 		/* NOTREACHED */
 	}
-	if (show_term || show_idle) {
-		if (pledge("stdio rpath getpw", NULL) == -1)
-			err(1, "pledge");
-	} else {
-		if (pledge("stdio getpw", NULL) == -1)
-			err(1, "pledge");
-	}
 	return(ufp);
 }
 
 void
-usage(void)
+usage()
 {
-	(void)fprintf(stderr, "usage: who [-HmqTu] [file]\n       who am i\n");
+	(void)fprintf(stderr, "usage: who [-mqTuH] [ file ]\n       who am i\n");
 	exit(1);
 }

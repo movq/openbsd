@@ -1,15 +1,43 @@
-#	$OpenBSD: Makefile,v 1.104 2015/03/24 12:00:39 dlg Exp $
+#	$OpenBSD: Makefile,v 1.46 1999/09/21 04:58:14 csapuntz Exp $
 
-SUBDIR=	atactl badsect bioctl clri dhclient \
-	disklabel dmesg dump dumpfs fdisk fsck fsck_ext2fs fsck_ffs  \
-	fsck_msdos fsdb fsirand growfs ifconfig iked init ipsecctl  \
-	isakmpd kbd ldattach mknod mount \
-	mount_cd9660 mount_ext2fs mount_ffs mount_msdos \
-	mount_nfs mount_ntfs mount_tmpfs mount_udf \
-	mount_vnd mountd ncheck_ffs newfs newfs_ext2fs newfs_msdos \
-	nfsd nologin pdisk pfctl pflogd ping ping6 quotacheck \
-	reboot restore route savecore scan_ffs \
-	scsi shutdown swapctl sysctl ttyflags tunefs \
-	umount wsconsctl
+# Not ported: XNSrouted enpload scsiformat startslip
+# Missing: icheck
+
+SUBDIR= atactl badsect brconfig ccdconfig disklabel dmesg fsck ifconfig init \
+	ipf ipfstat ipnat ipsecadm isakmpd kbd mknod modload modunload \
+	mount mountd ncheck_ffs nfsd nfsiod nologin photurisd ping \
+	quotacheck raidctl reboot route routed savecore scan_ffs scsi \
+	shutdown slattach startkey swapctl ttyflags umount
+
+# support for various file systems
+SUBDIR+= mount_ados
+SUBDIR+= mount_cd9660
+SUBDIR+= mount_fdesc
+SUBDIR+= mount_ffs	newfs fsck_ffs fsdb dumpfs dump restore clri tunefs fsirand
+SUBDIR+= mount_kernfs
+# mount_mfs -> newfs
+SUBDIR+= mount_msdos	newfs_msdos fsck_msdos
+SUBDIR+= mount_nfs
+SUBDIR+= mount_null
+SUBDIR+= mount_portal
+SUBDIR+= mount_procfs
+SUBDIR+= mount_umap
+SUBDIR+= mount_union
+SUBDIR+= mount_ext2fs fsck_ext2fs
+SUBDIR+= mount_xfs
+
+.if   make(clean) || make(cleandir) || make(obj)
+SUBDIR+= bim edlabel fdisk wicontrol
+.elif ${MACHINE} == "i386"
+SUBDIR+= fdisk
+SUBDIR+= wicontrol
+.elif (${MACHINE} == "arc") || (${MACHINE} == "powerpc") || (${MACHINE} == "alpha")
+SUBDIR+= fdisk
+.elif ${MACHINE} == "pc532"
+SUBDIR+= bim
+.elif (${MACHINE} == "sun3") || (${MACHINE} == "atari") || \
+      (${MACHINE} == "sparc")
+SUBDIR+= edlabel
+.endif
 
 .include <bsd.subdir.mk>

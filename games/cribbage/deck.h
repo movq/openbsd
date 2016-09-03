@@ -1,4 +1,3 @@
-/*	$OpenBSD: deck.h,v 1.4 2015/12/31 18:10:19 mestre Exp $	*/
 /*	$NetBSD: deck.h,v 1.3 1995/03/21 15:08:49 cgd Exp $	*/
 
 /*
@@ -13,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -35,6 +38,7 @@
 /*
  * define structure of a deck of cards and other related things
  */
+
 
 #define		CARDS		52		/* number cards in deck */
 #define		RANKS		13		/* number ranks in deck */
@@ -78,3 +82,6 @@ typedef		struct  {
 			int		rank;
 			int		suit;
 		}		CARD;
+
+typedef		char		BOOLEAN;
+

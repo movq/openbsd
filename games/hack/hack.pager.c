@@ -1,124 +1,61 @@
-/*	$OpenBSD: hack.pager.c,v 1.24 2016/03/15 19:56:20 mestre Exp $	*/
-
 /*
- * Copyright (c) 1985, Stichting Centrum voor Wiskunde en Informatica,
- * Amsterdam
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- * - Redistributions of source code must retain the above copyright notice,
- * this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above copyright
- * notice, this list of conditions and the following disclaimer in the
- * documentation and/or other materials provided with the distribution.
- *
- * - Neither the name of the Stichting Centrum voor Wiskunde en
- * Informatica, nor the names of its contributors may be used to endorse or
- * promote products derived from this software without specific prior
- * written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
- * IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
- * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER
- * OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Copyright (c) Stichting Mathematisch Centrum, Amsterdam, 1985.
  */
 
-/*
- * Copyright (c) 1982 Jay Fenlason <hack@gnu.org>
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
- * AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL
- * THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
+#ifndef lint
+static char rcsid[] = "$NetBSD: hack.pager.c,v 1.4 1995/03/23 08:31:16 cgd Exp $";
+#endif /* not lint */
 
 /* This file contains the command routine dowhatis() and a pager. */
 /* Also readmail() and doshell(), and generally the things that
    contact the outside world. */
 
-#include <libgen.h>
-#include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-
+#include	<sys/types.h>
+#include	<signal.h>
+#include	<stdio.h>
+#include	<stdlib.h>
+#include	<unistd.h>
 #include "hack.h"
-
 extern int CO, LI;	/* usually COLNO and ROWNO+2 */
 extern char *CD;
 extern char quitchars[];
+void done1();
 
-static void page_more(FILE *, int);
-
-int
-dowhatis(void)
+dowhatis()
 {
 	FILE *fp;
 	char bufr[BUFSZ+6];
-	char *buf = &bufr[6], q;
-	size_t len;
+	register char *buf = &bufr[6], *ep, q;
 	extern char readchar();
 
-	if (!(fp = fopen(DATAFILE, "r")))
+	if(!(fp = fopen(DATAFILE, "r")))
 		pline("Cannot open data file!");
 	else {
 		pline("Specify what? ");
 		q = readchar();
-		if (q != '\t')
-			while (fgets(buf,BUFSZ,fp))
-				if (*buf == q) {
-					len = strcspn(buf, "\n");
-					/* bad data file */
-					if (len == 0)
-						continue;
-					buf[len] = '\0';
-					/* Expand tab 'by hand' */
-					if (buf[1] == '\t'){
-						buf = bufr;
-						buf[0] = q;
-						(void) strncpy(buf+1, "       ", 7);
-						len = strlen(buf);
-					}
-					pline("%s", buf);
-					if (buf[len - 1] == ';') {
-						pline("More info? ");
-						if (readchar() == 'y') {
-							page_more(fp,1); /* does fclose() */
-							return(0);
-						}
-					}
-					(void) fclose(fp); 	/* kopper@psuvax1 */
+		if(q != '\t')
+		while(fgets(buf,BUFSZ,fp))
+		    if(*buf == q) {
+			ep = strchr(buf, '\n');
+			if(ep) *ep = 0;
+			/* else: bad data file */
+			/* Expand tab 'by hand' */
+			if(buf[1] == '\t'){
+				buf = bufr;
+				buf[0] = q;
+				(void) strncpy(buf+1, "       ", 7);
+			}
+			pline(buf);
+			if(ep[-1] == ';') {
+				pline("More info? ");
+				if(readchar() == 'y') {
+					page_more(fp,1); /* does fclose() */
 					return(0);
 				}
+			}
+			(void) fclose(fp); 	/* kopper@psuvax1 */
+			return(0);
+		    }
 		pline("I've never heard of such things.");
 		(void) fclose(fp);
 	}
@@ -129,25 +66,26 @@ dowhatis(void)
 static int got_intrup;
 
 void
-intruph(int notused)
-{
+intruph(){
 	got_intrup++;
 }
 
 /* simple pager, also used from dohelp() */
-/* strip: nr of chars to be stripped from each line (0 or 1) */
-static void
-page_more(FILE *fp, int strip)
+page_more(fp,strip)
+FILE *fp;
+int strip;	/* nr of chars to be stripped from each line (0 or 1) */
 {
-	char *bufr;
+	register char *bufr, *ep;
 	sig_t prevsig = signal(SIGINT, intruph);
 
 	set_pager(0);
 	bufr = (char *) alloc((unsigned) CO);
-	while (fgets(bufr, CO, fp) && (!strip || *bufr == '\t') &&
-	    !got_intrup) {
-		bufr[strcspn(bufr, "\n")] = '\0';
-		if (page_line(bufr+strip)) {
+	bufr[CO-1] = 0;
+	while(fgets(bufr,CO-1,fp) && (!strip || *bufr == '\t') && !got_intrup){
+		ep = strchr(bufr, '\n');
+		if(ep)
+			*ep = 0;
+		if(page_line(bufr+strip)) {
 			set_pager(2);
 			goto ret;
 		}
@@ -163,28 +101,23 @@ ret:
 static boolean whole_screen = TRUE;
 #define	PAGMIN	12	/* minimum # of lines for page below level map */
 
-void
-set_whole_screen(void)
-{	/* called in termcap as soon as LI is known */
+set_whole_screen() {	/* called in termcap as soon as LI is known */
 	whole_screen = (LI-ROWNO-2 <= PAGMIN || !CD);
 }
 
 #ifdef NEWS
-int
-readnews(void)
-{
-	int ret;
+readnews() {
+	register int ret;
 
 	whole_screen = TRUE;	/* force a docrt(), our first */
 	ret = page_file(NEWS, TRUE);
 	set_whole_screen();
 	return(ret);		/* report whether we did docrt() */
 }
-#endif /* NEWS */
+#endif NEWS
 
-/* 0: open  1: wait+close  2: close */
-void
-set_pager(int mode)
+set_pager(mode)
+register int mode;	/* 0: open  1: wait+close  2: close */
 {
 	static boolean so;
 	if(mode == 0) {
@@ -213,8 +146,8 @@ set_pager(int mode)
 	}
 }
 
-int
-page_line(char *s)		/* returns 1 if we should quit */
+page_line(s)		/* returns 1 if we should quit */
+register char *s;
 {
 	extern char morc;
 
@@ -250,8 +183,10 @@ page_line(char *s)		/* returns 1 if we should quit */
  *	cornline(2, morcs)	: output everything and cleanup
  *	cornline(3, 0)		: cleanup
  */
-void
-cornline(int mode, char *text)
+
+cornline(mode, text)
+int mode;
+char *text;
 {
 	static struct line {
 		struct line *next_line;
@@ -259,7 +194,7 @@ cornline(int mode, char *text)
 	} *texthead, *texttail;
 	static int maxlen;
 	static int linect;
-	struct line *tl;
+	register struct line *tl;
 
 	if(mode == 0) {
 		texthead = 0;
@@ -273,7 +208,7 @@ cornline(int mode, char *text)
 	}
 
 	if(mode == 1) {
-	    int len;
+	    register int len;
 
 	    if(!text) return;	/* superfluous, just to be sure */
 	    linect++;
@@ -284,7 +219,7 @@ cornline(int mode, char *text)
 		alloc((unsigned)(len + sizeof(struct line) + 1));
 	    tl->next_line = 0;
 	    tl->line_text = (char *)(tl + 1);
-	    (void) strlcpy(tl->line_text, text, len + 1);
+	    (void) strcpy(tl->line_text, text);
 	    if(!texthead)
 		texthead = tl;
 	    else
@@ -295,34 +230,34 @@ cornline(int mode, char *text)
 
 	/* --- now we really do it --- */
 	if(mode == 2 && linect == 1)			    /* topline only */
-		pline("%s", texthead->line_text);
+		pline(texthead->line_text);
 	else
 	if(mode == 2) {
-	    int curline, lth;
+	    register int curline, lth;
 
 	    if(flags.toplin == 1) more();	/* ab@unido */
 	    remember_topl();
 
 	    lth = CO - maxlen - 2;		   /* Use full screen width */
 	    if (linect < LI && lth >= 10) {		     /* in a corner */
-		home();
-		cl_end();
+		home ();
+		cl_end ();
 		flags.toplin = 0;
 		curline = 1;
 		for (tl = texthead; tl; tl = tl->next_line) {
-		    curs(lth, curline);
+		    curs (lth, curline);
 		    if(curline > 1)
-			cl_end();
+			cl_end ();
 		    putsym(' ');
 		    putstr (tl->line_text);
 		    curline++;
 		}
-		curs(lth, curline);
-		cl_end();
-		cmore(text);
-		home();
-		cl_end();
-		docorner(lth, curline-1);
+		curs (lth, curline);
+		cl_end ();
+		cmore (text);
+		home ();
+		cl_end ();
+		docorner (lth, curline-1);
 	    } else {					/* feed to pager */
 		set_pager(0);
 		for (tl = texthead; tl; tl = tl->next_line) {
@@ -340,34 +275,33 @@ cornline(int mode, char *text)
 	}
 
 cleanup:
-	while ((tl = texthead)) {
+	while(tl = texthead) {
 		texthead = tl->next_line;
-		free(tl);
+		free((char *) tl);
 	}
 }
 
-int
-dohelp(void)
+dohelp()
 {
 	char c;
 
 	pline ("Long or short help? ");
 	while (((c = readchar ()) != 'l') && (c != 's') && !strchr(quitchars,c))
-		hackbell ();
+		bell ();
 	if (!strchr(quitchars, c))
 		(void) page_file((c == 'l') ? HELP : SHELP, FALSE);
 	return(0);
 }
 
-/* return: 0 - cannot open fnam; 1 - otherwise */
-int
-page_file(char *fnam, boolean silent)
+page_file(fnam, silent)	/* return: 0 - cannot open fnam; 1 - otherwise */
+register char *fnam;
+boolean silent;
 {
 #ifdef DEF_PAGER			/* this implies that UNIX is defined */
       {
 	/* use external pager; this may give security problems */
 
-	int fd = open(fnam, O_RDONLY);
+	register int fd = open(fnam, O_RDONLY);
 
 	if(fd < 0) {
 		if(!silent) pline("Cannot open %s.", fnam);
@@ -383,14 +317,14 @@ page_file(char *fnam, boolean silent)
 		if(dup(fd)) {
 			if(!silent) printf("Cannot open %s as stdin.\n", fnam);
 		} else {
-			execlp(catmore, basename(catmore), (char *)NULL);
+			execl(catmore, "page", (char *) 0);
 			if(!silent) printf("Cannot exec %s.\n", catmore);
 		}
 		exit(1);
 	}
 	(void) close(fd);
       }
-#else /* DEF_PAGER */
+#else DEF_PAGER
       {
 	FILE *f;			/* free after Robert Viduya */
 
@@ -403,52 +337,59 @@ page_file(char *fnam, boolean silent)
 	}
 	page_more(f, 0);
       }
-#endif /* DEF_PAGER */
+#endif DEF_PAGER
 
 	return(1);
 }
 
 #ifdef UNIX
 #ifdef SHELL
-int
-dosh(void)
-{
-	char *str;
-
+dosh(){
+register char *str;
 	if(child(0)) {
-		if ((str = getenv("SHELL")))
-			execlp(str, str, (char *)NULL);
+		if(str = getenv("SHELL"))
+			execl(str, str, (char *) 0);
 		else
-			execl("/bin/sh", "sh", (char *)NULL);
+			execl("/bin/sh", "sh", (char *) 0);
 		pline("sh: cannot execute.");
 		exit(1);
 	}
 	return(0);
 }
-#endif /* SHELL */
+#endif SHELL
 
-#include <sys/wait.h>
+#ifdef NOWAITINCLUDE
+union wait {		/* used only for the cast  (union wait *) 0  */
+	int w_status;
+	struct {
+		unsigned short w_Termsig:7;
+		unsigned short w_Coredump:1;
+		unsigned short w_Retcode:8;
+	} w_T;
+};
 
-int
-child(int wt)
-{
+#else
+
+#ifdef BSD
+#include	<sys/wait.h>
+#else
+#include	<wait.h>
+#endif BSD
+#endif NOWAITINCLUDE
+
+child(wt) {
 	int status;
-	int f;
-	char *home;
-	gid_t gid;
+	register int f;
 
 	f = fork();
 	if(f == 0){		/* child */
-		settty(NULL);		/* also calls end_screen() */
-		/* revoke privs */
-		gid = getgid();
-		setresgid(gid, gid, gid);
+		settty((char *) 0);		/* also calls end_screen() */
+		/* revoke */
+		setegid(getgid());
+		setgid(getgid());
 #ifdef CHDIR
-		home = getenv("HOME");
-		if (home == NULL || *home == '\0')
-			home = "/";
-		(void) chdir(home);
-#endif /* CHDIR */
+		(void) chdir(getenv("HOME"));
+#endif CHDIR
 		return(1);
 	}
 	if(f == -1) {	/* cannot fork */
@@ -464,9 +405,9 @@ child(int wt)
 	(void) signal(SIGINT,done1);
 #ifdef WIZARD
 	if(wizard) (void) signal(SIGQUIT,SIG_DFL);
-#endif /* WIZARD */
+#endif WIZARD
 	if(wt) getret();
 	docrt();
 	return(0);
 }
-#endif /* UNIX */
+#endif UNIX

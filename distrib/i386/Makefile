@@ -1,13 +1,5 @@
-#	$OpenBSD: Makefile,v 1.12 2015/02/23 09:33:38 deraadt Exp $
+#	$OpenBSD: Makefile,v 1.4 1997/09/18 17:18:37 deraadt Exp $
 
-SUBDIR= ramdisk_cd ramdisk cdfs
-
-.if	make(obj) || make(cleandir) || make(clean)
-SUBDIR+= iso
-.endif
-
-unconfig:
-	cd ramdisk_cd; ${MAKE} unconfig
-	cd ramdisk; ${MAKE} unconfig
+SUBDIR=	floppies
 
 .include <bsd.subdir.mk>

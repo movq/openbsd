@@ -1,6 +1,4 @@
-/* $OpenBSD: deattack.h,v 1.11 2015/01/19 19:52:16 markus Exp $ */
-
-/*
+/* $Id: deattack.h,v 1.2 1999/10/05 02:35:57 dugsong Exp $
  * Cryptographic attack detector for ssh - Header file
  *
  * Copyright (c) 1998 CORE SDI S.A., Buenos Aires, Argentina.
@@ -16,8 +14,7 @@
  * SOFTWARE.
  *
  * Ariel Futoransky <futo@core-sdi.com>
- * <http://www.core-sdi.com>
- */
+ * <http://www.core-sdi.com> */
 
 #ifndef _DEATTACK_H
 #define _DEATTACK_H
@@ -25,14 +22,6 @@
 /* Return codes */
 #define DEATTACK_OK		0
 #define DEATTACK_DETECTED	1
-#define DEATTACK_DOS_DETECTED	2
-#define DEATTACK_ERROR		3
 
-struct deattack_ctx {
-	u_int16_t *h;
-	u_int32_t n;
-};
-
-void	 deattack_init(struct deattack_ctx *);
-int	 detect_attack(struct deattack_ctx *, const u_char *, u_int32_t);
+int detect_attack(unsigned char *buf, u_int32_t len, unsigned char IV[8]);
 #endif

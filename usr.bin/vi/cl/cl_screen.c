@@ -1,5 +1,3 @@
-/*	$OpenBSD: cl_screen.c,v 1.27 2016/05/28 18:30:35 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -11,38 +9,43 @@
 
 #include "config.h"
 
+#ifndef lint
+static const char sccsid[] = "@(#)cl_screen.c	10.49 (Berkeley) 9/24/96";
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/queue.h>
 
 #include <bitstring.h>
-#include <curses.h>
 #include <errno.h>
+#include <curses.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <term.h>
 #include <termios.h>
 #include <unistd.h>
 
 #include "../common/common.h"
 #include "cl.h"
 
-static int	cl_ex_end(GS *);
-static int	cl_ex_init(SCR *);
-static void	cl_freecap(CL_PRIVATE *);
-static int	cl_vi_end(GS *);
-static int	cl_vi_init(SCR *);
-static int	cl_putenv(char *, char *, u_long);
+static int	cl_ex_end __P((GS *));
+static int	cl_ex_init __P((SCR *));
+static void	cl_freecap __P((CL_PRIVATE *));
+static int	cl_vi_end __P((GS *));
+static int	cl_vi_init __P((SCR *));
+static int	cl_putenv __P((char *, char *, u_long));
 
 /*
  * cl_screen --
  *	Switch screen types.
  *
- * PUBLIC: int cl_screen(SCR *, u_int32_t);
+ * PUBLIC: int cl_screen __P((SCR *, u_int32_t));
  */
 int
-cl_screen(SCR *sp, u_int32_t flags)
+cl_screen(sp, flags)
+	SCR *sp;
+	u_int32_t flags;
 {
 	CL_PRIVATE *clp;
 	GS *gp;
@@ -52,16 +55,14 @@ cl_screen(SCR *sp, u_int32_t flags)
 
 	/* See if the current information is incorrect. */
 	if (F_ISSET(gp, G_SRESTART)) {
-		if ((!F_ISSET(sp, SC_SCR_EX | SC_SCR_VI) ||
-		    resizeterm(O_VAL(sp, O_LINES), O_VAL(sp, O_COLUMNS))) &&
-		    cl_quit(gp))
+		if (cl_quit(gp))
 			return (1);
 		F_CLR(gp, G_SRESTART);
 	}
 	
 	/* See if we're already in the right mode. */
-	if ((LF_ISSET(SC_EX) && F_ISSET(sp, SC_SCR_EX)) ||
-	    (LF_ISSET(SC_VI) && F_ISSET(sp, SC_SCR_VI)))
+	if (LF_ISSET(SC_EX) && F_ISSET(sp, SC_SCR_EX) ||
+	    LF_ISSET(SC_VI) && F_ISSET(sp, SC_SCR_VI))
 		return (0);
 
 	/*
@@ -89,7 +90,7 @@ cl_screen(SCR *sp, u_int32_t flags)
 	if (F_ISSET(sp, SC_SCR_VI)) {
 		F_CLR(sp, SC_SCR_VI);
 
-		if (TAILQ_NEXT(sp, q)) {
+		if (sp->q.cqe_next != (void *)&gp->dq) {
 			(void)move(RLNO(sp, sp->rows), 0);
 			clrtobot();
 		}
@@ -123,10 +124,11 @@ cl_screen(SCR *sp, u_int32_t flags)
  * cl_quit --
  *	Shutdown the screens.
  *
- * PUBLIC: int cl_quit(GS *);
+ * PUBLIC: int cl_quit __P((GS *));
  */
 int
-cl_quit(GS *gp)
+cl_quit(gp)
+	GS *gp;
 {
 	CL_PRIVATE *clp;
 	int rval;
@@ -165,8 +167,7 @@ cl_quit(GS *gp)
 	 * implementations get it wrong.  It may discard type-ahead characters
 	 * from the tty queue.
 	 */
-	if (F_ISSET(clp, CL_STDIN_TTY))
-		(void)tcsetattr(STDIN_FILENO, TCSADRAIN | TCSASOFT, &clp->orig);
+	(void)tcsetattr(STDIN_FILENO, TCSADRAIN | TCSASOFT, &clp->orig);
 
 	F_CLR(clp, CL_SCR_EX_INIT | CL_SCR_VI_INIT);
 	return (rval);
@@ -177,11 +178,14 @@ cl_quit(GS *gp)
  *	Initialize the curses vi screen.
  */
 static int
-cl_vi_init(SCR *sp)
+cl_vi_init(sp)
+	SCR *sp;
 {
 	CL_PRIVATE *clp;
+	GS *gp;
 	char *o_cols, *o_lines, *o_term, *ttype;
 
+	gp = sp->gp;
 	clp = CLP(sp);
 
 	/* If already initialized, just set the terminal modes. */
@@ -191,7 +195,7 @@ cl_vi_init(SCR *sp)
 	/* Curses vi always reads from (and writes to) a terminal. */
 	if (!F_ISSET(clp, CL_STDIN_TTY) || !isatty(STDOUT_FILENO)) {
 		msgq(sp, M_ERR,
-		    "Vi's standard input and output must be a terminal");
+		    "016|Vi's standard input and output must be a terminal");
 		return (1);
 	}
 
@@ -225,14 +229,18 @@ cl_vi_init(SCR *sp)
 	cl_putenv("COLUMNS", NULL, (u_long)O_VAL(sp, O_COLUMNS));
 
 	/*
-	 * The terminal is aways initialized, either in `main`, or by a
-	 * previous call to newterm(3).
-	 */
-	(void)del_curterm(cur_term);
-
-	/*
 	 * We don't care about the SCREEN reference returned by newterm, we
 	 * never have more than one SCREEN at a time.
+	 *
+	 * XXX
+	 * The SunOS initscr() can't be called twice.  Don't even think about
+	 * using it.  It fails in subtle ways (e.g. select(2) on fileno(stdin)
+	 * stops working).  (The SVID notes that applications should only call
+	 * initscr() once.)
+	 *
+	 * XXX
+	 * The HP/UX newterm doesn't support the NULL first argument, so we
+	 * have to specify the terminal type.
 	 */
 	errno = 0;
 	if (newterm(ttype, stdout, stdin) == NULL) {
@@ -314,7 +322,8 @@ cl_vi_init(SCR *sp)
 	 * it regardless.  It doesn't make much sense to suspend vi at read,
 	 * so I don't think anyone will care.  Alternatively, we could look
 	 * it up in the table of legal command characters and turn it off if
-	 * it matches one.
+	 * it matches one.  VDSUSP wasn't in POSIX 1003.1-1990, so we test for
+	 * it.
 	 *
 	 * XXX
 	 * We don't check to see if the user had signals enabled originally.
@@ -331,7 +340,9 @@ cl_vi_init(SCR *sp)
 		clp->vi_enter.c_iflag |= IXOFF;
 
 	clp->vi_enter.c_lflag |= ISIG;
+#ifdef VDSUSP
 	clp->vi_enter.c_cc[VDSUSP] = _POSIX_VDISABLE;
+#endif
 	clp->vi_enter.c_cc[VQUIT] = _POSIX_VDISABLE;
 	clp->vi_enter.c_cc[VSUSP] = _POSIX_VDISABLE;
 
@@ -341,9 +352,15 @@ cl_vi_init(SCR *sp)
 	 * characters when curses switches into raw mode.  It should be OK
 	 * to do it explicitly for everyone.
 	 */
+#ifdef VDISCARD
 	clp->vi_enter.c_cc[VDISCARD] = _POSIX_VDISABLE;
+#endif
+#ifdef VLNEXT
 	clp->vi_enter.c_cc[VLNEXT] = _POSIX_VDISABLE;
+#endif
+#ifdef VSTATUS
 	clp->vi_enter.c_cc[VSTATUS] = _POSIX_VDISABLE;
+#endif
 
 	/* Initialize terminal based information. */
 	if (cl_term_init(sp))
@@ -351,8 +368,6 @@ cl_vi_init(SCR *sp)
 
 fast:	/* Set the terminal modes. */
 	if (tcsetattr(STDIN_FILENO, TCSASOFT | TCSADRAIN, &clp->vi_enter)) {
-		if (errno == EINTR)
-			goto fast;
 		msgq(sp, M_SYSERR, "tcsetattr");
 err:		(void)cl_vi_end(sp->gp);
 		return (1);
@@ -365,7 +380,8 @@ err:		(void)cl_vi_end(sp->gp);
  *	Shutdown the vi screen.
  */
 static int
-cl_vi_end(GS *gp)
+cl_vi_end(gp)
+	GS *gp;
 {
 	CL_PRIVATE *clp;
 
@@ -393,9 +409,6 @@ cl_vi_end(GS *gp)
 	/* End curses window. */
 	(void)endwin();
 
-	/* Free the SCREEN created by newterm(3). */
-	delscreen(set_term(NULL));
-
 	/*
 	 * XXX
 	 * The screen TE sequence just got sent.  See the comment in
@@ -411,7 +424,8 @@ cl_vi_end(GS *gp)
  *	Initialize the ex screen.
  */
 static int
-cl_ex_init(SCR *sp)
+cl_ex_init(sp)
+	SCR *sp;
 {
 	CL_PRIVATE *clp;
 
@@ -458,14 +472,20 @@ cl_ex_init(SCR *sp)
 	 * to make all ex printf's output \r\n instead of \n.
 	 */
 	clp->ex_enter = clp->orig;
-	clp->ex_enter.c_lflag |=
-	    ECHO | ECHOCTL | ECHOE | ECHOK | ECHOKE | ICANON | IEXTEN | ISIG;
+	clp->ex_enter.c_lflag  |= ECHO | ECHOE | ECHOK | ICANON | IEXTEN | ISIG;
+#ifdef ECHOCTL
+	clp->ex_enter.c_lflag |= ECHOCTL;
+#endif
+#ifdef ECHOKE
+	clp->ex_enter.c_lflag |= ECHOKE;
+#endif
 	clp->ex_enter.c_iflag |= ICRNL;
-	clp->ex_enter.c_oflag |= ONLCR | OPOST;
+	clp->ex_enter.c_oflag |= OPOST;
+#ifdef ONLCR
+	clp->ex_enter.c_oflag |= ONLCR;
+#endif
 
 fast:	if (tcsetattr(STDIN_FILENO, TCSADRAIN | TCSASOFT, &clp->ex_enter)) {
-		if (errno == EINTR)
-			goto fast;
 		msgq(sp, M_SYSERR, "tcsetattr");
 		return (1);
 	}
@@ -477,7 +497,8 @@ fast:	if (tcsetattr(STDIN_FILENO, TCSADRAIN | TCSASOFT, &clp->ex_enter)) {
  *	Shutdown the ex screen.
  */
 static int
-cl_ex_end(GS *gp)
+cl_ex_end(gp)
+	GS *gp;
 {
 	CL_PRIVATE *clp;
 
@@ -492,17 +513,19 @@ cl_ex_end(GS *gp)
  * cl_getcap --
  *	Retrieve termcap/terminfo strings.
  *
- * PUBLIC: int cl_getcap(SCR *, char *, char **);
+ * PUBLIC: int cl_getcap __P((SCR *, char *, char **));
  */
 int
-cl_getcap(SCR *sp, char *name, char **elementp)
+cl_getcap(sp, name, elementp)
+	SCR *sp;
+	char *name, **elementp;
 {
 	size_t len;
 	char *t;
 
 	if ((t = tigetstr(name)) != NULL &&
 	    t != (char *)-1 && (len = strlen(t)) != 0) {
-		MALLOC_RET(sp, *elementp, len + 1);
+		MALLOC_RET(sp, *elementp, char *, len + 1);
 		memmove(*elementp, t, len + 1);
 	}
 	return (0);
@@ -513,7 +536,8 @@ cl_getcap(SCR *sp, char *name, char **elementp)
  *	Free any allocated termcap/terminfo strings.
  */
 static void
-cl_freecap(CL_PRIVATE *clp)
+cl_freecap(clp)
+	CL_PRIVATE *clp;
 {
 	if (clp->el != NULL) {
 		free(clp->el);
@@ -542,7 +566,10 @@ cl_freecap(CL_PRIVATE *clp)
  *	Put a value into the environment.
  */
 static int
-cl_putenv(char *name, char *str, u_long value)
+cl_putenv(name, str, value)
+	char *name, *str;
+	u_long value;
+
 {
 	char buf[40];
 

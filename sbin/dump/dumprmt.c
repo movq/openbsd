@@ -1,4 +1,4 @@
-/*	$OpenBSD: dumprmt.c,v 1.29 2015/01/16 06:39:57 deraadt Exp $	*/
+/*	$OpenBSD: dumprmt.c,v 1.12 1999/01/04 08:11:53 deraadt Exp $	*/
 /*	$NetBSD: dumprmt.c,v 1.17 1997/06/05 16:10:47 mrg Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,12 +34,26 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/param.h>	/* MAXBSIZE */
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)dumprmt.c	8.1 (Berkeley) 6/5/93";
+#else
+static char rcsid[] = "$NetBSD: dumprmt.c,v 1.10 1996/03/15 22:39:26 scottr Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/mtio.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#ifdef sunos
+#include <sys/vnode.h>
+
+#include <ufs/inode.h>
+#else
 #include <ufs/ufs/dinode.h>
+#endif
 
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -49,10 +67,11 @@
 #include <pwd.h>
 #include <signal.h>
 #include <stdio.h>
+#ifdef __STDC__
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <limits.h>
+#endif
 
 #include "pathnames.h"
 #include "dump.h"
@@ -64,32 +83,24 @@ static	int rmtstate = TS_CLOSED;
 static	int rmtape;
 static	char *rmtpeer;
 
-static	int okname(char *);
-static	int rmtcall(char *, char *);
-static	void rmtconnaborted(int);
-static	int rmtgetb(void);
-static	void rmtgetconn(void);
-static	void rmtgets(char *, int);
-static	int rmtreply(char *);
-
-int	rmthost(char *host);
-int	rmtopen(char *tape, int mode);
-int	rmtread(char *buf, int count);
-int	rmtwrite(char *buf, int count);
-int	rmtseek(int offset, int pos);
-int	rmtioctl(int cmd, int count);
-void	rmtclose(void);
+static	int okname __P((char *));
+static	int rmtcall __P((char *, char *));
+static	void rmtconnaborted __P((/* int, int */));
+static	int rmtgetb __P((void));
+static	void rmtgetconn __P((void));
+static	void rmtgets __P((char *, int));
+static	int rmtreply __P((char *));
 
 extern	int ntrec;		/* blocking factor on tape */
 
 int
-rmthost(char *host)
+rmthost(host)
+	char *host;
 {
-	int len = strlen(host) + 1;
 
-	rmtpeer = malloc(len);
+	rmtpeer = malloc(strlen(host) + 1);
 	if (rmtpeer)
-		strlcpy(rmtpeer, host, len);
+		strcpy(rmtpeer, host);
 	else
 		rmtpeer = host;
 	signal(SIGPIPE, rmtconnaborted);
@@ -99,18 +110,17 @@ rmthost(char *host)
 	return (1);
 }
 
-/* ARGSUSED */
 static void
-rmtconnaborted(int signo)
+rmtconnaborted()
 {
-	/* XXX signal race */
+
 	errx(X_ABORT, "Lost connection to remote host.");
 }
 
 void
-rmtgetconn(void)
+rmtgetconn()
 {
-	char *cp;
+	register char *cp;
 	static struct servent *sp = NULL;
 	static struct passwd *pwd = NULL;
 	static int on = 1;
@@ -160,10 +170,11 @@ rmtgetconn(void)
 }
 
 static int
-okname(char *cp0)
+okname(cp0)
+	char *cp0;
 {
-	char *cp;
-	unsigned char c;
+	register char *cp;
+	register int c;
 
 	for (cp = cp0; *cp; cp++) {
 		c = *cp;
@@ -176,7 +187,9 @@ okname(char *cp0)
 }
 
 int
-rmtopen(char *tape, int mode)
+rmtopen(tape, mode)
+	char *tape;
+	int mode;
 {
 	char buf[256];
 
@@ -186,7 +199,7 @@ rmtopen(char *tape, int mode)
 }
 
 void
-rmtclose(void)
+rmtclose()
 {
 
 	if (rmtstate != TS_OPEN)
@@ -196,10 +209,13 @@ rmtclose(void)
 }
 
 int
-rmtread(char *buf, int count)
+rmtread(buf, count)
+	char *buf;
+	int count;
 {
 	char line[30];
 	int n, i, cc;
+	extern int errno;
 
 	(void)snprintf(line, sizeof(line), "R%d\n", count);
 	n = rmtcall("read", line);
@@ -210,14 +226,16 @@ rmtread(char *buf, int count)
 	for (i = 0; i < n; i += cc) {
 		cc = read(rmtape, buf+i, n - i);
 		if (cc <= 0) {
-			rmtconnaborted(0);
+			rmtconnaborted();
 		}
 	}
 	return (n);
 }
 
 int
-rmtwrite(char *buf, int count)
+rmtwrite(buf, count)
+	char *buf;
+	int count;
 {
 	char line[30];
 
@@ -227,8 +245,35 @@ rmtwrite(char *buf, int count)
 	return (rmtreply("write"));
 }
 
+void
+rmtwrite0(count)
+	int count;
+{
+	char line[30];
+
+	(void)snprintf(line, sizeof(line), "W%d\n", count);
+	write(rmtape, line, strlen(line));
+}
+
+void
+rmtwrite1(buf, count)
+	char *buf;
+	int count;
+{
+
+	write(rmtape, buf, count);
+}
+
 int
-rmtseek(int offset, int pos)
+rmtwrite2()
+{
+
+	return (rmtreply("write"));
+}
+
+int
+rmtseek(offset, pos)
+	int offset, pos;
 {
 	char line[80];
 
@@ -236,8 +281,25 @@ rmtseek(int offset, int pos)
 	return (rmtcall("seek", line));
 }
 
+struct	mtget mts;
+
+struct mtget *
+rmtstatus()
+{
+	register int i;
+	register char *cp;
+
+	if (rmtstate != TS_OPEN)
+		return (NULL);
+	rmtcall("status", "S\n");
+	for (i = 0, cp = (char *)&mts; i < sizeof(mts); i++)
+		*cp++ = rmtgetb();
+	return (&mts);
+}
+
 int
-rmtioctl(int cmd, int count)
+rmtioctl(cmd, count)
+	int cmd, count;
 {
 	char buf[256];
 
@@ -248,18 +310,20 @@ rmtioctl(int cmd, int count)
 }
 
 static int
-rmtcall(char *cmd, char *buf)
+rmtcall(cmd, buf)
+	char *cmd, *buf;
 {
 
 	if (write(rmtape, buf, strlen(buf)) != strlen(buf))
-		rmtconnaborted(0);
+		rmtconnaborted();
 	return (rmtreply(cmd));
 }
 
 static int
-rmtreply(char *cmd)
+rmtreply(cmd)
+	char *cmd;
 {
-	char *cp;
+	register char *cp;
 	char code[30], emsg[BUFSIZ];
 
 	rmtgets(code, sizeof(code));
@@ -279,26 +343,28 @@ rmtreply(char *cmd)
 
 		msg("Protocol to remote tape server botched (code \"%s\").\n",
 		    code);
-		rmtconnaborted(0);
+		rmtconnaborted();
 	}
 	return (atoi(code + 1));
 }
 
 int
-rmtgetb(void)
+rmtgetb()
 {
 	char c;
 
 	if (read(rmtape, &c, 1) != 1)
-		rmtconnaborted(0);
+		rmtconnaborted();
 	return (c);
 }
 
 /* Get a line (guaranteed to have a trailing newline). */
 void
-rmtgets(char *line, int len)
+rmtgets(line, len)
+	char *line;
+	int len;
 {
-	char *cp = line;
+	register char *cp = line;
 
 	while (len > 1) {
 		*cp = rmtgetb();
@@ -312,5 +378,5 @@ rmtgets(char *line, int len)
 	*cp = '\0';
 	msg("Protocol to remote tape server botched.\n");
 	msg("(rmtgets got \"%s\").\n", line);
-	rmtconnaborted(0);
+	rmtconnaborted();
 }

@@ -1,70 +1,14 @@
-/*	$OpenBSD: hack.trap.c,v 1.9 2016/01/09 18:33:15 mestre Exp $	*/
-
 /*
- * Copyright (c) 1985, Stichting Centrum voor Wiskunde en Informatica,
- * Amsterdam
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- * - Redistributions of source code must retain the above copyright notice,
- * this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above copyright
- * notice, this list of conditions and the following disclaimer in the
- * documentation and/or other materials provided with the distribution.
- *
- * - Neither the name of the Stichting Centrum voor Wiskunde en
- * Informatica, nor the names of its contributors may be used to endorse or
- * promote products derived from this software without specific prior
- * written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
- * IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
- * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER
- * OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Copyright (c) Stichting Mathematisch Centrum, Amsterdam, 1985.
  */
 
-/*
- * Copyright (c) 1982 Jay Fenlason <hack@gnu.org>
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
- * AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL
- * THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
+#ifndef lint
+static char rcsid[] = "$NetBSD: hack.trap.c,v 1.3 1995/03/23 08:31:44 cgd Exp $";
+#endif /* not lint */
 
-#include <ctype.h>
-#include <stdlib.h>
+#include	"hack.h"
 
-#include "hack.h"
+extern struct monst *makemon();
 
 char vowels[] = "aeiou";
 
@@ -80,14 +24,11 @@ char *traps[] = {
 	" mimic"
 };
 
-static void vtele(void);
-static void teleds(int, int);
-static int  teleok(int, int);
-
 struct trap *
-maketrap(int x, int y, int typ)
+maketrap(x,y,typ)
+register x,y,typ;
 {
-	struct trap *ttmp;
+	register struct trap *ttmp;
 
 	ttmp = newtrap();
 	ttmp->ttyp = typ;
@@ -100,10 +41,8 @@ maketrap(int x, int y, int typ)
 	return(ttmp);
 }
 
-void
-dotrap(struct trap *trap)
-{
-	int ttype = trap->ttyp;
+dotrap(trap) register struct trap *trap; {
+	register int ttype = trap->ttyp;
 
 	nomul(0);
 	if(trap->tseen && !rn2(5) && ttype != PIT)
@@ -151,7 +90,7 @@ if(uarmh) pline("Fortunately, you are wearing a helmet!");
 			    stackobj(fobj);
 			    if(Invisible) newsym(u.ux, u.uy);
 			} else {
-			    int newlevel = dlevel + 1;
+			    register int newlevel = dlevel + 1;
 				while(!rn2(4) && newlevel < 29)
 					newlevel++;
 				pline("A trap door opens up under you!");
@@ -201,18 +140,16 @@ if(uarmh) pline("Fortunately, you are wearing a helmet!");
 	}
 }
 
-int
-mintrap(struct monst *mtmp)
-{
-	struct trap *trap = t_at(mtmp->mx, mtmp->my);
-	int wasintrap = mtmp->mtrapped;
+mintrap(mtmp) register struct monst *mtmp; {
+	register struct trap *trap = t_at(mtmp->mx, mtmp->my);
+	register int wasintrap = mtmp->mtrapped;
 
 	if(!trap) {
 		mtmp->mtrapped = 0;	/* perhaps teleported? */
 	} else if(wasintrap) {
 		if(!rn2(40)) mtmp->mtrapped = 0;
 	} else {
-	    int tt = trap->ttyp;
+	    register int tt = trap->ttyp;
 	    int in_sight = cansee(mtmp->mx,mtmp->my);
 	    extern char mlarge[];
 
@@ -293,9 +230,7 @@ pline("A trap door in the ceiling opens and a rock hits %s!", monnam(mtmp));
 	return(mtmp->mtrapped);
 }
 
-void
-selftouch(char *arg)
-{
+selftouch(arg) char *arg; {
 	if(uwep && uwep->otyp == DEAD_COCKATRICE){
 		pline("%s touch the dead cockatrice.", arg);
 		pline("You turn to stone.");
@@ -304,9 +239,7 @@ selftouch(char *arg)
 	}
 }
 
-void
-float_up(void)
-{
+float_up(){
 	if(u.utrap) {
 		if(u.utraptype == TT_PIT) {
 			u.utrap = 0;
@@ -318,13 +251,10 @@ float_up(void)
 		pline("You start to float in the air!");
 }
 
-int
-float_down(void)
-{
-	struct trap *trap;
-
+float_down(){
+	register struct trap *trap;
 	pline("You float gently to the ground.");
-	if ((trap = t_at(u.ux,u.uy)))
+	if(trap = t_at(u.ux,u.uy))
 		switch(trap->ttyp) {
 		case PIERC:
 			break;
@@ -335,17 +265,14 @@ float_down(void)
 			dotrap(trap);
 	}
 	pickup(1);
-	return(0);	/* XXX value needed in hack.potion.c */
 }
 
-static void
-vtele(void)
-{
-	struct mkroom *croom;
-
+vtele() {
+#include "def.mkroom.h"
+	register struct mkroom *croom;
 	for(croom = &rooms[0]; croom->hx >= 0; croom++)
 	    if(croom->rtype == VAULT) {
-		int x,y;
+		register x,y;
 
 		x = rn2(2) ? croom->lx : croom->hx;
 		y = rn2(2) ? croom->ly : croom->hy;
@@ -357,11 +284,10 @@ vtele(void)
 	tele();
 }
 
-void
-tele(void)
-{
+tele() {
+	extern coord getpos();
 	coord cc;
-	int nux,nuy;
+	register int nux,nuy;
 
 	if(Teleport_control) {
 		pline("To what position do you want to be teleported?");
@@ -381,8 +307,8 @@ tele(void)
 	teleds(nux, nuy);
 }
 
-static void
-teleds(int nux, int nuy)
+teleds(nux, nuy)
+register int nux,nuy;
 {
 	if(Punished) unplacebc();
 	unsee();
@@ -404,24 +330,20 @@ teleds(int nux, int nuy)
 	if(!Blind) read_engr_at(u.ux,u.uy);
 }
 
-static int
-teleok(int x, int y)
-{	/* might throw him into a POOL */
+teleok(x,y) register int x,y; {	/* might throw him into a POOL */
 	return( isok(x,y) && !IS_ROCK(levl[x][y].typ) && !m_at(x,y) &&
 		!sobj_at(ENORMOUS_ROCK,x,y) && !t_at(x,y)
 	);
 	/* Note: gold is permitted (because of vaults) */
 }
 
-int
-dotele(void)
-{
+dotele() {
 	extern char pl_character[];
 
 	if(
 #ifdef WIZARD
 	   !wizard &&
-#endif /* WIZARD */
+#endif WIZARD
 		      (!Teleportation || u.ulevel < 6 ||
 			(pl_character[0] != 'W' && u.ulevel < 10))) {
 		pline("You are not able to teleport at will.");
@@ -436,9 +358,7 @@ dotele(void)
 	return(1);
 }
 
-void
-placebc(int attach)
-{
+placebc(attach) int attach; {
 	if(!uchain || !uball){
 		impossible("Where are your chain and ball??");
 		return;
@@ -455,9 +375,7 @@ placebc(int attach)
 	}
 }
 
-void
-unplacebc(void)
-{
+unplacebc(){
 	if(!carried(uball)){
 		freeobj(uball);
 		unpobj(uball);
@@ -466,28 +384,20 @@ unplacebc(void)
 	unpobj(uchain);
 }
 
-void
-level_tele(void)
-{
-	int newlevel;
-
+level_tele() {
+register int newlevel;
 	if(Teleport_control) {
 	    char buf[BUFSZ];
 
 	    do {
 	      pline("To what level do you want to teleport? [type a number] ");
 	      getlin(buf);
-	    } while(!isdigit((unsigned char)buf[0]) &&
-	        (buf[0] != '-' || !isdigit((unsigned char)buf[1])));
+	    } while(!digit(buf[0]) && (buf[0] != '-' || !digit(buf[1])));
 	    newlevel = atoi(buf);
 	} else {
 	    newlevel  = 5 + rn2(20);	/* 5 - 24 */
-	    if(dlevel == newlevel) {
-		if(!xdnstair)
-			newlevel--;
-		else
-			newlevel++;
-	    }
+	    if(dlevel == newlevel)
+		if(!xdnstair) newlevel--; else newlevel++;
 	}
 	if(newlevel >= 30) {
 	    if(newlevel > MAXLEVEL) newlevel = MAXLEVEL;
@@ -519,14 +429,13 @@ level_tele(void)
 	goto_level(newlevel, FALSE); /* calls done("escaped") if newlevel==0 */
 }
 
-void
-drown(void)
+drown()
 {
 	pline("You fall into a pool!");
 	pline("You can't swim!");
 	if(rn2(3) < u.uluck+2) {
 		/* most scrolls become unreadable */
-		struct obj *obj;
+		register struct obj *obj;
 
 		for(obj = invent; obj; obj = obj->nobj)
 			if(obj->olet == SCROLL_SYM && rn2(12) > u.uluck)
@@ -535,8 +444,7 @@ drown(void)
 
 		pline("You attempt a teleport spell.");	/* utcsri!carroll */
 		(void) dotele();
-		if(levl[(int)u.ux][(int)u.uy].typ != POOL)
-			return;
+		if(levl[u.ux][u.uy].typ != POOL) return;
 	}
 	pline("You drown ...");
 	killer = "pool of water";

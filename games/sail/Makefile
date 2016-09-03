@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.7 2015/11/24 03:10:10 deraadt Exp $
+#	$OpenBSD: Makefile,v 1.4 1998/07/24 00:10:41 millert Exp $
 
 PROG=	sail
 SRCS=	main.c pl_main.c pl_1.c pl_2.c pl_3.c pl_4.c pl_5.c pl_6.c pl_7.c \
@@ -7,5 +7,6 @@ SRCS=	main.c pl_main.c pl_1.c pl_2.c pl_3.c pl_4.c pl_5.c pl_6.c pl_7.c \
 MAN=	sail.6
 DPADD=	${LIBCURSES}
 LDADD=	-lcurses
+HIDEGAME=hidegame
 
 .include <bsd.prog.mk>

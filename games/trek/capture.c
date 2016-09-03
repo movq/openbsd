@@ -1,4 +1,4 @@
-/*	$OpenBSD: capture.c,v 1.7 2016/01/07 14:37:51 mestre Exp $	*/
+/*	$OpenBSD: capture.c,v 1.2 1998/08/19 07:41:13 pjanzen Exp $	*/
 /*	$NetBSD: capture.c,v 1.3 1995/04/22 10:58:32 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,8 +34,15 @@
  * SUCH DAMAGE.
  */
 
-#include <stdio.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)capture.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: capture.c,v 1.2 1998/08/19 07:41:13 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
+#include <stdio.h>
 #include "trek.h"
 
 /*
@@ -48,11 +59,12 @@
 **	etc.
 */
 void
-capture(int v)
+capture(v)
+	int v;
 {
-	int		i;
-	struct kling	*k;
-	double		x;
+	register int		i;
+	register struct kling	*k;
+	double			x;
 
 	/* check for not cloaked */
 	if (Ship.cloaked)
@@ -116,9 +128,9 @@ capture(int v)
 */
 
 struct kling *
-selectklingon(void)
+selectklingon()
 {
-	int		i;
+	register int		i;
 
 	if (Etc.nkling < 2)
 		i = 0;

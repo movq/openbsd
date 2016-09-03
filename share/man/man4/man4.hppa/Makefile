@@ -1,14 +1,7 @@
-#	$OpenBSD: Makefile,v 1.29 2016/03/30 06:38:44 jmc Exp $
+#	$OpenBSD: Makefile,v 1.1 1999/04/18 20:16:01 mickey Exp $
 
-MAN=	asp.4 astro.4 cpu.4 dino.4 elroy.4
-MAN+=	gecko.4 gsc.4 gsckbc.4
-MAN+=	harmony.4 ie.4 intro.4 io.4 lasi.4 lcd.4 mem.4 mongoose.4 pdc.4
-MAN+=	phantomas.4 power.4 runway.4 ssio.4 uturn.4 wax.4
-# tir.4 xbar.4 mcx.4
-MANSUBDIR=hppa
-CLEANFILES+= cpu.4
-
-cpu.4: cpu.4tbl
-	cp ${.ALLSRC} ${.TARGET}
+MAN=	lasi.4 asp.4 gsc.4 lpt.4 # com.4 # eba.4 hil.4
+# aone.4 atwo.4 wax.4 dino.4 tir.4 xbar.4 mcx.4
+MANSUBDIR=/hppa
 
 .include <bsd.prog.mk>

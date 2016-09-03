@@ -1,4 +1,4 @@
-.\"	$OpenBSD: fsck_msdos.8,v 1.16 2015/10/14 14:33:45 deraadt Exp $
+.\"	$OpenBSD: fsck_msdos.8,v 1.8 1998/12/15 01:20:31 aaron Exp $
 .\"	$NetBSD: fsck_msdos.8,v 1.4 1996/10/17 20:41:24 cgd Exp $
 .\"
 .\" Copyright (C) 1995 Wolfgang Solfrank
@@ -12,6 +12,13 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by Martin Husemann
+.\"	and Wolfgang Solfrank.
+.\" 4. Neither the name of the University nor the names of its contributors
+.\"    may be used to endorse or promote products derived from this software
+.\"    without specific prior written permission.
 .\"
 .\" THIS SOFTWARE IS PROVIDED BY THE AUTHORS ``AS IS'' AND ANY EXPRESS OR
 .\" IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -25,48 +32,55 @@
 .\" THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"
 .\"
-.Dd $Mdocdate: October 14 2015 $
+.Dd August 13, 1995
 .Dt FSCK_MSDOS 8
 .Os
 .Sh NAME
 .Nm fsck_msdos
-.Nd DOS/Windows (FAT) file system consistency checker
+.Nd DOS/Windows (FAT) filesystem consistency checker
 .Sh SYNOPSIS
 .Nm fsck_msdos
-.Op Fl fnpy
+.Fl p
+.Op Fl f
 .Ar filesystem
+.Ar ...
+.Nm fsck_msdos
+.Op Fl fny
+.Ar filesystem
+.Ar ...
 .Sh DESCRIPTION
 The
 .Nm
 utility verifies and repairs
 .Tn FAT
-file systems (more commonly known as
+filesystems (more commonly known as
 .Tn DOS
-file systems).
-It checks the specified filesystem and tries to repair all
-detected inconsistencies, requesting confirmation before
-making any changes.
+filesystems).
 .Pp
-If the
-.Fl p
-flag is given,
+The first form of
 .Nm
-preens the specified filesystem.
-It is normally started this way by
+preens the specified filesystems.
+It is normally started by
 .Xr fsck 8
 run from
-.Xr rc 8
-during automatic reboot, when a FAT file system is detected.
+.Pa /etc/rc
+during automatic reboot, when a FAT filesystem is detected.
 When preening file systems,
 .Nm
-will fix common inconsistencies non-interactively.
-If more serious problems are found,
+will fix common inconsistencies non-interactively.  If
+more serious problems are found,
 .Nm
 does not try to fix them, indicates that it was not
 successful, and exits.
 .Pp
+The second form of
+.Nm
+checks the specified file systems and tries to repair all
+detected inconsistencies, requesting confirmation before
+making any changes.
+.Pp
 The options are as follows:
-.Bl -tag -width Ds
+.Bl -hang -offset indent
 .It Fl f
 This option is ignored by
 .Nm fsck_msdos ,
@@ -74,18 +88,15 @@ and is present only for compatibility with programs that
 check other file system types for consistency, such as
 .Xr fsck_ffs 8 .
 .It Fl n
-Assume a
-.Dq no
-response to all questions asked by
+Causes
 .Nm
-except for
-.Dq CONTINUE? ,
-which is assumed to be affirmative.
-The filesystem will not be opened for writing.
-This is the default for file systems to be checked that are
-concurrently mounted writable.
+to assume
+.Dq no
+as the answer to all operator
+questions, except
+.Dq CONTINUE? .
 .It Fl p
-Preen the specified filesystem.
+Preen the specified filesystems.
 .It Fl y
 Causes
 .Nm
@@ -93,25 +104,10 @@ to assume
 .Dq yes
 as the answer to all operator questions.
 .El
-.Pp
-If neither of the
-.Fl y
-or
-.Fl n
-options are specified, the user may force
-.Nm
-to assume an answer of
-.Dq yes
-to all the remaining questions by replying to a question with a value of
-.Dq F .
 .Sh SEE ALSO
-.Xr fs 5 ,
-.Xr fstab 5 ,
 .Xr fsck 8 ,
 .Xr fsck_ffs 8 ,
-.Xr mount_msdos 8 ,
-.Xr newfs_msdos 8 ,
-.Xr rc 8
+.Xr mount_msdos 8
 .Sh BUGS
 .Nm
 is still under construction.

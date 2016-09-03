@@ -1,4 +1,3 @@
-/*	$OpenBSD: fixunssfdi.c,v 1.5 2005/08/08 08:05:35 espie Exp $ */
 /*-
  * Copyright (c) 1992, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -15,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,9 +35,13 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: fixunssfdi.c,v 1.2 1996/08/19 08:30:27 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include "quad.h"
 
-#define	ONE_FOURTH	((int)1 << (INT_BITS - 2))
+#define	ONE_FOURTH	((long)1 << (LONG_BITS - 2))
 #define	ONE_HALF	(ONE_FOURTH * 2.0)
 #define	ONE		(ONE_FOURTH * 4.0)
 
@@ -74,20 +81,20 @@ __fixunssfdi(float f)
 	 * between x and this is the bottom part (this may introduce
 	 * a few fuzzy bits, but what the heck).  With any luck this
 	 * difference will be nonnegative: x should wind up in the
-	 * range [0..UINT_MAX].  For paranoia, we assume [INT_MIN..
-	 * 2*UINT_MAX] instead.
+	 * range [0..ULONG_MAX].  For paranoia, we assume [LONG_MIN..
+	 * 2*ULONG_MAX] instead.
 	 */
-	t.ul[H] = (unsigned int)toppart;
+	t.ul[H] = (unsigned long)toppart;
 	t.ul[L] = 0;
 	x -= (double)t.uq;
 	if (x < 0) {
 		t.ul[H]--;
-		x += UINT_MAX;
+		x += ULONG_MAX;
 	}
-	if (x > UINT_MAX) {
+	if (x > ULONG_MAX) {
 		t.ul[H]++;
-		x -= UINT_MAX;
+		x -= ULONG_MAX;
 	}
-	t.ul[L] = (u_int)x;
+	t.ul[L] = (u_long)x;
 	return (t.uq);
 }

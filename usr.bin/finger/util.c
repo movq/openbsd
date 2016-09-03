@@ -1,4 +1,4 @@
-/*	$OpenBSD: util.c,v 1.32 2015/12/26 20:51:35 guenther Exp $	*/
+/*	$OpenBSD: util.c,v 1.11 1999/08/17 09:13:15 millert Exp $	*/
 
 /*
  * Copyright (c) 1989 The Regents of the University of California.
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,8 +37,14 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+/*static char sccsid[] = "from: @(#)util.c	5.14 (Berkeley) 1/17/91";*/
+static char rcsid[] = "$OpenBSD: util.c,v 1.11 1999/08/17 09:13:15 millert Exp $";
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/uio.h>
+#include <sys/param.h>
 #include <sys/stat.h>
 #include <err.h>
 #include <stdio.h>
@@ -46,16 +56,13 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <vis.h>
+#include <err.h>
 #include "finger.h"
 #include "extern.h"
 
-char	*estrdup(char *);
-WHERE	*walloc(PERSON *pn);
-void	find_idle_and_ttywrite(WHERE *);
-void	userinfo(PERSON *, struct passwd *);
-
 void
-find_idle_and_ttywrite(WHERE *w)
+find_idle_and_ttywrite(w)
+	WHERE *w;
 {
 	struct stat sb;
 
@@ -73,87 +80,76 @@ find_idle_and_ttywrite(WHERE *w)
 	w->writable = ((sb.st_mode & TALKABLE) == TALKABLE);
 }
 
-char *
-estrdup(char *s)
-{
-	char *p = strdup(s);
-	if (!p)
-		err(1, "strdup");
-	return (p);
-}
-
 void
-userinfo(PERSON *pn, struct passwd *pw)
+userinfo(pn, pw)
+	PERSON *pn;
+	struct passwd *pw;
 {
 	char *p;
 	char *bp, name[1024];
 	struct stat sb;
-	int len;
 
 	pn->realname = pn->office = pn->officephone = pn->homephone = NULL;
-	pn->mailrecv = -1;		/* -1 == not_valid */
 
 	pn->uid = pw->pw_uid;
-	pn->name = estrdup(pw->pw_name);
-	pn->dir = estrdup(pw->pw_dir);
-	pn->shell = estrdup(pw->pw_shell);
+	pn->name = strdup(pw->pw_name);
+	pn->dir = strdup(pw->pw_dir);
+	pn->shell = strdup(pw->pw_shell);
 
-	(void)strlcpy(bp = tbuf, pw->pw_gecos, sizeof(tbuf));
+	(void)strncpy(bp = tbuf, pw->pw_gecos, sizeof(tbuf));
 
 	/* ampersands get replaced by the login name */
 	if (!(p = strsep(&bp, ",")))
 		return;
 	expandusername(p, pw->pw_name, name, sizeof(name));
-	if (stravis(&pn->realname, p, VIS_SAFE|VIS_NOSLASH) == -1)
-		err(1, "stravis");
-	if ((p = strsep(&bp, ",")) && *p) {
-		if (stravis(&pn->office, p, VIS_SAFE|VIS_NOSLASH) == -1)
-			err(1, "stravis");
-	}
-	if ((p = strsep(&bp, ",")) && *p) {
-		if (stravis(&pn->officephone, p, VIS_SAFE|VIS_NOSLASH) == -1)
-			err(1, "stravis");
-	}
-	if ((p = strsep(&bp, ",")) && *p) {
-		if (stravis(&pn->homephone, p, VIS_SAFE|VIS_NOSLASH) == -1)
-			err(1, "stravis");
-	}
-	len = snprintf(tbuf, sizeof(tbuf), "%s/%s", _PATH_MAILSPOOL,
+	pn->realname = strdup(name);
+	pn->office = ((p = strsep(&bp, ",")) && *p) ?
+	    strdup(p) : NULL;
+	pn->officephone = ((p = strsep(&bp, ",")) && *p) ?
+	    strdup(p) : NULL;
+	pn->homephone = ((p = strsep(&bp, ",")) && *p) ?
+	    strdup(p) : NULL;
+	(void)snprintf(tbuf, sizeof(tbuf), "%s/%s", _PATH_MAILSPOOL,
 	    pw->pw_name);
-	if (len != -1 && len < sizeof(tbuf)) {
-		if (stat(tbuf, &sb) < 0) {
-			if (errno != ENOENT) {
-				warn("%s", tbuf);
-				return;
-			}
-		} else if (sb.st_size != 0) {
-			pn->mailrecv = sb.st_mtime;
-			pn->mailread = sb.st_atime;
+	pn->mailrecv = -1;		/* -1 == not_valid */
+	if (stat(tbuf, &sb) < 0) {
+		if (errno != ENOENT) {
+			warn(tbuf);
+			return;
 		}
+	} else if (sb.st_size != 0) {
+		pn->mailrecv = sb.st_mtime;
+		pn->mailread = sb.st_atime;
 	}
 }
 
 int
-match(struct passwd *pw, char *user)
+match(pw, user)
+	struct passwd *pw;
+	char *user;
 {
 	char *p, *t;
 	char name[1024];
 
-	(void)strlcpy(p = tbuf, pw->pw_gecos, sizeof(tbuf));
+	(void)strncpy(p = tbuf, pw->pw_gecos, sizeof(tbuf));
 
 	/* ampersands get replaced by the login name */
 	if (!(p = strtok(p, ",")))
-		return (0);
+		return(0);
 	expandusername(p, pw->pw_name, name, sizeof(name));
 	for (t = name; (p = strtok(t, "\t ")) != NULL; t = NULL)
 		if (!strcasecmp(p, user))
-			return (1);
-	return (0);
+			return(1);
+	return(0);
 }
 
 /* inspired by usr.sbin/sendmail/util.c::buildfname */
 void
-expandusername(char *gecos, char *login, char *buf, int buflen)
+expandusername(gecos, login, buf, buflen)
+	char *gecos;
+	char *login;
+	char *buf;
+	int buflen;
 {
 	char *p, *bp;
 
@@ -166,14 +162,14 @@ expandusername(char *gecos, char *login, char *buf, int buflen)
 	for (p = gecos; *p != '\0'; p++) {
 		if (bp >= &buf[buflen - 1]) {
 			/* buffer overflow - just use login name */
-			strlcpy(buf, login, buflen);
+			snprintf(buf, buflen, "%s", login);
 			buf[buflen - 1] = '\0';
 			return;
 		}
 		if (*p == '&') {
 			/* interpolate full name */
-			strlcpy(bp, login, buflen - (bp - buf));
-			*bp = toupper((unsigned char)*bp);
+			snprintf(bp, buflen - (bp - buf), "%s", login);
+			*bp = toupper(*bp);
 			bp += strlen(bp);
 		}
 		else
@@ -183,7 +179,8 @@ expandusername(char *gecos, char *login, char *buf, int buflen)
 }
 
 void
-enter_lastlog(PERSON *pn)
+enter_lastlog(pn)
+	PERSON *pn;
 {
 	WHERE *w;
 	static int opened, fd;
@@ -196,12 +193,13 @@ enter_lastlog(PERSON *pn)
 		opened = 1;
 	}
 	if (fd == -1 ||
-	    pread(fd, &ll, sizeof(ll), (off_t)pn->uid * sizeof(ll)) !=
-	    sizeof(ll)) {
-		/* as if never logged in */
-		ll.ll_line[0] = ll.ll_host[0] = '\0';
-		ll.ll_time = 0;
-	}
+	    lseek(fd, (off_t)(pn->uid * sizeof(ll)), SEEK_SET) !=
+	    (long)(pn->uid * sizeof(ll)) ||
+	    read(fd, (char *)&ll, sizeof(ll)) != sizeof(ll)) {
+			/* as if never logged in */
+			ll.ll_line[0] = ll.ll_host[0] = '\0';
+			ll.ll_time = 0;
+		}
 	if ((w = pn->whead) == NULL)
 		doit = 1;
 	else if (ll.ll_time != 0) {
@@ -231,7 +229,9 @@ enter_lastlog(PERSON *pn)
 }
 
 void
-enter_where(struct utmp *ut, PERSON *pn)
+enter_where(ut, pn)
+	struct utmp *ut;
+	PERSON *pn;
 {
 	WHERE *w = walloc(pn);
 
@@ -245,13 +245,14 @@ enter_where(struct utmp *ut, PERSON *pn)
 }
 
 PERSON *
-enter_person(struct passwd *pw)
+enter_person(pw)
+	struct passwd *pw;
 {
 	PERSON *pn, **pp;
 
 	for (pp = htab + hash(pw->pw_name);
-	    *pp != NULL && strcmp((*pp)->name, pw->pw_name) != 0;
-	    pp = &(*pp)->hlink)
+	     *pp != NULL && strcmp((*pp)->name, pw->pw_name) != 0;
+	     pp = &(*pp)->hlink)
 		;
 	if ((pn = *pp) == NULL) {
 		pn = palloc();
@@ -268,24 +269,26 @@ enter_person(struct passwd *pw)
 		userinfo(pn, pw);
 		pn->whead = NULL;
 	}
-	return (pn);
+	return(pn);
 }
 
 PERSON *
-find_person(char *name)
+find_person(name)
+	char *name;
 {
 	PERSON *pn;
 
 	/* name may be only UT_NAMESIZE long and not terminated */
 	for (pn = htab[hash(name)];
-	    pn != NULL && strncmp(pn->name, name, UT_NAMESIZE) != 0;
-	    pn = pn->hlink)
+	     pn != NULL && strncmp(pn->name, name, UT_NAMESIZE) != 0;
+	     pn = pn->hlink)
 		;
-	return (pn);
+	return(pn);
 }
 
 int
-hash(char *name)
+hash(name)
+	char *name;
 {
 	int h, i;
 
@@ -293,25 +296,26 @@ hash(char *name)
 	/* name may be only UT_NAMESIZE long and not terminated */
 	for (i = UT_NAMESIZE; --i >= 0 && *name;)
 		h = ((h << 2 | h >> (HBITS - 2)) ^ *name++) & HMASK;
-	return (h);
+	return(h);
 }
 
 PERSON *
-palloc(void)
+palloc()
 {
 	PERSON *p;
 
-	if ((p = malloc((u_int) sizeof(PERSON))) == NULL)
+	if ((p = (PERSON *)malloc((u_int) sizeof(PERSON))) == NULL)
 		err(1, "malloc");
-	return (p);
+	return(p);
 }
 
 WHERE *
-walloc(PERSON *pn)
+walloc(pn)
+	PERSON *pn;
 {
 	WHERE *w;
 
-	if ((w = malloc((u_int) sizeof(WHERE))) == NULL)
+	if ((w = (WHERE *)malloc((u_int) sizeof(WHERE))) == NULL)
 		err(1, "malloc");
 	if (pn->whead == NULL)
 		pn->whead = pn->wtail = w;
@@ -320,11 +324,12 @@ walloc(PERSON *pn)
 		pn->wtail = w;
 	}
 	w->next = NULL;
-	return (w);
+	return(w);
 }
 
 char *
-prphone(char *num)
+prphone(num)
+	char *num;
 {
 	char *p;
 	int len;
@@ -332,11 +337,11 @@ prphone(char *num)
 
 	/* don't touch anything if the user has their own formatting */
 	for (p = num; *p; ++p)
-		if (!isdigit((unsigned char)*p))
-			return (num);
+		if (!isdigit(*p))
+			return(num);
 	len = p - num;
 	p = pbuf;
-	switch (len) {
+	switch(len) {
 	case 11:			/* +0-123-456-7890 */
 		*p++ = '+';
 		*p++ = *num++;
@@ -359,7 +364,7 @@ prphone(char *num)
 		*p++ = *num++;
 		break;
 	default:
-		return (num);
+		return(num);
 	}
 	if (len != 4) {
 		*p++ = '-';
@@ -369,5 +374,23 @@ prphone(char *num)
 	*p++ = *num++;
 	*p++ = *num++;
 	*p = '\0';
-	return (pbuf);
+	return(pbuf);
+}
+
+/* Like strvis(), but use malloc() to get the space and return a pointer
+ * to the beginning of the converted string, not the end.
+ *
+ * The caller is responsible for free()'ing the returned string.
+ */
+char *
+vs(src)
+	char *src;
+{
+	char *dst;
+
+	if ((dst = malloc((4 * strlen(src)) + 1)) == NULL)
+		err(1, "malloc failed");
+
+	strvis(dst, src, VIS_SAFE|VIS_NOSLASH);
+	return(dst);
 }

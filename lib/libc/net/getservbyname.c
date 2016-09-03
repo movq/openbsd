@@ -1,4 +1,3 @@
-/*	$OpenBSD: getservbyname.c,v 1.11 2015/09/14 07:38:38 guenther Exp $ */
 /*
  * Copyright (c) 1983, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,45 +31,57 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: getservbyname.c,v 1.4 1998/11/20 11:18:44 d Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <netdb.h>
-#include <stdio.h>
 #include <string.h>
+#include "thread_private.h"
 
-int
-getservbyname_r(const char *name, const char *proto, struct servent *se,
-    struct servent_data *sd)
+extern int _serv_stayopen;
+
+_THREAD_PRIVATE_MUTEX(getservbyname_r)
+
+struct servent *
+getservbyname_r(name, proto, se, buf, buflen)
+	const char *name, *proto;
+	struct servent *se;
+	char *buf;
+	int buflen;
 {
-	char **cp;
-	int error;
+	register struct servent *p;
+	register char **cp;
 
-	setservent_r(sd->stayopen, sd);
-	while ((error = getservent_r(se, sd)) == 0) {
-		if (strcmp(name, se->s_name) == 0)
+	_THREAD_PRIVATE_MUTEX_LOCK(getservbyname_r);
+	setservent(_serv_stayopen);
+	while ((p = getservent())) {
+		if (strcmp(name, p->s_name) == 0)
 			goto gotname;
-		for (cp = se->s_aliases; *cp; cp++)
+		for (cp = p->s_aliases; *cp; cp++)
 			if (strcmp(name, *cp) == 0)
 				goto gotname;
 		continue;
 gotname:
-		if (proto == 0 || strcmp(se->s_proto, proto) == 0)
+		if (proto == 0 || strcmp(p->s_proto, proto) == 0)
 			break;
 	}
-	if (!sd->stayopen && sd->fp != NULL) {
-		fclose(sd->fp);
-		sd->fp = NULL;
-	}
-	return (error);
+	if (!_serv_stayopen)
+		endservent();
+	_THREAD_PRIVATE_MUTEX_UNLOCK(getservbyname_r);
+	return (p);
 }
-DEF_WEAK(getservbyname_r);
 
-struct servent *
-getservbyname(const char *name, const char *proto)
+struct servent *getservbyname(name, proto)
+	const char *name, *proto;
 {
-	extern struct servent_data _servent_data;
-	static struct servent serv;
+	_THREAD_PRIVATE_KEY(getservbyname)
+	static char buf[4096];
+	char *bufp = (char*)_THREAD_PRIVATE(getservbyname, buf, NULL);
 
-	if (getservbyname_r(name, proto, &serv, &_servent_data) != 0)
+	if (bufp == NULL)
 		return (NULL);
-	return (&serv);
+	return getservbyname_r(name, proto, (struct servent*) bufp, 
+		bufp + sizeof(struct servent), 
+		sizeof buf - sizeof(struct servent) );
 }
-DEF_WEAK(getservbyname);

@@ -1,5 +1,5 @@
 /* Disassemble MN10200 instructions.
-   Copyright 1996, 1997, 1998, 2000 Free Software Foundation, Inc.
+   Copyright (C) 1996, 1997 Free Software Foundation, Inc.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -18,10 +18,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #include <stdio.h>
 
-#include "sysdep.h"
+#include "ansidecl.h"
 #include "opcode/mn10200.h" 
 #include "dis-asm.h"
-#include "opintl.h"
 
 static void disassemble PARAMS ((bfd_vma, struct disassemble_info *,
 				 unsigned long insn, unsigned long,
@@ -34,8 +33,7 @@ print_insn_mn10200 (memaddr, info)
 {
   int status;
   bfd_byte buffer[4];
-  unsigned long insn;
-  unsigned long extension = 0;
+  unsigned long insn, extension;
   unsigned int consume;
 
   /* First figure out how big the opcode is.  */
@@ -45,7 +43,6 @@ print_insn_mn10200 (memaddr, info)
       (*info->memory_error_func) (status, memaddr, info);
       return -1;
     }
-
   insn = *(unsigned char *) buffer;
 
   /* These are one byte insns.  */
@@ -60,8 +57,7 @@ print_insn_mn10200 (memaddr, info)
       || (insn & 0xf0) == 0xb0
       || (insn & 0xff) == 0xeb
       || (insn & 0xff) == 0xf6
-      || (insn & 0xff) == 0xfe
-      || (insn & 0xff) == 0xff)
+      || (insn & 0xff) == 0xfe)
     {
       extension = 0;
       consume = 1;
@@ -175,7 +171,7 @@ print_insn_mn10200 (memaddr, info)
 	  (*info->memory_error_func) (status, memaddr, info);
 	  return -1;
 	}
-      insn |= (*(unsigned char *)buffer << 8) & 0xff00;
+      insn |= *(unsigned char *)buffer << 8;
 
       status = (*info->read_memory_func) (memaddr + 3, buffer, 1, info);
       if (status != 0)
@@ -183,7 +179,7 @@ print_insn_mn10200 (memaddr, info)
 	  (*info->memory_error_func) (status, memaddr, info);
 	  return -1;
 	}
-      insn |= (*(unsigned char *)buffer) & 0xff;
+      insn |= *(unsigned char *)buffer;
 
       status = (*info->read_memory_func) (memaddr + 2, buffer, 1, info);
       if (status != 0)
@@ -191,14 +187,11 @@ print_insn_mn10200 (memaddr, info)
 	  (*info->memory_error_func) (status, memaddr, info);
 	  return -1;
 	}
-      extension = (*(unsigned char *)buffer) & 0xff;
+      extension = *(unsigned char *)buffer;
       consume = 5;
     }
   else
-    {
-      (*info->fprintf_func) (info->stream, _("unknown\t0x%02x"), insn);
-      return 1;
-    }
+    return -1;
 
   disassemble (memaddr, info, insn, extension, consume);
 
@@ -247,7 +240,7 @@ disassemble (memaddr, info, insn, extension, size)
 	extra_shift = 0;
 
       if ((op->mask & insn) == op->opcode
-	  && size == (unsigned int) mysize)
+	  && size == mysize)
 	{
 	  const unsigned char *opindex_ptr;
 	  unsigned int nocomma;
@@ -273,7 +266,7 @@ disassemble (memaddr, info, insn, extension, size)
 	      else
 		{
 		  value = ((insn >> (operand->shift))
-			   & ((1L << operand->bits) - 1L));
+			   & ((1 << operand->bits) - 1));
 		}
 
 	      if ((operand->flags & MN10200_OPERAND_SIGNED) != 0)
@@ -320,13 +313,13 @@ disassemble (memaddr, info, insn, extension, size)
 		}
 
 	      else if ((operand->flags & MN10200_OPERAND_PCREL) != 0)
-		(*info->print_address_func) ((value + memaddr + mysize) & 0xffffff, info);
+		(*info->print_address_func) ((value + memaddr) & 0xffffff, info);
 
 	      else if ((operand->flags & MN10200_OPERAND_MEMADDR) != 0)
 		(*info->print_address_func) (value, info);
 
 	      else 
-		(*info->fprintf_func) (info->stream, "%ld", value);
+		(*info->fprintf_func) (info->stream, "%d", value);
 	    }
 	  /* All done. */
 	  break;
@@ -336,6 +329,6 @@ disassemble (memaddr, info, insn, extension, size)
 
   if (!match)
     {
-	(*info->fprintf_func) (info->stream, _("unknown\t0x%04lx"), insn);
+	(*info->fprintf_func) (info->stream, "unknown\t0x%04x", insn);
     }
 }

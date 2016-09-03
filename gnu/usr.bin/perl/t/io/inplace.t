@@ -1,23 +1,28 @@
 #!./perl
-use strict;
-require './test.pl';
 
 $^I = $^O eq 'VMS' ? '_bak' : '.bak';
 
-plan( tests => 6 );
+# $RCSfile: inplace.t,v $$Revision: 4.1 $$Date: 92/08/07 18:27:29 $
 
-my @tfiles     = (tempfile(), tempfile(), tempfile());
-my @tfiles_bak = map "$_$^I", @tfiles;
+print "1..2\n";
 
-END { unlink_all(@tfiles_bak); }
-
-for my $file (@tfiles) {
-    runperl( prog => 'print qq(foo\n);', 
-             args => ['>', $file] );
+@ARGV = ('.a','.b','.c');
+if ($^O eq 'MSWin32') {
+  $CAT = '.\perl -e "print<>"';
+  `.\\perl -le "print 'foo'" > .a`;
+  `.\\perl -le "print 'foo'" > .b`;
+  `.\\perl -le "print 'foo'" > .c`;
 }
-
-@ARGV = @tfiles;
-
+elsif ($^O eq 'VMS') {
+  $CAT = 'MCR []perl. -e "print<>"';
+  `MCR []perl. -le "print 'foo'" > ./.a`;
+  `MCR []perl. -le "print 'foo'" > ./.b`;
+  `MCR []perl. -le "print 'foo'" > ./.c`;
+}
+else {
+  $CAT = 'cat';
+  `echo foo | tee .a .b .c`;
+}
 while (<>) {
     s/foo/bar/;
 }
@@ -25,68 +30,7 @@ continue {
     print;
 }
 
-is ( runperl( prog => 'print<>;', args => \@tfiles ), 
-     "bar\nbar\nbar\n", 
-     "file contents properly replaced" );
+if (`$CAT .a .b .c` eq "bar\nbar\nbar\n") {print "ok 1\n";} else {print "not ok 1\n";}
+if (`$CAT .a$^I .b$^I .c$^I` eq "foo\nfoo\nfoo\n") {print "ok 2\n";} else {print "not ok 2\n";}
 
-is ( runperl( prog => 'print<>;', args => \@tfiles_bak ), 
-     "foo\nfoo\nfoo\n", 
-     "backup file contents stay the same" );
-
-SKIP:
-{
-    # based on code, dosish systems can't do no-backup inplace
-    # edits
-    $^O =~ /^(MSWin32|cygwin|uwin|dos|os2)$/
-	and skip("Can't inplace edit without backups on $^O", 4);
-    
-    our @ifiles = ( tempfile(), tempfile(), tempfile() );
-    
-    {
-	for my $file (@ifiles) {
-	    runperl( prog => 'print qq(bar\n);',
-		     args => [ '>', $file ] );
-	}
-	
-	local $^I = '';
-    local @ARGV = @ifiles;
-	
-	while (<>) {
-	    print "foo$_";
-	}
-	
-	is(scalar(@ARGV), 0, "consumed ARGV");
-	
-#	runperl may quote its arguments, so don't expect to be able
-#	to reuse things you send it.
-
-	my @my_ifiles = @ifiles;
-	is( runperl( prog => 'print<>;', args => \@my_ifiles ),
-	    "foobar\nfoobar\nfoobar\n",
-	    "normal inplace edit");
-    }
-    
-    # test * equivalence RT #70802
-    {
-	for my $file (@ifiles) {
-	    runperl( prog => 'print qq(bar\n);',
-		     args => [ '>', $file ] );
-	}
-	
-	local $^I = '*';
-	local @ARGV = @ifiles;
-	
-	while (<>) {
-	    print "foo$_";
-	}
-	
-	is(scalar(@ARGV), 0, "consumed ARGV");
-	
-	my @my_ifiles = @ifiles;
-	is( runperl( prog => 'print<>;', args => \@my_ifiles ),
-	    "foobar\nfoobar\nfoobar\n",
-	    "normal inplace edit");
-    }
-    
-    END { unlink_all(@ifiles); }
-}
+unlink '.a', '.b', '.c', ".a$^I", ".b$^I", ".c$^I";

@@ -1,4 +1,4 @@
-/*	$OpenBSD: morg.c,v 1.8 2016/01/08 18:20:33 mestre Exp $	*/
+/*	$OpenBSD: morg.c,v 1.2 1998/09/20 23:36:54 pjanzen Exp $	*/
 /*	$NetBSD: morg.c,v 1.4 1995/03/23 08:35:02 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,9 +34,15 @@
  * SUCH DAMAGE.
  */
 
-#include <stdio.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)morg.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: morg.c,v 1.2 1998/09/20 23:36:54 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
-#include "monop.ext"
+# include	"monop.ext"
 
 /*
  *	These routines deal with mortgaging.
@@ -60,12 +70,12 @@ static char	*names[MAX_PRP+2],
 
 static shrt	square[MAX_PRP+2];
 
-static int	num_good, got_houses;
+static int	num_good,got_houses;
 
-static int	set_mlist(void);
-static void	m(int);
-static int	set_umlist(void);
-static void	unm(int);
+static int	set_mlist __P((void));
+static void	m __P((int));
+static int	set_umlist __P((void));
+static void	unm __P((int));
 
 /*
  *	This routine is the command level response the mortgage command.
@@ -73,7 +83,7 @@ static void	unm(int);
  * be mortgaged.
  */
 void
-mortgage(void)
+mortgage()
 {
 	int	prop;
 
@@ -102,7 +112,7 @@ mortgage(void)
  *	This routine sets up the list of mortgageable property
  */
 static int
-set_mlist(void)
+set_mlist()
 {
 	OWN	*op;
 
@@ -124,7 +134,8 @@ set_mlist(void)
  *	This routine actually mortgages the property.
  */
 static void
-m(int prop)
+m(prop)
+	int	prop;
 {
 	int	price;
 
@@ -139,7 +150,7 @@ m(int prop)
  * to be unmortgaged.
  */
 void
-unmortgage(void)
+unmortgage()
 {
 	int	prop;
 
@@ -164,7 +175,7 @@ unmortgage(void)
  *	This routine sets up the list of mortgaged property
  */
 static int
-set_umlist(void)
+set_umlist()
 {
 	OWN	*op;
 
@@ -182,7 +193,8 @@ set_umlist(void)
  *	This routine actually unmortgages the property
  */
 static void
-unm(int prop)
+unm(prop)
+	int	prop;
 {
 	int	price;
 
@@ -195,15 +207,15 @@ unm(int prop)
 }
 /*
  *	This routine forces the indebted player to fix his
- * financial woes.  It is fine to have $0 but not to be in debt.
+ * financial woes.
  */
 void
-force_morg(void)
+force_morg()
 {
 	told_em = fixing = TRUE;
-	while (cur_p->money < 0) {
+	while (cur_p->money <= 0) {
 		told_em = FALSE;
-		(*func[(getinp("How are you going to fix it up? ", morg_coms))])();
+		(*func[(getinp("How are you going to fix it up? ",morg_coms))])();
 		notify();
 	}
 	fixing = FALSE;

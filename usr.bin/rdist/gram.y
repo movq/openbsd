@@ -1,5 +1,5 @@
 %{
-/*	$OpenBSD: gram.y,v 1.12 2015/01/20 09:00:16 guenther Exp $	*/
+/*	$OpenBSD: gram.y,v 1.4 1998/06/26 21:21:11 millert Exp $	*/
 
 /*
  * Copyright (c) 1993 Michael A. Cooper
@@ -14,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,13 +35,32 @@
  * SUCH DAMAGE.
  */
 
-#include "client.h"
+#ifndef lint
+#if 0
+static char RCSid[] = 
+"$From: gram.y,v 6.29 1994/04/11 23:59:15 mcooper Exp mcooper $";
+#else
+static char RCSid[] = 
+"$OpenBSD: gram.y,v 1.4 1998/06/26 21:21:11 millert Exp $";
+#endif
 
-static struct namelist *addnl(struct namelist *, struct namelist *);
-static struct namelist *subnl(struct namelist *, struct namelist *);
-static struct namelist *andnl(struct namelist *, struct namelist *);
-static int innl(struct namelist *nl, char *p);
+static	char *sccsid = "@(#)gram.y	5.2 (Berkeley) 85/06/21";
 
+static char copyright[] =
+"@(#) Copyright (c) 1983 Regents of the University of California.\n\
+ All rights reserved.\n";
+#endif /* not lint */
+
+/*
+ * Tell defs.h not to include y.tab.h
+ */
+#ifndef yacc
+#define yacc
+#endif
+
+#include "defs.h"
+
+static struct namelist *addnl(), *subnl(), *andnl();
 struct	cmd *cmds = NULL;
 struct	cmd *last_cmd;
 struct	namelist *last_n;
@@ -146,7 +169,7 @@ cmdlist:	  /* VOID */ {
 		;
 
 cmd:		  INSTALL options opt_namelist ';' = {
-			struct namelist *nl;
+			register struct namelist *nl;
 
 			$1->sc_options = $2 | options;
 			if ($3 != NULL) {
@@ -173,20 +196,11 @@ cmd:		  INSTALL options opt_namelist ';' = {
 		}
 		| PATTERN namelist ';' = {
 			struct namelist *nl;
-			char ebuf[BUFSIZ];
-			regex_t reg;
-			int ecode;
+			char *cp, *re_comp();
 
-			for (nl = $2; nl != NULL; nl = nl->n_next) {
-				/* check for a valid regex */
-				ecode = regcomp(&reg, nl->n_name, REG_NOSUB);
-				if (ecode) {
-					regerror(ecode, &reg, ebuf,
-					    sizeof(ebuf));
-					yyerror(ebuf);
-				}
-				regfree(&reg);
-			}
+			for (nl = $2; nl != NULL; nl = nl->n_next)
+				if ((cp = re_comp(nl->n_name)) != NULL)
+					yyerror(cp);
 			$1->sc_args = expand($2, E_VARS);
 			$$ = $1;
 		}
@@ -225,12 +239,11 @@ opt_namelist:	  /* VOID */ = {
 int	yylineno = 1;
 extern	FILE *fin;
 
-int
-yylex(void)
+yylex()
 {
 	static char yytext[INMAX];
-	int c;
-	char *cp1, *cp2;
+	register int c;
+	register char *cp1, *cp2;
 	static char quotechars[] = "[]{}*?$";
 	
 again:
@@ -296,7 +309,7 @@ again:
 		if (c != '"')
 			yyerror("missing closing '\"'\n");
 		*cp1 = '\0';
-		yylval.string = xstrdup(yytext);
+		yylval.string = makestr(yytext);
 		return(STRING);
 
 	case ':':  /* : or :: */
@@ -338,9 +351,9 @@ again:
 		switch (yytext[1]) {
 		case 'o':
 			if (parsedistopts(&yytext[2], &opt, TRUE)) {
-				(void) snprintf(ebuf, sizeof(ebuf),
-					        "Bad distfile options \"%s\".", 
-					        &yytext[2]);
+				(void) sprintf(ebuf, 
+					       "Bad distfile options \"%s\".", 
+					       &yytext[2]);
 				yyerror(ebuf);
 			}
 			break;
@@ -363,8 +376,7 @@ again:
 		case 'r':	opt = DO_NODESCEND;		break;
 
 		default:
-			(void) snprintf(ebuf, sizeof(ebuf),
-					"Unknown option \"%s\".", yytext);
+			(void) sprintf(ebuf, "Unknown option \"%s\".", yytext);
 			yyerror(ebuf);
 		}
 
@@ -384,7 +396,7 @@ again:
 	else if (!strcmp(yytext, "cmdspecial"))
 		c = CMDSPECIAL;
 	else {
-		yylval.string = xstrdup(yytext);
+		yylval.string = makestr(yytext);
 		return(NAME);
 	}
 	yylval.subcmd = makesubcmd(c);
@@ -395,7 +407,9 @@ again:
  * XXX We should use strchr(), but most versions can't handle
  * some of the characters we use.
  */
-int any(int c, char *str)
+extern int any(c, str)
+	register int c;
+	register char *str;
 {
 	while (*str)
 		if (c == *str++)
@@ -407,15 +421,17 @@ int any(int c, char *str)
  * Insert or append ARROW command to list of hosts to be updated.
  */
 void
-insert(char *label, struct namelist *files, struct namelist *hosts,
-    struct subcmd *scmds)
+insert(label, files, hosts, subcmds)
+	char *label;
+	struct namelist *files, *hosts;
+	struct subcmd *subcmds;
 {
-	struct cmd *c, *prev, *nc;
-	struct namelist *h, *lasth;
+	register struct cmd *c, *prev, *nc;
+	register struct namelist *h, *lasth;
 
-	debugmsg(DM_CALL, "insert(%s, %p, %p, %p) start, files = %s", 
+	debugmsg(DM_CALL, "insert(%s, %x, %x, %x) start, files = %s", 
 		 label == NULL ? "(null)" : label,
-		 files, hosts, scmds, getnlstr(files));
+		 files, hosts, subcmds, getnlstr(files));
 
 	files = expand(files, E_VARS|E_SHELL);
 	hosts = expand(hosts, E_ALL);
@@ -442,7 +458,7 @@ insert(char *label, struct namelist *files, struct namelist *hosts,
 		nc->c_name = h->n_name;
 		nc->c_label = label;
 		nc->c_files = files;
-		nc->c_cmds = scmds;
+		nc->c_cmds = subcmds;
 		nc->c_flags = 0;
 		nc->c_next = c;
 		if (prev == NULL)
@@ -460,16 +476,20 @@ insert(char *label, struct namelist *files, struct namelist *hosts,
  * executed in the order they appear in the distfile.
  */
 void
-append(char *label, struct namelist *files, char *stamp, struct subcmd *scmds)
+append(label, files, stamp, subcmds)
+	char *label;
+	struct namelist *files;
+	char *stamp;
+	struct subcmd *subcmds;
 {
-	struct cmd *c;
+	register struct cmd *c;
 
 	c = ALLOC(cmd);
 	c->c_type = DCOLON;
 	c->c_name = stamp;
 	c->c_label = label;
 	c->c_files = expand(files, E_ALL);
-	c->c_cmds = scmds;
+	c->c_cmds = subcmds;
 	c->c_next = NULL;
 	if (cmds == NULL)
 		cmds = last_cmd = c;
@@ -483,24 +503,41 @@ append(char *label, struct namelist *files, char *stamp, struct subcmd *scmds)
  * Error printing routine in parser.
  */
 void
-yyerror(char *s)
+yyerror(s)
+	char *s;
 {
 	error("Error in distfile: line %d: %s", yylineno, s);
+}
+
+/*
+ * Return a copy of the string.
+ */
+char *
+makestr(str)
+	char *str;
+{
+	char *cp;
+
+	cp = strdup(str);
+	if (cp == NULL)
+		fatalerr("ran out of memory");
+
+	return(cp);
 }
 
 /*
  * Allocate a namelist structure.
  */
 struct namelist *
-makenl(char *name)
+makenl(name)
+	char *name;
 {
-	struct namelist *nl;
+	register struct namelist *nl;
 
 	debugmsg(DM_CALL, "makenl(%s)", name == NULL ? "null" : name);
 
 	nl = ALLOC(namelist);
 	nl->n_name = name;
-	nl->n_regex = NULL;
 	nl->n_next = NULL;
 
 	return(nl);
@@ -511,7 +548,9 @@ makenl(char *name)
  * Is the name p in the namelist nl?
  */
 static int
-innl(struct namelist *nl, char *p)
+innl(nl, p)
+	struct namelist *nl;
+	char *p;
 {
 	for ( ; nl; nl = nl->n_next)
 		if (!strcmp(p, nl->n_name))
@@ -523,7 +562,8 @@ innl(struct namelist *nl, char *p)
  * Join two namelists.
  */
 static struct namelist *
-addnl(struct namelist *n1, struct namelist *n2)
+addnl(n1, n2)
+	struct namelist *n1, *n2;
 {
 	struct namelist *nl, *prev;
 
@@ -546,7 +586,8 @@ addnl(struct namelist *n1, struct namelist *n2)
  * Copy n1 except for elements that are in n2.
  */
 static struct namelist *
-subnl(struct namelist *n1, struct namelist *n2)
+subnl(n1, n2)
+	struct namelist *n1, *n2;
 {
 	struct namelist *nl, *prev;
 
@@ -565,7 +606,8 @@ subnl(struct namelist *n1, struct namelist *n2)
  * Copy all items of n1 that are also in n2.
  */
 static struct namelist *
-andnl(struct namelist *n1, struct namelist *n2)
+andnl(n1, n2)
+	struct namelist *n1, *n2;
 {
 	struct namelist *nl, *prev;
 
@@ -583,10 +625,11 @@ andnl(struct namelist *n1, struct namelist *n2)
 /*
  * Make a sub command for lists of variables, commands, etc.
  */
-struct subcmd *
-makesubcmd(int type)
+extern struct subcmd *
+makesubcmd(type)
+	int type;
 {
-	struct subcmd *sc;
+	register struct subcmd *sc;
 
 	sc = ALLOC(subcmd);
 	sc->sc_type = type;

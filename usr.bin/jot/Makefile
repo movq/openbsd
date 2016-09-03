@@ -1,8 +1,5 @@
-#	$OpenBSD: Makefile,v 1.5 2016/01/10 01:15:52 tb Exp $
+#	$OpenBSD: Makefile,v 1.3 1997/09/21 11:49:22 deraadt Exp $
 
 PROG=	jot
-CFLAGS+= -Wall
-LDADD+=	-lm
-DPADD+=	${LIBM}
 
 .include <bsd.prog.mk>

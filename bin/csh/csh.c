@@ -1,4 +1,4 @@
-/*	$OpenBSD: csh.c,v 1.39 2016/03/19 15:42:38 krw Exp $	*/
+/*	$OpenBSD: csh.c,v 1.10 1999/02/21 08:28:00 deraadt Exp $	*/
 /*	$NetBSD: csh.c,v 1.14 1995/04/29 23:21:28 mycroft Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,8 +34,24 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1980, 1991, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)csh.c	8.2 (Berkeley) 10/12/93";
+#else
+static char rcsid[] = "$OpenBSD: csh.c,v 1.10 1999/02/21 08:28:00 deraadt Exp $";
+#endif
+#endif /* not lint */
+
 #include <sys/types.h>
+#include <sys/ioctl.h>
 #include <sys/stat.h>
+#include <sys/param.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <pwd.h>
@@ -39,14 +59,20 @@
 #include <string.h>
 #include <locale.h>
 #include <unistd.h>
-#include <limits.h>
 #include <vis.h>
-#include <stdarg.h>
+#ifdef __STDC__
+# include <stdarg.h>
+#else
+# include <varargs.h>
+#endif
 
 #include "csh.h"
 #include "proc.h"
 #include "extern.h"
 #include "pathnames.h"
+
+extern bool MapsAreInited;
+extern bool NLSMapsAreInited;
 
 /*
  * C Shell
@@ -78,24 +104,26 @@ bool    tellwhat = 0;
 
 extern char **environ;
 
-static int	readf(void *, char *, int);
-static fpos_t	seekf(void *, fpos_t, int);
-static int	writef(void *, const char *, int);
-static int	closef(void *);
-static int	srccat(Char *, Char *);
-static int	srcfile(char *, bool, bool);
-static void	phup(int);
-static void	srcunit(int, bool, bool);
-static void	mailchk(void);
-static Char   **defaultpath(void);
+static int	readf __P((void *, char *, int));
+static fpos_t	seekf __P((void *, fpos_t, int));
+static int	writef __P((void *, const char *, int));
+static int	closef __P((void *));
+static int	srccat __P((Char *, Char *));
+static int	srcfile __P((char *, bool, bool));
+static void	phup __P((int));
+static void	srcunit __P((int, bool, bool));
+static void	mailchk __P((void));
+static Char   **defaultpath __P((void));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+    int     argc;
+    char  **argv;
 {
-    Char *cp;
-    char *tcp;
-    int f;
-    char **tempv;
+    register Char *cp;
+    register char *tcp;
+    register int f;
+    register char **tempv;
     struct sigaction oact;
     sigset_t sigset;
 
@@ -108,8 +136,12 @@ main(int argc, char *argv[])
     /*
      * Initialize non constant strings
      */
+#ifdef _PATH_BSHELL
     STR_BSHELL = SAVE(_PATH_BSHELL);
+#endif
+#ifdef _PATH_CSHELL
     STR_SHELLPATH = SAVE(_PATH_CSHELL);
+#endif
     STR_environ = blk2short(environ);
     environ = short2blk(STR_environ);	/* So that we can free it */
     STR_WORD_CHARS = SAVE(WORD_CHARS);
@@ -150,11 +182,19 @@ main(int argc, char *argv[])
     if (loginsh)
 	(void) time(&chktim);
 
-    if (pledge("stdio rpath wpath cpath fattr getpw proc exec tty",
-	NULL) == -1) {
-	    perror("pledge");
-	    exit(1);
+    AsciiOnly = 1;
+#ifdef NLS
+    (void) setlocale(LC_ALL, "");
+    {
+	int     k;
+
+	for (k = 0200; k <= 0377 && !Isprint(k); k++)
+	    continue;
+	AsciiOnly = k > 0377;
     }
+#else
+    AsciiOnly = getenv("LANG") == NULL && getenv("LC_CTYPE") == NULL;
+#endif				/* NLS */
 
     /*
      * Move the descriptors to safe places. The variable didfds is 0 while we
@@ -194,7 +234,7 @@ main(int argc, char *argv[])
      */
     set(STRstatus, Strsave(STR0));
 
-    if ((tcp = getenv("HOME")) != NULL && strlen(tcp) < PATH_MAX)
+    if ((tcp = getenv("HOME")) != NULL && strlen(tcp) < MAXPATHLEN)
 	cp = SAVE(tcp);
     else
 	cp = NULL;
@@ -221,11 +261,12 @@ main(int argc, char *argv[])
     if ((tcp = getenv("PATH")) == NULL)
 	setq(STRpath, defaultpath(), &shvhed);
     else
-	importpath(str2short(tcp));
+	importpath(SAVE(tcp));
 
     set(STRshell, Strsave(STR_SHELLPATH));
 
     doldol = putn((int) getpid());	/* For $$ */
+    shtemp = Strspl(STRtmpsh, doldol);	/* For << */
 
     /*
      * Record the interrupt states from the parent process. If the parent is
@@ -368,7 +409,7 @@ main(int argc, char *argv[])
 		stderror(ERR_SYSTEM, tempv[0], strerror(errno));
 		break;
 	    }
-	(void) fcntl(SHIN, F_SETFD, FD_CLOEXEC);
+	(void) ioctl(SHIN, FIOCLEX, NULL);
 	prompt = 0;
 	 /* argc not used any more */ tempv++;
     }
@@ -462,7 +503,7 @@ main(int argc, char *argv[])
 		 */
 		if (tcsetpgrp(f, shpgrp) == -1)
 		    goto notty;
-		(void) fcntl(dcopy(f, FSHTTY), F_SETFD, FD_CLOEXEC);
+		(void) ioctl(dcopy(f, FSHTTY), FIOCLEX, NULL);
 	    }
 	    if (tpgrp == -1) {
 notty:
@@ -481,7 +522,6 @@ notty:
      * start-up scripts.
      */
     reenter = setexit();	/* PWP */
-    exitset++;
     haderr = 0;			/* In case second time through */
     if (!fast && reenter == 0) {
 	/* Will have value(STRhome) here because set fast if don't */
@@ -496,11 +536,15 @@ notty:
 
 	    setintr = 0;
 	    parintr = SIG_IGN;	/* Disable onintr */
+#ifdef _PATH_DOTCSHRC
 	    (void) srcfile(_PATH_DOTCSHRC, 0, 0);
+#endif
 	    if (!fast && !arginp && !onelflg)
 		dohash(NULL, NULL);
+#ifdef _PATH_DOTLOGIN
 	    if (loginsh)
 		(void) srcfile(_PATH_DOTLOGIN, 0, 0);
+#endif
 	    sigprocmask(SIG_SETMASK, &osigset, NULL);
 	    setintr = osetintr;
 	    parintr = oparintr;
@@ -555,7 +599,7 @@ notty:
 }
 
 void
-untty(void)
+untty()
 {
     if (tpgrp > 0) {
 	(void) setpgid(0, opgrp);
@@ -564,11 +608,12 @@ untty(void)
 }
 
 void
-importpath(Char *cp)
+importpath(cp)
+    Char   *cp;
 {
-    int i = 0;
-    Char *dp;
-    Char **pv;
+    register int i = 0;
+    register Char *dp;
+    register Char **pv;
     int     c;
 
     for (dp = cp; *dp; dp++)
@@ -596,19 +641,20 @@ importpath(Char *cp)
 	    dp++;
 	}
     pv[i] = 0;
-    setq(STRpath, pv, &shvhed);
+    set1(STRpath, pv, &shvhed);
 }
 
 /*
  * Source to the file which is the catenation of the argument names.
  */
 static int
-srccat(Char *cp, Char *dp)
+srccat(cp, dp)
+    Char   *cp, *dp;
 {
-    Char *ep = Strspl(cp, dp);
+    register Char *ep = Strspl(cp, dp);
     char   *ptr = short2str(ep);
 
-    free(ep);
+    xfree((ptr_t) ep);
     return srcfile(ptr, mflag ? 0 : 1, 0);
 }
 
@@ -616,15 +662,17 @@ srccat(Char *cp, Char *dp)
  * Source to a file putting the file descriptor in a safe place (> 2).
  */
 static int
-srcfile(char *f, bool onlyown, bool flag)
+srcfile(f, onlyown, flag)
+    char   *f;
+    bool    onlyown, flag;
 {
-    int unit;
+    register int unit;
 
     if ((unit = open(f, O_RDONLY)) == -1)
 	return 0;
     unit = dmove(unit, -1);
 
-    (void) fcntl(unit, F_SETFD, FD_CLOEXEC);
+    (void) ioctl(unit, FIOCLEX, NULL);
     srcunit(unit, onlyown, flag);
     return 1;
 }
@@ -635,7 +683,9 @@ srcfile(char *f, bool onlyown, bool flag)
  */
 int     insource;
 static void
-srcunit(int unit, bool onlyown, bool hflg)
+srcunit(unit, onlyown, hflg)
+    register int unit;
+    bool    onlyown, hflg;
 {
     /* We have to push down a lot of state here */
     /* All this could go into a structure */
@@ -712,13 +762,13 @@ srcunit(int unit, bool onlyown, bool hflg)
     if (setintr)
 	sigprocmask(SIG_SETMASK, &osigset, NULL);
     if (oSHIN >= 0) {
-	int i;
+	register int i;
 
 	/* We made it to the new state... free up its storage */
-	/* This code could get run twice but free doesn't care */
+	/* This code could get run twice but xfree doesn't care */
 	for (i = 0; i < fblocks; i++)
-	    free(fbuf[i]);
-	free(fbuf);
+	    xfree((ptr_t) fbuf[i]);
+	xfree((ptr_t) fbuf);
 
 	/* Reset input arena */
 	memcpy(&B, &saveB, sizeof(B));
@@ -743,10 +793,10 @@ srcunit(int unit, bool onlyown, bool hflg)
 }
 
 void
-rechist(void)
+rechist()
 {
     Char    buf[BUFSIZ], hbuf[BUFSIZ], *hfile;
-    int     fd, ftmp, oldidfds;
+    int     fp, ftmp, oldidfds;
     struct  varent *shist;
 
     if (!fast) {
@@ -756,39 +806,38 @@ rechist(void)
 	 */
 	if ((shist = adrof(STRsavehist)) != NULL) {
 	    if (shist->vec[0][0] != '\0')
-		(void) Strlcpy(hbuf, shist->vec[0], sizeof hbuf/sizeof(Char));
+		(void) Strcpy(hbuf, shist->vec[0]);
 	    else if ((shist = adrof(STRhistory)) && shist->vec[0][0] != '\0')
-		(void) Strlcpy(hbuf, shist->vec[0], sizeof hbuf/sizeof(Char));
+		(void) Strcpy(hbuf, shist->vec[0]);
 	    else
 		return;
 	}
 	else
-	    return;
+  	    return;
 
-	if ((hfile = value(STRhistfile)) == STRNULL) {
-	    Strlcpy(buf, value(STRhome), sizeof buf/sizeof(Char));
-	    hfile = buf;
-	    (void) Strlcat(buf, STRsldthist, sizeof buf/sizeof(Char));
-	}
+  	if ((hfile = value(STRhistfile)) == STRNULL) {
+  	    hfile = Strcpy(buf, value(STRhome));
+  	    (void) Strcat(buf, STRsldthist);
+  	}
 
-	if ((fd = open(short2str(hfile), O_WRONLY | O_CREAT | O_TRUNC,
-	    0600)) == -1)
-	    return;
+  	if ((fp = open(short2str(hfile), O_WRONLY | O_CREAT | O_TRUNC,
+	    0600)) == -1) 
+  	    return;
 
 	oldidfds = didfds;
 	didfds = 0;
 	ftmp = SHOUT;
-	SHOUT = fd;
+	SHOUT = fp;
 	dumphist[2] = hbuf;
 	dohist(dumphist, NULL);
 	SHOUT = ftmp;
-	(void) close(fd);
+	(void) close(fp);
 	didfds = oldidfds;
     }
 }
 
 void
-goodbye(void)
+goodbye()
 {
     rechist();
 
@@ -799,7 +848,9 @@ goodbye(void)
 	setintr = 0;		/* No interrupts after "logout" */
 	if (!(adrof(STRlogout)))
 	    set(STRlogout, STRnormal);
+#ifdef _PATH_DOTLOGOUT
 	(void) srcfile(_PATH_DOTLOGOUT, 0, 0);
+#endif
 	if (adrof(STRhome))
 	    (void) srccat(value(STRhome), STRsldtlogout);
     }
@@ -807,9 +858,12 @@ goodbye(void)
 }
 
 void
-exitstat(void)
+exitstat()
 {
     Char *s;
+#ifdef PROF
+    monitor(0);
+#endif
     /*
      * Note that if STATUS is corrupted (i.e. getn bombs) then error will exit
      * directly because we poke child here. Otherwise we might continue
@@ -824,22 +878,21 @@ exitstat(void)
  * in the event of a HUP we want to save the history
  */
 static void
-phup(int sig)
+phup(sig)
+int sig;
 {
-    /* XXX sigh, everything after this is a signal race */
-
     rechist();
 
     /*
      * We kill the last foreground process group. It then becomes
-     * responsible to propagate the SIGHUP to its progeny.
+     * responsible to propagate the SIGHUP to its progeny. 
      */
     {
 	struct process *pp, *np;
 
 	for (pp = proclist.p_next; pp; pp = pp->p_next) {
 	    np = pp;
-	    /*
+	    /* 
 	     * Find if this job is in the foreground. It could be that
 	     * the process leader has exited and the foreground flag
 	     * is cleared for it.
@@ -847,7 +900,7 @@ phup(int sig)
 	    do
 		/*
 		 * If a process is in the foreground; we try to kill
-		 * it's process group. If we succeed, then the
+		 * it's process group. If we succeed, then the 
 		 * whole job is gone. Otherwise we keep going...
 		 * But avoid sending HUP to the shell again.
 		 */
@@ -874,7 +927,8 @@ Char   *jobargv[2] = {STRjobs, 0};
  */
 /* ARGSUSED */
 void
-pintr(int notused)
+pintr(notused)
+	int notused;
 {
     int save_errno = errno;
 
@@ -883,7 +937,8 @@ pintr(int notused)
 }
 
 void
-pintr1(bool wantnl)
+pintr1(wantnl)
+    bool    wantnl;
 {
     Char **v;
     sigset_t sigset, osigset;
@@ -943,7 +998,8 @@ pintr1(bool wantnl)
  */
 static struct command *savet = NULL;
 void
-process(bool catch)
+process(catch)
+    bool    catch;
 {
     jmp_buf osetexit;
     struct command *t = savet;
@@ -1013,7 +1069,7 @@ process(bool catch)
 	    (void) fflush(cshout);
 	}
 	if (seterr) {
-	    free(seterr);
+	    xfree((ptr_t) seterr);
 	    seterr = NULL;
 	}
 
@@ -1077,12 +1133,14 @@ process(bool catch)
 
 void
 /*ARGSUSED*/
-dosource(Char **v, struct command *t)
+dosource(v, t)
+    Char **v;
+    struct command *t;
+
 {
-    Char *f;
+    register Char *f;
     bool    hflg = 0;
     Char    buf[BUFSIZ];
-    char    sbuf[BUFSIZ];
 
     v++;
     if (*v && eq(*v, STRmh)) {
@@ -1090,12 +1148,12 @@ dosource(Char **v, struct command *t)
 	    stderror(ERR_NAME | ERR_HFLAG);
 	hflg++;
     }
-    (void) Strlcpy(buf, *v, sizeof buf/sizeof(Char));
+    (void) Strcpy(buf, *v);
     f = globone(buf, G_ERROR);
-    (void) strlcpy(sbuf, short2str(f), sizeof sbuf);
-    free(f);
-    if (!srcfile(sbuf, 0, hflg) && !hflg)
-	stderror(ERR_SYSTEM, sbuf, strerror(errno));
+    (void) strcpy((char *) buf, short2str(f));
+    xfree((ptr_t) f);
+    if (!srcfile((char *) buf, 0, hflg) && !hflg)
+	stderror(ERR_SYSTEM, (char *) buf, strerror(errno));
 }
 
 /*
@@ -1108,10 +1166,10 @@ dosource(Char **v, struct command *t)
  * "You have mail."
  */
 static void
-mailchk(void)
+mailchk()
 {
-    struct varent *v;
-    Char **vp;
+    register struct varent *v;
+    register Char **vp;
     time_t  t;
     int     intvl, cnt;
     struct stat stb;
@@ -1152,7 +1210,8 @@ mailchk(void)
  * We write the home directory of the user back there.
  */
 int
-gethdir(Char *home, int len)
+gethdir(home)
+    Char   *home;
 {
     Char   *h;
     struct passwd *pw;
@@ -1162,8 +1221,7 @@ gethdir(Char *home, int len)
      */
     if (*home == '\0') {
 	if ((h = value(STRhome)) != NULL) {
-	    if (Strlcpy(home, h, len) >= len)
-		return 1;
+	    (void) Strcpy(home, h);
 	    return 0;
 	}
 	else
@@ -1171,8 +1229,7 @@ gethdir(Char *home, int len)
     }
 
     if ((pw = getpwnam(short2str(home))) != NULL) {
-	if (Strlcpy(home, str2short(pw->pw_dir), len) >= len)
-	    return 1;
+	(void) Strcpy(home, str2short(pw->pw_dir));
 	return 0;
     }
     else
@@ -1187,27 +1244,37 @@ gethdir(Char *home, int len)
 #define DESC(a) (*((int *) (a)) - (didfds && *((int *) a) >= FSHIN ? FSHIN : 0))
 
 static int
-readf(void *oreo, char *buf, int siz)
+readf(oreo, buf, siz)
+    void *oreo;
+    char *buf;
+    int siz;
 {
     return read(DESC(oreo), buf, siz);
 }
 
 
 static int
-writef(void *oreo, const char *buf, int siz)
+writef(oreo, buf, siz)
+    void *oreo;
+    const char *buf;
+    int siz;
 {
     return write(DESC(oreo), buf, siz);
 }
 
 static fpos_t
-seekf(void *oreo, fpos_t off, int whence)
+seekf(oreo, off, whence)
+    void *oreo;
+    fpos_t off;
+    int whence;
 {
     return lseek(DESC(oreo), off, whence);
 }
 
 
 static int
-closef(void *oreo)
+closef(oreo)
+    void *oreo;
 {
     return close(DESC(oreo));
 }
@@ -1217,48 +1284,59 @@ closef(void *oreo)
  * Print the visible version of a string.
  */
 int
-vis_fputc(int ch, FILE *fp)
+vis_fputc(ch, fp)
+    int ch;
+    FILE *fp;
 {
     char uenc[5];	/* 4 + NUL */
 
-    if (ch & QUOTE)
+    if (ch & QUOTE) 
 	return fputc(ch & TRIM, fp);
+    /* 
+     * XXX: When we are in AsciiOnly we want all characters >= 0200 to
+     * be encoded, but currently there is no way in vis to do that.
+     */
     (void) vis(uenc, ch & TRIM, VIS_NOSLASH, 0);
     return fputs(uenc, fp);
 }
 
 /*
  * Move the initial descriptors to their eventual
- * resting places, closing all other units.
+ * resting places, closin all other units.
  */
 void
-initdesc(void)
+initdesc()
 {
 
     didfds = 0;			/* 0, 1, 2 aren't set up */
-    (void) fcntl(SHIN = dcopy(0, FSHIN), F_SETFD, FD_CLOEXEC);
-    (void) fcntl(SHOUT = dcopy(1, FSHOUT), F_SETFD, FD_CLOEXEC);
-    (void) fcntl(SHERR = dcopy(2, FSHERR), F_SETFD, FD_CLOEXEC);
-    (void) fcntl(OLDSTD = dcopy(SHIN, FOLDSTD), F_SETFD, FD_CLOEXEC);
+    (void) ioctl(SHIN = dcopy(0, FSHIN), FIOCLEX, NULL);
+    (void) ioctl(SHOUT = dcopy(1, FSHOUT), FIOCLEX, NULL);
+    (void) ioctl(SHERR = dcopy(2, FSHERR), FIOCLEX, NULL);
+    (void) ioctl(OLDSTD = dcopy(SHIN, FOLDSTD), FIOCLEX, NULL);
     closem();
 }
 
 
 void
-xexit(int i)
+#ifdef PROF
+done(i)
+#else
+xexit(i)
+#endif
+    int     i;
 {
     untty();
     _exit(i);
 }
 
 static Char **
-defaultpath(void)
+defaultpath()
 {
     char   *ptr;
     Char  **blk, **blkp;
     struct stat stb;
 
-    blkp = blk = xreallocarray(NULL, 10, sizeof(Char *));
+    blkp = blk = (Char **) xmalloc((size_t) sizeof(Char *) * 10);
 
 #define DIRAPPEND(a)  \
 	if (stat(ptr = a, &stb) == 0 && S_ISDIR(stb.st_mode)) \
@@ -1269,14 +1347,19 @@ defaultpath(void)
 
 #undef DIRAPPEND
 
+#if 0
+    if (euid != 0 && uid != 0)
+	*blkp++ = Strsave(STRdot);
+#endif
+
     *blkp = NULL;
     return (blk);
 }
 
 void
-printprompt(void)
+printprompt()
 {
-    Char *cp;
+    register Char *cp;
 
     if (!whyles) {
 	for (cp = value(STRprompt); *cp; cp++)

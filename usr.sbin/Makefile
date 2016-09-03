@@ -1,28 +1,46 @@
-#	$OpenBSD: Makefile,v 1.193 2016/08/31 22:24:44 florian Exp $
+#	$OpenBSD: Makefile,v 1.44 1999/09/29 04:52:42 beck Exp $
+
+# not yet done: catman
 
 .include <bsd.own.mk>
 
-SUBDIR=	ac accton acme-client acpidump adduser amd apm apmd arp \
-	authpf bgpctl bgpd bind chroot config cron crunchgen dev_mkdb \
-	dhcpd dhcrelay dvmrpctl dvmrpd edquota eeprom eigrpd eigrpctl \
-	fdformat ftp-proxy gpioctl hostapd hostctl hotplugd httpd identd \
-	ifstated ikectl inetd installboot iostat iscsictl iscsid kgmon \
-	kvm_mkdb ldapd ldapctl ldomctl ldomd ldpd ldpctl lpr mailwrapper \
-	map-mbone memconfig mksuncd mkuboot mopd mrinfo mrouted \
-	mtrace mtree ndp netgroup_mkdb \
-	npppctl npppd nsd ntpd ospfctl ospfd ospf6d ospf6ctl \
-	pcidump pkg_add portmap pppd procmap pstat pwd_mkdb \
-	quot quotaon radiusctl radiusd rarpd rbootd \
-	rcctl rdate rebound relayctl relayd repquota ripctl ripd \
-	rmt route6d rpc.bootparamd rpc.lockd rpc.statd rtadvd \
-	sa sasyncd sensorsd slowcgi smtpd \
-	snmpctl snmpd spamdb syslogc syslogd sysmerge tcpdrop tcpdump \
-	tftp-proxy tftpd tokenadm tokeninit traceroute trpt \
-	unbound usbdevs user vmd vmctl vipw watchdogd wsconscfg \
-	wsfontload wsmoused zdump zic ztsscale
+SUBDIR=	ac accton adduser amd arp bootpd bootpgw bootpef bootptest \
+	chown chroot config cron ctm dev_mkdb dhcp \
+	edquota gspa httpd inetd iostat \
+	ipftest ipmon ipsend kgmon kvm_mkdb lpr openssl\
+	mailwrapper map-mbone mrinfo mopd mrouted mtrace mtree named \
+	netgroup_mkdb pkg_install portmap ppp pppd pstat pwd_mkdb \
+	quot quotaon rarpd rbootd rdconfig rdate repquota rmt \
+	rpc.bootparamd rpc.lockd rpc.pcnfsd rwhod \
+	sa sendmail sliplogin slstats spray sysctl \
+	syslogd tcpdump timed traceroute trpt trsp \
+	vipw vnconfig zdump zic
 
-.if (${YP:L} == "yes")
-SUBDIR+=ypbind ypldap yppoll ypset ypserv
+.if (${AFS} == "yes")
+SUBDIR+=afs
+.endif
+
+.if (${YP} == "yes")
+SUBDIR+=ypbind yppoll ypset ypserv
+.endif
+
+.if   make(clean) || make(cleandir) || make(obj)
+SUBDIR+=apm apmd bad144 eeprom fdformat grfconfig grfinfo \
+	hilinfo iteconfig pccon screenblank videomode
+.elif ${MACHINE} == "amiga" 
+SUBDIR+=grfconfig iteconfig videomode
+.elif ${MACHINE} == "atari"
+SUBDIR+=iteconfig
+.elif ${MACHINE} == "hp300"
+SUBDIR+=grfinfo hilinfo
+.elif ${MACHINE} == "i386"
+SUBDIR+=bad144 apm apmd fdformat pccon 
+.elif ${MACHINE} == "pmax"
+SUBDIR+=
+.elif ${MACHINE} == "sun3"
+SUBDIR+=eeprom screenblank
+.elif ${MACHINE} == "sparc"
+SUBDIR+=eeprom fdformat screenblank
 .endif
 
 .include <bsd.subdir.mk>

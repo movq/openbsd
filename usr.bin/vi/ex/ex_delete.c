@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_delete.c,v 1.7 2014/11/12 04:28:41 bentley Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)ex_delete.c	10.9 (Berkeley) 10/23/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -25,10 +27,12 @@
  *
  *	Delete lines from the file.
  *
- * PUBLIC: int ex_delete(SCR *, EXCMD *);
+ * PUBLIC: int ex_delete __P((SCR *, EXCMD *));
  */
 int
-ex_delete(SCR *sp, EXCMD *cmdp)
+ex_delete(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	recno_t lno;
 

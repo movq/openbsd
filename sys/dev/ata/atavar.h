@@ -1,8 +1,8 @@
-/*	$OpenBSD: atavar.h,v 1.21 2015/08/17 15:36:29 krw Exp $	*/
+/*	$OpenBSD: atavar.h,v 1.4 1999/10/09 03:42:03 csapuntz Exp $	*/
 /*	$NetBSD: atavar.h,v 1.13 1999/03/10 13:11:43 bouyer Exp $	*/
 
 /*
- * Copyright (c) 1998, 2001 Manuel Bouyer.
+ * Copyright (c) 1998 Manuel Bouyer.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -12,81 +12,79 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
  *
  */
 
-#ifndef _DEV_ATA_ATAVAR_H_
-#define _DEV_ATA_ATAVAR_H_
+/* Hight-level functions and structures used by both ATA and ATAPI devices */
 
-/* High-level functions and structures used by both ATA and ATAPI devices */
-#include <dev/ata/atareg.h>
+struct ataparams;
 
 /* Datas common to drives and controller drivers */
 struct ata_drive_datas {
-	u_int8_t drive; /* drive number */
-	int8_t ata_vers; /* ATA version supported */
-	u_int16_t drive_flags; /* bitmask for drives present/absent and cap */
+    u_int8_t drive; /* drive number */
+    int8_t ata_vers; /* ATA version supported */
+    u_int16_t drive_flags; /* bitmask for drives present/absent and cap */
 #define DRIVE_ATA	0x0001
 #define DRIVE_ATAPI	0x0002
-#define DRIVE_OLD	0x0004
+#define DRIVE_OLD	0x0004 
 #define DRIVE (DRIVE_ATA|DRIVE_ATAPI|DRIVE_OLD)
 #define DRIVE_CAP32	0x0008
-#define DRIVE_DMA	0x0010
+#define DRIVE_DMA	0x0010 
 #define DRIVE_UDMA	0x0020
 #define DRIVE_MODE	0x0040 /* the drive reported its mode */
 #define DRIVE_RESET	0x0080 /* reset the drive state at next xfer */
 #define DRIVE_DMAERR	0x0100 /* Udma transfer had crc error, don't try DMA */
 #define DRIVE_DSCBA	0x0200 /* DSC in buffer availability mode */
 #define DRIVE_DSCWAIT	0x0400 /* In wait for DSC to be asserted */
-#define DRIVE_DEVICE_RESET 0x0800 /* Drive supports DEVICE RESET command */
-#define DRIVE_SATA	0x1000 /* SATA drive */
-	/*
-	 * Current setting of drive's PIO, DMA and UDMA modes.
-	 * Is initialised by the disks drivers at attach time, and may be
-	 * changed later by the controller's code if needed
-	 */
-	u_int8_t PIO_mode; /* Current setting of drive's PIO mode */
-	u_int8_t DMA_mode; /* Current setting of drive's DMA mode */
-	u_int8_t UDMA_mode; /* Current setting of drive's UDMA mode */
-	/* Supported modes for this drive */
-	u_int8_t PIO_cap; /* supported drive's PIO mode */
-	u_int8_t DMA_cap; /* supported drive's DMA mode */
-	u_int8_t UDMA_cap; /* supported drive's UDMA mode */
-	/*
-	 * Drive state. This is drive-type (ATA or ATAPI) dependant
-	 * This is reset to 0 after a channel reset.
-	 */
-	u_int8_t state;
+    /*
+     * Current setting of drive's PIO, DMA and UDMA modes.
+     * Is initialised by the disks drivers at attach time, and may be
+     * changed later by the controller's code if needed
+     */
+    u_int8_t PIO_mode; /* Current setting of drive's PIO mode */
+    u_int8_t DMA_mode; /* Current setting of drive's DMA mode */
+    u_int8_t UDMA_mode; /* Current setting of drive's UDMA mode */
+    /* Supported modes for this drive */
+    u_int8_t PIO_cap; /* supported drive's PIO mode */
+    u_int8_t DMA_cap; /* supported drive's DMA mode */
+    u_int8_t UDMA_cap; /* supported drive's UDMA mode */
+    /*
+     * Drive state. This is drive-type (ATA or ATAPI) dependant
+     * This is reset to 0 after a channel reset.
+     */
+    u_int8_t state;
 
 #define ACAP_LEN            0x01  /* 16 byte commands */
 #define ACAP_DSC            0x02  /* use DSC signalling */
-	/* 0x20-0x40 reserved for ATAPI_CFG_DRQ_MASK */
-	u_int8_t atapi_cap;
+    /* 0x20-0x40 reserved for ATAPI_CFG_DRQ_MASK */
+    u_int8_t atapi_cap;
 
-	/* Keeps track of the number of resets that have occurred in a row
-	   without a successful command completion. */
-	u_int8_t n_resets;
-	u_int8_t n_dmaerrs;
-	u_int32_t n_xfers;
-#define NERRS_MAX 4
-#define NXFER 1000
+    /* Number of DMA errors. Reset to 0 after every successful transfers. */
+    u_int8_t n_dmaerrs;
+    /* downgrade mode after this many successive errors */
+#define NERRS_MAX 2
 
-	char drive_name[31];
-	int  cf_flags;
-	void *chnl_softc; /* channel softc */
-
-	struct ataparams id;
+    struct device *drv_softc; /* ATA/PI drive's softc, can be NULL */
+    void *chnl_softc; /* channel softc */
 };
 
 /* ATA/ATAPI common attachement datas */
@@ -114,7 +112,7 @@ struct ata_atapi_attach {
 #define ATA_CONFIG_UDMA_OFF	8
 
 /*
- * ATA/ATAPI commands description
+ * ATA/ATAPI commands description 
  *
  * This structure defines the interface between the ATA/ATAPI device driver
  * and the controller for short commands. It contains the command's parameter,
@@ -132,7 +130,7 @@ struct wdc_command {
     u_int16_t r_cyl;
     u_int8_t r_sector;
     u_int8_t r_count;
-    u_int8_t r_features;
+    u_int8_t r_precomp;
     u_int8_t r_st_bmask; /* status register mask to wait for before command */
     u_int8_t r_st_pmask; /* status register mask to wait for after command */
     u_int8_t r_error;    /* error register after command done */
@@ -146,39 +144,34 @@ struct wdc_command {
 #define AT_TIMEOU   0x0080 /* command timed out */
 #define AT_DF       0x0100 /* Drive fault */
 #define AT_READREG  0x0200 /* Read registers on completion */
-    int timeout;         /* timeout (in ms) */
+    int timeout;	 /* timeout (in ms) */
     void *data;          /* Data buffer address */
-    int bcount;          /* number of bytes to transfer */
-    void (*callback)(void *); /* command to call once command completed */
+    int bcount;           /* number of bytes to transfer */
+    void (*callback) __P((void*)); /* command to call once command completed */
     void *callback_arg;  /* argument passed to *callback() */
 };
 
-extern int at_poll;
-
-int wdc_exec_command(struct ata_drive_datas *, struct wdc_command*);
-#define WDC_COMPLETE  0x01
-#define WDC_QUEUED    0x02
+int wdc_exec_command __P((struct ata_drive_datas *, struct wdc_command*));
+#define WDC_COMPLETE 0x01
+#define WDC_QUEUED   0x02
 #define WDC_TRY_AGAIN 0x03
 
-void wdc_probe_caps(struct ata_drive_datas*, struct ataparams *);
-void wdc_print_caps(struct ata_drive_datas*);
-int  wdc_downgrade_mode(struct ata_drive_datas*);
+void wdc_probe_caps __P((struct ata_drive_datas*, struct ataparams *));
+void wdc_print_caps __P((struct ata_drive_datas*));
+int  wdc_downgrade_mode __P((struct ata_drive_datas*));
 
-void wdc_reset_channel(struct ata_drive_datas *, int);
+void wdc_reset_channel __P((struct ata_drive_datas *));
 
-int wdc_ata_addref(struct ata_drive_datas *);
-void wdc_ata_delref(struct ata_drive_datas *);
-void wdc_ata_kill_pending(struct ata_drive_datas *);
+int wdc_ata_addref __P((struct ata_drive_datas *));
+void wdc_ata_delref __P((struct ata_drive_datas *));
 
-int ata_get_params(struct ata_drive_datas*, u_int8_t,
-	struct ataparams *);
-int ata_set_mode(struct ata_drive_datas*, u_int8_t, u_int8_t);
+struct ataparams;
+int ata_get_params __P((struct ata_drive_datas*, u_int8_t,
+	 struct ataparams *));
+int ata_set_mode __P((struct ata_drive_datas*, u_int8_t, u_int8_t));
 /* return code for these cmds */
 #define CMD_OK    0
 #define CMD_ERR   1
 #define CMD_AGAIN 2
 
-void ata_dmaerr(struct ata_drive_datas *);
-void ata_perror(struct ata_drive_datas *, int, char *, size_t);
-
-#endif	/* !_DEV_ATA_ATAVAR_H_ */
+void ata_perror __P((struct ata_drive_datas *, int, char *));

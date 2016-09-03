@@ -1,2 +1,8 @@
-# Host: OpenBSD/hppa
-NATDEPFILES= fork-child.o inf-ptrace.o obsd-nat.o hppabsd-nat.o
+# Host: Big-endian HP-PA running OpenBSD/HPPA
+XDEPFILES= 
+XM_FILE= xm-hppaobsd.h
+NAT_FILE= nm-obsd.h
+NATDEPFILES= infptrace.o inftarg.o corelow.o hppaobsd-nat.o fork-child.o
+
+MMALLOC = 
+MMALLOC_CFLAGS = -DNO_MMALLOC 

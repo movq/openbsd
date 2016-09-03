@@ -1,90 +1,28 @@
-/*	$OpenBSD: hack.apply.c,v 1.8 2016/01/09 21:54:11 mestre Exp $	*/
-
 /*
- * Copyright (c) 1985, Stichting Centrum voor Wiskunde en Informatica,
- * Amsterdam
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- * - Redistributions of source code must retain the above copyright notice,
- * this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above copyright
- * notice, this list of conditions and the following disclaimer in the
- * documentation and/or other materials provided with the distribution.
- *
- * - Neither the name of the Stichting Centrum voor Wiskunde en
- * Informatica, nor the names of its contributors may be used to endorse or
- * promote products derived from this software without specific prior
- * written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
- * IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
- * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER
- * OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Copyright (c) Stichting Mathematisch Centrum, Amsterdam, 1985.
  */
 
-/*
- * Copyright (c) 1982 Jay Fenlason <hack@gnu.org>
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
- * AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL
- * THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
+#ifndef lint
+static char rcsid[] = "$NetBSD: hack.apply.c,v 1.4 1995/03/23 08:29:47 cgd Exp $";
+#endif /* not lint */
 
-#include "def.edog.h"
-#include "hack.h"
-
-extern int (*occupation)(void);
+#include	"hack.h"
+#include	"def.edog.h"
+#include	"def.mkroom.h"
+static struct monst *bchit();
+extern struct obj *addinv();
+extern struct trap *maketrap();
+extern int (*occupation)();
 extern char *occtxt;
 extern char quitchars[];
 extern char pl_character[];
 
-static void use_camera(struct obj *);
-static void use_ice_box(struct obj *);
-       int in_ice_box(struct obj *);
-       int ck_ice_box(struct obj *);
-       int out_ice_box(struct obj *);
-static struct monst *bchit(int, int, int, char);
-static void use_whistle(struct obj *);
-static void use_magic_whistle(struct obj *);
-static int dig(void);
-static int use_pick_axe(struct obj *);
+static void use_camera(), use_ice_box(), use_whistle(), use_magic_whistle();
+static int use_pick_axe();
 
-int
-doapply(void)
-{
-	struct obj *obj;
-	int res = 1;
+doapply() {
+	register struct obj *obj;
+	register int res = 1;
 
 	obj = getobj("(", "use or apply");
 	if(!obj) return(0);
@@ -129,33 +67,32 @@ doapply(void)
 	return(res);
 }
 
+/* ARGSUSED */
 static void
-use_camera(struct obj *obj)
-{
-	struct monst *mtmp;
-
-	if (!getdir(1)){		/* ask: in what direction? */
+use_camera(obj) /* register */ struct obj *obj; {
+register struct monst *mtmp;
+	if(!getdir(1)){		/* ask: in what direction? */
 		flags.move = multi = 0;
 		return;
 	}
-	if (u.uswallow) {
+	if(u.uswallow) {
 		pline("You take a picture of %s's stomach.", monnam(u.ustuck));
 		return;
 	}
-	if (u.dz) {
+	if(u.dz) {
 		pline("You take a picture of the %s.",
 			(u.dz > 0) ? "floor" : "ceiling");
 		return;
 	}
-	if ((mtmp = bchit(u.dx, u.dy, COLNO, '!'))) {
+	if(mtmp = bchit(u.dx, u.dy, COLNO, '!')) {
 		if(mtmp->msleep){
 			mtmp->msleep = 0;
 			pline("The flash awakens %s.", monnam(mtmp)); /* a3 */
 		} else
 		if(mtmp->data->mlet != 'y')
 		if(mtmp->mcansee || mtmp->mblinded){
-			int tmp = dist(mtmp->mx,mtmp->my);
-			int tmp2;
+			register int tmp = dist(mtmp->mx,mtmp->my);
+			register int tmp2;
 			if(cansee(mtmp->mx,mtmp->my))
 			  pline("%s is blinded by the flash!", Monnam(mtmp));
 			setmangry(mtmp);
@@ -178,9 +115,8 @@ use_camera(struct obj *obj)
 static
 struct obj *current_ice_box;	/* a local variable of use_ice_box, to be
 				used by its local procedures in/ck_ice_box */
-int
-in_ice_box(struct obj *obj)
-{
+static
+in_ice_box(obj) register struct obj *obj; {
 	if(obj == current_ice_box ||
 		(Punished && (obj == uball || obj == uchain))){
 		pline("You must be kidding.");
@@ -210,19 +146,15 @@ in_ice_box(struct obj *obj)
 	return(1);
 }
 
-int
-ck_ice_box(struct obj *obj)
-{
+static
+ck_ice_box(obj) register struct obj *obj; {
 	return(obj->o_cnt_id == current_ice_box->o_id);
 }
 
-int
-out_ice_box(struct obj *obj)
-{
-	struct obj *otmp;
-
-	if (obj == fcobj)
-		fcobj = fcobj->nobj;
+static
+out_ice_box(obj) register struct obj *obj; {
+register struct obj *otmp;
+	if(obj == fcobj) fcobj = fcobj->nobj;
 	else {
 		for(otmp = fcobj; otmp->nobj != obj; otmp = otmp->nobj)
 			if(!otmp->nobj) panic("out_ice_box");
@@ -231,14 +163,12 @@ out_ice_box(struct obj *obj)
 	current_ice_box->owt -= obj->owt;
 	obj->age = moves - obj->age;	/* simulated point of time */
 	(void) addinv(obj);
-	return(0);
 }
 
 static void
-use_ice_box(struct obj *obj)
-{
-	int cnt = 0;
-	struct obj *otmp;
+use_ice_box(obj) register struct obj *obj; {
+register int cnt = 0;
+register struct obj *otmp;
 	current_ice_box = obj;	/* for use by in/out_ice_box */
 	for(otmp = fcobj; otmp; otmp = otmp->nobj)
 		if(otmp->o_cnt_id == obj->o_id)
@@ -247,7 +177,7 @@ use_ice_box(struct obj *obj)
 	else {
 	    pline("Do you want to take something out of the ice-box? [yn] ");
 	    if(readchar() == 'y')
-		if(askchain(fcobj, NULL, 0, out_ice_box, ck_ice_box, 0))
+		if(askchain(fcobj, (char *) 0, 0, out_ice_box, ck_ice_box, 0))
 		    return;
 		pline("That was all. Do you wish to put something in? [yn] ");
 		if(readchar() != 'y') return;
@@ -260,34 +190,31 @@ use_ice_box(struct obj *obj)
 
 static
 struct monst *
-bchit(int ddx, int ddy, int range, char sym)
-{
-	struct monst *mtmp = (struct monst *) 0;
-	int bchx = u.ux, bchy = u.uy;
+bchit(ddx,ddy,range,sym) register int ddx,ddy,range; char sym; {
+	register struct monst *mtmp = (struct monst *) 0;
+	register int bchx = u.ux, bchy = u.uy;
 
 	if(sym) Tmp_at(-1, sym);	/* open call */
 	while(range--) {
 		bchx += ddx;
 		bchy += ddy;
-		if ((mtmp = m_at(bchx,bchy)))
+		if(mtmp = m_at(bchx,bchy))
 			break;
 		if(!ZAP_POS(levl[bchx][bchy].typ)) {
 			bchx -= ddx;
 			bchy -= ddy;
 			break;
 		}
-		if(sym)
-			Tmp_at(bchx, bchy);
+		if(sym) Tmp_at(bchx, bchy);
 	}
-	if(sym)
-		Tmp_at(-1, -1);
+	if(sym) Tmp_at(-1, -1);
 	return(mtmp);
 }
 
+/* ARGSUSED */
 static void
-use_whistle(struct obj *obj)
-{
-	struct monst *mtmp = fmon;
+use_whistle(obj) struct obj *obj; {
+register struct monst *mtmp = fmon;
 	pline("You produce a high whistling sound.");
 	while(mtmp) {
 		if(dist(mtmp->mx,mtmp->my) < u.ulevel*20) {
@@ -300,10 +227,10 @@ use_whistle(struct obj *obj)
 	}
 }
 
+/* ARGSUSED */
 static void
-use_magic_whistle(struct obj *obj)
-{
-	struct monst *mtmp = fmon;
+use_magic_whistle(obj) struct obj *obj; {
+register struct monst *mtmp = fmon;
 	pline("You produce a strange whistling sound.");
 	while(mtmp) {
 		if(mtmp->mtame) mnexto(mtmp);
@@ -316,11 +243,10 @@ static uchar dig_level;
 static coord dig_pos;
 static boolean dig_down;
 
-static int
-dig(void)
-{
-	struct rm *lev;
-	int dpx = dig_pos.x, dpy = dig_pos.y;
+static
+dig() {
+	register struct rm *lev;
+	register dpx = dig_pos.x, dpy = dig_pos.y;
 
 	/* perhaps a nymph stole his pick-axe while he was busy digging */
 	/* or perhaps he teleported away */
@@ -341,7 +267,7 @@ dig(void)
 			return(0);	/* done with digging */
 		}
 		if(dig_effort > 50) {
-			struct trap *ttmp = t_at(dpx,dpy);
+			register struct trap *ttmp = t_at(dpx,dpy);
 
 			if(!ttmp) {
 				ttmp = maketrap(dpx,dpy,PIT);
@@ -353,12 +279,12 @@ dig(void)
 			}
 		}
 	} else
-	if (dig_effort > 100) {
-		char *digtxt;
-		struct obj *obj;
+	if(dig_effort > 100) {
+		register char *digtxt;
+		register struct obj *obj;
 
 		lev = &levl[dpx][dpy];
-		if ((obj = sobj_at(ENORMOUS_ROCK, dpx, dpy))) {
+		if(obj = sobj_at(ENORMOUS_ROCK, dpx, dpy)) {
 			fracture_rock(obj);
 			digtxt = "The rock falls apart.";
 		} else if(!lev->typ || lev->typ == SCORR) {
@@ -372,11 +298,11 @@ dig(void)
 		  digtxt = "Now what exactly was it that you were digging in?";
 		mnewsym(dpx, dpy);
 		prl(dpx, dpy);
-		pline("%s", digtxt);		/* after mnewsym & prl */
+		pline(digtxt);		/* after mnewsym & prl */
 		return(0);
 	} else {
 		if(IS_WALL(levl[dpx][dpy].typ)) {
-			int rno = inroom(dpx,dpy);
+			register int rno = inroom(dpx,dpy);
 
 			if(rno >= 0 && rooms[rno].rtype >= 8) {
 			  pline("This wall seems too hard to dig into.");
@@ -389,16 +315,13 @@ dig(void)
 }
 
 /* When will hole be finished? Very rough indication used by shopkeeper. */
-int
-holetime(void)
-{
+holetime() {
 	return( (occupation == dig) ? (250 - dig_effort)/20 : -1);
 }
 
-void
-dighole(void)
+dighole()
 {
-	struct trap *ttmp = t_at(u.ux, u.uy);
+	register struct trap *ttmp = t_at(u.ux, u.uy);
 
 	if(!xdnstair) {
 		pline("The floor here seems too hard to dig in.");
@@ -422,15 +345,16 @@ dighole(void)
 	}
 }
 
-static int
-use_pick_axe(struct obj *obj)
+static
+use_pick_axe(obj)
+struct obj *obj;
 {
 	char dirsyms[12];
 	extern char sdir[];
-	char *dsp = dirsyms, *sdp = sdir;
-	struct monst *mtmp;
-	struct rm *lev;
-	int rx, ry, res = 0;
+	register char *dsp = dirsyms, *sdp = sdir;
+	register struct monst *mtmp;
+	register struct rm *lev;
+	register int rx, ry, res = 0;
 
 	if(obj != uwep) {
 		if(uwep && uwep->cursed) {
@@ -481,7 +405,7 @@ use_pick_axe(struct obj *obj)
 		     && !sobj_at(ENORMOUS_ROCK, rx, ry)) {
 			/* ACCESSIBLE or POOL */
 			pline("You swing your %s through thin air.",
-				aobjnam(obj, NULL));
+				aobjnam(obj, (char *) 0));
 		} else {
 			if(dig_pos.x != rx || dig_pos.y != ry
 			    || dig_level != dlevel || dig_down) {

@@ -1,4 +1,4 @@
-/*	$OpenBSD: invite.c,v 1.17 2016/03/16 15:41:11 krw Exp $	*/
+/*	$OpenBSD: invite.c,v 1.7 1999/03/03 20:43:30 millert Exp $	*/
 /*	$NetBSD: invite.c,v 1.3 1994/12/09 02:14:18 jtc Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,16 +34,21 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/socket.h>
-#include <arpa/inet.h>
-
-#include <err.h>
-#include <errno.h>
-#include <netdb.h>
-#include <setjmp.h>
-#include <unistd.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)invite.c	8.1 (Berkeley) 6/6/93";
+#endif
+static char rcsid[] = "$OpenBSD: invite.c,v 1.7 1999/03/03 20:43:30 millert Exp $";
+#endif /* not lint */
 
 #include "talk.h"
+#include <arpa/inet.h>
+#include <sys/time.h>
+#include <signal.h>
+#include <netdb.h>
+#include <errno.h>
+#include <setjmp.h>
+#include <unistd.h>
 #include "talk_ctl.h"
 
 #define STRING_LENGTH 158
@@ -60,13 +69,13 @@ int	local_id, remote_id;
 jmp_buf invitebuf;
 
 void
-invite_remote(void)
+invite_remote()
 {
 	int new_sockt;
 	struct itimerval itimer;
 	CTL_RESPONSE response;
 	struct sockaddr rp;
-	socklen_t rplen = sizeof(struct sockaddr);
+	int rplen = sizeof(struct sockaddr);
 	struct hostent *rphost;
 	char rname[STRING_LENGTH];
 
@@ -93,13 +102,12 @@ invite_remote(void)
 	 * gets called again in main().
 	 */
 	end_msgs();
-	setitimer(ITIMER_REAL, &itimer, NULL);
+	setitimer(ITIMER_REAL, &itimer, (struct itimerval *)0);
 	message("Waiting for your party to respond");
 	signal(SIGALRM, re_invite);
 	(void) setjmp(invitebuf);
-	while ((new_sockt = accept(sockt, &rp, &rplen)) == -1) {
-		if (errno == EINTR || errno == EWOULDBLOCK ||
-		    errno == ECONNABORTED)
+	while ((new_sockt = accept(sockt, &rp, &rplen)) < 0) {
+		if (errno == EINTR)
 			continue;
 		quit("Unable to connect with your party", 1);
 	}
@@ -137,10 +145,11 @@ invite_remote(void)
 }
 
 /*
- * Routine called on interrupt to re-invite the callee
+ * Routine called on interupt to re-invite the callee
  */
 void
-re_invite(int dummy)
+re_invite(dummy)
+	int dummy;
 {
 	message("Ringing your party again");
 	/* force a re-announce */
@@ -166,7 +175,7 @@ static	char *answers[] = {
  * Transmit the invitation and process the response
  */
 void
-announce_invite(void)
+announce_invite()
 {
 	CTL_RESPONSE response;
 
@@ -184,7 +193,7 @@ announce_invite(void)
  * Tell the daemon to remove your invitation
  */
 void
-send_delete(void)
+send_delete()
 {
 
 	msg.type = DELETE;

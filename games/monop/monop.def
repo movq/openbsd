@@ -1,4 +1,4 @@
-/*	$OpenBSD: monop.def,v 1.7 2016/01/08 18:19:47 mestre Exp $	*/
+/*	$OpenBSD: monop.def,v 1.2 1998/09/20 23:36:52 pjanzen Exp $	*/
 /*	$NetBSD: monop.def,v 1.3 1995/03/23 08:34:54 cgd Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,11 +36,11 @@
  *	@(#)monop.def	5.5 (Berkeley) 5/31/93
  */
 
-#include "deck.h"
-#include "monop.h"
+#include	"deck.h"
+#include	"monop.h"
 
-bool	fixing = FALSE,		/* set if fixing up debt		*/
-	trading = FALSE,	/* set if in process of trading		*/
+bool	fixing,			/* set if fixing up debt		*/
+	trading,		/* set if in process of trading		*/
 	told_em,		/* set if told user he's out of debt	*/
 	spec;			/* set if moving by card to RR or UTIL	*/
 
@@ -53,7 +57,7 @@ char	*name_list[MAX_PL+2],	/* list of players' names		*/
 	"",		/* 16 */
 	0
 	},
-	*ynlist[]	= {	/* list of commands for yes/no answers	*/
+	*yn[]		= {	/* list of commands for yes/no answers	*/
 	"yes",		/*  0 */	"no",		/*  1 */
 	"quit",		/*  2 */	"print",	/*  3 */
 	"where",	/*  4 */	"own holdings",	/*  5 */
@@ -77,7 +81,7 @@ int	player,			/* current player number		*/
 	num_luck	= sizeof lucky_mes / sizeof (char *);
 
 /* list of command functions		*/
-void (*func[])(void) = {	/* array of function calls for commands	*/
+void (*func[]) __P((void)) = {	/* array of function calls for commands	*/
 	quit,			/* quit game		|*  0 *|	*/
 	printboard,		/* print board		|*  1 *|	*/
 	where,			/* where players are	|*  2 *|	*/
@@ -92,7 +96,7 @@ void (*func[])(void) = {	/* array of function calls for commands	*/
 	trade,			/* trade		|* 11 *|	*/
 	resign,			/* resign		|* 12 *|	*/
 	save,			/* save game		|* 13 *|	*/
-	game_restore,		/* restore game		|* 14 *|	*/
+	restore,		/* restore game		|* 14 *|	*/
 	do_move,		/* roll			|* 15 *|	*/
 	do_move			/* ""			|* 16 *|	*/
 	};

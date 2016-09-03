@@ -1,4 +1,4 @@
-/*	$OpenBSD: from.c,v 1.24 2015/11/05 18:42:41 mmcc Exp $	*/
+/*	$OpenBSD: from.c,v 1.5 1999/08/26 14:17:20 aaron Exp $	*/
 /*	$NetBSD: from.c,v 1.6 1995/09/01 01:39:10 jtc Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +34,19 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1980, 1988, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)from.c	8.1 (Berkeley) 6/6/93";
+#endif
+static char rcsid[] = "$OpenBSD: from.c,v 1.5 1999/08/26 14:17:20 aaron Exp $";
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <ctype.h>
 #include <pwd.h>
@@ -37,120 +54,102 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <paths.h>
-#include <string.h>
 #include <err.h>
-#include <errno.h>
 
-int	match(char *, char *);
-char	*mail_spool(char *file, const char *user);
-
-int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
-	int ch, newline, fflag = 0;
-	char *file, *line, *sender, *p;
-	size_t linesize = 0;
-	ssize_t linelen;
-	FILE *fp;
+	extern char *optarg;
+	extern int optind;
+	struct passwd *pwd;
+	int ch, newline;
+	char *file, *sender, *p;
+#if MAXPATHLEN > BUFSIZ
+	char buf[MAXPATHLEN];
+#else
+	char buf[BUFSIZ];
+#endif
 
-	file = line = sender = NULL;
-	while ((ch = getopt(argc, argv, "f:s:")) != -1) {
-		switch(ch) {
+	file = sender = NULL;
+	while ((ch = getopt(argc, argv, "f:s:")) != -1)
+		switch((char)ch) {
 		case 'f':
-			fflag = 1;
 			file = optarg;
 			break;
 		case 's':
 			sender = optarg;
 			for (p = sender; *p; ++p)
-				if (isupper((unsigned char)*p))
-					*p = tolower((unsigned char)*p);
+				if (isupper(*p))
+					*p = tolower(*p);
 			break;
+		case '?':
 		default:
-			fprintf(stderr,
-			    "usage: from [-f file] [-s sender] [user]\n");
-			exit(EXIT_FAILURE);
+			fprintf(stderr, "usage: from [-f file] [-s sender] [user]\n");
+			exit(1);
 		}
-	}
 	argv += optind;
-
-	if (pledge("stdio rpath getpw", NULL) == -1)
-		err(1, "pledge");
-
-	file = mail_spool(file, *argv);
-	if ((fp = fopen(file, "r")) == NULL) {
-		if (!fflag && errno == ENOENT)
-			exit(EXIT_SUCCESS);
-		err(1, "%s", file);
-	}
-
-	if (pledge("stdio", NULL) == -1)
-		err(1, "pledge");
-
-	for (newline = 1; (linelen = getline(&line, &linesize, fp)) != -1;) {
-		if (*line == '\n') {
-			newline = 1;
-			continue;
-		}
-		if (newline && !strncmp(line, "From ", 5) &&
-		    (!sender || match(line + 5, sender)))
-			printf("%s", line);
-		newline = 0;
-	}
-	free(line);
-	exit(EXIT_SUCCESS);
-}
-
-char *
-mail_spool(char *file, const char *user)
-{
-	struct passwd *pwd;
 
 	/*
 	 * We find the mailbox by:
 	 *	1 -f flag
-	 *	2 _PATH_MAILDIR/user (from argv)
+	 *	2 user
 	 *	2 MAIL environment variable
-	 *	3 _PATH_MAILDIR/user (from environment or passwd db)
+	 *	3 _PATH_MAILDIR/file
 	 */
-	if (file == NULL) {
-		if (user == NULL) {
-			if ((file = getenv("MAIL")) == NULL) {
-				if ((user = getenv("LOGNAME")) == NULL &&
-				    (user = getenv("USER")) == NULL) {
-					if (!(pwd = getpwuid(getuid())))
-						errx(1, "no password file "
-						    "entry for you");
-					user = pwd->pw_name;
-				}
+	if (!file) {
+		if (!(file = *argv)) {
+			if (!(file = getenv("MAIL"))) {
+				if (!(pwd = getpwuid(getuid())))
+					errx(1, "no password file entry for you");
+				if (file = getenv("USER")) {
+					(void)snprintf(buf, sizeof(buf),
+						"%s/%s", _PATH_MAILDIR, file);
+					file = buf;
+				} else
+					(void)snprintf(file = buf, sizeof(buf),
+						"%s/%s", _PATH_MAILDIR,
+					        pwd->pw_name);
 			}
-		}
-		if (file == NULL) {
-			if (asprintf(&file, "%s/%s", _PATH_MAILDIR, user) == -1)
-				err(1, NULL);
+		} else {
+			(void)snprintf(buf, sizeof(buf), "%s/%s",
+				_PATH_MAILDIR, file);
+			file = buf;
 		}
 	}
-	return(file);
+	if (!freopen(file, "r", stdin))
+		errx(1, file);
+	for (newline = 1; fgets(buf, sizeof(buf), stdin);) {
+		if (*buf == '\n') {
+			newline = 1;
+			continue;
+		}
+		if (newline && !strncmp(buf, "From ", 5) &&
+		    (!sender || match(buf + 5, sender)))
+			printf("%s", buf);
+		newline = 0;
+	}
+	exit(0);
 }
 
-int
-match(char *line, char *sender)
+match(line, sender)
+	register char *line, *sender;
 {
-	char ch, pch, first, *p, *t;
+	register char ch, pch, first, *p, *t;
 
 	for (first = *sender++;;) {
-		if (isspace((unsigned char)(ch = *line)))
+		if (isspace(ch = *line))
 			return(0);
 		++line;
-		if (isupper((unsigned char)ch))
-			ch = tolower((unsigned char)ch);
+		if (isupper(ch))
+			ch = tolower(ch);
 		if (ch != first)
 			continue;
 		for (p = sender, t = line;;) {
 			if (!(pch = *p++))
 				return(1);
-			if (isupper((unsigned char)(ch = *t++)))
-				ch = tolower((unsigned char)ch);
+			if (isupper(ch = *t++))
+				ch = tolower(ch);
 			if (ch != pch)
 				break;
 		}

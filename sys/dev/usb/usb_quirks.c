@@ -1,13 +1,12 @@
-/*	$OpenBSD: usb_quirks.c,v 1.74 2015/11/27 10:59:32 mpi Exp $ */
-/*	$NetBSD: usb_quirks.c,v 1.45 2003/05/10 17:47:14 hamajima Exp $	*/
-/*	$FreeBSD: src/sys/dev/usb/usb_quirks.c,v 1.30 2003/01/02 04:15:55 imp Exp $	*/
+/*	$OpenBSD: usb_quirks.c,v 1.2 1999/09/27 18:03:56 fgsch Exp $	*/
+/*	$NetBSD: usb_quirks.c,v 1.14 1999/09/15 13:57:09 augustss Exp $	*/
 
 /*
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
- * by Lennart Augustsson (lennart@augustsson.net) at
+ * by Lennart Augustsson (augustss@carlstedt.se) at
  * Carlstedt Research & Technology.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -18,6 +17,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -34,7 +40,10 @@
 
 #include <sys/param.h>
 #include <sys/systm.h>
-
+#if defined(__FreeBSD__)
+#include <sys/bus.h>
+#endif
+ 
 #include <dev/usb/usb.h>
 
 #include <dev/usb/usbdevs.h>
@@ -44,168 +53,42 @@
 extern int usbdebug;
 #endif
 
-#define ANY 0xffff
-
-const struct usbd_quirk_entry {
+struct usbd_quirk_entry {
 	u_int16_t idVendor;
 	u_int16_t idProduct;
 	u_int16_t bcdDevice;
 	struct usbd_quirks quirks;
-} usb_quirks[] = {
+} quirks[] = {
  { USB_VENDOR_KYE, USB_PRODUCT_KYE_NICHE,	    0x100, { UQ_NO_SET_PROTO}},
- { USB_VENDOR_INSIDEOUT, USB_PRODUCT_INSIDEOUT_EDGEPORT4,
+ { USB_VENDOR_INSIDEOUT,USB_PRODUCT_INSIDEOUT_EDGEPORT4, 
    						    0x094, { UQ_SWAP_UNICODE}},
- { USB_VENDOR_QTRONIX, USB_PRODUCT_QTRONIX_980N,    0x110, { UQ_SPUR_BUT_UP }},
- { USB_VENDOR_ALCOR2, USB_PRODUCT_ALCOR2_KBD_HUB,   0x001, { UQ_SPUR_BUT_UP }},
- { USB_VENDOR_MCT, USB_PRODUCT_MCT_HUB0100,         0x102, { UQ_BUS_POWERED }},
- { USB_VENDOR_MCT, USB_PRODUCT_MCT_USB232,          0x102, { UQ_BUS_POWERED }},
- { USB_VENDOR_METRICOM, USB_PRODUCT_METRICOM_RICOCHET_GS,
- 	0x100, { UQ_ASSUME_CM_OVER_DATA }},
- { USB_VENDOR_SANYO, USB_PRODUCT_SANYO_SCP4900,
- 	0x000, { UQ_ASSUME_CM_OVER_DATA }},
- { USB_VENDOR_MOTOROLA2, USB_PRODUCT_MOTOROLA2_T720C,
-	0x001, { UQ_ASSUME_CM_OVER_DATA }},
- { USB_VENDOR_EICON, USB_PRODUCT_EICON_DIVA852,
-	0x100, { UQ_ASSUME_CM_OVER_DATA }},
- /* YAMAHA router's ucdDevice is the version of firmware and often changes. */
- { USB_VENDOR_YAMAHA, USB_PRODUCT_YAMAHA_RTA54I,
-	ANY, { UQ_ASSUME_CM_OVER_DATA }},
- { USB_VENDOR_YAMAHA, USB_PRODUCT_YAMAHA_RTA55I,
-	ANY, { UQ_ASSUME_CM_OVER_DATA }},
- { USB_VENDOR_YAMAHA, USB_PRODUCT_YAMAHA_RTW65B,
-	ANY, { UQ_ASSUME_CM_OVER_DATA }},
- { USB_VENDOR_YAMAHA, USB_PRODUCT_YAMAHA_RTW65I,
-	ANY, { UQ_ASSUME_CM_OVER_DATA }},
- { USB_VENDOR_QUALCOMM, USB_PRODUCT_QUALCOMM_MSM_MODEM,
-	ANY, { UQ_ASSUME_CM_OVER_DATA }},
- { USB_VENDOR_QUALCOMM2, USB_PRODUCT_QUALCOMM2_MSM_PHONE,
-	ANY, { UQ_ASSUME_CM_OVER_DATA }},
- { USB_VENDOR_SUNTAC, USB_PRODUCT_SUNTAC_AS64LX,
-	0x100, { UQ_ASSUME_CM_OVER_DATA }},
- { USB_VENDOR_CMOTECH, USB_PRODUCT_CMOTECH_CM5100P,
-	ANY, { UQ_ASSUME_CM_OVER_DATA }},
- { USB_VENDOR_CMOTECH, USB_PRODUCT_CMOTECH_CCU550,
-	ANY, { UQ_ASSUME_CM_OVER_DATA }},
- { USB_VENDOR_CMOTECH, USB_PRODUCT_CMOTECH_CNU550pro,
-	ANY, { UQ_ASSUME_CM_OVER_DATA }},
- { USB_VENDOR_SIEMENS2, USB_PRODUCT_SIEMENS2_ES75,
-	ANY, { UQ_ASSUME_CM_OVER_DATA }},
-
- { USB_VENDOR_TI, USB_PRODUCT_TI_UTUSB41,	    0x110, { UQ_POWER_CLAIM }},
-
- /* XXX These should have a revision number, but I don't know what they are. */
- { USB_VENDOR_HP, USB_PRODUCT_HP_895C,		    ANY,   { UQ_BROKEN_BIDIR }},
- { USB_VENDOR_HP, USB_PRODUCT_HP_880C,		    ANY,   { UQ_BROKEN_BIDIR }},
- { USB_VENDOR_HP, USB_PRODUCT_HP_815C,		    ANY,   { UQ_BROKEN_BIDIR }},
- { USB_VENDOR_HP, USB_PRODUCT_HP_810C,		    ANY,   { UQ_BROKEN_BIDIR }},
- { USB_VENDOR_HP, USB_PRODUCT_HP_830C,		    ANY,   { UQ_BROKEN_BIDIR }},
- { USB_VENDOR_HP, USB_PRODUCT_HP_885C,		    ANY,   { UQ_BROKEN_BIDIR }},
- { USB_VENDOR_HP, USB_PRODUCT_HP_840C,		    ANY,   { UQ_BROKEN_BIDIR }},
- { USB_VENDOR_HP, USB_PRODUCT_HP_816C,		    ANY,   { UQ_BROKEN_BIDIR }},
- { USB_VENDOR_HP, USB_PRODUCT_HP_959C,		    ANY,   { UQ_BROKEN_BIDIR }},
- { USB_VENDOR_HP, USB_PRODUCT_HP_1220C,		    ANY,   { UQ_BROKEN_BIDIR }},
- { USB_VENDOR_NEC, USB_PRODUCT_NEC_PICTY900,	    ANY,   { UQ_BROKEN_BIDIR }},
- { USB_VENDOR_NEC, USB_PRODUCT_NEC_PICTY760,	    ANY,   { UQ_BROKEN_BIDIR }},
- { USB_VENDOR_NEC, USB_PRODUCT_NEC_PICTY920,	    ANY,   { UQ_BROKEN_BIDIR }},
- { USB_VENDOR_NEC, USB_PRODUCT_NEC_PICTY800,	    ANY,   { UQ_BROKEN_BIDIR }},
-
- { USB_VENDOR_APPLE, USB_PRODUCT_APPLE_IPHONE,		ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_APPLE, USB_PRODUCT_APPLE_IPHONE_3G,	ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_APPLE, USB_PRODUCT_APPLE_IPHONE_3GS,	ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_APPLE, USB_PRODUCT_APPLE_IPHONE_4_CDMA,	ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_APPLE, USB_PRODUCT_APPLE_IPHONE_4_GSM,	ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_APPLE, USB_PRODUCT_APPLE_IPHONE_4S,	ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_APPLE, USB_PRODUCT_APPLE_IPHONE_6,	ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_APPLE, USB_PRODUCT_APPLE_IPOD_TOUCH,	ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_APPLE, USB_PRODUCT_APPLE_IPOD_TOUCH_2G,	ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_APPLE, USB_PRODUCT_APPLE_IPOD_TOUCH_3G,	ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_APPLE, USB_PRODUCT_APPLE_IPOD_TOUCH_4G,	ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_APPLE, USB_PRODUCT_APPLE_IPAD,		ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_APPLE, USB_PRODUCT_APPLE_IPAD2,		ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_APPLE, USB_PRODUCT_APPLE_SPEAKERS,	ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_CYPRESS, USB_PRODUCT_CYPRESS_SISPM_OLD,	ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_CYPRESS, USB_PRODUCT_CYPRESS_SISPM,	ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_CYPRESS, USB_PRODUCT_CYPRESS_SISPM_FLASH,	ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_ITUNER, USB_PRODUCT_ITUNER_USBLCD20x2,	ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_ITUNER, USB_PRODUCT_ITUNER_USBLCD256x64,	ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_MECANIQUE, USB_PRODUCT_MECANIQUE_WISPY,	ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_METAGEEK, USB_PRODUCT_METAGEEK_WISPY24I,	ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_MUSTEK2, USB_PRODUCT_MUSTEK2_PM800,	ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_OMRON, USB_PRODUCT_OMRON_BX35F,		ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_OMRON, USB_PRODUCT_OMRON_BX50F,		ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_OMRON, USB_PRODUCT_OMRON_BY35S,		ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_TENX, USB_PRODUCT_TENX_MISSILE,		ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_TERRATEC, USB_PRODUCT_TERRATEC_AUREON,	ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_TI, USB_PRODUCT_TI_MSP430,		ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_VELLEMAN, USB_PRODUCT_VELLEMAN_K8055,	ANY,	{ UQ_BAD_HID }},
- { USB_VENDOR_DREAMLINK, USB_PRODUCT_DREAMLINK_ULMB1,	ANY,	{ UQ_BAD_HID }},
-
- { USB_VENDOR_HUAWEI, USB_PRODUCT_HUAWEI_E220,	ANY,	{ UQ_NO_STRINGS }},
- { USB_VENDOR_SHANTOU, USB_PRODUCT_SHANTOU_DM9601, ANY, { UQ_NO_STRINGS }},
- { USB_VENDOR_RALINK, USB_PRODUCT_RALINK_RT2573, ANY,	{ UQ_NO_STRINGS }},
-
- /* MS keyboards do weird things */
- { USB_VENDOR_MICROSOFT, USB_PRODUCT_MICROSOFT_WLNOTEBOOK,
-	ANY, { UQ_MS_BAD_CLASS | UQ_MS_LEADING_BYTE }},
- { USB_VENDOR_MICROSOFT, USB_PRODUCT_MICROSOFT_WLNOTEBOOK2,
-	ANY, { UQ_MS_BAD_CLASS | UQ_MS_LEADING_BYTE }},
-
+ { USB_VENDOR_BTC, USB_PRODUCT_BTC_BTC7932,	    0x100, { UQ_NO_STRINGS }},
+ { USB_VENDOR_ADS, USB_PRODUCT_ADS_ENET,	    0x002, { UQ_NO_STRINGS }},
+ { USB_VENDOR_PERACOM, USB_PRODUCT_PERACOM_SERIAL1, 0x101, { UQ_NO_STRINGS }},
+ { USB_VENDOR_DALLAS, USB_PRODUCT_DALLAS_J6502,	    0x0a2, { UQ_BAD_ADC }},
+ { USB_VENDOR_LOGITECH, USB_PRODUCT_LOGITECH_N48,   0x110, { UQ_MS_REVZ }},
  { 0, 0, 0, { 0 } }
 };
 
-#define bANY 0xff
-const struct usbd_dev_quirk_entry {
-	u_int8_t bDeviceClass;
-	u_int8_t bDeviceSubClass;
-	u_int8_t bDeviceProtocol;
-	struct usbd_quirks quirks;
-} usb_dev_quirks[] = {
- { 0, 0, 0, { 0 } }
-};
+struct usbd_quirks usbd_no_quirk = { 0 };
 
-const struct usbd_quirks usbd_no_quirk = { 0 };
-
-const struct usbd_quirks *
-usbd_find_quirk(usb_device_descriptor_t *d)
+struct usbd_quirks *
+usbd_find_quirk(d)
+	usb_device_descriptor_t *d;
 {
-	const struct usbd_quirk_entry *t;
-	const struct usbd_dev_quirk_entry *td;
-	u_int16_t vendor = UGETW(d->idVendor);
-	u_int16_t product = UGETW(d->idProduct);
-	u_int16_t revision = UGETW(d->bcdDevice);
+	struct usbd_quirk_entry *t;
 
-	/* search device specific quirks entry */
-	for (t = usb_quirks; t->idVendor != 0; t++) {
-		if (t->idVendor  == vendor &&
-		    t->idProduct == product &&
-		    (t->bcdDevice == ANY || t->bcdDevice == revision)) {
-#ifdef USB_DEBUG
-			if (usbdebug && t->quirks.uq_flags)
-				printf("usbd_find_quirk for specific device 0x%04x/0x%04x/%x: %d\n",
-					vendor, product, UGETW(d->bcdDevice),
-					t->quirks.uq_flags);
-#endif
-	
-			return (&t->quirks);
-		}
+	for (t = quirks; t->idVendor != 0; t++) {
+		if (t->idVendor  == UGETW(d->idVendor) &&
+		    t->idProduct == UGETW(d->idProduct) &&
+		    t->bcdDevice == UGETW(d->bcdDevice))
+			break;
 	}
-	/* no device specific quirks found, search class specific entry */
-	for (td = usb_dev_quirks; td->bDeviceClass != 0; td++) {
-		if (td->bDeviceClass == d->bDeviceClass &&
-		    (td->bDeviceSubClass == bANY ||
-		     td->bDeviceSubClass == d->bDeviceSubClass) &&
-		    (td->bDeviceProtocol == bANY ||
-		     td->bDeviceProtocol == d->bDeviceProtocol)) {
 #ifdef USB_DEBUG
-			if (usbdebug && td->quirks.uq_flags)
-				printf("usbd_find_quirk for device class 0x%02x/0x%02x/%x: %d\n",
-					d->bDeviceClass, d->bDeviceSubClass, 
-					UGETW(d->bcdDevice),
-					td->quirks.uq_flags);
+	if (usbdebug && t->quirks.uq_flags)
+		logprintf("usbd_find_quirk 0x%04x/0x%04x/%x: %d\n", 
+			  UGETW(d->idVendor), UGETW(d->idProduct),
+			  UGETW(d->bcdDevice), t->quirks.uq_flags);
 #endif
-			return (&td->quirks);
-		}
-	}
-
-	return (&usbd_no_quirk);
+	return (&t->quirks);
 }

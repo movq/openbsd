@@ -1,4 +1,4 @@
-.\"	$OpenBSD: kvm_getloadavg.3,v 1.11 2013/06/05 03:40:26 tedu Exp $
+.\"	$OpenBSD: kvm_getloadavg.3,v 1.4 1999/05/16 19:55:53 alex Exp $
 .\"	$NetBSD: kvm_getloadavg.3,v 1.2 1996/03/18 22:33:26 thorpej Exp $
 .\"
 .\" Copyright (c) 1992, 1993
@@ -12,7 +12,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -30,15 +34,16 @@
 .\"
 .\"     @(#)kvm_getloadavg.3	8.1 (Berkeley) 6/4/93
 .\"
-.Dd $Mdocdate: June 5 2013 $
+.Dd June 4, 1993
 .Dt KVM_GETLOADAVG 3
 .Os
 .Sh NAME
 .Nm kvm_getloadavg
 .Nd get load average of the system
 .Sh SYNOPSIS
-.In sys/resource.h
-.In kvm.h
+.Fd #include <sys/resource.h>
+.Fd #include <kvm.h>
+.br
 .Ft int
 .Fn kvm_getloadavg "kvm_t *kd" "double loadavg[]" "int nelem"
 .Sh DESCRIPTION
@@ -54,9 +59,9 @@ samples are retrieved and assigned to successive elements of
 .Fa loadavg Ns Bq .
 The system imposes a maximum of 3 samples, representing averages
 over the last 1, 5, and 15 minutes, respectively.
-.Sh RETURN VALUES
-If the load average was unobtainable, \-1 is returned.
-Otherwise, the number of samples actually retrieved is returned.
+.Sh DIAGNOSTICS
+If the load average was unobtainable, \-1 is returned; otherwise,
+the number of samples actually retrieved is returned.
 .Sh SEE ALSO
 .Xr uptime 1 ,
 .Xr getloadavg 3 ,

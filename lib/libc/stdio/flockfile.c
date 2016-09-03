@@ -1,29 +1,49 @@
-/*	$OpenBSD: flockfile.c,v 1.9 2016/05/07 19:05:22 guenther Exp $	*/
+/*	$OpenBSD: flockfile.c,v 1.1 1998/11/20 11:18:48 d Exp $	*/
 
 #include <stdio.h>
-#include "local.h"
+#include "thread_private.h"
+
+#ifndef _THREAD_SAFE
+
+/*
+ * Subroutine versions of the macros in <stdio.h>
+ * Note that these are all no-ops because libc does not do threads.
+ */
+
+#undef flockfile
+#undef ftrylockfile
+#undef funlockfile
+#undef _flockfile_debug
 
 void
-flockfile(FILE *fp)
+flockfile(fp)
+	FILE * fp;
 {
-	FLOCKFILE(fp);
 }
-DEF_WEAK(flockfile);
-
 
 int
-ftrylockfile(FILE *fp)
+ftrylockfile(fp)
+	FILE * fp;
 {
-	if (_thread_cb.tc_ftrylockfile != NULL)
-		return (_thread_cb.tc_ftrylockfile(fp));
-
 	return 0;
 }
-DEF_WEAK(ftrylockfile);
 
 void
-funlockfile(FILE *fp)
+funlockfile(fp)
+	FILE * fp;
 {
-	FUNLOCKFILE(fp);
 }
-DEF_WEAK(funlockfile);
+
+void
+_flockfile_debug(fp, fname, lineno)
+	FILE * fp;
+	const char * fname;
+	int lineno;
+{
+}
+
+#else /* _THREAD_SAFE */
+
+/* Actual implementation of file locking in libc_r/uthread/uthread_file.c */
+
+#endif /* _THREAD_SAFE */

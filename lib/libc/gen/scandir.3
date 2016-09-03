@@ -1,4 +1,4 @@
-.\"	$OpenBSD: scandir.3,v 1.14 2015/02/28 21:51:57 bentley Exp $
+.\"	$OpenBSD: scandir.3,v 1.6 1999/07/09 13:35:18 aaron Exp $
 .\"
 .\" Copyright (c) 1983, 1991, 1993
 .\"	The Regents of the University of California.  All rights reserved.
@@ -11,7 +11,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -27,7 +31,7 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: February 28 2015 $
+.Dd June 4, 1993
 .Dt SCANDIR 3
 .Os
 .Sh NAME
@@ -35,21 +39,17 @@
 .Nm alphasort
 .Nd scan a directory
 .Sh SYNOPSIS
-.In sys/types.h
-.In dirent.h
+.Fd #include <sys/types.h>
+.Fd #include <dirent.h>
 .Ft int
-.Fo scandir
-.Fa "const char *dirname"
-.Fa "struct dirent ***namelist"
-.Fa "int (*select)(const struct dirent *)"
-.Fa "int (*compar)(const struct dirent **, const struct dirent **)"
-.Fc
+.Fn scandir "const char *dirname" "struct dirent ***namelist" "int \\*(lp*select\\*(rp\\*(lpstruct dirent *\\*(rp" "int \\*(lp*compar\\*(rp\\*(lpconst void *, const void *\\*(rp"
 .Ft int
-.Fn alphasort "const struct dirent **d1" "const struct dirent **d2"
+.Fn alphasort "const void *d1" "const void *d2"
 .Sh DESCRIPTION
 The
 .Fn scandir
-function reads the directory
+function
+reads the directory
 .Fa dirname
 and builds an array of pointers to directory
 entries using
@@ -84,7 +84,8 @@ the array is not sorted.
 .Pp
 The
 .Fn alphasort
-function is a routine which can be used for the
+function
+is a routine which can be used for the
 .Fa compar
 parameter to sort the array alphabetically.
 .Pp
@@ -100,13 +101,6 @@ cannot allocate enough memory to hold all the data structures.
 .Xr malloc 3 ,
 .Xr qsort 3 ,
 .Xr dir 5
-.Sh STANDARDS
-The
-.Fn scandir
-and
-.Fn alphasort
-functions conform to
-.St -p1003.1-2008 .
 .Sh HISTORY
 The
 .Fn scandir
@@ -114,26 +108,3 @@ and
 .Fn alphasort
 functions appeared in
 .Bx 4.2 .
-.Pp
-The argument types for
-.Fn alphasort
-and for the
-.Fn compar
-argument to
-.Fn scandir
-were originally
-.Vt "void *" ,
-then changed to
-.Vt "const void *" ,
-and then finally changed by
-.St -p1003.1-2008
-to their current form of
-.Vt "const struct dirent **" .
-Similarly, the
-.Fn select
-argument to
-.Fn scandir
-was originally
-.Vt "struct dirent *"
-until it was changed to its current form of
-.Vt "const struct dirent *" .

@@ -1,4 +1,3 @@
-/*	$OpenBSD: wbuf.c,v 1.13 2015/08/31 02:53:57 guenther Exp $ */
 /*-
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,6 +34,10 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: wbuf.c,v 1.4 1997/05/31 22:41:32 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <stdio.h>
 #include <errno.h>
 #include "local.h"
@@ -40,12 +47,12 @@
  * the given file.  Flush the buffer out if it is or becomes full,
  * or if c=='\n' and the file is line buffered.
  */
-int
-__swbuf(int c, FILE *fp)
+__swbuf(c, fp)
+	register int c;
+	register FILE *fp;
 {
-	int n;
+	register int n;
 
-	_SET_ORIENTATION(fp, -1);
 	/*
 	 * In case we cannot write, or longjmp takes us out early,
 	 * make sure _w is 0 (if fully- or un-buffered) or -_bf._size
@@ -65,21 +72,20 @@ __swbuf(int c, FILE *fp)
 	 * stuff c into the buffer.  If this causes the buffer to fill
 	 * completely, or if c is '\n' and the file is line buffered,
 	 * flush it (perhaps a second time).  The second flush will always
-	 * happen on unbuffered streams, where _bf._size==1; __sflush()
+	 * happen on unbuffered streams, where _bf._size==1; fflush()
 	 * guarantees that putc() will always call wbuf() by setting _w
 	 * to 0, so we need not do anything else.
 	 */
 	n = fp->_p - fp->_bf._base;
 	if (n >= fp->_bf._size) {
-		if (__sflush(fp))
+		if (fflush(fp))
 			return (EOF);
 		n = 0;
 	}
 	fp->_w--;
 	*fp->_p++ = c;
 	if (++n == fp->_bf._size || (fp->_flags & __SLBF && c == '\n'))
-		if (__sflush(fp))
+		if (fflush(fp))
 			return (EOF);
 	return (c);
 }
-DEF_STRONG(__swbuf);

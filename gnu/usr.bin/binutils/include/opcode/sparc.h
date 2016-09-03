@@ -1,6 +1,5 @@
 /* Definitions for opcode table for the sparc.
-   Copyright 1989, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 2000, 2002,
-   2003 Free Software Foundation, Inc.
+   Copyright (C) 1989, 1991, 1992, 1995, 1996 Free Software Foundation, Inc.
 
 This file is part of GAS, the GNU Assembler, GDB, the GNU debugger, and
 the GNU Binutils.
@@ -19,8 +18,6 @@ You should have received a copy of the GNU General Public License
 along with GAS or GDB; see the file COPYING.	If not, write to
 the Free Software Foundation, 59 Temple Place - Suite 330,
 Boston, MA 02111-1307, USA.  */
-
-#include "ansidecl.h"
 
 /* The SPARC opcode table (and other related data) is defined in
    the opcodes library in sparc-opc.c.  If you change anything here, make
@@ -46,7 +43,6 @@ enum sparc_opcode_arch_val {
   /* v9 variants must appear last */
   SPARC_OPCODE_ARCH_V9,
   SPARC_OPCODE_ARCH_V9A, /* v9 with ultrasparc additions */
-  SPARC_OPCODE_ARCH_V9B, /* v9 with ultrasparc and cheetah additions */
   SPARC_OPCODE_ARCH_BAD /* error return from sparc_opcode_lookup_arch */
 };
 
@@ -74,7 +70,7 @@ struct sparc_opcode_arch {
 extern const struct sparc_opcode_arch sparc_opcode_archs[];
 
 /* Given architecture name, look up it's sparc_opcode_arch_val value.  */
-extern enum sparc_opcode_arch_val sparc_opcode_lookup_arch (const char *);
+extern enum sparc_opcode_arch_val sparc_opcode_lookup_arch ();
 
 /* Return the bitmask of supported architectures for ARCH.  */
 #define SPARC_OPCODE_SUPPORTED(ARCH) (sparc_opcode_archs[ARCH].supported)
@@ -141,7 +137,6 @@ Kinds of operands:
 	h	22 high bits.
 	X	5 bit unsigned immediate
 	Y	6 bit unsigned immediate
-	3	SIAM mode (3 bits). (v9b)
 	K	MEMBAR mask (7 bits). (v9)
 	j	10 bit Immediate. (v9)
 	I	11 bit Immediate. (v9)
@@ -184,11 +179,9 @@ Kinds of operands:
 	*	Prefetch function constant. (v9)
 	x	OPF field (v9 impdep).
 	0	32/64 bit immediate for set or setx (v9) insns
-	_	Ancillary state register in rd (v9a)
-	/	Ancillary state register in rs1 (v9a)
 
 The following chars are unused: (note: ,[] are used as punctuation)
-[45]
+[345]
 
 */
 
@@ -219,17 +212,17 @@ The following chars are unused: (note: ,[] are used as punctuation)
 #define	RS1_G0	RS1(~0)
 #define	RS2_G0	RS2(~0)
 
-extern const struct sparc_opcode sparc_opcodes[];
+extern struct sparc_opcode sparc_opcodes[];
 extern const int sparc_num_opcodes;
 
-extern int sparc_encode_asi (const char *);
-extern const char *sparc_decode_asi (int);
-extern int sparc_encode_membar (const char *);
-extern const char *sparc_decode_membar (int);
-extern int sparc_encode_prefetch (const char *);
-extern const char *sparc_decode_prefetch (int);
-extern int sparc_encode_sparclet_cpreg (const char *);
-extern const char *sparc_decode_sparclet_cpreg (int);
+int sparc_encode_asi ();
+char *sparc_decode_asi ();
+int sparc_encode_membar ();
+char *sparc_decode_membar ();
+int sparc_encode_prefetch ();
+char *sparc_decode_prefetch ();
+int sparc_encode_sparclet_cpreg ();
+char *sparc_decode_sparclet_cpreg ();
 
 /*
  * Local Variables:

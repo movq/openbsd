@@ -1,4 +1,3 @@
-/*	$OpenBSD: popen.c,v 1.21 2015/08/31 02:53:57 guenther Exp $ */
 /*
  * Copyright (c) 1988, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,38 +34,41 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: popen.c,v 1.9 1997/09/11 18:51:04 deraadt Exp $";
+#endif /* LIBC_SCCS and not lint */
+
+#include <sys/param.h>
 #include <sys/wait.h>
 
 #include <signal.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <paths.h>
-#include <wchar.h>
-#include "thread_private.h"
 
 static struct pid {
 	struct pid *next;
 	FILE *fp;
 	pid_t pid;
-} *pidlist;
-
-static void *pidlist_lock = NULL;
-
+} *pidlist; 
+	
 FILE *
-popen(const char *program, const char *type)
+popen(program, type)
+	const char *program;
+	const char *type;
 {
-	struct pid * volatile cur;
+	struct pid *cur;
 	FILE *iop;
-	int pdes[2];
-	int target;
-	pid_t pid;
+	int pdes[2], pid;
 
-	if ((*type != 'r' && *type != 'w') ||
-	    (type[1] != '\0' && (type[1] != 'e' || type[2] != '\0'))) {
+#ifdef __GNUC__
+	(void)&cur;
+#endif
+
+	if ((*type != 'r' && *type != 'w') || type[1] != '\0') {
 		errno = EINVAL;
 		return (NULL);
 	}
@@ -70,15 +76,13 @@ popen(const char *program, const char *type)
 	if ((cur = malloc(sizeof(struct pid))) == NULL)
 		return (NULL);
 
-	if (pipe2(pdes, O_CLOEXEC) < 0) {
+	if (pipe(pdes) < 0) {
 		free(cur);
 		return (NULL);
 	}
 
-	_MUTEX_LOCK(&pidlist_lock);
 	switch (pid = vfork()) {
 	case -1:			/* Error. */
-		_MUTEX_UNLOCK(&pidlist_lock);
 		(void)close(pdes[0]);
 		(void)close(pdes[1]);
 		free(cur);
@@ -87,7 +91,6 @@ popen(const char *program, const char *type)
 	case 0:				/* Child. */
 	    {
 		struct pid *pcur;
-
 		/*
 		 * because vfork() instead of fork(), must leak FILE *,
 		 * but luckily we are terminally headed for an execl()
@@ -95,49 +98,49 @@ popen(const char *program, const char *type)
 		for (pcur = pidlist; pcur; pcur = pcur->next)
 			close(fileno(pcur->fp));
 
-		target = *type == 'r';
-		if (pdes[target] != target) {
-			if (dup2(pdes[target], target) == -1)
-				_exit(127);
-		} else {
-			int flags = fcntl(pdes[target], F_GETFD);
-			if (flags == -1 || ((flags & FD_CLOEXEC) &&
-			    fcntl(pdes[target], F_SETFD, flags & ~FD_CLOEXEC)
-			    == -1))
-				_exit(127);
-		}
+		if (*type == 'r') {
+			int tpdes1 = pdes[1];
 
-		execl(_PATH_BSHELL, "sh", "-c", program, (char *)NULL);
+			(void) close(pdes[0]);
+			/*
+			 * We must NOT modify pdes, due to the
+			 * semantics of vfork.
+			 */
+			if (tpdes1 != STDOUT_FILENO) {
+				(void)dup2(tpdes1, STDOUT_FILENO);
+				(void)close(tpdes1);
+				tpdes1 = STDOUT_FILENO;
+			}
+		} else {
+			(void)close(pdes[1]);
+			if (pdes[0] != STDIN_FILENO) {
+				(void)dup2(pdes[0], STDIN_FILENO);
+				(void)close(pdes[0]);
+			}
+		}
+		execl(_PATH_BSHELL, "sh", "-c", program, NULL);
 		_exit(127);
 		/* NOTREACHED */
 	    }
 	}
-	_MUTEX_UNLOCK(&pidlist_lock);
 
 	/* Parent; assume fdopen can't fail. */
-	target = *type == 'w';
-	iop = fdopen(pdes[target], type);
-	fwide(iop, -1);
-	(void)close(pdes[!target]);
+	if (*type == 'r') {
+		iop = fdopen(pdes[0], type);
+		(void)close(pdes[1]);
+	} else {
+		iop = fdopen(pdes[1], type);
+		(void)close(pdes[0]);
+	}
 
 	/* Link into list of file descriptors. */
 	cur->fp = iop;
 	cur->pid =  pid;
-	_MUTEX_LOCK(&pidlist_lock);
 	cur->next = pidlist;
 	pidlist = cur;
-	_MUTEX_UNLOCK(&pidlist_lock);
-
-	/* now that it's in the list, clear FD_CLOEXEC if unwanted */
-	if (type[1] != 'e') {
-		int flags = fcntl(pdes[target], F_GETFD);
-		if (flags != -1)
-			fcntl(pdes[target], F_SETFD, flags & ~FD_CLOEXEC);
-	}
 
 	return (iop);
 }
-DEF_WEAK(popen);
 
 /*
  * pclose --
@@ -145,38 +148,32 @@ DEF_WEAK(popen);
  *	if already `pclosed', or waitpid returns an error.
  */
 int
-pclose(FILE *iop)
+pclose(iop)
+	FILE *iop;
 {
-	struct pid *cur, *last;
+	register struct pid *cur, *last;
 	int pstat;
 	pid_t pid;
 
+	(void)fclose(iop);
+
 	/* Find the appropriate file pointer. */
-	_MUTEX_LOCK(&pidlist_lock);
 	for (last = NULL, cur = pidlist; cur; last = cur, cur = cur->next)
 		if (cur->fp == iop)
 			break;
-
-	if (cur == NULL) {
-		_MUTEX_UNLOCK(&pidlist_lock);
+	if (cur == NULL)
 		return (-1);
-	}
+
+	do {
+		pid = waitpid(cur->pid, &pstat, 0);
+	} while (pid == -1 && errno == EINTR);
 
 	/* Remove the entry from the linked list. */
 	if (last == NULL)
 		pidlist = cur->next;
 	else
 		last->next = cur->next;
-	_MUTEX_UNLOCK(&pidlist_lock);
-
-	(void)fclose(iop);
-
-	do {
-		pid = waitpid(cur->pid, &pstat, 0);
-	} while (pid == -1 && errno == EINTR);
-
 	free(cur);
-
+		
 	return (pid == -1 ? -1 : pstat);
 }
-DEF_WEAK(pclose);

@@ -1,4 +1,4 @@
-/*	$OpenBSD: stringlist.h,v 1.5 2015/05/20 23:39:55 schwarze Exp $	*/
+/*	$OpenBSD: stringlist.h,v 1.1 1997/02/03 01:05:45 millert Exp $	*/
 /*	$NetBSD: stringlist.h,v 1.2 1997/01/17 06:11:36 lukem Exp $	*/
 
 /*
@@ -13,6 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Christos Zoulas.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
  * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -27,11 +32,10 @@
  * SUCH DAMAGE.
  */
 
-#ifndef SMALL
-
 #ifndef _STRINGLIST_H
 #define _STRINGLIST_H 
 
+#include <sys/cdefs.h>
 #include <sys/types.h>
 
 /*
@@ -44,13 +48,10 @@ typedef struct _stringlist {
 } StringList;
 
 __BEGIN_DECLS
-StringList	*sl_init(void);
-void		 sl_add(StringList *, char *);
-void		 sl_free(StringList *, int);
-char		*sl_find(StringList *, char *);
+StringList	*sl_init	__P((void));
+void		 sl_add		__P((StringList *, char *));
+void		 sl_free	__P((StringList *, int));
+char		*sl_find	__P((StringList *, char *));
 __END_DECLS
 
 #endif /* _STRINGLIST_H */
-
-#endif /* !SMALL */
-

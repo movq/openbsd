@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,7 +36,7 @@
  * SUCH DAMAGE.
  *
  *	from: @(#)rpc_fwd.c	8.1 (Berkeley) 6/6/93
- *	$Id: rpc_fwd.c,v 1.10 2015/09/13 15:44:47 guenther Exp $
+ *	$Id: rpc_fwd.c,v 1.1.1.1 1995/10/18 08:47:12 deraadt Exp $
  */
 
 /*
@@ -41,6 +45,12 @@
 
 #include "am.h"
 #include <sys/ioctl.h>
+#ifndef F_SETFL
+#include <fcntl.h>
+#endif /* F_SETFL */
+#ifndef FNDELAY
+#include <sys/file.h>
+#endif /* FNDELAY */
 
 /*
  * Note that the ID field in the external packet is only
@@ -63,7 +73,7 @@ struct rpc_forward {
 	u_int	rf_xid;		/* Packet id */
 	u_int	rf_oldid;	/* Original packet id */
 	fwd_fun	rf_fwd;		/* Forwarding function */
-	void *	rf_ptr;
+	voidp	rf_ptr;
 	struct sockaddr_in rf_sin;
 };
 
@@ -83,8 +93,7 @@ int fwd_sock;
 /*
  * Allocate a rely structure
  */
-static rpc_forward *
-fwd_alloc()
+static rpc_forward *fwd_alloc()
 {
 	time_t now = clocktime();
 	rpc_forward *p = 0, *p2;
@@ -125,7 +134,7 @@ fwd_alloc()
 
 	/*
 	 * Set the time to live field
-	 * Timeout in 43 seconds
+	 * Timeout in 43 seconds 
 	 */
 	p->rf_ttl = now + 43;
 
@@ -140,8 +149,8 @@ fwd_alloc()
  * First unlink it from the list, then
  * discard it.
  */
-static void
-fwd_free(rpc_forward *p)
+static void fwd_free(p)
+rpc_forward *p;
 {
 #ifdef DEBUG
 	/*dlog("fwd_free: rpc_head = %#x", rpc_head.q_forw);*/
@@ -150,7 +159,7 @@ fwd_free(rpc_forward *p)
 #ifdef DEBUG
 	/*dlog("fwd_free: rpc_head = %#x", rpc_head.q_forw);*/
 #endif /* DEBUG */
-	free(p);
+	free((voidp) p);
 }
 
 /*
@@ -158,10 +167,12 @@ fwd_free(rpc_forward *p)
  */
 int fwd_init()
 {
+	int on = 1;
+
 	/*
 	 * Create ping socket
 	 */
-	fwd_sock = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0);
+	fwd_sock = socket(AF_INET, SOCK_DGRAM, 0);
 	if (fwd_sock < 0) {
 		plog(XLOG_ERROR, "Unable to create RPC forwarding socket: %m");
 		return errno;
@@ -173,14 +184,20 @@ int fwd_init()
 	if (bind_resv_port(fwd_sock, (unsigned short *) 0) < 0)
 		plog(XLOG_ERROR, "can't bind privileged port");
 
+	if (fcntl(fwd_sock, F_SETFL, FNDELAY) < 0 &&
+			ioctl(fwd_sock, FIONBIO, &on) < 0) {
+		plog(XLOG_ERROR, "Can't set non-block on forwarding socket: %m");
+		return errno;
+	}
+
 	return 0;
 }
 
 /*
  * Locate a packet in the forwarding list
  */
-static rpc_forward *
-fwd_locate(u_int id)
+static rpc_forward *fwd_locate(id)
+u_int id;
 {
 	rpc_forward *p;
 
@@ -200,9 +217,13 @@ fwd_locate(u_int id)
  * would not work because it might come from a
  * different address.
  */
-int
-fwd_packet(int type_id, void *pkt, int len, struct sockaddr_in *fwdto,
-    struct sockaddr_in *replyto, void *i, fwd_fun cb)
+int fwd_packet(type_id, pkt, len, fwdto, replyto, i, cb)
+int type_id;
+voidp pkt;
+int len;
+struct sockaddr_in *fwdto, *replyto;
+voidp i;
+fwd_fun cb;
 {
 	rpc_forward *p;
 	u_int *pkt_int;
@@ -270,11 +291,8 @@ fwd_packet(int type_id, void *pkt, int len, struct sockaddr_in *fwdto,
 	 * rest of "p" otherwise nasty things happen later...
 	 */
 #ifdef DEBUG
-	{ char dq[20];
-
-	dlog("Sending packet id %#x to %s.%d", p->rf_xid,
-	    inet_dquad(dq, sizeof(dq), fwdto->sin_addr.s_addr),
-	    ntohs(fwdto->sin_port));
+	{ char dq[20]; 
+	dlog("Sending packet id %#x to %s.%d", p->rf_xid, inet_dquad(dq, fwdto->sin_addr.s_addr), ntohs(fwdto->sin_port));
 	}
 #endif /* DEBUG */
 	if (sendto(fwd_sock, (char *) pkt, len, 0,
@@ -288,7 +306,7 @@ fwd_packet(int type_id, void *pkt, int len, struct sockaddr_in *fwdto,
 	if (replyto)
 		p->rf_sin = *replyto;
 	else
-		bzero(&p->rf_sin, sizeof(p->rf_sin));
+		bzero((voidp) &p->rf_sin, sizeof(p->rf_sin));
 	p->rf_ptr = i;
 
 	return error;
@@ -297,12 +315,11 @@ fwd_packet(int type_id, void *pkt, int len, struct sockaddr_in *fwdto,
 /*
  * Called when some data arrives on the forwarding socket
  */
-void
-fwd_reply()
+void fwd_reply()
 {
 	int len;
 #ifdef DYNAMIC_BUFFERS
-	void *pkt;
+	voidp pkt;
 #else
 	u_int pkt[MAX_PACKET_SIZE/sizeof(u_int)+1];
 #endif /* DYNAMIC_BUFFERS */
@@ -310,13 +327,13 @@ fwd_reply()
 	int rc;
 	rpc_forward *p;
 	struct sockaddr_in src_addr;
-	socklen_t src_addr_len;
+	int src_addr_len;
 
 	/*
 	 * Determine the length of the packet
 	 */
 #ifdef DYNAMIC_BUFFERS
-	if (ioctl(fwd_sock, FIONREAD, &len) < 0 || len < 0) {
+	if (ioctl(fwd_sock, FIONREAD, &len) < 0) {
 		plog(XLOG_ERROR, "Error reading packet size: %m");
 		return;
 	}
@@ -324,7 +341,7 @@ fwd_reply()
 	/*
 	 * Allocate a buffer
 	 */
-	pkt = malloc(len);
+	pkt = (voidp) malloc((unsigned) len);
 	if (!pkt) {
 		plog(XLOG_ERROR, "Out of buffers in fwd_reply");
 		return;
@@ -339,7 +356,7 @@ fwd_reply()
 again:
 	src_addr_len = sizeof(src_addr);
 	rc = recvfrom(fwd_sock, (char *) pkt, len, 0,
-	    (struct sockaddr *) &src_addr, &src_addr_len);
+			(struct sockaddr *) &src_addr, &src_addr_len);
 	if (rc < 0 || src_addr_len != sizeof(src_addr) ||
 			src_addr.sin_family != AF_INET) {
 		if (rc < 0 && errno == EINTR)
@@ -393,7 +410,7 @@ again:
 		/*
 		 * Call forwarding function
 		 */
-		(*p->rf_fwd)(pkt, rc, &src_addr, &p->rf_sin, p->rf_ptr, TRUE);
+		(*p->rf_fwd)((voidp) pkt, rc, &src_addr, &p->rf_sin, p->rf_ptr, TRUE);
 	}
 
 	/*
@@ -406,6 +423,6 @@ out:;
 	/*
 	 * Free the packet
 	 */
-	free(pkt);
+	free((voidp) pkt);
 #endif /* DYNAMIC_BUFFERS */
 }

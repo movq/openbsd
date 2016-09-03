@@ -2,7 +2,7 @@
 # Andreas Koenig <k@franz.ww.TU-Berlin.DE> and Gerd Knops <gerti@BITart.com>.
 # Comments, questions, and improvements welcome!
 #
-# These hints work for NeXT 3.2 and 3.3.  3.0 has its own
+# These hints work for NeXT 3.2 and 3.3.  3.0 has it's own
 # special hint file.
 #
 
@@ -26,28 +26,28 @@
 # sbrk makes it possible to run perl with its own malloc. Thanks to
 # Ilya who showed me the way to his sbrk for OS/2!!
 #
-# The whole malloc disaster lead to a failing gdbm test. It is far
+# The whole malloc desaster lead to a failing gdbm test. It is far
 # beyond my understanding, why GDBM_File breaks with the "fix", but in
 # general I consider it better to have a working perl with broken GDBM
 # than no perl at all.
 #
 # So, this hintsfile is using perl's malloc. If you want to turn
-# perl's malloc off, you need to remove '-DUSE_PERL_SBRK'
-# from the ccflags and set usemymalloc to 'n'.
+# perl's malloc off, you need to remove '-DUSE_PERL_SBRK' and
+# '-DHIDEMYMALLOC' from the ccflags and set usemymalloc to 'n'.
 #
 # 1997:
 # From perl5.003_22 the malloc bug has no impact any more. We can run
 # a perl without a special sbrk. Apparently Chip Salzenberg, the hero
-# of 5.004 anyway, earned another trophy during Australian Open.
+# of 5.004 anyway, earned another trophy during Australien Open.
 #
 # use the following two lines to enable USE_PERL_SBRK. Try this if you
 # encounter intermittent core dumps:
-#ccflags='-DUSE_NEXT_CTYPE -DUSE_PERL_SBRK'
+#ccflags='-DUSE_NEXT_CTYPE -DUSE_PERL_SBRK -DHIDEMYMALLOC'
 #usemymalloc='y'
 # use the following two lines if you have perl5.003_22 or better and
 # do not encounter intermittent core dumps.
 
-ccflags="$ccflags -DUSE_NEXT_CTYPE"
+ccflags='-DUSE_NEXT_CTYPE'
 usemymalloc='n'
 
 ######################################################################

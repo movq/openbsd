@@ -1,4 +1,4 @@
-/*	$OpenBSD: fortran.c,v 1.9 2013/11/26 13:18:55 deraadt Exp $	*/
+/*	$OpenBSD: fortran.c,v 1.2 1996/06/26 05:32:29 deraadt Exp $	*/
 /*	$NetBSD: fortran.c,v 1.3 1995/03/26 20:14:08 glass Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +34,14 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)fortran.c	8.3 (Berkeley) 4/2/94";
+#else
+static char rcsid[] = "$OpenBSD: fortran.c,v 1.2 1996/06/26 05:32:29 deraadt Exp $";
+#endif
+#endif /* not lint */
+
 #include <ctype.h>
 #include <limits.h>
 #include <stdio.h>
@@ -37,12 +49,12 @@
 
 #include "ctags.h"
 
-static void takeprec(void);
+static void takeprec __P((void));
 
 char *lbp;				/* line buffer pointer */
 
 int
-PF_funcs(void)
+PF_funcs()
 {
 	bool	pfcnt;			/* pascal/fortran functions found */
 	char	*cp;
@@ -56,7 +68,7 @@ PF_funcs(void)
 		lbp = lbuf;
 		if (*lbp == '%')	/* Ratfor escape to fortran */
 			++lbp;
-		for (; isspace((unsigned char)*lbp); ++lbp)
+		for (; isspace(*lbp); ++lbp)
 			continue;
 		if (!*lbp)
 			continue;
@@ -67,7 +79,7 @@ PF_funcs(void)
 			break;
 		case 'd':
 			if (cicmp("double")) {
-				for (; isspace((unsigned char)*lbp); ++lbp)
+				for (; isspace(*lbp); ++lbp)
 					continue;
 				if (!*lbp)
 					continue;
@@ -89,7 +101,7 @@ PF_funcs(void)
 				takeprec();
 			break;
 		}
-		for (; isspace((unsigned char)*lbp); ++lbp)
+		for (; isspace(*lbp); ++lbp)
 			continue;
 		if (!*lbp)
 			continue;
@@ -108,17 +120,17 @@ PF_funcs(void)
 		default:
 			continue;
 		}
-		for (; isspace((unsigned char)*lbp); ++lbp)
+		for (; isspace(*lbp); ++lbp)
 			continue;
 		if (!*lbp)
 			continue;
 		for (cp = lbp + 1; *cp && intoken(*cp); ++cp)
 			continue;
-		if ((cp = lbp + 1))
+		if (cp = lbp + 1)
 			continue;
 		*cp = EOS;
-		(void)strlcpy(tok, lbp, sizeof tok);	/* possible trunc */
-		get_line();			/* process line for ex(1) */
+		(void)strcpy(tok, lbp);
+		getline();			/* process line for ex(1) */
 		pfnote(tok, lineno);
 		pfcnt = YES;
 	}
@@ -130,7 +142,8 @@ PF_funcs(void)
  *	do case-independent strcmp
  */
 int
-cicmp(char *cp)
+cicmp(cp)
+	char	*cp;
 {
 	int	len;
 	char	*bp;
@@ -146,17 +159,17 @@ cicmp(char *cp)
 }
 
 static void
-takeprec(void)
+takeprec()
 {
-	for (; isspace((unsigned char)*lbp); ++lbp)
+	for (; isspace(*lbp); ++lbp)
 		continue;
 	if (*lbp == '*') {
-		for (++lbp; isspace((unsigned char)*lbp); ++lbp)
+		for (++lbp; isspace(*lbp); ++lbp)
 			continue;
-		if (!isdigit((unsigned char)*lbp))
+		if (!isdigit(*lbp))
 			--lbp;			/* force failure */
 		else
-			while (isdigit((unsigned char)*++lbp))
+			while (isdigit(*++lbp))
 				continue;
 	}
 }

@@ -1,5 +1,3 @@
-/*	$OpenBSD: util.c,v 1.15 2016/05/27 09:18:11 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1991, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -11,10 +9,14 @@
 
 #include "config.h"
 
+#ifndef lint
+static const char sccsid[] = "@(#)util.c	10.11 (Berkeley) 9/15/96";
+#endif /* not lint */
+
+#include <sys/types.h>
 #include <sys/queue.h>
 
 #include <bitstring.h>
-#include <ctype.h>
 #include <errno.h>
 #include <limits.h>
 #include <stdio.h>
@@ -24,16 +26,17 @@
 
 #include "common.h"
 
-#define MAXIMUM(a, b)	(((a) > (b)) ? (a) : (b))
-
 /*
  * binc --
  *	Increase the size of a buffer.
  *
- * PUBLIC: void *binc(SCR *, void *, size_t *, size_t);
+ * PUBLIC: void *binc __P((SCR *, void *, size_t *, size_t));
  */
 void *
-binc(SCR *sp, void *bp, size_t *bsizep, size_t min)
+binc(sp, bp, bsizep, min)
+	SCR *sp;			/* sp MAY BE NULL!!! */
+	void *bp;
+	size_t *bsizep, min;
 {
 	size_t csize;
 
@@ -41,8 +44,8 @@ binc(SCR *sp, void *bp, size_t *bsizep, size_t min)
 	if (min && *bsizep >= min)
 		return (bp);
 
-	csize = *bsizep + MAXIMUM(min, 256);
-	REALLOC(sp, bp, csize);
+	csize = *bsizep + MAX(min, 256);
+	REALLOC(sp, bp, void *, csize);
 
 	if (bp == NULL) {
 		/*
@@ -67,10 +70,13 @@ binc(SCR *sp, void *bp, size_t *bsizep, size_t min)
  *	including or after the starting column.  On error, set
  *	the column to 0, it's safest.
  *
- * PUBLIC: int nonblank(SCR *, recno_t, size_t *);
+ * PUBLIC: int nonblank __P((SCR *, recno_t, size_t *));
  */
 int
-nonblank(SCR *sp, recno_t lno, size_t *cnop)
+nonblank(sp, lno, cnop)
+	SCR *sp;
+	recno_t lno;
+	size_t *cnop;
 {
 	char *p;
 	size_t cnt, len, off;
@@ -97,17 +103,37 @@ nonblank(SCR *sp, recno_t lno, size_t *cnop)
 }
 
 /*
+ * tail --
+ *	Return tail of a path.
+ *
+ * PUBLIC: char *tail __P((char *));
+ */
+char *
+tail(path)
+	char *path;
+{
+	char *p;
+
+	if ((p = strrchr(path, '/')) == NULL)
+		return (path);
+	return (p + 1);
+}
+
+/*
  * v_strdup --
  *	Strdup for wide character strings with an associated length.
  *
- * PUBLIC: CHAR_T *v_strdup(SCR *, const CHAR_T *, size_t);
+ * PUBLIC: CHAR_T *v_strdup __P((SCR *, const CHAR_T *, size_t));
  */
 CHAR_T *
-v_strdup(SCR *sp, const CHAR_T *str, size_t len)
+v_strdup(sp, str, len)
+	SCR *sp;
+	const CHAR_T *str;
+	size_t len;
 {
 	CHAR_T *copy;
 
-	MALLOC(sp, copy, len + 1);
+	MALLOC(sp, copy, CHAR_T *, len + 1);
 	if (copy == NULL)
 		return (NULL);
 	memcpy(copy, str, len * sizeof(CHAR_T));
@@ -119,10 +145,14 @@ v_strdup(SCR *sp, const CHAR_T *str, size_t len)
  * nget_uslong --
  *      Get an unsigned long, checking for overflow.
  *
- * PUBLIC: enum nresult nget_uslong(u_long *, const char *, char **, int);
+ * PUBLIC: enum nresult nget_uslong __P((u_long *, const char *, char **, int));
  */
 enum nresult
-nget_uslong(u_long *valp, const char *p, char **endp, int base)
+nget_uslong(valp, p, endp, base)
+	u_long *valp;
+	const char *p;
+	char **endp;
+	int base;
 {
 	errno = 0;
 	*valp = strtoul(p, endp, base);
@@ -137,10 +167,14 @@ nget_uslong(u_long *valp, const char *p, char **endp, int base)
  * nget_slong --
  *      Convert a signed long, checking for overflow and underflow.
  *
- * PUBLIC: enum nresult nget_slong(long *, const char *, char **, int);
+ * PUBLIC: enum nresult nget_slong __P((long *, const char *, char **, int));
  */
 enum nresult
-nget_slong(long *valp, const char *p, char **endp, int base)
+nget_slong(valp, p, endp, base)
+	long *valp;
+	const char *p;
+	char **endp;
+	int base;
 {
 	errno = 0;
 	*valp = strtol(p, endp, base);
@@ -156,23 +190,38 @@ nget_slong(long *valp, const char *p, char **endp, int base)
 }
 
 #ifdef DEBUG
+#ifdef __STDC__
 #include <stdarg.h>
+#else
+#include <varargs.h>
+#endif
 
 /*
  * TRACE --
  *	debugging trace routine.
  *
- * PUBLIC: void TRACE(SCR *, const char *, ...);
+ * PUBLIC: void TRACE __P((SCR *, const char *, ...));
  */
 void
+#ifdef __STDC__
 TRACE(SCR *sp, const char *fmt, ...)
+#else
+TRACE(sp, fmt, va_alist)
+	SCR *sp;
+	char *fmt;
+	va_dcl
+#endif
 {
 	FILE *tfp;
 	va_list ap;
 
 	if ((tfp = sp->gp->tracefp) == NULL)
 		return;
+#ifdef __STDC__
 	va_start(ap, fmt);
+#else
+	va_start(ap);
+#endif
 	(void)vfprintf(tfp, fmt, ap);
 	va_end(ap);
 

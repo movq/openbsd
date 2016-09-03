@@ -1,4 +1,4 @@
-/*	$OpenBSD: nlist.c,v 1.19 2015/01/16 06:39:32 deraadt Exp $	*/
+/*	$OpenBSD: nlist.c,v 1.5 1999/08/16 18:18:34 art Exp $	*/
 /*	$NetBSD: nlist.c,v 1.11 1995/03/21 09:08:03 cgd Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,12 +34,18 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/param.h>	/* MAXCOMLEN */
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)nlist.c	8.4 (Berkeley) 4/2/94";
+#else
+static char rcsid[] = "$OpenBSD: nlist.c,v 1.5 1999/08/16 18:18:34 art Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/time.h>
-#include <sys/signal.h>
 #include <sys/proc.h>
 #include <sys/resource.h>
-#include <sys/sysctl.h>
 
 #include <err.h>
 #include <errno.h>
@@ -54,16 +64,13 @@ struct	nlist psnl[] = {
 #define	X_CCPU		1
 	{"_physmem"},
 #define	X_PHYSMEM	2
-	{"_maxslp"},
-#define X_MAXSLP	3
 	{NULL}
 };
 
 fixpt_t	ccpu;				/* kernel _ccpu variable */
 int	nlistread;			/* if nlist already read. */
-u_int	mempages;			/* number of pages of phys. memory */
+int	mempages;			/* number of pages of phys. memory */
 int	fscale;				/* kernel _fscale variable */
-int	maxslp;
 
 extern kvm_t *kd;
 
@@ -71,74 +78,35 @@ extern kvm_t *kd;
 	kvm_read(kd, psnl[x].n_value, &v, sizeof v) != sizeof(v)
 
 int
-donlist(void)
+donlist()
 {
-	int64_t physmem;
-	int rval, mib[2];
-	size_t siz;
+	int rval;
 
 	rval = 0;
 	nlistread = 1;
-
-	if (kd != NULL && !kvm_sysctl_only) {
-		if (kvm_nlist(kd, psnl)) {
-			nlisterr(psnl);
-			eval = 1;
-			return (1);
-		}
-		if (kread(X_FSCALE, fscale)) {
-			warnx("fscale: %s", kvm_geterr(kd));
-			eval = rval = 1;
-		}
-		if (kread(X_PHYSMEM, mempages)) {
-			warnx("physmem: %s", kvm_geterr(kd));
-			eval = rval = 1;
-		}
-		if (kread(X_CCPU, ccpu)) {
-			warnx("ccpu: %s", kvm_geterr(kd));
-			eval = rval = 1;
-		}
-		if (kread(X_MAXSLP, maxslp)) {
-			warnx("maxslp: %s", kvm_geterr(kd));
-			eval = rval = 1;
-		}
-	} else {
-		siz = sizeof (fscale);
-		mib[0] = CTL_KERN;
-		mib[1] = KERN_FSCALE;
-		if (sysctl(mib, 2, &fscale, &siz, NULL, 0) < 0) {
-			warnx("fscale: failed to get kern.fscale");
-			eval = rval = 1;
-		}
-		siz = sizeof (physmem);
-		mib[0] = CTL_HW;
-		mib[1] = HW_PHYSMEM64;
-		if (sysctl(mib, 2, &physmem, &siz, NULL, 0) < 0) {
-			warnx("physmem: failed to get hw.physmem");
-			eval = rval = 1;
-		}
-		/* translate bytes into page count */
-		mempages = physmem / getpagesize();
-		siz = sizeof (ccpu);
-		mib[0] = CTL_KERN;
-		mib[1] = KERN_CCPU;
-		if (sysctl(mib, 2, &ccpu, &siz, NULL, 0) < 0) {
-			warnx("ccpu: failed to get kern.ccpu");
-			eval = rval = 1;
-		}
-		siz = sizeof (maxslp);
-		mib[0] = CTL_VM;
-		mib[1] = VM_MAXSLP;
-		if (sysctl(mib, 2, &maxslp, &siz, NULL, 0) < 0) {
-			warnx("maxslp: failed to get vm.maxslp");
-			eval = rval = 1;
-		}
+	if (kvm_nlist(kd, psnl)) {
+		nlisterr(psnl);
+		eval = 1;
+		return (1);
+	}
+	if (kread(X_FSCALE, fscale)) {
+		warnx("fscale: %s", kvm_geterr(kd));
+		eval = rval = 1;
+	}
+	if (kread(X_PHYSMEM, mempages)) {
+		warnx("avail_start: %s", kvm_geterr(kd));
+		eval = rval = 1;
+	}
+	if (kread(X_CCPU, ccpu)) {
+		warnx("ccpu: %s", kvm_geterr(kd));
+		eval = rval = 1;
 	}
 	return (rval);
 }
 
 void
-nlisterr(struct nlist nl[])
+nlisterr(nl)
+	struct nlist nl[];
 {
 	int i;
 

@@ -1,4 +1,4 @@
-/*	$OpenBSD: io.c,v 1.19 2016/03/22 17:58:28 mmcc Exp $	*/
+/*	$OpenBSD: io.c,v 1.7 1997/02/01 12:03:07 tholo Exp $	*/
 /*	$NetBSD: io.c,v 1.2 1995/03/21 09:04:43 cgd Exp $	*/
 
 /* io.c: This file contains the i/o routines for the ed line editor */
@@ -28,63 +28,69 @@
  * SUCH DAMAGE.
  */
 
-#include <regex.h>
-#include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#ifndef lint
+#if 0
+static char *rcsid = "@(#)io.c,v 1.1 1994/02/01 00:34:41 alm Exp";
+#else
+static char rcsid[] = "$OpenBSD: io.c,v 1.7 1997/02/01 12:03:07 tholo Exp $";
+#endif
+#endif /* not lint */
 
 #include "ed.h"
 
-static int read_stream(FILE *, int);
-static int get_stream_line(FILE *);
-static int write_stream(FILE *, int, int);
-static int put_stream_line(FILE *, char *, int);
 
 extern int scripted;
 
 /* read_file: read a named file/pipe into the buffer; return line count */
-int
-read_file(char *fn, int n)
+long
+read_file(fn, n)
+	char *fn;
+	long n;
 {
 	FILE *fp;
-	int size;
+	long size;
 
 
 	fp = (*fn == '!') ? popen(fn + 1, "r") : fopen(strip_escapes(fn), "r");
 	if (fp == NULL) {
 		perror(fn);
-		seterrmsg("cannot open input file");
+		strcpy(errmsg, "cannot open input file");
 		return ERR;
 	} else if ((size = read_stream(fp, n)) < 0)
 		return ERR;
 	 else if (((*fn == '!') ?  pclose(fp) : fclose(fp)) < 0) {
 		perror(fn);
-		seterrmsg("cannot close input file");
+		strcpy(errmsg, "cannot close input file");
 		return ERR;
 	}
-	fprintf(stderr, !scripted ? "%d\n" : "", size);
+	fprintf(stderr, !scripted ? "%lu\n" : "", size);
 	return current_addr - n;
 }
 
 
-static char *sbuf;		/* file i/o buffer */
-static int sbufsz;		/* file i/o buffer size */
+extern int des;
+
+char *sbuf;			/* file i/o buffer */
+int sbufsz;			/* file i/o buffer size */
 int newline_added;		/* if set, newline appended to input file */
 
 /* read_stream: read a stream into the editor buffer; return status */
-static int
-read_stream(FILE *fp, int n)
+long
+read_stream(fp, n)
+	FILE *fp;
+	long n;
 {
 	line_t *lp = get_addressed_line_node(n);
 	undo_t *up = NULL;
-	unsigned int size = 0;
+	unsigned long size = 0;
 	int o_newline_added = newline_added;
 	int o_isbinary = isbinary;
 	int appended = (n == addr_last);
 	int len;
 
 	isbinary = newline_added = 0;
+	if (des)
+		init_des_cipher();
 	for (current_addr = n; (len = get_stream_line(fp)) > 0; size += len) {
 		SPL1();
 		if (put_sbuf_line(sbuf) == NULL) {
@@ -113,17 +119,21 @@ read_stream(FILE *fp, int n)
 		newline_added = 1;
 	newline_added = appended ? newline_added : o_newline_added;
 	isbinary = isbinary | o_isbinary;
+	if (des)
+		size += 8 - size % 8;			/* adjust DES size */
 	return size;
 }
 
-/* get_stream_line: read a line of text from a stream; return line length */
-static int
-get_stream_line(FILE *fp)
-{
-	int c;
-	int i = 0;
 
-	while (((c = getc(fp)) != EOF || (!feof(fp) &&
+/* get_stream_line: read a line of text from a stream; return line length */
+int
+get_stream_line(fp)
+	FILE *fp;
+{
+	register int c;
+	register int i = 0;
+
+	while (((c = des ? get_des_char(fp) : getc(fp)) != EOF || (!feof(fp) &&
 	    !ferror(fp))) && c != '\n') {
 		REALLOC(sbuf, sbufsz, i + 1, ERR);
 		if (!(sbuf[i++] = c))
@@ -134,7 +144,7 @@ get_stream_line(FILE *fp)
 		sbuf[i++] = c;
 	else if (ferror(fp)) {
 		perror(NULL);
-		seterrmsg("cannot read input file");
+		strcpy(errmsg, "cannot read input file");
 		return ERR;
 	} else if (i) {
 		sbuf[i++] = '\n';
@@ -146,38 +156,47 @@ get_stream_line(FILE *fp)
 
 
 /* write_file: write a range of lines to a named file/pipe; return line count */
-int
-write_file(char *fn, char *mode, int n, int m)
+long
+write_file(fn, mode, n, m)
+	char *fn;
+	char *mode;
+	long n;
+	long m;
 {
 	FILE *fp;
-	int size;
+	long size;
 
 	fp = (*fn == '!') ? popen(fn+1, "w") : fopen(strip_escapes(fn), mode);
 	if (fp == NULL) {
 		perror(fn);
-		seterrmsg("cannot open output file");
+		strcpy(errmsg, "cannot open output file");
 		return ERR;
 	} else if ((size = write_stream(fp, n, m)) < 0)
 		return ERR;
 	 else if (((*fn == '!') ?  pclose(fp) : fclose(fp)) < 0) {
 		perror(fn);
-		seterrmsg("cannot close output file");
+		strcpy(errmsg, "cannot close output file");
 		return ERR;
 	}
-	fprintf(stderr, !scripted ? "%d\n" : "", size);
+	fprintf(stderr, !scripted ? "%lu\n" : "", size);
 	return n ? m - n + 1 : 0;
 }
 
 
 /* write_stream: write a range of lines to a stream; return status */
-static int
-write_stream(FILE *fp, int n, int m)
+long
+write_stream(fp, n, m)
+	FILE *fp;
+	long n;
+	long m;
 {
 	line_t *lp = get_addressed_line_node(n);
-	unsigned int size = 0;
+	unsigned long size = 0;
 	char *s;
 	int len;
 
+	if (des)
+		init_des_cipher();
 	for (; n && n <= m; n++, lp = lp->q_forw) {
 		if ((s = get_sbuf_line(lp)) == NULL)
 			return ERR;
@@ -188,28 +207,35 @@ write_stream(FILE *fp, int n, int m)
 			return ERR;
 		size += len;
 	}
+	if (des) {
+		flush_des_file(fp);			/* flush buffer */
+		size += 8 - size % 8;			/* adjust DES size */
+	}
 	return size;
 }
 
 
 /* put_stream_line: write a line of text to a stream; return status */
-static int
-put_stream_line(FILE *fp, char *s, int len)
+int
+put_stream_line(fp, s, len)
+	FILE *fp;
+	char *s;
+	int len;
 {
-	while (len--) {
-		if (fputc(*s, fp) < 0) {
+	while (len--)
+		if ((des ? put_des_char(*s++, fp) : fputc(*s++, fp)) < 0) {
 			perror(NULL);
-			seterrmsg("cannot write file");
+			strcpy(errmsg, "cannot write file");
 			return ERR;
 		}
-		s++;
-	}
 	return 0;
 }
 
 /* get_extended_line: get a an extended line from stdin */
 char *
-get_extended_line(int *sizep, int nonl)
+get_extended_line(sizep, nonl)
+	int *sizep;
+	int nonl;
 {
 	static char *cvbuf = NULL;		/* buffer */
 	static int cvbufsz = 0;			/* buffer size */
@@ -227,13 +253,12 @@ get_extended_line(int *sizep, int nonl)
 	REALLOC(cvbuf, cvbufsz, l, NULL);
 	memcpy(cvbuf, ibufp, l);
 	*(cvbuf + --l - 1) = '\n'; 	/* strip trailing esc */
-	if (nonl)
-		l--; 			/* strip newline */
+	if (nonl) l--; 			/* strip newline */
 	for (;;) {
 		if ((n = get_tty_line()) < 0)
 			return NULL;
 		else if (n == 0 || ibuf[n - 1] != '\n') {
-			seterrmsg("unexpected end-of-file");
+			strcpy(errmsg, "unexpected end-of-file");
 			return NULL;
 		}
 		REALLOC(cvbuf, cvbufsz, l + n, NULL);
@@ -253,10 +278,10 @@ get_extended_line(int *sizep, int nonl)
 
 /* get_tty_line: read a line of text from stdin; return line length */
 int
-get_tty_line(void)
+get_tty_line()
 {
-	int oi = 0;
-	int i = 0;
+	register int oi = 0;
+	register int i = 0;
 	int c;
 
 	for (;;)
@@ -274,7 +299,7 @@ get_tty_line(void)
 		case EOF:
 			if (ferror(stdin)) {
 				perror("stdin");
-				seterrmsg("cannot read stdin");
+				strcpy(errmsg, "cannot read stdin");
 				clearerr(stdin);
 				ibufp = NULL;
 				return ERR;
@@ -301,7 +326,11 @@ extern int cols;
 
 /* put_tty_line: print text to stdout */
 int
-put_tty_line(char *s, int l, int n, int gflag)
+put_tty_line(s, l, n, gflag)
+	char *s;
+	int l;
+	long n;
+	int gflag;
 {
 	int col = 0;
 #ifndef BACKWARDS
@@ -310,7 +339,7 @@ put_tty_line(char *s, int l, int n, int gflag)
 	char *cp;
 
 	if (gflag & GNP) {
-		printf("%d\t", n);
+		printf("%ld\t", n);
 		col = 8;
 	}
 	for (; l--; s++) {

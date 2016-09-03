@@ -1,4 +1,4 @@
-/*	$OpenBSD: kvm_private.h,v 1.24 2015/09/04 02:55:09 dlg Exp $ */
+/*	$OpenBSD: kvm_private.h,v 1.4 1996/05/10 12:58:33 deraadt Exp $ */
 /*	$NetBSD: kvm_private.h,v 1.7 1996/05/05 04:32:15 gwr Exp $	*/
 
 /*-
@@ -17,7 +17,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -43,14 +47,15 @@ struct __kvm {
 	 * if this value is null, errors are saved in errbuf[]
 	 */
 	const char *program;
+	char	*errp;		/* XXX this can probably go away */
 	char	errbuf[_POSIX2_LINE_MAX];
 	DB	*db;
+#define ISALIVE(kd) ((kd)->vmfd >= 0)
 	int	pmfd;		/* physical memory file (or crashdump) */
 	int	vmfd;		/* virtual memory file (-1 if crashdump) */
 	int	swfd;		/* swap file (e.g., /dev/drum) */
 	int	nlfd;		/* namelist file (e.g., /vmunix) */
 	struct kinfo_proc *procbase;
-	struct kinfo_file *filebase;
 	int	nbpg;		/* page size */
 	char	*swapspc;	/* (dynamic) storage for swapped pages */
 	char	*argspc, *argbuf; /* (dynamic) storage for argv strings */
@@ -80,29 +85,19 @@ struct __kvm {
 	 */
 	struct pglist *vm_page_buckets;
 	int vm_page_hash_mask;
-	int alive;	/* Dead or alive. */
-#define ISALIVE(kd) ((kd)->alive)
 };
-
-#define KREAD(kd, addr, obj) \
-	(kvm_read(kd, addr, (void *)(obj), sizeof(*obj)) != sizeof(*obj))
 
 /*
  * Functions used internally by kvm, but across kvm modules.
  */
-__BEGIN_HIDDEN_DECLS
-void	 _kvm_err(kvm_t *kd, const char *program, const char *fmt, ...)
-	    __attribute__((__format__ (printf, 3, 4)));
-int	 _kvm_dump_mkheader(kvm_t *kd_live, kvm_t *kd_dump);
-void	 _kvm_freevtop(kvm_t *);
-int	 _kvm_initvtop(kvm_t *);
-int	 _kvm_kvatop(kvm_t *, u_long, paddr_t *);
-void	*_kvm_malloc(kvm_t *kd, size_t);
-void	*_kvm_realloc(kvm_t *kd, void *, size_t);
-off_t	 _kvm_pa2off(kvm_t *, paddr_t);
-void	*_kvm_reallocarray(kvm_t *kd, void *, size_t, size_t);
-void	 _kvm_syserr(kvm_t *kd, const char *program, const char *fmt, ...)
-	    __attribute__((__format__ (printf, 3, 4)));
-ssize_t	 _kvm_pread(kvm_t *, int, void *, size_t, off_t);
-ssize_t	 _kvm_pwrite(kvm_t *, int, const void *, size_t, off_t);
-__END_HIDDEN_DECLS
+void	 _kvm_err __P((kvm_t *kd, const char *program, const char *fmt, ...));
+int	 _kvm_dump_mkheader __P((kvm_t *kd_live, kvm_t *kd_dump));
+void	 _kvm_freeprocs __P((kvm_t *kd));
+void	 _kvm_freevtop __P((kvm_t *));
+int	 _kvm_initvtop __P((kvm_t *));
+int	 _kvm_kvatop __P((kvm_t *, u_long, u_long *));
+void	*_kvm_malloc __P((kvm_t *kd, size_t));
+off_t	 _kvm_pa2off __P((kvm_t *, u_long));
+void	*_kvm_realloc __P((kvm_t *kd, void *, size_t));
+void	 _kvm_syserr
+	    __P((kvm_t *kd, const char *program, const char *fmt, ...));

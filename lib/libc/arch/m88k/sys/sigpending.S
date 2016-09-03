@@ -1,5 +1,3 @@
-/*	$OpenBSD: sigpending.S,v 1.10 2015/09/10 13:29:09 guenther Exp $	*/
-
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
  * All rights reserved.
@@ -16,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,14 +35,20 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+	.data
+	/*.asciz "from: @(#)sigpending.s	5.2 (Berkeley) 8/6/90"*/
+	.asciz "$Id: sigpending.S,v 1.1 1998/12/15 07:10:33 smurph Exp $"
+	.text
+#endif /* LIBC_SCCS and not lint */
+
 #include "SYS.h"
 
-SYSENTRY(sigpending)
-	or	%r4,%r2,0		/* save r2 */
-	or	%r13,%r0,SYS_sigpending
-	tb0	0,%r0,450
-	br	CERROR
-	st	%r2,%r4,0
-	jmp.n	%r1
-	 or	%r2,%r0,0
-SYSCALL_END(sigpending)
+ENTRY(sigpending)
+	or	r4,r2,0		/* save r2 */
+	or	r13,r0,SYS_sigpending
+	tb0	0,r0,128
+	br	cerror
+	st	r2,r4,0
+	jmp.n	r1
+	or	r2,r0,0

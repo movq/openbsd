@@ -1,4 +1,4 @@
-/*	$OpenBSD: main.c,v 1.29 2016/03/07 13:48:25 jmc Exp $	*/
+/*	$OpenBSD: main.c,v 1.8 1999/09/01 00:27:08 pjanzen Exp $	*/
 /*	$NetBSD: main.c,v 1.4 1995/04/27 21:22:25 mycroft Exp $	*/
 
 /*-
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -42,93 +46,112 @@
  * For more info on this and all of my stuff, mail edjames@berkeley.edu.
  */
 
-#include <err.h>
-#include <signal.h>
-#include <stdlib.h>
-#include <string.h>
-#include <termios.h>
-#include <unistd.h>
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1990, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
 
-#include "extern.h"
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)main.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: main.c,v 1.8 1999/09/01 00:27:08 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
+#include "include.h"
 #include "pathnames.h"
 
 int
-main(int argc, char *argv[])
+main(ac, av)
+	int	ac;
+	char	*av[];
 {
-	int			ch;
+	int			seed;
 	int			f_usage = 0, f_list = 0, f_showscore = 0;
 	int			f_printpath = 0;
 	const char		*file = NULL;
-	char			*seed;
+	char			*name, *ptr;
 	struct sigaction	sa;
+#ifdef BSD
 	struct itimerval	itv;
+#endif
 
-	if (pledge("stdio rpath wpath cpath flock tty", NULL) == -1)
-		err(1, "pledge");
 	open_score_file();
 
-	start_time = time(0);
-	makenoise = 1;
-	seed = NULL;
+	/* revoke privs */
+	setegid(getgid());
+	setgid(getgid());
 
-	while ((ch = getopt(argc, argv, "f:g:hlpqr:st")) != -1) {
-		switch (ch) {
-		case 'f':
-		case 'g':
-			file = optarg;
+	start_time = seed = time(0);
+	makenoise = 1;
+
+	name = *av++;
+	while (*av) {
+#ifndef SAVEDASH
+		if (**av == '-') 
+			++*av;
+		else
 			break;
-		case 'l':
-			f_list = 1;
-			break;
-		case 'p':
-			f_printpath = 1;
-			break;
-		case 'q':
-			makenoise = 0;
-			break;
-		case 'r':
-			seed = optarg;
-			break;
-		case 's':
-		case 't':
-			f_showscore = 1;
-			break;
-		case 'h':
-		default:
-			f_usage = 1;
-			break;
+#endif
+		ptr = *av++;
+		while (*ptr) {
+			switch (*ptr) {
+			case '?':
+			case 'u':
+				f_usage++;
+				break;
+			case 'l':
+				f_list++;
+				break;
+			case 's':
+			case 't':
+				f_showscore++;
+				break;
+			case 'p':
+				f_printpath++;
+				break;
+			case 'q':
+				makenoise = 0;
+				break;
+			case 'r':
+				seed = atoi(*av);
+				av++;
+				break;
+			case 'f':
+			case 'g':
+				file = *av;
+				av++;
+				break;
+			default: 
+				warnx("unknown option '%c'", *ptr);
+				f_usage++;
+				break;
+			}
+			ptr++;
 		}
 	}
-	argc -= optind;
-	argv += optind;
-
-	if (argc > 0)
-		f_usage = 1;
-
-	if (seed != NULL)
-		setseed(seed);
+	srandom(seed);
 
 	if (f_usage)
 		fprintf(stderr, 
-		    "usage: %s [-lpqst] [-f game] [-g game] [-r seed]\n",
-		    getprogname());
+		    "Usage: %s -[u?lstpq] [-[gf] game_name] [-r random seed]\n",
+			name);
 	if (f_showscore)
 		log_score(1);
 	if (f_list)
 		list_games();
 	if (f_printpath) {
-		size_t	len;
 		char	buf[256];
 
-		strlcpy(buf, _PATH_GAMES, sizeof buf);
-		len = strlen(buf);
-		if (len != 0 && buf[len - 1] == '/')
-			buf[len - 1] = '\0';
+		strcpy(buf, _PATH_GAMES);
+		buf[strlen(buf) - 1] = '\0';
 		puts(buf);
 	}
 		
 	if (f_usage || f_showscore || f_list || f_printpath)
-		return 0;
+		exit(0);
 
 	if (file == NULL)
 		file = default_game();
@@ -136,7 +159,7 @@ main(int argc, char *argv[])
 		file = okay_game(file);
 
 	if (file == NULL || read_file(file) < 0)
-		return 1;
+		exit(1);
 
 	setup_screen(sp);
 
@@ -144,8 +167,10 @@ main(int argc, char *argv[])
 
 	signal(SIGINT, quit);
 	signal(SIGQUIT, quit);
+#ifdef BSD
 	signal(SIGTSTP, SIG_IGN);
 	signal(SIGSTOP, SIG_IGN);
+#endif
 	signal(SIGHUP, log_score_quit);
 	signal(SIGTERM, log_score_quit);
 
@@ -165,33 +190,49 @@ main(int argc, char *argv[])
 	sa.sa_flags = 0;
 	sigaction(SIGALRM, &sa, (struct sigaction *)0);
 
+#ifdef BSD
 	itv.it_value.tv_sec = 0;
 	itv.it_value.tv_usec = 1;
 	itv.it_interval.tv_sec = sp->update_secs;
 	itv.it_interval.tv_usec = 0;
 	setitimer(ITIMER_REAL, &itv, NULL);
+#endif
+#ifdef SYSV
+	alarm(sp->update_secs);
+#endif
 
 	for (;;) {
 		if (getcommand() != 1)
 			planewin();
 		else {
+#ifdef BSD
 			itv.it_value.tv_sec = 0;
 			itv.it_value.tv_usec = 0;
 			setitimer(ITIMER_REAL, &itv, NULL);
+#endif
+#ifdef SYSV
+			alarm(0);
+#endif
 
 			update(0);
 
+#ifdef BSD
 			itv.it_value.tv_sec = sp->update_secs;
 			itv.it_value.tv_usec = 0;
 			itv.it_interval.tv_sec = sp->update_secs;
 			itv.it_interval.tv_usec = 0;
 			setitimer(ITIMER_REAL, &itv, NULL);
+#endif
+#ifdef SYSV
+			alarm(sp->update_secs);
+#endif
 		}
 	}
 }
 
 int
-read_file(const char *s)
+read_file(s)
+	const char	*s;
 {
 	extern FILE	*yyin;
 	int		retval;
@@ -212,14 +253,14 @@ read_file(const char *s)
 }
 
 const char	*
-default_game(void)
+default_game()
 {
 	FILE		*fp;
 	static char	file[256];
 	char		line[256], games[256];
 
-	strlcpy(games, _PATH_GAMES, sizeof games);
-	strlcat(games, GAMES, sizeof games);
+	strcpy(games, _PATH_GAMES);
+	strcat(games, GAMES);
 
 	if ((fp = fopen(games, "r")) == NULL) {
 		warn("fopen %s", games);
@@ -227,45 +268,44 @@ default_game(void)
 	}
 	if (fgets(line, sizeof(line), fp) == NULL) {
 		warnx("%s: no default game available", games);
-		fclose(fp);
 		return (NULL);
 	}
 	fclose(fp);
-
-	line[strcspn(line, "\n")] = '\0';
+	line[strlen(line) - 1] = '\0';
 	if (strlen(line) + strlen(_PATH_GAMES) >= sizeof(file)) {
 		warnx("default game name too long");
 		return (NULL);
 	}
-	strlcpy(file, _PATH_GAMES, sizeof file);
-	strlcat(file, line, sizeof file);
+	strcpy(file, _PATH_GAMES);
+	strcat(file, line);
 	return (file);
 }
 
 const char	*
-okay_game(const char *s)
+okay_game(s)
+	const char	*s;
 {
 	FILE		*fp;
 	static char	file[256];
 	const char	*ret = NULL;
 	char		line[256], games[256];
 
-	strlcpy(games, _PATH_GAMES, sizeof games);
-	strlcat(games, GAMES, sizeof games);
+	strcpy(games, _PATH_GAMES);
+	strcat(games, GAMES);
 
 	if ((fp = fopen(games, "r")) == NULL) {
 		warn("fopen %s", games);
 		return (NULL);
 	}
 	while (fgets(line, sizeof(line), fp) != NULL) {
-		line[strcspn(line, "\n")] = '\0';
+		line[strlen(line) - 1] = '\0';
 		if (strcmp(s, line) == 0) {
 			if (strlen(line) + strlen(_PATH_GAMES) >= sizeof(file)) {
 				warnx("game name too long");
 				return (NULL);
 			}
-			strlcpy(file, _PATH_GAMES, sizeof file);
-			strlcat(file, line, sizeof file);
+			strcpy(file, _PATH_GAMES);
+			strcat(file, line);
 			ret = file;
 			break;
 		}
@@ -282,14 +322,14 @@ okay_game(const char *s)
 }
 
 int
-list_games(void)
+list_games()
 {
 	FILE		*fp;
 	char		line[256], games[256];
 	int		num_games = 0;
 
-	strlcpy(games, _PATH_GAMES, sizeof games);
-	strlcat(games, GAMES, sizeof games);
+	strcpy(games, _PATH_GAMES);
+	strcat(games, GAMES);
 
 	if ((fp = fopen(games, "r")) == NULL) {
 		warn("fopen %s", games);
@@ -297,8 +337,7 @@ list_games(void)
 	}
 	puts("available games:");
 	while (fgets(line, sizeof(line), fp) != NULL) {
-		line[strcspn(line, "\n")] = '\0';
-		printf("	%s\n", line);
+		printf("	%s", line);
 		num_games++;
 	}
 	fclose(fp);

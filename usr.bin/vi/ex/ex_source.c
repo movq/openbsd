@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_source.c,v 1.10 2015/12/07 20:39:19 mmcc Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)ex_source.c	10.12 (Berkeley) 8/10/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -27,20 +29,22 @@
 #include "../common/common.h"
 
 /*
- * ex_sourcefd -- :source already opened file
- *	Execute ex commands from the given file descriptor
+ * ex_source -- :source file
+ *	Execute ex commands from a file.
  *
- * PUBLIC: int ex_sourcefd(SCR *, EXCMD *, int);
+ * PUBLIC: int ex_source __P((SCR *, EXCMD *));
  */
 int
-ex_sourcefd(SCR *sp, EXCMD *cmdp, int fd)
+ex_source(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	struct stat sb;
-	int len;
+	int fd, len;
 	char *bp, *name;
 
 	name = cmdp->argv[0]->bp;
-	if (fstat(fd, &sb))
+	if ((fd = open(name, O_RDONLY, 0)) < 0 || fstat(fd, &sb))
 		goto err;
 
 	/*
@@ -58,7 +62,7 @@ ex_sourcefd(SCR *sp, EXCMD *cmdp, int fd)
 		goto err;
 	}
 
-	MALLOC(sp, bp, (size_t)sb.st_size + 1);
+	MALLOC(sp, bp, char *, (size_t)sb.st_size + 1);
 	if (bp == NULL) {
 		(void)close(fd);
 		return (1);
@@ -78,24 +82,4 @@ err:		msgq_str(sp, M_SYSERR, name, "%s");
 
 	/* Put it on the ex queue. */
 	return (ex_run_str(sp, name, bp, (size_t)sb.st_size, 1, 1));
-}
-
-/*
- * ex_source -- :source file
- *	Execute ex commands from a file.
- *
- * PUBLIC: int ex_source(SCR *, EXCMD *);
- */
-int
-ex_source(SCR *sp, EXCMD *cmdp)
-{
-	char *name;
-	int fd;
-
-	name = cmdp->argv[0]->bp;
-	if ((fd = open(name, O_RDONLY, 0)) >= 0)
-		return (ex_sourcefd(sp, cmdp, fd));
-
-	msgq_str(sp, M_SYSERR, name, "%s");
-	return (1);
 }

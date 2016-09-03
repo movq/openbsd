@@ -1,4 +1,4 @@
-/*	$OpenBSD: utils.c,v 1.39 2015/12/26 18:11:43 guenther Exp $	*/
+/*	$OpenBSD: utils.c,v 1.14 1999/05/06 17:19:47 millert Exp $	*/
 /*	$NetBSD: utils.c,v 1.6 1997/02/26 14:40:51 cgd Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgment:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,7 +34,15 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/param.h>		/* MAXBSIZE */
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)utils.c	8.3 (Berkeley) 4/1/94";
+#else
+static char rcsid[] = "$OpenBSD: utils.c,v 1.14 1999/05/06 17:19:47 millert Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <sys/time.h>
@@ -43,31 +55,20 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <limits.h>
 
 #include "extern.h"
 
 int
-copy_file(FTSENT *entp, int dne)
+copy_file(entp, dne)
+	FTSENT *entp;
+	int dne;
 {
-	static char *buf;
-	static char *zeroes;
+	static char buf[MAXBSIZE];
 	struct stat to_stat, *fs;
 	int ch, checkch, from_fd, rcount, rval, to_fd, wcount;
 #ifdef VM_AND_BUFFER_CACHE_SYNCHRONIZED
 	char *p;
 #endif
-
-	if (!buf) {
-		buf = malloc(MAXBSIZE);
-		if (!buf)
-			err(1, "malloc");
-	}
-	if (!zeroes) {
-		zeroes = calloc(1, MAXBSIZE);
-		if (!zeroes)
-			err(1, "calloc");
-	}
 
 	if ((from_fd = open(entp->fts_path, O_RDONLY, 0)) == -1) {
 		warn("%s", entp->fts_path);
@@ -78,7 +79,7 @@ copy_file(FTSENT *entp, int dne)
 
 	/*
 	 * In -f (force) mode, we always unlink the destination first
-	 * if it exists.  Note that -i and -f are mutually exclusive.
+	 * if it exists.  Note that -i and -f are mututally exclusive.
 	 */
 	if (!dne && fflag)
 		(void)unlink(to.p_path);
@@ -110,7 +111,7 @@ copy_file(FTSENT *entp, int dne)
 	if (to_fd == -1) {
 		warn("%s", to.p_path);
 		(void)close(from_fd);
-		return (1);
+		return (1);;
 	}
 
 	rval = 0;
@@ -121,14 +122,12 @@ copy_file(FTSENT *entp, int dne)
 	 * wins some CPU back.
 	 */
 #ifdef VM_AND_BUFFER_CACHE_SYNCHRONIZED
-	/* XXX broken for 0-size mmap */
 	if (fs->st_size <= 8 * 1048576) {
 		if ((p = mmap(NULL, (size_t)fs->st_size, PROT_READ,
-		    MAP_FILE|MAP_SHARED, from_fd, (off_t)0)) == MAP_FAILED) {
+		    0, from_fd, (off_t)0)) == MAP_FAILED) {
 			warn("mmap: %s", entp->fts_path);
 			rval = 1;
 		} else {
-			madvise(p, fs->st_size, MADV_SEQUENTIAL);
 			if (write(to_fd, p, fs->st_size) != fs->st_size) {
 				warn("%s", to.p_path);
 				rval = 1;
@@ -142,23 +141,14 @@ copy_file(FTSENT *entp, int dne)
 	} else
 #endif
 	{
-		int skipholes = 0;
-		struct stat tosb;
-		if (!fstat(to_fd, &tosb) && S_ISREG(tosb.st_mode))
-			skipholes = 1;
 		while ((rcount = read(from_fd, buf, MAXBSIZE)) > 0) {
-			if (skipholes && memcmp(buf, zeroes, rcount) == 0)
-				wcount = lseek(to_fd, rcount, SEEK_CUR) == -1 ? -1 : rcount;
-			else
-				wcount = write(to_fd, buf, rcount);
+			wcount = write(to_fd, buf, rcount);
 			if (rcount != wcount || wcount == -1) {
 				warn("%s", to.p_path);
 				rval = 1;
 				break;
 			}
 		}
-		if (skipholes && rcount >= 0)
-			rcount = ftruncate(to_fd, lseek(to_fd, 0, SEEK_CUR));
 		if (rcount < 0) {
 			warn("%s", entp->fts_path);
 			rval = 1;
@@ -179,8 +169,7 @@ copy_file(FTSENT *entp, int dne)
 	 */
 #define	RETAINBITS \
 	(S_ISUID | S_ISGID | S_ISVTX | S_IRWXU | S_IRWXG | S_IRWXO)
-	if (!pflag && dne &&
-	    fs->st_mode & (S_ISUID | S_ISGID) && fs->st_uid == myuid) {
+	else if (fs->st_mode & (S_ISUID | S_ISGID) && fs->st_uid == myuid)
 		if (fstat(to_fd, &to_stat)) {
 			warn("%s", to.p_path);
 			rval = 1;
@@ -189,7 +178,6 @@ copy_file(FTSENT *entp, int dne)
 			warn("%s", to.p_path);
 			rval = 1;
 		}
-	}
 	(void)close(from_fd);
 	if (close(to_fd)) {
 		warn("%s", to.p_path);
@@ -199,29 +187,33 @@ copy_file(FTSENT *entp, int dne)
 }
 
 int
-copy_link(FTSENT *p, int exists)
+copy_link(p, exists)
+	FTSENT *p;
+	int exists;
 {
 	int len;
-	char name[PATH_MAX];
+	char link[MAXPATHLEN];
 
-	if ((len = readlink(p->fts_path, name, sizeof(name)-1)) == -1) {
+	if ((len = readlink(p->fts_path, link, sizeof(link)-1)) == -1) {
 		warn("readlink: %s", p->fts_path);
 		return (1);
 	}
-	name[len] = '\0';
+	link[len] = '\0';
 	if (exists && unlink(to.p_path)) {
 		warn("unlink: %s", to.p_path);
 		return (1);
 	}
-	if (symlink(name, to.p_path)) {
-		warn("symlink: %s", name);
+	if (symlink(link, to.p_path)) {
+		warn("symlink: %s", link);
 		return (1);
 	}
-	return (pflag ? setfile(p->fts_statp, -1) : 0);
+	return (pflag ? setlink(p->fts_statp) : 0);
 }
 
 int
-copy_fifo(struct stat *from_stat, int exists)
+copy_fifo(from_stat, exists)
+	struct stat *from_stat;
+	int exists;
 {
 	if (exists && unlink(to.p_path)) {
 		warn("unlink: %s", to.p_path);
@@ -231,11 +223,13 @@ copy_fifo(struct stat *from_stat, int exists)
 		warn("mkfifo: %s", to.p_path);
 		return (1);
 	}
-	return (pflag ? setfile(from_stat, -1) : 0);
+	return (pflag ? setfile(from_stat, 0) : 0);
 }
 
 int
-copy_special(struct stat *from_stat, int exists)
+copy_special(from_stat, exists)
+	struct stat *from_stat;
+	int exists;
 {
 	if (exists && unlink(to.p_path)) {
 		warn("unlink: %s", to.p_path);
@@ -245,24 +239,25 @@ copy_special(struct stat *from_stat, int exists)
 		warn("mknod: %s", to.p_path);
 		return (1);
 	}
-	return (pflag ? setfile(from_stat, -1) : 0);
+	return (pflag ? setfile(from_stat, 0) : 0);
 }
 
 
 int
-setfile(struct stat *fs, int fd)
+setfile(fs, fd)
+	struct stat *fs;
+	int fd;
 {
-	struct timespec ts[2];
+	static struct timeval tv[2];
 	int rval;
 
 	rval = 0;
 	fs->st_mode &= S_ISTXT | S_ISUID | S_ISGID | S_IRWXU | S_IRWXG | S_IRWXO;
 
-	ts[0] = fs->st_atim;
-	ts[1] = fs->st_mtim;
-	if (fd >= 0 ? futimens(fd, ts) :
-	    utimensat(AT_FDCWD, to.p_path, ts, AT_SYMLINK_NOFOLLOW)) {
-		warn("update times: %s", to.p_path);
+	TIMESPEC_TO_TIMEVAL(&tv[0], &fs->st_atimespec);
+	TIMESPEC_TO_TIMEVAL(&tv[1], &fs->st_mtimespec);
+	if (utimes(to.p_path, tv)) {
+		warn("utimes: %s", to.p_path);
 		rval = 1;
 	}
 	/*
@@ -271,17 +266,16 @@ setfile(struct stat *fs, int fd)
 	 * the mode; current BSD behavior is to remove all setuid bits on
 	 * chown.  If chown fails, lose setuid/setgid bits.
 	 */
-	if (fd >= 0 ? fchown(fd, fs->st_uid, fs->st_gid) :
-	    lchown(to.p_path, fs->st_uid, fs->st_gid)) {
+	if (fd ? fchown(fd, fs->st_uid, fs->st_gid) :
+	    chown(to.p_path, fs->st_uid, fs->st_gid)) {
 		if (errno != EPERM) {
 			warn("chown: %s", to.p_path);
 			rval = 1;
 		}
 		fs->st_mode &= ~(S_ISTXT | S_ISUID | S_ISGID);
 	}
-	if (fd >= 0 ? fchmod(fd, fs->st_mode) :
-	    fchmodat(AT_FDCWD, to.p_path, fs->st_mode, AT_SYMLINK_NOFOLLOW)) {
-		warn("chmod: %s", to.p_path);
+	if (fd ? fchmod(fd, fs->st_mode) : chmod(to.p_path, fs->st_mode)) {
+		warn("chown: %s", to.p_path);
 		rval = 1;
 	}
 
@@ -293,8 +287,7 @@ setfile(struct stat *fs, int fd)
 	 * on a file that we copied, i.e., that we didn't create.)
 	 */
 	errno = 0;
-	if (fd >= 0 ? fchflags(fd, fs->st_flags) :
-	    chflagsat(AT_FDCWD, to.p_path, fs->st_flags, AT_SYMLINK_NOFOLLOW))
+	if (fd ? fchflags(fd, fs->st_flags) : chflags(to.p_path, fs->st_flags))
 		if (errno != EOPNOTSUPP || fs->st_flags != 0) {
 			warn("chflags: %s", to.p_path);
 			rval = 1;
@@ -303,13 +296,26 @@ setfile(struct stat *fs, int fd)
 }
 
 
-void
-usage(void)
+int
+setlink(fs)
+	register struct stat *fs;
 {
-	(void)fprintf(stderr,
-	    "usage: %s [-fip] [-R [-H | -L | -P]] source target\n", __progname);
-	(void)fprintf(stderr,
-	    "       %s [-fip] [-R [-H | -L | -P]] source ... directory\n",
-	    __progname);
+
+	if (lchown(to.p_path, fs->st_uid, fs->st_gid)) {
+		if (errno != EPERM) {
+			warn("lchown: %s", to.p_path);
+			return (1);
+		}
+	}
+	return (0);
+}
+
+
+void
+usage()
+{
+	(void)fprintf(stderr, "%s\n%s\n",
+	    "usage: cp [-R [-H | -L | -P]] [-fip] src target",
+	    "       cp [-R [-H | -L | -P]] [-fip] src1 ... srcN directory");
 	exit(1);
 }

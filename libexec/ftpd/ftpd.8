@@ -1,4 +1,4 @@
-.\"	$OpenBSD: ftpd.8,v 1.75 2015/10/25 23:10:53 millert Exp $
+.\"	$OpenBSD: ftpd.8,v 1.25 1999/09/30 08:28:52 downsj Exp $
 .\"	$NetBSD: ftpd.8,v 1.8 1996/01/14 20:55:23 thorpej Exp $
 .\"
 .\" Copyright (c) 1985, 1988, 1991, 1993
@@ -12,7 +12,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -30,104 +34,99 @@
 .\"
 .\"     @(#)ftpd.8	8.2 (Berkeley) 4/19/94
 .\"
-.Dd $Mdocdate: October 25 2015 $
+.Dd June 18, 1996
 .Dt FTPD 8
 .Os
 .Sh NAME
 .Nm ftpd
-.Nd Internet File Transfer Protocol server
+.Nd
+Internet File Transfer Protocol server
 .Sh SYNOPSIS
 .Nm ftpd
-.Op Fl 46ADdlMnPSUW
-.Op Fl m Ar minuid
+.Op Fl AdDhlMPSU
 .Op Fl T Ar maxtimeout
 .Op Fl t Ar timeout
 .Op Fl u Ar mask
 .Sh DESCRIPTION
-.Nm
-is the Internet File Transfer Protocol server process.
-The server uses the TCP protocol
+.Nm Ftpd
+is the
+Internet File Transfer Protocol
+server process.  The server uses the
+.Tn TCP
+protocol
 and listens at the port specified in the
 .Dq ftp
 service specification; see
 .Xr services 5 .
 .Pp
-The options are as follows:
+Available options:
 .Bl -tag -width Ds
-.It Fl 4
-When
-.Fl D
-is specified, forces
-.Nm
-to use IPv4 addresses only.
-.It Fl 6
-When
-.Fl D
-is specified, forces
-.Nm
-to use IPv6 addresses only.
 .It Fl A
-Permit only anonymous FTP connections
-(unless the
-.Fl n
-option is specified),
-accounts listed in
-.Pa /etc/ftpchroot
-or users in a login class with the
-.Dq ftp-chroot
-variable set (see below).
+Permit only anonymous ftp connections or accounts listed in
+.Pa /etc/ftpchroot.
 Other connection attempts are refused.
+.It Fl d
+Debugging information is written to the syslog using LOG_FTP.
 .It Fl D
 With this option set,
-.Nm
+.Nm ftpd
 will detach and become a daemon, accepting connections on the FTP port and
-forking child processes to handle them.
-This has lower overhead than starting
-.Nm
+forking child processes to handle them. This has lower overhead than
+starting
+.Nm ftpd
 from
 .Xr inetd 8
 and is thus useful on busy servers to reduce load.
-.It Fl d
-Debugging information is written to the syslog using
-.Dv LOG_FTP .
+.It Fl h
+The server will use data ports in the high port range for passive connections.
+This range is defined by the
+.Ev IPPORT_HIFIRSTAUTO
+and
+.Ev IPPORT_HILASTAUTO
+defines in <netinet/in.h>.  In
+.Ox
+they are set to 49152 and 65535 respectively.
 .It Fl l
 Each successful and failed
-FTP session is logged using syslog with a facility of
-.Dv LOG_FTP .
+.Xr ftp 1
+session is logged using syslog with a facility of LOG_FTP.
 If this option is specified twice, the retrieve (get), store (put), append,
 delete, make directory, remove directory and rename operations and
 their filename arguments are also logged.
 .It Fl M
-Enables multihomed mode.
-Instead of simply using
+Enables multihomed mode.  Instead of simply using
 .Pa ~ftp
 for anonymous transfers, a directory matching the fully qualified name of
 the IP number the client connected to, and located inside
-.Pa ~ftp ,
+.Pa ~ftp
 is used instead.
-.It Fl m Ar minuid
-Disallow login to user accounts with a UID below
-.Ar minuid .
-The default is 1000, to prevent access to administrative and daemon accounts.
-Anonymous access is allowed even if the UID of the FTP user is smaller than
-.Ar minuid .
-.It Fl n
-Do not permit anonymous FTP logins.
-Normally they are permitted.
+.It Fl p
+Disable passive mode ftp connections.  This is useful if you are behind
+a firewall that refuses connections to arbitrary high numbered ports.
+Many ftp clients try passive mode first and do not always react gracefully
+to a server that refuses connections to the port it asked the client to
+connect to.
 .It Fl P
 Permit illegal port numbers or addresses for PORT command initiated connects.
 By default
-.Nm
+.Xr ftpd 8
 violates the RFC and thus constrains the PORT command to non-reserved ports
 and requires it use the same source address as the connection came from.
 This prevents the "FTP bounce attack" against services on both the local
 machine and other local machines.
 .It Fl S
 With this option set,
-.Nm
+.Nm ftpd
 logs all anonymous downloads to the file
 .Pa /var/log/ftpd
 when this file exists.
+.It Fl U
+Each concurrent
+.Xr ftp 1
+session is logged to the file
+.Pa /var/run/utmp ,
+making them visible to commands such as
+.Xr who 1 .
 .It Fl T Ar maxtimeout
 A client may also request a different timeout period;
 the maximum period allowed may be set to
@@ -140,43 +139,17 @@ The default limit is 2 hours.
 The inactivity timeout period is set to
 .Ar timeout
 seconds (the default is 15 minutes).
-.It Fl U
-Each concurrent
-FTP session is logged to the file
-.Pa /var/run/utmp ,
-making them visible to commands such as
-.Xr who 1 .
-.Fl U
-and
-.Fl W
-are mutually exclusive.
 .It Fl u Ar mask
-Force the umask to
-.Ar mask ,
-instead of the default specified in
-.Pa /etc/login.conf
-(usually 022).
-Also disallows chmod.
-.It Fl W
-Do not save login records to
-.Pa /var/log/wtmp .
-.Fl W
-and
-.Fl U
-are mutually exclusive.
+Change the default umask from 027 to
+.Ar mask .
 .El
 .Pp
 The file
 .Pa /etc/nologin
-can be used to disable FTP access.
+can be used to disable ftp access.
 If the file exists,
 .Nm
 displays it and exits.
-Note: this method will disable
-.Em all
-non-root logins; see
-.Xr login 1
-for further details.
 If the file
 .Pa /etc/ftpwelcome
 exists,
@@ -184,36 +157,31 @@ exists,
 prints it before issuing the
 .Dq ready
 message.
-If the welcome file exists
-.Pa ( /etc/motd
-by default),
-.Nm
-prints it after a successful login.
 If the file
+.Pa /etc/motd
+exists,
+.Nm
+prints it after a successful login.  If the file
 .Pa .message
 exists in a directory,
 .Nm
 prints it when that directory is entered.
 .Pp
-The FTP server currently supports the following FTP requests.
+The ftp server currently supports the following ftp requests.
 The case of the requests is ignored.
 .Bl -column "Request" -offset indent
-.It Sy Request Ta Sy Description
+.It Request Ta "Description"
 .It ABOR Ta "abort previous command"
-.It ACCT Ta "specify account (not implemented)"
+.It ACCT Ta "specify account (ignored)"
 .It ALLO Ta "allocate storage (vacuously)"
 .It APPE Ta "append to a file"
 .It CDUP Ta "change to parent of current working directory"
 .It CWD Ta "change working directory"
 .It DELE Ta "delete a file"
-.It EPRT Ta "specify data connection port"
-.It EPSV Ta "prepare for server-to-server transfer"
 .It HELP Ta "give help information"
-.It LIST Ta "give list of files in a directory" Pq Li "ls -lgA"
-.It LPRT Ta "specify data connection port"
-.It LPSV Ta "prepare for server-to-server transfer"
-.It MDTM Ta "show last modification time of file"
+.It LIST Ta "give list files in a directory" Pq Dq Li "ls -lgA"
 .It MKD Ta "make a directory"
+.It MDTM Ta "show last modification time of file"
 .It MODE Ta "specify data transfer" Em mode
 .It NLST Ta "give name list of files in directory"
 .It NOOP Ta "do nothing"
@@ -222,7 +190,6 @@ The case of the requests is ignored.
 .It PORT Ta "specify data connection port"
 .It PWD Ta "print the current working directory"
 .It QUIT Ta "terminate session"
-.It REIN Ta "reinitialize (not implemented)"
 .It REST Ta "restart incomplete transfer"
 .It RETR Ta "retrieve a file"
 .It RMD Ta "remove a directory"
@@ -230,36 +197,41 @@ The case of the requests is ignored.
 .It RNTO Ta "specify rename-to file name"
 .It SITE Ta "non-standard commands (see next section)"
 .It SIZE Ta "return size of file"
-.It SMNT Ta "structure mount (not implemented)"
 .It STAT Ta "return status of server"
 .It STOR Ta "store a file"
 .It STOU Ta "store a file with a unique name"
 .It STRU Ta "specify data transfer" Em structure
 .It SYST Ta "show operating system type of server system"
 .It TYPE Ta "specify data transfer" Em type
-.It USER Ta "specify user name; not valid after login"
-.It XCUP Ta "change to parent of current working directory (deprec.)"
+.It USER Ta "specify user name"
+.It XCUP Ta "change to parent of current working directory (deprecated)"
 .It XCWD Ta "change working directory (deprecated)"
 .It XMKD Ta "make a directory (deprecated)"
 .It XPWD Ta "print the current working directory (deprecated)"
 .It XRMD Ta "remove a directory (deprecated)"
 .El
 .Pp
-The following non-standard or UNIX specific commands
-are supported by the SITE request:
+The following non-standard or
+.Tn UNIX
+specific commands are supported
+by the
+SITE request.
+.Pp
 .Bl -column Request -offset indent
 .It Sy Request Ta Sy Description
-.It CHMOD Ta "change mode of a file, e.g., SITE CHMOD 755 filename"
-.It HELP Ta "give help information"
-.It IDLE Ta "set idle-timer, e.g., SITE IDLE 60"
-.It UMASK Ta "change umask, e.g., SITE UMASK 002"
+.It UMASK Ta change umask, e.g. ``SITE UMASK 002''
+.It IDLE Ta set idle-timer, e.g. ``SITE IDLE 60''
+.It CHMOD Ta change mode of a file, e.g. ``SITE CHMOD 755 filename''
+.It HELP Ta give help information.
 .El
 .Pp
-The remaining FTP requests specified in Internet RFC 959 are recognized,
-but not implemented.
-MDTM and SIZE are specified in RFC 3659.
+The remaining ftp requests specified in Internet RFC 959
+are
+recognized, but not implemented.
+MDTM and SIZE are not specified in RFC 959, but will appear in the
+next updated FTP RFC.
 .Pp
-The FTP server will abort an active file transfer only when the
+The ftp server will abort an active file transfer only when the
 ABOR
 command is preceded by a Telnet "Interrupt Process" (IP)
 signal and a Telnet "Synch" signal in the command Telnet stream,
@@ -269,7 +241,7 @@ STAT
 command is received during a data transfer, preceded by a Telnet IP
 and Synch, transfer status will be returned.
 .Pp
-.Nm
+.Nm Ftpd
 interprets file names according to the
 .Dq globbing
 conventions used by
@@ -277,63 +249,50 @@ conventions used by
 This allows users to utilize the metacharacters
 .Dq Li \&*?[]{}~ .
 .Pp
-.Nm
-authenticates users by using the service and type of
-.Ar ftp ,
-as defined in the
-.Pa /etc/login.conf
-file (see
-.Xr login.conf 5 ) .
-An authentication style
-may be specified by appending with a colon
-.Pq Sq :\&
-following the authentication style, i.e.\&
-.Dq joe:skey .
-The allowed authentication styles for
-.Nm
-may be explicitly specified by the
-.Dq auth-ftp
-entry in
-.Pa /etc/login.conf .
+.Nm Ftpd
+authenticates users according to five rules.
 .Pp
-.Nm
-authenticates users according to the following rules.
 .Bl -enum -offset indent
 .It
-The login name must be in the password database and not have a null password.
+The login name must be in the password data base,
+.Pa /etc/pwd.db ,
+and not have a null password.
 In this case a password must be provided by the client before any
 file operations may be performed.
+If the user has an S/Key key, the response from a successful USER
+command will include an S/Key challenge. The client may choose to respond
+with a PASS command giving either a standard password or an S/Key
+one-time password. The server will automatically determine which type of
+password it has been given and attempt to authenticate accordingly. See
+.Xr skey 1
+for more information on S/Key authentication. S/Key is a Trademark of
+Bellcore.
 .It
 The login name must not appear in the file
 .Pa /etc/ftpusers .
 .It
-The user account must have a UID not less than
-.Ar minuid .
-.It
-The user must have a standard shell as described by
-.Xr shells 5 .
+The user must have a standard shell returned by
+.Xr getusershell 3 .
 .It
 If the user name appears in the file
-.Pa /etc/ftpchroot ,
-which is a text file containing one user name per line,
+.Pa /etc/ftpchroot
 the session's root will be changed to the user's login directory by
 .Xr chroot 2
 as for an
 .Dq anonymous
 or
 .Dq ftp
-account (see next item).
-However, the user must still supply a password.
+account (see next item).  However, the user must still supply a password.
 This feature is intended as a compromise between a fully anonymous account
-and a fully privileged account.
-The account should also be set up as for an anonymous account.
+and a fully privileged account.  The account should also be set up as for an
+anonymous account.
 .It
 If the user name is
 .Dq anonymous
 or
 .Dq ftp ,
 an
-anonymous FTP account must be present in the password
+anonymous ftp account must be present in the password
 file (user
 .Dq ftp ) .
 In this case the user is allowed
@@ -341,35 +300,8 @@ to log in by specifying any password (by convention an email address for
 the user should be used as the password).
 .El
 .Pp
-Once a user is authenticated the user must be approved by any approval
-script defined (see
-.Xr login.conf 5 ) .
-If a valid approval script (by either :approve=...: or :approve-ftp=...:
-for the user's class) is defined then it is run and must exit with a 0
-(success) status.
-When
-.Nm
-is running under the
-.Fl D
-flag (and debugging is not turned on) then the approval script will be
-called with at least the following variables specified via the
-.Fl v
-option (see
-.Xr login.conf 5 )
-to the approve script:
-.Bl -column "Variable" -offset indent
-.It Sy Variable Ta Sy Description
-.It FTPD_HOST Ta "The server's (virtual) hostname"
-.El
-.Pp
-For example (the line is broken to fit the page):
-.Bd -literal -offset indent
-/usr/libexec/auth/approve_ftpd -v FTPD_HOST=ftp.mycompany.com \e
-	username class service
-.Ed
-.Pp
-When the user logs in to the anonymous FTP account,
-.Nm
+In the last case,
+.Nm ftpd
 takes special measures to restrict the client's access privileges.
 The server performs a
 .Xr chroot 2
@@ -390,9 +322,9 @@ Make this directory owned by
 .Dq root
 and unwritable by anyone (mode 511).
 This directory is optional unless you have commands you wish
-the anonymous FTP user to be able to run (the
+the anonymous ftp user to be able to run (the
 .Xr ls 1
-command exists as a built-in).
+command exists as a builtin).
 Any programs in this directory should be mode 111 (executable only).
 .It Pa ~ftp/etc
 Make this directory owned by
@@ -403,10 +335,10 @@ The files pwd.db (see
 and
 .Xr group 5
 must be present for the
-.Xr ls 1
+.Xr ls
 command to be able to produce owner names rather than numbers.
 The password field in
-.Pa pwd.db
+.Xr pwd.db
 is not used, and should not contain real passwords.
 The file
 .Pa motd ,
@@ -415,7 +347,7 @@ These files should be mode 444.
 .It Pa ~ftp/pub
 Make this directory mode 555 and owned by
 .Dq root .
-This is traditionally where publicly accessible files are
+This is traditionally where publically accessible files are
 stored for download.
 .El
 .Pp
@@ -433,143 +365,80 @@ The elapsed time, in seconds.
 .It remote host
 The remote host (or IP number).
 .It bytes
-The number of bytes transferred.
+The number of bytes transfered.
 .It path
-The full path (relative to the FTP chroot space) of the file transferred.
+The full path (relative the ftp chroot space) of the file transfered.
 .It type
 The type of transfer; either
-.Sq a
+.Dq a
 for ASCII or
-.Sq b
+.Dq b
 for binary.
 .It unused
 Unused field containing a
-.Sq * ,
+.Dq * ,
 for compatibility.
 .It unused
-Unused field containing an
-.Sq o ,
+Unused field containing a
+.Dq o ,
 for compatibility.
 .It user type
-The type of user; either
-.Sq a
-for anonymous or
-.Sq r
+The type of user, either
+.Dq a
+for anonymous, or
+.Dq r
 for a real user (should always be anonymous).
 .It name
 Either a system login name or the value given for
 .Dq email address
 if an anonymous user.
-.It service name
-The network service name (always ftp).
 .It unused
-Unused field containing a
-.Sq 0 ,
+Unused field, containing a
+.Dq 0 ,
 for compatibility.
 .It real name
 The system login name if the connection is not anonymous, or a
-.Sq *
+.Dq *
 if it is.
-.\" .It virtual host
-.\" The virtual host that the connection was made to.
+.It virtual host
+The virtual host that the connection was made to.
 .El
 .Pp
 Although fields exist for logging information on real users, this file is
-only used for anonymous downloads.
-Unused fields exist only for compatibility with other
-.Nm
+only used for anonymous downloads.  Unused fields exist only for compatility
+with other
+.Nm ftpd
 implementations.
-.Sh LOGIN.CONF VARIABLES
-The
-.Nm
-daemon uses the following FTP-specific parameters:
-.Bl -tag -width ftp-chroot
-.It Pa auth-ftp
-The list of authentication types available to this class.
-See
-.Xr login.conf 5 .
-.It Pa ftp-chroot
-A boolean value.
-If set, users in this class will be automatically chrooted to
-the user's login directory.
-.It Pa ftp-dir
-A path to a directory.
-This value overrides the login directory for users in this class.
-A leading tilde
-.Pq Ql ~
-in
-.Pa ftp-dir
-will be expanded to the user's home directory based on the
-contents of the password database.
-.It Pa welcome
-The path of the file containing the welcome message.
-If this variable is not set,
-.Pa /etc/motd
-is used.
-.El
-.Sh PORT ALLOCATION
-For passive mode data connections,
-.Nm
-will listen to a random high TCP port.
-The interval of ports used are configurable using
-.Xr sysctl 8
-variables
-.Va net.inet.ip.porthifirst
-and
-.Va net.inet.ip.porthilast .
 .Sh FILES
 .Bl -tag -width /etc/ftpwelcome -compact
-.It Pa /etc/ftpchroot
-list of normal users who should be chrooted
 .It Pa /etc/ftpusers
-list of unwelcome/restricted users
+List of unwelcome/restricted users.
+.It Pa /etc/ftpchroot
+List of normal users who should be chroot'd.
 .It Pa /etc/ftpwelcome
-welcome notice
-.It Pa /etc/login.conf
-authentication styles
+Welcome notice.
 .It Pa /etc/motd
-printed after a successful login
+Welcome notice after login.
 .It Pa /etc/nologin
-displayed and access refused
-.It Pa /var/log/ftpd
-log file for anonymous downloads
-.It Pa /var/log/wtmp
-login account records
+Displayed and access refused.
 .It Pa /var/run/utmp
-list of users on the system
+List of users on the system.
+.It Pa /var/log/ftpd
+Log file for anonymous downloads.
 .El
 .Sh SEE ALSO
 .Xr ftp 1 ,
-.Xr login 1 ,
 .Xr skey 1 ,
 .Xr who 1 ,
-.Xr chroot 2 ,
-.Xr ctime 3 ,
-.Xr group 5 ,
-.Xr login.conf 5 ,
-.Xr motd 5 ,
-.Xr services 5 ,
-.Xr shells 5 ,
-.Xr ftp-proxy 8 ,
-.Xr inetd 8 ,
-.Xr pwd_mkdb 8 ,
-.Xr sysctl 8 ,
+.Xr getusershell 3 ,
 .Xr syslogd 8
-.Sh STANDARDS
-.Rs
-.%A J. Postel
-.%A J. Reynolds
-.%D October 1985
-.%R RFC 959
-.%T FILE TRANSFER PROTOCOL (FTP)
-.Re
-.Pp
-.Rs
-.%A P. Hethmon
-.%D March 2007
-.%R RFC 3659
-.%T Extensions to FTP
-.Re
+.Sh BUGS
+The server must run as the super-user
+to create sockets with privileged port numbers.  It maintains
+an effective user ID of the logged in user, reverting to
+the super-user only when binding addresses to sockets.  The
+possible security holes have been extensively
+scrutinized, but are possibly incomplete.
 .Sh HISTORY
 The
 .Nm

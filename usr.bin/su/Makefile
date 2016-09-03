@@ -1,7 +1,21 @@
-#	$OpenBSD: Makefile,v 1.9 2015/04/15 02:10:25 deraadt Exp $
+#	$OpenBSD: Makefile,v 1.6 1997/04/19 21:26:30 millert Exp $
 
 PROG=	su
 BINOWN=	root
 BINMODE=4555
-COPTS=-Wall
+
+.include <bsd.own.mk>
+
+.if (${SKEY} == "yes")
+CFLAGS+=-DSKEY
+LDADD+= -lskey
+DPADD+= ${LIBSKEY}
+.endif
+
+.if (${KERBEROS} == "yes")
+CFLAGS+=-DKERBEROS
+LDADD+=	-lkrb -ldes
+DPADD+=	${LIBKRB} ${LIBDES}
+.endif
+
 .include <bsd.prog.mk>

@@ -1,4 +1,4 @@
-/*	$OpenBSD: libsa.h,v 1.45 2010/07/02 00:36:52 weingart Exp $	*/
+/*	$OpenBSD: libsa.h,v 1.29 1999/08/25 00:54:19 mickey Exp $	*/
 
 /*
  * Copyright (c) 1996-1999 Michael Shalayeff
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *      This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -29,55 +34,31 @@
 #include <lib/libsa/stand.h>
 #include <machine/biosvar.h>
 
-#define	EXEC_ELF
+#define	EXEC_AOUT
 
-#define	DEFAULT_KERNEL_ADDRESS	0
+#define	DEFAULT_KERNEL_ADDRESS	0x100000
 
-struct i386_boot_probes {
-	char *name;
-	void (**probes)(void);
-	int count;
-};
+void gateA20 __P((int));
 
-extern void (*sa_cleanup)(void);
+void smpprobe __P((void));
+void memprobe __P((void));
+void diskprobe __P((void));
+void apmprobe __P((void));
+void apmcheck __P((void));
+void pciprobe __P((void));
+void dump_biosmem __P((bios_memmap_t *));
+int mem_delete __P((long, long));
+int mem_add __P((long, long));
 
-void gateA20(int);
-void gateA20on(void);
-
-void cpuprobe(void);
-void smpprobe(void);
-void ps2probe(void);
-void pciprobe(void);
-void memprobe(void);
-void diskprobe(void);
-void cdprobe(void);
-void apmprobe(void);
-void apmfixmem(void);
-void dump_biosmem(bios_memmap_t *);
-int mem_add(long long, long long);
-int mem_delete(long long, long long);
-int mem_limit(long long);
-void mem_pass(void);
-
-void devboot(dev_t, char *);
-void machdep(void);
-
-void *getSYSCONFaddr(void);
-void *getEBDAaddr(void);
+void devboot __P((dev_t, char *));
+void machdep __P((void));
 
 extern const char bdevs[][4];
 extern const int nbdevs;
 extern u_int cnvmem, extmem; /* XXX global pass memprobe()->machdep_start() */
-extern int ps2model;
-
-extern struct i386_boot_probes probe_list[];
-extern int nibprobes;
-extern void (*devboot_p)(dev_t, char *);
 
 /* diskprobe.c */
 extern bios_diskinfo_t bios_diskinfo[];
 extern u_int32_t bios_cksumlen;
 
-#define MACHINE_CMD	cmd_machine /* we have i386-specific commands */
-
-#define CHECK_SKIP_CONF	check_skip_conf	/* we can skip boot.conf with Ctrl */
+#define MACHINE_CMD	cmd_machine /* we have i386 specific sommands */

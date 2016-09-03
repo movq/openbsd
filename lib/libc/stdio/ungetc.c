@@ -1,4 +1,3 @@
-/*	$OpenBSD: ungetc.c,v 1.14 2015/08/31 02:53:57 guenther Exp $ */
 /*-
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,71 +34,72 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: ungetc.c,v 1.2 1996/08/19 08:33:11 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "local.h"
 
-static int __submore(FILE *);
 /*
  * Expand the ungetc buffer `in place'.  That is, adjust fp->_p when
  * the buffer moves, so that it points the same distance from the end,
  * and move the bytes in the buffer around as necessary so that they
  * are all at the end (stack-style).
  */
-static int
-__submore(FILE *fp)
+static
+__submore(fp)
+	register FILE *fp;
 {
-	int i;
-	unsigned char *p;
+	register int i;
+	register unsigned char *p;
 
-	if (_UB(fp)._base == fp->_ubuf) {
+	if (fp->_ub._base == fp->_ubuf) {
 		/*
 		 * Get a new buffer (rather than expanding the old one).
 		 */
 		if ((p = malloc((size_t)BUFSIZ)) == NULL)
 			return (EOF);
-		_UB(fp)._base = p;
-		_UB(fp)._size = BUFSIZ;
+		fp->_ub._base = p;
+		fp->_ub._size = BUFSIZ;
 		p += BUFSIZ - sizeof(fp->_ubuf);
 		for (i = sizeof(fp->_ubuf); --i >= 0;)
 			p[i] = fp->_ubuf[i];
 		fp->_p = p;
 		return (0);
 	}
-	i = _UB(fp)._size;
-	p = reallocarray(_UB(fp)._base, i, 2);
+	i = fp->_ub._size;
+	p = realloc(fp->_ub._base, i << 1);
 	if (p == NULL)
 		return (EOF);
 	/* no overlap (hence can use memcpy) because we doubled the size */
 	(void)memcpy((void *)(p + i), (void *)p, (size_t)i);
 	fp->_p = p + i;
-	_UB(fp)._base = p;
-	_UB(fp)._size = i * 2;
+	fp->_ub._base = p;
+	fp->_ub._size = i << 1;
 	return (0);
 }
 
-int
-ungetc(int c, FILE *fp)
+ungetc(c, fp)
+	int c;
+	register FILE *fp;
 {
 	if (c == EOF)
 		return (EOF);
 	if (!__sdidinit)
 		__sinit();
-	FLOCKFILE(fp);
-	_SET_ORIENTATION(fp, -1);
 	if ((fp->_flags & __SRD) == 0) {
 		/*
 		 * Not already reading: no good unless reading-and-writing.
 		 * Otherwise, flush any current write stuff.
 		 */
-		if ((fp->_flags & __SRW) == 0) {
-error:			FUNLOCKFILE(fp);
+		if ((fp->_flags & __SRW) == 0)
 			return (EOF);
-		}
 		if (fp->_flags & __SWR) {
 			if (__sflush(fp))
-				goto error;
+				return (EOF);
 			fp->_flags &= ~__SWR;
 			fp->_w = 0;
 			fp->_lbfsize = 0;
@@ -109,11 +113,10 @@ error:			FUNLOCKFILE(fp);
 	 * This may require expanding the current ungetc buffer.
 	 */
 	if (HASUB(fp)) {
-		if (fp->_r >= _UB(fp)._size && __submore(fp))
-			goto error;
+		if (fp->_r >= fp->_ub._size && __submore(fp))
+			return (EOF);
 		*--fp->_p = c;
-inc_ret:	fp->_r++;
-		FUNLOCKFILE(fp);
+		fp->_r++;
 		return (c);
 	}
 	fp->_flags &= ~__SEOF;
@@ -126,7 +129,8 @@ inc_ret:	fp->_r++;
 	if (fp->_bf._base != NULL && fp->_p > fp->_bf._base &&
 	    fp->_p[-1] == c) {
 		fp->_p--;
-		goto inc_ret;
+		fp->_r++;
+		return (c);
 	}
 
 	/*
@@ -135,12 +139,10 @@ inc_ret:	fp->_r++;
 	 */
 	fp->_ur = fp->_r;
 	fp->_up = fp->_p;
-	_UB(fp)._base = fp->_ubuf;
-	_UB(fp)._size = sizeof(fp->_ubuf);
+	fp->_ub._base = fp->_ubuf;
+	fp->_ub._size = sizeof(fp->_ubuf);
 	fp->_ubuf[sizeof(fp->_ubuf) - 1] = c;
 	fp->_p = &fp->_ubuf[sizeof(fp->_ubuf) - 1];
 	fp->_r = 1;
-	FUNLOCKFILE(fp);
 	return (c);
 }
-DEF_STRONG(ungetc);

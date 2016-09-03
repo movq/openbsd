@@ -1,4 +1,4 @@
-/*	$OpenBSD: complete.c,v 1.29 2015/10/18 03:04:11 mmcc Exp $	*/
+/*	$OpenBSD: complete.c,v 1.9 1997/09/04 04:37:14 millert Exp $	*/
 /*	$NetBSD: complete.c,v 1.10 1997/08/18 10:20:18 lukem Exp $	*/
 
 /*-
@@ -16,6 +16,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -31,6 +38,9 @@
  */
 
 #ifndef SMALL
+#ifndef lint
+static char rcsid[] = "$OpenBSD: complete.c,v 1.9 1997/09/04 04:37:14 millert Exp $";
+#endif /* not lint */
 
 /*
  * FTP user program - command and file completion routines
@@ -45,15 +55,15 @@
 
 #include "ftp_var.h"
 
-static int	     comparstr(const void *, const void *);
-static unsigned char complete_ambiguous(char *, int, StringList *);
-static unsigned char complete_command(char *, int);
-static unsigned char complete_local(char *, int);
-static unsigned char complete_remote(char *, int);
-static void          ftpvis(char *, size_t, const char *, size_t);
+static int	     comparstr		__P((const void *, const void *));
+static unsigned char complete_ambiguous	__P((char *, int, StringList *));
+static unsigned char complete_command	__P((char *, int));
+static unsigned char complete_local	__P((char *, int));
+static unsigned char complete_remote	__P((char *, int));
 
 static int
-comparstr(const void *a, const void *b)
+comparstr(a, b)
+	const void *a, *b;
 {
 	return (strcmp(*(char **)a, *(char **)b));
 }
@@ -69,9 +79,12 @@ comparstr(const void *a, const void *b)
  *	words	stringlist containing possible matches
  */
 static unsigned char
-complete_ambiguous(char *word, int list, StringList *words)
+complete_ambiguous(word, list, words)
+	char *word;
+	int list;
+	StringList *words;
 {
-	char insertstr[PATH_MAX * 2];
+	char insertstr[MAXPATHLEN];
 	char *lastmatch;
 	int i, j;
 	size_t matchlen, wordlen;
@@ -81,15 +94,15 @@ complete_ambiguous(char *word, int list, StringList *words)
 		return (CC_ERROR);	/* no choices available */
 
 	if (words->sl_cur == 1) {	/* only once choice available */
-		char *p = words->sl_str[0] + wordlen;
-		ftpvis(insertstr, sizeof(insertstr), p, strlen(p));
-		if (el_insertstr(el, insertstr) == -1)
+		(void)strcpy(insertstr, words->sl_str[0]);
+		if (el_insertstr(el, insertstr + wordlen) == -1)
 			return (CC_ERROR);
 		else
 			return (CC_REFRESH);
 	}
 
 	if (!list) {
+		matchlen = 0;
 		lastmatch = words->sl_str[0];
 		matchlen = strlen(lastmatch);
 		for (i = 1 ; i < words->sl_cur ; i++) {
@@ -100,9 +113,9 @@ complete_ambiguous(char *word, int list, StringList *words)
 				matchlen = j;
 		}
 		if (matchlen > wordlen) {
-			ftpvis(insertstr, sizeof(insertstr),
-			    lastmatch + wordlen, matchlen - wordlen);
-			if (el_insertstr(el, insertstr) == -1)
+			(void)strncpy(insertstr, lastmatch, matchlen);
+			insertstr[matchlen] = '\0';
+			if (el_insertstr(el, insertstr + wordlen) == -1)
 				return (CC_ERROR);
 			else	
 					/*
@@ -122,7 +135,9 @@ complete_ambiguous(char *word, int list, StringList *words)
  * Complete a command
  */
 static unsigned char
-complete_command(char *word, int list)
+complete_command(word, list)
+	char *word;
+	int list;
 {
 	struct cmd *c;
 	StringList *words;
@@ -148,10 +163,12 @@ complete_command(char *word, int list)
  * Complete a local file
  */
 static unsigned char
-complete_local(char *word, int list)
+complete_local(word, list)
+	char *word;
+	int list;
 {
 	StringList *words;
-	char dir[PATH_MAX];
+	char dir[MAXPATHLEN];
 	char *file;
 	DIR *dd;
 	struct dirent *dp;
@@ -166,7 +183,8 @@ complete_local(char *word, int list)
 			dir[0] = '/';
 			dir[1] = '\0';
 		} else {
-			(void)strlcpy(dir, word, (size_t)(file - word) + 1);
+			(void)strncpy(dir, word, (size_t)(file - word));
+			dir[file - word] = '\0';
 		}
 		file++;
 	}
@@ -201,12 +219,14 @@ complete_local(char *word, int list)
  * Complete a remote file
  */
 static unsigned char
-complete_remote(char *word, int list)
+complete_remote(word, list)
+	char *word;
+	int list;
 {
 	static StringList *dirlist;
-	static char	 lastdir[PATH_MAX];
+	static char	 lastdir[MAXPATHLEN];
 	StringList	*words;
-	char		 dir[PATH_MAX];
+	char		 dir[MAXPATHLEN];
 	char		*file, *cp;
 	int		 i;
 	unsigned char	 rv;
@@ -221,20 +241,20 @@ complete_remote(char *word, int list)
 		cp = file;
 		while (*cp == '/' && cp > word)
 			cp--;
-		(void)strlcpy(dir, word, (size_t)(cp - word + 2));
+		(void)strncpy(dir, word, (size_t)(cp - word + 1));
+		dir[cp - word + 1] = '\0';
 		file++;
 	}
 
 	if (dirchange || strcmp(dir, lastdir) != 0) {	/* dir not cached */
 		char *emesg;
 
-		sl_free(dirlist, 1);
+		if (dirlist != NULL)
+			sl_free(dirlist, 1);
 		dirlist = sl_init();
 
 		mflag = 1;
 		emesg = NULL;
-		if (debug)
-			(void)putc('\n', ttyout);
 		while ((cp = remglob(dummyargv, 0, &emesg)) != NULL) {
 			char *tcp;
 
@@ -258,7 +278,7 @@ complete_remote(char *word, int list)
 			fprintf(ttyout, "\n%s\n", emesg);
 			return (CC_REDISPLAY);
 		}
-		(void)strlcpy(lastdir, dir, sizeof lastdir);
+		(void)strcpy(lastdir, dir);
 		dirchange = 0;
 	}
 
@@ -279,21 +299,23 @@ complete_remote(char *word, int list)
  * Generic complete routine
  */
 unsigned char
-complete(EditLine *el, int ch)
+complete(el, ch)
+	EditLine *el;
+	int ch;
 {
 	static char word[FTPBUFLEN];
 	static int lastc_argc, lastc_argo;
+
 	struct cmd *c;
 	const LineInfo *lf;
 	int celems, dolist;
 	size_t len;
 
-	ch = ch;		/* not used */
 	lf = el_line(el);
 	len = lf->lastchar - lf->buffer;
 	if (len >= sizeof(line))
 		return (CC_ERROR);
-	(void)memcpy(line, lf->buffer, len);
+	(void)strncpy(line, lf->buffer, len);
 	line[len] = '\0';
 	cursor_pos = line + (lf->cursor - lf->buffer);
 	lastc_argc = cursor_argc;	/* remember last cursor pos */
@@ -308,8 +330,8 @@ complete(EditLine *el, int ch)
 	if (lastc_argc == cursor_argc && lastc_argo == cursor_argo
 	    && strncmp(word, margv[cursor_argc], cursor_argo) == 0)
 		dolist = 1;
-	else if (cursor_argo)
-		memcpy(word, margv[cursor_argc], cursor_argo);
+	else
+	    (void)strncpy(word, margv[cursor_argc], cursor_argo);
 	word[cursor_argo] = '\0';
 
 	if (cursor_argc == 0)
@@ -322,61 +344,32 @@ complete(EditLine *el, int ch)
 
 		/* check for 'continuation' completes (which are uppercase) */
 	if ((cursor_argc > celems) && (celems > 0)
-	    && isupper((unsigned char)c->c_complete[celems - 1]))
+	    && isupper(c->c_complete[celems-1]))
 		cursor_argc = celems;
 
 	if (cursor_argc > celems)
 		return (CC_ERROR);
 
 	switch (c->c_complete[cursor_argc - 1]) {
-	case 'l':			/* local complete */
-	case 'L':
-		return (complete_local(word, dolist));
-	case 'r':			/* remote complete */
-	case 'R':
-		if (connected != -1) {
-			fputs("\nMust be logged in to complete.\n", ttyout);
-			return (CC_REDISPLAY);
-		}
-		return (complete_remote(word, dolist));
-	case 'c':			/* command complete */
-	case 'C':
-		return (complete_command(word, dolist));
-	case 'n':			/* no complete */
-		return (CC_ERROR);
+		case 'l':			/* local complete */
+		case 'L':
+			return (complete_local(word, dolist));
+		case 'r':			/* remote complete */
+		case 'R':
+			if (connected != -1) {
+				fputs("\nMust be logged in to complete.\n", ttyout);
+				return (CC_REDISPLAY);
+			}
+			return (complete_remote(word, dolist));
+		case 'c':			/* command complete */
+		case 'C':
+			return (complete_command(word, dolist));
+		case 'n':			/* no complete */
+		default:
+			return (CC_ERROR);
 	}
 
 	return (CC_ERROR);
 }
 
-/*
- * Copy characters from src into dst, \ quoting characters that require it.
- */
-static void
-ftpvis(char *dst, size_t dstlen, const char *src, size_t srclen)
-{
-	size_t	di, si;
-
-	di = si = 0;
-	while (di + 1 < dstlen && si < srclen && src[si] != '\0') {
-		switch (src[si]) {
-		case '\\':
-		case ' ':
-		case '\t':
-		case '\r':
-		case '\n':
-		case '"':
-			/* Need room for two characters and NUL, avoiding
-			 * incomplete escape sequences at end of dst. */
-			if (di + 3 >= dstlen)
-				break;
-			dst[di++] = '\\';
-			/* FALLTHROUGH */
-		default:
-			dst[di++] = src[si++];
-		}
-	}
-	if (dstlen != 0)
-		dst[di] = '\0';
-}
 #endif /* !SMALL */

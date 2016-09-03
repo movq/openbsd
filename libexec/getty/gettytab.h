@@ -1,5 +1,3 @@
-/*	$OpenBSD: gettytab.h,v 1.8 2015/11/06 16:42:30 tedu Exp $*/
-
 /*
  * Copyright (c) 1983, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -12,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,6 +31,7 @@
  * SUCH DAMAGE.
  *
  *	from: @(#)gettytab.h	8.2 (Berkeley) 3/30/94
+ *	$Id: gettytab.h,v 1.3 1998/02/27 22:01:24 brian Exp $
  */
 
 /*
@@ -82,6 +85,7 @@ struct gettyflags {
 #define FL	gettystrs[21].value
 #define WE	gettystrs[22].value
 #define LN	gettystrs[23].value
+#define PP	gettystrs[24].value
 
 /*
  * Numeric definitions.
@@ -95,31 +99,37 @@ struct gettyflags {
 #define	FD	gettynums[6].value
 #define	BD	gettynums[7].value
 #define	TO	gettynums[8].value
-#define	PF	gettynums[9].value
-#define	C0	gettynums[10].value
-#define	C0set	gettynums[10].set
-#define	C1	gettynums[11].value
-#define	C1set	gettynums[11].set
-#define	C2	gettynums[12].value
-#define	C2set	gettynums[12].set
-#define	I0	gettynums[13].value
-#define	I0set	gettynums[13].set
-#define	I1	gettynums[14].value
-#define	I1set	gettynums[14].set
-#define	I2	gettynums[15].value
-#define	I2set	gettynums[15].set
-#define	L0	gettynums[16].value
-#define	L0set	gettynums[16].set
-#define	L1	gettynums[17].value
-#define	L1set	gettynums[17].set
-#define	L2	gettynums[18].value
-#define	L2set	gettynums[18].set
-#define	O0	gettynums[19].value
-#define	O0set	gettynums[19].set
-#define	O1	gettynums[20].value
-#define	O1set	gettynums[20].set
-#define	O2	gettynums[21].value
-#define	O2set	gettynums[21].set
+#define	F0	gettynums[9].value
+#define	F0set	gettynums[9].set
+#define	F1	gettynums[10].value
+#define	F1set	gettynums[10].set
+#define	F2	gettynums[11].value
+#define	F2set	gettynums[11].set
+#define	PF	gettynums[12].value
+#define	C0	gettynums[13].value
+#define	C0set	gettynums[13].set
+#define	C1	gettynums[14].value
+#define	C1set	gettynums[14].set
+#define	C2	gettynums[15].value
+#define	C2set	gettynums[15].set
+#define	I0	gettynums[16].value
+#define	I0set	gettynums[16].set
+#define	I1	gettynums[17].value
+#define	I1set	gettynums[17].set
+#define	I2	gettynums[18].value
+#define	I2set	gettynums[18].set
+#define	L0	gettynums[19].value
+#define	L0set	gettynums[19].set
+#define	L1	gettynums[20].value
+#define	L1set	gettynums[20].set
+#define	L2	gettynums[21].value
+#define	L2set	gettynums[21].set
+#define	O0	gettynums[22].value
+#define	O0set	gettynums[22].set
+#define	O1	gettynums[23].value
+#define	O1set	gettynums[23].set
+#define	O2	gettynums[24].value
+#define	O2set	gettynums[24].set
 
 /*
  * Boolean values.
@@ -151,10 +161,10 @@ struct gettyflags {
 #define	NP	gettyflags[21].value
 #define	MB	gettyflags[22].value
 
-int	getent(char *, char *);
-long	getnum(char *);
-int	getflag(char *);
-char	*getstr(char *, char **);
+int	getent __P((char *, char *));
+long	getnum __P((char *));
+int	getflag __P((char *));
+char	*getstr __P((char *, char **));
 
 extern	struct gettyflags gettyflags[];
 extern	struct gettynums gettynums[];

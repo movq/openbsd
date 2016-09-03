@@ -1,4 +1,3 @@
-/*	$OpenBSD: getcap.c,v 1.33 2015/09/14 16:09:13 tedu Exp $	*/
 /*-
  * Copyright (c) 1992, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,11 +34,15 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: getcap.c,v 1.16 1999/02/25 21:40:17 millert Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
 
 #include <ctype.h>
 #include <db.h>
-#include <errno.h>
+#include <errno.h>	
 #include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
@@ -57,26 +64,9 @@ static size_t	 topreclen;	/* toprec length */
 static char	*toprec;	/* Additional record specified by cgetset() */
 static int	 gottoprec;	/* Flag indicating retrieval of toprecord */
 
-static int	cdbget(DB *, char **, const char *);
-static int 	getent(char **, u_int *, char **, FILE *, const char *, int, char *);
-static int	nfcmp(const char *, char *);
-
-static int	usedb = 1;
-
-/*
- * Cgetusedb() allows the user to specify whether or not to use a .db
- * version of the database file (if it exists) in preference to the
- * text version.  By default, the getcap(3) routines will use a .db file.
- */
-int
-cgetusedb(int new_usedb)
-{
-	int old_usedb = usedb;
-
-	usedb = new_usedb;
-	return(old_usedb);
-}
-DEF_WEAK(cgetusedb);
+static int	cdbget __P((DB *, char **, const char *));
+static int 	getent __P((char **, u_int *, char **, int, const char *, int, char *));
+static int	nfcmp __P((const char *, char *));
 
 /*
  * Cgetset() allows the addition of a user specified buffer to be added
@@ -84,22 +74,25 @@ DEF_WEAK(cgetusedb);
  * virtual database. 0 is returned on success, -1 on failure.
  */
 int
-cgetset(const char *ent)
+cgetset(ent)
+	const char *ent;
 {
 	if (ent == NULL) {
-		free(toprec);
+		if (toprec)
+			free(toprec);
 		toprec = NULL;
 		topreclen = 0;
 		return (0);
 	}
 	topreclen = strlen(ent);
-	if ((toprec = malloc(topreclen + 1)) == NULL)
+	if ((toprec = malloc (topreclen + 1)) == NULL) {
+		errno = ENOMEM;
 		return (-1);
+	}
 	gottoprec = 0;
-	memcpy(toprec, ent, topreclen + 1);
+	(void)strcpy(toprec, ent);
 	return (0);
 }
-DEF_WEAK(cgetset);
 
 /*
  * Cgetcap searches the capability record buf for the capability cap with
@@ -114,10 +107,13 @@ DEF_WEAK(cgetset);
  * return NULL.
  */
 char *
-cgetcap(char *buf, const char *cap, int type)
+cgetcap(buf, cap, type)
+	char *buf;
+	const char *cap;
+	int type;
 {
-	char *bp;
-	const char *cp;
+	register char *bp;
+	register const char *cp;
 
 	bp = buf;
 	for (;;) {
@@ -154,7 +150,6 @@ cgetcap(char *buf, const char *cap, int type)
 	}
 	/* NOTREACHED */
 }
-DEF_WEAK(cgetcap);
 
 /*
  * Cgetent extracts the capability record name from the NULL terminated file
@@ -166,17 +161,18 @@ DEF_WEAK(cgetcap);
  * reference loop is detected.
  */
 int
-cgetent(char **buf, char **db_array, const char *name)
+cgetent(buf, db_array, name)
+	char **buf, **db_array;
+	const char *name;
 {
 	u_int dummy;
 
-	return (getent(buf, &dummy, db_array, NULL, name, 0, NULL));
+	return (getent(buf, &dummy, db_array, -1, name, 0, NULL));
 }
-DEF_WEAK(cgetent);
 
 /*
- * Getent implements the functions of cgetent.  If fp is non-NULL,
- * *db_array has already been opened and fp is the open file descriptor.  We
+ * Getent implements the functions of cgetent.  If fd is non-negative,
+ * *db_array has already been opened and fd is the open file descriptor.  We
  * do this to save time and avoid using up file descriptors for tc=
  * recursions.
  *
@@ -193,16 +189,19 @@ DEF_WEAK(cgetent);
  *	  MAX_RECURSION.
  */
 static int
-getent(char **cap, u_int *len, char **db_array, FILE *fp,
-	const char *name, int depth, char *nfield)
+getent(cap, len, db_array, fd, name, depth, nfield)
+	char **cap, **db_array, *nfield;
+	const char *name;
+	u_int *len;
+	int fd, depth;
 {
 	DB *capdbp;
-	char *r_end, *rp, **db_p;
+	register char *r_end, *rp, **db_p;
 	int myfd, eof, foundit, opened, retval, clen;
 	char *record, *cbuf;
 	int tc_not_resolved;
-	char pbuf[PATH_MAX];
-
+	char pbuf[_POSIX_PATH_MAX];
+	
 	/*
 	 * Return with ``loop detected'' error if we've recursed more than
 	 * MAX_RECURSION times.
@@ -217,9 +216,11 @@ getent(char **cap, u_int *len, char **db_array, FILE *fp,
 	 */
 	if (depth == 0 && toprec != NULL && cgetmatch(toprec, name) == 0) {
 		opened++;
-		if ((record = malloc(topreclen + 1 + BFRAG)) == NULL)
+		if ((record = malloc (topreclen + BFRAG)) == NULL) {
+			errno = ENOMEM;
 			return (-2);
-		memcpy(record, toprec, topreclen + 1);
+		}
+		(void)strcpy(record, toprec);
 		myfd = 0;
 		db_p = db_array;
 		rp = record + topreclen + 1;
@@ -229,8 +230,10 @@ getent(char **cap, u_int *len, char **db_array, FILE *fp,
 	/*
 	 * Allocate first chunk of memory.
 	 */
-	if ((record = malloc(BFRAG)) == NULL)
+	if ((record = malloc(BFRAG)) == NULL) {
+		errno = ENOMEM;
 		return (-2);
+	}
 	r_end = record + BFRAG;
 	foundit = 0;
 	/*
@@ -243,16 +246,16 @@ getent(char **cap, u_int *len, char **db_array, FILE *fp,
 		/*
 		 * Open database if not already open.
 		 */
-		if (fp != NULL) {
-			(void)fseek(fp, 0L, SEEK_SET);
+
+		if (fd >= 0) {
+			(void)lseek(fd, (off_t)0, SEEK_SET);
 			myfd = 0;
 			opened++;
 		} else {
 			char *dbrecord;
-
-			clen = snprintf(pbuf, sizeof(pbuf), "%s.db", *db_p);
-			if (clen != -1 && clen < sizeof(pbuf) && usedb &&
-			    (capdbp = dbopen(pbuf, O_RDONLY, 0, DB_HASH, 0))) {
+			(void)snprintf(pbuf, sizeof(pbuf), "%s.db", *db_p);
+			if ((capdbp = dbopen(pbuf, O_RDONLY, 0, DB_HASH, 0))
+			     != NULL) {
 				opened++;
 				retval = cdbget(capdbp, &dbrecord, name);
 				if (retval < 0) {
@@ -263,8 +266,7 @@ getent(char **cap, u_int *len, char **db_array, FILE *fp,
 				free(record);
 				/* save the data; close frees it */
 				clen = strlen(dbrecord);
-				if ((cbuf = malloc(clen + 1)) == NULL)
-					return (-2);
+				cbuf = malloc(clen + 1);
 				memcpy(cbuf, dbrecord, clen + 1);
 				if (capdbp->close(capdbp) < 0) {
 					free(cbuf);
@@ -275,8 +277,8 @@ getent(char **cap, u_int *len, char **db_array, FILE *fp,
 				*cap = cbuf;
 				return (retval);
 			} else {
-				fp = fopen(*db_p, "re");
-				if (fp == NULL) {
+				fd = open(*db_p, O_RDONLY, 0);
+				if (fd < 0) {
 					/* No error on unfound file. */
 					continue;
 				}
@@ -289,8 +291,8 @@ getent(char **cap, u_int *len, char **db_array, FILE *fp,
 		 */
 		{
 		    char buf[BUFSIZ];
-		    char *b_end, *bp;
-		    int c;
+		    register char *b_end, *bp;
+		    register int c;
 
 		    /*
 		     * Loop invariants:
@@ -311,24 +313,25 @@ getent(char **cap, u_int *len, char **db_array, FILE *fp,
 			rp = record;
 			for (;;) {
 				if (bp >= b_end) {
-					size_t n;
-
-					n = fread(buf, 1, sizeof(buf), fp);
-					if (n == 0) {
-						eof = feof(fp);
+					int n;
+		
+					n = read(fd, buf, sizeof(buf));
+					if (n <= 0) {
 						if (myfd)
-							(void)fclose(fp);
-						if (eof) {
-							fp = NULL;
+							(void)close(fd);
+						if (n < 0) {
+							free(record);
+							return (-2);
+						} else {
+							fd = -1;
+							eof = 1;
 							break;
 						}
-						free(record);
-						return (-2);
 					}
 					b_end = buf+n;
 					bp = buf;
 				}
-
+	
 				c = *bp++;
 				if (c == '\n') {
 					if (rp > record && *(rp-1) == '\\') {
@@ -345,7 +348,7 @@ getent(char **cap, u_int *len, char **db_array, FILE *fp,
 				 * some more.
 				 */
 				if (rp >= r_end) {
-					size_t pos;
+					u_int pos;
 					size_t newsize;
 					char *nrecord;
 
@@ -353,10 +356,11 @@ getent(char **cap, u_int *len, char **db_array, FILE *fp,
 					newsize = r_end - record + BFRAG;
 					nrecord = realloc(record, newsize);
 					if (nrecord == NULL) {
-						free(record);
-						if (myfd)
-							(void)fclose(fp);
+						if (record)
+							free(record);
 						errno = ENOMEM;
+						if (myfd)
+							(void)close(fd);
 						return (-2);
 					}
 					record = nrecord;
@@ -364,21 +368,21 @@ getent(char **cap, u_int *len, char **db_array, FILE *fp,
 					rp = record + pos;
 				}
 			}
-				/* loop invariant lets us do this */
+				/* loop invariant let's us do this */
 			*rp++ = '\0';
 
 			/*
-			 * If encountered EOF check next file.
+			 * If encountered eof check next file.
 			 */
 			if (eof)
 				break;
-
+				
 			/*
 			 * Toss blank lines and comments.
 			 */
 			if (*record == '\0' || *record == '#')
 				continue;
-
+	
 			/*
 			 * See if this is the record we want ...
 			 */
@@ -404,10 +408,11 @@ getent(char **cap, u_int *len, char **db_array, FILE *fp,
 	 * references in it ...
 	 */
 tc_exp:	{
-		char *s;
+		register char *newicap, *s;
+		register int newilen;
 		u_int ilen;
 		int diff, iret, tclen;
-		char *ibuf, *icap, *scan, *tc, *tcstart, *tcend;
+		char *icap, *scan, *tc, *tcstart, *tcend;
 
 		/*
 		 * Loop invariants:
@@ -428,7 +433,7 @@ tc_exp:	{
 			 * (if present) so we can use it to call ourselves.
 			 */
 			s = tc;
-			for (;;) {
+			for (;;)
 				if (*s == '\0')
 					break;
 				else
@@ -436,18 +441,19 @@ tc_exp:	{
 						*(s - 1) = '\0';
 						break;
 					}
-			}
 			tcstart = tc - 3;
 			tclen = s - tcstart;
 			tcend = s;
 
-			iret = getent(&icap, &ilen, db_p, fp, tc, depth+1,
+			iret = getent(&icap, &ilen, db_p, fd, tc, depth+1,
 				      NULL);
+			newicap = icap;		/* Put into a register. */
+			newilen = ilen;
 			if (iret != 0) {
 				/* an error */
 				if (iret < -1) {
 					if (myfd)
-						(void)fclose(fp);
+						(void)close(fd);
 					free(record);
 					return (iret);
 				}
@@ -455,36 +461,36 @@ tc_exp:	{
 					tc_not_resolved = 1;
 				/* couldn't resolve tc */
 				if (iret == -1) {
-					*(s - 1) = ':';
+					*(s - 1) = ':';			
 					scan = s - 1;
 					tc_not_resolved = 1;
 					continue;
-
+					
 				}
 			}
 			/* not interested in name field of tc'ed record */
-			s = ibuf = icap;
+			s = newicap;
 			for (;;)
 				if (*s == '\0')
 					break;
 				else
 					if (*s++ == ':')
 						break;
-			ilen -= s - icap;
-			icap = s;
+			newilen -= s - newicap;
+			newicap = s;
 
 			/* make sure interpolated record is `:'-terminated */
-			s += ilen;
+			s += newilen;
 			if (*(s-1) != ':') {
 				*s = ':';	/* overwrite NUL with : */
-				ilen++;
+				newilen++;
 			}
 
 			/*
 			 * Make sure there's enough room to insert the
 			 * new record.
 			 */
-			diff = ilen - tclen;
+			diff = newilen - tclen;
 			if (diff >= r_end - rp) {
 				u_int pos, tcpos, tcposend;
 				size_t newsize;
@@ -496,11 +502,12 @@ tc_exp:	{
 				tcposend = tcend - record;
 				nrecord = realloc(record, newsize);
 				if (nrecord == NULL) {
-					free(record);
-					if (myfd)
-						(void)fclose(fp);
-					free(ibuf);
+					if (record)
+						free(record);
 					errno = ENOMEM;
+					if (myfd)
+						(void)close(fd);
+					free(icap);
 					return (-2);
 				}
 				record = nrecord;
@@ -513,11 +520,11 @@ tc_exp:	{
 			/*
 			 * Insert tc'ed record into our record.
 			 */
-			s = tcstart + ilen;
-			memmove(s, tcend, rp - tcend);
-			memmove(tcstart, icap, ilen);
+			s = tcstart + newilen;
+			bcopy(tcend, s, rp - tcend);
+			bcopy(newicap, tcstart, newilen);
 			rp += diff;
-			free(ibuf);
+			free(icap);
 
 			/*
 			 * Start scan on `:' so next cgetcap works properly
@@ -525,21 +532,22 @@ tc_exp:	{
 			 */
 			scan = s-1;
 		}
-
+	
 	}
 	/*
 	 * Close file (if we opened it), give back any extra memory, and
 	 * return capability, length and success.
 	 */
 	if (myfd)
-		(void)fclose(fp);
+		(void)close(fd);
 	*len = rp - record - 1;	/* don't count NUL */
 	if (r_end > rp) {
 		char *nrecord;
 
 		if ((nrecord =
 		     realloc(record, (size_t)(rp - record))) == NULL) {
-			free(record);
+			if (record)
+				free(record);
 			errno = ENOMEM;
 			return (-2);
 		}
@@ -549,10 +557,13 @@ tc_exp:	{
 	if (tc_not_resolved)
 		return (1);
 	return (0);
-}
+}	
 
 static int
-cdbget(DB *capdbp, char **bp, const char *name)
+cdbget(capdbp, bp, name)
+	DB *capdbp;
+	char **bp;
+	const char *name;
 {
 	DBT key, data;
 
@@ -575,7 +586,7 @@ cdbget(DB *capdbp, char **bp, const char *name)
 		key.data = (char *)data.data + 1;
 		key.size = data.size - 1;
 	}
-
+	
 	*bp = (char *)data.data + 1;
 	return (((char *)(data.data))[0] == TCERR ? 1 : 0);
 }
@@ -585,13 +596,13 @@ cdbget(DB *capdbp, char **bp, const char *name)
  * record buf, -1 if not.
  */
 int
-cgetmatch(char *buf, const char *name)
+cgetmatch(buf, name)
+	char *buf;
+	const char *name;
 {
-	char *bp;
-	const char *np;
+	register char *bp;
+	register const char *np;
 
-	if (*name == '\0')
-		return (-1);
 	/*
 	 * Start search at beginning of record.
 	 */
@@ -623,25 +634,26 @@ cgetmatch(char *buf, const char *name)
 					break;	/* found next name */
 	}
 }
-DEF_WEAK(cgetmatch);
+
+
+
+
 
 int
-cgetfirst(char **buf, char **db_array)
+cgetfirst(buf, db_array)
+	char **buf, **db_array;
 {
-
 	(void)cgetclose();
 	return (cgetnext(buf, db_array));
 }
-DEF_WEAK(cgetfirst);
 
 static FILE *pfp;
 static int slash;
 static char **dbp;
 
 int
-cgetclose(void)
+cgetclose()
 {
-
 	if (pfp != NULL) {
 		(void)fclose(pfp);
 		pfp = NULL;
@@ -651,7 +663,6 @@ cgetclose(void)
 	slash = 0;
 	return(0);
 }
-DEF_WEAK(cgetclose);
 
 /*
  * Cgetnext() gets either the first or next entry in the logical database
@@ -659,150 +670,123 @@ DEF_WEAK(cgetclose);
  * upon returning an entry with more remaining, and -1 if an error occurs.
  */
 int
-cgetnext(char **cap, char **db_array)
+cgetnext(bp, db_array)
+	register char **bp;
+	char **db_array;
 {
-	size_t len, otopreclen = topreclen;
-	int c, serrno, status = -1;
-	char buf[BUFSIZ], nbuf[BSIZE];
-	char *b_end, *bp, *r_end, *rp;
-	char *record = NULL;
-	char *otoprec = toprec;
+	size_t len;
+	int status, done;
+	char *cp, *line, *rp, *np, buf[BSIZE], nbuf[BSIZE];
 	u_int dummy;
-	off_t pos;
 
 	if (dbp == NULL)
 		dbp = db_array;
 
-	if (pfp == NULL && (pfp = fopen(*dbp, "re")) == NULL)
-		goto done;
-
-	/*
-	 * Check if we have an unused top record from cgetset().
-	 */
-	if (toprec && !gottoprec) {
-		gottoprec = 1;
-		record = toprec;
-		goto lookup;
+	if (pfp == NULL && (pfp = fopen(*dbp, "r")) == NULL) {
+		(void)cgetclose();
+		return (-1);
 	}
-
-	/*
-	 * Allocate first chunk of memory.
-	 */
-	if ((record = malloc(BFRAG)) == NULL)
-		goto done;
-	r_end = record + BFRAG;
-
-	/*
-	 * Find the next capability record
-	 */
-	/*
-	 * Loop invariants:
-	 *	There is always room for one more character in record.
-	 *	R_end always points just past end of record.
-	 *	Rp always points just past last character in record.
-	 *	B_end always points just past last character in buf.
-	 *	Bp always points at next character in buf.
-	 */
-	b_end = buf;
-	bp = buf;
-	for (;;) {
-		/*
-		 * Read in a line implementing (\, newline)
-		 * line continuation.
-		 */
-		rp = record;
-		for (;;) {
-			if (bp >= b_end) {
-				size_t n;
-
-				n = fread(buf, 1, sizeof(buf), pfp);
-				if (n == 0) {
-					if (ferror(pfp))
-						goto done;
+	for(;;) {
+		if (toprec && !gottoprec) {
+			gottoprec = 1;
+			line = toprec;
+		} else {
+			line = fgetln(pfp, &len);
+			if (line == NULL && pfp) {
+				if (ferror(pfp)) {
 					(void)fclose(pfp);
-					pfp = NULL;
+					(void)cgetclose();
+					return (-1);
+				} else {
+					(void)fclose(pfp);
 					if (*++dbp == NULL) {
-						status = 0;
-						goto done;
+						(void)cgetclose();
+						return (0);
 					} else if ((pfp =
-					    fopen(*dbp, "re")) == NULL) {
-						goto done;
+					    fopen(*dbp, "r")) == NULL) {
+						(void)cgetclose();
+						return (-1);
 					} else
 						continue;
 				}
-				b_end = buf + n;
-				bp = buf;
+			} else
+				line[len - 1] = '\0';
+			if (len == 1) {
+				slash = 0;
+				continue;
 			}
-
-			c = *bp++;
-			if (c == '\n') {
-				if (rp > record && *(rp-1) == '\\') {
-					rp--;
-					continue;
-				} else
-					break;
+			if (isspace(*line) ||
+			    *line == ':' || *line == '#' || slash) {
+				if (line[len - 2] == '\\')
+					slash = 1;
+				else
+					slash = 0;
+				continue;
 			}
-			*rp++ = c;
+			if (line[len - 2] == '\\')
+				slash = 1;
+			else
+				slash = 0;
+		}			
 
-			/*
-			 * Enforce loop invariant: if no room
-			 * left in record buffer, try to get
-			 * some more.
-			 */
-			if (rp >= r_end) {
-				size_t newsize, off;
-				char *nrecord;
-
-				off = rp - record;
-				newsize = r_end - record + BFRAG;
-				nrecord = realloc(record, newsize);
-				if (nrecord == NULL)
-					goto done;
-				record = nrecord;
-				r_end = record + newsize;
-				rp = record + off;
-			}
-		}
-		/* loop invariant lets us do this */
-		*rp++ = '\0';
 
 		/*
-		 * If not blank or comment, set toprec and topreclen so
-		 * getent() doesn't have to re-parse the file to find it.
+		 * Line points to a name line.
 		 */
-		if (*record != '\0' && *record != '#') {
-			/* Rewind to end of record */
-			fseeko(pfp, (off_t)(bp - b_end), SEEK_CUR);
-			toprec = record;
-			topreclen = rp - record;
-			break;
+		done = 0;
+		np = nbuf;
+		for (;;) {
+			for (cp = line; *cp != '\0'; cp++) {
+				if (*cp == ':') {
+					*np++ = ':';
+					done = 1;
+					break;
+				}
+				if (*cp == '\\')
+					break;
+				*np++ = *cp;
+			}
+			if (done) {
+				*np = '\0';
+				break;
+			} else { /* name field extends beyond the line */
+				line = fgetln(pfp, &len);
+				if (line == NULL && pfp) {
+					if (ferror(pfp)) {
+						(void)fclose(pfp);
+						(void)cgetclose();
+						return (-1);
+					}
+					(void)fclose(pfp);
+					pfp = NULL;
+				} else
+					line[len - 1] = '\0';
+			}
 		}
-	}
-lookup:
-	/* extract name from record */
-	len = strcspn(record, "|:");
-	memcpy(nbuf, record, len);
-	nbuf[len] = '\0';
+		rp = buf;
+		for(cp = nbuf; *cp != '\0'; cp++)
+			if (*cp == '|' || *cp == ':')
+				break;
+			else
+				*rp++ = *cp;
 
-	/* return value of getent() is one less than cgetnext() */
-	pos = ftello(pfp);
-	status = getent(cap, &dummy, dbp, pfp, nbuf, 0, NULL) + 1;
-	if (status > 0)
-		fseeko(pfp, pos, SEEK_SET);
-done:
-	serrno = errno;
-	if (toprec != otoprec) {
-		toprec = otoprec;
-		topreclen = otopreclen;
-		free(record);
-	}
-	if (status <= 0)
-		(void)cgetclose();
-	errno = serrno;
+		*rp = '\0';
+		/*
+		 * XXX
+		 * Last argument of getent here should be nbuf if we want true
+		 * sequential access in the case of duplicates.
+		 * With NULL, getent will return the first entry found
+		 * rather than the duplicate entry record.  This is a
+		 * matter of semantics that should be resolved.
+		 */
+		status = getent(bp, &dummy, db_array, -1, buf, 0, NULL);
+		if (status == -2 || status == -3)
+			(void)cgetclose();
 
-	return (status);
+		return (status + 1);
+	}
+	/* NOTREACHED */
 }
-DEF_WEAK(cgetnext);
 
 /*
  * Cgetstr retrieves the value of the string capability cap from the
@@ -814,10 +798,13 @@ DEF_WEAK(cgetnext);
  * allocation failure).
  */
 int
-cgetstr(char *buf, const char *cap, char **str)
+cgetstr(buf, cap, str)
+	char *buf;
+	const char *cap;
+	char **str;
 {
-	u_int m_room;
-	char *bp, *mp;
+	register u_int m_room;
+	register char *bp, *mp;
 	int len;
 	char *mem;
 
@@ -832,8 +819,10 @@ cgetstr(char *buf, const char *cap, char **str)
 	 * Conversion / storage allocation loop ...  Allocate memory in
 	 * chunks SFRAG in size.
 	 */
-	if ((mem = malloc(SFRAG)) == NULL)
+	if ((mem = malloc(SFRAG)) == NULL) {
+		errno = ENOMEM;
 		return (-2);	/* couldn't even allocate the first fragment */
+	}
 	m_room = SFRAG;
 	mp = mem;
 
@@ -854,7 +843,7 @@ cgetstr(char *buf, const char *cap, char **str)
 			if (*bp == ':' || *bp == '\0')
 				break;	/* drop unfinished escape */
 			if ('0' <= *bp && *bp <= '7') {
-				int n, i;
+				register int n, i;
 
 				n = 0;
 				i = 3;	/* maximum of three octal digits */
@@ -906,7 +895,8 @@ cgetstr(char *buf, const char *cap, char **str)
 			char *nmem;
 
 			if ((nmem = realloc(mem, size + SFRAG)) == NULL) {
-				free(mem);
+				if (mem)
+					free(mem);
 				return (-2);
 			}
 			mem = nmem;
@@ -925,7 +915,8 @@ cgetstr(char *buf, const char *cap, char **str)
 		char *nmem;
 
 		if ((nmem = realloc(mem, (size_t)(mp - mem))) == NULL) {
-			free(mem);
+			if (mem)
+				free(mem);
 			return (-2);
 		}
 		mem = nmem;
@@ -933,7 +924,6 @@ cgetstr(char *buf, const char *cap, char **str)
 	*str = mem;
 	return (len);
 }
-DEF_WEAK(cgetstr);
 
 /*
  * Cgetustr retrieves the value of the string capability cap from the
@@ -946,10 +936,12 @@ DEF_WEAK(cgetstr);
  * error was encountered (storage allocation failure).
  */
 int
-cgetustr(char *buf, const char *cap, char **str)
+cgetustr(buf, cap, str)
+	char *buf, **str;
+	const char *cap;
 {
-	u_int m_room;
-	char *bp, *mp;
+	register u_int m_room;
+	register char *bp, *mp;
 	int len;
 	char *mem;
 
@@ -963,8 +955,10 @@ cgetustr(char *buf, const char *cap, char **str)
 	 * Conversion / storage allocation loop ...  Allocate memory in
 	 * chunks SFRAG in size.
 	 */
-	if ((mem = malloc(SFRAG)) == NULL)
+	if ((mem = malloc(SFRAG)) == NULL) {
+		errno = ENOMEM;
 		return (-2);	/* couldn't even allocate the first fragment */
+	}
 	m_room = SFRAG;
 	mp = mem;
 
@@ -987,7 +981,8 @@ cgetustr(char *buf, const char *cap, char **str)
 			char *nmem;
 
 			if ((nmem = realloc(mem, size + SFRAG)) == NULL) {
-				free(mem);
+				if (mem)
+					free(mem);
 				return (-2);
 			}
 			mem = nmem;
@@ -1005,8 +1000,9 @@ cgetustr(char *buf, const char *cap, char **str)
 	if (m_room != 0) {
 		char *nmem;
 
-		if ((nmem = realloc(mem, mp - mem)) == NULL) {
-			free(mem);
+		if ((nmem = realloc(mem, (size_t)(mp - mem))) == NULL) {
+			if (mem)
+				free(mem);
 			return (-2);
 		}
 		mem = nmem;
@@ -1014,7 +1010,6 @@ cgetustr(char *buf, const char *cap, char **str)
 	*str = mem;
 	return (len);
 }
-DEF_WEAK(cgetustr);
 
 /*
  * Cgetnum retrieves the value of the numeric capability cap from the
@@ -1023,11 +1018,14 @@ DEF_WEAK(cgetustr);
  * numeric capability couldn't be found.
  */
 int
-cgetnum(char *buf, const char *cap, long *num)
+cgetnum(buf, cap, num)
+	char *buf;
+	const char *cap;
+	long *num;
 {
-	long n;
-	int base, digit;
-	char *bp;
+	register long n;
+	register int base, digit;
+	register char *bp;
 
 	/*
 	 * Find numeric capability cap
@@ -1079,20 +1077,22 @@ cgetnum(char *buf, const char *cap, long *num)
 	*num = n;
 	return (0);
 }
-DEF_WEAK(cgetnum);
+
 
 /*
  * Compare name field of record.
  */
 static int
-nfcmp(const char *nf, char *rec)
+nfcmp(nf, rec)
+	const char *nf;
+	char *rec;
 {
 	char *cp, tmp;
 	int ret;
-
+	
 	for (cp = rec; *cp != ':'; cp++)
 		;
-
+	
 	tmp = *(cp + 1);
 	*(cp + 1) = '\0';
 	ret = strcmp(nf, rec);

@@ -1,4 +1,4 @@
-/*	$OpenBSD: fparseln.c,v 1.7 2012/12/05 23:20:06 deraadt Exp $	*/
+/*	$OpenBSD: fparseln.c,v 1.1 1999/07/20 16:38:56 jakob Exp $
 /*	$NetBSD: fparseln.c,v 1.7 1999/07/02 15:49:12 simonb Exp $	*/
 
 /*
@@ -30,20 +30,27 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: fparseln.c,v 1.1 1999/07/20 16:38:56 jakob Exp $";
+#endif /* LIBC_SCCS and not lint */
+
+#include <sys/cdefs.h>
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <util.h>
 
-#include "util.h"
-
-static int isescaped(const char *, const char *, int);
+static int isescaped __P((const char *, const char *, int));
 
 /* isescaped():
  *	Return true if the character in *p that belongs to a string
  *	that starts in *sp, is escaped by the escape character esc.
  */
 static int
-isescaped(const char *sp, const char *p, int esc)
+isescaped(sp, p, esc)
+	const char *sp, *p;
+	int esc;
 {
 	const char     *cp;
 	size_t		ne;
@@ -67,13 +74,24 @@ isescaped(const char *sp, const char *p, int esc)
  *	the comment char.
  */
 char *
-fparseln(FILE *fp, size_t *size, size_t *lineno, const char str[3],
-    int flags)
+fparseln(fp, size, lineno, str, flags)
+	FILE		*fp;
+	size_t		*size;
+	size_t		*lineno;
+	const char	 str[3];
+	int		 flags;
 {
 	static const char dstr[3] = { '\\', '\\', '#' };
-	char	*buf = NULL, *ptr, *cp, esc, con, nl, com;
-	size_t	s, len = 0;
-	int	cnt = 1;
+
+	size_t	s, len;
+	char   *buf;
+	char   *ptr, *cp;
+	int	cnt;
+	char	esc, con, nl, com;
+
+	len = 0;
+	buf = NULL;
+	cnt = 1;
 
 	if (str == NULL)
 		str = dstr;
@@ -81,7 +99,6 @@ fparseln(FILE *fp, size_t *size, size_t *lineno, const char str[3],
 	esc = str[0];
 	con = str[1];
 	com = str[2];
-
 	/*
 	 * XXX: it would be cool to be able to specify the newline character,
 	 * but unfortunately, fgetln does not let us
@@ -106,7 +123,7 @@ fparseln(FILE *fp, size_t *size, size_t *lineno, const char str[3],
 				}
 		}
 
-		if (s && nl) {		/* Check and eliminate newlines */
+		if (s && nl) { 		/* Check and eliminate newlines */
 			cp = &ptr[s - 1];
 
 			if (*cp == nl)
@@ -174,7 +191,7 @@ fparseln(FILE *fp, size_t *size, size_t *lineno, const char str[3],
 
 #ifdef TEST
 
-int main(int, char **);
+int main __P((int, char **));
 
 int
 main(argc, argv)

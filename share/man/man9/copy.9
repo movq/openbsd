@@ -1,4 +1,4 @@
-.\"	$OpenBSD: copy.9,v 1.17 2015/11/23 17:53:57 jmc Exp $
+.\"	$OpenBSD: copy.9,v 1.5 1999/09/02 17:28:06 espie Exp $
 .\"	$NetBSD: copy.9,v 1.2 1996/01/09 03:23:04 thorpej Exp $
 .\"
 .\" Copyright (c) 1996 Jason R. Thorpe.
@@ -33,40 +33,31 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: November 23 2015 $
-.Dt COPYIN 9
+.Dd January 7, 1996
+.Dt COPY 9
 .Os
 .Sh NAME
-.Nm copyin ,
-.Nm copyout ,
-.Nm copystr ,
-.Nm copyinstr ,
-.Nm copyoutstr ,
-.Nm kcopy
+.Nm copy
 .Nd kernel copy functions
 .Sh SYNOPSIS
-.In sys/types.h
-.In sys/systm.h
+.Fd #include <sys/types.h>
+.Fd #include <sys/systm.h>
 .Ft int
-.Fn copyin "const void *uaddr" "void *kaddr" "size_t len"
+.Fn copyin "void *uaddr" "void *kaddr" "size_t len"
 .Ft int
-.Fn copyout "const void *kaddr" "void *uaddr" "size_t len"
+.Fn copyout "void *kaddr" "void *uaddr" "size_t len"
 .Ft int
-.Fn copystr "const void *kfaddr" "void *kdaddr" "size_t len" "size_t *done"
+.Fn copystr "void *kfaddr" "void *kdaddr" "size_t len" "size_t *done"
 .Ft int
-.Fn copyinstr "const void *uaddr" "void *kaddr" "size_t len" "size_t *done"
+.Fn copyinstr "void *uaddr" "void *kaddr" "size_t len" "size_t *done"
 .Ft int
-.Fn copyoutstr "const void *kaddr" "void *uaddr" "size_t len" "size_t *done"
-.Ft int
-.Fn kcopy "const void *kfaddr" "void *kdaddr" "size_t len"
+.Fn copyoutstr "void *kaddr" "void *uaddr" "size_t len" "size_t *done"
 .Sh DESCRIPTION
 The
 .Nm
-functions are designed to copy contiguous data from one address to another.
-All but
+functions are designed to copy contiguous data from one address
+to another.  All but
 .Fn copystr
-and
-.Fn kcopy
 copy data from user-space to kernel-space or vice-versa.
 .Pp
 The
@@ -88,79 +79,47 @@ bytes of data from the kernel-space address
 to the user-space address
 .Fa uaddr .
 .It Fn copystr
-Copies a null-terminated string, at most
+Copies a NULL-terminated string, at most
 .Fa len
 bytes long, from kernel-space address
 .Fa kfaddr
 to kernel-space address
 .Fa kdaddr .
-The number of bytes actually copied, including the terminating null,
-is returned in
-.Fa *done ,
-if
-.Fa done
-is not
-.Dv NULL .
-.Pp
-Unlike the other
-.Nm
-functions,
-.Fn copystr
-does
-.Em not
-support returning
-.Er EFAULT
-when a bad address is encountered.
+The number of bytes actually copied, including the terminating
+NULL, is returned in
+.Fa *done .
 .It Fn copyinstr
-Copies a null-terminated string, at most
+Copies a NULL-terminated string, at most
 .Fa len
 bytes long, from user-space address
 .Fa uaddr
 to kernel-space address
 .Fa kaddr .
-The number of bytes actually copied, including the terminating null,
-is returned in
-.Fa *done ,
-if
-.Fa done
-is not
-.Dv NULL .
+The number of bytes actually copied, including the terminating
+NULL, is returned in
+.Fa *done .
 .It Fn copyoutstr
-Copies a null-terminated string, at most
-.Fa len
+Copies a NULL-terminated string, at most
 bytes long, from kernel-space address
 .Fa kaddr
 to user-space address
 .Fa uaddr .
-The number of bytes actually copied, including the terminating null,
-is returned in
-.Fa *done ,
-if
-.Fa done
-is not
-.Dv NULL .
-.It Fn kcopy
-Copies
-.Fa len
-bytes of data from the kernel-space address
-.Fa kfaddr
-to the kernel-space address
-.Fa kdaddr .
+The number of bytes actually copied, including the terminating
+NULL, is returned in
+.Fa *done .
 .El
 .Sh RETURN VALUES
 The
 .Nm
-functions return 0 on success or
-.Er EFAULT
-if a bad address is encountered.
+functions return 0 on success or EFAULT if a bad address is encountered.
 In addition, the
 .Fn copystr ,
 .Fn copyinstr ,
 and
 .Fn copyoutstr
-functions return
-.Er ENAMETOOLONG
-if the string is longer than
+funtions return ENAMETOOLONG if the string is longer than
 .Fa len
 bytes.
-.\" .Sh SEE ALSO
+.Sh SEE ALSO
+.Xr fetch 9 ,
+.Xr store 9 .

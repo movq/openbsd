@@ -1,51 +1,36 @@
 /*
- * Copyright (c) 1983, 1993, 1998, 2001, 2002
- *      The Regents of the University of California.  All rights reserved.
+ * Copyright (c) 1983 Regents of the University of California.
+ * All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
+ * Redistribution and use in source and binary forms are permitted
+ * provided that: (1) source distributions retain this entire copyright
+ * notice and comment, and (2) distributions including binaries display
+ * the following acknowledgement:  ``This product includes software
+ * developed by the University of California, Berkeley and its contributors''
+ * in the documentation or other materials provided with the distribution
+ * and in all advertising materials mentioning features or use of this
+ * software. Neither the name of the University nor the names of its
+ * contributors may be used to endorse or promote products derived
+ * from this software without specific prior written permission.
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
-
+#include "getopt.h"
 #include "libiberty.h"
 #include "gprof.h"
-#include "search_list.h"
-#include "source.h"
-#include "symtab.h"
 #include "basic_blocks.h"
 #include "call_graph.h"
 #include "cg_arcs.h"
 #include "cg_print.h"
-#include "corefile.h"
+#include "core.h"
 #include "gmon_io.h"
 #include "hertz.h"
 #include "hist.h"
+#include "source.h"
 #include "sym_ids.h"
-#include "demangle.h"
-#include "getopt.h"
 
-static void usage PARAMS ((FILE *, int)) ATTRIBUTE_NORETURN;
-int main PARAMS ((int, char **));
+#define VERSION "2.7.1"
 
 const char *whoami;
 const char *function_mapping_file;
@@ -58,22 +43,21 @@ long hz = HZ_WRONG;
 int debug_level = 0;
 int output_style = 0;
 int output_width = 80;
-bfd_boolean bsd_style_output = FALSE;
-bfd_boolean demangle = TRUE;
-bfd_boolean discard_underscores = TRUE;
-bfd_boolean ignore_direct_calls = FALSE;
-bfd_boolean ignore_static_funcs = FALSE;
-bfd_boolean ignore_zeros = TRUE;
-bfd_boolean line_granularity = FALSE;
-bfd_boolean print_descriptions = TRUE;
-bfd_boolean print_path = FALSE;
-bfd_boolean ignore_non_functions = FALSE;
+bool bsd_style_output = FALSE;
+bool discard_underscores = TRUE;
+bool ignore_direct_calls = FALSE;
+bool ignore_static_funcs = FALSE;
+bool ignore_zeros = TRUE;
+bool line_granularity = FALSE;
+bool print_descriptions = TRUE;
+bool print_path = FALSE;
+bool ignore_non_functions = FALSE;
 File_Format file_format = FF_AUTO;
 
-bfd_boolean first_output = TRUE;
+bool first_output = TRUE;
 
 char copyright[] =
- "@(#) Copyright (c) 1983 Regents of the University of California.\n\
+"@(#) Copyright (c) 1983 Regents of the University of California.\n\
  All rights reserved.\n";
 
 static char *gmon_name = GMONNAME;	/* profile filename */
@@ -85,17 +69,10 @@ bfd *abfd;
  */
 static char *default_excluded_list[] =
 {
-  "_gprof_mcount", "mcount", "_mcount", "__mcount", "__mcount_internal",
-  "__mcleanup",
+  "_gprof_mcount", "mcount", "_mcount", "__mcount", "__mcleanup",
   "<locore>", "<hicore>",
   0
 };
-
-/* Codes used for the long options with no short synonyms.  150 isn't
-   special; it's just an arbitrary non-ASCII char value.  */
-
-#define OPTION_DEMANGLE		(150)
-#define OPTION_NO_DEMANGLE	(OPTION_DEMANGLE + 1)
 
 static struct option long_options[] =
 {
@@ -121,8 +98,6 @@ static struct option long_options[] =
     /* various options to affect output: */
 
   {"all-lines", no_argument, 0, 'x'},
-  {"demangle", optional_argument, 0, OPTION_DEMANGLE},
-  {"no-demangle", no_argument, 0, OPTION_NO_DEMANGLE},
   {"directory-path", required_argument, 0, 'I'},
   {"display-unused-functions", no_argument, 0, 'z'},
   {"min-count", required_argument, 0, 'm'},
@@ -156,11 +131,9 @@ static struct option long_options[] =
 
 
 static void
-usage (stream, status)
-     FILE *stream;
-     int status;
+DEFUN (usage, (stream, status), FILE * stream AND int status)
 {
-  fprintf (stream, _("\
+  fprintf (stream, "\
 Usage: %s [-[abcDhilLsTvwxyz]] [-[ACeEfFJnNOpPqQZ][name]] [-I dirs]\n\
 	[-d[num]] [-k from/to] [-m min-count] [-t table-length]\n\
 	[--[no-]annotated-source[=name]] [--[no-]exec-counts[=name]]\n\
@@ -172,40 +145,26 @@ Usage: %s [-[abcDhilLsTvwxyz]] [-[ACeEfFJnNOpPqQZ][name]] [-I dirs]\n\
 	[--no-static] [--print-path] [--separate-files]\n\
 	[--static-call-graph] [--sum] [--table-length=len] [--traditional]\n\
 	[--version] [--width=n] [--ignore-non-functions]\n\
-	[--demangle[=STYLE]] [--no-demangle]\n\
-	[image-file] [profile-file...]\n"),
+	[image-file] [profile-file...]\n",
 	   whoami);
   if (status == 0)
-    fprintf (stream, _("Report bugs to %s\n"), REPORT_BUGS_TO);
+    fprintf (stream, "Report bugs to bug-gnu-utils@prep.ai.mit.edu\n");
   done (status);
 }
 
 
 int
-main (argc, argv)
-     int argc;
-     char **argv;
+DEFUN (main, (argc, argv), int argc AND char **argv)
 {
   char **sp, *str;
   Sym **cg = 0;
   int ch, user_specified = 0;
 
-#if defined (HAVE_SETLOCALE) && defined (HAVE_LC_MESSAGES)
-  setlocale (LC_MESSAGES, "");
-#endif
-#if defined (HAVE_SETLOCALE)
-  setlocale (LC_CTYPE, "");
-#endif
-  bindtextdomain (PACKAGE, LOCALEDIR);
-  textdomain (PACKAGE);
-
   whoami = argv[0];
   xmalloc_set_program_name (whoami);
 
-  expandargv (&argc, &argv);
-
   while ((ch = getopt_long (argc, argv,
-	"aA::bBcCd::De:E:f:F:hiI:J::k:lLm:n::N::O:p::P::q::Q::st:Tvw:xyzZ::",
+	"aA::bBcCdD::e:E:f:F:hiI:J::k:lLm:n::N::O:p::P::q::Q::st:Tvw:xyzZ::",
 			    long_options, 0))
 	 != EOF)
     {
@@ -252,7 +211,7 @@ main (argc, argv)
 	    }
 	  DBG (ANYDEBUG, printf ("[main] debug-level=0x%x\n", debug_level));
 #ifndef DEBUG
-	  printf (_("%s: debugging not supported; -d ignored\n"), whoami);
+	  printf ("%s: debugging not supported; -d ignored\n", whoami);
 #endif	/* DEBUG */
 	  break;
 	case 'D':
@@ -305,7 +264,7 @@ main (argc, argv)
 	  print_path = TRUE;
 	  break;
 	case 'm':
-	  bb_min_calls = (unsigned long) strtoul (optarg, (char **) NULL, 10);
+	  bb_min_calls = atoi (optarg);
 	  break;
 	case 'n':
 	  sym_id_add (optarg, INCL_TIME);
@@ -325,14 +284,11 @@ main (argc, argv)
 	    case 'b':
 	      file_format = FF_BSD;
 	      break;
-	    case '4':
-	      file_format = FF_BSD44;
-	      break;
 	    case 'p':
 	      file_format = FF_PROF;
 	      break;
 	    default:
-	      fprintf (stderr, _("%s: unknown file format %s\n"),
+	      fprintf (stderr, "%s: unknown file format %s\n",
 		       optarg, whoami);
 	      done (1);
 	    }
@@ -416,10 +372,11 @@ main (argc, argv)
 	  break;
 	case 'v':
 	  /* This output is intended to follow the GNU standards document.  */
-	  printf (_("GNU gprof %s\n"), VERSION);
-	  printf (_("Based on BSD gprof, copyright 1983 Regents of the University of California.\n"));
-	  printf (_("\
-This program is free software.  This program has absolutely no warranty.\n"));
+	  printf ("GNU gprof %s\n", VERSION);
+	  printf ("Copyright 1996 Free Software Foundation, Inc.\n");
+	  printf ("\
+This program is free software; you may redistribute it under the terms of\n\
+the GNU General Public License.  This program has absolutely no warranty.\n");
 	  done (0);
 	case 'w':
 	  output_width = atoi (optarg);
@@ -449,27 +406,6 @@ This program is free software.  This program has absolutely no warranty.\n"));
 	    }
 	  user_specified |= STYLE_ANNOTATED_SOURCE;
 	  break;
-	case OPTION_DEMANGLE:
-	  demangle = TRUE;
-	  if (optarg != NULL)
-	    {
-	      enum demangling_styles style;
-
-	      style = cplus_demangle_name_to_style (optarg);
-	      if (style == unknown_demangling)
-		{
-		  fprintf (stderr,
-			   _("%s: unknown demangling style `%s'\n"),
-			   whoami, optarg);
-		  xexit (1);
-		}
-
-	      cplus_demangle_set_style (style);
-	   }
-	  break;
-	case OPTION_NO_DEMANGLE:
-	  demangle = FALSE;
-	  break;
 	default:
 	  usage (stderr, 1);
 	}
@@ -479,16 +415,10 @@ This program is free software.  This program has absolutely no warranty.\n"));
   if ((user_specified & STYLE_FUNCTION_ORDER)
       && (user_specified & STYLE_FILE_ORDER))
     {
-      fprintf (stderr,_("\
-%s: Only one of --function-ordering and --file-ordering may be specified.\n"),
+      fprintf (stderr,"\
+%s: Only one of --function-ordering and --file-ordering may be specified.\n",
 	       whoami);
       done (1);
-    }
-
-  /* --sum implies --line, otherwise we'd lose b-b counts in gmon.sum */
-  if (output_style & STYLE_SUMMARY_FILE)
-    {
-      line_granularity = 1;
     }
 
   /* append value of GPROF_PATH to source search list if set: */
@@ -514,7 +444,9 @@ This program is free software.  This program has absolutely no warranty.\n"));
     {
       sym_id_add (*sp, EXCL_TIME);
       sym_id_add (*sp, EXCL_GRAPH);
+#ifdef __alpha__
       sym_id_add (*sp, EXCL_FLAT);
+#endif
     }
 
   /*
@@ -577,7 +509,7 @@ This program is free software.  This program has absolutely no warranty.\n"));
       while (optind++ < argc);
 #else
       fprintf (stderr,
-	       _("%s: sorry, file format `prof' is not yet supported\n"),
+	       "%s: sorry, file format `prof' is not yet supported\n",
 	       whoami);
       done (1);
 #endif
@@ -638,14 +570,14 @@ This program is free software.  This program has absolutely no warranty.\n"));
   if ((output_style & STYLE_FLAT_PROFILE)
       && !(gmon_input & INPUT_HISTOGRAM))
     {
-      fprintf (stderr, _("%s: gmon.out file is missing histogram\n"), whoami);
+      fprintf (stderr, "%s: gmon.out file is missing histogram\n", whoami);
       done (1);
     }
 
   if ((output_style & STYLE_CALL_GRAPH) && !(gmon_input & INPUT_CALL_GRAPH))
     {
       fprintf (stderr,
-	       _("%s: gmon.out file is missing call-graph data\n"), whoami);
+	       "%s: gmon.out file is missing call-graph data\n", whoami);
       done (1);
     }
 

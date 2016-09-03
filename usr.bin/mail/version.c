@@ -1,4 +1,4 @@
-/*	$OpenBSD: version.c,v 1.7 2009/10/27 23:59:40 deraadt Exp $	*/
+/*	$OpenBSD: version.c,v 1.3 1997/06/18 23:52:28 deraadt Exp $	*/
 /*	$NetBSD: version.c,v 1.4 1996/06/08 19:48:46 christos Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,8 +34,16 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)version.c	8.1 (Berkeley) 6/6/93";
+#else
+static char rcsid[] = "$OpenBSD: version.c,v 1.3 1997/06/18 23:52:28 deraadt Exp $";
+#endif
+#endif /* not lint */
+
 /*
  * Just keep track of the date/sid of this version of Mail.
  * Load this file first to get a "total" Mail version.
  */
-const char version[] = "8.1.2 01/15/2001";
+char	*version = "8.1.1 18/6/97";

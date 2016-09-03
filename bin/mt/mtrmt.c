@@ -1,4 +1,4 @@
-/*	$OpenBSD: mtrmt.c,v 1.21 2013/11/21 15:54:45 deraadt Exp $	*/
+/*	$OpenBSD: mtrmt.c,v 1.7 1997/09/12 04:01:37 millert Exp $	*/
 /*	$NetBSD: mtrmt.c,v 1.2 1996/03/06 06:22:07 scottr Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,12 +34,25 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/types.h>
+/*
+ * This was unceremoniously ripped out of usr.sbin/dump/dumprmt.c:
+ *
+ * static char sccsid[] = "@(#)dumprmt.c	8.1 (Berkeley) 6/5/93";
+ *
+ */
+
+#include <sys/param.h>
 #include <sys/mtio.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#ifdef sunos
+#include <sys/vnode.h>
+
+#include <ufs/inode.h>
+#else
 #include <ufs/ufs/dinode.h>
+#endif
 
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -48,9 +65,11 @@
 #include <pwd.h>
 #include <signal.h>
 #include <stdio.h>
+#ifdef __STDC__
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#endif
 
 #include "pathnames.h"
 #include "mt.h"
@@ -62,47 +81,42 @@ static	int rmtstate = TS_CLOSED;
 static	int rmtape;
 static	char *rmtpeer;
 
-static	int okname(char *);
-static	int rmtcall(char *, char *);
-static	void rmtconnaborted(void);
-static	void sigrmtconnaborted(int);
-static	int rmtgetb(void);
-static	void rmtgetconn(void);
-static	void rmtgets(char *, int);
-static	int rmtreply(char *);
+static	int okname __P((char *));
+static	int rmtcall __P((char *, char *));
+static	void rmtconnaborted __P((/* int, int */));
+static	int rmtgetb __P((void));
+static	void rmtgetconn __P((void));
+static	void rmtgets __P((char *, int));
+static	int rmtreply __P((char *));
 
 int
-rmthost(char *host)
+rmthost(host)
+	char *host;
 {
-	if ((rmtpeer = strdup(host)) == NULL)
-		err(1, "strdup");
-	signal(SIGPIPE, sigrmtconnaborted);
+
+	rmtpeer = malloc(strlen(host) + 1);
+	if (rmtpeer)
+		strcpy(rmtpeer, host);
+	else
+		rmtpeer = host;
+	signal(SIGPIPE, rmtconnaborted);
 	rmtgetconn();
 	if (rmtape < 0)
 		return (0);
 	return (1);
 }
 
-/* ARGSUSED */
 static void
-sigrmtconnaborted(int signo)
-{
-
-	warnx("Lost connection to remote host.");
-	_exit(1);
-}
-
-static void
-rmtconnaborted(void)
+rmtconnaborted()
 {
 
 	errx(1, "Lost connection to remote host.");
 }
 
 void
-rmtgetconn(void)
+rmtgetconn()
 {
-	char *cp;
+	register char *cp;
 	static struct servent *sp = NULL;
 	static struct passwd *pwd = NULL;
 #ifdef notdef
@@ -156,13 +170,14 @@ rmtgetconn(void)
 }
 
 static int
-okname(char *cp0)
+okname(cp0)
+	char *cp0;
 {
-	unsigned char *cp;
-	int c;
+	register char *cp;
+	register int c;
 
 	for (cp = cp0; *cp; cp++) {
-		c = (unsigned char)*cp;
+		c = *cp;
 		if (!isascii(c) || !(isalnum(c) || c == '_' || c == '-')) {
 			warnx("invalid user name: %s", cp0);
 			return (0);
@@ -172,7 +187,9 @@ okname(char *cp0)
 }
 
 int
-rmtopen(char *tape, int mode)
+rmtopen(tape, mode)
+	char *tape;
+	int mode;
 {
 	char buf[256];
 
@@ -182,7 +199,7 @@ rmtopen(char *tape, int mode)
 }
 
 void
-rmtclose(void)
+rmtclose()
 {
 
 	if (rmtstate != TS_OPEN)
@@ -194,10 +211,10 @@ rmtclose(void)
 struct	mtget mts;
 
 struct mtget *
-rmtstatus(void)
+rmtstatus()
 {
-	int i;
-	char *cp;
+	register int i;
+	register char *cp;
 
 	if (rmtstate != TS_OPEN)
 		return (NULL);
@@ -208,7 +225,8 @@ rmtstatus(void)
 }
 
 int
-rmtioctl(int cmd, int count)
+rmtioctl(cmd, count)
+	int cmd, count;
 {
 	char buf[256];
 
@@ -219,7 +237,8 @@ rmtioctl(int cmd, int count)
 }
 
 static int
-rmtcall(char *cmd, char *buf)
+rmtcall(cmd, buf)
+	char *cmd, *buf;
 {
 
 	if (write(rmtape, buf, strlen(buf)) != strlen(buf))
@@ -228,9 +247,10 @@ rmtcall(char *cmd, char *buf)
 }
 
 static int
-rmtreply(char *cmd)
+rmtreply(cmd)
+	char *cmd;
 {
-	char *cp;
+	register char *cp;
 	char code[30], emsg[BUFSIZ];
 
 	rmtgets(code, sizeof (code));
@@ -257,7 +277,7 @@ rmtreply(char *cmd)
 }
 
 int
-rmtgetb(void)
+rmtgetb()
 {
 	char c;
 
@@ -268,9 +288,11 @@ rmtgetb(void)
 
 /* Get a line (guaranteed to have a trailing newline). */
 void
-rmtgets(char *line, int len)
+rmtgets(line, len)
+	char *line;
+	int len;
 {
-	char *cp = line;
+	register char *cp = line;
 
 	while (len > 1) {
 		*cp = rmtgetb();

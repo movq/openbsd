@@ -1,4 +1,4 @@
-.\"	$OpenBSD: msgrcv.2,v 1.16 2014/11/15 22:19:53 guenther Exp $
+.\"	$OpenBSD: msgrcv.2,v 1.8 1999/06/29 14:10:09 aaron Exp $
 .\"	$NetBSD: msgrcv.2,v 1.2 1997/03/27 08:20:37 mikel Exp $
 .\"
 .\" Copyright (c) 1995 Frank van der Linden
@@ -30,14 +30,16 @@
 .\" (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 .\" THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"/
-.Dd $Mdocdate: November 15 2014 $
+.Dd August 17, 1995
 .Dt MSGRCV 2
 .Os
 .Sh NAME
 .Nm msgrcv
 .Nd receive a message from a message queue
 .Sh SYNOPSIS
-.In sys/msg.h
+.Fd #include <sys/types.h>
+.Fd #include <sys/ipc.h>
+.Fd #include <sys/msg.h>
 .Ft int
 .Fn msgrcv "int msqid" "void *msgp" "size_t msgsz" "long msgtyp" "int msgflg"
 .Sh DESCRIPTION
@@ -65,26 +67,23 @@ has one of the following meanings:
 .Bl -bullet
 .It
 .Fa msgtyp
-is greater than 0.
-The first message of type
+is greater than 0. The first message of type
 .Fa msgtyp
 will be received.
 .It
 .Fa msgtyp
-is equal to 0.
-The first message on the queue will be received.
+is equal to 0. The first message on the queue will be received.
 .It
 .Fa msgtyp
-is less than 0.
-The first message of the lowest message type that is
+is less than 0. The first message of the lowest message type that is
 less than or equal to the absolute value of
 .Fa msgtyp
 will be received.
 .El
 .Pp
 .Fa msgsz
-specifies the maximum length of the requested message.
-If the received message has a length greater than
+specifies the maximum length of the requested message. If the received
+message has a length greater than
 .Fa msgsz
 it will be silently truncated if the
 .Dv MSG_NOERROR
@@ -100,8 +99,7 @@ depends on whether the
 .Dv IPC_NOWAIT
 flag is set in
 .Fa msgflg
-or not.
-If
+or not. If
 .Dv IPC_NOWAIT
 is set,
 .Fn msgrcv
@@ -122,8 +120,7 @@ The message queue is removed, in which case \-1 will be returned, and
 set to
 .Er EINVAL .
 .It
-A signal is received and caught.
-\-1 is returned, and
+A signal is received and caught. \-1 is returned, and
 .Va errno
 set to
 .Er EINTR .
@@ -162,7 +159,11 @@ will fail if:
 .Bl -tag -width Er
 .It Bq Er EINVAL
 .Fa msqid
-is not a valid message queue identifier.
+is not a valid message queue identifier
+.Pp
+The message queue was removed while
+.Fn msgrcv
+was waiting for a message of the requested type to become available on it.
 .Pp
 .Fa msgsz
 is less than 0.
@@ -180,21 +181,26 @@ The calling process does not have read access to the message queue.
 points to an invalid address.
 .It Bq Er EINTR
 The system call was interrupted by the delivery of a signal.
-.It Bq Er ENOMSG
+.It Bq Er EAGAIN
 There is no message of the requested type available on the message queue,
 and
 .Dv IPC_NOWAIT
 is set in
 .Fa msgflg .
-.It Bq Er EIDRM
-The message queue was removed while
-.Fn msgrcv
-was waiting for a message of the requested type to become available on it.
 .El
 .Sh SEE ALSO
 .Xr msgctl 2 ,
 .Xr msgget 2 ,
 .Xr msgsnd 2
+.Sh BUGS
+OpenBSD does not define the
+.Er EIDRM
+error value, which should be used in
+the case of a removed message queue, nor the
+.Er ENOMSG
+value, which
+should be used when no suitable message is available and
+.Dv IPC_NOWAIT
+is set.
 .Sh HISTORY
-Message queues appeared in
-.At V.1 .
+Message queues appeared in the first release of AT&T Unix System V.

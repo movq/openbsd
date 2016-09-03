@@ -1,5 +1,3 @@
-/*	$OpenBSD: put.c,v 1.16 2016/05/27 09:18:11 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)put.c	10.11 (Berkeley) 9/23/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -27,10 +29,15 @@
  * put --
  *	Put text buffer contents into the file.
  *
- * PUBLIC: int put(SCR *, CB *, CHAR_T *, MARK *, MARK *, int);
+ * PUBLIC: int put __P((SCR *, CB *, CHAR_T *, MARK *, MARK *, int));
  */
 int
-put(SCR *sp, CB *cbp, CHAR_T *namep, MARK *cp, MARK *rp, int append)
+put(sp, cbp, namep, cp, rp, append)
+	SCR *sp;
+	CB *cbp;
+	CHAR_T *namep;
+	MARK *cp, *rp;
+	int append;
 {
 	CHAR_T name;
 	TEXT *ltp, *tp;
@@ -39,25 +46,24 @@ put(SCR *sp, CB *cbp, CHAR_T *namep, MARK *cp, MARK *rp, int append)
 	int rval;
 	char *bp, *p, *t;
 
-	if (cbp == NULL) {
+	if (cbp == NULL)
 		if (namep == NULL) {
 			cbp = sp->gp->dcbp;
 			if (cbp == NULL) {
 				msgq(sp, M_ERR,
-				    "The default buffer is empty");
+				    "053|The default buffer is empty");
 				return (1);
 			}
 		} else {
 			name = *namep;
 			CBNAME(sp, cbp, name);
 			if (cbp == NULL) {
-				msgq(sp, M_ERR, "Buffer %s is empty",
+				msgq(sp, M_ERR, "054|Buffer %s is empty",
 				    KEY_NAME(sp, name));
 				return (1);
 			}
 		}
-	}
-	tp = TAILQ_FIRST(&cbp->textq);
+	tp = cbp->textq.cqh_first;
 
 	/*
 	 * It's possible to do a put into an empty file, meaning that the cut
@@ -78,8 +84,8 @@ put(SCR *sp, CB *cbp, CHAR_T *namep, MARK *cp, MARK *rp, int append)
 		if (db_last(sp, &lno))
 			return (1);
 		if (lno == 0) {
-			for (; tp; ++lno, ++sp->rptlines[L_ADDED],
-			    tp = TAILQ_NEXT(tp, q))
+			for (; tp != (void *)&cbp->textq;
+			    ++lno, ++sp->rptlines[L_ADDED], tp = tp->q.cqe_next)
 				if (db_append(sp, 1, lno, tp->lb, tp->len))
 					return (1);
 			rp->lno = 1;
@@ -92,8 +98,8 @@ put(SCR *sp, CB *cbp, CHAR_T *namep, MARK *cp, MARK *rp, int append)
 	if (F_ISSET(cbp, CB_LMODE)) {
 		lno = append ? cp->lno : cp->lno - 1;
 		rp->lno = lno + 1;
-		for (; tp;
-		    ++lno, ++sp->rptlines[L_ADDED], tp = TAILQ_NEXT(tp, q))
+		for (; tp != (void *)&cbp->textq;
+		    ++lno, ++sp->rptlines[L_ADDED], tp = tp->q.cqe_next)
 			if (db_append(sp, 1, lno, tp->lb, tp->len))
 				return (1);
 		rp->cno = 0;
@@ -155,7 +161,7 @@ put(SCR *sp, CB *cbp, CHAR_T *namep, MARK *cp, MARK *rp, int append)
 	 * the intermediate lines, because the line changes will lose
 	 * the cached line.
 	 */
-	if (TAILQ_NEXT(tp, q) == NULL) {
+	if (tp->q.cqe_next == (void *)&cbp->textq) {
 		if (clen > 0) {
 			memcpy(t, p, clen);
 			t += clen;
@@ -177,7 +183,7 @@ put(SCR *sp, CB *cbp, CHAR_T *namep, MARK *cp, MARK *rp, int append)
 		 * Last part of original line; check for space, reset
 		 * the pointer into the buffer.
 		 */
-		ltp = TAILQ_LAST(&cbp->textq, _texth);
+		ltp = cbp->textq.cqh_last;
 		len = t - bp;
 		ADD_SPACE_RET(sp, bp, blen, ltp->len + clen);
 		t = bp + len;
@@ -205,8 +211,9 @@ put(SCR *sp, CB *cbp, CHAR_T *namep, MARK *cp, MARK *rp, int append)
 		}
 
 		/* Output any intermediate lines in the CB. */
-		for (tp = TAILQ_NEXT(tp, q); TAILQ_NEXT(tp, q);
-		    ++lno, ++sp->rptlines[L_ADDED], tp = TAILQ_NEXT(tp, q))
+		for (tp = tp->q.cqe_next;
+		    tp->q.cqe_next != (void *)&cbp->textq;
+		    ++lno, ++sp->rptlines[L_ADDED], tp = tp->q.cqe_next)
 			if (db_append(sp, 1, lno, tp->lb, tp->len))
 				goto err;
 

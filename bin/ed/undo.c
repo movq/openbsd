@@ -1,4 +1,4 @@
-/*	$OpenBSD: undo.c,v 1.14 2016/03/22 17:58:28 mmcc Exp $	*/
+/*	$OpenBSD: undo.c,v 1.4 1996/10/12 19:38:43 millert Exp $	*/
 /*	$NetBSD: undo.c,v 1.2 1995/03/21 09:04:52 cgd Exp $	*/
 
 /* undo.c: This file contains the undo routines for the ed line editor */
@@ -28,27 +28,42 @@
  * SUCH DAMAGE.
  */
 
-#include <regex.h>
-#include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
+#ifndef lint
+#if 0
+static char *rcsid = "@(#)undo.c,v 1.1 1994/02/01 00:34:44 alm Exp";
+#else
+static char rcsid[] = "$OpenBSD: undo.c,v 1.4 1996/10/12 19:38:43 millert Exp $";
+#endif
+#endif /* not lint */
 
 #include "ed.h"
 
-#define USIZE 100				/* undo stack size */
-static undo_t *ustack = NULL;			/* undo stack */
-static int usize = 0;				/* stack size variable */
-static int u_p = 0;				/* undo stack pointer */
 
-/* push_undo_stack: return pointer to initialized undo node */
+#define USIZE 100				/* undo stack size */
+undo_t *ustack = NULL;				/* undo stack */
+long usize = 0;					/* stack size variable */
+long u_p = 0;					/* undo stack pointer */
+
+/* push_undo_stack: return pointer to intialized undo node */
 undo_t *
-push_undo_stack(int type, int from, int to)
+push_undo_stack(type, from, to)
+	int type;
+	long from;
+	long to;
 {
 	undo_t *t;
 
+#if defined(sun) || defined(NO_REALLOC_NULL)
+	if (ustack == NULL &&
+	    (ustack = (undo_t *) malloc((usize = USIZE) * sizeof(undo_t))) == NULL) {
+		perror(NULL);
+		strcpy(errmsg, "out of memory");
+		return NULL;
+	}
+#endif
 	t = ustack;
 	if (u_p < usize ||
-	    (t = reallocarray(ustack, (usize += USIZE), sizeof(undo_t))) != NULL) {
+	    (t = (undo_t *) realloc(ustack, (usize += USIZE) * sizeof(undo_t))) != NULL) {
 		ustack = t;
 		ustack[u_p].type = type;
 		ustack[u_p].t = get_addressed_line_node(to);
@@ -57,7 +72,7 @@ push_undo_stack(int type, int from, int to)
 	}
 	/* out of memory - release undo stack */
 	perror(NULL);
-	seterrmsg("out of memory");
+	strcpy(errmsg, "out of memory");
 	clear_undo_stack();
 	free(ustack);
 	ustack = NULL;
@@ -73,19 +88,19 @@ push_undo_stack(int type, int from, int to)
 }
 
 
-int u_current_addr = -1;	/* if >= 0, undo enabled */
-int u_addr_last = -1;		/* if >= 0, undo enabled */
+long u_current_addr = -1;	/* if >= 0, undo enabled */
+long u_addr_last = -1;		/* if >= 0, undo enabled */
 
 /* pop_undo_stack: undo last change to the editor buffer */
 int
-pop_undo_stack(void)
+pop_undo_stack()
 {
-	int n;
-	int o_current_addr = current_addr;
-	int o_addr_last = addr_last;
+	long n;
+	long o_current_addr = current_addr;
+	long o_addr_last = addr_last;
 
 	if (u_current_addr == -1 || u_addr_last == -1) {
-		seterrmsg("nothing to undo");
+		strcpy(errmsg, "nothing to undo");
 		return ERR;
 	} else if (u_p)
 		modified = 1;
@@ -127,7 +142,7 @@ pop_undo_stack(void)
 
 /* clear_undo_stack: clear the undo stack */
 void
-clear_undo_stack(void)
+clear_undo_stack()
 {
 	line_t *lp, *ep, *tl;
 

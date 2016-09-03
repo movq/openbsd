@@ -1,5 +1,3 @@
-/*	$OpenBSD: v_yank.c,v 1.7 2014/11/12 04:28:41 bentley Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)v_yank.c	10.9 (Berkeley) 5/19/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -37,10 +39,12 @@
  * to the line and column marked by a.  Hopefully, the motion component code
  * got it right...   Unlike delete, we make no adjustments here.
  *
- * PUBLIC: int v_yank(SCR *, VICMD *);
+ * PUBLIC: int v_yank __P((SCR *, VICMD *));
  */
 int
-v_yank(SCR *sp, VICMD *vp)
+v_yank(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	size_t len;
 

@@ -1,5 +1,5 @@
 /* itbl-parse.y
-   Copyright 1997 Free Software Foundation, Inc.
+   Copyright (C) 1997  Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -152,7 +152,7 @@ Here is the grammar for the coprocessor table:
 	    char -> any printable character
 	    ltr -> ['a'..'z'|'A'..'Z'] 
 	    dec -> ['0'..'9']*	    	    	    	    	     ; value in decimal
-	    hex -> '0x'['0'..'9' | 'a'..'f' | 'A'..'F']*	; value in hexadecimal 
+	    hex -> '0x'['0'..'9' | 'a'..'f' | 'A'..'F']*	; value in hexidecimal 
 
 
 Examples
@@ -239,7 +239,7 @@ was deleted from the original format such that we now count the fields.
 
 ----
 FIXME! should really change lexical analyzer 
-to recognize 'dreg' etc. in context sensitive way.
+to recognize 'dreg' etc. in context sensative way.
 Currently function names or mnemonics may be incorrectly parsed as keywords
 
 FIXME! hex is ambiguous with any digit
@@ -321,7 +321,6 @@ entry:
 	    insn=itbl_add_insn ($1, $3, $4, sbit, ebit, $6);
 	  }
 	fieldspecs NL
-	  {}
 	| NL
 	| error NL
 	;

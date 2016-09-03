@@ -1,5 +1,3 @@
-/*	$OpenBSD: v_cmd.c,v 1.5 2016/03/13 18:30:43 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)v_cmd.c	10.9 (Berkeley) 3/28/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -128,7 +130,7 @@ VIKEYS const vikeys [MAXVIKEY + 1] = {
 /* 034  ^\ */
 	{v_exmode,	0,
 	    "^\\",
-	    "^\\ switch to ex mode"},
+	    " ^\\ switch to ex mode"},
 /* 035  ^] */
 	{v_tagpush,	V_ABS|V_KEYW|VM_RCM_SET,
 	    "^]",
@@ -328,7 +330,7 @@ VIKEYS const vikeys [MAXVIKEY + 1] = {
 /* 125   U */
 	{v_Undo,	VM_RCM_SET,
 	    "U",
-	    " U restore the current line"},
+	    " U Restore the current line"},
 /* 126   V */
 	{NULL},
 /* 127   W */

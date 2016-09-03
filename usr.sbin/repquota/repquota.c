@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,10 +34,21 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1980, 1990, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+/*static char sccsid[] = "from: @(#)repquota.c	8.1 (Berkeley) 6/6/93";*/
+static char *rcsid = "$Id: repquota.c,v 1.9 1997/01/17 07:14:24 millert Exp $";
+#endif /* not lint */
+
 /*
  * Quota report
  */
-#include <sys/param.h>	/* dbtob */
+#include <sys/param.h>
 #include <sys/stat.h>
 #include <ufs/ufs/quota.h>
 #include <fstab.h>
@@ -43,7 +58,6 @@
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
-#include <stdlib.h>
 
 char *qfname = QUOTAFILENAME;
 char *qfextension[] = INITQFNAMES;
@@ -57,24 +71,26 @@ struct fileusage {
 };
 #define FUHASH 1024	/* must be power of two */
 struct fileusage *fuhead[MAXQUOTAS][FUHASH];
-struct fileusage *lookup(uid_t, int);
-struct fileusage *addid(uid_t id, int type, char *name);
+struct fileusage *lookup();
+struct fileusage *addid();
 uid_t highid[MAXQUOTAS];	/* highest addid()'ed identifier per type */
 
 int	vflag;			/* verbose */
 int	aflag;			/* all file systems */
 
-void	usage(void);
-int	repquota(struct fstab *, int, char *);
-int	hasquota(struct fstab *, int, char **);
-int	oneof(char *, char *[], int);
-char	*timeprt(time_t);
+void	usage __P((void));
+int	repquota __P((struct fstab *, int, char *));
+int	hasquota __P((struct fstab *, int, char **));
+int	oneof __P((char *, char *[], int));
+
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
-	struct fstab *fs;
-	struct passwd *pw;
-	struct group *gr;
+	register struct fstab *fs;
+	register struct passwd *pw;
+	register struct group *gr;
 	int gflag = 0, uflag = 0, errs = 0;
 	long i, argnum, done = 0;
 	extern char *optarg;
@@ -102,7 +118,7 @@ main(int argc, char *argv[])
 	}
 	argc -= optind;
 	argv += optind;
-	if ((argc == 0) == (aflag == 0))
+	if (argc == 0 && !aflag)
 		usage();
 	if (!gflag && !uflag) {
 		if (aflag)
@@ -139,7 +155,7 @@ main(int argc, char *argv[])
 			done |= 1 << argnum;
 			if (gflag && hasquota(fs, GRPQUOTA, &qfnp))
 				errs += repquota(fs, GRPQUOTA, qfnp);
-			if (uflag && hasquota(fs, USRQUOTA, &qfnp))
+			if (uflag && hasquota(fs, GRPQUOTA, &qfnp))
 				errs += repquota(fs, USRQUOTA, qfnp);
 		}
 	}
@@ -151,24 +167,29 @@ main(int argc, char *argv[])
 }
 
 void
-usage(void)
+usage()
 {
-	extern char *__progname;
-	fprintf(stderr, "usage: %s [-aguv] filesystem ...\n", __progname);
+	fprintf(stderr, "Usage:\n\t%s\n\t%s\n",
+		"repquota [-v] [-g] [-u] -a",
+		"repquota [-v] [-g] [-u] filesys ...");
 	exit(1);
 }
 
 int
-repquota(struct fstab *fs, int type, char *qfpathname)
+repquota(fs, type, qfpathname)
+	register struct fstab *fs;
+	int type;
+	char *qfpathname;
 {
-	struct fileusage *fup;
+	register struct fileusage *fup;
 	FILE *qf;
 	uid_t id;
 	struct dqblk dqbuf;
-	char *timeprt(time_t);
+	char *timeprt();
 	static struct dqblk zerodqblk;
 	static int warned = 0;
 	static int multiple = 0;
+	extern int errno;
 
 	if (quotactl(fs->fs_file, QCMD(Q_SYNC, type), 0, 0) < 0 &&
 	    errno == EOPNOTSUPP && !warned && vflag) {
@@ -192,11 +213,11 @@ repquota(struct fstab *fs, int type, char *qfpathname)
 		if (dqbuf.dqb_curinodes == 0 && dqbuf.dqb_curblocks == 0)
 			continue;
 		if ((fup = lookup(id, type)) == 0)
-			fup = addid(id, type, NULL);
+			fup = addid(id, type, (char *)0);
 		fup->fu_dqblk = dqbuf;
 	}
 	fclose(qf);
-	printf("                        KByte limits               File limits\n");
+	printf("                        Block limits               File limits\n");
 	printf("User            used    soft    hard  grace    used  soft  hard  grace\n");
 	for (id = 0; id <= highid[type]; id++) {
 		fup = lookup(id, type);
@@ -206,24 +227,21 @@ repquota(struct fstab *fs, int type, char *qfpathname)
 		    fup->fu_dqblk.dqb_curblocks == 0)
 			continue;
 		printf("%-10s", fup->fu_name);
-		printf("%c%c %7d %7d %7d %6s",
+		printf("%c%c%8d%8d%8d%7s",
 			fup->fu_dqblk.dqb_bsoftlimit && 
 			    fup->fu_dqblk.dqb_curblocks >= 
 			    fup->fu_dqblk.dqb_bsoftlimit ? '+' : '-',
 			fup->fu_dqblk.dqb_isoftlimit &&
 			    fup->fu_dqblk.dqb_curinodes >=
 			    fup->fu_dqblk.dqb_isoftlimit ? '+' : '-',
-			(int)(dbtob((u_quad_t)fup->fu_dqblk.dqb_curblocks)
-			    / 1024),
-			(int)(dbtob((u_quad_t)fup->fu_dqblk.dqb_bsoftlimit)
-			    / 1024),
-			(int)(dbtob((u_quad_t)fup->fu_dqblk.dqb_bhardlimit)
-			    / 1024),
+			dbtob(fup->fu_dqblk.dqb_curblocks) / 1024,
+			dbtob(fup->fu_dqblk.dqb_bsoftlimit) / 1024,
+			dbtob(fup->fu_dqblk.dqb_bhardlimit) / 1024,
 			fup->fu_dqblk.dqb_bsoftlimit && 
 			    fup->fu_dqblk.dqb_curblocks >= 
 			    fup->fu_dqblk.dqb_bsoftlimit ?
 			    timeprt(fup->fu_dqblk.dqb_btime) : "");
-		printf("  %6d %5d %5d %6s\n",
+		printf("  %6d%6d%6d%7s\n",
 			fup->fu_dqblk.dqb_curinodes,
 			fup->fu_dqblk.dqb_isoftlimit,
 			fup->fu_dqblk.dqb_ihardlimit,
@@ -240,9 +258,11 @@ repquota(struct fstab *fs, int type, char *qfpathname)
  * Check to see if target appears in list of size cnt.
  */
 int
-oneof(char *target, char *list[], int cnt)
+oneof(target, list, cnt)
+	register char *target, *list[];
+	int cnt;
 {
-	int i;
+	register int i;
 
 	for (i = 0; i < cnt; i++)
 		if (strcmp(target, list[i]) == 0)
@@ -254,21 +274,22 @@ oneof(char *target, char *list[], int cnt)
  * Check to see if a particular quota is to be enabled.
  */
 int
-hasquota(struct fstab *fs, int type, char **qfnamep)
+hasquota(fs, type, qfnamep)
+	register struct fstab *fs;
+	int type;
+	char **qfnamep;
 {
-	char *opt;
+	register char *opt;
 	char *cp;
 	static char initname, usrname[100], grpname[100];
 	static char buf[BUFSIZ];
 
 	if (!initname) {
-		(void)snprintf(usrname, sizeof usrname, "%s%s",
-		    qfextension[USRQUOTA], qfname);
-		(void)snprintf(grpname, sizeof grpname, "%s%s",
-		    qfextension[GRPQUOTA], qfname);
+		sprintf(usrname, "%s%s", qfextension[USRQUOTA], qfname);
+		sprintf(grpname, "%s%s", qfextension[GRPQUOTA], qfname);
 		initname = 1;
 	}
-	strlcpy(buf, fs->fs_mntops, sizeof buf);
+	strcpy(buf, fs->fs_mntops);
 	for (opt = strtok(buf, ","); opt; opt = strtok(NULL, ",")) {
 		if ((cp = strchr(opt, '=')))
 			*cp++ = '\0';
@@ -283,8 +304,7 @@ hasquota(struct fstab *fs, int type, char **qfnamep)
 		*qfnamep = cp;
 		return (1);
 	}
-	(void)snprintf(buf, sizeof buf, "%s/%s.%s",
-	    fs->fs_file, qfname, qfextension[type]);
+	(void) sprintf(buf, "%s/%s.%s", fs->fs_file, qfname, qfextension[type]);
 	*qfnamep = buf;
 	return (1);
 }
@@ -295,24 +315,30 @@ hasquota(struct fstab *fs, int type, char **qfnamep)
  * Lookup an id of a specific type.
  */
 struct fileusage *
-lookup(uid_t id, int type)
+lookup(id, type)
+	uid_t id;
+	int type;
 {
-	struct fileusage *fup;
+	register struct fileusage *fup;
 
 	for (fup = fuhead[type][id & (FUHASH-1)]; fup != 0; fup = fup->fu_next)
 		if (fup->fu_id == id)
 			return (fup);
-	return (NULL);
+	return ((struct fileusage *)0);
 }
 
 /*
  * Add a new file usage id if it does not already exist.
  */
 struct fileusage *
-addid(uid_t id, int type, char *name)
+addid(id, type, name)
+	uid_t id;
+	int type;
+	char *name;
 {
 	struct fileusage *fup, **fhp;
-	size_t len;
+	int len;
+	extern char *calloc();
 
 	if ((fup = lookup(id, type)))
 		return (fup);
@@ -320,7 +346,7 @@ addid(uid_t id, int type, char *name)
 		len = strlen(name);
 	else
 		len = 10;
-	if ((fup = calloc(1, sizeof(*fup) + len)) == NULL) {
+	if ((fup = (struct fileusage *)calloc(1, sizeof(*fup) + len)) == NULL) {
 		fprintf(stderr, "out of memory for fileusage structures\n");
 		exit(1);
 	}
@@ -333,7 +359,7 @@ addid(uid_t id, int type, char *name)
 	if (name) {
 		bcopy(name, fup->fu_name, len + 1);
 	} else {
-		snprintf(fup->fu_name, len, "%u", id);
+		sprintf(fup->fu_name, "%u", id);
 	}
 	return (fup);
 }
@@ -342,7 +368,8 @@ addid(uid_t id, int type, char *name)
  * Calculate the grace period and return a printable string for it.
  */
 char *
-timeprt(time_t seconds)
+timeprt(seconds)
+	time_t seconds;
 {
 	int hours, minutes;
 	static char buf[20];
@@ -356,14 +383,13 @@ timeprt(time_t seconds)
 	minutes = (seconds + 30) / 60;
 	hours = (minutes + 30) / 60;
 	if (hours >= 36) {
-		snprintf(buf, sizeof buf, "%ddays", (hours + 12) / 24);
+		sprintf(buf, "%ddays", (hours + 12) / 24);
 		return (buf);
 	}
 	if (minutes >= 60) {
-		snprintf(buf, sizeof buf, "%2d:%d", minutes / 60,
-		    minutes % 60);
+		sprintf(buf, "%2d:%d", minutes / 60, minutes % 60);
 		return (buf);
 	}
-	snprintf(buf, sizeof buf, "%2d", minutes);
+	sprintf(buf, "%2d", minutes);
 	return (buf);
 }

@@ -1,4 +1,4 @@
-/*	$OpenBSD: disk.h,v 1.6 2015/09/02 04:09:24 yasuoka Exp $	*/
+/*	$OpenBSD: disk.h,v 1.1 1997/11/30 21:59:50 mickey Exp $	*/
 
 /*
  * Copyright (c) 1997 Tobias Weingartner
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Tobias Weingartner.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR 
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
@@ -27,23 +32,15 @@
  *
  */
 
-#ifndef _DISK_H
-#define _DISK_H
+#ifndef _DISKPROBE_H
+#define _DISKPROBE_H
 
 #include <sys/queue.h>
 
-struct efi_diskinfo;
-typedef struct efi_diskinfo *efi_diskinfo_t;
-
 /* All the info on a disk we've found */
 struct diskinfo {
-	efi_diskinfo_t efi_info;
 	bios_diskinfo_t bios_info;
 	struct disklabel disklabel;
-	struct sr_boot_volume *sr_vol;
-
-	int (*diskio)(int, struct diskinfo *, u_int, int, void *);
-	int (*strategy)(void *, int, daddr32_t, size_t, void *, size_t *);
 
 	dev_t bsddev, bootdev;
 
@@ -51,12 +48,10 @@ struct diskinfo {
 };
 TAILQ_HEAD(disklist_lh, diskinfo);
 
-/* Disk info for boot device. */
+/* Head of this list */
 extern struct diskinfo *bootdev_dip;
 
-/* List of probed disks. */
-extern struct disklist_lh disklist;
+void dump_diskinfo __P((void));
 
-void dump_diskinfo(void);
+#endif /* _DISKPROBE_H */
 
-#endif /* _DISK_H */

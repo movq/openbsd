@@ -1,7 +1,7 @@
-/* $OpenBSD: m_new.c,v 1.8 2010/01/12 23:22:08 nicm Exp $ */
+/*	$OpenBSD: m_new.c,v 1.6 1999/05/17 03:04:25 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2004,2006 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -29,7 +29,7 @@
  ****************************************************************************/
 
 /****************************************************************************
- *   Author:  Juergen Pfeifer, 1995,1997                                    *
+ *   Author: Juergen Pfeifer <juergen.pfeifer@gmx.net> 1995,1997            *
  ****************************************************************************/
 
 /***************************************************************************
@@ -39,7 +39,7 @@
 
 #include "menu.priv.h"
 
-MODULE_ID("$Id: m_new.c,v 1.8 2010/01/12 23:22:08 nicm Exp $")
+MODULE_ID("$From: m_new.c,v 1.10 1999/05/16 17:26:59 juergen Exp $")
 
 /*---------------------------------------------------------------------------
 |   Facility      :  libnmenu  
@@ -52,13 +52,10 @@ MODULE_ID("$Id: m_new.c,v 1.8 2010/01/12 23:22:08 nicm Exp $")
 |
 |   Return Values :  NULL on error
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(MENU *)
-new_menu(ITEM ** items)
+MENU *new_menu(ITEM ** items)
 {
-  int err = E_SYSTEM_ERROR;
-  MENU *menu = (MENU *) calloc(1, sizeof(MENU));
-
-  T((T_CALLED("new_menu(%p)"), items));
+  MENU *menu = (MENU *)calloc(1,sizeof(MENU));
+  
   if (menu)
     {
       *menu = _nc_Default_Menu;
@@ -67,19 +64,18 @@ new_menu(ITEM ** items)
       menu->cols = menu->fcols;
       if (items && *items)
 	{
-	  if (!_nc_Connect_Items(menu, items))
+	  if (!_nc_Connect_Items(menu,items))
 	    {
-	      err = E_NOT_CONNECTED;
 	      free(menu);
-	      menu = (MENU *) 0;
+	      menu = (MENU *)0;
 	    }
 	}
     }
 
   if (!menu)
-    SET_ERROR(err);
+    SET_ERROR(E_SYSTEM_ERROR);
 
-  returnMenu(menu);
+  return(menu);
 }
 
 /*---------------------------------------------------------------------------
@@ -93,19 +89,17 @@ new_menu(ITEM ** items)
 |                    E_BAD_ARGUMENT     - Invalid menu pointer passed
 |                    E_POSTED           - Menu is already posted
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(int)
-free_menu(MENU * menu)
+int free_menu(MENU * menu)
 {
-  T((T_CALLED("free_menu(%p)"), menu));
   if (!menu)
     RETURN(E_BAD_ARGUMENT);
-
-  if (menu->status & _POSTED)
+  
+  if ( menu->status & _POSTED )
     RETURN(E_POSTED);
-
-  if (menu->items)
+  
+  if (menu->items) 
     _nc_Disconnect_Items(menu);
-
+  
   if ((menu->status & _MARK_ALLOCATED) && menu->mark)
     free(menu->mark);
 

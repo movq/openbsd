@@ -1,4 +1,4 @@
-.\"	$OpenBSD: quotactl.2,v 1.15 2015/01/19 15:54:11 millert Exp $
+.\"	$OpenBSD: quotactl.2,v 1.6 1999/07/05 06:08:05 aaron Exp $
 .\"	$NetBSD: quotactl.2,v 1.8 1995/02/27 12:35:43 cgd Exp $
 .\"
 .\" Copyright (c) 1983, 1990, 1991, 1993
@@ -15,7 +15,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -33,15 +37,14 @@
 .\"
 .\"	@(#)quotactl.2	8.1 (Berkeley) 6/4/93
 .\"
-.Dd $Mdocdate: January 19 2015 $
+.Dd June 4, 1993
 .Dt QUOTACTL 2
 .Os
 .Sh NAME
 .Nm quotactl
 .Nd manipulate filesystem quotas
 .Sh SYNOPSIS
-.In ufs/ufs/quota.h
-.In unistd.h
+.Fd #include <ufs/ufs/quota.h>	/* for ufs quotas */
 .Ft int
 .Fn quotactl "const char *path" "int cmd" "int id" "char *addr"
 .Sh DESCRIPTION
@@ -89,7 +92,7 @@ program.
 The
 .Fa id
 argument is unused.
-Only the superuser may turn quotas on.
+Only the super-user may turn quotas on.
 .It Dv Q_QUOTAOFF
 Disable disk quotas for the filesystem specified by
 .Fa path .
@@ -99,7 +102,7 @@ The
 and
 .Fa id
 arguments are unused.
-Only the superuser may turn quotas off.
+Only the super-user may turn quotas off.
 .It Dv Q_GETQUOTA
 Get disk quota limits and current usage for the user or group
 (as determined by the command type) with identifier
@@ -119,7 +122,7 @@ structure.
 The usage fields of
 .Li struct dqblk
 structure are ignored.
-This call is restricted to the superuser.
+This call is restricted to the super-user.
 .It Dv Q_SETUSE
 Set disk usage limits for the user or group
 (as determined by the command type) with identifier
@@ -129,7 +132,7 @@ is a pointer to a
 .Li struct dqblk
 structure.
 Only the usage fields are used.
-This call is restricted to the superuser.
+This call is restricted to the super-user.
 .It Dv Q_SYNC
 Update the on-disk copy of quota usages.
 The command type specifies which type of quotas are to be updated.
@@ -140,7 +143,10 @@ and
 parameters are ignored.
 .El
 .Sh RETURN VALUES
-.Rv -std
+A successful call returns 0,
+otherwise the value \-1 is returned and the global variable
+.Va errno
+indicates the reason for the failure.
 .Sh ERRORS
 A
 .Fn quotactl
@@ -165,11 +171,10 @@ Search permission is denied for a component of a path prefix.
 A component of a path prefix was not a directory.
 .It Bq Er ENAMETOOLONG
 A component of a pathname exceeded
-.Dv NAME_MAX
-characters, or an entire pathname (including the terminating NUL)
-exceeded
-.Dv PATH_MAX
-bytes.
+.Dv {NAME_MAX}
+characters, or an entire path name exceeded
+.Dv {PATH_MAX}
+characters.
 .It Bq Er ENOENT
 A filename does not exist.
 .It Bq Er ELOOP
@@ -179,7 +184,9 @@ In
 .Dv Q_QUOTAON ,
 the quota file resides on a read-only filesystem.
 .It Bq Er EIO
-An I/O error occurred while reading from or writing
+An
+.Tn I/O
+error occurred while reading from or writing
 to a file containing quotas.
 .It Bq Er EFAULT
 An invalid
@@ -190,7 +197,7 @@ of the kernel.
 .Fa path
 points outside the process's allocated address space.
 .It Bq Er EPERM
-The call was privileged and the caller was not the superuser.
+The call was privileged and the caller was not the super-user.
 .El
 .Sh SEE ALSO
 .Xr quota 1 ,
@@ -199,14 +206,14 @@ The call was privileged and the caller was not the superuser.
 .Xr quotacheck 8 ,
 .Xr quotaon 8 ,
 .Xr repquota 8
-.Sh HISTORY
-The
-.Fn quotactl
-function call appeared in
-.Bx 4.3 Reno .
 .Sh BUGS
 There should be some way to integrate this call with the resource
 limit interface provided by
 .Xr setrlimit 2
 and
 .Xr getrlimit 2 .
+.Sh HISTORY
+The
+.Fn quotactl
+function call appeared in
+.Bx 4.3 Reno .

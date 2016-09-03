@@ -1,7 +1,7 @@
-/*	$OpenBSD: trap.h,v 1.12 2005/05/26 04:34:52 kettenis Exp $	*/
+/*	$OpenBSD: trap.h,v 1.6 1999/09/18 20:39:55 mickey Exp $	*/
 
 /*
- * Copyright (c) 1999-2004 Michael Shalayeff
+ * Copyright (c) 1999 Michael Shalayeff
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *      This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -61,9 +66,6 @@
 #define	T_DATACC	26	/* data access rights >=7100 */
 #define	T_DATAPID	27	/* data protection ID >=7100 */
 #define	T_DATALIGN	28	/* unaligned data ref */
-#define	T_PERFMON	29	/* performance monitor interrupt */
-#define	T_IDEBUG	30	/* debug SFU interrupt */
-#define	T_DDEBUG	31	/* debug SFU interrupt */
 
 /*
  * Reserved range for traps is 0-63, place user flag at 6th bit
@@ -76,18 +78,14 @@
  */
 #define	TFF_LAST_POS	0
 #define	TFF_ITLB_POS	1
-#define	TFF_SYS_POS	2
-#define	TFF_INTR_POS	3
 
 #define	TFF_LAST	(1 << (31 - TFF_LAST_POS))
 #define	TFF_ITLB	(1 << (31 - TFF_ITLB_POS))
-#define	TFF_SYS		(1 << (31 - TFF_SYS_POS))
-#define	TFF_INTR	(1 << (31 - TFF_INTR_POS))
 
 /*
- * Define this for pretty printings of trapflags.
+ * Definre this for pretty printings of trapflags.
  */
-#define	T_BITS	"\020\07user\036intr\037itlb\040last"
+#define	T_BITS	"\020\07user\037itlb\040last"
 
 /*
  * These are break instruction entry points.
@@ -95,11 +93,9 @@
 /* im5 */
 #define	HPPA_BREAK_KERNEL	0
 /* im13 */
-#define HPPA_BREAK_SS		4
 #define	HPPA_BREAK_KGDB		5
 #define	HPPA_BREAK_GET_PSW	9
 #define	HPPA_BREAK_SET_PSW	10
-#define	HPPA_BREAK_SPLLOWER	11
 
 /*
  * break instruction decoding.
@@ -108,3 +104,4 @@
 #define	break13(i)	(((i) >> 13) & 0x1fff)
 
 #endif	/* _MACHINE_TRAP_H_ */
+

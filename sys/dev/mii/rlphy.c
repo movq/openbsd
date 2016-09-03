@@ -1,4 +1,4 @@
-/*	$OpenBSD: rlphy.c,v 1.33 2014/11/24 00:13:42 brad Exp $	*/
+/*	$OpenBSD: rlphy.c,v 1.4 1999/07/23 12:39:11 deraadt Exp $	*/
 
 /*
  * Copyright (c) 1998, 1999 Jason L. Wright (jason@thought.net)
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Jason L. Wright
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -36,69 +41,44 @@
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/device.h>
+#include <sys/malloc.h>
 #include <sys/socket.h>
 #include <sys/errno.h>
 
-#include <machine/bus.h>
-
 #include <net/if.h>
 #include <net/if_media.h>
-
-#include <netinet/in.h>
-#include <netinet/if_ether.h>
 
 #include <dev/mii/mii.h>
 #include <dev/mii/miivar.h>
 #include <dev/mii/miidevs.h>
 
-#include <dev/ic/rtl81x9reg.h>
-
-int	rlphymatch(struct device *, void *, void *);
-void	rlphyattach(struct device *, struct device *, void *);
+int	rlphymatch __P((struct device *, void *, void *));
+void	rlphyattach __P((struct device *, struct device *, void *));
 
 struct cfattach rlphy_ca = {
-	sizeof(struct mii_softc), rlphymatch, rlphyattach, mii_phy_detach
+	sizeof(struct mii_softc), rlphymatch, rlphyattach
 };
 
 struct cfdriver rlphy_cd = {
 	NULL, "rlphy", DV_DULL
 };
 
-int	rlphy_service(struct mii_softc *, struct mii_data *, int);
-void	rlphy_status(struct mii_softc *);
+int	rlphy_service __P((struct mii_softc *, struct mii_data *, int));
+void	rlphy_reset __P((struct mii_softc *));
 
-const struct mii_phy_funcs rlphy_funcs = {
-	rlphy_service, rlphy_status, mii_phy_reset,
-};
-
-static const struct mii_phydesc rlphys[] = {
-	{ MII_OUI_REALTEK,		MII_MODEL_REALTEK_RTL8201L,
-          MII_STR_REALTEK_RTL8201L },
-	{ MII_OUI_xxREALTEK,		MII_MODEL_xxREALTEK_RTL8201E,
-          MII_STR_xxREALTEK_RTL8201E },
-	{ MII_OUI_ICPLUS,		MII_MODEL_ICPLUS_IP101,
-	  MII_STR_ICPLUS_IP101 },
-
-	{ 0,				0,
-	  NULL },
-};
 int
-rlphymatch(struct device *parent, void *match, void *aux)
+rlphymatch(parent, match, aux)
+	struct device *parent;
+	void *match;
+	void *aux;
 {
 	struct mii_attach_args *ma = aux;
-	char *devname;
-
-	devname = parent->dv_cfdata->cf_driver->cd_name;
-
-	if (mii_phy_match(ma, rlphys) != NULL)
-		return (10);
 
 	if (MII_OUI(ma->mii_id1, ma->mii_id2) != 0 ||
 	    MII_MODEL(ma->mii_id2) != 0)
 		return (0);
 
-	if ((strcmp(devname, "re") != 0) &&
-	    (strcmp(devname, "rl") != 0))
+	if (strcmp(parent->dv_cfdata->cf_driver->cd_name, "rl") != 0)
 		return (0);
 
 	/*
@@ -109,43 +89,44 @@ rlphymatch(struct device *parent, void *match, void *aux)
 }
 
 void
-rlphyattach(struct device *parent, struct device *self, void *aux)
+rlphyattach(parent, self, aux)
+	struct device *parent, *self;
+	void *aux;
 {
 	struct mii_softc *sc = (struct mii_softc *)self;
 	struct mii_attach_args *ma = aux;
 	struct mii_data *mii = ma->mii_data;
-	const struct mii_phydesc *mpd;
 
-	mpd = mii_phy_match(ma, rlphys);
-	if (mpd != NULL) {
-		printf(": %s, rev. %d\n", mpd->mpd_name,
-		    MII_REV(ma->mii_id2));
-	} else
-		printf(": RTL internal PHY\n");
+	printf(": RTL internal phy\n");
 
 	sc->mii_inst = mii->mii_instance;
 	sc->mii_phy = ma->mii_phyno;
-	sc->mii_funcs = &rlphy_funcs;
+	sc->mii_service = rlphy_service;
 	sc->mii_pdata = mii;
-	sc->mii_flags = ma->mii_flags;
 
-	sc->mii_flags |= MIIF_NOISOLATE;
+	ifmedia_add(&mii->mii_media,
+	    IFM_MAKEWORD(IFM_ETHER, IFM_NONE, 0, sc->mii_inst),
+	    BMCR_ISO, NULL);
+	ifmedia_add(&mii->mii_media,
+	    IFM_MAKEWORD(IFM_ETHER, IFM_100_TX, IFM_LOOP, sc->mii_inst),
+	    BMCR_LOOP | BMCR_S100, NULL);
 
-	PHY_RESET(sc);
+	rlphy_reset(sc);
 
 	sc->mii_capabilities =
 	    PHY_READ(sc, MII_BMSR) & ma->mii_capmask;
 	if (sc->mii_capabilities & BMSR_MEDIAMASK)
-		mii_phy_add_media(sc);
+		mii_add_media(mii, sc->mii_capabilities,
+		    sc->mii_inst);
 }
 
 int
-rlphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
+rlphy_service(sc, mii, cmd)
+	struct mii_softc *sc;
+	struct mii_data *mii;
+	int cmd;
 {
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
-
-	if ((sc->mii_dev.dv_flags & DVF_ACTIVE) == 0)
-		return (ENXIO);
 
 	/*
 	 * Can't isolate the RTL8139 phy, so it has to be the only one.
@@ -171,7 +152,7 @@ rlphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 			 */
 			if (PHY_READ(sc, MII_BMCR) & BMCR_AUTOEN)
 				return (0);
-			(void) mii_phy_auto(sc, 0);
+			(void) mii_phy_auto(sc, 1);
 			break;
 		case IFM_100_T4:
 			/*
@@ -190,126 +171,47 @@ rlphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 
 	case MII_TICK:
 		/*
+		 * Only used for autonegotiation.
+		 */
+		if (IFM_SUBTYPE(ife->ifm_media) != IFM_AUTO)
+			return (0);
+
+		/*
 		 * Is the interface even up?
 		 */
 		if ((mii->mii_ifp->if_flags & IFF_UP) == 0)
 			return (0);
 
 		/*
-		 * The Realtek PHY's autonegotiation doesn't need to be
+		 * The RTL8139 autonegotiation doesn't need to be
 		 * kicked; it continues in the background.
 		 */
 		break;
-
-	case MII_DOWN:
-		mii_phy_down(sc);
-		return (0);
 	}
 
 	/* Update the media status. */
-	mii_phy_status(sc);
+	ukphy_status(sc);
 
 	/* Callback if something changed. */
-	mii_phy_update(sc, cmd);
+	if (sc->mii_active != mii->mii_media_active || cmd == MII_MEDIACHG) {
+		(*mii->mii_statchg)(sc->mii_dev.dv_parent);
+		sc->mii_active = mii->mii_media_active;
+	}
 	return (0);
 }
 
 void
-rlphy_status(struct mii_softc *sc)
+rlphy_reset(sc)
+	struct mii_softc *sc;
 {
-	struct mii_data *mii = sc->mii_pdata;
-	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
-	int bmsr, bmcr, anlpar;
-	char *devname;
+	int bmcr;
 
-	devname = sc->mii_dev.dv_parent->dv_cfdata->cf_driver->cd_name;
-
-	mii->mii_media_status = IFM_AVALID;
-	mii->mii_media_active = IFM_ETHER;
-
-	bmsr = PHY_READ(sc, MII_BMSR) | PHY_READ(sc, MII_BMSR);
-	if (bmsr & BMSR_LINK)
-		mii->mii_media_status |= IFM_ACTIVE;
+	/*
+	 * XXX The RTL8139 doesn't set the BMCR properly
+	 * XXX after reset, which breaks autoneg.
+	 */
 
 	bmcr = PHY_READ(sc, MII_BMCR);
-	if (bmcr & BMCR_ISO) {
-		mii->mii_media_active |= IFM_NONE;
-		mii->mii_media_status = 0;
-		return;
-	}
-
-	if (bmcr & BMCR_LOOP)
-		mii->mii_media_active |= IFM_LOOP;
-
-	if (bmcr & BMCR_AUTOEN) {
-		/*
-		 * NWay autonegotiation takes the highest-order common
-		 * bit of the ANAR and ANLPAR (i.e. best media advertised
-		 * both by us and our link partner).
-		 */
-		if ((bmsr & BMSR_ACOMP) == 0) {
-			/* Erg, still trying, I guess... */
-			mii->mii_media_active |= IFM_NONE;
-			return;
-		}
-
-		if ((anlpar = PHY_READ(sc, MII_ANAR) &
-		    PHY_READ(sc, MII_ANLPAR))) {
-			if (anlpar & ANLPAR_TX_FD)
-				mii->mii_media_active |= IFM_100_TX|IFM_FDX;
-			else if (anlpar & ANLPAR_T4)
-				mii->mii_media_active |= IFM_100_T4|IFM_HDX;
-			else if (anlpar & ANLPAR_TX)
-				mii->mii_media_active |= IFM_100_TX|IFM_HDX;
-			else if (anlpar & ANLPAR_10_FD)
-				mii->mii_media_active |= IFM_10_T|IFM_FDX;
-			else if (anlpar & ANLPAR_10)
-				mii->mii_media_active |= IFM_10_T|IFM_HDX;
-			else
-				mii->mii_media_active |= IFM_NONE;
-			return;
-		}
-
-		/*
-		 * If the other side doesn't support NWAY, then the
-		 * best we can do is determine if we have a 10Mbps or
-		 * 100Mbps link. There's no way to know if the link 
-		 * is full or half duplex, so we default to half duplex
-		 * and hope that the user is clever enough to manually
-		 * change the media settings if we're wrong.
-		 */
-
-		/*
-		 * The Realtek PHY supports non-NWAY link speed
-		 * detection, however it does not report the link
-		 * detection results via the ANLPAR or BMSR registers.
-		 * (What? Realtek doesn't do things the way everyone
-		 * else does? I'm just shocked, shocked I tell you.)
-		 * To determine the link speed, we have to do one
-		 * of two things:
-		 *
-		 * - If this is a standalone Realtek RTL8201(L) PHY,
-		 *   we can determine the link speed by testing bit 0
-		 *   in the magic, vendor-specific register at offset
-		 *   0x19.
-		 *
-		 * - If this is a Realtek MAC with integrated PHY, we
-		 *   can test the 'SPEED10' bit of the MAC's media status
-		 *   register.
-		 */
-		if (strcmp("rl", devname) == 0 ||
-		    strcmp("re", devname) == 0) {
-			if (PHY_READ(sc, RL_MEDIASTAT) & RL_MEDIASTAT_SPEED10)
-				mii->mii_media_active |= IFM_10_T;
-			else
-				mii->mii_media_active |= IFM_100_TX;
-		} else {
-			if (PHY_READ(sc, 0x0019) & 0x01)
-				mii->mii_media_active |= IFM_100_TX;
-			else
-				mii->mii_media_active |= IFM_10_T;
-		}
-		mii->mii_media_active |= IFM_HDX;
-	} else
-		mii->mii_media_active = ife->ifm_media;
+	mii_phy_reset(sc);
+	PHY_WRITE(sc, MII_BMCR, bmcr);
 }

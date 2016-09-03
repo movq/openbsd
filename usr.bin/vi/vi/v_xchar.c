@@ -1,5 +1,3 @@
-/*	$OpenBSD: v_xchar.c,v 1.8 2016/01/06 22:28:52 millert Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)v_xchar.c	10.9 (Berkeley) 10/23/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -26,10 +28,12 @@
  * v_xchar -- [buffer] [count]x
  *	Deletes the character(s) on which the cursor sits.
  *
- * PUBLIC: int v_xchar(SCR *, VICMD *);
+ * PUBLIC: int v_xchar __P((SCR *, VICMD *));
  */
 int
-v_xchar(SCR *sp, VICMD *vp)
+v_xchar(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	size_t len;
 	int isempty;
@@ -40,7 +44,7 @@ v_xchar(SCR *sp, VICMD *vp)
 		return (1);
 	}
 	if (len == 0) {
-nodel:		msgq(sp, M_BERR, "No characters to delete");
+nodel:		msgq(sp, M_BERR, "206|No characters to delete");
 		return (1);
 	}
 
@@ -73,10 +77,12 @@ nodel:		msgq(sp, M_BERR, "No characters to delete");
  *	Deletes the character(s) immediately before the current cursor
  *	position.
  *
- * PUBLIC: int v_Xchar(SCR *, VICMD *);
+ * PUBLIC: int v_Xchar __P((SCR *, VICMD *));
  */
 int
-v_Xchar(SCR *sp, VICMD *vp)
+v_Xchar(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	u_long cnt;
 

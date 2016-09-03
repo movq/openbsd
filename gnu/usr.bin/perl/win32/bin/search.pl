@@ -47,12 +47,7 @@ $version = "950918.5";
 $stripped=0;
 
 &init;
-if (exists $ENV{'HOME'}) {
-    $rc_file = join('/', $ENV{'HOME'}, ".search");
-}
-else {
-    $rc_file = "";
-}
+$rc_file = join('/', $ENV{'HOME'}, ".search");
 
 &check_args;
 
@@ -182,6 +177,8 @@ However, duplicating things (such as -name '*.c' -name '*.txt') implies OR.
 If any letter in -newer/-older is upper case, "or equal" is
 inserted into the test.
 
+You can always find the latest version on the World Wide Web in
+   http://www.wg.omron.co.jp/~jfriedl/perl/
 INLINE_LITERAL_TEXT
 	  exit(0);
       }
@@ -196,7 +193,7 @@ INLINE_LITERAL_TEXT
       $iflag='i',           next if $arg eq '-i';       ## ignore case
       $norc=1,              next if $arg eq '-norc';    ## don't load rc file
       $showrc=1,            next if $arg eq '-showrc';  ## show rc file
-      $underlineOK=1,       next if $arg eq '-u';       ## look through underln.
+      $underlineOK=1,       next if $arg eq '-u';       ## look throuh underln.
       $words=1,             next if $arg eq '-w';       ## match "words" only
       &strip                     if $arg eq '-strip';   ## dump this program
       last                       if $arg eq '-e';
@@ -464,7 +461,7 @@ sub prepare_to_search
 	  ##
 	  if ($underlineOK) {
 	     if ($regex =~ m/[?*+{}()\\.|^\$[]/) {
-		warn "$0: warning, can't underline-safe '$regex'.\n";
+		warn "$0: warning, can't underline-safe ``$regex''.\n";
 	     } else {
 		$regex = join($underline_glue, split(//, $regex));
 	     }
@@ -624,7 +621,7 @@ sub read_rc
     local($line_num, $ln, $tag) = 0;
     local($use_default, @default) = 0;
 
-    { package magic; $^W= 0; } ## turn off warnings for when we run EXPR's
+    { package magic; $ = 0; } ## turn off warnings for when we run EXPR's
 
     unless (open(RC, "$file")) {
 	$use_default=1;
@@ -632,8 +629,8 @@ sub read_rc
 	## no RC file -- use this default.
 	@default = split(/\n/,<<'--------INLINE_LITERAL_TEXT');
             magic: 32 : $H =~ m/[\x00-\x06\x10-\x1a\x1c-\x1f\x80\xff]{2}/
-	    option: -skip '.a .elc .gz .o .pbm .xbm .dvi'
-	    option: -iskip '.com .exe .lib .pdb .tarz .zip .z .lzh .jpg .jpeg .gif .uu'
+	    option: -skip '.a .COM .elc .EXE .gz .o .pbm .xbm .dvi'
+	    option: -iskip '.tarz .zip .z .lzh .jpg .jpeg .gif .uu'
 	    <!~> option: -skip '~ #'
 --------INLINE_LITERAL_TEXT
     }
@@ -1141,7 +1138,10 @@ more powerful and efficient (and intuitive, I think).
 
 This manual describes
 .I search
-as of version "941227.4".
+as of version "941227.4". You can always find the latest version at
+.nf
+   http://www.wg.omron.co.jp/~jfriedl/perl/index.html
+.fi
 
 .SH "QUICK EXAMPLE"
 Basic use is simple:

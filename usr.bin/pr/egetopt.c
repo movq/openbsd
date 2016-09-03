@@ -1,4 +1,4 @@
-/*	$OpenBSD: egetopt.c,v 1.9 2013/11/26 13:19:07 deraadt Exp $	*/
+/*	$OpenBSD: egetopt.c,v 1.3 1999/05/23 17:37:41 millert Exp $	*/
 
 /*-
  * Copyright (c) 1991 Keith Muller.
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,6 +36,11 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
+#ifndef lint
+/* from: static char sccsid[] = "@(#)egetopt.c	8.1 (Berkeley) 6/6/93"; */
+static char *rcsid = "$OpenBSD: egetopt.c,v 1.3 1999/05/23 17:37:41 millert Exp $";
+#endif /* not lint */
 
 #include <ctype.h>
 #include <stdio.h>
@@ -61,12 +70,15 @@ char	*eoptarg;		/* argument associated with option */
 #define	EMSG	""
 
 int
-egetopt(int nargc, char * const *nargv, const char *ostr)
+egetopt(nargc, nargv, ostr)
+	int nargc;
+	char * const *nargv;
+	const char *ostr;
 {
 	static char *place = EMSG;	/* option letter processing */
-	char *oli;			/* option letter list index */
-	static int delim;		/* which option delimiter */
-	char *p;
+	register char *oli;		/* option letter list index */
+	static int delim;		/* which option delimeter */
+	register char *p;
 	static char savec = '\0';
 
 	if (savec != '\0') {
@@ -106,14 +118,14 @@ egetopt(int nargc, char * const *nargv, const char *ostr)
 		 */
 		if ((eoptopt == (int)'-') && !*place)
 			return (-1);
-		if (strchr(ostr, '#') && (isdigit((unsigned char)eoptopt) ||
+		if (strchr(ostr, '#') && (isdigit(eoptopt) ||
 		    (((eoptopt == (int)'-') || (eoptopt == (int)'+')) &&
-		      isdigit((unsigned char)*place)))) {
+		      isdigit(*place)))) {
 			/*
 			 * # option: +/- with a number is ok
 			 */
 			for (p = place; *p != '\0'; ++p) {
-				if (!isdigit((unsigned char)*p))
+				if (!isdigit(*p))
 					break;
 			}
 			eoptarg = place-1;

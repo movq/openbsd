@@ -1,6 +1,6 @@
-#	$OpenBSD: Makefile,v 1.5 2015/12/04 13:58:09 nicm Exp $
+#	$OpenBSD: Makefile,v 1.4 1999/03/05 04:47:45 tholo Exp $
 
 PROG=	cap_mkdb
-SRCS=	cap_mkdb.c
+SRCS=	cap_mkdb.c getinfo.c
 
 .include <bsd.prog.mk>

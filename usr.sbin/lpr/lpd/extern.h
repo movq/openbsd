@@ -1,4 +1,4 @@
-/*	$OpenBSD: extern.h,v 1.9 2015/09/29 02:37:29 millert Exp $	*/
+/*	$OpenBSD: extern.h,v 1.3 1997/07/17 09:09:11 deraadt Exp $	*/
 
 /*
  * Copyright (c) 1989, 1993
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,10 +35,9 @@
  *      @(#)extern.h	8.1 (Berkeley) 6/6/93
  */
 
-#include <sys/ioctl.h>
-#include <sys/socket.h>
-#include <stdio.h>
+#include <sys/cdefs.h>
 #include <termios.h>
+#include <sys/ioctl.h>
 
 /*
  * from stty.h
@@ -50,8 +53,11 @@ struct info {
 	struct winsize win;                     /* window info */
 }; 
 
-int	   allowedhost(FILE *, struct sockaddr *, socklen_t);
-int	   ksearch(char ***, struct info *);
-int	   msearch(char ***, struct info *);
-void       printjob(void);
-void       recvjob(void);
+void       printjob __P((void));
+void       recvjob __P((void));
+void       sttyclearflags __P((struct termios *tp, int flags));
+void       sttysetflags __P((struct termios *tp, int flags));
+void       sttyclearlflags __P((struct termios *tp, int flags));
+void       sttysetlflags __P((struct termios *tp, int flags));
+int	   ksearch __P((char ***, struct info *));
+int	   msearch __P((char ***, struct info *));

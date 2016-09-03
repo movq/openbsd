@@ -1,13 +1,12 @@
-/*	$OpenBSD: usbcdc.h,v 1.9 2013/04/15 09:23:02 mglocker Exp $ */
-/*	$NetBSD: usbcdc.h,v 1.8 2001/02/16 20:15:57 kenh Exp $	*/
-/*	$FreeBSD: src/sys/dev/usb/usbcdc.h,v 1.7 1999/11/17 22:33:48 n_hibma Exp $	*/
+/*	$OpenBSD: usbcdc.h,v 1.1 1999/08/19 08:18:39 fgsch Exp $	*/
+/*	$NetBSD: usbcdc.h,v 1.4 1999/08/16 20:20:19 augustss Exp $	*/
 
 /*
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
- * by Lennart Augustsson (lennart@augustsson.net) at
+ * by Lennart Augustsson (augustss@carlstedt.se) at
  * Carlstedt Research & Technology.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -18,6 +17,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -45,22 +51,15 @@
 #define UDESCSUB_CDC_CS		7 /* Country Selection */
 #define UDESCSUB_CDC_TOM	8 /* Telephone Operational Modes */
 #define UDESCSUB_CDC_USBT	9 /* USB Terminal */
-#define UDESCSUB_CDC_NCT	10 /* Network Channel Terminal */
-#define UDESCSUB_CDC_PUF	11 /* Protocol Unit */
-#define UDESCSUB_CDC_EUF	12 /* Extension Unit */
-#define UDESCSUB_CDC_MCMF	13 /* Multi-Channel Management */
-#define UDESCSUB_CDC_CCMF	14 /* CAPI Control Management */
-#define UDESCSUB_CDC_ENF	15 /* Ethernet Networking */
-#define UDESCSUB_CDC_ANF	16 /* ATM Networking */
 
-struct usb_cdc_header_descriptor {
+typedef struct {
 	uByte		bLength;
 	uByte		bDescriptorType;
 	uByte		bDescriptorSubtype;
 	uWord		bcdCDC;
-} __packed;
+} usb_cdc_header_descriptor_t;
 
-struct usb_cdc_cm_descriptor {
+typedef struct {
 	uByte		bLength;
 	uByte		bDescriptorType;
 	uByte		bDescriptorSubtype;
@@ -68,9 +67,9 @@ struct usb_cdc_cm_descriptor {
 #define USB_CDC_CM_DOES_CM		0x01
 #define USB_CDC_CM_OVER_DATA		0x02
 	uByte		bDataInterface;
-} __packed;
+} usb_cdc_cm_descriptor_t;
 
-struct usb_cdc_acm_descriptor {
+typedef struct {
 	uByte		bLength;
 	uByte		bDescriptorType;
 	uByte		bDescriptorSubtype;
@@ -79,26 +78,15 @@ struct usb_cdc_acm_descriptor {
 #define USB_CDC_ACM_HAS_LINE		0x02
 #define USB_CDC_ACM_HAS_BREAK		0x04
 #define USB_CDC_ACM_HAS_NETWORK_CONN	0x08
-} __packed;
+} usb_cdc_acm_descriptor_t;
 
-struct usb_cdc_union_descriptor {
+typedef struct {
 	uByte		bLength;
 	uByte		bDescriptorType;
 	uByte		bDescriptorSubtype;
 	uByte		bMasterInterface;
 	uByte		bSlaveInterface[1];
-} __packed;
-
-struct usb_cdc_ethernet_descriptor {
-	uByte		bLength;
-	uByte		bDescriptorType;
-	uByte		bDescriptorSubtype;
-	uByte		iMacAddress;
-	uDWord		bmEthernetStatistics;
-	uWord		wMaxSegmentSize;
-	uWord		wNumberMCFilters;
-	uByte		bNumberPowerFilters;
-} __packed;
+} usb_cdc_union_descriptor_t;
 
 #define UCDC_SEND_ENCAPSULATED_COMMAND	0x00
 #define UCDC_GET_ENCAPSULATED_RESPONSE	0x01
@@ -116,14 +104,14 @@ struct usb_cdc_ethernet_descriptor {
 #define  UCDC_BREAK_ON			0xffff
 #define  UCDC_BREAK_OFF			0x0000
 
-struct usb_cdc_abstract_state {
+typedef struct {
 	uWord	wState;
 #define UCDC_IDLE_SETTING		0x0001
 #define UCDC_DATA_MULTIPLEXED		0x0002
-} __packed;
+} usb_cdc_abstract_state_t;
 #define UCDC_ABSTRACT_STATE_LENGTH 2
 
-struct usb_cdc_line_state {
+typedef struct {
 	uDWord	dwDTERate;
 	uByte	bCharFormat;
 #define UCDC_STOP_BIT_1			0
@@ -136,10 +124,10 @@ struct usb_cdc_line_state {
 #define UCDC_PARITY_MARK		3
 #define UCDC_PARITY_SPACE		4
 	uByte	bDataBits;
-} __packed;
+} usb_cdc_line_state_t;
 #define UCDC_LINE_STATE_LENGTH 7
 
-struct usb_cdc_notification {
+typedef struct {
 	uByte	bmRequestType;
 #define UCDC_NOTIFICATION		0xa1
 	uByte	bNotification;
@@ -155,25 +143,7 @@ struct usb_cdc_notification {
 	uWord	wIndex;
 	uWord	wLength;
 	uByte	data[16];
-} __packed;
+} usb_cdc_notification_t;
 #define UCDC_NOTIFICATION_LENGTH 8
-
-struct usb_cdc_connection_speed {
-	uDWord	dwUSBitRate;
-	uDWord	dwDSBitRate;
-} __packed;
-#define UCDC_CONNECTION_SPEED_LENGTH 8
-
-/*
- * Bits set in the SERIAL STATE notifcation (first byte of data)
- */
-
-#define UCDC_N_SERIAL_OVERRUN		0x40
-#define UCDC_N_SERIAL_PARITY		0x20
-#define UCDC_N_SERIAL_FRAMING		0x10
-#define UCDC_N_SERIAL_RI		0x08
-#define UCDC_N_SERIAL_BREAK		0x04
-#define UCDC_N_SERIAL_DSR		0x02
-#define UCDC_N_SERIAL_DCD		0x01
 
 #endif /* _USBCDC_H_ */

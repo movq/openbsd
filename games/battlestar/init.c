@@ -1,4 +1,4 @@
-/*	$OpenBSD: init.c,v 1.16 2015/12/31 17:51:19 mestre Exp $	*/
+/*	$OpenBSD: init.c,v 1.6 1999/09/25 20:30:46 pjanzen Exp $	*/
 /*	$NetBSD: init.c,v 1.4 1995/03/21 15:07:35 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,21 +34,19 @@
  * SUCH DAMAGE.
  */
 
-#include <err.h>
-#include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)init.c	8.4 (Berkeley) 4/30/95";
+#else
+static char rcsid[] = "$OpenBSD: init.c,v 1.6 1999/09/25 20:30:46 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
 #include "extern.h"
 
-static int checkout(const char *);
-static const char *getutmp(void);
-static int wizard(const char *);
-
 void
-initialize(const char *filename)
+initialize(filename)
+	const char    *filename;
 {
 	const struct objs *p;
 	char *savefile;
@@ -53,9 +55,8 @@ initialize(const char *filename)
 	puts("First Adventure game written by His Lordship, the honorable");
 	puts("Admiral D.W. Riggle\n");
 	location = dayfile;
-	username = getutmp();
-	if (username == NULL)
-		errx(1, "Don't know who you are.");
+	srandom(getpid());
+	getutmp(username);
 	wordinit();
 	if (filename == NULL) {
 		direction = NORTH;
@@ -76,24 +77,17 @@ initialize(const char *filename)
 	signal(SIGINT, die);
 }
 
-static const char *
-getutmp(void)
+void
+getutmp(username)
+	char   *username;
 {
-	const char	*name;
+	struct passwd *ptr;
 
-	name = getenv("LOGNAME");
-	if (name == NULL || *name == 0)
-		name = getenv("USER");
-	if (name == NULL || *name == 0)
-		name = getlogin();
-	if (name == NULL || *name == 0)
-		name = " ??? ";
-
-	return(strdup(name));
+	ptr = getpwuid(getuid());
+	strcpy(username, ptr ? ptr->pw_name : "");
 }
 
-/* Hereditary wizards.  A configuration file might make more sense. */
-static const char *const list[] = {
+const char   *const list[] = {	/* hereditary wizards */
 	"riggle",
 	"chris",
 	"edward",
@@ -104,15 +98,16 @@ static const char *const list[] = {
 	0
 };
 
-static const char *const badguys[] = {
+const char   *const badguys[] = {
 	"wnj",
 	"root",
 	"ted",
 	0
 };
 
-static int
-wizard(const char *username)
+int
+wizard(username)
+	const char   *username;
 {
 	int     flag;
 
@@ -121,8 +116,9 @@ wizard(const char *username)
 	return flag;
 }
 
-static int
-checkout(const char *username)
+int
+checkout(username)
+	const char   *username;
 {
 	const char  *const *ptr;
 

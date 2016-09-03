@@ -1,7 +1,7 @@
-/*	$OpenBSD: hashmap.c,v 1.8 2010/01/12 23:22:07 nicm Exp $	*/
+/*	$OpenBSD: hashmap.c,v 1.4 1999/03/18 16:46:58 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2006,2007 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -70,9 +70,9 @@ AUTHOR
 *****************************************************************************/
 
 #include <curses.priv.h>
-#include <term.h>		/* for back_color_erase */
+#include <term.h> /* for back_color_erase */
 
-MODULE_ID("$Id: hashmap.c,v 1.8 2010/01/12 23:22:07 nicm Exp $")
+MODULE_ID("$From: hashmap.c,v 1.33 1999/03/18 02:09:45 Alexander.V.Lukyanov Exp $")
 
 #ifdef HASHDEBUG
 
@@ -83,8 +83,7 @@ MODULE_ID("$Id: hashmap.c,v 1.8 2010/01/12 23:22:07 nicm Exp $")
 # define screen_lines MAXLINES
 # define TEXTWIDTH	1
 int oldnums[MAXLINES], reallines[MAXLINES];
-static NCURSES_CH_T oldtext[MAXLINES][TEXTWIDTH];
-static NCURSES_CH_T newtext[MAXLINES][TEXTWIDTH];
+static chtype oldtext[MAXLINES][TEXTWIDTH], newtext[MAXLINES][TEXTWIDTH];
 # define OLDNUM(n)	oldnums[n]
 # define OLDTEXT(n)	oldtext[n]
 # define NEWTEXT(m)	newtext[m]
@@ -92,7 +91,7 @@ static NCURSES_CH_T newtext[MAXLINES][TEXTWIDTH];
 
 #else /* !HASHDEBUG */
 
-# define OLDNUM(n)	SP->_oldnum_list[n]
+# define OLDNUM(n)	_nc_oldnums[n]
 # define OLDTEXT(n)	curscr->_line[n].text
 # define NEWTEXT(m)	newscr->_line[m].text
 # define TEXTWIDTH	(curscr->_maxx+1)
@@ -100,58 +99,45 @@ static NCURSES_CH_T newtext[MAXLINES][TEXTWIDTH];
 
 #endif /* !HASHDEBUG */
 
-#define oldhash		(SP->oldhash)
-#define newhash		(SP->newhash)
-#define hashtab		(SP->hashtab)
-#define lines_alloc	(SP->hashtab_len)
+#define oldhash	(SP->oldhash)
+#define newhash	(SP->newhash)
 
-#if USE_WIDEC_SUPPORT
-#define HASH_VAL(ch) (ch.chars[0])
-#else
-#define HASH_VAL(ch) (ch)
-#endif
-
-static const NCURSES_CH_T blankchar = NewChar(BLANK_TEXT);
-
-static NCURSES_INLINE unsigned long
-hash(NCURSES_CH_T * text)
+static inline unsigned long hash(chtype *text)
 {
     int i;
-    NCURSES_CH_T ch;
+    chtype ch;
     unsigned long result = 0;
-    for (i = TEXTWIDTH; i > 0; i--) {
+    for (i = TEXTWIDTH; i>0; i--)
+    {
 	ch = *text++;
-	result += (result << 5) + HASH_VAL(ch);
+	result += (result<<5) + ch;
     }
     return result;
 }
 
 /* approximate update cost */
-static int
-update_cost(NCURSES_CH_T * from, NCURSES_CH_T * to)
+static int update_cost(chtype *from,chtype *to)
 {
-    int cost = 0;
+    int cost=0;
     int i;
 
-    for (i = TEXTWIDTH; i > 0; i--, from++, to++)
-	if (!(CharEq(*from, *to)))
+    for (i=TEXTWIDTH; i>0; i--)
+	if (*from++ != *to++)
 	    cost++;
 
     return cost;
 }
-
-static int
-update_cost_from_blank(NCURSES_CH_T * to)
+static int update_cost_from_blank(chtype *to)
 {
-    int cost = 0;
+    int cost=0;
     int i;
-    NCURSES_CH_T blank = blankchar;
+    chtype blank = BLANK;
 
     if (back_color_erase)
-	SetPair(blank, GetPair(stdscr->_nc_bkgd));
+	blank |= (stdscr->_bkgd & A_COLOR);
 
-    for (i = TEXTWIDTH; i > 0; i--, to++)
-	if (!(CharEq(blank, *to)))
+    for (i=TEXTWIDTH; i>0; i--)
+	if (blank != *to++)
 	    cost++;
 
     return cost;
@@ -161,8 +147,7 @@ update_cost_from_blank(NCURSES_CH_T * to)
  * Returns true when moving line 'from' to line 'to' seems to be cost
  * effective. 'blank' indicates whether the line 'to' would become blank.
  */
-static NCURSES_INLINE bool
-cost_effective(const int from, const int to, const bool blank)
+static inline bool cost_effective(const int from, const int to, const bool blank)
 {
     int new_from;
 
@@ -178,19 +163,30 @@ cost_effective(const int from, const int to, const bool blank)
      * on the right side -- cost after moving.
      */
     return (((blank ? update_cost_from_blank(NEWTEXT(to))
-	      : update_cost(OLDTEXT(to), NEWTEXT(to)))
-	     + update_cost(OLDTEXT(new_from), NEWTEXT(from)))
-	    >= ((new_from == from ? update_cost_from_blank(NEWTEXT(from))
-		 : update_cost(OLDTEXT(new_from), NEWTEXT(from)))
-		+ update_cost(OLDTEXT(from), NEWTEXT(to)))) ? TRUE : FALSE;
+		    : update_cost(OLDTEXT(to),NEWTEXT(to)))
+	     + update_cost(OLDTEXT(new_from),NEWTEXT(from)))
+	 >= ((new_from==from ? update_cost_from_blank(NEWTEXT(from))
+			     : update_cost(OLDTEXT(new_from),NEWTEXT(from)))
+	     + update_cost(OLDTEXT(from),NEWTEXT(to)))) ? TRUE : FALSE;
 }
 
-static void
-grow_hunks(void)
+
+typedef struct
+{
+    unsigned long	hashval;
+    int		oldcount, newcount;
+    int		oldindex, newindex;
+}
+    sym;
+
+static sym *hashtab=0;
+static int lines_alloc=0;
+
+static void grow_hunks(void)
 {
     int start, end, shift;
-    int back_limit, forward_limit;	/* limits for cells to fill */
-    int back_ref_limit, forward_ref_limit;	/* limits for refrences */
+    int back_limit, forward_limit;	    /* limits for cells to fill */
+    int back_ref_limit, forward_ref_limit;  /* limits for refrences */
     int i;
     int next_hunk;
 
@@ -204,14 +200,14 @@ grow_hunks(void)
     i = 0;
     while (i < screen_lines && OLDNUM(i) == _NEWINDEX)
 	i++;
-    for (; i < screen_lines; i = next_hunk) {
+    for ( ; i < screen_lines; i=next_hunk)
+    {
 	start = i;
 	shift = OLDNUM(i) - i;
 
 	/* get forward limit */
-	i = start + 1;
-	while (i < screen_lines && OLDNUM(i) != _NEWINDEX && OLDNUM(i) - i
-	       == shift)
+	i = start+1;
+	while (i < screen_lines && OLDNUM(i) != _NEWINDEX && OLDNUM(i) - i == shift)
 	    i++;
 	end = i;
 	while (i < screen_lines && OLDNUM(i) == _NEWINDEX)
@@ -223,21 +219,25 @@ grow_hunks(void)
 	else
 	    forward_ref_limit = OLDNUM(i);
 
-	i = start - 1;
+	i = start-1;
 	/* grow back */
 	if (shift < 0)
 	    back_limit = back_ref_limit + (-shift);
-	while (i >= back_limit) {
-	    if (newhash[i] == oldhash[i + shift]
-		|| cost_effective(i + shift, i, shift < 0)) {
-		OLDNUM(i) = i + shift;
+	while (i >= back_limit)
+	{
+	    if(newhash[i] == oldhash[i+shift]
+	    || cost_effective(i+shift, i, shift<0))
+	    {
+		OLDNUM(i) = i+shift;
 		TR(TRACE_UPDATE | TRACE_MOVE,
 		   ("connected new line %d to old line %d (backward continuation)",
-		    i, i + shift));
-	    } else {
+		    i, i+shift));
+	    }
+	    else
+	    {
 		TR(TRACE_UPDATE | TRACE_MOVE,
 		   ("not connecting new line %d to old line %d (backward continuation)",
-		    i, i + shift));
+		    i, i+shift));
 		break;
 	    }
 	    i--;
@@ -247,17 +247,21 @@ grow_hunks(void)
 	/* grow forward */
 	if (shift > 0)
 	    forward_limit = forward_ref_limit - shift;
-	while (i < forward_limit) {
-	    if (newhash[i] == oldhash[i + shift]
-		|| cost_effective(i + shift, i, shift > 0)) {
-		OLDNUM(i) = i + shift;
+	while (i < forward_limit)
+	{
+	    if(newhash[i] == oldhash[i+shift]
+	    || cost_effective(i+shift, i, shift>0))
+	    {
+		OLDNUM(i) = i+shift;
 		TR(TRACE_UPDATE | TRACE_MOVE,
 		   ("connected new line %d to old line %d (forward continuation)",
-		    i, i + shift));
-	    } else {
+		    i, i+shift));
+	    }
+	    else
+	    {
 		TR(TRACE_UPDATE | TRACE_MOVE,
 		   ("not connecting new line %d to old line %d (forward continuation)",
-		    i, i + shift));
+		    i, i+shift));
 		break;
 	    }
 	    i++;
@@ -269,61 +273,69 @@ grow_hunks(void)
     }
 }
 
-NCURSES_EXPORT(void)
-_nc_hash_map(void)
+void _nc_hash_map(void)
 {
-    HASHMAP *sp;
+    sym *sp;
     register int i;
     int start, shift, size;
 
-    if (screen_lines > lines_alloc) {
+
+    if (screen_lines > lines_alloc)
+    {
 	if (hashtab)
-	    free(hashtab);
-	hashtab = typeMalloc(HASHMAP, (screen_lines + 1) * 2);
-	if (!hashtab) {
-	    if (oldhash) {
+	    free (hashtab);
+	hashtab = typeMalloc(sym, (screen_lines+1)*2);
+	if (!hashtab)
+	{
+	    if (oldhash)
 		FreeAndNull(oldhash);
-	    }
 	    lines_alloc = 0;
 	    return;
 	}
 	lines_alloc = screen_lines;
     }
 
-    if (oldhash && newhash) {
+    if (oldhash && newhash)
+    {
 	/* re-hash only changed lines */
-	for (i = 0; i < screen_lines; i++) {
+	for (i = 0; i < screen_lines; i++)
+	{
 	    if (PENDING(i))
 		newhash[i] = hash(NEWTEXT(i));
 	}
-    } else {
+    }
+    else
+    {
 	/* re-hash all */
 	if (oldhash == 0)
-	    oldhash = typeCalloc(unsigned long, (unsigned) screen_lines);
+	    oldhash = typeCalloc (unsigned long, screen_lines);
 	if (newhash == 0)
-	    newhash = typeCalloc(unsigned long, (unsigned) screen_lines);
+	    newhash = typeCalloc (unsigned long, screen_lines);
 	if (!oldhash || !newhash)
-	    return;		/* malloc failure */
-	for (i = 0; i < screen_lines; i++) {
+	    return; /* malloc failure */
+	for (i = 0; i < screen_lines; i++)
+	{
 	    newhash[i] = hash(NEWTEXT(i));
 	    oldhash[i] = hash(OLDTEXT(i));
 	}
     }
 
 #ifdef HASH_VERIFY
-    for (i = 0; i < screen_lines; i++) {
-	if (newhash[i] != hash(NEWTEXT(i)))
-	    fprintf(stderr, "error in newhash[%d]\n", i);
-	if (oldhash[i] != hash(OLDTEXT(i)))
-	    fprintf(stderr, "error in oldhash[%d]\n", i);
+    for (i = 0; i < screen_lines; i++)
+    {
+	if(newhash[i] != hash(NEWTEXT(i)))
+	    fprintf(stderr,"error in newhash[%d]\n",i);
+	if(oldhash[i] != hash(OLDTEXT(i)))
+	    fprintf(stderr,"error in oldhash[%d]\n",i);
     }
 #endif
 
     /*
      * Set up and count line-hash values.
      */
-    memset(hashtab, '\0', sizeof(*hashtab) * (screen_lines + 1) * 2);
-    for (i = 0; i < screen_lines; i++) {
+    memset(hashtab, '\0', sizeof(*hashtab)*(screen_lines+1)*2);
+    for (i = 0; i < screen_lines; i++)
+    {
 	unsigned long hashval = oldhash[i];
 
 	for (sp = hashtab; sp->hashval; sp++)
@@ -333,7 +345,8 @@ _nc_hash_map(void)
 	sp->oldcount++;
 	sp->oldindex = i;
     }
-    for (i = 0; i < screen_lines; i++) {
+    for (i = 0; i < screen_lines; i++)
+    {
 	unsigned long hashval = newhash[i];
 
 	for (sp = hashtab; sp->hashval; sp++)
@@ -355,10 +368,11 @@ _nc_hash_map(void)
      */
     for (sp = hashtab; sp->hashval; sp++)
 	if (sp->oldcount == 1 && sp->newcount == 1
-	    && sp->oldindex != sp->newindex) {
+	    && sp->oldindex != sp->newindex)
+	{
 	    TR(TRACE_UPDATE | TRACE_MOVE,
 	       ("new line %d is hash-identical to old line %d (unique)",
-		sp->newindex, sp->oldindex));
+		   sp->newindex, sp->oldindex));
 	    OLDNUM(sp->newindex) = sp->oldindex;
 	}
 
@@ -370,7 +384,8 @@ _nc_hash_map(void)
      * those which are to be moved too far, they are likely to destroy
      * more than carry.
      */
-    for (i = 0; i < screen_lines;) {
+    for (i = 0; i < screen_lines; )
+    {
 	while (i < screen_lines && OLDNUM(i) == _NEWINDEX)
 	    i++;
 	if (i >= screen_lines)
@@ -378,12 +393,13 @@ _nc_hash_map(void)
 	start = i;
 	shift = OLDNUM(i) - i;
 	i++;
-	while (i < screen_lines && OLDNUM(i) != _NEWINDEX && OLDNUM(i) - i
-	       == shift)
+	while (i < screen_lines && OLDNUM(i) != _NEWINDEX && OLDNUM(i) - i == shift)
 	    i++;
 	size = i - start;
-	if (size < 3 || size + min(size / 8, 2) < abs(shift)) {
-	    while (start < i) {
+	if (size < 3 || size+min(size/8,2) < abs(shift))
+	{
+	    while (start < i)
+	    {
 		OLDNUM(start) = _NEWINDEX;
 		start++;
 	    }
@@ -392,42 +408,48 @@ _nc_hash_map(void)
 
     /* After clearing invalid hunks, try grow the rest. */
     grow_hunks();
+
+#if NO_LEAKS
+    FreeAndNull(hashtab);
+    lines_alloc = 0;
+#endif
 }
 
-NCURSES_EXPORT(void)
-_nc_make_oldhash(int i)
+void _nc_make_oldhash(int i)
 {
     if (oldhash)
 	oldhash[i] = hash(OLDTEXT(i));
 }
 
-NCURSES_EXPORT(void)
-_nc_scroll_oldhash(int n, int top, int bot)
+void _nc_scroll_oldhash(int n, int top, int bot)
 {
-    size_t size;
+    int size;
     int i;
 
     if (!oldhash)
 	return;
 
-    size = sizeof(*oldhash) * (bot - top + 1 - abs(n));
-    if (n > 0) {
-	memmove(oldhash + top, oldhash + top + n, size);
-	for (i = bot; i > bot - n; i--)
+    size = sizeof(*oldhash) * (bot-top+1-abs(n));
+    if (n > 0)
+    {
+	memmove (oldhash+top, oldhash+top+n, size);
+	for (i = bot; i > bot-n; i--)
 	    oldhash[i] = hash(OLDTEXT(i));
-    } else {
-	memmove(oldhash + top - n, oldhash + top, size);
-	for (i = top; i < top - n; i++)
+    }
+    else
+    {
+	memmove (oldhash+top-n, oldhash+top, size);
+	for (i = top; i < top-n; i++)
 	    oldhash[i] = hash(OLDTEXT(i));
     }
 }
+
 
 #ifdef HASHDEBUG
 static void
 usage(void)
 {
-    static const char *table[] =
-    {
+    static const char *table[] = {
 	"hashmap test-driver",
 	"",
 	"#  comment",
@@ -439,24 +461,22 @@ usage(void)
 	"?  this message"
     };
     size_t n;
-    for (n = 0; n < sizeof(table) / sizeof(table[0]); n++)
+    for (n = 0; n < sizeof(table)/sizeof(table[0]); n++)
 	fprintf(stderr, "%s\n", table[n]);
 }
 
 int
-main(int argc GCC_UNUSED, char *argv[]GCC_UNUSED)
+main(int argc GCC_UNUSED, char *argv[] GCC_UNUSED)
 {
-    char line[BUFSIZ], *st, *last;
-    int n;
+    char	line[BUFSIZ], *st;
+    int		n;
 
-    if (setupterm(NULL, fileno(stdout), (int *) 0) == ERR)
-	return EXIT_FAILURE;
-    (void) _nc_alloc_screen();
-
-    for (n = 0; n < screen_lines; n++) {
+    SP = typeCalloc(SCREEN,1);
+    for (n = 0; n < screen_lines; n++)
+    {
 	reallines[n] = n;
 	oldnums[n] = _NEWINDEX;
-	CharOf(oldtext[n][0]) = CharOf(newtext[n][0]) = '.';
+	oldtext[n][0] = newtext[n][0] = '.';
     }
 
     if (isatty(fileno(stdin)))
@@ -465,66 +485,69 @@ main(int argc GCC_UNUSED, char *argv[]GCC_UNUSED)
 #ifdef TRACE
     _nc_tracing = TRACE_MOVE;
 #endif
-    for (;;) {
+    for (;;)
+    {
 	/* grab a test command */
-	if (fgets(line, sizeof(line), stdin) == (char *) NULL)
-	    break;
+	if (fgets(line, sizeof(line), stdin) == (char *)NULL)
+	    exit(EXIT_SUCCESS);
 
-	switch (line[0]) {
-	case '#':		/* comment */
+	switch(line[0])
+	{
+	case '#':	/* comment */
 	    (void) fputs(line, stderr);
 	    break;
 
-	case 'l':		/* get initial line number vector */
-	    for (n = 0; n < screen_lines; n++) {
+	case 'l':	/* get initial line number vector */
+	    for (n = 0; n < screen_lines; n++)
+	    {
 		reallines[n] = n;
 		oldnums[n] = _NEWINDEX;
 	    }
 	    n = 0;
-	    st = strtok_r(line, " ", &last);
+	    st = strtok(line, " ");
 	    do {
 		oldnums[n++] = atoi(st);
 	    } while
-		((st = strtok_r((char *) NULL, " "), &last) != 0);
+		((st = strtok((char *)NULL, " ")) != 0);
 	    break;
 
-	case 'n':		/* use following letters as text of new lines */
+	case 'n':	/* use following letters as text of new lines */
 	    for (n = 0; n < screen_lines; n++)
-		CharOf(newtext[n][0]) = '.';
+		newtext[n][0] = '.';
 	    for (n = 0; n < screen_lines; n++)
-		if (line[n + 1] == '\n')
+		if (line[n+1] == '\n')
 		    break;
 		else
-		    CharOf(newtext[n][0]) = line[n + 1];
+		    newtext[n][0] = line[n+1];
 	    break;
 
-	case 'o':		/* use following letters as text of old lines */
+	case 'o':	/* use following letters as text of old lines */
 	    for (n = 0; n < screen_lines; n++)
-		CharOf(oldtext[n][0]) = '.';
+		oldtext[n][0] = '.';
 	    for (n = 0; n < screen_lines; n++)
-		if (line[n + 1] == '\n')
+		if (line[n+1] == '\n')
 		    break;
 		else
-		    CharOf(oldtext[n][0]) = line[n + 1];
+		    oldtext[n][0] = line[n+1];
 	    break;
 
-	case 'd':		/* dump state of test arrays */
+	case 'd':	/* dump state of test arrays */
 #ifdef TRACE
 	    _nc_linedump();
 #endif
 	    (void) fputs("Old lines: [", stdout);
 	    for (n = 0; n < screen_lines; n++)
-		putchar(CharOf(oldtext[n][0]));
+		putchar(oldtext[n][0]);
 	    putchar(']');
 	    putchar('\n');
 	    (void) fputs("New lines: [", stdout);
 	    for (n = 0; n < screen_lines; n++)
-		putchar(CharOf(newtext[n][0]));
+		putchar(newtext[n][0]);
 	    putchar(']');
 	    putchar('\n');
 	    break;
 
-	case 'h':		/* apply hash mapper and see scroll optimization */
+	case 'h':	/* apply hash mapper and see scroll optimization */
 	    _nc_hash_map();
 	    (void) fputs("Result:\n", stderr);
 #ifdef TRACE
@@ -533,17 +556,12 @@ main(int argc GCC_UNUSED, char *argv[]GCC_UNUSED)
 	    _nc_scroll_optimize();
 	    (void) fputs("Done.\n", stderr);
 	    break;
-	default:
 	case '?':
 	    usage();
 	    break;
 	}
     }
-#if NO_LEAKS
-    _nc_free_and_exit(EXIT_SUCCESS);
-#else
     return EXIT_SUCCESS;
-#endif
 }
 
 #endif /* HASHDEBUG */

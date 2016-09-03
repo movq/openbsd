@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_insch.c,v 1.3 2010/01/12 23:22:05 nicm Exp $ */
+/*	$OpenBSD: lib_insch.c,v 1.1 1999/01/18 19:09:49 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2005,2008 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -31,9 +31,9 @@
 /****************************************************************************
  *  Author: Zeyd M. Ben-Halim <zmbenhal@netcom.com> 1992,1995               *
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
- *     and: Sven Verdoolaege                                                *
- *     and: Thomas E. Dickey                                                *
  ****************************************************************************/
+
+
 
 /*
 **	lib_insch.c
@@ -43,115 +43,27 @@
 */
 
 #include <curses.priv.h>
-#include <ctype.h>
 
-MODULE_ID("$Id: lib_insch.c,v 1.3 2010/01/12 23:22:05 nicm Exp $")
+MODULE_ID("$From: lib_insch.c,v 1.10 1998/06/28 00:26:52 tom Exp $")
 
-/*
- * Insert the given character, updating the current location to simplify
- * inserting a string.
- */
-NCURSES_EXPORT(int)
-_nc_insert_ch(WINDOW *win, chtype ch)
+int  winsch(WINDOW *win, chtype c)
 {
-    int code = OK;
-    NCURSES_CH_T wch;
-    int count;
-    NCURSES_CONST char *s;
+int code = ERR;
 
-    switch (ch) {
-    case '\t':
-	for (count = (TABSIZE - (win->_curx % TABSIZE)); count > 0; count--) {
-	    if ((code = _nc_insert_ch(win, ' ')) != OK)
-		break;
-	}
-	break;
-    case '\n':
-    case '\r':
-    case '\b':
-	SetChar2(wch, ch);
-	_nc_waddch_nosync(win, wch);
-	break;
-    default:
-	if (
-#if USE_WIDEC_SUPPORT
-	       WINDOW_EXT(win, addch_used) == 0 &&
-#endif
-	       is8bits(ChCharOf(ch)) &&
-	       isprint(ChCharOf(ch))) {
-	    if (win->_curx <= win->_maxx) {
+	T((T_CALLED("winsch(%p, %s)"), win, _tracechtype(c)));
+
+	if (win) {
 		struct ldat *line = &(win->_line[win->_cury]);
-		NCURSES_CH_T *end = &(line->text[win->_curx]);
-		NCURSES_CH_T *temp1 = &(line->text[win->_maxx]);
-		NCURSES_CH_T *temp2 = temp1 - 1;
-
-		SetChar2(wch, ch);
+		chtype *end = &(line->text[win->_curx]);
+		chtype *temp1 = &(line->text[win->_maxx]);
+		chtype *temp2 = temp1 - 1;
 
 		CHANGED_TO_EOL(line, win->_curx, win->_maxx);
 		while (temp1 > end)
-		    *temp1-- = *temp2--;
+			*temp1-- = *temp2--;
 
-		*temp1 = _nc_render(win, wch);
-		win->_curx++;
-	    }
-	} else if (is8bits(ChCharOf(ch)) && iscntrl(ChCharOf(ch))) {
-	    s = unctrl(ChCharOf(ch));
-	    while (*s != '\0') {
-		code = _nc_insert_ch(win, ChAttrOf(ch) | UChar(*s));
-		if (code != OK)
-		    break;
-		++s;
-	    }
+		*temp1 = _nc_render(win, c);
+		code = OK;
 	}
-#if USE_WIDEC_SUPPORT
-	else {
-	    /*
-	     * Handle multibyte characters here
-	     */
-	    SetChar2(wch, ch);
-	    wch = _nc_render(win, wch);
-	    count = _nc_build_wch(win, &wch);
-	    if (count > 0) {
-		code = wins_wch(win, &wch);
-	    } else if (count == -1) {
-		/* handle EILSEQ */
-		if (is8bits(ch)) {
-		    s = unctrl(ChCharOf(ch));
-		    while (*s != '\0') {
-			code = _nc_insert_ch(win, ChAttrOf(ch) | UChar(*s));
-			if (code != OK)
-			    break;
-			++s;
-		    }
-		} else {
-		    code = ERR;
-		}
-	    }
-	}
-#endif
-	break;
-    }
-    return code;
-}
-
-NCURSES_EXPORT(int)
-winsch(WINDOW *win, chtype c)
-{
-    NCURSES_SIZE_T oy;
-    NCURSES_SIZE_T ox;
-    int code = ERR;
-
-    T((T_CALLED("winsch(%p, %s)"), win, _tracechtype(c)));
-
-    if (win != 0) {
-	oy = win->_cury;
-	ox = win->_curx;
-
-	code = _nc_insert_ch(win, c);
-
-	win->_curx = ox;
-	win->_cury = oy;
-	_nc_synchook(win);
-    }
-    returnCode(code);
+	returnCode(code);
 }

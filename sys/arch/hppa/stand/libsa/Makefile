@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.20 2015/11/16 19:33:52 miod Exp $
+#	$OpenBSD: Makefile,v 1.6 1999/04/20 19:57:27 mickey Exp $
 
 .include "${.CURDIR}/../Makefile.inc"
 
@@ -11,17 +11,18 @@ DIR_SA=	$S/lib/libsa
 NOPROFILE=noprofile
 NOPIC=nopic
 
-#AS=cat ;
+#AS=cat ; 
 #AS+=	-R
 #AS+=	-a
 
 # hppa stuff
-SRCS=	machdep.c pdc.c itecons.c dev_hppa.c time.c \
-	ct.c dk.c lf.c lif.c cmd_hppa.c loadfile.c elf32.c elf64.c
+SRCS=	machdep.c pdc.c itecons.c dev_hppa.c exec_hppa.c time.c \
+	ct.c dk.c lf.c lif.c
 
 # stand routines
-SRCS+=	alloc.c exit.c getfile.c getln.c getchar.c globals.c \
-	printf.c putchar.c strerror.c strtol.c strchr.c ctime.c snprintf.c
+SRCS+=	alloc.c exit.c getfile.c gets.c globals.c strcmp.c strlen.c \
+	strncmp.c memcmp.c memcpy.c memset.c printf.c strerror.c strncpy.c \
+	strtol.c strchr.c ctime.c exec.new.c exec_elf.c
 
 # io routines
 SRCS+=	close.c closeall.c dev.c disklabel.c dkcksum.c fstat.c ioctl.c lseek.c \
@@ -40,5 +41,4 @@ install:
 
 CPPFLAGS+=-DHEAP_LIMIT=${HEAP_LIMIT} ${DEBUGFLAGS} -DNO_NET
 CPPFLAGS+=-I${S}/stand/boot
-CFLAGS+=${SACFLAGS} -D__INTERNAL_LIBSA_CREAD -DCOMPAT_UFS -fno-pie
-CFLAGS+=-DCONSPEED=9600
+CFLAGS+=${SACFLAGS} -D__INTERNAL_LIBSA_CREAD -DCOMPAT_UFS

@@ -1,7 +1,7 @@
-/*	$OpenBSD: asp.c,v 1.14 2005/06/09 18:01:36 mickey Exp $	*/
+/*	$OpenBSD: asp.c,v 1.3 1999/07/16 17:53:06 mickey Exp $	*/
 
 /*
- * Copyright (c) 1998-2003 Michael Shalayeff
+ * Copyright (c) 1998,1999 Michael Shalayeff
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -12,18 +12,22 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHOR OR HIS RELATIVES BE LIABLE FOR ANY DIRECT,
- * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF MIND, USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
- * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
- * THE POSSIBILITY OF SUCH DAMAGE.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 /*
@@ -42,7 +46,6 @@
 #include <machine/bus.h>
 #include <machine/iomod.h>
 #include <machine/autoconf.h>
-#include <machine/cpufunc.h>
 
 #include <hppa/dev/cpudevs.h>
 #include <hppa/dev/viper.h>
@@ -67,6 +70,9 @@ struct asp_trs {
 	u_int32_t asp_iar;
 	u_int32_t asp_resv[3];
 	u_int8_t  asp_cled;
+#define	ASP_LEDDATA	1
+#define	ASP_LEDSTROBE	2
+#define	ASP_LEDPULSE	8
 	u_int8_t  asp_resv1[3];
 	struct {
 		u_int		:20,
@@ -97,34 +103,20 @@ struct asp_trs {
 #define	asp_scsi	_asp_ios.asp_scsi
 };
 
-const struct asp_spus_tag {
-	char	name[12];
-	int	ledword;
-} asp_spus[] = {
-	{ "Cobra", 0 },
-	{ "Coral", 0 },
-	{ "Bushmaster", 0 },
-	{ "Hardball", 1 },
-	{ "Scorpio", 0 },
-	{ "Coral II", 1 },
-	{ "#6", 0 },
-	{ "#7", 0 }
-};
-
 struct asp_softc {
 	struct  device sc_dev;
 	struct gscbus_ic sc_ic;
 
-	volatile struct asp_hwr *sc_hw;
-	volatile struct asp_trs *sc_trs;
+	struct asp_hwr volatile *sc_hw;
+	struct asp_trs volatile *sc_trs;
+	u_int8_t sc_leds;
 };
 
-#define	ASP_IOMASK	0xfe000000
 /* ASP "Primary Controller" HPA */
 #define	ASP_CHPA	0xF0800000
 
-int	aspmatch(struct device *, void *, void *);
-void	aspattach(struct device *, struct device *, void *);
+int	aspmatch __P((struct device *, void *, void *));
+void	aspattach __P((struct device *, struct device *, void *));
 
 struct cfattach asp_ca = {
 	sizeof(struct asp_softc), aspmatch, aspattach
@@ -133,6 +125,11 @@ struct cfattach asp_ca = {
 struct cfdriver asp_cd = {
 	NULL, "asp", DV_DULL
 };
+
+void asp_intr_establish __P((void *v, u_int32_t mask));
+void asp_intr_disestablish __P((void *v, u_int32_t mask));
+u_int32_t asp_intr_check __P((void *v));
+void asp_intr_ack __P((void *v, u_int32_t mask));
 
 int
 aspmatch(parent, cfdata, aux)   
@@ -164,17 +161,16 @@ aspattach(parent, self, aux)
 	register int s;
 
 	if (bus_space_map(ca->ca_iot, ca->ca_hpa, IOMOD_HPASIZE, 0, &ioh)) {
-		printf(": can't map IO space\n");
+#ifdef DEBUG
+		printf("aspattach: can't map IO space\n");
+#endif
 		return;
 	}
 
 	sc->sc_trs = (struct asp_trs *)ASP_CHPA;
 	sc->sc_hw = (struct asp_hwr *)ca->ca_hpa;
 
-#ifdef USELEDS
-	machine_ledaddr = &sc->sc_trs->asp_cled;
-	machine_ledword = asp_spus[sc->sc_trs->asp_spu].ledword;
-#endif
+	sc->sc_leds = 0;
 
 	/* reset ASP */
 	/* sc->sc_hw->asp_reset = 1; */
@@ -188,24 +184,79 @@ aspattach(parent, self, aux)
 	sc->sc_trs->asp_imr = 0;
 	splx(s);
 
-	printf (": %s rev %d, lan %d scsi %d\n",
-	    asp_spus[sc->sc_trs->asp_spu].name, sc->sc_hw->asp_version,
-	    sc->sc_trs->asp_lan, sc->sc_trs->asp_scsi);
+	printf (": rev %d, spu %d, lan %d, scsi %d\n", sc->sc_hw->asp_version,
+		sc->sc_trs->asp_spu,sc->sc_trs->asp_lan, sc->sc_trs->asp_scsi);
 
 	sc->sc_ic.gsc_type = gsc_asp;
 	sc->sc_ic.gsc_dv = sc;
-	sc->sc_ic.gsc_base = sc->sc_trs;
+	sc->sc_ic.gsc_intr_establish = asp_intr_establish;
+	sc->sc_ic.gsc_intr_disestablish = asp_intr_disestablish;
+	sc->sc_ic.gsc_intr_check = asp_intr_check;
+	sc->sc_ic.gsc_intr_ack = asp_intr_ack;
 
 	ga.ga_ca = *ca;	/* clone from us */
-	ga.ga_dp.dp_bc[0] = ga.ga_dp.dp_bc[1];
-	ga.ga_dp.dp_bc[1] = ga.ga_dp.dp_bc[2];
-	ga.ga_dp.dp_bc[2] = ga.ga_dp.dp_bc[3];
-	ga.ga_dp.dp_bc[3] = ga.ga_dp.dp_bc[4];
-	ga.ga_dp.dp_bc[4] = ga.ga_dp.dp_bc[5];
-	ga.ga_dp.dp_bc[5] = ga.ga_dp.dp_mod;
-	ga.ga_dp.dp_mod = 0;
-	ga.ga_hpamask = ASP_IOMASK;
 	ga.ga_name = "gsc";
 	ga.ga_ic = &sc->sc_ic;
 	config_found(self, &ga, gscprint);
+}
+
+#ifdef USELEDS
+void
+heartbeat(int on)
+{
+	register struct asp_softc *sc;
+
+	sc = asp_cd.cd_devs[0];
+	if (asp_cd.cd_ndevs && sc) {
+		register u_int8_t r = sc->sc_leds ^= ASP_LEDPULSE, b;
+		for (b = 0x80; b; b >>= 1) {
+			sc->sc_trs->asp_cled = (r & b)? 1 : 0;
+			sc->sc_trs->asp_cled = ASP_LEDSTROBE | (r & b)? 1 : 0;
+		}
+	}
+}
+#endif
+
+void
+asp_intr_establish(v, mask)
+	void *v;
+	u_int32_t mask;
+{
+	register struct asp_softc *sc = v;
+
+	sc->sc_trs->asp_imr |= mask;
+}
+
+void
+asp_intr_disestablish(v, mask)
+	void *v;
+	u_int32_t mask;
+{
+	register struct asp_softc *sc = v;
+
+	sc->sc_trs->asp_imr &= ~mask;
+}
+
+u_int32_t
+asp_intr_check(v)
+	void *v;
+{
+	register struct asp_softc *sc = v;
+	register u_int32_t irr, imr;
+
+	imr = sc->sc_trs->asp_imr;
+	irr = sc->sc_trs->asp_irr;
+	sc->sc_trs->asp_imr = imr & ~irr;
+
+	return irr;
+}
+
+void
+asp_intr_ack(v, mask)
+	void *v;
+	u_int32_t mask;
+{
+	register struct asp_softc *sc = v;
+
+	sc->sc_trs->asp_imr |= mask;
 }

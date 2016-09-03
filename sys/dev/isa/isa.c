@@ -1,4 +1,4 @@
-/*	$OpenBSD: isa.c,v 1.46 2015/05/25 15:19:22 miod Exp $	*/
+/*	$OpenBSD: isa.c,v 1.37 1999/07/30 17:12:56 deraadt Exp $	*/
 /*	$NetBSD: isa.c,v 1.85 1996/05/14 00:31:04 thorpej Exp $	*/
 
 /*
@@ -12,6 +12,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *      This product includes software developed by Jason Downs for the
+ *      OpenBSD system.
+ * 4. Neither the name(s) of the author(s) nor the name OpenBSD
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR(S) ``AS IS'' AND ANY EXPRESS
  * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -63,12 +70,14 @@
 #include <sys/device.h>
 #include <sys/extent.h>
 
+#include <machine/intr.h>
+
 #include <dev/isa/isareg.h>
 #include <dev/isa/isavar.h>
 #include <dev/isa/isadmareg.h>
 
-int isamatch(struct device *, void *, void *);
-void isaattach(struct device *, struct device *, void *);
+int isamatch __P((struct device *, void *, void *));
+void isaattach __P((struct device *, struct device *, void *));
 
 extern int autoconf_verbose;
 
@@ -155,38 +164,21 @@ isaprint(aux, isa)
 	const char *isa;
 {
 	struct isa_attach_args *ia = aux;
-	int irq, nirq;
-	int dma, ndma;
 
 	if (ia->ia_iosize)
 		printf(" port 0x%x", ia->ia_iobase);
 	if (ia->ia_iosize > 1)
 		printf("/%d", ia->ia_iosize);
-
 	if (ia->ia_msize)
 		printf(" iomem 0x%x", ia->ia_maddr);
 	if (ia->ia_msize > 1)
 		printf("/%d", ia->ia_msize);
-
-	nirq = ia->ipa_nirq;
-	if (nirq < 0 || nirq > nitems(ia->ipa_irq))
-		nirq = 1;
-	for (irq = 0; irq < nirq; irq++)
-		if (ia->ipa_irq[irq].num != IRQUNK)
-			printf(" irq %d", ia->ipa_irq[irq].num);
-
-	ndma = ia->ipa_ndrq;
-	if (ndma < 0 || ndma > nitems(ia->ipa_drq))
-		ndma = 2;
-	for (dma = 0; dma < ndma; dma++)
-		if (ia->ipa_drq[dma].num != DRQUNK) {
-			if (dma == 0)
-				printf(" drq");
-			else
-				printf(" drq%d", dma + 1);
-			printf(" %d", ia->ipa_drq[dma].num);
-		}
-
+	if (ia->ia_irq != IRQUNK)
+		printf(" irq %d", ia->ia_irq);
+	if (ia->ia_drq != DRQUNK)
+		printf(" drq %d", ia->ia_drq);
+	if (ia->ia_drq2 != DRQUNK)
+		printf(" drq2 %d", ia->ia_drq2);
 	return (UNCONF);
 }
 
@@ -211,10 +203,8 @@ isascan(parent, match)
 	ia.ia_maddr = cf->cf_maddr;
 	ia.ia_msize = cf->cf_msize;
 	ia.ia_irq = cf->cf_irq == 2 ? 9 : cf->cf_irq;
-	ia.ipa_nirq = ia.ia_irq == IRQUNK ? 0 : 1;
 	ia.ia_drq = cf->cf_drq;
 	ia.ia_drq2 = cf->cf_drq2;
-	ia.ipa_ndrq = 2;
 	ia.ia_delaybah = sc->sc_delaybah;
 
 	if (cf->cf_fstate == FSTATE_STAR) {
@@ -257,7 +247,7 @@ isascan(parent, match)
 		if (autoconf_verbose)
 			printf(">>> probing for %s* finished\n",
 			    cf->cf_driver->cd_name);
-		free(dev, M_DEVBUF, 0);
+		free(dev, M_DEVBUF);
 		return;
 	}
 
@@ -270,7 +260,7 @@ isascan(parent, match)
 		    !isa_intr_check(sc->sc_ic, ia.ia_irq, IST_EDGE)) {
 			printf("%s%d: irq %d already in use\n",
 			    cf->cf_driver->cd_name, cf->cf_unit, ia.ia_irq);
-			free(dev, M_DEVBUF, 0);
+			free(dev, M_DEVBUF);
 		} else {
 #endif
 			if (autoconf_verbose)
@@ -291,7 +281,7 @@ isascan(parent, match)
 		if (autoconf_verbose)
 			printf(">>> probing for %s%d failed\n",
 			    cf->cf_driver->cd_name, cf->cf_unit);
-		free(dev, M_DEVBUF, 0);
+		free(dev, M_DEVBUF);
 	}
 }
 
